@@ -22,7 +22,7 @@ namespace BNGcore
         protected:       
             void  initialize_M_vec ( );
             void  copy_M ( ullmann_M_t & orig, ullmann_M_t & copy );
-            void  copy_M ( ullmann_M_t & orig, ullmann_M_t & copy, row_iter_t row_iter );
+
             void  print_M ( ullmann_M_t & M );
 
             // Ga is the subgraph, Gb is the graph
@@ -39,6 +39,25 @@ namespace BNGcore
             node_container_t  targets;
             std::vector<bool> targets_mask;
             Map               map;
+
+            // Deterministic row order for the M matrix.
+            //
+            // `M` is a `std::map<Node*, ...>`, whose iteration order is
+            // ascending ADDRESS. `find_maps` used to seed its recursion at
+            // `M.begin()` and step with `++row_iter`, so the order in which
+            // pattern nodes were assigned - and therefore the order in which
+            // subgraph isomorphisms were emitted - was a function of heap
+            // addresses, i.e. of ASLR. Downstream that order decides the
+            // emission order of reactions, so the same model file could
+            // produce different .net output in different processes whenever
+            // two reactions tied on everything the writer prints.
+            //
+            // This vector holds the rows in `Ga` order instead. `Ga` is a
+            // `std::vector<Node*>`, so its iteration order is insertion order
+            // and is stable across processes and runs. Callers walk
+            // `M.find(rowOrder_[d])` instead of `++row_iter`, leaving the map
+            // itself and its `find`/`insert` call sites untouched.
+            std::vector <Node*>  rowOrder;
     };         
 
 
@@ -62,7 +81,9 @@ namespace BNGcore
             void set_max_maps ( size_t max ) { max_maps_ = max; };
 
         protected:
-            size_t   next_node ( size_t d, row_iter_t & row_iter, List <Map> & sg_iso_maps );
+            // Depth is an index into UllmannBase::rowOrder, not an iterator
+            // into the address-ordered M map; see that member for why.
+            size_t   next_node ( size_t d, List <Map> & sg_iso_maps );
             bool     find_next_match ( col_iter_t & col_iter, const col_iter_t & col_end );
             bool     build_M0  ( );
             bool     refine_M  ( );

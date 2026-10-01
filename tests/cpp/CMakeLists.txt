@@ -344,3 +344,12 @@ if(BUILD_BNGSIM_ADAPTER)
         Catch2::Catch2WithMain Catch2::Catch2 bng_engine)
     catch_discover_tests(test_bngsim_adapter)
 endif()
+
+# test_correctness_regressions — four independently-fixed defects
+add_executable(test_correctness_regressions test_correctness_regressions.cpp)
+target_include_directories(test_correctness_regressions PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+)
+target_link_libraries(test_correctness_regressions PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast bng_parser bng_compile)
+catch_discover_tests(test_correctness_regressions)
