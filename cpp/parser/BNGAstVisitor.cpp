@@ -1789,6 +1789,24 @@ std::any BNGAstVisitor::visitObservable_def(BNGParser::Observable_defContext* ct
 
     const auto names = ctx->STRING();
     const std::string type = ctx->observable_type() != nullptr ? ctx->observable_type()->getText() : "Molecules";
+    if (toLower(type) == "concentration") {
+        // BNG2 refuses this type ("Observable type is not valid") and so must
+        // we: BNG3 never applies the compartment volume to an observable, so
+        // accepting it would hand the caller a molecule count under the name of
+        // a concentration, with nothing to say so.  `Molecules` is not a
+        // concentration either -- it reports the raw simulation state, which
+        // is a concentration under method=>"ode" and a molecule count under
+        // method=>"ssa".  To get a molecule count from an ODE run, multiply
+        // the `Molecules` observable by the compartment's volume; under
+        // `ssa` the observable is already the count.
+        throw std::runtime_error(
+            "observable type 'Concentration' is not supported: BNG3 does not "
+            "apply compartment volumes to observables, so no observable type "
+            "yields a concentration. Use 'Molecules' and multiply by the "
+            "compartment volume to get a molecule count under method=>\"ode\"; "
+            "under method=>\"ssa\" 'Molecules' is already a molecule count.");
+    }
+
     currentModel_->addObservable(ast::Observable(names.back()->getText(), type, std::move(patterns)));
     return {};
 }

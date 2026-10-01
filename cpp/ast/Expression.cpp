@@ -310,8 +310,16 @@ double Expression::evaluateWithFunctions(
             return Vmax * S / (Km + S);
         }
         // MM(kcat, Km, St, Et) -> self-consistent Michaelis-Menten (BNG2 parity)
-        // Computes free substrate via quadratic: S = 0.5*(b + sqrt(b^2 + 4*St*Km))
-        // where b = St - Km - Et, then rate = kcat * Et * S / (Km + S)
+        // The free substrate is the positive root of
+        //     S^2 + (Km + Et - St)*S - St*Km = 0,
+        // i.e. the exact binding equilibrium S*E = Km*C with C = St - S and
+        // E = Et - C.  With b = St - Km - Et that root is 0.5*(b + q), where
+        // q = sqrt(b*b + 4*St*Km).  When Et >> St + Km, b < 0 and |b| >> q, so
+        // b + q cancels catastrophically and the positive root collapses to 0,
+        // which silently zeroes the entire rate law.  BNG2
+        // (Network3/src/util/misc.cpp, Util::mm_free_substrate) switches to the
+        // algebraically identical 2*St*Km/(q - b) in exactly that case; both
+        // branches are kept so the two implementations agree.
         if (text_ == "MM" || text_ == "mm") {
             if (children_.size() == 4) {
                 const double kcat = evalArg(0);
@@ -319,7 +327,9 @@ double Expression::evaluateWithFunctions(
                 const double St   = evalArg(2);  // total substrate
                 const double Et   = evalArg(3);  // total enzyme
                 const double b = St - Km - Et;
-                const double S = 0.5 * (b + std::sqrt(b * b + 4.0 * St * Km));
+                const double q = std::sqrt(b * b + 4.0 * St * Km);
+                const double S = (b >= 0.0) ? 0.5 * (b + q)
+                                             : 2.0 * St * Km / (q - b);
                 return kcat * Et * S / (Km + S);
             }
             // Fallback for 3-arg form (legacy): Vmax * S / (Km + S)
