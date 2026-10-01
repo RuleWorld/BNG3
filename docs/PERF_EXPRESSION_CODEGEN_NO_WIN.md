@@ -73,27 +73,63 @@ The host's wall clock cannot resolve anything below ~10% — it has ranged 23–
 on loadavg across the session, and `memWatch` proved `vm.loadavg` does not even
 respond to a known single-core input.
 
-**The instruction counter settled it.** `/usr/bin/time -l … instructions retired`
-measured **insensitive to concurrent load**: across six interleaved reps per arm
-on the same binaries in the same contended session, its spread was three orders
-of magnitude tighter than wall clock's.
+**The instruction counter contradicted the wall clock — which is the part
+that mattered, and is *not* the same as resolving a difference.** Across six
+interleaved reps per arm on the same binaries in the same contended session,
+the counter's spread was three orders of magnitude tighter than wall clock's:
 
     A baseline       median 5,037,345,446   cv 0.022%
-    B length-gated   median 5,038,543,790   cv 0.037%    -> +0.024%
+    B length-gated   median 5,038,543,790   cv 0.037%
 
-Same binaries, same session, same wall-clock conditions — 0.03% spread instead
-of 5.19%. That is a 170x tighter instrument, and it is what turned "it looked
-faster" into "it is flat".
+Wall clock said +4.78% slower. The counter said the two arms are **flat**,
+which is the finding that killed the candidate. That contradiction is what
+settled it, and it does not depend on resolving any particular delta.
 
-**Stated precisely, because "deterministic" would overclaim.** What I
-measured is stability against *scheduling contention*, which is the noise
-source I was fighting. I did **not** test CPU migration, frequency scaling, or
-heterogeneous core placement, and on a 15-logical-CPU host under R=21–74 those
-are not hypothetical. My own data shows the limit of the claim: cv 0.022% and
-0.037% against a +0.024% delta means the counter *resolved* that difference —
-which is three orders of magnitude away from proving it is immune to
-everything a scheduler does. The defensible claim is "insensitive to
-concurrent load, as measured", not "deterministic".
+**Correction, published after `swarmMemory` showed me my own error.** I first
+reported this as `B = +0.024%`, i.e. the candidate *slower*, as though the
+counter had resolved a difference. It had not. Re-analysing the two
+independent datasets I collected:
+
+    instr.txt    A_med 5,039,373,445  B_med 5,037,690,571   -0.033%  -> B FASTER
+    instr2.txt   A_med 5,037,345,446  B_med 5,038,543,790   +0.024%  -> B SLOWER
+
+**The sign flips between datasets**, and the between-arm delta (~0.03%) is
+*smaller* than the within-arm full range (0.061%–0.099% of median). So the
+honest reading is **no measurable difference in either direction** — not
+"+0.024%, slower". I published a resolvable-looking figure for an
+unresolvable one, which is the same class of mistake as the original 23.6%,
+one order of magnitude smaller.
+
+The no-win verdict is unchanged and in fact slightly better supported: the
+candidate does not merely fail to win, it is indistinguishable from baseline
+in a metric tight enough to have caught the difference if one existed.
+
+**What this costs the instrument, stated honestly.** The counter is still far
+tighter than wall clock (0.03% vs 5.19% spread — roughly 170x) and it still
+refuted a wall-clock claim, which is what matters. But it is *not* a
+deterministic counter, and my own data is what proves it: had the true
+between-arm difference been 0.03%, this instrument could not have seen it. A
+0.03% resolution limit means **differences below ~0.1% are invisible to it**,
+so it can only adjudicate claims of the size this one was — a 23.6% claim, not
+a 0.03% one. `swarmMemory` found the same thing in a different counter, where
+allocation counts advertised as deterministic turned out to have a 13.69% full
+range. Do not trust a counter's label; check its own spread before quoting a
+delta against it. I did not, and it cost a wrong number in this file.
+
+**"Deterministic" would overclaim.** What I measured is stability against
+*scheduling contention*, the noise source I was fighting. CPU migration,
+frequency scaling and heterogeneous core placement were not tested, and on a
+15-logical-CPU host under R=21–74 those are not hypothetical. The defensible
+claim is "insensitive to concurrent load, as measured", not "deterministic".
+
+**A counter's spread, not its label, is what licenses a delta.** The check I
+skipped is one subtraction: compare the between-arm difference against the
+within-arm range *of each arm*. If the delta is smaller than the noise, the
+correct output is "no measurable difference", and no amount of decimal places
+on the median makes it otherwise. This is `swarmMemory`'s rule generalised —
+they wrote "use median+IQR, not min/max; below ~2% is noise, not a win" after
+finding their own "deterministic, min==max" counters had a 13.69% range. Mine
+had a 0.06–0.10% range and I still quoted a 0.024% delta against it.
 
 **The generalisable rule.** Measure once with a cheap instrument to find a
 hypothesis, then re-measure with a deterministic one before believing it. If
@@ -177,7 +213,7 @@ links nothing else from the engine — see "Instrument limitations".
 | Candidate | Change | Microbench (ns/eval, sum of 7 shapes) | Instruction count @-O2 | @-O0 | Verdict |
 |---|---|---|---|---|---|
 | A | baseline | 935.48 | median 5,037,345,446 | 33,609 | reference |
-| B | hoist each literal's length in front of its compare (`text_.size() == N && text_ == "..."`), 66 sites | 714.89 (**-23.6%**, *retracted, see below*) | median 5,038,543,790 (**+0.024%**) | 36,618 (**+9%**) | **rejected** |
+| B | hoist each literal's length in front of its compare (`text_.size() == N && text_ == "..."`), 66 sites | 714.89 (**-23.6%**, *retracted, see below*) | **flat — sign flips between datasets, delta below within-arm noise** (see below) | 36,618 (**+9%**) | **rejected** |
 | C | B plus the `factorial` arm moved to a `[[gnu::cold]] [[gnu::noinline]]` helper (targets the 25,880-byte single function) | 792.06 (worse than B) | not measured — C was built on B, and B did not survive re-measurement | — | **rejected** |
 
 ### The retraction, stated plainly
