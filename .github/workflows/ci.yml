@@ -45,6 +45,9 @@ jobs:
       - name: Validate integration provenance structure
         run: python scripts/validate_provenance.py
 
+      - name: Enforce strict provenance gate ratchet
+        run: python scripts/check_provenance_ratchet.py
+
       - name: Validate frozen corpus selection
         run: python scripts/validate_corpus_manifest.py
 
