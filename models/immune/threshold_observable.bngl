@@ -1,0 +1,40 @@
+# A count predicate on a Molecules observable, which must be REFUSED.
+#
+# The model itself is trivial and that is the point: it isolates the construct.
+# ``Gt50`` asks for the amount of Effector() exceeding 50.  On a Molecules
+# observable that comparison has no defined meaning in BNG3, so the supported
+# outcome is a named diagnostic and a non-zero exit, not a column of zeros.
+# The smallest reproducer of the defect this pins down:
+#
+#   BNG2 2.9.3 -> Gt50 = 1.000000000000e+02   (predicate ignored, amount returned)
+#   BNG3 before the fix -> Gt50 = 0.0 at every step, while Plain = 1.0e+02
+#
+# ``Species`` observables use the same spelling and DO have defined semantics
+# (a structural embedding count), so the companion file
+# threshold_observable_species.bngl must keep working.
+
+begin parameters
+  k = 0.5
+end parameters
+
+begin molecule types
+  Eff()
+end molecule types
+
+begin seed species
+  Eff() 100
+end seed species
+
+begin observables
+  Molecules Plain Eff()
+  Molecules Gt50  Eff()>50
+end observables
+
+begin reaction rules
+  Eff() -> 0   k
+end reaction rules
+
+begin actions
+  generate_network({overwrite=>1})
+  simulate({method=>"ode",t_end=>1,n_steps=>1})
+end actions

@@ -1,0 +1,42 @@
+# Clonal expansion of a CD8+ T-cell clone with a crowding-limited carrying
+# capacity.
+#
+# Domain expectation. Antigen-activated T cells divide; division stops once the
+# clone has recruited the available niche, so the clone approaches a declared
+# carrying capacity K and stops there. The compartment identity that must hold at
+# every sampled step is that total cells equal the sum of the compartments.
+#
+# The rule rate law is r*(K-Eff())/K, so the ODE is
+#     dE/dt = r*E*(K-E)/K
+# whose closed form is the logistic
+#     E(t) = K / (1 + ((K-E0)/E0) * exp(-r*t)).
+# That is the number this model is checked against, not a vibe.
+
+begin parameters
+  K   = 1000      # carrying capacity (crowding-limited niche), cells
+  r   = 0.5       # intrinsic per-cell division rate, 1/day
+  E0  = 200       # seeded clone size, cells
+end parameters
+
+begin molecule types
+  Effector()
+end molecule types
+
+begin seed species
+  Effector()  E0
+end seed species
+
+begin observables
+  Molecules Effector  Effector()
+end observables
+
+begin reaction rules
+  # Reactant factor supplies the "per cell" part; the law supplies crowding.
+  Effector() -> Effector() + Effector()   r*(K-Effector())/K
+end reaction rules
+
+begin actions
+  generate_network({overwrite=>1})
+  simulate({suffix=>"_ode",method=>"ode",t_end=>8,n_steps=>8,atol=>1e-10,rtol=>1e-10})
+  simulate({suffix=>"_ssa",method=>"ssa",t_end=>8,n_steps=>40,seed=>20260930})
+end actions

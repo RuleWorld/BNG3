@@ -1,0 +1,59 @@
+# Exhaustion/memory split driven by a threshold on cumulative antigen stimulus.
+#
+# Domain expectation. An effector cell keeps proliferating until its cumulative
+# antigen stimulus S crosses an exhaustion threshold THETA; at that point it
+# leaves the cycling compartment and becomes a memory cell. This is a
+# threshold-driven switch, so the switch time is PREDICTABLE:
+#
+#     S(t) = S0 + a*t          (stimulus accumulates linearly)
+#     t*   = (THETA - S0)/a    <- the analytic switch time
+#
+# The rate law for the switch is Hill(1, THETA, n) applied to S, which is a
+# smooth approximation to a step: the flux is half-maximal at S = THETA and
+# reaches 90% within THETA*(10^(1/n) - 1) of it. With n = 8 that band is
+# THETA*0.1786, so the switch time is determined to within that band divided by
+# the stimulus slope. The tolerance in the test is derived from those two
+# numbers, not chosen.
+
+begin parameters
+  S0     = 100      # stimulus at t=0
+  a      = 60       # stimulus accumulation rate, units/day
+  THETA  = 400      # exhaustion threshold
+  n      = 8        # Hill coefficient of the switch
+  E0     = 50       # starting effector count
+  kprol  = 0.05     # effector proliferation rate, 1/day
+  kmem   = 0.4      # effector -> memory conversion rate constant, 1/day
+end parameters
+
+begin molecule types
+  Effector()
+  Memory()
+  Stimulus()
+end molecule types
+
+begin seed species
+  Effector()  E0
+  Memory() 0
+  Stimulus() S0
+end seed species
+
+begin observables
+  Molecules Effector  Effector()
+  Molecules Memory    Memory()
+  Molecules Stimulus  Stimulus()
+  Molecules TotalCD8  Effector(),Memory()
+end observables
+
+begin reaction rules
+  # Stimulus accumulates linearly and is never consumed.
+  0 -> Stimulus()   a
+  # Effectors divide while not yet exhausted.
+  Effector() -> Effector() + Effector()   kprol
+  # The switch: conversion rate rises steeply once Stimulus passes THETA.
+  Effector() -> Memory()   kmem*Hill(1,THETA,n,Stimulus())
+end reaction rules
+
+begin actions
+  generate_network({overwrite=>1})
+  simulate({suffix=>"_ode",method=>"ode",t_end=>8,n_steps=>160,atol=>1e-10,rtol=>1e-10})
+end actions

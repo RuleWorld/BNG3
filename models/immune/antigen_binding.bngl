@@ -1,0 +1,54 @@
+# Finite-antigen reversible binding between a T-cell receptor and its ligand.
+#
+# Domain expectation. This is the trap the development checklist names: a
+# reversible binding rule whose forward and reverse constants are SPLIT across
+# the two rates. The invariant that must hold is a conservation identity, and it
+# must hold at EVERY sampled step, not only at t_end:
+#
+#     free_antigen + bound_antigen == total_antigen     (exactly, at all t)
+#
+# Conservation is the check that is convention-free: a frozen or purely
+# binding/unbinding pool cannot manufacture or destroy antigen, so any drift at
+# any intermediate step is a defect regardless of what the rate law means. The
+# model also exercises the analytically checkable thing that the split rates
+# must preserve -- the equilibrium constant -- because a rule that drops or
+# doubles one of the two rates still conserves the pool but moves Kd.
+
+begin parameters
+  Ag0    = 200      # total antigen, molecules
+  R0     = 300      # total receptor, molecules
+  kon    = 0.01     # forward binding rate constant, 1/(molecule*day)
+  koff   = 0.10     # reverse rate constant, 1/day
+end parameters
+
+begin molecule types
+  Ag()
+  R()
+  AgR()
+end molecule types
+
+begin seed species
+  Ag()   Ag0
+  R()    R0
+  AgR()  0
+end seed species
+
+begin observables
+  Molecules AgFree   Ag()
+  Molecules AgBound  AgR()
+  Molecules RFree    R()
+  Molecules RBound   AgR()
+  Molecules AgTotal  Ag(),AgR()
+end observables
+
+begin reaction rules
+  # The split: one forward constant, one reverse constant. Both must survive
+  # lowering intact, which is what the equilibrium check below pins down.
+  Ag() + R() <-> AgR()   kon, koff
+end reaction rules
+
+begin actions
+  generate_network({overwrite=>1})
+  simulate({suffix=>"_ode",method=>"ode",t_end=>60,n_steps=>600,atol=>1e-10,rtol=>1e-10})
+  simulate({suffix=>"_ssa",method=>"ssa",t_end=>60,n_steps=>60,seed=>20260930})
+end actions
