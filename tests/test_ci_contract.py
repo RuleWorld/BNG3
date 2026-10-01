@@ -8,7 +8,14 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
+from tests.workflow_yaml import (
+    concurrency_of,
+    job_matrix_values,
+    job_subtree_text,
+    parse_workflow,
+)
 from scripts.ci import validate_sbml_test_suite
 from scripts.validate import (
     load_skip_models,
@@ -262,9 +269,11 @@ def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
 def test_pull_request_runs_keep_exact_head_evidence_available():
     """A later PR push must not cancel validation for the preceding SHA."""
 
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert "github.event.pull_request.head.sha" in workflow
-    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
+    # Parsed, not grepped: a duplicate `concurrency:` key would leave both
+    # copies in the file text -- so a substring search would pass -- while the
+    # run executes only the last one. The key this test exists to protect is
+    # exactly the kind a text search cannot see.
+    _assert_exact_head_concurrency(CI_WORKFLOW, "ci.yml")
 
 
 def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
@@ -282,13 +291,21 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
         assert (
             "DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
         )
-        assert 'macos_deployment_target: "10.13"' in job
-        assert 'macos_deployment_target: "11.0"' in job
+        # By parsed value, not by source text: the quotes in
+        # `macos_deployment_target: "10.13"` are the author's punctuation, and
+        # both spellings denote the same deployment target.
+        targets = job_matrix_values(workflow_path, job_name, "macos_deployment_target")
+        assert (
+            "10.13" in targets
+        ), f"{job_name} must still target macOS 10.13: {targets}"
+        assert "11.0" in targets, f"{job_name} must still target macOS 11.0: {targets}"
         assert "CIBW_TEST_REQUIRES: pytest numpy click" in job
         assert "cp314-*" in job
 
-    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert re.search(r"^\s+workflow_dispatch:\s*$", ci_workflow, re.MULTILINE)
+    ci_doc = parse_workflow(CI_WORKFLOW)
+    assert "workflow_dispatch" in (
+        ci_doc.get("on") or ci_doc.get(True) or {}
+    ), "ci.yml must stay manually dispatchable"
     wheels = _workflow_job_from(CI_WORKFLOW, "wheels")
     assert "github.event_name == 'workflow_dispatch'" in wheels
 
@@ -307,13 +324,7 @@ def test_wheel_tests_smoke_the_installed_console_script():
 
 
 def _workflow_job(name: str) -> str:
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    match = re.search(
-        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)",
-        workflow,
-    )
-    assert match, f"CI must define a {name} job"
-    return match.group("body")
+    return job_subtree_text(CI_WORKFLOW, name)
 
 
 def _python_test_job() -> str:
@@ -321,24 +332,50 @@ def _python_test_job() -> str:
 
 
 def _workflow_job_from(path: Path, name: str) -> str:
-    workflow = path.read_text(encoding="utf-8")
-    match = re.search(
-        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)",
-        workflow,
-    )
-    assert match, f"{path.name} must define a {name} job"
-    return match.group("body")
+    """A job's *parsed* subtree, rendered as text for substring assertions.
+
+    This replaced a regex that sliced the job body out of the file text. The
+    assertions are unchanged; the haystack is now the job GitHub actually
+    executes, so a duplicate key inside the job can no longer let an assertion
+    pass against a copy that never runs.
+    """
+    return job_subtree_text(path, name)
 
 
 def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
     """Cross-tool checks must be independently reproducible per PR head."""
 
-    workflow = PARITY_WORKFLOW.read_text(encoding="utf-8")
-    assert "github.event.pull_request.head.sha" in workflow
-    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
-    assert 'BNG3_CI_STRICT_ORACLES: "1"' in workflow
+    # Parsed, not grepped -- see the ci.yml concurrency test above.
+    _assert_exact_head_concurrency(PARITY_WORKFLOW, "parity.yml")
+    parity_doc = parse_workflow(PARITY_WORKFLOW)
+    assert (
+        parity_doc["env"]["BNG3_CI_STRICT_ORACLES"] == "1"
+    ), "parity.yml must set BNG3_CI_STRICT_ORACLES=1 or oracle-gated steps skip"
+    parity_jobs = parity_doc.get("jobs") or {}
     for job in ("oracle-lock", "bng2-parity", "nfsim-parity", "pybionetgen-compat"):
-        assert re.search(rf"^  {job}:\n", workflow, re.MULTILINE), job
+        assert job in parity_jobs, f"parity.yml must define a {job} job"
+
+
+def _assert_exact_head_concurrency(path: Path, label: str) -> None:
+    """Both halves of the per-head evidence contract, read from parsed YAML."""
+    concurrency = concurrency_of(path)
+    assert "${{ github.event.pull_request.head.sha || github.sha }}" in str(
+        concurrency.get("group")
+    ), f"{label} concurrency group does not key on the exact PR head: {concurrency}"
+    assert (
+        concurrency.get("cancel-in-progress") is False
+    ), f"{label} must not cancel an in-flight run: {concurrency}"
+
+
+def _workflow_job_from(path: Path, name: str) -> str:
+    """A job's *parsed* subtree, rendered as text for substring assertions.
+
+    This replaced a regex that sliced the job body out of the file text. The
+    assertions are unchanged; the haystack is now the job GitHub actually
+    executes, so a duplicate key inside the job can no longer make an
+    assertion pass against a copy that never runs.
+    """
+    return job_subtree_text(path, name)
 
 
 def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
@@ -362,19 +399,23 @@ def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
 def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     """The Lean reference must be kernel-checked on every PR head."""
 
-    workflow = FORMAL_WORKFLOW.read_text(encoding="utf-8")
-    assert "github.event.pull_request.head.sha" in workflow
-    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
-    assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in workflow
-    assert "lake-package-directory: formal/lean" in workflow
-    assert "auto-config: false" in workflow
+    # Parsed, not grepped -- see the ci.yml concurrency test above. The Lean
+    # action is pinned to a commit, so it is matched against the parsed
+    # document rather than as a substring of the file.
+    _assert_exact_head_concurrency(FORMAL_WORKFLOW, "formal.yml")
+    formal = yaml.safe_dump(
+        parse_workflow(FORMAL_WORKFLOW), sort_keys=False, default_flow_style=False
+    )
+    assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in formal
+    assert "lake-package-directory: formal/lean" in formal
+    assert "auto-config: false" in formal
     assert (REPO / "formal" / "lean" / "lean-toolchain").read_text(
         encoding="utf-8"
     ).strip() == ("leanprover/lean4:v4.33.1")
-    assert "scripts/static_validate.py" in workflow
-    assert "scripts/run_nfnext_contract.sh" in workflow
-    assert "lake build" in workflow
-    assert "lake env lean tests/Smoke.lean" in workflow
+    assert "scripts/static_validate.py" in formal
+    assert "scripts/run_nfnext_contract.sh" in formal
+    assert "lake build" in formal
+    assert "lake env lean tests/Smoke.lean" in formal
 
 
 def test_release_workflow_requires_exact_main_sha_qualification():

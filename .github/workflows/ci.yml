@@ -575,6 +575,14 @@ jobs:
         env:
           SYMPY_USE_GMPY: "0"
 
+      - name: Check workflow YAML integrity and test-selector reachability
+        # Runs here, not in `lint`, because the selector check collects
+        # `tests/python/`, whose conftest requires an importable `bionetgen`
+        # that this job's `pip install -e .[full]` provides.
+        run: pytest tests/test_workflow_contract.py -q --tb=short
+        env:
+          SYMPY_USE_GMPY: "0"
+
       - name: Test CLI commands
         run: |
           bionetgen --version
@@ -660,7 +668,10 @@ jobs:
           - os: ubuntu-22.04
             macos_arch: x86_64
             macos_deployment_target: "11.0"
-          - os: macos-13
+          # macos-13 is retired: it is absent from the public-runner label set,
+          # so this job sat queued and unschedulable forever. macos-15-intel is
+          # the supported x86_64 macOS label on public repositories.
+          - os: macos-15-intel
             macos_arch: x86_64
             macos_deployment_target: "10.13"
           - os: macos-14
@@ -696,8 +707,9 @@ jobs:
             bionetgen --version &&
             bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
-          # Build one native architecture per macOS runner; macos-13 supplies
-          # x86_64 and macos-14 supplies arm64 without cross-target duplication.
+          # Build one native architecture per macOS runner; macos-15-intel
+          # supplies x86_64 and macos-14 supplies arm64 without cross-target
+          # duplication.
           CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}
           CIBW_ENVIRONMENT_MACOS: >-
             MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}
