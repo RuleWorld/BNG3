@@ -315,6 +315,46 @@ NATIVE_DECIDE_ALLOWLIST = {
         "nfnextBridgeContract_holds -- substantive statement, trusted proof method",
 }
 
+# A reason is not decoration.  Without this, `"BNG/Foo.lean": ""` silently
+# weakens the `Lean.ofReduceBool` checking for a whole file and the gate stays
+# green, which is the "reports success while testing nothing" shape again one
+# level down.  An entry must say WHICH declaration is trusted and WHY the
+# statement is nonetheless worth having, in at least MIN_REASON_CHARS characters.
+MIN_REASON_CHARS = 30
+
+
+def check_allowlist_reasons(errors: list[str]) -> None:
+    """Every allowlist entry must carry a substantive reason.
+
+    Also flags two ways the allowlist can rot silently:
+      * an entry for a file that no longer exists (stale, so a future author may
+        believe the weakening is still justified when it is not);
+      * an entry for a file that no longer uses native_decide (dead, same risk).
+    """
+    for rel, reason in NATIVE_DECIDE_ALLOWLIST.items():
+        if not isinstance(reason, str) or len(reason.strip()) < MIN_REASON_CHARS:
+            errors.append(
+                f"NATIVE_DECIDE_ALLOWLIST[{rel!r}]: reason is too short to be a "
+                f"reviewable justification (needs >= {MIN_REASON_CHARS} chars "
+                f"saying which declaration is trusted and why); got {reason!r}. "
+                f"This gate exists so a new trusted `native_decide` is a visible "
+                f"weakening of kernel checking rather than a silent one."
+            )
+        path = ROOT / rel
+        if not path.exists():
+            errors.append(
+                f"NATIVE_DECIDE_ALLOWLIST[{rel!r}]: stale entry, the file no "
+                f"longer exists; a future author may read it as still justifying "
+                f"a weakening that no longer applies"
+            )
+            continue
+        code, _ = mask_comments_and_strings(path.read_text(encoding="utf-8"))
+        if not re.search(r"\bnative_decide\b", code):
+            errors.append(
+                f"NATIVE_DECIDE_ALLOWLIST[{rel!r}]: dead entry, the file no "
+                f"longer uses native_decide"
+            )
+
 
 def main() -> int:
     errors: list[str] = []
@@ -340,6 +380,7 @@ def main() -> int:
     check_unreachable_modules(errors)
     check_assertion_floor(errors)
     check_trusted_proof_tactics(errors)
+    check_allowlist_reasons(errors)
 
     required = [
         ROOT / "BNG" / "Runtime.lean",
