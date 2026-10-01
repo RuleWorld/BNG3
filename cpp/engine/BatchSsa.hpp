@@ -107,6 +107,31 @@ struct FlattenedReactionNetwork {
     );
 };
 
+// Per-trajectory RNG seed for a batch run.
+//
+// This lives here, rather than in any one backend, because every backend must
+// derive the same seed for the same (baseSeed, trajectory) pair: the CPU/GPU
+// parity harness in tests/test_batch_ssa_statistical_parity.py compares the two
+// at the SAME base seed, so a derivation that differs per backend silently
+// invalidates that comparison. It is a pure function of its two arguments — no
+// thread id, no device id, no loop order — so the result cannot depend on how
+// the batch was partitioned across workers.
+//
+// The derivation is a SplitMix64 finalizer over the pair, not `base + traj`.
+// Addition aliases: batch runs whose base seeds differ by delta share their
+// B - delta trajectories, so base seeds 5000, 5001 and 5002 produced
+// near-identical batch means and an across-seed spread ~19x too small to be a
+// sampling distribution. Mixing both words through one avalanche makes
+// adjacent base seeds and adjacent trajectory indices decorrelate, which is the
+// same property the GPU backends already had via their counter-based PCG32
+// (gpu/MetalSsaBackend.mm, gpu/CudaSsaBackend.cu: keyed on trajId).
+inline uint64_t batchTrajectorySeed(uint64_t baseSeed, std::size_t trajectory) {
+    uint64_t z = baseSeed + 0x9E3779B97F4A7C15ULL * (trajectory + 1);
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+    return z ^ (z >> 31);
+}
+
 // CPU Batch SSA Simulator: reference implementation and fallback backend.
 class CpuBatchSsaSimulator {
 public:
