@@ -674,10 +674,32 @@ that way reproduces the measured file byte for byte.
 
 ## Instrument limitations
 
-1. The microbenchmark compiles `Expression.cpp` **standalone** and links nothing
-   else. Production links the whole engine with LTO on. A real microbenchmark
-   delta would not necessarily survive into the shipped binary — and in this
-   case there was not even a real microbenchmark delta.
+1. **Which of my instruments is the reader, and which is a proxy.** The rule
+   that earns the most from this charge is `correctness`'s: *when the question
+   is what value a reader sees, the instrument must BE that reader.* They
+   retracted a published comparison after realising they had applied `awk` to
+   drop a field, then described the result as what a test's own unpacking sees —
+   a transformation belonging to a different consumer, substituted for the
+   consumer itself.
+
+   Applying that test to my own work, honestly:
+
+   - **The trajectory gate IS the reader.** It runs the real `bng_cpp` CLI and
+     hashes the `.gdat` that CLI emits — no transformation between the question
+     and the artifact. Nothing sits in the way.
+   - **The microbench drives the same entry point the engine calls**,
+     `Expression::evaluate(std::function, t)` — so the *call surface* is
+     faithful.
+   - **But it compiles `Expression.cpp` standalone** and links nothing else,
+     while production links the whole engine with LTO on. That part is a proxy,
+     and it is the weakest instrument here. A real microbenchmark delta would
+>     not necessarily survive into the shipped binary — and in this case there
+>     was not even a real microbenchmark delta to survive.
+
+   So the fitness numbers in this document rest on a proxy and the correctness
+>   gate rests on the real reader. They answer different questions, and the
+>   verdict rests on neither alone: the profile and the 4.89% ceiling are
+   end-to-end, while the microbench only ever located the cost.
 2. Wall-clock on this host is not trustworthy below ~10%: the same binaries
    measured 5.19% apart in one session and the host has ranged 23–131 on
    loadavg. The instruction counter contradicted it, which is what settled the
