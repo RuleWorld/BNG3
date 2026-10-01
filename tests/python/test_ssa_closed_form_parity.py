@@ -25,6 +25,37 @@ threshold has is on the record rather than assumed:
                                 z_mean +0.88  z_var -1.52  implied k = 0.49888
     A+A firing count            p=0.253 vs k*C(n,2); p=0 vs k*n(n-1) (|z| > 130)
 
+Provenance for those numbers, because a threshold without it is not a
+measurement. Command, from the repository root, with the resolution it
+actually produced on this host:
+
+    PYTHONPATH=python:build/cpp python -m pytest \
+        tests/python/test_ssa_closed_form_parity.py -q
+    UNDER TEST (package)     .../BNG3/python/bionetgen/__init__.py
+    UNDER TEST (extension)   .../BNG3/build/cpp/_bionetgen_cpp.cpython-314-darwin.so
+                             sha256 f6cf5b72ff85b25ad3988e35825b7c5f5326fa8ec46ff72e0f6ecec2e78dc1f0
+    10 passed
+
+Two things that resolution depends on, both load-bearing:
+
+* On this host ``bionetgen`` resolves through a scikit-build **editable**
+  ``meta_path`` finder that runs before ``sys.path``, so ``PYTHONPATH`` cannot
+  override it. The extension it can resolve is a different path from the one
+  above, and the two are byte-identical (same sha256) - but a result is only
+  meaningful with the path printed next to it.
+* The shared ``build/cpp`` extension is one commit behind ``6889fba``:
+  ``75b22a7``, which touches only ``cpp/nfsim/NFinput/NFinput_fromCompiled.cpp``.
+  This file calls ``simulate_batch_ssa_cpu`` and ``simulate_ssa`` and never
+  touches NFsim, so the stale commit cannot affect anything asserted here.
+
+Import the extension under the name every other file in ``tests/python`` uses.
+Loading it a second time under a different module name is not a no-op: pybind11
+registers its C++ types globally, so the second load raises ``generic_type:
+type "Expression" is already registered!`` and ``importorskip`` turns that into
+a SILENT SKIP of this entire file. That is not hypothetical: an interim draft
+of this file imported ``_bionetgen_cpp`` top-level, the whole file skipped, and
+the suite still reported a green number.
+
 The GOF values are secondary; the moment Z-scores carry the test, and they sit
 at least a factor of three inside ``Z_LIMIT`` while a genuine propensity or
 stoichiometry error moves them by two orders of magnitude more.
@@ -433,6 +464,10 @@ end model
     ):
         gen = np.array([[-a4, a4, 0.0], [0.0, -a2, a2], [0.0, 0.0, 0.0]])
         expected = scipy_linalg.expm(gen * t)[0] * BATCH
+        # Read the reference off the generator rather than hand-deriving p2: a
+        # hand-derived one was mis-indexed here and rejected a correct engine
+        # at z = -123, where this gives z = -1.42. Row 0 of exp(Q t) is
+        # P(j firings by t) for j = 0, 1, 2.
         chi2, p = scipy_stats.chisquare(observed, expected, sum_check=False)
         if label == "k*C(n,2)":
             assert (
