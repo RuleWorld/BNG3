@@ -27,6 +27,17 @@ What it measures (composite = `sum(weight * seconds)`, lower is better):
 | `py_import`  |   0.10 | Python-side: `import bionetgen` timed in a fresh interpreter |
 | `py_load`    |   0.15 | Python-side: `bionetgen.load` of the mid-size `models/egfr_net.bngl` plus `BioNetGenModel` property reads (model-block counts must stay stable across reps) |
 
+## Cross-session drift — read before comparing candidates
+
+Cross-session composite min drift measured at 0.3275 / 0.3677 / 0.3506
+(~11%), one session cv 39.6% from co-tenant load; therefore compare
+interleaved same-session A/B against baseline min, never a baseline measured
+in a different session. This host is shared with other builds and agents, so
+a candidate's win must exceed that drift, not just its own in-run stdev.
+Baseline session on this machine (2026-09-30, commit 528f6d8): composite
+mean 0.3196, min 0.3064, cv 3.3%, peak RSS 84,131,840 B — see
+`bench/baseline.json`.
+
 Editable-install guard: a scikit-build editable install of `bionetgen` on this
 host redirects `import bionetgen` to another checkout via a `sys.meta_path`
 finder. Every child interpreter removes `sys.meta_path` entries whose type
