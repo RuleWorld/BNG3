@@ -1,0 +1,32 @@
+# M5a: membrane binding at V = 1 (counts = concentrations).
+begin model
+begin parameters
+  kon  2e-3
+  koff 0.4
+end parameters
+begin compartments
+  mem 3 1.0
+end compartments
+begin molecule types
+  L(l)
+  R(r)
+end molecule types
+begin seed species
+  L(l)@mem 1.0
+  R(r)@mem 3.0
+end seed species
+begin observables
+  Molecules Lfree L(l)
+  Molecules Rfree R(r)
+  Molecules LR    L(l!1).R(r!1)
+  Molecules Ltot  L
+  Molecules Rtot  R
+end observables
+begin reaction rules
+  L(l) + R(r) <-> L(l!1).R(r!1) kon, koff
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+  simulate_ode({t_end=>20000,n_steps=>20000,atol=>1e-12,rtol=>1e-12})
+end actions

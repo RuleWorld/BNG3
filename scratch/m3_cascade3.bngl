@@ -1,0 +1,38 @@
+# M3: one-way 3-stage first-order MAP kinase cascade A -> B -> C -> D.
+# Domain claim: the exact solution is
+#   A(t) = A0 exp(-k1 t)
+#   B(t) = A0 k1 (exp(-k2 t) - exp(-k1 t))/(k2-k1)
+#   C(t) = A0 k1 k2 sum_j exp(-k_j t)/prod_{m!=j}(k_m-k_j)
+#   D(t) = A0 - A - B - C
+# and A+B+C+D = A0 is conserved for all t.
+begin model
+begin parameters
+  k1 1.0
+  k2 0.4
+  k3 0.15
+  A0 800.0
+end parameters
+begin molecule types
+  A()
+  B()
+  C()
+  D()
+end molecule types
+begin seed species
+  A() A0
+end seed species
+begin observables
+  Molecules A A
+  Molecules B B
+  Molecules C C
+  Molecules D D
+end observables
+begin reaction rules
+  A() -> B() k1
+  B() -> C() k2
+  C() -> D() k3
+end reaction rules
+end model
+begin actions
+  simulate_ode({t_end=>40,n_steps=>4000,atol=>1e-12,rtol=>1e-12})
+end actions

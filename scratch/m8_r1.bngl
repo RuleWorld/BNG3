@@ -1,0 +1,38 @@
+# M8: REVERSE-RATE SPLITTING for a two-state phosphorylation pair.
+# A reversible rule written `A -> B ka, kb` (BNG2's "k1, k2" reversible form on
+# a one-way arrow) must generate a network whose forward rate is ka and whose
+# reverse rate is kb -- NOT (ka - kb) and NOT kb in the forward slot.  The
+# steady state of a closed two-state pair is then exactly b/a, independent of
+# how it was spelled.
+#
+# This is run three ways so the spelling cannot matter:
+#   R1: A(s~U) -> A(s~P) ka, kb            (reversible form on a one-way arrow)
+#   R2: A(s~U) <-> A(s~P) ka, kb           (explicit two-way arrow)
+#   R3: A(s~U) -> A(s~P) ka  ;  A(s~P) -> A(s~U) kb   (two separate rules)
+# All three must give the same steady state and the same trajectory.
+begin model
+begin parameters
+  ka 0.8
+  kb 0.3
+  Rtot 1000.0
+end parameters
+begin molecule types
+  A(s~U~P)
+end molecule types
+begin seed species
+  A(s~U) Rtot
+end seed species
+begin observables
+  Molecules U A(s~U)
+  Molecules P A(s~P)
+  Molecules T A
+end observables
+begin reaction rules
+  A(s~U) -> A(s~P) ka, kb
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+  writeNetwork({overwrite=>1,file=>"m8_r1.net"})
+  simulate_ode({t_end=>60,n_steps=>3000,atol=>1e-12,rtol=>1e-12})
+end actions
