@@ -72,13 +72,23 @@ if _EDITABLE_FINDERS:
     # misconfigured environment into a suite that reports skips and exit 0,
     # which is the same quiet-pass failure this guard exists to prevent --
     # a guard that silences its own tests is passing quietly.
+    # `import a.b.c as x` binds ONLY `x` -- it never creates a module-level
+    # name `a`, and neither does `import a as y`. The diagnostic below reads
+    # `bionetgen.__file__`, so read the package out of sys.modules instead,
+    # where a partially-imported package lands once the submodule import
+    # fails. Without this, the one situation this guard exists to explain
+    # (extension unimportable) raises NameError instead of the actionable
+    # message -- found the hard way, when an agent in an unbuilt worktree got
+    # a conftest crash rather than "build the extension".
     try:
         import bionetgen._bionetgen_cpp as _cpp_probe  # noqa: F401
     except ImportError as _exc:
+        _pkg = sys.modules.get("bionetgen")
         raise RuntimeError(
             "bionetgen._bionetgen_cpp is unimportable after resolving bionetgen "
             f"to the tree under test ({_ROOT}).\n"
-            f"  bionetgen resolved from: {getattr(bionetgen, '__file__', '?')}\n"
+            f"  bionetgen resolved from: "
+            f"{getattr(_pkg, '__file__', None) or 'not importable at all'}\n"
             f"  sys.path: {sys.path[:6]}\n"
             f"  underlying error: {_exc}\n"
             "This is a build/misconfiguration problem, not a code failure. Build "
