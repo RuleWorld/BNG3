@@ -2054,22 +2054,42 @@ void captureParameterComments(const std::string& source, ast::Model& model) {
 
 } // namespace
 
-std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
+BNGSyntaxError::BNGSyntaxError(std::size_t errorCount, std::string sourceName)
+    : std::runtime_error("BNGL syntax errors in " + sourceName + ": " +
+                         std::to_string(errorCount) + " error(s)"),
+      errorCount_(errorCount),
+      sourceName_(std::move(sourceName)) {}
+
+std::unique_ptr<ast::Model> parseModelSource(const std::string& sourceText,
+                                             const std::string& sourceName) {
     antlr4::ANTLRInputStream input(normalizeBNGLSource(sourceText));
     BNGLexer lexer(&input);
     antlr4::CommonTokenStream tokens(&lexer);
     BNGParser parser(&tokens);
     auto* tree = parser.prog();
     if (parser.getNumberOfSyntaxErrors() != 0) {
-        throw std::runtime_error("Cannot build model from source with syntax errors");
+        throw BNGSyntaxError(
+            static_cast<std::size_t>(parser.getNumberOfSyntaxErrors()), sourceName);
     }
 
     BNGAstVisitor visitor;
     visitor.visit(tree);
+    // Post-visit lowering of the synthetic `begin barrier patterns` /
+    // `driven_by()` metadata. Omitting it here is not a simplification: the
+    // barrier stays in the rule list and the driving work never reaches the
+    // model, with no diagnostic.
     visitor.finalizeThermodynamicMetadata();
     auto model = visitor.takeModel();
     captureParameterComments(sourceText, *model);
     return model;
+}
+
+std::unique_ptr<ast::Model> parseModel(const std::string& sourceText) {
+    try {
+        return parseModelSource(sourceText, "<string>");
+    } catch (const BNGSyntaxError&) {
+        throw std::runtime_error("Cannot build model from source with syntax errors");
+    }
 }
 
 std::unique_ptr<ast::Model> parseModelFromFile(const std::string& filePath) {
