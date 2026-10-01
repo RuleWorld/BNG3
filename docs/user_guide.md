@@ -94,6 +94,29 @@ result = model.simulate(method="nf", t_end=100.0, n_steps=200, seed=42)
 
 Network-based methods (`ode`, `ssa`, `pla`, `psa`) automatically generate the network if needed.
 
+### Seeds and reproducibility
+
+Stochastic methods (`ssa`, `nf`) are reproducible for a given seed: the same
+model and the same seed produce the same trajectory, and the batch SSA pool
+(`_bionetgen_cpp.simulate_batch_ssa_cpu`) seeds trajectory *b* with
+`base_seed + b`, so one base seed determines a whole batch and the result does
+not depend on the worker count.
+
+**`seed=0` is the exception and is not reproducible.** It means "use the system
+default", i.e. a fresh `std::random_device` draw, so two runs with `seed=0`
+differ. This is BNG2-compatible and is kept deliberately; it is not an error
+and it will not become a refusal. If you need reproducibility, pass an explicit
+non-zero seed. Do not assert reproducibility, or quote reproducibility as
+evidence, from a run that used `seed=0`.
+
+
+`seed` applies to the stochastic backends only. `simulate_ode`,
+`simulate_pla` and `simulate_psa` do not take one at all; `Model.simulate`
+accepts it for API uniformity and forwards it only to `ssa` and `nf`. The
+equivalents elsewhere are the `--seed` flag on `bionetgen run` and the `seed`
+argument of the `simulate_ssa`/`simulate_nf` BNGL actions; all of them use the
+same `0 = system default` rule.
+
 ## 5. Work With Results
 
 ```python

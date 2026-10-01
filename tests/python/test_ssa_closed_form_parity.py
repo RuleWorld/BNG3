@@ -28,6 +28,26 @@ threshold has is on the record rather than assumed:
 The GOF values are secondary; the moment Z-scores carry the test, and they sit
 at least a factor of three inside ``Z_LIMIT`` while a genuine propensity or
 stoichiometry error moves them by two orders of magnitude more.
+
+Three reference formulas that are easy to get wrong, each of which makes a
+CORRECT engine look broken. All three were hit while writing this file.
+
+1. **A two-state chain's event rate is its stationary exit rate, not
+   ``k01+k10``.** A molecule in state 0 leaves at ``k01`` and one in state 1
+   leaves at ``k10``, so the flip rate is ``pi0*k01 + pi1*k10``. With
+   ``k01=0.7, k10=0.3`` that is 0.42, not 1.0. Asserting ``(k01+k10)*T = 500``
+   flips over ``T=500`` gives **z = -41000** against an engine that measured
+   210.1 against the correct 210.0.
+2. **A fixed total makes the counts a multinomial PAIR, not two independent
+   binomials.** The total is conserved, so ``E[nX nY] = N(N-1) pX pY``, not
+   ``N^2 pX pY``. For ``N=12, pX=1/2, pY=1/3`` that is 22.0, not 24.0, and
+   ``corr(nX,nY) = -sqrt(pX pY / ((1-pX)(1-pY))) = -0.7071``, not 0.
+   Asserting independence gives **z = -103** against the correct 21.9662.
+3. **Index the CTMC generator, do not hand-derive its entries.** For the
+   4 -> 2 -> 0 pure-death chain, ``P(j firings by t)`` is the *j*-th entry of
+   ``[exp(Q t)]_{0,:}``. A hand-derived ``p2`` is easy to mis-index: the
+   mis-indexed one rejected a correct engine at **z = -123** on the same model
+   that the generator gets right at z = -1.42.
 """
 
 import math
@@ -504,3 +524,31 @@ def test_single_trajectory_seed_is_reproducible(tmp_path):
     ]
     for r in runs[1:]:
         assert np.array_equal(runs[0], r)
+
+
+def test_seed_zero_is_the_system_default_and_is_not_reproducible(tmp_path):
+    """``seed=0`` means "draw a fresh seed", so it must NOT be reproducible.
+
+    This is BNG2-compatible and deliberate, not a bug, and it is kept rather
+    than turned into a refusal. Pinning it stops the contract drifting in
+    either direction: making ``seed=0`` mean literal seed 0 would silently
+    change what a reproducibility claim means for every model that relies on
+    the default. The matching rule for contributors is that no test may assert
+    reproducibility from a ``seed=0`` run — the test above uses 4242 — and no
+    performance claim may quote reproducibility evidence from one.
+    """
+    path = tmp_path / "model.bngl"
+    path.write_text(BIRTH_DEATH)
+    model = _cpp.parse_file(str(path))
+    network = _cpp.generate_network(model)
+    runs = [
+        np.asarray(
+            _cpp.simulate_ssa(model, network, t_end=100.0, n_steps=10, seed=0)[
+                "concentrations"
+            ]
+        )
+        for _ in range(3)
+    ]
+    assert not all(
+        np.array_equal(runs[0], r) for r in runs[1:]
+    ), "seed=0 produced identical trajectories; it must draw a fresh seed"
