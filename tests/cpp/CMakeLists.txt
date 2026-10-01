@@ -97,6 +97,27 @@ target_link_libraries(test_ode_options PRIVATE
 )
 catch_discover_tests(test_ode_options)
 
+# test_ode_function_index — invalidation regression tests for the per-model
+# function index in OdeIntegrator (functionIndex_, zeroArgumentFunctionSet_,
+# resultFunctionIndices_).
+add_executable(test_ode_function_index test_ode_function_index.cpp)
+target_include_directories(test_ode_function_index PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(test_ode_function_index PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_ast
+    antlr4_static
+)
+catch_discover_tests(test_ode_function_index)
+
 # Batched-SSA GPU backend registry: selection, naming, and fail-closed lookup.
 add_executable(test_gpu_batch_ssa_backend test_gpu_batch_ssa_backend.cpp)
 target_link_libraries(test_gpu_batch_ssa_backend PRIVATE
