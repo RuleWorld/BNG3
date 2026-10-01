@@ -570,14 +570,24 @@ the corrected form is recorded rather than the original:
 >       stat -f "%Sm" build/cpp/bng_cpp                                   -> 2026-09-30 22:26:42
 >       git log -1 --format=%ci 3d94862                                   -> 2026-09-30 22:26:28 -0400
 >
->   The artifact postdates the commit by 14 seconds and no compiled file differs
->   from what was compiled, so both halves hold. Note the order of operations:
->   I compared against `6889fba..HEAD` first and got **13 compiled files** —
->   every one of them another lane's work that landed on `main` afterwards, none
->   mine. The diff half only means something against the tree the artifact was
->   built from, and `swarmMemory`'s case shows the timestamp half is not a PASS
->   either: both halves are checks that can fail, and a gate is sound only once
->   you have watched each of them fail.
+>   Neither half of that is a *pass* — both are checks that can fail, and
+> `swarmMemory` is right that the failure mode is not watching them fail but
+> **publishing whichever half you happened to run**. I ran both.
+>
+>   The timestamp is the weaker instrument and the stronger one is content: the
+>   gate executed on a tree that provably is what I claim it is —
+>
+>       git show 3d94862:cpp/ast/Expression.cpp | grep -c 'text_\.size() =='  -> 0
+>       git show 3d94862:cpp/ast/Expression.cpp | grep -c 'q - b'            -> 2
+>
+>   no length guards, the MM cancellation branch present — the reverted tree,
+>   built from the only `cpp/` commit I ever made. When a content check is
+>   available it settles the question and the timestamp is beside it.
+>
+>   One process note, because it is the failure this document keeps recording:
+>   I first compared `6889fba..HEAD` and got **13 compiled files** — every one
+>   another lane's work that landed on `main` afterwards, none of it mine. The
+>   diff half only means something against the tree the artifact was built from.
 2. **The C++ conclusions are untouched either way.** Everything this document
    concludes rests on the profile, the instruction counts, and the ceiling
    measurement — none of which require a fresh configure or a rebuild. The gate
