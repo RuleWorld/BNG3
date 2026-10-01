@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <unordered_set>
 
@@ -9,6 +11,23 @@
 #include "generated/BNGParserBaseVisitor.h"
 
 namespace bng::parser {
+
+/// Raised when the BNGL grammar reports syntax errors. The count is carried so
+/// each entry point can phrase its own diagnostic instead of the shared parse
+/// function guessing at one; every other parse failure (a malformed barrier
+/// block, an unresolvable driven_by() expression) is a plain std::runtime_error
+/// and passes through untouched.
+class BNGSyntaxError : public std::runtime_error {
+public:
+    BNGSyntaxError(std::size_t errorCount, std::string sourceName);
+
+    std::size_t errorCount() const { return errorCount_; }
+    const std::string& sourceName() const { return sourceName_; }
+
+private:
+    std::size_t errorCount_;
+    std::string sourceName_;
+};
 
 class BNGAstVisitor : public BNGParserBaseVisitor {
 public:
@@ -60,6 +79,16 @@ private:
     std::map<std::size_t, std::string> pendingBarrierLabels_;
     std::map<std::size_t, std::string> pendingDrivingWork_;
 };
+
+/// The single BNGL parse pipeline: normalize, visit, finalize thermodynamic
+/// metadata, capture parameter comments. Every entry point — parseModel,
+/// parseModelFromFile, the CLI, and the Python `parse_file` / `parse_string`
+/// bindings — must go through it, because a post-visit step that one of them
+/// skips is a construct that silently disappears for that caller only.
+/// `sourceName` is used only to label diagnostics; throws BNGSyntaxError when
+/// the grammar reports syntax errors.
+std::unique_ptr<ast::Model> parseModelSource(const std::string& sourceText,
+                                             const std::string& sourceName);
 
 std::unique_ptr<ast::Model> parseModel(const std::string& sourceText);
 

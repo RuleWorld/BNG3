@@ -91,6 +91,14 @@ existing synthetic `setOption` channel, indexed over ordinary (non-barrier)
 rules in source order. Indexing over ordinary rules only is what makes the
 annotation independent of where the barrier block was placed.
 
+The post-parse lowering runs in `parseModelSource`
+(`cpp/parser/BNGAstVisitor.cpp`), which is the single parse pipeline every
+entry point uses: `parseModel`, `parseModelFromFile` (the CLI and the
+`include`/`include_files` actions), and the Python `parse_file` /
+`parse_string` bindings. Before that consolidation the bindings drove
+`BNGAstVisitor` themselves and skipped the post-parse pass, so a model using
+either construct parsed cleanly through `python/bionetgen` and lost it.
+
 ### Two RT conventions
 
 The NFsim path divides by an explicit `RT`, and both directions take the
