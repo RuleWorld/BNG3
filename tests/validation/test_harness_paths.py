@@ -166,3 +166,48 @@ def test_required_oracle_fails_in_strict_ci(monkeypatch):
 
     with pytest.raises(pytest.fail.Exception, match="required oracle unavailable"):
         require_oracle(False, "required oracle unavailable")
+
+
+def test_api_fixture_fails_in_strict_ci_and_skips_locally(monkeypatch):
+    """The `api` fixture must not absorb a missing engine into a clean skip.
+
+    It used to call `pytest.skip` directly, so a checkout whose compiled
+    extension was not importable reported every test taking the fixture as
+    SKIPPED with exit 0 -- including under BNG3_CI_STRICT_ORACLES=1, the flag
+    that exists to turn a missing engine into a failure. That is the
+    silent-pass shape this harness exists to prevent, sitting in the conftest of
+    the lane whose job is preventing it.
+
+    Called directly rather than through pytest: the question is what this
+    fixture's branch does on one input, and a whole-suite run would measure an
+    adjacent property. `__wrapped__` unwraps the fixture decorator.
+    """
+    # Reference the module, not the bare name: `api` in this namespace is the
+    # fixture object pytest injects, not conftest's attribute, and calling that
+    # silently skips this very test.
+    fixture = getattr(
+        sys.modules["tests.validation.conftest"].api, "__wrapped__", None
+    )
+    assert fixture is not None, "conftest.api is not a plain fixture function"
+
+    monkeypatch.delenv("BNG3_CI_STRICT_ORACLES", raising=False)
+    with pytest.raises(pytest.skip.Exception, match="extension not importable"):
+        fixture(False)
+
+    # Strict mode must FAIL, not skip. Asserted explicitly rather than letting a
+    # skip escape: a skip raised out of the test body makes pytest record the
+    # test as skipped with exit 0, which is the very reporting shape being fixed
+    # and would make this test fail silently.
+    monkeypatch.setenv("BNG3_CI_STRICT_ORACLES", "1")
+    try:
+        fixture(False)
+    except pytest.fail.Exception as exc:
+        assert "extension not importable" in str(exc)
+    except pytest.skip.Exception as exc:
+        pytest.fail(
+            "the api fixture SKIPPED under BNG3_CI_STRICT_ORACLES=1 instead of "
+            f"failing: {exc}. A missing compiled extension must be a failure in "
+            "strict mode, as it already is for the bng_cpp fixture."
+        )
+    else:
+        pytest.fail("the api fixture returned without raising for have_api=False")
