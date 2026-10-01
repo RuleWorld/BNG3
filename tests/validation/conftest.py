@@ -68,8 +68,18 @@ def have_api() -> bool:
 
 @pytest.fixture
 def api(have_api):
-    if not have_api:
-        pytest.skip("compiled bionetgen extension not importable")
+    # Routed through require_oracle, exactly as the bng_cpp fixture above does.
+    # A bare pytest.skip here meant that a checkout whose compiled extension was
+    # not importable reported every test using this fixture as skipped and
+    # exited 0 -- including under BNG3_CI_STRICT_ORACLES=1, which exists
+    # precisely to turn a missing engine into a failure. Verified by calling this
+    # branch directly: it raised pytest.skip, not pytest.fail.
+    #
+    # The trade is the same one bng_cpp already made: under the strict flag a
+    # missing engine fails, and a local run without a build still skips.
+    require_oracle(
+        have_api, "compiled bionetgen extension not importable"
+    )
     import bionetgen
 
     return bionetgen
