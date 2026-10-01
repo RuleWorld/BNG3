@@ -18,6 +18,71 @@ buys nothing end to end. The change is also ~9% *slower* at `-O0`.
 This document exists so the next operator does not re-run the same three
 experiments. The candidate diff is reproducible from the description below.
 
+### Scope of this negative result — read before concluding anything
+
+**This document is NOT a clean bill of health for `Expression` everywhere.**
+It establishes exactly one negative claim, and only for one workload shape:
+
+> On the **C++ ODE path with functional rate laws**, `bng::ast::Expression` is
+> absent from end-to-end profiles, and the entire addressable budget for
+> optimizing it is ~5% of wall clock. No codegen change to it can be worth
+> landing on that path.
+
+**What this does NOT cover, and which is an open item rather than a cleared
+one:**
+
+- **NFsim's rate-law path is NOT covered.** `cpp/nfsim/NFcore2/legacy_bridge.cpp:112`
+  and `:264` both call `evaluateWithFunctions`. I never profiled NFsim. If you
+  are profiling that lane, this document tells you nothing — treat the coldness
+  claim as unestablished there, not as disproven.
+- Any other caller reached through `cpp/ast/ParameterList`, `cpp/io/*`,
+  `cpp/parser/BNGAstVisitor.cpp`, or the batch-SSA path was not exercised
+  either.
+
+The profiles behind the claim are four `sample` runs of one model class: an
+8-reaction ODE in which **every** rate law references an observable or `time`,
+so every reaction is classified functional and its tree is evaluated once per
+derivative call. That was chosen deliberately as the most favourable case for
+this code — if the evaluator is cold there, it is cold on that path — but it is
+one path, not the program.
+
+## The one transferable lesson: pair the instruments
+
+This file is mostly a negative result about `Expression`. The part worth
+reusing is *how* the result was reached, because the first instrument was
+confidently wrong and the second was not.
+
+**Wall clock produced the false positive.** A single un-replicated run of two
+binaries said the candidate was 23.6% faster (935.48 → 714.89 ns/eval). That
+number was reported to a peer before it was ever re-run. Re-measured with 15
+interleaved reps of the *same binaries in the same session*, it inverted to
+**+4.78% median (slower)**, against a 5.19% noise floor on the baseline itself.
+The host's wall clock cannot resolve anything below ~10% — it has ranged 23–131
+on loadavg across the session, and `memWatch` proved `vm.loadavg` does not even
+respond to a known single-core input.
+
+**The instruction counter settled it.** `/usr/bin/time -l … instructions retired`
+is deterministic and does not move when nothing changed:
+
+    A baseline       median 5,037,345,446   cv 0.022%
+    B length-gated   median 5,038,543,790   cv 0.037%    -> +0.024%
+
+Same binaries, same session, same wall-clock conditions — 0.03% spread instead
+of 5.19%. That is a 170x tighter instrument, and it is what turned "it looked
+faster" into "it is flat".
+
+**The generalisable rule.** Measure once with a cheap instrument to find a
+hypothesis, then re-measure with a *deterministic* one before believing it. If
+the two disagree, the cheap one is wrong — not the code, and not your reading
+of it. On this host the counters worth trusting are `instructions retired` and
+`cycles elapsed` from `/usr/bin/time -l`, plus allocation counts; wall clock
+needs 10%+ effects and interleaved reps to mean anything.
+
+The second use of the counter is as a *gate* rather than a diagnostic: a
+candidate whose instruction count is unchanged has not changed its cost model,
+however good its disassembly looks. That check is cheap enough to run before
+any timing A/B, and it would have saved this entire charge's timing work.
+
 ## The target and its disassembly evidence
 
 `bng::ast::Expression::evaluateWithFunctions` is one non-inlined function,
