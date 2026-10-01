@@ -1,9 +1,9 @@
 name: Batch SSA segv probe
 
-# Diagnostic-only workflow. It reproduces the failing
-# `batch-ssa-cpu-reference` job from ci.yml in isolation (one job, ~15 min
-# instead of a full CI wave) and localizes the exit-139 crash with staged
-# imports, unbuffered output, Python faulthandler, and a native backtrace.
+# Diagnostic-only workflow (v2). v1 localized the exit-139 crash to
+# `cpp.generate_network` (test line 164) on the first model, while the same
+# call passed in an isolated process. This version gets a native backtrace
+# (gdb) and an AddressSanitizer reproduction in two parallel jobs.
 
 on:
   push:
@@ -15,8 +15,70 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  probe:
-    name: Localize the batch SSA CPU segfault
+  gdb-trace:
+    name: Native backtrace under gdb
+    runs-on: ubuntu-22.04
+    env:
+      CC: gcc-12
+      CXX: g++-12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build gdb
+          python -m pip install pytest numpy scipy
+
+      - name: Configure with the Python bindings
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DBUILD_CLI=OFF \
+            -DBUILD_NFSIM_CLI=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Isolate - does importing numpy/scipy first break parse+generate?
+        shell: bash
+        run: |
+          set +e
+          for i in 1 2 3 4 5; do
+            python -c "
+            import numpy, scipy
+            import sys
+            sys.path.insert(0, 'build/cpp'); sys.path.insert(0, 'python')
+            import _bionetgen_cpp as cpp
+            m = cpp.parse_file('models/isomerization.bngl')
+            n = cpp.generate_network(m)
+            print('iter $i ok:', n.num_species, n.num_reactions, flush=True)"
+            echo "iter $i rc=$?"
+          done
+
+      - name: Crash under gdb for a native backtrace
+        shell: bash
+        run: |
+          set +e
+          gdb --batch --return-child-result \
+            -ex "set pagination off" \
+            -ex "set disable-randomization off" \
+            -ex run \
+            -ex "bt 50" \
+            -ex "thread apply all bt 20" \
+            -ex quit \
+            --args python -X faulthandler -u tests/test_batch_ssa_statistical_parity.py --mode cpu 2>&1 | tee /tmp/gdb.log | tail -120
+          echo "gdb rc=${PIPESTATUS[0]}"
+
+  asan-repro:
+    name: AddressSanitizer reproduction
     runs-on: ubuntu-22.04
     env:
       CC: gcc-12
@@ -34,11 +96,15 @@ jobs:
           sudo apt-get install -y cmake ninja-build
           python -m pip install pytest numpy scipy
 
-      - name: Configure with the Python bindings
+      - name: Configure with ASan and the Python bindings
         run: |
           cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=Debug \
             -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+            -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
             -DBUILD_PYTHON_BINDINGS=ON \
             -DBUILD_CLI=OFF \
             -DBUILD_NFSIM_CLI=OFF \
@@ -47,53 +113,11 @@ jobs:
       - name: Build
         run: cmake --build build
 
-      - name: Probe stages
+      - name: Run the test under ASan
         shell: bash
         run: |
           set +e
-
-          echo "== [1/5] environment =="
-          python -VV
-          echo "nproc=$(nproc)"
-          python -c "import numpy, scipy; print('numpy', numpy.__version__, 'scipy', scipy.__version__, flush=True)"
-          echo "stage1_rc=$?"
-
-          echo "== [2/5] extension import =="
-          python -c "import sys; sys.path.insert(0, 'build/cpp'); import _bionetgen_cpp; print('extension import OK', flush=True)"
-          echo "stage2_rc=$?"
-
-          echo "== [3/5] parse + network generation =="
-          python -c "
-          import sys
-          sys.path.insert(0, 'build/cpp'); sys.path.insert(0, 'python')
-          import _bionetgen_cpp as cpp
-          m = cpp.parse_file('models/isomerization.bngl')
-          n = cpp.generate_network(m)
-          print('parse OK:', n.num_species, 'species', n.num_reactions, 'reactions', flush=True)"
-          echo "stage3_rc=$?"
-
-          echo "== [4/5] one CPU batch (threads=0) =="
-          python -c "
-          import sys
-          sys.path.insert(0, 'build/cpp'); sys.path.insert(0, 'python')
-          import _bionetgen_cpp as cpp
-          m = cpp.parse_file('models/isomerization.bngl')
-          n = cpp.generate_network(m)
-          res = cpp.simulate_batch_ssa_cpu(m, n, batch_size=20000, t_end=20.0, n_steps=10, threads=0, base_seed=1000)
-          print('batch OK:', res['batch_size'], res['total_events'], flush=True)"
-          echo "stage4_rc=$?"
-
-          echo "== [5/5] full test, unbuffered + faulthandler =="
-          PYTHONUNBUFFERED=1 python -X faulthandler tests/test_batch_ssa_statistical_parity.py --mode cpu
-          rc=$?
-          echo "test_rc=$rc"
-
-          if [ "$rc" -ne 0 ]; then
-            echo "== native backtrace under lldb =="
-            if command -v lldb >/dev/null 2>&1; then
-              lldb --batch -o run -o "bt 40" -o quit -- python -X faulthandler -u tests/test_batch_ssa_statistical_parity.py --mode cpu 2>&1 | tail -80
-            else
-              echo "lldb not available on this runner"
-            fi
-          fi
-          exit $rc
+          export LD_PRELOAD="$(gcc-12 -print-file-name=libasan.so)"
+          export ASAN_OPTIONS="detect_leaks=0:abort_on_error=1:symbolize=1"
+          PYTHONUNBUFFERED=1 python -X faulthandler tests/test_batch_ssa_statistical_parity.py --mode cpu 2>&1 | tail -120
+          exit ${PIPESTATUS[0]}
