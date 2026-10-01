@@ -34,8 +34,30 @@ _EDITABLE_FINDERS = [
 ]
 if _EDITABLE_FINDERS:
     sys.meta_path = [f for f in sys.meta_path if f not in _EDITABLE_FINDERS]
-    sys.path[:] = [p for p in sys.path if "BioNetGen" not in p]
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "python"))
+    # Drop only the paths belonging to OTHER checkouts. A substring match on
+    # "BioNetGen" cannot tell another lane's tree from this worktree's own
+    # build/cpp, and deleting the latter makes the compiled extension
+    # unimportable: tests then fail with a misleading
+    # `AttributeError: 'NoneType' object has no attribute 'parse_file'`, and
+    # any importorskip-guarded module silently SKIPS. That is a quiet pass,
+    # which is what this guard exists to prevent. Keep every entry under this
+    # checkout, including its build directory.
+    _ROOT = pathlib.Path(__file__).resolve().parents[2]
+    sys.path[:] = [
+        p
+        for p in sys.path
+        if "BioNetGen" not in p or pathlib.Path(p).resolve().is_relative_to(_ROOT)
+    ]
+    sys.path.insert(0, str(_ROOT / "python"))
+    # This checkout's own compiled extension, if it has one. bionetgen's model
+    # modules import `bionetgen._bionetgen_cpp`, so the module must be
+    # reachable as a submodule, and a fresh worktree has it only in build/cpp.
+    # Without this the guard removes every route to the extension and the
+    # suite fails with a misleading `AttributeError: 'NoneType' object has no
+    # attribute 'parse_file'`, or silently skips whole modules.
+    _OWN_BUILD = _ROOT / "build" / "cpp"
+    if _OWN_BUILD.is_dir():
+        sys.path.append(str(_OWN_BUILD))
 
 import os
 import tempfile
