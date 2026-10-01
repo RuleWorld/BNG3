@@ -43,10 +43,23 @@ Two things that resolution depends on, both load-bearing:
   override it. The extension it can resolve is a different path from the one
   above, and the two are byte-identical (same sha256) - but a result is only
   meaningful with the path printed next to it.
-* The shared ``build/cpp`` extension is one commit behind ``6889fba``:
-  ``75b22a7``, which touches only ``cpp/nfsim/NFinput/NFinput_fromCompiled.cpp``.
-  This file calls ``simulate_batch_ssa_cpu`` and ``simulate_ssa`` and never
-  touches NFsim, so the stale commit cannot affect anything asserted here.
+* The shared ``build/cpp`` extension is one commit behind ``6889fba``, and that
+  commit is NFsim-only. Re-derive it in one command rather than trusting the
+  sentence:
+
+      git log --oneline --since='2026-09-29 15:08:50' -- cpp/
+
+  which returns exactly ``75b22a7``, touching exactly
+  ``cpp/nfsim/NFinput/NFinput_fromCompiled.cpp``. This file calls
+  ``simulate_batch_ssa_cpu`` and ``simulate_ssa`` and never touches NFsim, so
+  that commit cannot affect anything asserted here.
+
+  The commit log is the evidence, deliberately. A ``find cpp -newer <binary>``
+  check is NOT usable for this: it reports two files
+  (``cpp/ast/ParameterList.cpp``, ``cpp/engine/OdeIntegrator.cpp``) whose
+  mtimes are newer purely because of checkout activity, and it is equally wrong
+  in the other direction, reporting a stale binary from a harmless touch. A
+  reader must be able to re-run the cited command and get the cited answer.
 
 Import the extension under the name every other file in ``tests/python`` uses.
 Loading it a second time under a different module name is not a no-op: pybind11
