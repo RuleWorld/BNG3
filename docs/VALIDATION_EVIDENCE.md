@@ -8,7 +8,7 @@ when it was written — see its own preamble at `:12-19`) and the reasoning live
 in [`docs/adr/`](adr/). Those two disagree with the code in places. This file
 records the current truth and nothing else.
 
-**Tree state described:** `main` at `57a0c82`.
+**Tree state described:** `main` at `6889fba` (2026-09-30).
 
 **Rule for this file.** Every claim below carries a `file:line` or a commit. A
 claim with neither does not belong here. Where a measurement is missing this
@@ -26,47 +26,68 @@ to `main` and pushes to `main`/`develop` (`.github/workflows/ci.yml:3-9`).
 | Gate | Where | What it asserts |
 |---|---|---|
 | Lint & policy | `ci.yml:26-71` | Black and Ruff clean over `python/ tests/python/ scripts/`; `scripts/validate_provenance.py` (non-strict), `scripts/validate_corpus_manifest.py`, `scripts/generate_corpus_manifest.py --check`; every committed `provenance/golden/**/manifest.json` validates; the validation exception budget is ≤ 1; `tests/test_ci_contract.py` passes. |
-| C++ matrix | `ci.yml:77-164` | Builds and `ctest`s on ubuntu-22.04/gcc-12, ubuntu-22.04/clang-15, macos-14/clang-arm64, windows-2022/MSVC. Four independent compilers, one shared test suite. |
-| C++ ASan | `ci.yml:168-216` | Same suite under `-fsanitize=address`, gcc-12 Debug. |
-| Batch SSA CPU reference parity | `ci.yml:302-355` | Builds the Python extension, asserts `_bionetgen_cpp*` exists, then runs `tests/test_batch_ssa_statistical_parity.py --mode cpu`: exact (non-statistical) conservation identities and seed reproducibility on four models, plus a Chi-square and moment test of `isomerization` against the closed form `Binomial(20, 1/6)`. No accelerator needed. |
-| Validation corpus | `ci.yml:359-402` | ubuntu/macOS/Windows: `scripts/validate.py --bng-cpp … --strict-references --validation-manifest tests/validation/validation_manifest.json`. Compares typed networks through `tests.validation.compare` — graph-aware, not section counts. |
-| BNGL corpus parse inventory | `ci.yml:406-466` | `bng_cpp --check` over every `models/*.bngl`; fails only if zero models are discovered. The job states it is parser acceptance only and **does not run NFsim**. |
-| Python matrix | `ci.yml:471-545` | 3 OS × Python 3.9–3.14: builds and installs the wheel, then `test_sbml_import.py` in its own invocation and the rest of `tests/python/` with coverage. |
-| Integration | `ci.yml:549-604` | `tests/python -k atomizer`, `-k model`, and a real CLI smoke (`bionetgen check`, `bionetgen run --method ode`). |
+| C++ matrix | `ci.yml:77-162` | Builds and `ctest`s on ubuntu-22.04/gcc-12, ubuntu-22.04/clang-15, macos-14/clang-arm64, windows-2022/MSVC. Four independent compilers, one shared test suite. |
+| C++ ASan | `ci.yml:168-207` | Same suite under `-fsanitize=address`, gcc-12 Debug. |
+| Batch SSA CPU reference parity | `ci.yml:302-353` | Builds the Python extension, asserts `_bionetgen_cpp*` exists, then runs `tests/test_batch_ssa_statistical_parity.py --mode cpu`: exact (non-statistical) conservation identities and seed reproducibility on four models, plus a Chi-square and moment test of `isomerization` against the closed form `Binomial(20, 1/6)`. No accelerator needed. |
+| Validation corpus | `ci.yml:359-400` | ubuntu/macOS/Windows: `scripts/validate.py --bng-cpp … --strict-references --validation-manifest tests/validation/validation_manifest.json`. Compares typed networks through `tests.validation.compare` — graph-aware, not section counts. |
+| BNGL corpus parse inventory | `ci.yml:406-465` | `bng_cpp --check` over every `models/*.bngl`; fails only if zero models are discovered. The job states it is parser acceptance only and **does not run NFsim**. |
+| Python matrix | `ci.yml:471-543` | 3 OS × Python 3.9–3.14: builds and installs the wheel, then `test_sbml_import.py` in its own invocation and the rest of `tests/python/` with coverage. |
+| Integration | `ci.yml:549-601` | `tests/python -k atomizer`, `-k model`, and a real CLI smoke (`bionetgen check`, `bionetgen run --method ode`). |
 | Package smoke / wheels / sdist / publish / docker | `ci.yml:607-806` | Clean-venv sdist install and import; cibuildwheel matrix that runs `tests/python/test_cpp_backend.py` plus the console script inside each wheel; PyPI publish and GHCR image. |
-| Source lock | `parity.yml:29-48` | `scripts/ci/checkout_oracle.py --validate-only`; non-strict provenance; CI-contract tests. |
-| BNG3 vs BNG2 networks | `parity.yml:50-95` | Five named models compared against a *locked* BNG2 checkout via `scripts/cross_validate.py`. |
-| BNG3 vs independent NFsim | `parity.yml:97-181` | Builds the locked NFsim oracle, then `tests/validation/test_parity_nfsim.py -m "nf and not slow"`, plus two targeted `-k` selections. This is the only `tests/validation/` module any job runs. |
-| PyBioNetGen compatibility | `parity.yml:219-…` | `scripts/ci/check_pybionetgen_compat.py` against a locked checkout. |
+| Source lock | `parity.yml:28-48` | `scripts/ci/checkout_oracle.py --validate-only`; non-strict provenance; CI-contract tests. |
+| BNG3 vs BNG2 networks | `parity.yml:50-100` | Five named models compared against a *locked* BNG2 checkout via `scripts/cross_validate.py`. |
+| BNG3 vs independent NFsim | `parity.yml:102-179` | Builds the locked NFsim oracle, then `tests/validation/test_parity_nfsim.py -m "nf and not slow"`, plus two targeted `-k` selections. This is the only pytest module from `tests/validation/` any job runs; the lint job separately runs `python -m tests.validation.exception_ledger` (`ci.yml:68`), and the corpus jobs import `tests/validation/compare.py` through `validate.py` (`scripts/validate.py:28`). |
+| PyBioNetGen compatibility | `parity.yml:230-…` | `scripts/ci/check_pybionetgen_compat.py` against a locked checkout. |
 | Lean kernel | `formal.yml:19-…` | Pinned Lean 4.33.1 kernel check and the NFnext contracts. |
 | Weekly (`bng-validation`, `nfsim-execution-smoke`, `python-full`, `benchmarks`, `cross-validation`) | `weekly.yml:16, 69, 141, 162, 196` | Sunday-only; the same `validate.py` corpus and the Perl cross-validation. Not a per-PR signal. |
 
-Two harness properties that make the above stronger than it looks:
+Three harness properties that make the above stronger than it looks:
 
 - **A missing oracle is a failure, not a skip.** `tests.validation.strict.require_oracle`
-  fails the test when `BNG3_CI_STRICT_ORACLES=1` (`tests/validation/strict.py:10-18`),
+  fails the test when `BNG3_CI_STRICT_ORACLES=1` (`tests/validation/strict.py:10-17`),
   and only skips otherwise. That variable is set in `parity.yml:24` **and nowhere
   else** — the `validation` job in `ci.yml` does not set it.
-- **The comparators are graph-aware.** `compare.py` canonicalises species to a
-  graph-isomorphism-invariant form (`compare.py:731-737`), resolves rate tokens
-  to values rather than strings (`compare.py:107-132`), and returns
-  `NetDiff`/`TrajDiff`/`EnsembleDiff` verdicts (`compare.py:1032, 1326, 1417`).
+- **The comparators are graph-aware.** `tests/validation/compare.py`
+  canonicalises species to a graph-isomorphism-invariant form
+  (`tests/validation/compare.py:731-737`), resolves rate tokens to values
+  rather than strings (`:107-132`), and returns
+  `NetDiff`/`TrajDiff`/`EnsembleDiff` verdicts (`:1032, 1326, 1417`, the
+  `@dataclass` lines; the class statements follow at `:1033, 1327, 1418`).
+- **Statistical gates pool only sparse cells.** The chi-square binning keeps
+  every cell expected to carry at least `MIN_EXPECTED_COUNTS = 5.0` as its own
+  cell and pools only the tail below that floor
+  (`tests/test_batch_ssa_statistical_parity.py:101-104, 353-373`), then fails
+  the gate outright if any resulting cell is still under the floor
+  (`:375-379`). The reason is in the comment at `:101-103`: pooling
+  well-populated cells too would re-weight the statistic and can move a good
+  sample's p-value by orders of magnitude, so a p-value from this repo is
+  quotable only together with its binning.
 
 ### Gates that exist in the tree but run nowhere
 
 Being able to run is not being run. None of these is invoked by any workflow:
 
-- `scripts/validate_ratelaws.py`, `scripts/validate_actions.py`,
-  `scripts/validate_sbml.py`, `scripts/check_localfunc_rates.py`.
-  `validate_actions.py` is still described in the convergence checklist as
-  reporting "6/6 action contracts" — that is a local run, not a CI result.
-- Every module in `tests/validation/` **except** `test_parity_nfsim.py`:
+- `scripts/validate_ratelaws.py`, `scripts/validate_sbml.py`, and
+  `scripts/check_localfunc_rates.py`. `scripts/validate_actions.py`'s
+  standalone CLI is likewise not a workflow step, but its code *does* run:
+  `validate.py` imports it for the six action fixtures
+  (`scripts/validate.py:204-207`; the fixtures are listed in
+  `tests/validation/validation_manifest.json`), so those contracts are
+  exercised inside the `validation` job's `validate.py` run — 6 of the 71
+  fixtures in that run.
+- Every test module in `tests/validation/` **except** `test_parity_nfsim.py`:
   `test_parity_net.py`, `test_parity_ode.py`, `test_parity_stochastic.py`,
   `test_parity_expressions.py`, `test_compare_net.py`, `test_provenance.py`,
   `test_corpus_manifest.py`, `test_golden_manifest.py`,
   `test_exception_ledger.py`, `test_harness_paths.py`,
   `test_reference_fixtures.py`, `test_export_formats.py`,
-  `test_published_biomodels_manifest.py`. They are run by the commands in §4.
+  `test_published_biomodels_manifest.py`, `test_stochastic_comparator.py`.
+  No workflow runs them, and §4's harness command does not select them: its
+  `-m "nf and not slow"` matches only the `nf` marker, which only
+  `test_parity_nfsim.py` carries — measured at `6889fba`: `6 passed, 231
+  deselected`. Invoking
+  `python -m pytest -c tests/validation/pytest.ini tests/validation` without
+  `-m` is what reaches them.
 
 ### A gate that can pass without doing anything
 
@@ -134,13 +155,13 @@ These are open. None of them is covered by anything in §1.
 6. **The strict provenance gate is not wired into any job, and it currently
    fails.** `python scripts/validate_provenance.py --require-approved` was
    measured at **13 errors** at `d04f648` — baseline, 8 sources, 2 oracles,
-   compiler images, Python lock. Only the non-strict call runs; no workflow
-   passes `--require-approved`, so those errors cannot fail any job.
-   *(Not re-run when this file was written. Re-run the command in §4 for
-   today's number.)*
+   compiler images, Python lock. Re-run at `6889fba` on 2026-09-30: still
+   **13 errors**, exit 1, the same 13 lines. Only the non-strict call runs;
+   no workflow passes `--require-approved` (no occurrence in
+   `.github/workflows/`), so those errors cannot fail any job.
 
 7. **The hyphen is the only non-SId character that survives to emission
-   correctly.** `_SBML_ID_RUN` is `[A-Za-z_][A-Za-z0-9_-]*` (`writer.py:74`),
+   correctly.** `_SBML_ID_RUN` is `[A-Za-z_][A-Za-z0-9_-]*` (`writer.py:88`),
    and every id-run scan in the writer, the event tokenizer, and the AST guards
    is defined by it. A `<ci>` body may legally contain characters that are not
    legal in an SId at all; those reach expression analysis raw, are invisible to
@@ -186,7 +207,7 @@ fix would be the exact error this document exists to prevent.
 | 7 | **Parameter alias chains** | `e3af431` | **Behaviour change (Atomizer)** | The alias map was applied as a chain of renames. Because one parameter's canonical id can be another's alias *key* (`k-1` and `k_1` both standardize to `k_1`), a rate law could be rewritten to the wrong parameter's value. Resolution is now a single simultaneous rewrite. |
 | 8 | **`writeSSCcfg` wrote the wrong artifact** | `1a3091e` (tests in `c6a4132`) | **Behaviour change (export)** | BNG2's `writeSSC` emits a complete `.rxn` program while `writeSSCcfg` emits a `.cfg` holding the parameter block alone. BNG3 emitted the full program at the `.cfg` path — the wrong file at the wrong path. `SscWriter::writeConfig` now writes the parameter block and is explicitly not derived from `write()`. |
 | 9 | **Seed site state resolved by discovery index** | `75b22a7` | **Behaviour change (NFsim)** | The seed builder used an offset into the Atomizer's *discovery order* as the NFsim state value; NFsim's value is an offset into the molecule type's own state table. `ANx` declares `RD(...,m~2)` before any observable mentions `m~0`, so every seed receptor was built in state 0. The state is now bound by name, and the two construction routes must agree at `rtol=atol=0`. The strict-xfail tuple `_KNOWN_SEED_STATE_ORDER_DIVERGENCES` is **empty** because the divergence is gone, not because the check was dropped. |
-| 10 | **Raw-id tokenizer family** | `6dc41b6`, `2370586`, `ccde363` | **Two behaviour changes — one of them incomplete when it was claimed — and one no-op refactor** | An SBML id with a character outside `[A-Za-z0-9_]` is stored **raw** and standardized only at emission, so an identifier-shaped token cannot spell it. `6dc41b6` stopped raw hyphenated ids leaking into emitted rate text **in the tokenizer and function paths only**; its rate-law path was still wrong when it landed and did not become correct until `57a0c82` (row 12). `2370586` closed the remaining body leaks: assignment-rule bodies, which bypass `bngl_function` and so bypassed the pre-pass, and function-definition bodies via `bngl_function`'s own pre-pass (`writer.py:152-154`). `ccde363` routes three pre-filter sites through the whole-id-run helper and **changes no output**. |
+| 10 | **Raw-id tokenizer family** | `6dc41b6`, `2370586`, `ccde363` | **Two behaviour changes — one of them incomplete when it was claimed — and one no-op refactor** | An SBML id with a character outside `[A-Za-z0-9_]` is stored **raw** and standardized only at emission, so an identifier-shaped token cannot spell it. `6dc41b6` stopped raw hyphenated ids leaking into emitted rate text **in the tokenizer and function paths only**; its rate-law path was still wrong when it landed and did not become correct until `57a0c82` (row 12). `2370586` closed the remaining body leaks: assignment-rule bodies, which bypass `bngl_function` and so bypassed the pre-pass, and function-definition bodies via `bngl_function`'s own pre-pass (`writer.py:152`, called at `writer.py:1038`). `ccde363` routes three pre-filter sites through the whole-id-run helper and **changes no output**. |
 | 11 | **`_tokenize` split a hyphenated id, and the AST rewriters split it again** | `5ca19da` | **Behaviour change (event delays and trigger/assignment lowering)** | The formula tokenizer's identifier class was `[A-Za-z_][A-Za-z0-9_]*`, which stops at `-`. A `<ci> A-B </ci>` delay therefore folded to the *difference* `5 - 2 == 3` and the event fired at `t = 1 + 3` — a fabricated time — instead of being left untranslated as a species-valued delay. The class is now the writer's `_SBML_ID_RUN`, and the two spellings cannot collide because a genuine MathML `<minus>` is serialised with surrounding spaces (`parser.py:848`). Three further guards close the same hole one layer up, because `ast.parse`/`ast.unparse` round trips re-read `A-B` as subtraction and re-spell it: `_preserves_hyphenated_ids` refuses the rewrite at all three rewriter sites. Fails closed in every case. |
 | 12 | **Hyphenated species corrupted the rate law and the trajectory** | `57a0c82` | **Behaviour change (rate-law emission and ODE trajectory)** | Two distinct causes in `_split_reversible_rate`. (a) A source id's hyphen was cut as a difference: `k2 * A-B` split to `('k2 * A', 'B')`, handing the caller a "reverse law" that is a fragment of an identifier. (b) An arrow head was cut as a difference: `A <-> B` produced a reverse rate of `'> B'`, a rate expression that means nothing. Both now fail closed (`_extract_top_level_additive_terms`, `_is_id_hyphen`, which treats a hyphen inside a whole-id run *and* a `>` head as non-operator). The raw spelling no longer picks a different classification from the standardized one, so the two spellings emit byte-identical rules and neither gains a spurious `TotalRate`. |
 
@@ -249,7 +270,8 @@ prior head.
 Locally, the full command set recorded in the convergence checklist:
 
 ```bash
-# --- policy / contract gates (exactly what `lint` runs) ---
+# --- policy / contract gates (the subset `lint` runs; lint also runs Black,
+# Ruff, and the golden-manifest loop over provenance/golden/) ---
 python scripts/validate_provenance.py            # the call CI makes
 python scripts/validate_corpus_manifest.py
 python scripts/generate_corpus_manifest.py --check
@@ -279,6 +301,8 @@ python tests/test_batch_ssa_statistical_parity.py --mode cpu
 
 # --- Python suite ---
 python -m pytest tests/python -q
+# print `import bionetgen; bionetgen.__file__` first: see the
+# editable-install hazard note in DEVELOPMENT_CHECKLIST.md §0
 ```
 
 Two habits that keep this file from going stale:
@@ -312,9 +336,13 @@ become the next stale artifact.
    three-model list and compares parsed network/rate text — it is not an
    expression-vector comparison at 1e-9 either. The 1e-9 requirement exists only
    as a comment.
-3. **"`tests/validation/` is a real gate" overstates it.** Exactly one module of
-   that directory — `test_parity_nfsim.py` — is wired into CI. The other
-   thirteen run only via the commands in §4.
+3. **"`tests/validation/` is a real gate" overstates it.** Exactly one *test*
+   module of that directory — `test_parity_nfsim.py` — is wired into CI, as a
+   pytest gate in `parity.yml`. None of the other fourteen runs in any
+   workflow, and §4's harness command does not select them: `-m "nf and not
+   slow"` matches only the `nf` marker (measured `6 passed, 231 deselected` at
+   `6889fba`). The lint job does run the directory's non-test CLI module,
+   `python -m tests.validation.exception_ledger` (`ci.yml:68`).
 4. **The `cpp-cuda` job can report success having tested nothing** (§1, last
    paragraph). Worth knowing before quoting a green `cpp-cuda`.
 5. **The validation exception budget is 1, not 0** (`ci.yml:68`). One exception
@@ -322,18 +350,24 @@ become the next stale artifact.
 6. **A review reporting that function-definition bodies still leak raw ids was
    measured at the wrong commit.** That measurement was taken at `6dc41b6`; it
    does not describe `main` today. Function definitions are pre-passed by
-   `bngl_function` (`writer.py:152-154`) and assignment-rule bodies were
+   `bngl_function` (`writer.py:152`, called at `writer.py:1038`) and
+   assignment-rule bodies were
    routed through the same pre-pass by `2370586`. Both paths are pinned by
    tests. Recorded so a future reader does not re-raise it from the old report.
-7. **`docs/CI_PARITY.md:110-112` overstates strictness, and this file does
-   not.** It says the full-corpus `ci.yml` and weekly validation jobs "are
-   strict and must report zero skipped fixtures". `BNG3_CI_STRICT_ORACLES` is
-   set at `parity.yml:24` **and nowhere else** — the only other occurrences in
-   the tree are `tests/validation/strict.py`,
-   `tests/validation/test_harness_paths.py` and the contract assertion in
-   `tests/test_ci_contract.py`. A missing oracle in the `validation` job is a
-   **skip**, not a failure. §1 of this file is right and that document is
-   stale.
+7. **The strictness correction this file made was itself wrong.**
+   `docs/CI_PARITY.md` used to compress the mechanisms into "are strict and
+   must report zero skipped fixtures" without naming one, and this file
+   "corrected" it with "A missing oracle in the `validation` job is a
+   **skip**, not a failure." That is false: the job passes
+   `--strict-references` (`ci.yml:398-400`), so a missing reference `.net` is
+   an ERROR (`scripts/validate.py:227-229`), and no exclusion profile is
+   passed, so no skip path can trigger (`tests/test_ci_contract.py:613-631`
+   pins that). `BNG3_CI_STRICT_ORACLES` is indeed set only at `parity.yml:24`,
+   but it is read only by the pytest gates
+   (`tests/validation/strict.py:10-17`); `validate.py` never reads it, and its
+   exit code would pass a skip anyway (`scripts/validate.py:516-517`).
+   `docs/CI_PARITY.md:109-132` now states the per-workflow mechanics; §1 of
+   this file was right about where the variable is set.
 
 ---
 

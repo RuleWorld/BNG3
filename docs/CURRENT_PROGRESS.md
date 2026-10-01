@@ -42,11 +42,17 @@ below remain snapshots and are not current-head evidence.
   release qualification, and publication remain unverified.
 - Exact-head hosted status must be read for each pushed SHA; an earlier queued
   result does not establish a later commit's CI outcome. The pre-existing
-  ~549 MB `bng3-offline-bundle/` remains untracked and is not covered by
-  `.gitignore`. `scikit-build-core` builds the sdist from a filesystem walk,
+  ~549 MB `bng3-offline-bundle/` remains untracked. At the `c2babc5` snapshot
+  it was not covered by `.gitignore`, and `sdist.exclude` was the only guard;
+  `d04f648` (2026-09-29, after that head) added it at `.gitignore:63`
+  (`git check-ignore` verified at `6889fba`, 2026-09-30), and
+  scikit-build-core 1.0.3's sdist walk reads `.gitignore` in both the
+  `default` and `classic` inclusion modes
+  (`scikit_build_core/build/_file_processor.py:108-113`), so two guards now
+  exclude it. `scikit-build-core` builds the sdist from a filesystem walk,
   not from the git index, so untracked files are sdist candidates; the
   `sdist.exclude = ["bng3-offline-bundle/**"]` rule in `pyproject.toml` is the
-  only thing keeping them out. Verified at `c2babc5`: a local `build_sdist`
+  standing guard. Verified at `c2babc5`: a local `build_sdist`
   produces a 4.8 MB archive with zero bundle members, versus ~360 MB and 8,947
   extra files without the rule. GitHub Actions checkouts never contain the
   directory, so CI and PyPI artifacts are unaffected.
