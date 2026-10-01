@@ -210,11 +210,28 @@ and evaluated through the same `evaluate(std::function, t)` entry point the
 engine uses. The harness compiles `cpp/ast/Expression.cpp` **standalone** and
 links nothing else from the engine — see "Instrument limitations".
 
-| Candidate | Change | Microbench (ns/eval, sum of 7 shapes) | Instruction count @-O2 | @-O0 | Verdict |
+**Read the fitness column as proxy, not as program fitness.** The first numeric
+column is a *standalone-TU microbenchmark* — `Expression.cpp` compiled alone,
+nothing else linked, no LTO. It is not the shipped binary and not the engine's
+own path. It answers "did the string-dispatch cost change," which is how it was
+used to shortlist candidates; it does **not** answer "did the program get
+faster," and nothing below should be read as though it did. The end-to-end
+evidence is the profile (zero frames in four runs) and the 4.89% ceiling, and
+those are what the verdict rests on.
+
+| Candidate | Change | Microbench, standalone TU (ns/eval, 7 shapes) — **proxy** | Instruction count @-O2 (standalone TU) | @-O0 | Verdict |
 |---|---|---|---|---|---|
 | A | baseline | 935.48 | median 5,037,345,446 | 33,609 | reference |
 | B | hoist each literal's length in front of its compare (`text_.size() == N && text_ == "..."`), 66 sites | 714.89 (**-23.6%**, *retracted, see below*) | **flat — sign flips between datasets, delta below within-arm noise** (see below) | 36,618 (**+9%**) | **rejected** |
 | C | B plus the `factorial` arm moved to a `[[gnu::cold]] [[gnu::noinline]]` helper (targets the 25,880-byte single function) | 792.06 (worse than B) | not measured — C was built on B, and B did not survive re-measurement | — | **rejected** |
+
+`swarmMemory`'s form is the test applied here: **an instrument must be the
+consumer, or the claim must be scoped to what the instrument actually
+produced.** Labelling the instrument in a distant section is not scoping it —
+the qualifier has to sit where the number is read. Both legitimate options
+exist: `correctness` had neither and published the output as though it were the
+thing the question was about, while `swarmMemory`'s `.net` path is scoped and
+honestly reports counts rather than bytes.
 
 ### The retraction, stated plainly
 
