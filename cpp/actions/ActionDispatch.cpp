@@ -139,7 +139,20 @@ std::string lowercase(std::string value) {
 }
 
 double parseScalarValue(const std::string& text, ast::Model& model) {
-    std::string value = stripQuotes(trim(text));
+    const std::string raw = stripQuotes(trim(text));
+
+    // A parameter name is looked up under its own spelling.  Only the NUMERIC
+    // attempt gets the Fortran double-precision exponent rewrite, so `1D-10`
+    // still parses.  Rewriting the whole string first renamed the parameter
+    // being looked up: any name containing 'd' ('d', 'tend', 't_end',
+    // 'n_steps') was searched for as its mangled twin and every action that
+    // took such a value -- `simulate_ode({t_end=>t_end})` -- was refused with
+    // "Unsupported scalar action value".
+    if (model.getParameters().contains(raw)) {
+        return model.getParameters().evaluate(raw);
+    }
+
+    std::string value = raw;
     std::replace(value.begin(), value.end(), 'D', 'E');
     std::replace(value.begin(), value.end(), 'd', 'e');
 
@@ -150,11 +163,7 @@ double parseScalarValue(const std::string& text, ast::Model& model) {
             return parsed;
         }
     } catch (const std::exception&) {
-        // Try parameter name fallback below.
-    }
-
-    if (model.getParameters().contains(value)) {
-        return model.getParameters().evaluate(value);
+        // Try the expression forms below.
     }
 
     // Try evaluating as expression with parameter resolution

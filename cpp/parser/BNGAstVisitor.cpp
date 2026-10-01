@@ -1814,6 +1814,18 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
         modifiers.push_back(modifier->getText());
     }
 
+    // A unidirectional arrow carries one rate law.  A second law on `->` was
+    // previously accepted and then silently discarded, because the reverse
+    // direction is only ever built for a bidirectional rule: `A -> B ka, kb`
+    // ran as `A -> B ka`, so a two-state phosphorylation pair equilibrated
+    // nowhere and the substrate drained to the product.  BNG2 refuses this
+    // spelling ("Unidirection reaction may have only one rate law"), and the
+    // same diagnostic already guards population mapping rules.  Fail closed.
+    const bool bidirectional = ctx->reaction_sign()->BI_REACTION_SIGN() != nullptr;
+    if (!bidirectional && rates.size() > 1) {
+        throw std::runtime_error("Unidirection reaction may have only one rate law");
+    }
+
     // Check if any molecule in reactant/product patterns has a scope prefix (%x::)
     bool hasScopePrefix = false;
     for (auto* speciesDef : ctx->reactant_patterns()->species_def()) {
