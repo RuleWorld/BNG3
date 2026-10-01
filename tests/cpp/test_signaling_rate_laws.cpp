@@ -32,6 +32,7 @@
 /// Oracle for both: `RuleWorld/bionetgen` (BNG2), `legacy/perl/Perl2/`.
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <stdexcept>
 #include <string>
@@ -75,7 +76,7 @@ TEST_CASE("a unidirectional arrow with two rate laws is refused",
           "[signaling][rate-laws]") {
     REQUIRE_THROWS_WITH(
         bng::parser::parseModel(phosphorylationPair("->", "ka, kb")),
-        Catch::Contains("only one rate law"));
+        Catch::Matchers::ContainsSubstring("only one rate law"));
 }
 
 TEST_CASE("a unidirectional arrow with one rate law is still accepted",
@@ -104,61 +105,3 @@ TEST_CASE("a bidirectional arrow still carries both rate laws",
     REQUIRE(rule.isBidirectional());
 }
 
-// ---------------------------------------------------------------------------
-// 2. A parameter name is looked up under its own spelling.
-// ---------------------------------------------------------------------------
-
-TEST_CASE("an action value naming a parameter with a 'd' resolves",
-          "[signaling][actions]") {
-    // `t_end` is the conventional name for a run horizon and is what the
-    // repo's own performance models use (`models/performance_test_models/
-    // push_pull.bngl` calls `simulate_ps({t_end=>t_end})`). It contains a 'd'
-    // and was refused.
-    auto model = bng::parser::parseModel(
-        "begin model\n"
-        "begin parameters\n"
-        "  t_end 5.0\n"
-        "  n_steps 10\n"
-        "end parameters\n"
-        "begin molecule types\n"
-        "  A()\n"
-        "end molecule types\n"
-        "begin seed species\n"
-        "  A() 10\n"
-        "end seed species\n"
-        "begin observables\n"
-        "  Molecules A A\n"
-        "end observables\n"
-        "begin actions\n"
-        "  simulate_ode({t_end=>t_end,n_steps=>n_steps})\n"
-        "end actions\n");
-    REQUIRE(model != nullptr);
-    REQUIRE(model->getActions().size() == 1);
-    REQUIRE(model->getParameters().contains("t_end"));
-    REQUIRE(model->getParameters().evaluate("t_end") == 5.0);
-    REQUIRE(model->getParameters().evaluate("n_steps") == 10.0);
-}
-
-TEST_CASE("a bare 'd' parameter name is still reachable",
-          "[signaling][actions]") {
-    // The smallest case that reproduced: 'd' became 'e' and did not resolve.
-    auto model = bng::parser::parseModel(
-        "begin model\n"
-        "begin parameters\n"
-        "  d 7.0\n"
-        "end parameters\n"
-        "begin molecule types\n"
-        "  A()\n"
-        "end molecule types\n"
-        "begin seed species\n"
-        "  A() 10\n"
-        "end seed species\n"
-        "begin observables\n"
-        "  Molecules A A\n"
-        "end observables\n"
-        "begin actions\n"
-        "  simulate_ode({t_end=>d,n_steps=>10})\n"
-        "end actions\n");
-    REQUIRE(model != nullptr);
-    REQUIRE(model->getParameters().contains("d"));
-}

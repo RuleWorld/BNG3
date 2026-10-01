@@ -16,6 +16,13 @@ add_test(
 )
 
 add_test(
+    NAME signaling_action_params
+    COMMAND ${CMAKE_COMMAND}
+        -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_signaling_action_params.cmake
+)
+
+add_test(
     NAME psa_issue_265_reaction_order_stress
     COMMAND ${CMAKE_COMMAND}
         -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
