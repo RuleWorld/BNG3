@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from _extdep import require_extension
+
 _cpp = require_extension()
 import bionetgen
 

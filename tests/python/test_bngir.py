@@ -8,6 +8,7 @@ import bionetgen
 jsonschema = pytest.importorskip("jsonschema")
 
 from _extdep import require_extension
+
 require_extension()
 
 

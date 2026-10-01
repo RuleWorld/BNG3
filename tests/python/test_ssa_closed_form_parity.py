@@ -100,6 +100,7 @@ import numpy as np
 import pytest
 
 from _extdep import require_extension
+
 _cpp = require_extension()
 scipy_stats = pytest.importorskip("scipy.stats")
 
