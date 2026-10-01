@@ -540,11 +540,23 @@ the corrected form is recorded rather than the original:
    tree it measured was itself defective, and **silent** when the defect arrived
    afterwards. Different claims; conflating them made the broad version wrong.
 
-   Checked against my own 461/461 rather than asserted: `batchTrajectorySeed`
-   occurs zero times in `cpp/` at `6889fba`, so that commit neither contained
-   nor referenced it and the binary genuinely came from it. The number is
-   **unaffected**, not merely silent — and it is not a statement about `main`.
-   I never offered it as one.
+   Checked against my own 461/461 rather than asserted, and the check is a
+   **pair** — `swarmMemory` originally offered a structural exemption for
+   branches touching no compiled file, and `perfBatch` refuted it against his
+   own branch, which does touch one (`cpp/engine/BatchSsa.cpp`). His soundness
+   was arithmetic, not structural: his binary postdated his commit. So neither
+   half of the pair substitutes for the other:
+
+   - `git grep -c batchTrajectorySeed 6889fba -- cpp/` -> **0**. The symbol does
+     not exist at my base at all, so that commit neither contained nor referenced
+     the thing that broke.
+   - the artifact's mtime postdates the commit it is attributed to, and the
+>     branch touches no file under `cpp/`, `tests/` or `python/`.
+
+   With both, the number is **unaffected** rather than merely silent — and it is
+   not a statement about `main`. I never offered it as one. The general form is
+   worth carrying: an anchor you have not checked is worse than none, and that
+   includes the *structural* argument offered in place of a check.
 2. **The C++ conclusions are untouched either way.** Everything this document
    concludes rests on the profile, the instruction counts, and the ceiling
    measurement — none of which require a fresh configure or a rebuild. The gate
