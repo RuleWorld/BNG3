@@ -458,7 +458,10 @@ This gives BNG3 several layers of defense:
 2. differential tests against legacy BioNetGen/NFsim;
 3. property-based generated molecular graphs;
 4. an executable slow reference semantics;
-5. selected machine-checked refinement theorems.
+5. selected machine-checked refinement theorems — the subset covered by
+   `lake build` under the pinned toolchain, not the whole of `BNG/`; see
+   [Verification status](#verification-status) for what "machine-checked"
+   does and does not cover here.
 
 AI makes this more attractive because agents can generate large numbers of weird
 rules and mixtures. A simple reference semantics gives those generated tests a
@@ -626,24 +629,43 @@ true    -- A.x-B.y bond exists
 
 # Verification status
 
-The local execution environment used for this package does not provide `lean`,
-`lake`, or `elan`. Therefore the Lean kernel could not type-check the project
-locally at the 2026-09-14 checkpoint.
+Measured on `main` at `9f840a5` with the pinned `leanprover/lean4:v4.33.1`
+toolchain (macOS/arm64, local `lean --version` reports `4.33.1`):
 
-That means:
+```text
+lake build                        -> success, 36 jobs
+lake env lean tests/Smoke.lean    -> success (exit 0)
+lake env lean tests/Coverage.lean -> FAILURE (exit 1), by design
+```
 
-- this is concrete Lean source, not pseudocode;
-- imports/delimiters/placeholders can be checked statically here;
-- **theorems are not trusted artifacts until `lake build` succeeds on a machine
-  with the pinned toolchain**.
+The `Coverage.lean` failure is **intentional and must not be silenced**. Its
+final block is marked `[FAILS TODAY]` and exists to gate CI: it asserts what
+`BNG/Stochastic.lean` *ought* to do and currently does not, so that
+`formal/lean` cannot go green while that file is wrong. The block says so in
+its own banner ("hiding it would make formal/lean green while
+`BNG/Stochastic.lean` is wrong") and prescribes its own removal. Treat a green
+`Coverage.lean` as the signal to delete that block, not to re-add a `skip`.
 
-See `VALIDATION.md` for the exact checks and limitations.
+Two boundaries matter when reading any "machine-checked" claim:
+
+- `lake build` compiles `BNG/**` only. `lakefile.lean` declares
+  `lean_lib BNG where roots := #[`BNG]`, so `tests/Smoke.lean` and
+  `tests/Coverage.lean` are **not** built by it and must be named explicitly.
+- `native_decide` does not consult the Lean kernel. `Smoke.lean:220-233`
+  kernel-checks the smoke values via `native_decide`, which reduces through the
+  compiled evaluator; the split is measured rather than asserted by
+  `scripts/check_axiom_dependencies.sh`, which fails on any axiom that is
+  neither one of Lean's three standard ones nor a declared `native_decide`
+  extension.
 
 Pull requests run the pinned kernel and smoke gate in
-[`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml).
-This keeps kernel evidence attached to the exact PR head; local static
-validation and NFnext contract success remain useful preflight checks but are
-not theorem-validation evidence.
+[`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml):
+static and NFnext contract checks, `lake build`, `Smoke.lean`, `Coverage.lean`,
+and the axiom audit. This keeps kernel evidence attached to the exact PR head.
+Local static validation and NFnext contract success remain useful preflight
+checks but are not theorem-validation evidence.
+
+See `VALIDATION.md` for the exact checks and limitations.
 
 ---
 
