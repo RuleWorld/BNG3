@@ -1,0 +1,99 @@
+name: Batch SSA segv probe
+
+# Diagnostic-only workflow. It reproduces the failing
+# `batch-ssa-cpu-reference` job from ci.yml in isolation (one job, ~15 min
+# instead of a full CI wave) and localizes the exit-139 crash with staged
+# imports, unbuffered output, Python faulthandler, and a native backtrace.
+
+on:
+  push:
+    branches: ['ci/**']
+  workflow_dispatch:
+
+concurrency:
+  group: probe-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Localize the batch SSA CPU segfault
+    runs-on: ubuntu-22.04
+    env:
+      CC: gcc-12
+      CXX: g++-12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install pytest numpy scipy
+
+      - name: Configure with the Python bindings
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DBUILD_CLI=OFF \
+            -DBUILD_NFSIM_CLI=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Probe stages
+        shell: bash
+        run: |
+          set +e
+
+          echo "== [1/5] environment =="
+          python -VV
+          echo "nproc=$(nproc)"
+          python -c "import numpy, scipy; print('numpy', numpy.__version__, 'scipy', scipy.__version__, flush=True)"
+          echo "stage1_rc=$?"
+
+          echo "== [2/5] extension import =="
+          python -c "import sys; sys.path.insert(0, 'build/cpp'); import _bionetgen_cpp; print('extension import OK', flush=True)"
+          echo "stage2_rc=$?"
+
+          echo "== [3/5] parse + network generation =="
+          python -c "
+          import sys
+          sys.path.insert(0, 'build/cpp'); sys.path.insert(0, 'python')
+          import _bionetgen_cpp as cpp
+          m = cpp.parse_file('models/isomerization.bngl')
+          n = cpp.generate_network(m)
+          print('parse OK:', n.num_species, 'species', n.num_reactions, 'reactions', flush=True)"
+          echo "stage3_rc=$?"
+
+          echo "== [4/5] one CPU batch (threads=0) =="
+          python -c "
+          import sys
+          sys.path.insert(0, 'build/cpp'); sys.path.insert(0, 'python')
+          import _bionetgen_cpp as cpp
+          m = cpp.parse_file('models/isomerization.bngl')
+          n = cpp.generate_network(m)
+          res = cpp.simulate_batch_ssa_cpu(m, n, batch_size=20000, t_end=20.0, n_steps=10, threads=0, base_seed=1000)
+          print('batch OK:', res['batch_size'], res['total_events'], flush=True)"
+          echo "stage4_rc=$?"
+
+          echo "== [5/5] full test, unbuffered + faulthandler =="
+          PYTHONUNBUFFERED=1 python -X faulthandler tests/test_batch_ssa_statistical_parity.py --mode cpu
+          rc=$?
+          echo "test_rc=$rc"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "== native backtrace under lldb =="
+            if command -v lldb >/dev/null 2>&1; then
+              lldb --batch -o run -o "bt 40" -o quit -- python -X faulthandler -u tests/test_batch_ssa_statistical_parity.py --mode cpu 2>&1 | tail -80
+            else
+              echo "lldb not available on this runner"
+            fi
+          fi
+          exit $rc
