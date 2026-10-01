@@ -100,6 +100,15 @@ allocations the isomorphism search performs, not in what it produces.
 separate processes, which is the control: the instrument itself does not
 introduce variance when the code path is stable.
 
+**Correction to my own wording, found while checking this against another lane's
+measurement.** "Output identical" in the table above means the species/reaction
+COUNTS reported by `generateNative` (e.g. tlbr: 19 species / 29 reactions), not
+serialized `.net` bytes. This harness calls `engine::NetworkGenerator::generateNative`
+directly and never writes a file, so it cannot observe an emitted-text tie-break.
+Counts are a much coarser observable than byte identity: a change that only
+reorders tied reactions moves the bytes and leaves the counts untouched. Do not
+read the determinism table as evidence about file-level output stability.
+
 **Practical rule.** Use the **median and IQR**, not min/max: a delta smaller
 than ~2% on `tlbr`/`blbr` is not resolvable and must be reported as "within
 measurement noise". Any A/B must interleave both arms in one session, >= 7
