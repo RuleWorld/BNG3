@@ -2,6 +2,9 @@
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 
 def _load_validator(name: str):
@@ -40,6 +43,270 @@ def test_stochastic_sbml_cases_select_ssa_for_event_translation():
         'simulate({method=>"ssa", t_start=>0, t_end=>1, n_steps=>10})'
     )
     assert validator._atomizer_actions_for_category("semantic", 1.0, 10) == ""
+
+
+def test_semantic_event_analysis_uses_the_official_reference_horizon():
+    validator = _load_validator("validate_sbml_test_suite")
+
+    assert validator._atomizer_horizon(
+        "semantic",
+        {"start": 2.0, "duration": 3.0, "steps": 30},
+        simulation_t_end=1.0,
+        simulation_n_steps=10,
+    ) == (5.0, 30)
+    assert validator._atomizer_horizon(
+        "semantic", None, simulation_t_end=1.0, simulation_n_steps=10
+    ) == (1.0, 10)
+
+
+def _write_reference_case(tmp_path: Path, *, header: str = "time,S1,C") -> dict:
+    (tmp_path / "00001-settings.txt").write_text(
+        "start: 2\n"
+        "duration: 1\n"
+        "steps: 2\n"
+        "variables: S1, C\n"
+        "absolute: 0.001\n"
+        "relative: 0.01\n"
+        "amount: S1\n"
+        "concentration: C\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "00001-results.csv").write_text(
+        f"{header}\n2,10,1\n2.5,9,2\n3,8,3\n", encoding="utf-8"
+    )
+    source = tmp_path / "00001-sbml-l3v2.xml"
+    source.write_text("<sbml/>", encoding="utf-8")
+    return {"category": "semantic", "id": "00001", "path": source}
+
+
+def test_official_settings_and_results_preserve_units_and_reference_grid(tmp_path):
+    validator = _load_validator("validate_sbml_test_suite")
+    case = _write_reference_case(tmp_path)
+
+    reference = validator._read_reference_case(case)
+
+    assert reference["times"].tolist() == [2.0, 2.5, 3.0]
+    assert reference["variables"] == ["S1", "C"]
+    assert reference["amount"] == ["S1"]
+    assert reference["concentration"] == ["C"]
+    assert reference["expected"]["S1"].tolist() == [10.0, 9.0, 8.0]
+    assert reference["absolute"] == 0.001
+    assert reference["relative"] == 0.01
+
+
+def test_official_results_reject_column_order_or_time_grid_mismatch(tmp_path):
+    validator = _load_validator("validate_sbml_test_suite")
+    case = _write_reference_case(tmp_path, header="time,C,S1")
+
+    try:
+        validator._read_reference_case(case)
+    except ValueError as exc:
+        assert "header" in str(exc).lower()
+    else:
+        raise AssertionError("misordered official variables must be rejected")
+
+    case = _write_reference_case(tmp_path)
+    result_path = tmp_path / "00001-results.csv"
+    result_path.write_text(
+        "time,S1,C\n2,10,1\n2.4,9,2\n3,8,3\n", encoding="utf-8"
+    )
+    try:
+        validator._read_reference_case(case)
+    except ValueError as exc:
+        assert "time grid" in str(exc).lower()
+    else:
+        raise AssertionError("off-grid official sample times must be rejected")
+
+
+def test_official_results_accept_case_insensitive_time_header_and_headerless_csv(tmp_path):
+    validator = _load_validator("validate_sbml_test_suite")
+    case = _write_reference_case(tmp_path, header="Time,S1,C")
+
+    reference = validator._read_reference_case(case)
+    assert reference["expected"]["C"].tolist() == [1.0, 2.0, 3.0]
+
+    result_path = tmp_path / "00001-results.csv"
+    result_path.write_text("2,10,1\n2.5,9,2\n3,8,3\n", encoding="utf-8")
+    reference = validator._read_reference_case(case)
+    assert reference["times"].tolist() == [2.0, 2.5, 3.0]
+
+
+def test_non_timecourse_official_reference_is_reported_as_unsupported(tmp_path):
+    validator = _load_validator("validate_sbml_test_suite")
+    case = _write_reference_case(tmp_path)
+    (tmp_path / "00001-settings.txt").write_text(
+        "start:\nduration:\nsteps:\nvariables: S1\n"
+        "absolute: 0.001\nrelative: 0.001\namount: \nconcentration: \n",
+        encoding="utf-8",
+    )
+    (tmp_path / "00001-results.csv").write_text("S1\n1.0\n", encoding="utf-8")
+
+    try:
+        validator._read_reference_case(case)
+    except validator.OfficialReferenceUnsupported as exc:
+        assert "time-course" in str(exc)
+    else:
+        raise AssertionError("non-timecourse references need an explicit unsupported status")
+
+
+def test_official_reference_comparison_uses_each_expected_value_and_suite_tolerance():
+    validator = _load_validator("validate_sbml_test_suite")
+
+    result = validator._compare_reference_series(
+        {"large": [100.0, 0.0], "small": [1e-6, 2.0]},
+        {"large": [100.01, 0.0011], "small": [1.1e-6, 2.0003]},
+        absolute=1e-5,
+        relative=0.0001,
+    )
+
+    assert result["passed"] is False
+    assert result["failed_variables"] == ["large", "small"]
+    assert result["variables"]["large"]["passed_points"] == 1
+    assert result["variables"]["small"]["passed_points"] == 1
+    assert result["tolerance_formula"] == "abs(expected-actual) <= absolute + relative*abs(expected)"
+
+
+def test_official_comparison_records_failed_sample_indices():
+    validator = _load_validator("validate_sbml_test_suite")
+
+    result = validator._compare_reference_series(
+        {"S1": [1.0, 1.01, 0.5, 2.0]},
+        {"S1": [1.1, 1.01, 0.8, 2.0]},
+        absolute=0.001,
+        relative=0.01,
+        sample_times=[0.0, 0.5, 1.0, 1.5],
+    )
+
+    assert result["variables"]["S1"]["failed_sample_index_count"] == 2
+    assert result["variables"]["S1"]["failed_sample_indices"] == [0, 2]
+    assert result["variables"]["S1"]["failed_sample_examples"][0] == {
+        "index": 0,
+        "time": 0.0,
+        "expected": 1.0,
+        "actual": 1.1,
+        "absolute_difference": pytest.approx(0.1),
+        "tolerance": pytest.approx(0.011),
+    }
+
+
+def test_official_summary_explains_numeric_reference_failures():
+    validator = _load_validator("validate_sbml_test_suite")
+    records = [
+        {
+            "category": "semantic",
+            "id": "mismatch",
+            "official_conformance": {
+                "status": "failed",
+                "comparison": {
+                    "sample_count": 5,
+                    "failed_points": 3,
+                    "failed_variables": ["S1"],
+                    "variables": {
+                        "S1": {
+                            "sample_count": 5,
+                            "failed_points": 3,
+                            "max_abs_difference": 0.5,
+                            "max_scaled_error": 12.0,
+                        }
+                    },
+                },
+            },
+        }
+    ]
+
+    summary = validator._official_conformance_summary(records)
+
+    reason = summary["non_passed_records"][0]["reason"]
+    assert "reference mismatch" in reason
+    assert "3/5 output points" in reason
+    assert "S1" in reason
+    assert "max abs diff 0.5" in reason
+
+
+def test_official_reference_comparison_requires_exact_nonfinite_class():
+    validator = _load_validator("validate_sbml_test_suite")
+
+    matching = validator._compare_reference_series(
+        {"x": [float("nan"), float("inf"), float("-inf")]},
+        {"x": [float("nan"), float("inf"), float("-inf")]},
+        absolute=0.0,
+        relative=0.0,
+    )
+    mismatched = validator._compare_reference_series(
+        {"x": [float("inf")]},
+        {"x": [float("-inf")]},
+        absolute=0.0,
+        relative=0.0,
+    )
+
+    assert matching["passed"] is True
+    assert matching["variables"]["x"]["nonfinite_points"] == 3
+    assert mismatched["passed"] is False
+
+
+def test_official_summary_keeps_reference_status_separate_from_roundtrip_status():
+    validator = _load_validator("validate_sbml_test_suite")
+    records = [
+        {
+            "category": "semantic",
+            "id": "scheduled",
+            "status": "passed",
+            "official_conformance": {
+                "status": "unsupported",
+                "reason": "scheduled BNGL actions are not run at the official grid",
+            },
+        }
+    ]
+
+    summary = validator._official_conformance_summary(records)
+
+    assert summary["non_passed_count"] == 1
+    assert summary["by_status_and_reason"] == [
+        {
+            "status": "unsupported",
+            "reason": "scheduled BNGL actions are not run at the official grid",
+            "count": 1,
+            "cases": ["semantic/scheduled"],
+        }
+    ]
+
+
+def test_dynamic_compartment_rate_rule_maps_to_its_integrated_amount_observable():
+    validator = _load_validator("validate_sbml_test_suite")
+    parsed = SimpleNamespace(
+        species={},
+        compartments={"C": object()},
+        parameters={},
+        rules=[SimpleNamespace(type="rate", variable="C")],
+    )
+
+    target = validator._reference_output_target(
+        "C", {"amount": ["C"], "concentration": []}, parsed, {}, lambda name: name
+    )
+
+    assert target == "C_amt"
+
+
+def test_official_concentration_uses_amount_and_current_compartment_volume():
+    validator = _load_validator("validate_sbml_test_suite")
+    parsed = SimpleNamespace(
+        species={
+            "S": SimpleNamespace(compartment="C", has_only_substance_units=True)
+        },
+        compartments={"C": object()},
+        parameters={},
+        rules=[SimpleNamespace(type="rate", variable="C")],
+    )
+
+    target = validator._reference_output_target(
+        "S",
+        {"amount": [], "concentration": ["S"]},
+        parsed,
+        {"S": "S"},
+        lambda name: name,
+    )
+
+    assert target == "S_amt / C_amt"
 
 
 def test_curated_biomodel_gate_blocks_approximated_semantics():

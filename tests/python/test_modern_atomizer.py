@@ -3708,6 +3708,266 @@ def test_playground_writer_materializes_non_species_rate_rule_targets():
     cpp.parse_string(bngl)
 
 
+def test_concentration_output_tracks_rate_ruled_compartment_volume():
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer
+    import bionetgen._bionetgen_cpp as cpp
+    import numpy as np
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="dynamic_compartment_concentration">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="false"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialConcentration="2"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+        </listOfSpecies>
+        <listOfRules>
+          <rateRule variable="C">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><cn>0.5</cn><ci>C</ci></apply>
+            </math>
+          </rateRule>
+        </listOfRules>
+      </model>
+    </sbml>"""
+
+    atomized = Atomizer(quiet_mode=True, t_end=3, n_steps=30).atomize(xml)
+
+    assert atomized.success, atomized.error
+    assert "_c_S() = S / C_amt" in atomized.bngl
+    assert "_c_S() = S / __compartment_C__" not in atomized.bngl
+    bngl = atomized.bngl.replace(
+        "end functions",
+        "  SSTSREF_concentration() = _c_S()\nend functions",
+        1,
+    )
+    result = BioNetGenModel(cpp.parse_string(bngl)).simulate(
+        method="ode",
+        t_start=0,
+        t_end=3,
+        n_steps=0,
+        sample_times=[0, 3],
+        rtol=1e-10,
+        atol=1e-14,
+    )
+    expected = 2 * np.exp(-0.5 * result.time)
+
+    assert np.allclose(
+        result.functions["SSTSREF_concentration"], expected, rtol=1e-7, atol=1e-12
+    )
+
+
+def test_mass_action_flux_tracks_rate_ruled_compartment_volume():
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer
+    import bionetgen._bionetgen_cpp as cpp
+    import numpy as np
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="dynamic_compartment_mass_action">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="false" spatialDimensions="3"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+          <species id="B" compartment="C" initialAmount="2"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+          <species id="P" compartment="C" initialAmount="0"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="k" value="0.75" constant="true"/></listOfParameters>
+        <listOfRules>
+          <rateRule variable="C">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><cn>-0.1</cn><ci>C</ci></apply>
+            </math>
+          </rateRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="r" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k</ci><ci>A</ci><ci>B</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    atomized = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+
+    assert atomized.success, atomized.error
+    reaction_line = next(
+        line for line in atomized.bngl.splitlines() if line.strip().startswith("r:")
+    )
+    assert "TotalRate" in reaction_line
+    assert "C_amt" in reaction_line
+    assert "_c_A()" in reaction_line
+    assert "_c_B()" in reaction_line
+    bngl = atomized.bngl.replace(
+        "end functions",
+        "  SSTSREF_A() = A_amt\n  SSTSREF_B() = B_amt\nend functions",
+        1,
+    )
+    times = np.asarray([0.0, 0.5, 1.0, 2.0])
+    result = BioNetGenModel(cpp.parse_string(bngl)).simulate(
+        method="ode",
+        t_start=0,
+        t_end=2,
+        n_steps=0,
+        sample_times=times.tolist(),
+        rtol=1e-10,
+        atol=1e-14,
+    )
+    transformed_time = np.expm1(0.1 * times) / 0.1
+    ratio = 0.5 * np.exp(-0.75 * transformed_time)
+    expected_a = ratio / (1.0 - ratio)
+    expected_b = expected_a + 1.0
+
+    assert np.allclose(result.functions["SSTSREF_A"], expected_a, rtol=1e-7, atol=1e-11)
+    assert np.allclose(result.functions["SSTSREF_B"], expected_b, rtol=1e-7, atol=1e-11)
+
+
+def test_assignment_rule_compartment_is_used_for_concentration_laws():
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer
+    import bionetgen._bionetgen_cpp as cpp
+    import numpy as np
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="assignment_compartment_mass_action">
+        <listOfCompartments>
+          <compartment id="C" size="5" constant="false" spatialDimensions="3"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+          <species id="B" compartment="C" initialAmount="2"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+          <species id="P" compartment="C" initialAmount="0"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="k" value="0.75" constant="true"/></listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="C">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </assignmentRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="r" reversible="false">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k</ci><ci>A</ci><ci>B</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    atomized = Atomizer(quiet_mode=True, t_end=1, n_steps=10).atomize(xml)
+
+    assert atomized.success, atomized.error
+    assert "_c_A() = A / (1)" in atomized.bngl
+    assert "_c_B() = B / (1)" in atomized.bngl
+    assert "r: @C:M_A() + @C:M_B() -> @C:M_P()" in atomized.bngl
+    reaction_line = next(
+        line for line in atomized.bngl.splitlines() if line.strip().startswith("r:")
+    )
+    assert "TotalRate" in reaction_line
+    assert "_c_A()" in reaction_line
+    assert "_c_B()" in reaction_line
+    assert "__compartment_C__" not in reaction_line
+    bngl = atomized.bngl.replace(
+        "end functions",
+        "  SSTSREF_A() = A_amt\n  SSTSREF_B() = B_amt\nend functions",
+        1,
+    )
+    times = np.asarray([0.0, 0.25, 0.5, 1.0])
+    result = BioNetGenModel(cpp.parse_string(bngl)).simulate(
+        method="ode",
+        t_start=0,
+        t_end=1,
+        n_steps=0,
+        sample_times=times.tolist(),
+        rtol=1e-10,
+        atol=1e-14,
+    )
+    ratio = 0.5 * np.exp(-0.75 * times)
+    expected_a = ratio / (1.0 - ratio)
+    expected_b = expected_a + 1.0
+
+    assert np.allclose(result.functions["SSTSREF_A"], expected_a, rtol=1e-7, atol=1e-11)
+    assert np.allclose(result.functions["SSTSREF_B"], expected_b, rtol=1e-7, atol=1e-11)
+
+
+def test_one_dimensional_compartment_flux_keeps_sbml_volume_factor():
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer
+    import bionetgen._bionetgen_cpp as cpp
+    import numpy as np
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="one_dimensional_compartment_mass_action">
+        <listOfCompartments>
+          <compartment id="C" size="4" constant="true" spatialDimensions="1"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+          <species id="B" compartment="C" initialAmount="2"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+          <species id="P" compartment="C" initialAmount="0"
+                   hasOnlySubstanceUnits="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters><parameter id="k" value="9" constant="true"/></listOfParameters>
+        <listOfReactions>
+          <reaction id="r" reversible="false" compartment="C">
+            <listOfReactants><speciesReference species="A"/><speciesReference species="B"/></listOfReactants>
+            <listOfProducts><speciesReference species="P"/></listOfProducts>
+            <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>C</ci><ci>k</ci><ci>A</ci><ci>B</ci></apply>
+            </math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    atomized = Atomizer(quiet_mode=True, t_end=0.5, n_steps=5).atomize(xml)
+
+    assert atomized.success, atomized.error
+    reaction_line = next(
+        line for line in atomized.bngl.splitlines() if line.strip().startswith("r:")
+    )
+    assert "TotalRate" in reaction_line
+    assert "__compartment_C__" in reaction_line
+    bngl = atomized.bngl.replace(
+        "end functions",
+        "  SSTSREF_A() = A_amt\n  SSTSREF_B() = B_amt\nend functions",
+        1,
+    )
+    times = np.asarray([0.0, 0.1, 0.25, 0.5])
+    result = BioNetGenModel(cpp.parse_string(bngl)).simulate(
+        method="ode",
+        t_start=0,
+        t_end=0.5,
+        n_steps=0,
+        sample_times=times.tolist(),
+        rtol=1e-10,
+        atol=1e-14,
+    )
+    ratio = 0.5 * np.exp(-(9.0 / 4.0) * times)
+    expected_a = ratio / (1.0 - ratio)
+    expected_b = expected_a + 1.0
+
+    assert np.allclose(result.functions["SSTSREF_A"], expected_a, rtol=1e-7, atol=1e-11)
+    assert np.allclose(result.functions["SSTSREF_B"], expected_b, rtol=1e-7, atol=1e-11)
+
+
 def test_playground_parser_preserves_l2_rational_stoichiometry():
     from bionetgen.atomizer.modern import SBMLParser
 
