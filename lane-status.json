@@ -4,9 +4,10 @@
   "objective": "Isolate and repair assigned BNG3 SSA/immune acceptance failures from candidate f90ead11c2bd56ae254914da6443048a2f49b7ea; preserve fixed scientific tolerances, seeds, immutable artifacts, and independent oracle semantics; verify in this worktree and publish a small draft PR without merging.",
   "worktree": "/private/tmp/bng3-20261003-ssa-repair",
   "branch": "codex/bng3-20261003-ssa-repair",
-  "source_sha": "3f22f8c7a05d84d77a183e62436a563c0ea503b2",
+  "source_sha": "3ae00e00db49f0b87d73f8828ea8d76a125efe10",
+  "tested_code_head_sha": "3f22f8c7a05d84d77a183e62436a563c0ea503b2",
   "merged_remote_main_sha": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
-  "draft_pr_url": null,
+  "draft_pr_url": "https://github.com/RuleWorld/BNG3/pull/94",
   "commits_ready_for_integration": ["e6c46f6"],
   "test_commands_results": [
     {
@@ -93,7 +94,7 @@
     "immutable_ensemble_manifest": "tests/validation/evidence/bng2-ssa-ensembles/manifest.json",
     "note": "Pinned oracle checkout is read-only. Original sequential comparison and reset-action proof used disposable staging directories."
   },
-  "exact_head_hosted_state": "no draft PR created yet; local verification is at 3f22f8c",
+  "exact_head_hosted_state": "PR #94 is draft; 13 hosted checks pending at published head 3ae00e00db49f0b87d73f8828ea8d76a125efe10",
   "files_changed": [
     "models/immune/clonal_expansion.bngl",
     "tests/python/test_immune_models.py",
@@ -105,5 +106,5 @@
     "Coordinate exact engine file ownership with parent before any engine/parser edit; no engine files have been touched."
   ],
   "integration_dependency_note": "The assigned branch includes the f90ead1 integration candidate. Its current diff from main is 711 inherited files; focused repair commit is e6c46f6 and parent may cherry-pick it without the candidate lanes.",
-  "next_step": "Commit this evidence ledger, push the assigned branch, create a draft PR that describes its inherited integration delta, then continue package/worker identity proof and the original fixed 200-member michment failure."
+  "next_step": "Publish the PR URL in this ledger, push its evidence-only update, then continue package/worker identity proof and the original fixed 200-member michment failure while hosted checks run."
 }
