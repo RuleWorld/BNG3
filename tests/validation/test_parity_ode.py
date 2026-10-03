@@ -41,6 +41,11 @@ def test_ode_parity(model_name, bng_cpp, work_dir):
     assert test_data is not None, "could not parse engine .gdat"
 
     diff = compare.compare_trajectories(
-        ref_data, ref_cols, test_data, test_cols, rtol=1e-6
+        ref_data,
+        ref_cols,
+        test_data,
+        test_cols,
+        rtol=1e-6,
+        columns=compare.COLUMNS_INTERSECT,
     )
     assert diff.ok, f"ODE mismatch [{model_name}] (ref={ref_src}): {diff.summary()}"

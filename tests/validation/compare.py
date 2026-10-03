@@ -1396,6 +1396,49 @@ class TrajDiff:
         return s if not self.note else f"{s} ({self.note})"
 
 
+COLUMNS_INTERSECT = "intersect"
+COLUMNS_EXACT = "exact"
+COLUMN_MODES = (COLUMNS_INTERSECT, COLUMNS_EXACT)
+
+
+def _observable_columns(columns: list[str]) -> list[str]:
+    return [column for column in columns if column.lower() != "time"]
+
+
+def _duplicate_columns(columns: list[str]) -> list[str]:
+    return sorted(column for column, count in Counter(columns).items() if count > 1)
+
+
+def _column_mismatch_note(
+    ref_cols: list[str], test_cols: list[str], mode: str
+) -> str:
+    if mode not in COLUMN_MODES:
+        raise ValueError(
+            f"unknown column mode {mode!r}; expected one of {list(COLUMN_MODES)}"
+        )
+
+    for side, columns in (("ref", ref_cols), ("test", test_cols)):
+        duplicates = _duplicate_columns(columns)
+        if duplicates:
+            return f"duplicate column names in {side}: {duplicates}"
+
+    if mode == COLUMNS_EXACT:
+        ref_observables = _observable_columns(ref_cols)
+        test_observables = _observable_columns(test_cols)
+        only_ref = [
+            column for column in ref_observables if column not in test_observables
+        ]
+        only_test = [
+            column for column in test_observables if column not in ref_observables
+        ]
+        if only_ref or only_test:
+            return (
+                f"observable column sets differ: only in ref {only_ref}, "
+                f"only in test {only_test}"
+            )
+    return ""
+
+
 def compare_trajectories(
     ref: np.ndarray,
     ref_cols: list[str],
@@ -1404,14 +1447,28 @@ def compare_trajectories(
     *,
     rtol: float = 1e-6,
     atol: float = 1e-12,
+    columns: str = COLUMNS_INTERSECT,
 ) -> TrajDiff:
-    """Compare two trajectories column-by-column on shared observables.
+    """Compare two trajectories on their shared or exactly matching columns.
 
     Aligns on the common time grid (intersection of time points, exact match).
     Relative error uses max(|ref|, atol) in the denominator so near-zero
-    observables don't blow up the metric.
+    observables don't blow up the metric. ``intersect`` compares only shared
+    observable names; ``exact`` first requires equal observable-name sets.
+    Column order is not significant because values are aligned by name. Both
+    modes reject duplicate column names because those values cannot be aligned
+    unambiguously.
     """
-    common = [c for c in ref_cols if c in test_cols and c.lower() != "time"]
+    note = _column_mismatch_note(ref_cols, test_cols, columns)
+    if note:
+        return TrajDiff(False, np.inf, "", np.inf, note)
+
+    ref_observables = _observable_columns(ref_cols)
+    test_observables = _observable_columns(test_cols)
+    if columns == COLUMNS_EXACT:
+        common = ref_observables
+    else:
+        common = [c for c in ref_observables if c in test_observables]
     if not common:
         return TrajDiff(False, np.inf, "", np.inf, "no shared observable columns")
 
@@ -1496,15 +1553,22 @@ def compare_stochastic(
     max_violation_frac: float = 0.02,
     min_ref_runs: int = 2,
     min_test_runs: int = 2,
+    columns: str = COLUMNS_INTERSECT,
 ) -> EnsembleDiff:
     """Distributional comparison of two stochastic ensembles.
 
-    For each shared observable at each shared time point, compare the two
+    For each selected observable at each shared time point, compare the two
     independent ensemble means using the pooled standard error
     sqrt(SE(ref)^2 + SE(test)^2). Pass if the fraction of violating points is
     <= max_violation_frac (allows for the few tail points expected at 3 sigma
-    over many checks).
+    over many checks). ``intersect`` compares shared observable names;
+    ``exact`` requires equal observable-name sets. Duplicate names always fail.
     """
+    if columns not in COLUMN_MODES:
+        raise ValueError(
+            f"unknown column mode {columns!r}; expected one of {list(COLUMN_MODES)}"
+        )
+
     if len(ref_runs) < min_ref_runs or len(test_runs) < min_test_runs:
         return EnsembleDiff(
             False,
@@ -1518,12 +1582,37 @@ def compare_stochastic(
             ),
         )
 
+    for side, runs in (("ref", ref_runs), ("test", test_runs)):
+        for index, (_, run_cols) in enumerate(runs):
+            duplicates = _duplicate_columns(run_cols)
+            if duplicates:
+                return EnsembleDiff(
+                    False,
+                    0,
+                    0,
+                    np.inf,
+                    "",
+                    note=(
+                        f"duplicate column names in {side} ensemble run "
+                        f"{index + 1}: {duplicates}"
+                    ),
+                )
+
     rmean, rse, rcols, rt = _ensemble_stats(ref_runs)
     tmean, tse, tcols, tt = _ensemble_stats(test_runs)
     if rmean is None or tmean is None:
         return EnsembleDiff(False, 0, 0, np.inf, "", note="empty ensemble")
 
-    common = [c for c in rcols if c in tcols and c.lower() != "time"]
+    note = _column_mismatch_note(rcols, tcols, columns)
+    if note:
+        return EnsembleDiff(False, 0, 0, np.inf, "", note=note)
+
+    ref_observables = _observable_columns(rcols)
+    test_observables = _observable_columns(tcols)
+    if columns == COLUMNS_EXACT:
+        common = ref_observables
+    else:
+        common = [c for c in ref_observables if c in test_observables]
     ridx, tidx = _align_times(rt, tt)
     if not common or len(ridx) < 2:
         return EnsembleDiff(False, 0, 0, np.inf, "", note="no shared trajectory")

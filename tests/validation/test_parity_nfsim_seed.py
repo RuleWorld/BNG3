@@ -298,7 +298,13 @@ def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
     require_oracle(native is not None, f"native NFsim produced no output: {error}")
 
     diff = compare.compare_trajectories(
-        native[0], native[1], direct.data, direct.columns, rtol=0.0, atol=0.0
+        native[0],
+        native[1],
+        direct.data,
+        direct.columns,
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert diff.ok or diff.max_rel_err == 0.0, (
         f"fixed-seed direct/native mismatch [{model_name}]: {diff.summary()}"
@@ -425,7 +431,13 @@ def test_seed_state_order_matches_native_nfsim(block_order, api, work_dir, monke
     require_oracle(native is not None, f"native NFsim produced no output: {error}")
 
     diff = compare.compare_trajectories(
-        native[0], native[1], direct[0], direct[1], rtol=0.0, atol=0.0
+        native[0],
+        native[1],
+        direct[0],
+        direct[1],
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     report = _identity_report(native, direct)
     assert report is None, (
@@ -486,7 +498,13 @@ def test_an_family_seed_state_order_matches_native_nfsim(model_name, api, work_d
     )
     require_oracle(native is not None, f"native NFsim produced no output: {error}")
     diff = compare.compare_trajectories(
-        native[0], native[1], direct.data, direct.columns, rtol=0.0, atol=0.0
+        native[0],
+        native[1],
+        direct.data,
+        direct.columns,
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
 
     report = _identity_report(native, (direct.data, direct.columns))
