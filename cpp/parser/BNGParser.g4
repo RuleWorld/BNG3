@@ -116,6 +116,9 @@ keyword_as_mol_name
     : SPECIES | MOLECULE | MOLECULES | REACTION | REACTIONS | RULES
     | PARAMETERS | OBSERVABLES | FUNCTIONS | COMPARTMENTS | ENERGY | PATTERNS
     | MODEL | SEED | GROUPS | POPULATION | COUNTER
+    // `priority` is a keyword only in rule modifiers and bng3_events fields.
+    // Those positions are syntactically distinct from molecule names.
+    | PRIORITY
     ;
 
 // Allow numeric states like ~0~p and mixed like ~2P~10P (INT followed by STRING)
@@ -211,7 +214,7 @@ observables_block
 
 // Observable definition - type is optional (can be just "Name Pattern")
 observable_def
-    : (STRING COLON)? observable_type? STRING observable_pattern_list
+    : (STRING COLON)? observable_type? observable_name observable_pattern_list
     ;
 
 observable_type
@@ -551,6 +554,8 @@ arg_name
     // Safe/execute
     | SAFE | EXECUTE
     | TEXTREACTION | TEXTSPECIES
+    // `priority` also remains available as an expression and parameter name.
+    | PRIORITY
     ;
 
 expression_list
@@ -619,7 +624,7 @@ function_call
     ;
 
 observable_ref
-    : STRING LPAREN expression_list? RPAREN
+    : observable_name LPAREN expression_list? RPAREN
     ;
 
 literal
@@ -627,4 +632,11 @@ literal
     | FLOAT
     | PI
     | EULERIAN
+    ;
+
+// Keep keyword-capable names in a named context so the AST visitor can retain
+// the identifier even when it is tokenized as a keyword. Kept at the end to
+// leave existing generated rule indices stable.
+observable_name
+    : STRING | PRIORITY
     ;

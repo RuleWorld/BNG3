@@ -305,3 +305,95 @@ end reaction rules
                                  diagnostic.message.find("molecularity") != std::string::npos;
                       }));
 }
+
+TEST_CASE("priority is preserved as molecule, molecule type, and parameter name") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  priority = 2
+  rate = priority + 1
+end parameters
+begin molecule types
+  priority(x)
+end molecule types
+begin seed species
+  priority(x) 3
+end seed species
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getMoleculeTypes().size() == 1);
+    CHECK(model->getMoleculeTypes().front().getName() == "priority");
+    REQUIRE(model->getSeedSpecies().size() == 1);
+    CHECK(model->getSeedSpecies().front().getPattern() == "priority(x)");
+    CHECK(model->getParameters().get("priority").getValue() == 2.0);
+    CHECK(model->getParameters().get("rate").getValue() == 3.0);
+}
+
+TEST_CASE("priority is retained as an observable name") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 3
+end seed species
+begin observables
+  Molecules priority A()
+end observables
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getObservables().size() == 1);
+    CHECK(model->getObservables().front().getName() == "priority");
+    CHECK(model->getObservables().front().getType() == "Molecules");
+}
+
+TEST_CASE("priority observable references do not consume rule or event priority syntax") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  priority = 2
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules priority A()
+end observables
+begin reaction rules
+  A() -> A() priority priority=5
+  A() -> A() priority()
+end reaction rules
+begin bng3_events version 1
+  event "uses_priority_identifier"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    priority: priority + 1
+    assignment: priority = 0
+  end event
+end bng3_events
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 2);
+    const auto& modifiedRule = model->getReactionRules().at(0);
+    REQUIRE(modifiedRule.getRates().size() == 1);
+    CHECK(modifiedRule.getRates().front().kind() == bng::ast::ExpressionKind::Identifier);
+    CHECK(modifiedRule.getRates().front().name() == "priority");
+    CHECK(modifiedRule.getModifiers() == std::vector<std::string>{"priority=5"});
+
+    const auto& observableRate = model->getReactionRules().at(1).getRates().front();
+    CHECK(observableRate.kind() == bng::ast::ExpressionKind::ObservableRef);
+    CHECK(observableRate.name() == "priority");
+
+    REQUIRE(model->getEvents().size() == 1);
+    const auto& event = model->getEvents().front();
+    REQUIRE(event.priority.has_value());
+    CHECK(event.priority->toString() == "(priority + 1)");
+    REQUIRE(event.assignments.size() == 1);
+    CHECK(event.assignments.front().target == "priority");
+}
