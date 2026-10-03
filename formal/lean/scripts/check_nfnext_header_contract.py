@@ -166,9 +166,9 @@ for path, enums in ORDERED_ENUMS.items():
                 )
 
 # ---------------------------------------------------------------------------
-# Field / vocabulary contracts.  Substring is still the right tool for a field
-# NAME, which is not repeated inside a nested scope the way enumerators are --
-# but the comparison is now against comment-stripped text.
+# Field / vocabulary contracts. Token checks preserve the expected vocabulary,
+# but a token that also appears in a method body does not establish that its
+# data member still exists. Required field declarations are pinned separately.
 # ---------------------------------------------------------------------------
 FIELD_TOKENS = {
     NF / "transformation.hpp": [
@@ -207,6 +207,34 @@ for path, tokens in FIELD_TOKENS.items():
             errors.append(
                 f"{path.name}: expected token {token!r} not found in code "
                 f"(comments are ignored)"
+            )
+
+# connected_to and interchangeable also appear in method bodies, so token
+# presence does not establish that the PatternIR data members still exist.
+# Pin their declaration shapes separately; this catches removal or movement to
+# a comment while allowing harmless whitespace changes.
+FIELD_DECLARATIONS = {
+    NF / "nfir.hpp": {
+        "connected_to": (
+            r"^\s*std::vector\s*<\s*std::pair\s*<\s*std::size_t\s*,"
+            r"\s*std::size_t\s*>\s*>\s+connected_to\s*;\s*$"
+        ),
+        "interchangeable": (
+            r"^\s*std::vector\s*<\s*std::vector\s*<\s*std::size_t\s*>\s*>"
+            r"\s+interchangeable\s*;\s*$"
+        ),
+    },
+}
+
+for path, declarations in FIELD_DECLARATIONS.items():
+    if not path.exists():
+        continue
+    text = strip_cpp_comments(path.read_text(encoding="utf-8"))
+    for name, pattern in declarations.items():
+        if not re.search(pattern, text, re.MULTILINE):
+            errors.append(
+                f"{path.name}: expected field declaration for {name!r} not found "
+                f"(comments and method uses do not count)"
             )
 
 # ---------------------------------------------------------------------------

@@ -452,5 +452,9 @@ public:
     return visitChildren(ctx);
   }
 
+  virtual std::any visitObservable_name(BNGParser::Observable_nameContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
 
 };

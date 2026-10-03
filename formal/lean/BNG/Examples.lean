@@ -136,10 +136,16 @@ def badPattern : Pattern :=
 
 /--
 Concrete NFnext lowering contract mirrored by the production C++ boundary test
-in `tests/architecture_contracts/nfnext/test_nfnext.cpp`.  Both start from the
-same biological rule shown at the top of this file.  The C++ side crosses
-BNGL parser → `bng::compile::CompiledModel` → `nfnext::lowerFromBioNetGen`;
-this side checks the proof-friendly typed lowering independently.
+in tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp. Both start
+from the same biological rule shown at the top of this file. The C++ side
+crosses the BNGL parser, bng::compile::CompiledModel, and
+nfnext::lowerFromBioNetGen; this side checks the proof-friendly typed lowering
+independently. That C++ test names this fixture in its header comment as the
+mirror of formal/lean/BNG/Examples.lean.
+
+test_nfnext.cpp exercises a different boundary: it round-trips a hand-built
+ModelIR through ModelCache and does not call lowerFromBioNetGen, so it cannot
+mirror this lowering contract.
 -/
 def nfnextBridgeContract : Bool :=
   let packing := NFnextPacking.fromSignature model.signature
