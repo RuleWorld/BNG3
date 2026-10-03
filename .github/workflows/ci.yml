@@ -725,7 +725,7 @@ jobs:
           # for public GitHub-hosted runners.
           - os: macos-15-intel
             macos_arch: x86_64
-            macos_deployment_target: "10.13"
+            macos_deployment_target: "10.15"
           - os: macos-14
             macos_arch: arm64
             macos_deployment_target: "11.0"

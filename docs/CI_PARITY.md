@@ -98,8 +98,13 @@ requires GCC 10.3 or newer when built from source and has no suitable
 manylinux2014 binary for that target.
 
 Both the CI and release wheel workflows now pin cibuildwheel 4.2.1, build
-native macOS architectures with deployment targets 10.13 on macos-13 and 11.0
-on macos-14, and use `manylinux_2_28` for the Linux wheel image. The Linux
+native macOS architectures with deployment targets 10.15 on macos-15-intel and
+11.0 on macos-14, and use `manylinux_2_28` for the Linux wheel image. The x86_64
+floor is 10.15 because the engine uses `std::filesystem` APIs unavailable on
+earlier macOS targets. On libc++, the floating-point `std::to_chars` fast path
+is compiled only when libc++ reports it available (macOS 13.3 and later); older
+supported targets use the precision-12 stream formatter. The fast path remains
+enabled for other standard libraries. The Linux
 compatibility floor is consequently glibc 2.28 for these wheels. CI also has a
 manual-dispatch route for running the complete wheel matrix on an exact branch
 head. The follow-up PR head `9efa0e9` passed hosted CI run
