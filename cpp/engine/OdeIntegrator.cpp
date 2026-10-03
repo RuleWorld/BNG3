@@ -1885,8 +1885,11 @@ namespace {
 // identical, so the .cdat/.gdat files are unchanged byte-for-byte.
 //
 // `leadingSpace` reproduces the literal " " the caller inserted before every
-// field except the first on a row.
-void appendScientificField(std::string& row, double value, bool leadingSpace) {
+// field except the first on a row. `dst` must have room for kMaxFieldBytes;
+// the return value is the first byte after the field.
+constexpr std::size_t kMaxFieldBytes = 24;
+
+char* appendScientificField(char* dst, double value, bool leadingSpace) {
     constexpr std::size_t kWidth = 18;
     char buf[64];
     char* cursor = buf;
@@ -1902,10 +1905,10 @@ void appendScientificField(std::string& row, double value, bool leadingSpace) {
         // do not trust an errored result.
         std::ostringstream fallback;
         fallback << std::setw(18) << std::setprecision(12) << std::scientific
-                  << value;
+                 << value;
         const std::string text = fallback.str();
-        row.append(text);
-        return;
+        std::memcpy(dst, text.data(), text.size());
+        return dst + text.size();
     }
     const std::size_t length = static_cast<std::size_t>(result.ptr - fieldStart);
     // "%18.12e" right-justifies into 18 columns. The digit string is shorter
@@ -1918,7 +1921,59 @@ void appendScientificField(std::string& row, double value, bool leadingSpace) {
         std::memmove(fieldStart + pad, fieldStart, length);
         std::memset(fieldStart, ' ', pad);
     }
-    row.append(buf, static_cast<std::size_t>(cursor - buf) + pad + length);
+    const std::size_t total = static_cast<std::size_t>(cursor - buf) + pad + length;
+    std::memcpy(dst, buf, total);
+    return dst + total;
+}
+
+// Accumulates formatted rows and hands the ofstream one write per ~1 MiB
+// instead of one insertion per row. Measured on a 40001-row x 9-field write,
+// the per-row insertion costs a stream sentry, a filebuf copy and a
+// buffer-full test, which together are about a third of what is left of the
+// loop once the digit conversion is done. The bytes that reach the file are
+// the same bytes, in the same order.
+class RowBuffer {
+public:
+    // `totalBytes` estimates the whole file: the buffer is capped at ~1 MiB so
+    // a large file is written in a handful of chunks, and sized down for a
+    // small one so a two-row .gdat does not allocate a megabyte.
+    RowBuffer(std::ofstream& out, std::size_t totalBytes) : out_(out) {
+        buf_.resize(std::min(totalBytes, kFlushAt));
+    }
+
+    // Start of writable space for the next row, flushing if fewer than
+    // `bytes` remain.
+    char* reserve(std::size_t bytes) {
+        if (buf_.size() - used_ < bytes) {
+            flush();
+            if (buf_.size() < bytes) {
+                buf_.resize(bytes);
+            }
+        }
+        return buf_.data() + used_;
+    }
+
+    void commit(const char* end) { used_ = static_cast<std::size_t>(end - buf_.data()); }
+
+    void flush() {
+        if (used_ != 0) {
+            out_.write(buf_.data(), static_cast<std::streamsize>(used_));
+            used_ = 0;
+        }
+    }
+
+private:
+    static constexpr std::size_t kFlushAt = 1u << 20;
+
+    std::ofstream& out_;
+    std::vector<char> buf_;
+    std::size_t used_ = 0;
+};
+
+// Upper bound on the bytes a text output file of `rows` rows will need, using
+// the widest field the emitter can produce. Only used to size RowBuffer.
+std::size_t textFileBytes(std::size_t fieldsPerRow, std::size_t rows) {
+    return kMaxFieldBytes * (fieldsPerRow + 2) * rows;
 }
 
 } // namespace
@@ -1947,22 +2002,27 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             cdat << "\n";
         }
 
-        // Each row is built in a reused buffer and written once, so the loop
-        // does not pay an ostream insertion (sentry + num_put facet lookup +
-        // num_put locale grouping) per numeric field.
-        std::string row;
-        row.reserve(32 + 20 * (result.concentrations.empty()
-                                   ? 0
-                                   : result.concentrations.front().size()));
+        // Rows are formatted into a reused buffer and the buffer is written
+        // once per ~1 MiB, so the loop pays neither an ostream insertion
+        // (sentry + num_put facet lookup + num_put locale grouping) nor a
+        // stream write per numeric field.
+        RowBuffer rows(cdat,
+                       textFileBytes(result.concentrations.empty()
+                                         ? 0
+                                         : result.concentrations.front().size(),
+                                     result.timePoints.size() - startStep));
         for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
-            row.clear();
-            appendScientificField(row, result.timePoints[step], /*leadingSpace=*/false);
-            for (const auto& c : result.concentrations[step]) {
-                appendScientificField(row, c, /*leadingSpace=*/true);
+            const std::vector<double>& conc = result.concentrations[step];
+            char* const row = rows.reserve(kMaxFieldBytes * (conc.size() + 2));
+            char* cursor = appendScientificField(row, result.timePoints[step],
+                                                /*leadingSpace=*/false);
+            for (const auto& c : conc) {
+                cursor = appendScientificField(cursor, c, /*leadingSpace=*/true);
             }
-            row += '\n';
-            cdat.write(row.data(), static_cast<std::streamsize>(row.size()));
+            *cursor++ = '\n';
+            rows.commit(cursor);
         }
+        rows.flush();
     }
 
     // Write .gdat (observables)
@@ -1994,17 +2054,21 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
         gdat << "\n";
     }
 
-    // Rows are built in a reused buffer and written once each; see the .cdat
-    // loop above for why.
-    std::string row;
-    row.reserve(32 + 20 * (result.observables.empty()
-                               ? 0
-                               : result.observables.front().size()));
+    // Rows are built in a reused buffer and written once per ~1 MiB; see the
+    // .cdat loop above for why.
+    RowBuffer rows(gdat,
+                   textFileBytes((result.observables.empty()
+                                      ? 0
+                                      : result.observables.front().size()) +
+                                     funcExprs.size(),
+                                 result.timePoints.size() - startStep));
     for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
-        row.clear();
-        appendScientificField(row, result.timePoints[step], /*leadingSpace=*/false);
-        for (const auto& obs : result.observables[step]) {
-            appendScientificField(row, obs, /*leadingSpace=*/true);
+        const std::vector<double>& obs = result.observables[step];
+        char* const row = rows.reserve(kMaxFieldBytes * (obs.size() + funcExprs.size() + 2));
+        char* cursor = appendScientificField(row, result.timePoints[step],
+                                            /*leadingSpace=*/false);
+        for (const auto& o : obs) {
+            cursor = appendScientificField(cursor, o, /*leadingSpace=*/true);
         }
         // Evaluate and print function values
         if (printFunctions && !funcExprs.empty()) {
@@ -2034,12 +2098,13 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             };
             for (auto& fexpr : funcExprs) {
                 double val = fexpr.evaluate(resolver, result.timePoints[step]);
-                appendScientificField(row, val, /*leadingSpace=*/true);
+                cursor = appendScientificField(cursor, val, /*leadingSpace=*/true);
             }
         }
-        row += '\n';
-        gdat.write(row.data(), static_cast<std::streamsize>(row.size()));
+        *cursor++ = '\n';
+        rows.commit(cursor);
     }
+    rows.flush();
 }
 
 void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT) const {
@@ -2048,28 +2113,51 @@ void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeR
         if (!cdat) {
             throw std::runtime_error("Failed to open " + prefix + ".cdat for binary writing");
         }
+        // Accumulated and written once per ~1 MiB; see RowBuffer above.
+        RowBuffer rows(cdat,
+                       sizeof(float) * result.timePoints.size() *
+                           (result.concentrations.empty()
+                                ? 1
+                                : result.concentrations.front().size() + 1));
         for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
+            const std::vector<double>& conc = result.concentrations[step];
+            char* const row = rows.reserve(sizeof(float) * (conc.size() + 1));
+            char* cursor = row;
             float t = static_cast<float>(result.timePoints[step]);
-            cdat.write(reinterpret_cast<const char*>(&t), sizeof(float));
-            for (const auto& c : result.concentrations[step]) {
+            std::memcpy(cursor, &t, sizeof(float));
+            cursor += sizeof(float);
+            for (const auto& c : conc) {
                 float val = static_cast<float>(c);
-                cdat.write(reinterpret_cast<const char*>(&val), sizeof(float));
+                std::memcpy(cursor, &val, sizeof(float));
+                cursor += sizeof(float);
             }
+            rows.commit(cursor);
         }
+        rows.flush();
     }
 
     std::ofstream gdat(prefix + ".gdat", std::ios::binary | std::ios::trunc);
     if (!gdat) {
         throw std::runtime_error("Failed to open " + prefix + ".gdat for binary writing");
     }
+    RowBuffer rows(gdat,
+                   sizeof(float) * result.timePoints.size() *
+                       (result.observables.empty() ? 1 : result.observables.front().size() + 1));
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
+        const std::vector<double>& obs = result.observables[step];
+        char* const row = rows.reserve(sizeof(float) * (obs.size() + 1));
+        char* cursor = row;
         float t = static_cast<float>(result.timePoints[step]);
-        gdat.write(reinterpret_cast<const char*>(&t), sizeof(float));
-        for (const auto& obs : result.observables[step]) {
-            float val = static_cast<float>(obs);
-            gdat.write(reinterpret_cast<const char*>(&val), sizeof(float));
+        std::memcpy(cursor, &t, sizeof(float));
+        cursor += sizeof(float);
+        for (const auto& o : obs) {
+            float val = static_cast<float>(o);
+            std::memcpy(cursor, &val, sizeof(float));
+            cursor += sizeof(float);
         }
+        rows.commit(cursor);
     }
+    rows.flush();
 }
 
 // ---------------------------------------------------------------------------
@@ -2267,14 +2355,22 @@ void OdeIntegrator::writeBatchStdDevsFile(const std::string& prefix, const OdeRe
         bdat << " " << std::setw(18) << group.name;
     }
     bdat << "\n";
+    // Same field format as the .gdat loop above, emitted the same way.
+    RowBuffer rows(bdat,
+                   textFileBytes(result.batchObsStdDevs.front().size(),
+                                 result.timePoints.size()));
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
-        bdat << std::setw(18) << std::setprecision(12) << std::scientific
-             << result.timePoints[step];
-        for (const auto& sd : result.batchObsStdDevs[step]) {
-            bdat << " " << std::setw(18) << sd;
+        const std::vector<double>& sd = result.batchObsStdDevs[step];
+        char* const row = rows.reserve(kMaxFieldBytes * (sd.size() + 2));
+        char* cursor = appendScientificField(row, result.timePoints[step],
+                                            /*leadingSpace=*/false);
+        for (const auto& s : sd) {
+            cursor = appendScientificField(cursor, s, /*leadingSpace=*/true);
         }
-        bdat << "\n";
+        *cursor++ = '\n';
+        rows.commit(cursor);
     }
+    rows.flush();
 }
 
 
