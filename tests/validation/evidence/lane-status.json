@@ -1,7 +1,7 @@
 {
   "schema": "bng3-parity-lane-status/v1",
-  "updated_at_utc": "2026-10-03T16:42:11Z",
-  "status": "corrected source-precedence guard committed; frozen 100-model Tier-P completed at 71 pass/29 fail, with six supplemental immune models separately completed at 4 pass/1 fail/1 oracle error; hosted exact-head CI pending push",
+  "updated_at_utc": "2026-10-03T19:21:40Z",
+  "status": "Latest main merged; focused comparator, network-group, and independent RHS fixes pass. The frozen Tier-P 71/29 result remains unchanged at 2d760cc; targeted oscSystem is resolved, test_tfun remains a documented BNG2 export-stub mismatch, and threshold species groups now match BNG2. PR #91 exact-head hosted checks await push.",
   "source": {
     "branch": "codex/bng3-20261002-parity",
     "baseline_head": "bf5f7d7684b4f758c2d81811c6733442e410e9bf",
@@ -22,7 +22,13 @@
     "python_extension_sha256": "b64a68c58f8bf2dc3bc7d16eae4958feaa933f5103b4b00d38cc5b14ee767fa3",
     "tested_source_identity": "The tested working-tree patch was committed unchanged after gates; the source patch SHA records the exact tree.",
     "current_validation_head": "2d760ccf748fe95f4e5ff8c97d4d0df0e5a03d69",
-    "validation_fix_commit": "2d760ccf748fe95f4e5ff8c97d4d0df0e5a03d69"
+    "validation_fix_commit": "2d760ccf748fe95f4e5ff8c97d4d0df0e5a03d69",
+    "latest_targeted_followup_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+    "latest_base_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
+    "latest_followup_commits": [
+      "7409ad2",
+      "16a115d"
+    ]
   },
   "implementation": {
     "state_functional_rates": "Evaluate strict finite coefficients at the initial state and refresh every functional coefficient after each reaction; constant-rate propensity refresh remains dependency-indexed.",
@@ -54,7 +60,13 @@
       "tests/validation/golden/gene_expr.ens",
       "tests/validation/golden/michment.ens",
       "tests/validation/golden/simple_system.ens"
-    ]
+    ],
+    "artifact_verification": {
+      "result": "600/600 member files match manifest size and SHA-256; no mismatches",
+      "manifest": "tests/validation/evidence/bng2-ssa-ensembles/manifest.json",
+      "strict_parity": "2 models pass; michment fails with 10/306 points outside mean +/- 3 pooled SE; worst |z|=9.344938257977688 at ScT",
+      "ownership": "SSA action/seed/tolerance/engine repair is handled by the sibling repair lane; this lane does not alter it."
+    }
   },
   "verification": {
     "configure": {
@@ -78,8 +90,10 @@
       "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 BNG_ENSEMBLE_WORKERS=2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_stochastic.py::test_ssa_ensemble_vs_perl -q"
     },
     "tier_p_net": {
-      "result": "57 passed, 43 failed because BNG2 reference .net/.gdat artifacts were not produced (see parity-report.json)",
-      "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py::test_net_parity_full --bng-cpp build/cpp/bng_cpp -q"
+      "result": "71 passed, 29 failed, 0 skipped, 0 incomplete; corrected source-precedence run at 2d760cc",
+      "tested_head": "2d760ccf748fe95f4e5ff8c97d4d0df0e5a03d69",
+      "report": "tests/validation/evidence/partial-runs/tierp-explicit-source-guard-2d760cc.json",
+      "status": "completed_with_classified_failures; immutable historical run; not a full parity pass"
     },
     "full_non_slow": {
       "result": "241 passed, 44 failed, 10 deselected; 43 Tier-P reference artifact failures and 1 stale selection manifest",
@@ -359,5 +373,66 @@
     "last_checked_head": "8031e4f1ac71578efe46b4f43b4d9a495bdbfb5b",
     "last_checked_summary": "13 passed, 22 failed, 9 skipped",
     "next_step": "Push the stable final evidence head; hosted checks for that exact SHA are pending."
+  },
+  "historical_verification": {
+    "tier_p_net_pre_source_guard": {
+      "result": "57 passed, 43 failed because BNG2 reference .net/.gdat artifacts were not produced (see parity-report.json)",
+      "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py::test_net_parity_full --bng-cpp build/cpp/bng_cpp -q"
+    }
+  },
+  "current_targeted_followup": {
+    "recorded_at_utc": "2026-10-03T19:21:40Z",
+    "tested_code_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+    "base_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
+    "fix_commits": [
+      {
+        "commit": "7409ad2",
+        "subject": "fix(validation): normalize zero-arg function rates"
+      },
+      {
+        "commit": "16a115d",
+        "subject": "fix(net): honor observable count predicates in groups"
+      }
+    ],
+    "oscSystem": {
+      "status": "resolved comparator false-positive",
+      "result": "1 passed, 115 deselected",
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=<pinned BNG2>/BNG2.pl BNGPATH=<pinned BNG2> .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py -k oscSystem --bng-cpp build/cpp/bng_cpp -q",
+      "change": "Zero-argument function definitions are expanded without leaving their empty call suffix; equivalent product-of-quotient forms normalize consistently."
+    },
+    "test_tfun": {
+      "status": "known unsupported BNG2 network-export stub mismatch; comparator intentionally preserves the distinction",
+      "result": "1 strict network parity failure; species and reaction counts match 5/5, four rate expressions differ",
+      "observed_rates": {
+        "bng2": "TFUN(dum/10000,'DAT_validate/test.dat')",
+        "bng3": "tfun('DAT_validate/test.dat',dum/10000), with displayed surrounding factors retained"
+      },
+      "oracle_basis": "Pinned BNG2 Perl2/Expression.pm documents uppercase TFUN as NFsim-specific; outside NFsim it returns its first argument as a stub. This .net comparison does not establish equivalent runtime TFUN behavior.",
+      "policy": "Keep non-empty function calls structural and fail closed; do not count test_tfun as strict parity."
+    },
+    "threshold_observable_species": {
+      "status": "resolved network-group predicate mismatch",
+      "result": "3 passed, 20 deselected, including equality of BNG2 and BNG3 .net group rows",
+      "change": "NetWriter now evaluates species observable count predicates before serializing group membership, using the shared observable relation/count helper."
+    },
+    "independent_numeric_rhs": {
+      "status": "passed",
+      "result": "6 passed in 16.73s on tests/validation/test_parity_rhs.py; direct numeric derivative-vector parity.",
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=<pinned BNG2>/BNG2.pl BNGPATH=<pinned BNG2> .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_compare_net.py tests/validation/test_parity_rhs.py -q"
+    },
+    "verification": {
+      "cmake_build": "passed after merging latest main",
+      "focused_comparator_and_rhs": "25 passed in 16.24s",
+      "immune_species_predicates": "3 passed, 20 deselected",
+      "oscSystem": "1 passed, 115 deselected",
+      "test_tfun": "expected strict mismatch reproduced and classified; not a passing gate",
+      "related_native_ctest": "2 passed",
+      "format_and_lint": "Black check and Ruff check passed; git diff --check passed",
+      "full_tier_p_rerun": "not run; immutable 71/29 result remains tied to 2d760cc, with targeted oscSystem and immune group follow-ups recorded separately"
+    },
+    "hosted_status_at_recording": {
+      "pr91": "Previously pushed head e385afa had 18 Python matrix failures from the seeded SSA trajectory and harness-self-test cases. This local follow-up head had not yet been pushed, so no exact-head hosted result exists for it.",
+      "pr84": "Open at d31e79a; UNSTABLE with lint/format, MSVC, Python matrix, and PyBioNetGen API compatibility failures. Hold for rebase and exact-head review; no merge or closure performed."
+    }
   }
 }

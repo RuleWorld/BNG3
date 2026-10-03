@@ -1,20 +1,17 @@
 {
-  "base_head": "c345f3aa635aac0048681b79c6a4ff1e75a298f7",
+  "base_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
   "benchlock": {
     "timing_measurements": "none; validation runs were correctness checks"
   },
   "blockers": [
-    "BNG2 SSA 200-member distributional parity is unavailable because no committed .ens reference artifacts exist."
+    "PR #91 hosted checks for the new local head await push; the last pushed head e385afa failed 18 Python matrix jobs in two SSA/harness tests.",
+    "The separately owned SSA repair commit has not yet been relayed into this branch.",
+    "Strict BNG2 ensemble parity remains 2 pass, 1 fail; michment has 10/306 points outside the specified 3 pooled-SE band."
   ],
   "branch": "codex/bng3-20261002-parity",
   "commits_ready_for_integration": [
-    "aacf6abb5712a1b7abc2fde6f3a2f9580753ab2c",
-    "d04b6c835e6dcd57f6f036c980efd21052b086e7",
-    "a14a7d1c226b84ea541abb4481e80d4da56207cf",
-    "fdec3bd5396a4a407d534452ca188f41db76cec1",
-    "a5fcc0247e201e3c23293221c9ea7e683962f64d",
-    "8f4c709bede079b3c11de5d21ab1e727998ac6ea",
-    "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    "7409ad2",
+    "16a115d"
   ],
   "committed_checkpoints": [
     {
@@ -44,19 +41,27 @@
     {
       "sha": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
       "subject": "test(validation): compare compiled rate expression values"
+    },
+    {
+      "sha": "7409ad2",
+      "subject": "fix(validation): normalize zero-arg function rates"
+    },
+    {
+      "sha": "16a115d",
+      "subject": "fix(net): honor observable count predicates in groups"
     }
   ],
-  "coordination_status": "Core/integration ownership is resolved; the seven parity commits are ready for integration reconciliation. Cross-chat direct messages were blocked by automatic review, so this file is the lane handoff.",
+  "coordination_status": "Current PR #91 branch has latest main merged and the two focused fixes committed locally. Parent retains PR merge/closure ownership; no PR has been merged or closed by this lane.",
   "dependencies": [
-    "BNG2 SSA distributional parity needs pinned 200-member .ens references or a separately agreed deterministic oracle-generation lane.",
-    "CI owner review/application of the workflow proposal; it now applies cleanly after the referenced tests were committed at f64962a.",
-    "Integration owner reconciliation of the committed branch; this lane did not merge or push it."
+    "Push the locally verified branch and inspect exact-head PR #91 checks.",
+    "Integrate the sibling lane's verified focused SSA/harness commit when relayed; do not alter its seed, action, tolerance, or engine work here.",
+    "PR #84 disposition remains with the parent; current recommendation is hold pending rebase and exact-head checks."
   ],
-  "draft_pr_url": null,
+  "draft_pr_url": "https://github.com/RuleWorld/BNG3/pull/91",
   "evidence_report": "/private/tmp/bng3-20261002-parity/tests/validation/evidence/parity-report.json",
-  "evidence_report_sha256": "671a058be52853df3e7c9dd8ea20d897547a455b66bd446b217a13e921bab81c",
-  "evidence_report_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
-  "exact_head_hosted_state": "No PR created; hosted checks not queried at source head f64962a7e569f426b5f7e2077066bf49ea3442d2.",
+  "evidence_report_sha256": "945d8126f3347047b1d16d6c9c0dab9ecd83cc047a1591b61d47c9a7d1056613",
+  "evidence_report_source_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+  "exact_head_hosted_state": "Prior pushed PR #91 head e385afa (run 37138422787) had 18 Python matrix failures from test_seeded_ssa_concentrates_near_the_deterministic_trajectory and test_verify_harness_itself. Current locally verified source head 6a055bb2fcc232830ebc699ed174af51feef2608 is not pushed yet; its hosted checks have not run.",
   "expression_value_coverage": {
     "atol": 1e-12,
     "coefficient_semantics": "Per-reaction rate coefficient before mass-action species factors; reaction formulas and species identity are structurally paired.",
@@ -119,15 +124,12 @@
   },
   "lane": "parity",
   "native_test_discovery": {
-    "available_source_tests_not_built": [
-      "tests/cpp/test_ode_function_index.cpp",
-      "tests/cpp/test_ode_options.cpp"
-    ],
+    "available_source_tests_not_built": [],
     "command": "ctest --test-dir build -N",
-    "reason": "The current Release build was configured with BUILD_TESTS=OFF.",
-    "result": "Total Tests: 0"
+    "reason": "Latest build is configured with BUILD_TESTS=ON; the full discovered suite was not run.",
+    "result": "486 tests discovered; two related observable/network-writer C++ tests passed."
   },
-  "next_step": "Integration owner reconciles the seven committed parity changes; CI owner can apply the now-applicable workflow proposal. The BNG2 SSA ensemble gap remains unavailable pending reference artifacts or an agreed oracle-generation lane.",
+  "next_step": "Push the verified branch, inspect exact-head PR #91 CI, and update its draft body with the focused resolutions and known test_tfun boundary. Integrate the sibling SSA repair when relayed. Parent retains PR merge and closure actions.",
   "objective": "Independent network, expression-value/RHS, deterministic trajectory, and stochastic/NFsim parity gates over frozen tiers, with classified results and oracle identity.",
   "oracle_artifacts": {
     "bng2": {
@@ -149,17 +151,17 @@
   "owner_review_pending_files": [],
   "python_build": {
     "cli": "/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp",
-    "cli_sha256": "f53ddfb4cef0e874553bc4e0d183026f7e743a2ff941f7d4e3992304ef41b102",
-    "configure": "Release; BUILD_PYTHON_BINDINGS=ON; BUILD_CLI=ON; BUILD_NFSIM_CLI=OFF; BUILD_TESTS=OFF; NFSIM_ENABLE_LTO=OFF; parallel=2",
+    "cli_sha256": "eae6c8204896ef252d2c6a1f11464e8cc15f0fc529435e9d4ff40551558f0f45",
+    "configure": "Release; BUILD_PYTHON_BINDINGS=ON; BUILD_CLI=ON; BUILD_TESTS=ON; latest merged main; parallel=2",
     "import_verified": true,
     "last_build_command": "cmake --build build -j2",
-    "last_build_result": "exit 0; dependency deprecation and duplicate-library linker warnings only",
+    "last_build_result": "exit 0 after merging latest main; dependency deprecation and duplicate-library linker warnings only",
     "numpy": "2.5.3",
     "package_source": "/private/tmp/bng3-20261002-parity/python/bionetgen/__init__.py",
     "pytest": "9.1.1",
     "python": "3.14.7",
     "python_extension": "/private/tmp/bng3-20261002-parity/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
-    "python_extension_sha256": "da3c21bc615d86d5c959b87e9cea701e0764b947fe9749881243e1e1a69144f7"
+    "python_extension_sha256": "f5844799a20a845c343eaeb20c28a6697bf5a408160275686b53f3243d5d7b79"
   },
   "resolved_findings": [
     {
@@ -192,7 +194,7 @@
       "resolution": "Use rtol=1e-10 and atol=1e-12 for same-engine action/API equivalence; BNG2 scientific parity remains at its fixed 1e-6/1e-9 threshold."
     }
   ],
-  "source_sha": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
+  "source_sha": "6a055bb2fcc232830ebc699ed174af51feef2608",
   "still_working": true,
   "subagents": "not used",
   "task_progress": [
@@ -207,7 +209,7 @@
       "task": 2
     },
     {
-      "checkpoint": "Tier-NF direct/XML/seed checks and four 200-run native NFsim distributions pass; BNG2 stochastic ensemble references remain unavailable.",
+      "checkpoint": "Tier-NF direct/XML/seed checks and native NFsim distributions pass; pinned BNG2 SSA ensemble fixtures are available, with strict ensemble comparison passing two models and failing michment.",
       "status": "partial",
       "task": 3
     },
@@ -222,7 +224,7 @@
       "task": 5
     },
     {
-      "checkpoint": "Machine-readable per-case evidence refreshed against tested source head f64962a; overall task remains active for missing BNG2 ensemble, integration, and hosted CI.",
+      "checkpoint": "Frozen Tier-P source-precedence run completed at 71/29 on 2d760cc with immutable artifacts; focused comparator/group/RHS follow-ups pass or are classified at 6a055bb; hosted exact-head CI awaits push.",
       "status": "partial",
       "task": 6
     }
@@ -297,23 +299,23 @@
   "unverified_or_unavailable": [
     {
       "gate": "BNG2 SSA 200-member distributional parity",
-      "reason": "oracle_perl.ensemble('gene_expr', min_runs=200) reports 'no committed ensemble directory'; no .ens artifacts exist in this checkout. A single BNG2 .gdat was not substituted.",
-      "status": "unavailable"
+      "reason": "Pinned references exist for gene_expr, michment, and simple_system; strict comparison passed two models and failed michment with 10/306 points outside +/-3 pooled SE, worst |z|=9.344938257977688 at ScT.",
+      "status": "failed_with_classified_result"
     },
     {
       "gate": "Full Tier-P direct NFsim path sweep",
-      "reason": "Only the frozen tier-NF direct/XML/seed and native 200-run cases were exercised; the broader Tier-P sweep was not run.",
-      "status": "not_run"
+      "reason": "The recorded Tier-P direct-path sweep classified 100 cases: 78 accepted, 16 attributed declines, 4 not loadable, 2 incomplete, 0 diverged. It is not a full-corpus or all-backend result.",
+      "status": "completed_classified"
     },
     {
       "gate": "Full-corpus independent BNG2 network parity and full CTest suite",
-      "reason": "Only selected expression/network/trajectory fixtures were run. The build uses BUILD_TESTS=OFF, and ctest --test-dir build -N reports Total Tests: 0; the full CTest suite was not built or run.",
+      "reason": "The corrected frozen Tier-P run covers 100 selected models. The full CTest suite has 486 discovered tests; only two related observable/network-writer C++ tests ran in this follow-up.",
       "status": "not_run"
     },
     {
-      "gate": "Hosted CI",
-      "reason": "No PR was created and the workflow proposal was not applied; hosted checks were not queried.",
-      "status": "not_run"
+      "gate": "Hosted CI for the current local source head",
+      "reason": "The existing PR #91 run is for e385afa. The locally verified follow-up head is not pushed, so no exact-head hosted result exists yet.",
+      "status": "awaiting_push"
     }
   ],
   "verified_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
@@ -325,7 +327,121 @@
     "scope": "New deterministic expression/RHS/ODE job plus comparator and SSA determinism modules; excludes slow 200-member ensemble checks from this job. The existing NFsim job remains the owner for native NFsim gates.",
     "workflow_modified": false
   },
-  "working_source_signature_sha256": "0db9d450276e9d03f1e55c1e30738df2efb4f689017c36cd12dd4f0ad0ad41dd",
+  "working_source_signature_sha256": "e8889e1ca52fe2db9ec5a41b2723e7f29ea322fcd89d32f2b817c99cb7b1bf7b",
   "worktree": "/private/tmp/bng3-20261002-parity",
-  "worktree_clean_at_source_head": true
+  "worktree_clean_at_source_head": true,
+  "historical_lane_snapshots": [
+    {
+      "recorded_at_utc": "2026-10-03T09:03:58Z",
+      "source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
+      "status": null,
+      "superseded_blockers": [
+        "BNG2 SSA 200-member distributional parity is unavailable because no committed .ens reference artifacts exist."
+      ],
+      "superseded_dependencies": [
+        "BNG2 SSA distributional parity needs pinned 200-member .ens references or a separately agreed deterministic oracle-generation lane.",
+        "CI owner review/application of the workflow proposal; it now applies cleanly after the referenced tests were committed at f64962a.",
+        "Integration owner reconciliation of the committed branch; this lane did not merge or push it."
+      ]
+    }
+  ],
+  "updated_at_utc": "2026-10-03T19:21:40Z",
+  "source_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+  "status": "Latest main merged; comparator and observable network-group fixes are committed and locally verified. Independent RHS checks pass. PR #91 is still draft; its prior exact-head Python matrix failure is owned by the sibling SSA repair lane. PR #84 remains open and unstable; hold for rebase and exact-head review.",
+  "latest_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
+  "current_fix_commits": [
+    {
+      "commit": "7409ad2",
+      "subject": "fix(validation): normalize zero-arg function rates"
+    },
+    {
+      "commit": "16a115d",
+      "subject": "fix(net): honor observable count predicates in groups"
+    }
+  ],
+  "current_diagnostics": {
+    "recorded_at_utc": "2026-10-03T19:21:40Z",
+    "tested_code_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+    "base_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
+    "fix_commits": [
+      {
+        "commit": "7409ad2",
+        "subject": "fix(validation): normalize zero-arg function rates"
+      },
+      {
+        "commit": "16a115d",
+        "subject": "fix(net): honor observable count predicates in groups"
+      }
+    ],
+    "oscSystem": {
+      "status": "resolved comparator false-positive",
+      "result": "1 passed, 115 deselected",
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=<pinned BNG2>/BNG2.pl BNGPATH=<pinned BNG2> .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py -k oscSystem --bng-cpp build/cpp/bng_cpp -q",
+      "change": "Zero-argument function definitions are expanded without leaving their empty call suffix; equivalent product-of-quotient forms normalize consistently."
+    },
+    "test_tfun": {
+      "status": "known unsupported BNG2 network-export stub mismatch; comparator intentionally preserves the distinction",
+      "result": "1 strict network parity failure; species and reaction counts match 5/5, four rate expressions differ",
+      "observed_rates": {
+        "bng2": "TFUN(dum/10000,'DAT_validate/test.dat')",
+        "bng3": "tfun('DAT_validate/test.dat',dum/10000), with displayed surrounding factors retained"
+      },
+      "oracle_basis": "Pinned BNG2 Perl2/Expression.pm documents uppercase TFUN as NFsim-specific; outside NFsim it returns its first argument as a stub. This .net comparison does not establish equivalent runtime TFUN behavior.",
+      "policy": "Keep non-empty function calls structural and fail closed; do not count test_tfun as strict parity."
+    },
+    "threshold_observable_species": {
+      "status": "resolved network-group predicate mismatch",
+      "result": "3 passed, 20 deselected, including equality of BNG2 and BNG3 .net group rows",
+      "change": "NetWriter now evaluates species observable count predicates before serializing group membership, using the shared observable relation/count helper."
+    },
+    "independent_numeric_rhs": {
+      "status": "passed",
+      "result": "6 passed in 16.73s on tests/validation/test_parity_rhs.py; direct numeric derivative-vector parity.",
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=<pinned BNG2>/BNG2.pl BNGPATH=<pinned BNG2> .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_compare_net.py tests/validation/test_parity_rhs.py -q"
+    },
+    "verification": {
+      "cmake_build": "passed after merging latest main",
+      "focused_comparator_and_rhs": "25 passed in 16.24s",
+      "immune_species_predicates": "3 passed, 20 deselected",
+      "oscSystem": "1 passed, 115 deselected",
+      "test_tfun": "expected strict mismatch reproduced and classified; not a passing gate",
+      "related_native_ctest": "2 passed",
+      "format_and_lint": "Black check and Ruff check passed; git diff --check passed",
+      "full_tier_p_rerun": "not run; immutable 71/29 result remains tied to 2d760cc, with targeted oscSystem and immune group follow-ups recorded separately"
+    },
+    "hosted_status_at_recording": {
+      "pr91": "Previously pushed head e385afa had 18 Python matrix failures from the seeded SSA trajectory and harness-self-test cases. This local follow-up head had not yet been pushed, so no exact-head hosted result exists for it.",
+      "pr84": "Open at d31e79a; UNSTABLE with lint/format, MSVC, Python matrix, and PyBioNetGen API compatibility failures. Hold for rebase and exact-head review; no merge or closure performed."
+    }
+  },
+  "reference_ensemble_status": {
+    "artifacts": "Available: 200 members each for gene_expr, michment, and simple_system; 600 member hashes verified against the committed manifest.",
+    "manifest": "tests/validation/evidence/bng2-ssa-ensembles/manifest.json",
+    "strict_result": "2 pass, 1 fail; michment 10/306 outside +/-3 pooled SE, worst |z|=9.344938257977688 at ScT."
+  },
+  "pull_requests": {
+    "91": {
+      "url": "https://github.com/RuleWorld/BNG3/pull/91",
+      "state": "OPEN",
+      "draft": true,
+      "last_pushed_head": "e385afa34f95999c1aa996625c54be44f93acf83",
+      "current_local_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+      "merge_action": "parent-owned; not performed"
+    },
+    "84": {
+      "url": "https://github.com/RuleWorld/BNG3/pull/84",
+      "state": "OPEN",
+      "head": "d31e79a293c3219bce6e31caabd6f98ad3c9a4cc",
+      "merge_state": "UNSTABLE",
+      "failed_check_areas": [
+        "Lint & Format",
+        "MSVC C++",
+        "Python matrix",
+        "PyBioNetGen API compatibility"
+      ],
+      "recommendation": "Hold pending rebase and exact-head checks; parent owns final disposition.",
+      "merge_or_close": "not performed"
+    }
+  },
+  "working_source_signature_basis": "SHA-256 of git diff --binary dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6..6a055bb2fcc232830ebc699ed174af51feef2608."
 }
