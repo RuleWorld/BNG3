@@ -1479,6 +1479,64 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
 
     // Process functional-rate reactions (require expression evaluation)
     if (hasFunctionalRates_) {
+        // Build resolver with O(1) observable lookup
+        // Use std::function to allow recursive self-reference for function evaluation
+        std::function<double(const std::string&)> resolver;
+        resolver = [&](const std::string& name) -> double {
+            if (name == "time") return t;
+
+            // TFUN resolution: __tfun_NAME__ → interpolate at current time (or custom index value)
+            if (name.rfind("__tfun_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 2) == "__") {
+                auto atPos = name.find("_AT_");
+                if (atPos != std::string::npos) {
+                    std::string tfunName = name.substr(7, atPos - 7);
+                    try {
+                        double val = std::stod(name.substr(atPos + 4, name.size() - atPos - 6));
+                        if (tfunRegistry_.has(tfunName)) {
+                            return tfunRegistry_.evaluate(tfunName, val);
+                        }
+                    } catch (...) {}
+                }
+                std::string tfunName = name.substr(7, name.size() - 9);
+                if (tfunRegistry_.has(tfunName)) {
+                    return tfunRegistry_.evaluate(tfunName, t);
+                }
+            }
+
+            // Sat/MM/Hill substrate references: __substrate_N → y[N]
+            if (name.rfind("__substrate_", 0) == 0) {
+                std::size_t idx = std::stoul(name.substr(12));
+                return (idx < nSpecies_) ? y[idx] : 0.0;
+            }
+
+            // O(1) observable lookup via precomputed map
+            auto it = observableIndex_.find(name);
+            if (it != observableIndex_.end()) {
+                return groupValues_[it->second];
+            }
+
+            // Check user-defined functions (Bug 2 fix)
+            //
+            // Resolved through functionIndex_, which compile() already builds
+            // from the same immutable function vector in the same order with
+            // first-wins insertion — so it selects exactly the function the
+            // old linear scan found, duplicate names included.  This scan ran
+            // once per model function per identifier per RHS call, making a
+            // derivative O(functions x reactions): on the 150-function
+            // benchmark fixture that linear scan alone was ~7x the cost of
+            // everything else in derivs() combined.
+            const auto function = functionIndex_.find(name);
+            if (function != functionIndex_.end()) {
+                return model_.getFunctions()[function->second]
+                    .getExpression().evaluate(resolver, t);
+            }
+
+            // Otherwise try as parameter. `t` must be passed: a parameter whose
+            // expression reads `time` is not memoized, so dropping it here
+            // would silently evaluate it at t=0 inside a derivative.
+            return model_.getParameters().evaluate(name, t);
+        };
+
         for (const auto idx : functionalRxnIndices_) {
             const auto& rxn = compiledRxns_[idx];
             double rate = functionalRateCoefficients_[idx];
