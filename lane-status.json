@@ -4,14 +4,14 @@
     "timing_measurements": "none; validation runs were correctness checks"
   },
   "blockers": [
-    "PR #91 hosted checks for the new local head await push; the last pushed head e385afa failed 18 Python matrix jobs in two SSA/harness tests.",
-    "The separately owned SSA repair commit has not yet been relayed into this branch.",
+    "PR #91 hosted checks for the current local head await push; the previous e385afa run had 18 Python matrix failures, now covered by two passing focused immune regressions.",
     "Strict BNG2 ensemble parity remains 2 pass, 1 fail; michment has 10/306 points outside the specified 3 pooled-SE band."
   ],
   "branch": "codex/bng3-20261002-parity",
   "commits_ready_for_integration": [
     "7409ad2",
-    "16a115d"
+    "16a115d",
+    "e6c46f6"
   ],
   "committed_checkpoints": [
     {
@@ -49,19 +49,26 @@
     {
       "sha": "16a115d",
       "subject": "fix(net): honor observable count predicates in groups"
+    },
+    {
+      "sha": "e6c46f6",
+      "subject": "fix(immune): reset clonal expansion state before SSA"
+    },
+    {
+      "sha": "6d98578",
+      "subject": "style(test): format immune SSA assertion"
     }
   ],
-  "coordination_status": "Current PR #91 branch has latest main merged and the two focused fixes committed locally. Parent retains PR merge/closure ownership; no PR has been merged or closed by this lane.",
+  "coordination_status": "Current PR #91 branch has latest main merged and the comparator, NetWriter, and focused SSA action-reset fixes locally committed and verified. The relayed SSA repair is only the two-file e6c46f6 commit; its branches and broad follow-up were not imported. Parent retains PR merge/closure ownership; no PR has been merged or closed by this lane.",
   "dependencies": [
     "Push the locally verified branch and inspect exact-head PR #91 checks.",
-    "Integrate the sibling lane's verified focused SSA/harness commit when relayed; do not alter its seed, action, tolerance, or engine work here.",
     "PR #84 disposition remains with the parent; current recommendation is hold pending rebase and exact-head checks."
   ],
   "draft_pr_url": "https://github.com/RuleWorld/BNG3/pull/91",
   "evidence_report": "/private/tmp/bng3-20261002-parity/tests/validation/evidence/parity-report.json",
-  "evidence_report_sha256": "945d8126f3347047b1d16d6c9c0dab9ecd83cc047a1591b61d47c9a7d1056613",
-  "evidence_report_source_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
-  "exact_head_hosted_state": "Prior pushed PR #91 head e385afa (run 37138422787) had 18 Python matrix failures from test_seeded_ssa_concentrates_near_the_deterministic_trajectory and test_verify_harness_itself. Current locally verified source head 6a055bb2fcc232830ebc699ed174af51feef2608 is not pushed yet; its hosted checks have not run.",
+  "evidence_report_sha256": "c511b19b4cd48c8f45bfceb38edb24f58c2eee1b15346c75cdc12b4c52e7a874",
+  "evidence_report_source_head": "6d9857829ca1c439b7acc55f394587affa80de7f",
+  "exact_head_hosted_state": "Prior pushed PR #91 head e385afa (run 37138422787) had 18 Python matrix failures in the seeded SSA trajectory and harness self-test. Both focused tests pass locally after cherry-picking e6c46f6; source head 6d9857829ca1c439b7acc55f394587affa80de7f awaits push, so its hosted checks have not run.",
   "expression_value_coverage": {
     "atol": 1e-12,
     "coefficient_semantics": "Per-reaction rate coefficient before mass-action species factors; reaction formulas and species identity are structurally paired.",
@@ -129,7 +136,7 @@
     "reason": "Latest build is configured with BUILD_TESTS=ON; the full discovered suite was not run.",
     "result": "486 tests discovered; two related observable/network-writer C++ tests passed."
   },
-  "next_step": "Push the verified branch, inspect exact-head PR #91 CI, and update its draft body with the focused resolutions and known test_tfun boundary. Integrate the sibling SSA repair when relayed. Parent retains PR merge and closure actions.",
+  "next_step": "Push the verified branch, inspect exact-head PR #91 CI, and update its draft body with the focused resolutions and known test_tfun boundary. Parent retains PR merge and closure actions.",
   "objective": "Independent network, expression-value/RHS, deterministic trajectory, and stochastic/NFsim parity gates over frozen tiers, with classified results and oracle identity.",
   "oracle_artifacts": {
     "bng2": {
@@ -194,7 +201,7 @@
       "resolution": "Use rtol=1e-10 and atol=1e-12 for same-engine action/API equivalence; BNG2 scientific parity remains at its fixed 1e-6/1e-9 threshold."
     }
   ],
-  "source_sha": "6a055bb2fcc232830ebc699ed174af51feef2608",
+  "source_sha": "6d9857829ca1c439b7acc55f394587affa80de7f",
   "still_working": true,
   "subagents": "not used",
   "task_progress": [
@@ -327,7 +334,7 @@
     "scope": "New deterministic expression/RHS/ODE job plus comparator and SSA determinism modules; excludes slow 200-member ensemble checks from this job. The existing NFsim job remains the owner for native NFsim gates.",
     "workflow_modified": false
   },
-  "working_source_signature_sha256": "e8889e1ca52fe2db9ec5a41b2723e7f29ea322fcd89d32f2b817c99cb7b1bf7b",
+  "working_source_signature_sha256": "bb369ebc05bef75bd088609459b289be32a997b302b8f841a93e915f4b69221a",
   "worktree": "/private/tmp/bng3-20261002-parity",
   "worktree_clean_at_source_head": true,
   "historical_lane_snapshots": [
@@ -345,9 +352,9 @@
       ]
     }
   ],
-  "updated_at_utc": "2026-10-03T19:21:40Z",
-  "source_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
-  "status": "Latest main merged; comparator and observable network-group fixes are committed and locally verified. Independent RHS checks pass. PR #91 is still draft; its prior exact-head Python matrix failure is owned by the sibling SSA repair lane. PR #84 remains open and unstable; hold for rebase and exact-head review.",
+  "updated_at_utc": "2026-10-03T19:25:35Z",
+  "source_head": "6d9857829ca1c439b7acc55f394587affa80de7f",
+  "status": "Latest main merged; comparator, observable-group, independent RHS, and clonal SSA reset fixes are committed and locally verified. PR #91 is draft and awaits exact-head hosted checks after push. test_tfun remains a documented BNG2 export-stub boundary. PR #84 remains open and unstable; hold for rebase and exact-head review.",
   "latest_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
   "current_fix_commits": [
     {
@@ -357,11 +364,19 @@
     {
       "commit": "16a115d",
       "subject": "fix(net): honor observable count predicates in groups"
+    },
+    {
+      "commit": "e6c46f6",
+      "subject": "fix(immune): reset clonal expansion state before SSA"
+    },
+    {
+      "commit": "6d98578",
+      "subject": "style(test): format immune SSA assertion"
     }
   ],
   "current_diagnostics": {
-    "recorded_at_utc": "2026-10-03T19:21:40Z",
-    "tested_code_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+    "recorded_at_utc": "2026-10-03T19:25:35Z",
+    "tested_code_head": "6d9857829ca1c439b7acc55f394587affa80de7f",
     "base_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
     "fix_commits": [
       {
@@ -371,6 +386,14 @@
       {
         "commit": "16a115d",
         "subject": "fix(net): honor observable count predicates in groups"
+      },
+      {
+        "commit": "e6c46f6fa57ea7ca698e57420c37982d96e434f2",
+        "subject": "fix(immune): reset clonal expansion state before SSA"
+      },
+      {
+        "commit": "6d9857829ca1c439b7acc55f394587affa80de7f",
+        "subject": "style(test): format immune SSA assertion"
       }
     ],
     "oscSystem": {
@@ -407,11 +430,19 @@
       "test_tfun": "expected strict mismatch reproduced and classified; not a passing gate",
       "related_native_ctest": "2 passed",
       "format_and_lint": "Black check and Ruff check passed; git diff --check passed",
-      "full_tier_p_rerun": "not run; immutable 71/29 result remains tied to 2d760cc, with targeted oscSystem and immune group follow-ups recorded separately"
+      "full_tier_p_rerun": "not run; immutable 71/29 result remains tied to 2d760cc, with targeted oscSystem and immune group follow-ups recorded separately",
+      "clonal_ssa_and_harness": "seeded SSA regression 1 passed; test_verify_harness_itself_passes 1 passed",
+      "focused_immune": "4 passed, 19 deselected for seeded SSA and species-count predicates; harness self-test 1 passed"
     },
     "hosted_status_at_recording": {
-      "pr91": "Previously pushed head e385afa had 18 Python matrix failures from the seeded SSA trajectory and harness-self-test cases. This local follow-up head had not yet been pushed, so no exact-head hosted result exists for it.",
+      "pr91": "Previously pushed head e385afa had 18 Python matrix failures from the seeded SSA trajectory and harness-self-test cases. The focused repair is cherry-picked and verified locally at 6d9857829ca1c439b7acc55f394587affa80de7f; this updated head awaits push and exact-head hosted CI.",
       "pr84": "Open at d31e79a; UNSTABLE with lint/format, MSVC, Python matrix, and PyBioNetGen API compatibility failures. Hold for rebase and exact-head review; no merge or closure performed."
+    },
+    "clonal_expansion_ssa": {
+      "status": "resolved deterministic-action state carryover",
+      "result": "seeded trajectory regression and harness self-test both pass; focused immune selection is 4 passed, 19 deselected, plus harness self-test 1 passed",
+      "change": "Set Effector() back to E0 after the ODE action and before SSA, then assert the SSA first sample is exactly t=0, E=200.",
+      "oracle_and_seed_evidence": "Pinned BNG2 reproduces ODE carryover at 932 and final 997 with the old action order; explicit E200 reset yields candidate 935 versus BNG2 919 within the unchanged 5% acceptance band. Seed 20260930 and tolerances are unchanged."
     }
   },
   "reference_ensemble_status": {
@@ -425,7 +456,7 @@
       "state": "OPEN",
       "draft": true,
       "last_pushed_head": "e385afa34f95999c1aa996625c54be44f93acf83",
-      "current_local_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+      "current_local_head": "6d9857829ca1c439b7acc55f394587affa80de7f",
       "merge_action": "parent-owned; not performed"
     },
     "84": {
@@ -443,5 +474,5 @@
       "merge_or_close": "not performed"
     }
   },
-  "working_source_signature_basis": "SHA-256 of git diff --binary dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6..6a055bb2fcc232830ebc699ed174af51feef2608."
+  "working_source_signature_basis": "SHA-256 of git diff --binary dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6..6d9857829ca1c439b7acc55f394587affa80de7f."
 }

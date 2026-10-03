@@ -852,10 +852,10 @@
       "seeds_changed": false
     }
   },
-  "updated_at_utc": "2026-10-03T19:21:40Z",
+  "updated_at_utc": "2026-10-03T19:25:35Z",
   "current_targeted_followup": {
-    "recorded_at_utc": "2026-10-03T19:21:40Z",
-    "tested_code_head": "6a055bb2fcc232830ebc699ed174af51feef2608",
+    "recorded_at_utc": "2026-10-03T19:25:35Z",
+    "tested_code_head": "6d9857829ca1c439b7acc55f394587affa80de7f",
     "base_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
     "fix_commits": [
       {
@@ -865,6 +865,14 @@
       {
         "commit": "16a115d",
         "subject": "fix(net): honor observable count predicates in groups"
+      },
+      {
+        "commit": "e6c46f6fa57ea7ca698e57420c37982d96e434f2",
+        "subject": "fix(immune): reset clonal expansion state before SSA"
+      },
+      {
+        "commit": "6d9857829ca1c439b7acc55f394587affa80de7f",
+        "subject": "style(test): format immune SSA assertion"
       }
     ],
     "oscSystem": {
@@ -901,11 +909,19 @@
       "test_tfun": "expected strict mismatch reproduced and classified; not a passing gate",
       "related_native_ctest": "2 passed",
       "format_and_lint": "Black check and Ruff check passed; git diff --check passed",
-      "full_tier_p_rerun": "not run; immutable 71/29 result remains tied to 2d760cc, with targeted oscSystem and immune group follow-ups recorded separately"
+      "full_tier_p_rerun": "not run; immutable 71/29 result remains tied to 2d760cc, with targeted oscSystem and immune group follow-ups recorded separately",
+      "clonal_ssa_and_harness": "seeded SSA regression 1 passed; test_verify_harness_itself_passes 1 passed",
+      "focused_immune": "4 passed, 19 deselected for seeded SSA and species-count predicates; harness self-test 1 passed"
     },
     "hosted_status_at_recording": {
-      "pr91": "Previously pushed head e385afa had 18 Python matrix failures from the seeded SSA trajectory and harness-self-test cases. This local follow-up head had not yet been pushed, so no exact-head hosted result exists for it.",
+      "pr91": "Previously pushed head e385afa had 18 Python matrix failures from the seeded SSA trajectory and harness-self-test cases. The focused repair is cherry-picked and verified locally at 6d9857829ca1c439b7acc55f394587affa80de7f; this updated head awaits push and exact-head hosted CI.",
       "pr84": "Open at d31e79a; UNSTABLE with lint/format, MSVC, Python matrix, and PyBioNetGen API compatibility failures. Hold for rebase and exact-head review; no merge or closure performed."
+    },
+    "clonal_expansion_ssa": {
+      "status": "resolved deterministic-action state carryover",
+      "result": "seeded trajectory regression and harness self-test both pass; focused immune selection is 4 passed, 19 deselected, plus harness self-test 1 passed",
+      "change": "Set Effector() back to E0 after the ODE action and before SSA, then assert the SSA first sample is exactly t=0, E=200.",
+      "oracle_and_seed_evidence": "Pinned BNG2 reproduces ODE carryover at 932 and final 997 with the old action order; explicit E200 reset yields candidate 935 versus BNG2 919 within the unchanged 5% acceptance band. Seed 20260930 and tolerances are unchanged."
     }
   }
 }
