@@ -243,8 +243,6 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       BNG3_PYTHON_TEST_MODE: installed
-      BNG3_SOURCE_REVISION: ${{ github.sha }}
-      BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -277,3 +275,5 @@ jobs:
         env:
           MPLBACKEND: Agg
           SYMPY_USE_GMPY: "0"
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

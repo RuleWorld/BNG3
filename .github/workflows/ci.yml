@@ -473,8 +473,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       BNG3_PYTHON_TEST_MODE: installed
-      BNG3_SOURCE_REVISION: ${{ github.sha }}
-      BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -520,6 +518,9 @@ jobs:
 
       - name: Verify installed package identity
         run: python scripts/ci/check_python_package_identity.py
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Seed isolated Matplotlib font cache (Unix)
         if: matrix.os == 'ubuntu-22.04' && (matrix.python-version == '3.9' || matrix.python-version == '3.10')
@@ -559,8 +560,6 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       BNG3_PYTHON_TEST_MODE: installed
-      BNG3_SOURCE_REVISION: ${{ github.sha }}
-      BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -578,6 +577,9 @@ jobs:
 
       - name: Verify installed package identity
         run: python scripts/ci/check_python_package_identity.py
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Run atomizer tests
         run: pytest tests/python/ -v -k "atomizer" --tb=short
@@ -630,8 +632,6 @@ jobs:
     runs-on: ubuntu-22.04
     env:
       BNG3_PYTHON_TEST_MODE: installed
-      BNG3_SOURCE_REVISION: ${{ github.sha }}
-      BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -659,12 +659,18 @@ jobs:
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
+      - name: Verify sdist package identity
+        run: >-
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python"
+          scripts/ci/check_python_package_identity.py
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
       - name: Smoke installed package
         shell: bash
         run: |
           set -eu
-          "$RUNNER_TEMP/bng3-package-smoke/bin/python" \
-            scripts/ci/check_python_package_identity.py
           "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pytest \
             tests/python/test_thermodynamic_parse_path.py -q --tb=short
           "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --version
