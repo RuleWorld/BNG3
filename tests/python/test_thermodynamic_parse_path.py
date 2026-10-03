@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 from unittest import mock
 
@@ -33,8 +32,7 @@ import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
-sys.path.insert(0, str(_REPO_ROOT / "build" / "cpp"))
-import _bionetgen_cpp as _cpp  # noqa: E402
+import bionetgen._bionetgen_cpp as _cpp
 
 _HEADER = """begin model
 begin parameters
