@@ -241,6 +241,10 @@ jobs:
     name: PyBioNetGen API compatibility
     needs: oracle-lock
     runs-on: ubuntu-22.04
+    env:
+      BNG3_PYTHON_TEST_MODE: installed
+      BNG3_SOURCE_REVISION: ${{ github.sha }}
+      BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -253,7 +257,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
           python -m pip install scikit-build-core pybind11 pytest numpy
-          python -m pip install -e ".[full,dev]"
+          python -m pip install ".[full,dev]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
 

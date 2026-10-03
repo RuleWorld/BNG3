@@ -58,15 +58,37 @@ def test_legacy_run_supports_method_and_time_overrides(tmp_path):
     assert np.allclose(data["time"], np.linspace(2.0, 3.0, 5))
 
 
-def test_module_entry_point_exposes_cli_help():
+def test_module_entry_point_exposes_cli_help(tmp_path):
     env = os.environ.copy()
-    source_python = str(REPO / "python")
-    env["PYTHONPATH"] = os.pathsep.join(
-        [source_python, str(REPO / "build" / "cpp"), env.get("PYTHONPATH", "")]
-    )
+    package_path = Path(bionetgen.__file__).resolve()
+    source_package = (REPO / "python" / "bionetgen").resolve()
+    source_mode = package_path.is_relative_to(source_package)
+    if source_mode:
+        extension_dir = REPO / "build" / "cpp"
+        env["PYTHONPATH"] = os.pathsep.join(
+            [
+                str(REPO / "python"),
+                str(extension_dir),
+                env.get("PYTHONPATH", ""),
+            ]
+        )
+        code = (
+            "import pathlib, runpy, sys, bionetgen; "
+            "bionetgen.__path__.insert(0, "
+            "str(pathlib.Path(sys.argv.pop(1)).resolve())); "
+            "runpy.run_module('bionetgen', run_name='__main__', alter_sys=True)"
+        )
+        command = [sys.executable, "-c", code, str(extension_dir), "--help"]
+        cwd = REPO
+    else:
+        # An installed-mode child must not inherit paths that could replace
+        # the wheel being tested. Its working directory is outside the repo.
+        env.pop("PYTHONPATH", None)
+        command = [sys.executable, "-m", "bionetgen", "--help"]
+        cwd = tmp_path
     result = subprocess.run(
-        [sys.executable, "-m", "bionetgen", "--help"],
-        cwd=REPO,
+        command,
+        cwd=cwd,
         env=env,
         capture_output=True,
         text=True,
