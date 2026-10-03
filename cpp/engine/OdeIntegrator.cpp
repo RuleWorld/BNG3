@@ -2704,6 +2704,28 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
     return propensity;
 }
 
+namespace {
+
+// Per-thread scratch for integrateSSA.
+//
+// The batch pool drives one trajectory per call against a single shared
+// integrator, so the state vector, the propensity table, its prefix sums and
+// the species->reaction dependency graph are rebuilt once per trajectory --
+// a million times over a pool run -- while depending only on the compiled
+// network.  Holding them here makes that rebuild a resize instead of a
+// fresh allocation.  Every field is written in full before it is read, and
+// integrateSSA never recurses, so nothing leaks between trajectories or
+// between threads.
+struct SsaScratch {
+    std::vector<double> state;
+    std::vector<double> propensities;
+    std::vector<double> prefixSums;
+    std::vector<std::size_t> depOffset;
+    std::vector<std::size_t> depReactions;
+};
+
+} // namespace
+
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Direct Gillespie algorithm (matches BNG2 implementation)
     for (const auto& rxn : compiledRxns_) {
@@ -2715,17 +2737,22 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     const auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     const bool explicitTimes = !opts.sampleTimes.empty();
-    std::mt19937_64 rng;
-    if (opts.seed > 0) {
-        rng.seed(opts.seed);
-    } else {
-        std::random_device rd;
-        rng.seed(rd());
-    }
+    // Constructing with the value seeds the engine once.  Declaring the engine
+    // and then calling seed() runs the 312-word state initialisation twice per
+    // trajectory and throws the first result away; a pool run pays that on
+    // every trajectory for a state the very next line overwrites.  The seeded
+    // state is the same either way, so the draw sequence is unchanged.
+    const std::mt19937_64::result_type seedValue =
+        opts.seed > 0
+            ? static_cast<std::mt19937_64::result_type>(opts.seed)
+            : static_cast<std::mt19937_64::result_type>(std::random_device{}());
+    std::mt19937_64 rng(seedValue);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     // Initialize state (round to nearest integer)
-    std::vector<double> y(nSpecies_);
+    static thread_local SsaScratch scratch;
+    auto& y = scratch.state;
+    y.resize(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         y[i] = std::round(network_.species.get(i).getAmount());
     }
@@ -2769,13 +2796,22 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
     };
 
-    // Compute initial propensities
-    std::vector<double> propensities(compiledRxns_.size());
-    std::vector<double> prefixSums(compiledRxns_.size());
+    // Propensity table and the prefix sums the selector searches.  Both live
+    // in per-thread scratch: a batch pool drives one trajectory per call
+    // against a single shared integrator, so these are rebuilt once per
+    // trajectory -- a million times over a pool run -- while depending only
+    // on the compiled network.  Each is written in full before it is read.
+    const std::size_t nRxns = compiledRxns_.size();
+    auto& propensities = scratch.propensities;
+    auto& prefixSums = scratch.prefixSums;
+    propensities.resize(nRxns);
+    prefixSums.resize(nRxns);
+    // Functional-rate coefficients are re-evaluated from the current state,
+    // so they stay local to this trajectory; only the value tables are reused.
     std::vector<double> rateCoefficients;
     if (hasFunctionalRates_) {
-        rateCoefficients.resize(compiledRxns_.size());
-        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+        rateCoefficients.resize(nRxns);
+        for (std::size_t r = 0; r < nRxns; ++r) {
             rateCoefficients[r] = compiledRxns_[r].rateConstant;
         }
     }
@@ -2784,6 +2820,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                    ? rateCoefficients[r]
                    : compiledRxns_[r].rateConstant;
     };
+=====
     double totalPropensity = 0.0;
 
     // Reaction selection needs the first cumulative propensity that reaches
@@ -2796,68 +2833,82 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // reproduces the original cumulative scan exactly for any sign pattern.
     bool monotonePrefix = true;
 
-    auto recomputePropensities = [&]() {
+    auto recomputeAll = [&]() {
         if (hasFunctionalRates_) {
             evaluateFunctionalRateCoefficients(
                 t, y.data(), rateCoefficients.data(), true);
         }
         totalPropensity = 0.0;
         monotonePrefix = true;
-        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-            const double rateCoefficient = rateCoefficientFor(r);
-            if (!(rateCoefficient >= 0.0)) {
+        for (std::size_t r = 0; r < nRxns; ++r) {
+            const double rateCoef = rateCoefficientFor(r);
+            if (!(rateCoef >= 0.0)) {
                 monotonePrefix = false;
             }
             propensities[r] = computePropensity(
-                compiledRxns_[r], y, rateCoefficient);
+                compiledRxns_[r], y, rateCoef);
             totalPropensity += propensities[r];
             prefixSums[r] = totalPropensity;
         }
     };
+            prefixSums[r] = totalPropensity;
+        }
+    };
 
-    recomputePropensities();
+    recomputeAll();
 
     // Species -> reactions whose propensity reads that species.  A propensity
     // consults only reactantIndices (see computePropensity), so firing a
     // reaction can only change propensities of reactions sharing a species
     // with its reactants or products.  Every other stored propensity is
-    // already exact, and refreshAfterEvent rebuilds totalPropensity with the
-    // same in-order summation as recomputePropensities(), keeping each
-    // propensity value, the total, and therefore the seeded trajectory
-    // bit-identical to recomputing everything on every step.
-    std::vector<std::size_t> depOffset(nSpecies_ + 1, 0);
-    for (const auto& rxn : compiledRxns_) {
-        for (const auto idx : rxn.reactantIndices) {
-            // Reactant indices are network species indices, so they are in
-            // [0, nSpecies_) — the same invariant the pre-existing ODE and
-            // SSA code relies on when it reads y[idx].  depOffset is sized
-            // nSpecies_ + 1 precisely so idx + 1 stays in range; assert the
-            // invariant where the index first crosses this new write.
-            // Beyond the assertion, this bound was audited empirically over
-            // the repository's generated networks (perfOracle's audit, 2026-
-            // 09-30): 2,711 generated .net files, 792,960 reaction lines,
-            // max 1-based reactant index == nSpecies and zero references
-            // outside [1, nSpecies] in every file, so idx+1 never exceeds
-            // depOffset[nSpecies_].
-            assert(idx < nSpecies_);
-            ++depOffset[idx + 1];
+    // already exact, and is what recomputeAll would re-derive.
+    //
+    // The graph earns its two setup passes only when the reactions it skips
+    // outnumber the reactions it refreshes.  On a small network most of the
+    // table is affected anyway, while the O(nRxns) prefix rebuild that follows
+    // every event is paid either way, so recomputeAll is cheaper both to set
+    // up and to run.  The threshold is the point past which skipping the
+    // unaffected reactions dominates: each one saved is a propensity
+    // evaluation the per-event pass no longer does, against a graph that
+    // costs two traversals of the whole reaction table per trajectory.
+    constexpr std::size_t dependencyGraphThreshold = 64;
+    const bool useDependencyGraph = nRxns > dependencyGraphThreshold;
+
+    auto& depOffset = scratch.depOffset;
+    auto& depReactions = scratch.depReactions;
+    if (useDependencyGraph) {
+        depOffset.assign(nSpecies_ + 1, 0);
+        for (const auto& rxn : compiledRxns_) {
+            for (const auto idx : rxn.reactantIndices) {
+                // Reactant indices are network species indices, so they are in
+                // [0, nSpecies_) — the same invariant the pre-existing ODE and
+                // SSA code relies on when it reads y[idx].  depOffset is sized
+                // nSpecies_ + 1 precisely so idx + 1 stays in range; assert the
+                // invariant where the index first crosses this new write.
+                // Beyond the assertion, this bound was audited empirically over
+                // the repository's generated networks (perfOracle's audit, 2026-
+                // 09-30): 2,711 generated .net files, 792,960 reaction lines,
+                // max 1-based reactant index == nSpecies and zero references
+                // outside [1, nSpecies] in every file, so idx+1 never exceeds
+                // depOffset[nSpecies_].
+                assert(idx < nSpecies_);
+                ++depOffset[idx + 1];
+            }
         }
-    }
-    for (std::size_t i = 0; i < nSpecies_; ++i) {
-        depOffset[i + 1] += depOffset[i];
-    }
-    std::vector<std::size_t> depReactions(depOffset[nSpecies_]);
-    {
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            depOffset[i + 1] += depOffset[i];
+        }
+        depReactions.resize(depOffset[nSpecies_]);
         std::vector<std::size_t> cursor(depOffset.begin(),
                                         depOffset.end() - 1);
-        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+        for (std::size_t r = 0; r < nRxns; ++r) {
             for (const auto idx : compiledRxns_[r].reactantIndices) {
                 depReactions[cursor[idx]++] = r;
             }
         }
     }
 
-    auto refreshAfterEvent = [&](std::size_t firedIndex) {
+    auto refreshAffected = [&](std::size_t firedIndex) {
         const auto& fired = compiledRxns_[firedIndex];
         if (hasFunctionalRates_) {
             // An observable-backed function may read any species in the
@@ -2888,7 +2939,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
         totalPropensity = 0.0;
         monotonePrefix = true;
-        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+        for (std::size_t r = 0; r < nRxns; ++r) {
             if (!(rateCoefficientFor(r) >= 0.0)) {
                 monotonePrefix = false;
             }
@@ -2990,10 +3041,16 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             y[idx] += 1.0;
         }
 
-        // Recompute propensities.  Only reactions that read a species whose
-        // amount this event changed can differ from the previous step; the
-        // total is rebuilt over all reactions in the original order.
-        refreshAfterEvent(selectedRxn);
+        // Recompute propensities.  On a network with a dependency graph only
+        // reactions that read a species whose amount this event changed can
+        // differ from the previous step, and the total is rebuilt over all
+        // reactions in the original order; on a small network the whole table
+        // is re-derived instead.  Both are bit-identical to each other.
+        if (useDependencyGraph) {
+            refreshAffected(selectedRxn);
+        } else {
+            recomputeAll();
+        }
 
         if (opts.outputStepInterval == 0 || explicitTimes) {
             // Include an explicit sample that coincides with the event using
