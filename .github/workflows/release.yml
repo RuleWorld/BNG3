@@ -61,7 +61,9 @@ jobs:
           - os: ubuntu-22.04
             artifact_name: bionetgen-linux-x86_64
             binary_ext: ""
-          - os: macos-13
+          # macos-13 is retired; macos-15-intel is the supported x86_64 label
+          # for public GitHub-hosted runners.
+          - os: macos-15-intel
             artifact_name: bionetgen-macos-x86_64
             binary_ext: ""
           - os: macos-14
@@ -139,7 +141,7 @@ jobs:
           - os: ubuntu-22.04
             macos_arch: x86_64
             macos_deployment_target: "11.0"
-          - os: macos-13
+          - os: macos-15-intel
             macos_arch: x86_64
             macos_deployment_target: "10.13"
           - os: macos-14

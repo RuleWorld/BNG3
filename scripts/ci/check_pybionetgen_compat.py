@@ -9,6 +9,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from check_python_package_identity import inspect_installed_package
+
 REPO = Path(__file__).resolve().parents[2]
 REQUIRED_SYMBOLS = {"bngmodel", "run", "sim_getter"}
 REQUIRED_RUN_PARAMETERS = {
@@ -53,6 +55,11 @@ def source_run_parameters(source_root: Path) -> set[str]:
 
 
 def run_compatibility(source_root: Path, summary_file: Path | None = None) -> int:
+    identity = inspect_installed_package()
+    print("BNG3 installed package identity:")
+    for key, value in identity.items():
+        print(f"  {key}: {value}")
+
     exports = source_exports(source_root)
     source_parameters = source_run_parameters(source_root)
     missing = REQUIRED_SYMBOLS - exports
@@ -71,6 +78,14 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
     env = os.environ.copy()
     env.setdefault("MPLBACKEND", "Agg")
     env.setdefault("SYMPY_USE_GMPY", "0")
+    env["BNG3_PYTHON_TEST_MODE"] = "installed"
+    # Identity is checked above before discarding import overrides. Pytest then
+    # runs from an installed-package environment with no source shadow path.
+    env.pop("PYTHONPATH", None)
+    # These values annotate the identity record above. Keep them out of tests
+    # so provenance helpers under test use their own explicit fixtures.
+    env.pop("BNG3_SOURCE_REVISION", None)
+    env.pop("BNG3_PR_HEAD_SHA", None)
     command = [
         sys.executable,
         "-m",
@@ -86,6 +101,14 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
         with summary_file.open("a", encoding="utf-8") as stream:
             stream.write("### PyBioNetGen compatibility\n\n")
             stream.write(f"- Source checkout: `{source_root}`\n")
+            stream.write(f"- BNG3 package file: `{identity['package_file']}`\n")
+            stream.write(f"- BNG3 native extension: `{identity['native_extension']}`\n")
+            stream.write(
+                f"- Native extension SHA-256: `{identity['native_extension_sha256']}`\n"
+            )
+            stream.write(f"- Tested source revision: `{identity['source_revision']}`\n")
+            if identity["pr_head_sha"]:
+                stream.write(f"- PR head SHA: `{identity['pr_head_sha']}`\n")
             stream.write(
                 "- Source-derived root symbols: "
                 + ", ".join(sorted(REQUIRED_SYMBOLS))
@@ -107,7 +130,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         return run_compatibility(args.source_root.resolve(), args.summary_file)
-    except (OSError, UnicodeError, SyntaxError, ValueError) as exc:
+    except (OSError, RuntimeError, UnicodeError, SyntaxError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
