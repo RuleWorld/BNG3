@@ -379,10 +379,20 @@ def test_ssts_checkout_preflight_rejects_dirty_or_wrong_origin(
 ):
     suite, lock, _revision = _locked_ssts_checkout(tmp_path)
     if mutation == "dirty":
-        (suite / "untracked.txt").write_text("not a locked checkout\n", encoding="utf-8")
+        (suite / "untracked.txt").write_text(
+            "not a locked checkout\n", encoding="utf-8"
+        )
     else:
         subprocess.run(
-            ["git", "-C", str(suite), "remote", "set-url", "origin", "https://example.com/other.git"],
+            [
+                "git",
+                "-C",
+                str(suite),
+                "remote",
+                "set-url",
+                "origin",
+                "https://example.com/other.git",
+            ],
             check=True,
         )
 
@@ -947,6 +957,31 @@ end actions
         'begin actions\n  setParameter("k", 2)\n'
         "  generate_network({overwrite=>1})\nend actions\n"
     )
+
+
+def test_cross_validation_drops_runtime_and_continuation_actions():
+    """Network-only staging must not retain simulations or state resets."""
+
+    staged = _network_only_text("""begin model
+end model
+begin actions
+simulate_ps({t_end=>10})
+simulate_rm({t_end=>10})
+parameter_scan({method=>"protocol"})
+saveConcentrations("post2")
+resetConcentrations("post2")
+end actions
+""")
+
+    assert "generate_network({overwrite=>1})" in staged
+    for action in (
+        "simulate_ps",
+        "simulate_rm",
+        "parameter_scan",
+        "saveConcentrations",
+        "resetConcentrations",
+    ):
+        assert action not in staged
 
 
 def test_weekly_cross_validation_uses_structural_oracle_runner():
