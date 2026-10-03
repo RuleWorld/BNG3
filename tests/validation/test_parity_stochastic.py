@@ -58,5 +58,6 @@ def test_ssa_ensemble_vs_perl(model_name, api, work_dir):
         test_runs,
         min_ref_runs=200,
         min_test_runs=200,
+        columns=compare.COLUMNS_EXACT,
     )
     assert diff.ok, f"SSA vs Perl ensemble mismatch [{model_name}]: {diff.summary()}"

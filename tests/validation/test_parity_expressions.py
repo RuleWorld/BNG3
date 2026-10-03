@@ -1,8 +1,7 @@
-"""Rate-law / local-function network parity.
+"""Network/rate parity for deterministic local-function fixtures.
 
-The direct expression-vector/RHS gate remains open. This check compares the
-action-aware BNG3 network and emitted rate laws with the independent BNG2
-network for deterministic function-heavy fixtures.
+The separate ``test_parity_rhs`` module compares instantaneous derivatives
+across all five frozen expression-tier fixtures.
 """
 
 from __future__ import annotations

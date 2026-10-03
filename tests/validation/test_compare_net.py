@@ -168,6 +168,51 @@ def test_function_rate_normalizes_negative_product_parentheses(tmp_path):
     assert compare_net(reference, generated).ok
 
 
+def test_function_rate_consumes_empty_call_when_resolving_definition(tmp_path):
+    def write(path: Path, degradation: str) -> Path:
+        path.write_text(
+            "\n".join(
+                [
+                    "begin parameters",
+                    "    1 kDegProtNuc 8",
+                    "    2 Km 10",
+                    "end parameters",
+                    "begin species",
+                    "    1 Prot(loc~NUCLEUS) 1",
+                    "    2 Trash() 0",
+                    "end species",
+                    "begin functions",
+                    f"    1 DegFunction() {degradation}",
+                    "    2 _rateLaw() kDegProtNuc*DegFunction()",
+                    "end functions",
+                    "begin reactions",
+                    "    1 1 2 _rateLaw",
+                    "end reactions",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    reference = parse_net(write(tmp_path / "reference.net", "NucProt/(Km+NucProt)"))
+    generated = parse_net(
+        write(tmp_path / "generated.net", "(NucProt / (Km + NucProt))")
+    )
+    assert reference is not None
+    assert generated is not None
+    assert compare_net(reference, generated).ok
+
+
+def test_function_rate_comparison_keeps_nonempty_calls_structural():
+    from tests.validation.compare import _resolve_rate
+
+    bng2_stub = _resolve_rate("TFUN(x,'data')", {}, "value")
+    bng3_call = _resolve_rate("tfun('data',x)", {}, "value")
+
+    assert bng2_stub != bng3_call
+
+
 def test_same_counts_with_different_rate_values_fail(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "0.5"))
     generated = parse_net(_net(tmp_path / "generated.net", "1.0"))

@@ -61,7 +61,8 @@ def run_cli_path(
 
     work_dir.mkdir(parents=True, exist_ok=True)
     local = work_dir / src.name
-    shutil.copy2(src, local)
+    if src.resolve() != local.resolve():
+        shutil.copy2(src, local)
 
     try:
         proc = subprocess.run(

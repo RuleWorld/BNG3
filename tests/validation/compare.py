@@ -59,6 +59,9 @@ class Network:
     # BNG2 and BNG3 use different labels for some groups; the indexed weighted
     # membership is the semantic contract used by the network engine.
     groups: dict[int, tuple[str, dict[int, float]]] = field(default_factory=dict)
+    # Names of zero-argument user functions. Their call suffix is present in
+    # function definitions but omitted from reaction rate fields.
+    rate_functions: set[str] = field(default_factory=set)
 
     @property
     def n_species(self) -> int:
@@ -104,7 +107,12 @@ _SAFE_NAMES = {
 }
 
 
-def _resolve_rate(token: str, rate_defs: dict[str, str], rate_mode: str) -> str:
+def _resolve_rate(
+    token: str,
+    rate_defs: dict[str, str],
+    rate_mode: str,
+    rate_functions: set[str] | None = None,
+) -> str:
     """Turn a reaction's 4th-field rate token into a comparison key.
 
     rate_mode="string"  -> the token verbatim (old behavior; byte-identical names).
@@ -123,7 +131,7 @@ def _resolve_rate(token: str, rate_defs: dict[str, str], rate_mode: str) -> str:
 
     # Resolve complex top-level expressions (e.g. "2*rateLaw4" or "rateLaw1*2")
     # by evaluating them as expressions directly rather than just single symbol names.
-    val, expr = _eval_expr(tok, rate_defs, set())
+    val, expr = _eval_expr(tok, rate_defs, set(), rate_functions or set())
     if val is not None:
         return repr(round(val, 12))
     # Non-constant (references observables/time): compare the substituted,
@@ -138,7 +146,9 @@ _NUMBER_TOKEN = re.compile(
 )
 
 
-def _eval_symbol(name: str, defs: dict[str, str], seen: set[str]):
+def _eval_symbol(
+    name: str, defs: dict[str, str], seen: set[str], rate_functions: set[str]
+):
     """Resolve a symbol to (value|None, substituted_expression_string).
 
     Returns a float value when the symbol constant-folds; otherwise None and the
@@ -153,28 +163,44 @@ def _eval_symbol(name: str, defs: dict[str, str], seen: set[str]):
         except ValueError:
             return None, name
     seen = seen | {name}
-    return _eval_expr(defs[name], defs, seen)
+    return _eval_expr(defs[name], defs, seen, rate_functions)
 
 
-def _eval_expr(expr: str, defs: dict[str, str], seen: set[str]):
+def _eval_expr(
+    expr: str,
+    defs: dict[str, str],
+    seen: set[str],
+    rate_functions: set[str] | None = None,
+):
     """Evaluate a rate expression. (value|None, substituted_expr_string)."""
     toks = _TOKEN.findall(expr)
+    rate_functions = rate_functions or set()
     # Substitute identifiers (that are defined parameters) for the structural form.
     sub_parts = []
     constant = True
-    for t in toks:
+    index = 0
+    while index < len(toks):
+        t = toks[index]
         if re.match(r"^[A-Za-z_]\w*$", t):
             if t in _SAFE_NAMES:
                 sub_parts.append(t)
             else:
-                v, sub = _eval_symbol(t, defs, seen)
+                v, sub = _eval_symbol(t, defs, seen, rate_functions)
                 if v is None:
                     constant = False
                     sub_parts.append(sub)
                 else:
                     sub_parts.append(repr(v))
+            index += 1
+            # A no-argument user function is written as f() in its definition,
+            # while its expanded body is just an expression. Consume only the
+            # empty call of known zero-argument functions; non-empty calls such
+            # as TFUN(path, value) stay structural and fail closed.
+            if t in rate_functions and toks[index : index + 2] == ["(", ")"]:
+                index += 2
         else:
             sub_parts.append(t)
+            index += 1
     sub_expr = "".join(sub_parts)
 
     if not constant:
@@ -355,10 +381,33 @@ def _canon_expr(expr: str) -> str:
                     return node.left
             return node
 
+    class NormalizeProductOfQuotient(ast.NodeTransformer):
+        def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+            node = self.generic_visit(node)
+            if (
+                isinstance(node.op, ast.Mult)
+                and isinstance(node.right, ast.BinOp)
+                and isinstance(node.right.op, ast.Div)
+            ):
+                # Normalize a*(b/c) to a*b/c. BNG2 and BNG3 differ in whether
+                # the parser retains this redundant grouping in function
+                # definitions; the arithmetic expression is the same.
+                return ast.BinOp(
+                    left=ast.BinOp(
+                        left=node.left,
+                        op=ast.Mult(),
+                        right=node.right.left,
+                    ),
+                    op=ast.Div(),
+                    right=node.right.right,
+                )
+            return node
+
     try:
         tree = ast.parse(result.replace("^", "**"), mode="eval")
         if supported(tree):
             normalized = StripUnitMultiplications().visit(tree)
+            normalized = NormalizeProductOfQuotient().visit(normalized)
             result = re.sub(r"\s+", "", ast.unparse(normalized))
     except (SyntaxError, ValueError):
         pass
@@ -906,6 +955,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
     species: dict[int, str] = {}
     raw_reactions: list[tuple[list[int], list[int], str]] = []
     rate_defs: dict[str, str] = {}
+    rate_functions: set[str] = set()
     groups: dict[str, dict[int, float]] = {}
     section = None
     has_species_block = False
@@ -957,12 +1007,23 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
             # "<name> <expr...>" or "<name>=<expr>".
             if "=" in stripped and len(parts) >= 1 and "=" in parts[0]:
                 name, _, expr = stripped.partition("=")
-                rate_defs[_rate_definition_key(name)] = _norm(expr)
+                key = _rate_definition_key(name)
+                rate_defs[key] = _norm(expr)
+                if section == "functions" and name.strip().endswith("()"):
+                    rate_functions.add(key)
                 continue
             if len(parts) >= 3 and parts[0].isdigit():
-                rate_defs[_rate_definition_key(parts[1])] = " ".join(parts[2:])
+                name = parts[1]
+                expression = " ".join(parts[2:])
             elif len(parts) >= 2:
-                rate_defs[_rate_definition_key(parts[0])] = " ".join(parts[1:])
+                name = parts[0]
+                expression = " ".join(parts[1:])
+            else:
+                continue
+            key = _rate_definition_key(name)
+            rate_defs[key] = expression
+            if section == "functions" and name.strip().endswith("()"):
+                rate_functions.add(key)
 
         elif section == "groups":
             parts = _norm(stripped).split(" ", 2)
@@ -1009,6 +1070,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         _raw=raw_reactions,
         rate_mode=rate_mode,
         groups=groups,
+        rate_functions=rate_functions,
     )
     _rekey(net, rate_mode)
     return net
@@ -1024,7 +1086,7 @@ def _rekey(net: Network, rate_mode: str) -> None:
         except KeyError:
             r_strs = tuple(f"?{i}" for i in sorted(reactants))
             p_strs = tuple(f"?{i}" for i in sorted(products))
-        rate_key = _resolve_rate(rate, net.rate_defs, rate_mode)
+        rate_key = _resolve_rate(rate, net.rate_defs, rate_mode, net.rate_functions)
         multiset[(r_strs, p_strs, rate_key)] += 1
     net.reaction_multiset = multiset
 
@@ -1135,8 +1197,7 @@ def _species_prefilter_key(
             for label in labels
         ]
     multiset = Counter(
-        (label, len(degree))
-        for label, degree in zip(labels, graph.adjacency)
+        (label, len(degree)) for label, degree in zip(labels, graph.adjacency)
     )
     return ("graph", graph.header, tuple(sorted(multiset.items())))
 
@@ -1222,7 +1283,9 @@ def _reaction_view(
             )
         )
         rate_key = (
-            _resolve_rate(rate, net.rate_defs, net.rate_mode) if compare_rates else ""
+            _resolve_rate(rate, net.rate_defs, net.rate_mode, net.rate_functions)
+            if compare_rates
+            else ""
         )
         key = (
             (reactant_ids, product_ids, rate_key)
@@ -1396,6 +1459,47 @@ class TrajDiff:
         return s if not self.note else f"{s} ({self.note})"
 
 
+COLUMNS_INTERSECT = "intersect"
+COLUMNS_EXACT = "exact"
+COLUMN_MODES = (COLUMNS_INTERSECT, COLUMNS_EXACT)
+
+
+def _observable_columns(columns: list[str]) -> list[str]:
+    return [column for column in columns if column.lower() != "time"]
+
+
+def _duplicate_columns(columns: list[str]) -> list[str]:
+    return sorted(column for column, count in Counter(columns).items() if count > 1)
+
+
+def _column_mismatch_note(ref_cols: list[str], test_cols: list[str], mode: str) -> str:
+    if mode not in COLUMN_MODES:
+        raise ValueError(
+            f"unknown column mode {mode!r}; expected one of {list(COLUMN_MODES)}"
+        )
+
+    for side, columns in (("ref", ref_cols), ("test", test_cols)):
+        duplicates = _duplicate_columns(columns)
+        if duplicates:
+            return f"duplicate column names in {side}: {duplicates}"
+
+    if mode == COLUMNS_EXACT:
+        ref_observables = _observable_columns(ref_cols)
+        test_observables = _observable_columns(test_cols)
+        only_ref = [
+            column for column in ref_observables if column not in test_observables
+        ]
+        only_test = [
+            column for column in test_observables if column not in ref_observables
+        ]
+        if only_ref or only_test:
+            return (
+                f"observable column sets differ: only in ref {only_ref}, "
+                f"only in test {only_test}"
+            )
+    return ""
+
+
 def compare_trajectories(
     ref: np.ndarray,
     ref_cols: list[str],
@@ -1404,14 +1508,28 @@ def compare_trajectories(
     *,
     rtol: float = 1e-6,
     atol: float = 1e-12,
+    columns: str = COLUMNS_INTERSECT,
 ) -> TrajDiff:
-    """Compare two trajectories column-by-column on shared observables.
+    """Compare two trajectories on their shared or exactly matching columns.
 
     Aligns on the common time grid (intersection of time points, exact match).
     Relative error uses max(|ref|, atol) in the denominator so near-zero
-    observables don't blow up the metric.
+    observables don't blow up the metric. ``intersect`` compares only shared
+    observable names; ``exact`` first requires equal observable-name sets.
+    Column order is not significant because values are aligned by name. Both
+    modes reject duplicate column names because those values cannot be aligned
+    unambiguously.
     """
-    common = [c for c in ref_cols if c in test_cols and c.lower() != "time"]
+    note = _column_mismatch_note(ref_cols, test_cols, columns)
+    if note:
+        return TrajDiff(False, np.inf, "", np.inf, note)
+
+    ref_observables = _observable_columns(ref_cols)
+    test_observables = _observable_columns(test_cols)
+    if columns == COLUMNS_EXACT:
+        common = ref_observables
+    else:
+        common = [c for c in ref_observables if c in test_observables]
     if not common:
         return TrajDiff(False, np.inf, "", np.inf, "no shared observable columns")
 
@@ -1496,15 +1614,22 @@ def compare_stochastic(
     max_violation_frac: float = 0.02,
     min_ref_runs: int = 2,
     min_test_runs: int = 2,
+    columns: str = COLUMNS_INTERSECT,
 ) -> EnsembleDiff:
     """Distributional comparison of two stochastic ensembles.
 
-    For each shared observable at each shared time point, compare the two
+    For each selected observable at each shared time point, compare the two
     independent ensemble means using the pooled standard error
     sqrt(SE(ref)^2 + SE(test)^2). Pass if the fraction of violating points is
     <= max_violation_frac (allows for the few tail points expected at 3 sigma
-    over many checks).
+    over many checks). ``intersect`` compares shared observable names;
+    ``exact`` requires equal observable-name sets. Duplicate names always fail.
     """
+    if columns not in COLUMN_MODES:
+        raise ValueError(
+            f"unknown column mode {columns!r}; expected one of {list(COLUMN_MODES)}"
+        )
+
     if len(ref_runs) < min_ref_runs or len(test_runs) < min_test_runs:
         return EnsembleDiff(
             False,
@@ -1518,12 +1643,37 @@ def compare_stochastic(
             ),
         )
 
+    for side, runs in (("ref", ref_runs), ("test", test_runs)):
+        for index, (_, run_cols) in enumerate(runs):
+            duplicates = _duplicate_columns(run_cols)
+            if duplicates:
+                return EnsembleDiff(
+                    False,
+                    0,
+                    0,
+                    np.inf,
+                    "",
+                    note=(
+                        f"duplicate column names in {side} ensemble run "
+                        f"{index + 1}: {duplicates}"
+                    ),
+                )
+
     rmean, rse, rcols, rt = _ensemble_stats(ref_runs)
     tmean, tse, tcols, tt = _ensemble_stats(test_runs)
     if rmean is None or tmean is None:
         return EnsembleDiff(False, 0, 0, np.inf, "", note="empty ensemble")
 
-    common = [c for c in rcols if c in tcols and c.lower() != "time"]
+    note = _column_mismatch_note(rcols, tcols, columns)
+    if note:
+        return EnsembleDiff(False, 0, 0, np.inf, "", note=note)
+
+    ref_observables = _observable_columns(rcols)
+    test_observables = _observable_columns(tcols)
+    if columns == COLUMNS_EXACT:
+        common = ref_observables
+    else:
+        common = [c for c in ref_observables if c in test_observables]
     ridx, tidx = _align_times(rt, tt)
     if not common or len(ridx) < 2:
         return EnsembleDiff(False, 0, 0, np.inf, "", note="no shared trajectory")

@@ -1,0 +1,9 @@
+ERROR exhaustion_switch (Perl ABORT: Parameter 'Hill' is referenced but not defined)
+
+============================================================
+CROSS-VALIDATION SUMMARY
+  Total models: 1
+  PASS:  0
+  FAIL:  0
+  ERROR: 1
+============================================================
