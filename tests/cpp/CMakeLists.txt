@@ -431,3 +431,14 @@ target_include_directories(test_correctness_regressions PRIVATE
 target_link_libraries(test_correctness_regressions PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast bng_parser bng_compile)
 catch_discover_tests(test_correctness_regressions)
+
+# test_node_label_parity — NodeType/EntityType/BondType label construction must
+# stay byte-identical to the historical stringstream-based construction.
+add_executable(test_node_label_parity test_node_label_parity.cpp)
+target_include_directories(test_node_label_parity PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/core
+)
+target_link_libraries(test_node_label_parity PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_core)
+catch_discover_tests(test_node_label_parity)
