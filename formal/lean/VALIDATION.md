@@ -1,106 +1,116 @@
 # Validation record
 
-## Validation performed in this environment
+## Pinned-toolchain results
 
-From `formal/lean/` at the 2026-09-14 checkpoint:
+Refreshed in this checkout on 2026-10-03. The source pins
+leanprover/lean4:v4.33.1.
 
-```bash
-./scripts/validate_all.sh
-```
+~~~text
+lake build                         -> success, 36 jobs
+lake env lean tests/Smoke.lean     -> success
+lake env lean tests/Coverage.lean  -> success
+scripts/static_validate.py         -> PASS, 37 Lean files
+scripts/check_axiom_dependencies.sh -> AXIOM AUDIT PASS
+scripts/check_nfnext_header_contract.py -> PASS
+scripts/run_nfnext_contract.sh     -> PASS, 18/18 checks
+scripts/check_harness_itself.sh    -> PASS, 32/32 mutation and malformed-input cases
+production NFnext CTest            -> PASS, 2/2 tests
+~~~
 
-Current local result:
+The production CTest run includes architecture_nfnext_reference and
+architecture_nfnext_bng_lowering_bridge. The bridge test parses a BNGL fixture,
+constructs bng::compile::CompiledModel, then calls nfnext::lowerFromBioNetGen.
+The separate test_nfnext.cpp instead round-trips a hand-built ModelIR through
+ModelCache; it does not test the parser-to-lowering bridge.
 
-```text
-STATIC VALIDATION PASSED (36 Lean files checked)
-NFNEXT HEADER CONTRACT PASS
-NFNEXT CONTRACT PASS: 18/18 checks
-LEAN KERNEL CHECK SKIPPED: lake is not installed
-```
+The current MatchOnce implementation and its symmetric-dimer assertions pass
+Coverage.lean. The test checks that two embeddings into one connected dimer
+produce one channel event, while two matching molecules in separate complexes
+remain two events. Earlier failure banners in that file described a defect
+that is now fixed and have been removed.
 
-The current continuation adds a bounded production-boundary contract to the
-normal architecture tests. Lean and C++ independently use
-`A(x~u) + B(y) -> A(x~p!1).B(y!1) k`; the C++ side crosses BNGL parsing,
-`bng::compile::CompiledModel`, and `nfnext::lowerFromBioNetGen`, checking
-distinct-reactant molecularity, a state update, and a new bond. This is
-correspondence evidence for one NFnext slice, not complete kernel verification
-or backend equivalence.
+## Kernel and executable-check boundaries
 
-### Static Lean checks
+The default Lake target compiles BNG/** only. Smoke.lean and Coverage.lean are
+separate commands and must be invoked explicitly. A successful lake build alone
+does not establish that either test file passes.
 
-`static_validate.py` checks:
+Assertions proved with rfl or decide are kernel-reduced. Most concrete fixture
+assertions use native_decide, which evaluates through Lean's compiled evaluator
+and introduces a kernel-opaque per-declaration axiom. Those assertions are
+executable regression checks, not kernel-reduced proofs. The named theorem
+nfnextBridgeContract_holds is also a worked fixture assertion using
+native_decide.
 
-- all local `import BNG.*` targets exist;
-- comments/strings/delimiters are structurally balanced;
-- no `sorry`, `admit`, or `axiom` proof placeholders occur in code;
-- required semantic modules are present.
+check_axiom_dependencies.sh audits the named library declarations listed in
+that script. The measured dependencies are:
 
-These checks do **not** type-check Lean.
+- No axioms: BNG.source_text_is_not_semantics, BNG.source_irrelevance_again,
+  BNG.rule_side_roundtrip, BNG.PatternSide.flip_involutive,
+  BNG.pattern_lowering_keeps_bonds, and BNG.lower_preserves_bond_count.
+- propext only: BNG.pattern_lowering_keeps_nodes,
+  BNG.rule_lowering_keeps_edits, BNG.lower_preserves_molecule_count,
+  BNG.lower_preserves_mutation_count, BNG.backend_one_edit_refines_semantics,
+  BNG.execute_lowered_mutation_eq_reference, BNG.connectedFrom_empty,
+  BNG.empty_molecule_observable_zero, BNG.structural_roundtrip, and
+  BNG.compileStructuralSemantics_deterministic.
+- propext and Quot.sound: BNG.backend_edit_program_refines_semantics,
+  BNG.backend_rule_step_refines_semantics,
+  BNG.execute_lowered_program_eq_reference,
+  BNG.execute_lowered_rule_eq_reference, and
+  BNG.Examples.example_lowered_step_equals_semantic_step.
+- BNG.Examples.nfnextBridgeContract_holds depends on propext,
+  Classical.choice, Quot.sound, and its allowlisted
+  nfnextBridgeContract_holds._native.native_decide.ax_1_1 extension.
 
-### Real NFnext C++ checks
+Anonymous native_decide examples in Smoke.lean and Coverage.lean are not
+individually listed in that audit; their tactic use is checked textually, not
+by per-example #print axioms.
 
-`run_nfnext_contract.sh` compiles a temporary binary directly against the
-repository's current:
+The lowering equalities have a broader quantifier than the fixture checks, but
+their boundary remains the Lean reference model:
 
-- `nfir.cpp`;
-- `generic_state.cpp`;
-- `generic_matcher.cpp`;
-- `transformation.cpp`;
-- `validator.cpp`.
+- execute_lowered_mutation_eq_reference is proved for every mutation,
+  environment, and mixture. It equates the Lean lowered-action interpreter
+  with Lean's semantic applyMutation function.
+- execute_lowered_program_eq_reference covers every finite mutation list,
+  environment, and mixture, with the same two Lean interpreters.
+- execute_lowered_rule_eq_reference equates the two Lean rule-step functions
+  for any direction, mixture, and supplied candidate match. Both are gated by
+  supportedOperationalSubset and match validity. That subset requires empty
+  filters, local scopes, and modifiers. In particular, this theorem does not
+  prove MatchOnce behavior, discover matches, or execute production C++.
 
-The fixture currently checks 18 matcher/transformation properties including:
+nfnextBridgeContract_holds checks one concrete lowering fixture. The native
+C++ bridge CTest checks the same BNGL example through the production parser,
+CompiledModel, and NFnext lowering implementation. These independent checks do
+not form a general Lean-to-C++ refinement theorem.
 
-- exact state and state-set matching;
-- explicit free-site matching;
-- same- and different-complex molecularity;
-- exact bonds;
-- interchangeable-node automorphism behavior;
-- indirect `connected_to`;
-- SetState;
-- AddBond / DeleteBond;
-- CreateMolecule;
-- AddBondExistingToCreated;
-- AddBondCreated;
-- DestroyMolecule;
-- DestroyComplex;
-- initial states on created molecules.
+## NFnext and hybrid checks
 
-The binary is built in a temporary directory and removed automatically.
+run_nfnext_contract.sh builds its temporary C++ contract executable against
+the current NFnext implementation and passes 18 matcher/transformation checks.
+The production CMake tests separately pass the reference and parser-to-lowering
+bridge cases.
 
-### Header-drift check
+The Hybrid.lean definitions describe a conservative reference conversion that
+requires an embedding to cover an entire connected complex. This is executable
+Lean reference behavior, not a proof of equivalence to a population simulator.
+The native hybrid-model-generator tests pass 21 assertions in two cases, but
+they test BNGL model generation. PopulationMap.hpp explicitly limits current
+support to parsing and storage; population-based simulation refinement is not
+executed. HybridModelGenerator.cpp also reports that compartments are not
+supported by this generator.
 
-`check_nfnext_header_contract.py` verifies that the C++ NFnext vocabulary
-mirrored by Lean still contains the expected PatternIR and TransformationIR
-constructors/fields.
+## Static and header checks
 
-## Missing kernel validation
+static_validate.py checks imports, balanced syntax delimiters, required modules,
+and prohibited proof placeholders. It does not type-check Lean.
 
-The environment does not contain `lean`, `lake`, or `elan`, and external binary
-installation is not available through the shell environment. Therefore the
-Lean source remains **not kernel-verified here**.
+check_nfnext_header_contract.py pins ordered enum members, selected NFnext
+vocabulary, the connected_to and interchangeable field declarations, and
+correspondence with Lean's operation ordering. This catches header drift but
+does not prove runtime semantic equivalence.
 
-The mandatory external gate is:
-
-```bash
-cd formal/lean
-lake build
-lake env lean tests/Smoke.lean
-```
-
-No theorem in this repository should be advertised as machine-checked until
-that command succeeds under the pinned `leanprover/lean4:v4.33.1` toolchain.
-
-Pull requests now run the pinned hosted gate in
-[`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml).
-That job installs `leanprover/lean4:v4.33.1`, runs the static and NFnext
-contract checks, executes `lake build`, and runs the Lean smoke file. A local
-green static/contract result is not a substitute for that kernel check.
-
-
-### Latest semantic additions
-
-- `Propensity.lean` separates per-match kinetic constants from TotalRate channel rates.
-- `ReactionNetwork.lean` records canonical reaction edges over the graph-isomorphic species pool.
-- `BNGIR.lean` models the BNGIR envelope header: format tag, decode acceptance
-  of exactly versions 0.1/0.2, and the fail-closed feature gate; roundtrip and
-  refusal theorems are exercised by `tests/Smoke.lean`.
-- `CXX_MIGRATION_BLOCKERS.md` records why full production C++ refinement is not yet claimable.
+See CXX_MAPPING.md and CXX_MIGRATION_BLOCKERS.md for the remaining production
+C++ correspondence boundary.

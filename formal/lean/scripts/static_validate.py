@@ -438,7 +438,7 @@ def main() -> int:
     )
     print(f"STATIC VALIDATION PASSED ({len(LEAN_FILES)} Lean files checked)")
     print("  every BNG/*.lean is transitively imported from BNG.lean")
-    print(f"  trusted (non-kernel) native_decide proofs: {native} (allowlisted)")
+    print(f"  Lean files using native_decide: {native} (library uses are allowlisted)")
     print("Reminder: this does not replace `lake build` / Lean kernel checking.")
     return 0
 

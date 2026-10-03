@@ -212,10 +212,12 @@ example (doc : Document) :
 
 /-! ## Machine-checked assertions
 
-The `#eval`s above document intent; they cannot fail a build.  These
-`example ... := by native_decide` lines kernel-check the SAME values, so a
-semantic change that flips one of them breaks `lake build` rather than merely
-changing a log line.  Existing checks above are unchanged and still run. -/
+The eval output above is descriptive and cannot fail the command. These
+example declarations use native_decide to pin the same fixture values through
+Lean's compiled evaluator. Their proof terms use the trusted native_decide
+extension rather than having the kernel reduce the computations, so they are
+executable regression checks, not kernel-reduced proofs. A semantic change
+that flips a value makes this explicit Lean command fail to elaborate. -/
 
 example : model.wellFormed = true := by native_decide
 example : runtimeMixture.wellFormed model.signature = true := by native_decide
