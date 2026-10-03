@@ -69,16 +69,41 @@ legacy structured-SBML `atomize=>1` contract for the `plain2` validation model.
 
 ## What each gate proves
 - `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger is empty: `blbr` now compares equal under structural species identity, including its symmetry-heavy bond-label orientations.
-- `test_parity_ode` — ODE rel-err <= 1e-6 vs Perl.
-- `test_parity_stochastic` — seeded determinism + fixed-seed ensembles (at least
-  200 members per side) within mean +/- 3 SE. A single `.gdat` is never treated
-  as an ensemble reference.
+- `test_parity_ode` — action-aware CLI trajectories against BNG2 at fixed
+  `rtol=1e-6`, `atol=1e-9`, plus exact observable-set Python API comparisons
+  for action-matched models. The original `Motivating_example` action remains
+  unedited in the BNG2 comparison.
+- `test_parity_stochastic` — exact repeated-seed SSA determinism. Its
+  distributional BNG2 comparison requires a committed 200-member `.ens`
+  reference for each model; one trajectory is never substituted for an
+  ensemble.
 - `test_parity_nfsim` — WO-2. ast-direct vs native binary, and ast-direct vs in-memory-XML (`BNG_NFSIM_FORCE_XML=1`).
-- `test_parity_expressions` — WO-3. function-driven RHS to 1e-9.
+- `test_parity_expressions` — action-aware `.net` structure and rate-expression parity for the deterministic function fixtures.
+- `test_parity_rhs` — instantaneous `OdeIntegrator::derivs` against an independent, restricted evaluator of pinned BNG2 `.net` expressions across all five frozen `expr` tier models. It uses three positive synthetic states and three times per model (`rtol=1e-9`, `atol=1e-12`); unsupported syntax and rate laws fail closed. This compares derivative vectors; it does not separately compare intermediate parameter, function, or group values.
+- `test_oracle_perl` — exact model-stem output selection, unambiguous phase fallback, and source-only network generation flags.
 - `test_export_formats` — WO-5. BNG-XML/SBML valid, `.net` idempotent.
 
 ## Comparator notes
 `.net` reactions are keyed by structural species identity, not indices or raw bond-label strings. Molecule/site order and explicit bond numbers are ignored; site states, compartments, connectivity, stoichiometry, multiplicity, and rate values remain significant. Molecule names remain significant except where the validation manifest records an explicit, one-to-one source-specific alias. The `test_sbml_flat` aliases cover BNG2's historical `A()` to `A____` sanitization while keeping the network topology, compartments, stoichiometry, group membership, and rates under strict comparison. A duplicated reaction is detected and named.
+
+Trajectory comparisons choose their observable policy explicitly. Network-free and
+stochastic identity checks require the exact observable set; the BNG2 ODE gate
+uses the intersection because the two action implementations can expose
+different but valid columns. The comparator reports missing, extra, duplicate,
+and reordered columns instead of silently aligning an accidental subset.
+
+## Graph identity boundary
+
+BNGcore canonicalizes pattern graphs through `PatternGraph::get_label` and
+NFsim constructs its own complex labels in `Complex::generateCanonicalLabel`;
+both link the one compiled `nauty` target documented in
+[`../../cpp/nauty/README.md`](../../cpp/nauty/README.md). The parity comparator
+uses its own structural species-graph isomorphism, with tests for molecule/site
+order and bond-number independence, and for preserving state and connectivity.
+These checks establish structural parity for the tested encodings. They do not
+assert that BNGcore and NFsim raw label strings are interchangeable or prove a
+global cross-domain canonical-label contract; cache keys and serialization
+remain domain-specific.
 
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.
