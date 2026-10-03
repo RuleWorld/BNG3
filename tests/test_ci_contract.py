@@ -652,6 +652,31 @@ end actions
     )
 
 
+def test_cross_validation_drops_runtime_and_continuation_actions():
+    """Network-only staging must not retain simulations or state resets."""
+
+    staged = _network_only_text("""begin model
+end model
+begin actions
+simulate_ps({t_end=>10})
+simulate_rm({t_end=>10})
+parameter_scan({method=>"protocol"})
+saveConcentrations("post2")
+resetConcentrations("post2")
+end actions
+""")
+
+    assert "generate_network({overwrite=>1})" in staged
+    for action in (
+        "simulate_ps",
+        "simulate_rm",
+        "parameter_scan",
+        "saveConcentrations",
+        "resetConcentrations",
+    ):
+        assert action not in staged
+
+
 def test_weekly_cross_validation_uses_structural_oracle_runner():
     """C++/Perl validation must compare typed networks, not section counts."""
 

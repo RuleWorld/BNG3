@@ -1,7 +1,7 @@
 {
   "schema": "bng3-parity-lane-status/v1",
-  "updated_at_utc": "2026-10-03T10:24:14.767109+00:00",
-  "status": "local validation recorded; strict stochastic and Tier-P network gates remain unresolved",
+  "updated_at_utc": "2026-10-03T14:53:38+00:00",
+  "status": "matched-source Tier-P network results classified; action-filter repair is focused-verified, with the required exact-commit full Tier-P rerun pending",
   "source": {
     "branch": "codex/bng3-20261002-parity",
     "baseline_head": "bf5f7d7684b4f758c2d81811c6733442e410e9bf",
@@ -100,6 +100,143 @@
       "command": "BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl python scripts/regen_golden.py --models gene_expr michment simple_system --ensemble 200",
       "result": "3/3 generated; 200 fixed-seed members each; manifest and per-member hashes recorded",
       "manifest": "tests/validation/evidence/bng2-ssa-ensembles/manifest.json"
+    },
+    "tier_p_net_matched_source": {
+      "selection": "frozen 100-model Tier-P selection",
+      "comparison_contract": "Both engines receive byte-identical source-preserving network-only BNGL inputs staged by scripts.cross_validate._stage_model.",
+      "pre_filter_full_run": {
+        "tested_head": "8031e4f1ac71578efe46b4f43b4d9a495bdbfb5b",
+        "result": "68 passed, 32 failed in 3150.19s",
+        "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py::test_net_parity_full --bng-cpp build/cpp/bng_cpp -q"
+      },
+      "pre_filter_failure_classification": {
+        "result": "32 failed in 3002.10s; all 32 original failing IDs reproduced",
+        "classification_runner": "/private/tmp/bng3-run-net-tierp-failures.py",
+        "junit": "/private/tmp/bng3-net-tierp-failures.xml",
+        "log": "/private/tmp/bng3-net-tierp-failures.log",
+        "timeouts": [
+          "AN",
+          "ANx",
+          "ANx_noActivity",
+          "e8",
+          "e9",
+          "hybrid_test",
+          "hybrid_test_hpp",
+          "test_write_sbml_multi",
+          "tlbr",
+          "tlbr_performance"
+        ],
+        "filtered_runtime_actions_retained_before_fix": {
+          "models": [
+            "nfkb_illustrating_protocols",
+            "push_pull",
+            "test_setconc"
+          ],
+          "reasons": {
+            "nfkb_illustrating_protocols": "parameter_scan action reached BNG2",
+            "push_pull": "simulate_ps action reached BNG2",
+            "test_setconc": "resetConcentrations(post2) remained after saveConcentrations was removed"
+          },
+          "post_fix_targeted_result": "all three cases passed with strict BNG2 comparison"
+        },
+        "bng2_parser_or_source_incompatibilities": [
+          {
+            "model": "actin_branch",
+            "reason": "BNG2 aborts on dangling edge while reading observable Actin_ADF"
+          },
+          {
+            "model": "actin_branch_forFitToData",
+            "reason": "BNG2 aborts on whitespace in rule label Barbed end elongation"
+          },
+          {
+            "model": "actin_simple",
+            "reason": "BNG2 aborts on dangling edge while reading observable Actin_ADF"
+          },
+          {
+            "model": "blbr",
+            "reason": "BNG2 aborts because SpeciesLabel changes after species definition"
+          },
+          {
+            "model": "fceri_fyn family",
+            "members": [
+              "fceri_fyn",
+              "fceri_fyn_lig",
+              "fceri_fyn_trimer",
+              "fceri_gamma2",
+              "fceri_ji",
+              "fceri_ji_red",
+              "fceri_lyn_745",
+              "fceri_trimer"
+            ],
+            "reason": "BNG2 cannot process block type reaction_rules"
+          },
+          {
+            "model": "motor",
+            "reason": "BNG2 cannot process block type molecule type"
+          }
+        ],
+        "incomplete_external_inputs": [
+          {
+            "model": "michment_cont",
+            "reason": "source reads michment_cont.net, which is absent from the staged input"
+          },
+          {
+            "model": "test_sat_cont",
+            "reason": "source reads test_sat_cont.net, which is absent from the staged input"
+          },
+          {
+            "model": "test_sbml_flat",
+            "reason": "referenced INPUT_FILES/test_sbml_flat_SBML.xml is absent"
+          },
+          {
+            "model": "test_sbml_structured",
+            "reason": "referenced INPUT_FILES/test_sbml_structured_SBML.xml is absent"
+          }
+        ],
+        "strict_net_comparator_mismatches": [
+          {
+            "model": "oscSystem",
+            "reason": "same species/reaction counts; compared rate expressions differ only by explicit parentheses around NucProt/(10+NucProt)",
+            "semantic_status": "not adjudicated by this parity run"
+          },
+          {
+            "model": "test_tfun",
+            "reason": "same species/reaction counts; four rate expressions differ in TFUN/tfun serialization, argument ordering, and displayed factors",
+            "semantic_status": "not adjudicated by this parity run"
+          }
+        ]
+      },
+      "filter_repair": {
+        "commit": "pending",
+        "change": "Network-only staging now removes parameter_scan, resetConcentrations, simulate_ps, and simulate_rm.",
+        "regression": {
+          "red": "1 failed because simulate_ps remained in staged output",
+          "green": "39 passed in tests/test_ci_contract.py"
+        },
+        "focused_tier_p": {
+          "models": [
+            "push_pull",
+            "test_setconc",
+            "nfkb_illustrating_protocols"
+          ],
+          "result": "3 passed in 0.34s"
+        }
+      },
+      "required_post_fix_full_run": {
+        "status": "pending exact-commit run",
+        "note": "The pre-filter 68/32 result and post-filter 3-case result are separate snapshots and must not be combined into a current full-tier pass count."
+      },
+      "supplemental_on_disk_models_outside_frozen_selection": {
+        "models": [
+          "antigen_binding",
+          "clonal_expansion",
+          "cytotoxic_killing",
+          "exhaustion_switch",
+          "threshold_observable",
+          "threshold_observable_species"
+        ],
+        "status": "pending separate run after the frozen 100-model Tier-P gate"
+      }
     }
   },
   "known_diagnostics": {
@@ -109,7 +246,10 @@
     "selection_cohort": "The Tier-P sweep preserves the committed 100-model set. Six additional on-disk immune fixtures are present; commit 2b8fe24 on codex/bng3-20261002-ci contains the reviewed selection update but is not integrated into this branch."
   },
   "hosted_ci": {
-    "status": "not_run",
-    "reason": "Draft PR not yet created."
+    "status": "previous pushed head terminal; new validation/evidence commits not yet pushed",
+    "pull_request": "https://github.com/RuleWorld/BNG3/pull/91",
+    "last_checked_head": "8031e4f1ac71578efe46b4f43b4d9a495bdbfb5b",
+    "last_checked_summary": "13 passed, 22 failed, 9 skipped",
+    "next_step": "Push the stable final evidence head; hosted checks for that exact SHA are pending."
   }
 }

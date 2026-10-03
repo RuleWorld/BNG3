@@ -84,12 +84,17 @@ def run_perl(
     timeout: int = 300,
     skip_nfsim: bool = False,
     network_only: bool = False,
+    source_path: Path | None = None,
 ):
     """Run Perl BNG2 on a model; return (net|None, gdat|None, stderr)."""
     bng2 = _bng2_path()
     if bng2 is None:
         return None, None, "BNG2.pl not found (set BNG2_PERL)"
-    src = corpus.resolve(model_name)
+    src = (
+        Path(source_path).resolve()
+        if source_path is not None
+        else corpus.resolve(model_name)
+    )
     if src is None:
         return None, None, f"model {model_name!r} not on disk"
 
@@ -140,7 +145,11 @@ def run_perl(
 
 
 def net(
-    model_name: str, work_dir: Path, *, network_only: bool = False
+    model_name: str,
+    work_dir: Path,
+    *,
+    network_only: bool = False,
+    source_path: Path | None = None,
 ) -> tuple[Path | None, str]:
     """Reference .net: golden first, then live Perl, else (None, reason)."""
     g = golden_net(model_name)
@@ -152,6 +161,7 @@ def net(
             work_dir,
             skip_nfsim=True,
             network_only=network_only,
+            source_path=source_path,
         )
         return (p, "perl") if p else (None, f"perl failed: {err}")
     return None, "no golden and no perl"
