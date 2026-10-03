@@ -18,13 +18,24 @@ PyTest Fixtures and markers.
 # someone else's code. PYTHONPATH does not fix it (it loses to the finder), and
 # once sys.modules['bionetgen'] is bound the wrong module persists all session.
 #
-# This only fires when an editable finder is actually present. CI installs a
-# real wheel and has none; prepending this checkout's `python/` there would
-# shadow the installed wheel, which is the same class of quiet
-# mismeasurement this guard exists to prevent.
+# Wheel and sdist CI set the mode explicitly. Developer runs infer source mode
+# from an editable finder or this checkout's source path. Both modes verify the
+# package and extension locations and fail loudly on shadowed or missing code.
 # ---------------------------------------------------------------------------
+import importlib.metadata
+import os
 import pathlib
 import sys
+
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_SOURCE_PACKAGE = (_ROOT / "python" / "bionetgen").resolve()
+_LOCAL_EXTENSION_DIR = (_ROOT / "build" / "cpp").resolve()
+_MODE = os.environ.get("BNG3_PYTHON_TEST_MODE", "auto").lower()
+if _MODE not in {"auto", "source", "installed"}:
+    raise RuntimeError(
+        "BNG3_PYTHON_TEST_MODE must be 'auto', 'source', or 'installed'; "
+        f"received {_MODE!r}"
+    )
 
 _EDITABLE_FINDERS = [
     finder
@@ -32,73 +43,139 @@ _EDITABLE_FINDERS = [
     if "editable" in type(finder).__module__.lower()
     or "editable" in getattr(finder, "__name__", "").lower()
 ]
-if _EDITABLE_FINDERS:
-    sys.meta_path = [f for f in sys.meta_path if f not in _EDITABLE_FINDERS]
-    # Remove the editable install's own source path -- the thing this guard
-    # guards -- and nothing else. A substring filter on "BioNetGen" also
-    # strips this repository's build-artifact directory, leaving the
-    # extension unimportable in any worktree without its own build (46
-    # AttributeError failures, and every importorskip-guarded file
-    # silently skipping instead of failing). Dropping "everything not
-    # under the worktree root" is equally wrong: a legitimate PYTHONPATH
-    # pointing at a shared artifact directory is not under this worktree
-    # and must survive. Both were measured; see sciSignaling and
-    # sciStochastic.
-    _ROOT = pathlib.Path(__file__).resolve().parents[2]
+_EDITABLE_SOURCES = set()
+for _finder in _EDITABLE_FINDERS:
+    _paths = getattr(_finder, "search_paths", None) or ()
+    if isinstance(_paths, dict):
+        _paths = _paths.values()
+    for _path in _paths:
+        _editable_path = pathlib.Path(_path).resolve()
+        _EDITABLE_SOURCES.add(_editable_path)
+        if _editable_path.name == "bionetgen":
+            _EDITABLE_SOURCES.add(_editable_path.parent)
+if _EDITABLE_FINDERS and not _EDITABLE_SOURCES:
     _EDITABLE_SOURCES = {
-        pathlib.Path(p).resolve()
-        for finder in _EDITABLE_FINDERS
-        for p in getattr(finder, "search_paths", None) or ()
-    }
-    if not _EDITABLE_SOURCES:
-        _EDITABLE_SOURCES = {
-            pathlib.Path(p).resolve().parent
-            for p in sys.path
-            if "BioNetGen" in p and pathlib.Path(p or ".").resolve() != _ROOT
-        }
-    sys.path[:] = [
-        p
+        pathlib.Path(p).resolve().parent
         for p in sys.path
-        if not any(pathlib.Path(p or ".").resolve() == src for src in _EDITABLE_SOURCES)
-    ]
-    # This worktree's own build artifacts take precedence over any shared
-    # copy, but never displace a shared one that is all the caller has.
-    _LOCAL_BUILD = _ROOT / "build" / "cpp"
-    if _LOCAL_BUILD.is_dir():
-        sys.path.insert(0, str(_LOCAL_BUILD))
+        if "BioNetGen" in p and pathlib.Path(p or ".").resolve() != _ROOT
+    }
+_SOURCE_PATH_PRESENT = any(
+    pathlib.Path(p or ".").resolve() == (_ROOT / "python").resolve() for p in sys.path
+)
+_LOADED_PACKAGE = sys.modules.get("bionetgen")
+_LOADED_FROM_SOURCE = bool(
+    _LOADED_PACKAGE
+    and getattr(_LOADED_PACKAGE, "__file__", None)
+    and pathlib.Path(_LOADED_PACKAGE.__file__).resolve().is_relative_to(_SOURCE_PACKAGE)
+)
+_USE_SOURCE = _MODE == "source" or (
+    _MODE == "auto"
+    and (_EDITABLE_FINDERS or _SOURCE_PATH_PRESENT or _LOADED_FROM_SOURCE)
+)
+
+if _MODE == "installed" and _EDITABLE_FINDERS:
+    raise RuntimeError(
+        "installed package tests found a scikit-build editable import finder; "
+        "install a regular wheel before running this suite"
+    )
+
+if _USE_SOURCE:
+    if not (_SOURCE_PACKAGE / "__init__.py").is_file():
+        raise RuntimeError(f"source package is missing: {_SOURCE_PACKAGE}")
+
+    # Remove only paths registered by the editable finder. Other PYTHONPATH
+    # entries and shared build artifacts remain available.
+    if _EDITABLE_FINDERS:
+        sys.meta_path = [f for f in sys.meta_path if f not in _EDITABLE_FINDERS]
+        sys.path[:] = [
+            p
+            for p in sys.path
+            if not any(
+                pathlib.Path(p or ".").resolve() == src for src in _EDITABLE_SOURCES
+            )
+        ]
+    if not _LOCAL_EXTENSION_DIR.is_dir():
+        raise RuntimeError(
+            f"source mode requires this worktree's native build directory: "
+            f"{_LOCAL_EXTENSION_DIR}; build with "
+            "`cmake -B build -DBUILD_PYTHON_BINDINGS=ON && "
+            "cmake --build build --parallel 2`"
+        )
+    # model.py supports development builds through the top-level extension
+    # import fallback. Put this worktree's binary first before importing the
+    # package so its initial model import binds the correct native module.
+    sys.path.insert(0, str(_LOCAL_EXTENSION_DIR))
     sys.path.insert(0, str(_ROOT / "python"))
 
-    # A missing build must be loud. Without this, `importorskip` turns a
-    # misconfigured environment into a suite that reports skips and exit 0,
-    # which is the same quiet-pass failure this guard exists to prevent --
-    # a guard that silences its own tests is passing quietly.
-    # Read the package out of sys.modules rather than by bare name. Line 76 is
-    # `import a.b as x`, which binds `x` ONLY -- never `a`. So on exactly the
-    # path this handler exists for, `bionetgen` is not bound and the bare
-    # getattr raised NameError instead of printing the diagnostic.
-    # Verified: exec("import bionetgen._bionetgen_cpp as _cpp_probe") against a
-    # blocked import leaves the namespace holding only __builtins__.
-    _pkg = sys.modules.get("bionetgen")
-    try:
-        import bionetgen._bionetgen_cpp as _cpp_probe  # noqa: F401
-    except ImportError as _exc:
+    if _LOADED_PACKAGE and not _LOADED_FROM_SOURCE:
         raise RuntimeError(
-            "bionetgen._bionetgen_cpp is unimportable after resolving bionetgen "
-            f"to the tree under test ({_ROOT}).\n"
-            f"  bionetgen resolved from: "
-            f"{getattr(_pkg, '__file__', None) or 'not imported'}\n"
-            f"  sys.path: {sys.path[:6]}\n"
-            f"  underlying error: {_exc}\n"
-            "This is a build/misconfiguration problem, not a code failure. Build "
-            "the extension in this worktree "
-            "(`cmake -B build -DBUILD_PYTHON_BINDINGS=ON && cmake --build build`) "
-            "or add its directory to PYTHONPATH. Do not relax this check to make "
-            "the suite pass."
-        ) from _exc
+            "bionetgen was imported before source mode could select this worktree: "
+            f"{getattr(_LOADED_PACKAGE, '__file__', None)}"
+        )
+    import bionetgen as _pkg
 
-import os
-import tempfile
+    if str(_LOCAL_EXTENSION_DIR) not in _pkg.__path__:
+        _pkg.__path__.insert(0, str(_LOCAL_EXTENSION_DIR))
+else:
+    try:
+        _DIST_PACKAGE = pathlib.Path(
+            importlib.metadata.distribution("bionetgen").locate_file("bionetgen")
+        ).resolve()
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise RuntimeError(
+            "installed package mode requires an installed bionetgen distribution"
+        ) from exc
+
+    if (
+        _LOADED_PACKAGE
+        and pathlib.Path(_LOADED_PACKAGE.__file__).resolve().parent != _DIST_PACKAGE
+    ):
+        raise RuntimeError(
+            "bionetgen was imported from outside the installed distribution: "
+            f"{getattr(_LOADED_PACKAGE, '__file__', None)} (expected under "
+            f"{_DIST_PACKAGE})"
+        )
+    import bionetgen as _pkg
+
+    _PACKAGE_FILE = pathlib.Path(_pkg.__file__).resolve()
+    if _PACKAGE_FILE.parent != _DIST_PACKAGE:
+        raise RuntimeError(
+            "installed bionetgen package was shadowed: "
+            f"{_PACKAGE_FILE} (distribution package is {_DIST_PACKAGE})"
+        )
+
+try:
+    import bionetgen._bionetgen_cpp as _cpp_probe  # noqa: F401
+except ImportError as exc:
+    if _USE_SOURCE:
+        raise RuntimeError(
+            "bionetgen._bionetgen_cpp is unimportable after selecting "
+            f"{_pkg.__file__}.\n"
+            f"  sys.path: {sys.path[:6]}\n"
+            f"  underlying error: {exc}\n"
+            "Build the extension in this worktree. Do not relax this check to "
+            "make the suite pass."
+        ) from exc
+    raise RuntimeError(
+        "installed bionetgen distribution has no importable native extension: "
+        f"{_DIST_PACKAGE}; underlying error: {exc}"
+    ) from exc
+
+_EXTENSION_FILE = pathlib.Path(_cpp_probe.__file__).resolve()
+if _USE_SOURCE:
+    if _EXTENSION_FILE.parent != _LOCAL_EXTENSION_DIR:
+        raise RuntimeError(
+            "source mode loaded the native extension from another build: "
+            f"{_EXTENSION_FILE} (expected under {_LOCAL_EXTENSION_DIR})"
+        )
+elif _EXTENSION_FILE.parent != _DIST_PACKAGE:
+    raise RuntimeError(
+        "installed native extension was shadowed: "
+        f"{_EXTENSION_FILE} (expected under {_DIST_PACKAGE})"
+    )
+
 import shutil
+import tempfile
 
 import pytest
 
