@@ -325,6 +325,13 @@ def _workflow_job_from(path: Path, name: str) -> str:
     return job_subtree_text(path, name)
 
 
+def test_lint_job_installs_ci_contract_dependencies():
+    """The lint job must install dependencies required during test collection."""
+
+    lint_job = _workflow_job_from(CI_WORKFLOW, "lint")
+    assert "pip install black ruff pytest numpy pyyaml" in lint_job
+
+
 def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
     """Cross-tool checks must be independently reproducible per PR head."""
 
