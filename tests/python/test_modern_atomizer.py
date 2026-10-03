@@ -3759,6 +3759,31 @@ def test_concentration_output_tracks_rate_ruled_compartment_volume():
     )
 
 
+def test_zero_dimensional_compartment_does_not_default_to_three_dimensions():
+    from bionetgen.atomizer.modern.types import (
+        SBMLCompartment,
+        SBMLModel,
+        SBMLReaction,
+    )
+    from bionetgen.atomizer.modern.writer import _requires_explicit_compartment_flux
+
+    compartments = [
+        (SBMLCompartment(id="C", spatial_dimensions=0), True),
+        (SBMLCompartment(id="C"), False),
+        (SBMLCompartment(id="C", spatial_dimensions=None), False),
+    ]
+    for compartment, expected in compartments:
+        model = SBMLModel(
+            id="compartment_dimensions",
+            compartments={"C": compartment},
+        )
+        reaction = SBMLReaction(id="r", compartment="C")
+
+        assert (
+            _requires_explicit_compartment_flux(reaction, model) is expected
+        )
+
+
 def test_mass_action_flux_tracks_rate_ruled_compartment_volume():
     from bionetgen import BioNetGenModel
     from bionetgen.atomizer.modern import Atomizer
