@@ -82,6 +82,10 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
     # Identity is checked above before discarding import overrides. Pytest then
     # runs from an installed-package environment with no source shadow path.
     env.pop("PYTHONPATH", None)
+    # These values annotate the identity record above. Keep them out of tests
+    # so provenance helpers under test use their own explicit fixtures.
+    env.pop("BNG3_SOURCE_REVISION", None)
+    env.pop("BNG3_PR_HEAD_SHA", None)
     command = [
         sys.executable,
         "-m",

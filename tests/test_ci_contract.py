@@ -533,6 +533,19 @@ def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
     assert "scripts/ci/check_python_package_identity.py" in python_job
     assert "BNG3_SOURCE_REVISION" in python_job
     assert "BNG3_PR_HEAD_SHA" in python_job
+    for workflow_path, job_name, step_name in (
+        (CI_WORKFLOW, "python-test", "Verify installed package identity"),
+        (CI_WORKFLOW, "python-integration", "Verify installed package identity"),
+        (CI_WORKFLOW, "package-smoke", "Verify sdist package identity"),
+    ):
+        job = parse_workflow(workflow_path)["jobs"][job_name]
+        job_env = job.get("env") or {}
+        assert "BNG3_SOURCE_REVISION" not in job_env
+        assert "BNG3_PR_HEAD_SHA" not in job_env
+        step = next(s for s in job["steps"] if s.get("name") == step_name)
+        step_env = step.get("env") or {}
+        assert "BNG3_SOURCE_REVISION" in step_env
+        assert "BNG3_PR_HEAD_SHA" in step_env
 
     smoke_job = _workflow_job("package-smoke")
     assert "BNG3_PYTHON_TEST_MODE: installed" in smoke_job
@@ -575,12 +588,23 @@ def test_pybionetgen_compatibility_runs_against_a_regular_installed_package():
     assert 'python -m pip install ".[full,dev]"' in job
     assert "pip install -e" not in job
     assert "BNG3_PYTHON_TEST_MODE: installed" in job
+    job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["pybionetgen-compat"]
+    assert "BNG3_SOURCE_REVISION" not in (job_doc.get("env") or {})
+    compatibility_step = next(
+        step
+        for step in job_doc["steps"]
+        if step.get("name") == "Run source-derived compatibility contracts"
+    )
+    assert "BNG3_SOURCE_REVISION" in compatibility_step.get("env", {})
+    assert "BNG3_PR_HEAD_SHA" in compatibility_step.get("env", {})
 
     checker = (REPO / "scripts" / "ci" / "check_pybionetgen_compat.py").read_text(
         encoding="utf-8"
     )
     assert "inspect_installed_package()" in checker
     assert 'env.pop("PYTHONPATH", None)' in checker
+    assert 'env.pop("BNG3_SOURCE_REVISION", None)' in checker
+    assert 'env.pop("BNG3_PR_HEAD_SHA", None)' in checker
 
 
 def test_gdat_output_test_claims_a_cross_process_unique_temp_directory():
