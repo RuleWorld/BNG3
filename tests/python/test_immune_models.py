@@ -164,6 +164,10 @@ def test_seeded_ssa_concentrates_near_the_deterministic_trajectory(tmp_path):
     """As counts grow the stochastic clone concentrates near the capacity."""
     work = run_model("clonal_expansion", tmp_path)
     rows = gdat(work / "clonal_expansion__ssa.gdat")
+    t_first, amount_first = rows[0]
+    assert (t_first, amount_first) == (0.0, 200.0), (
+        "the SSA action must explicitly reset Effector() to its declared seed"
+    )
     t_last, amount = rows[-1]
     analytic = logistic(1000.0, 0.5, 200.0, t_last)
     assert (
