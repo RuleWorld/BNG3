@@ -57,7 +57,34 @@ def perl_available() -> bool:
     )
 
 
-def run_perl(model_name: str, work_dir: Path, *, timeout: int = 300):
+def _select_artifact(work_dir: Path, model_stem: str, suffix: str) -> Path | None:
+    """Select the exact model artifact, or a sole unambiguous phase output."""
+    exact = work_dir / f"{model_stem}{suffix}"
+    if exact.is_file():
+        return exact
+    candidates = sorted(work_dir.glob(f"*{suffix}"))
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _artifact_error(work_dir: Path, model_stem: str, suffix: str) -> str:
+    candidates = sorted(work_dir.glob(f"*{suffix}"))
+    if candidates:
+        names = ", ".join(path.name for path in candidates)
+        return (
+            f"ambiguous BNG2 {suffix} outputs for {model_stem}: {names}; "
+            f"expected {model_stem}{suffix}"
+        )
+    return f"BNG2 produced no {suffix} output for {model_stem}"
+
+
+def run_perl(
+    model_name: str,
+    work_dir: Path,
+    *,
+    timeout: int = 300,
+    skip_nfsim: bool = False,
+    network_only: bool = False,
+):
     """Run Perl BNG2 on a model; return (net|None, gdat|None, stderr)."""
     bng2 = _bng2_path()
     if bng2 is None:
@@ -76,8 +103,16 @@ def run_perl(model_name: str, work_dir: Path, *, timeout: int = 300):
         str(bng2),
         "--outdir",
         str(work_dir),
-        str(src),
     ]
+    if network_only:
+        # Parse source definitions, skip its simulation/action block, then ask
+        # BNG2 to generate only the reaction network. This is the correct
+        # oracle route for state-vector RHS checks and avoids running a model's
+        # unrelated long SSA/NF equilibration actions.
+        command.extend(["--check", "--netgen"])
+    if skip_nfsim:
+        command.append("--no-nfsim")
+    command.append(str(src))
     try:
         proc = subprocess.run(
             command,
@@ -91,18 +126,33 @@ def run_perl(model_name: str, work_dir: Path, *, timeout: int = 300):
         return None, None, f"perl timeout after {timeout}s"
     if proc.returncode != 0:
         return None, None, proc.stderr or proc.stdout
-    net = next(iter(work_dir.glob("*.net")), None)
-    gdat = next(iter(work_dir.glob("*.gdat")), None)
-    return net, gdat, proc.stderr
+    net = _select_artifact(work_dir, src.stem, ".net")
+    gdat = _select_artifact(work_dir, src.stem, ".gdat")
+    selection_errors = []
+    if net is None:
+        selection_errors.append(_artifact_error(work_dir, src.stem, ".net"))
+    if gdat is None:
+        selection_errors.append(_artifact_error(work_dir, src.stem, ".gdat"))
+    message = proc.stderr.strip()
+    if selection_errors:
+        message = "\n".join(part for part in (message, *selection_errors) if part)
+    return net, gdat, message
 
 
-def net(model_name: str, work_dir: Path) -> tuple[Path | None, str]:
+def net(
+    model_name: str, work_dir: Path, *, network_only: bool = False
+) -> tuple[Path | None, str]:
     """Reference .net: golden first, then live Perl, else (None, reason)."""
     g = golden_net(model_name)
     if g is not None:
         return g, "golden"
     if perl_available():
-        p, _, err = run_perl(model_name, work_dir)
+        p, _, err = run_perl(
+            model_name,
+            work_dir,
+            skip_nfsim=True,
+            network_only=network_only,
+        )
         return (p, "perl") if p else (None, f"perl failed: {err}")
     return None, "no golden and no perl"
 
