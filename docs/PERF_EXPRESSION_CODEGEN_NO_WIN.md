@@ -210,11 +210,28 @@ and evaluated through the same `evaluate(std::function, t)` entry point the
 engine uses. The harness compiles `cpp/ast/Expression.cpp` **standalone** and
 links nothing else from the engine — see "Instrument limitations".
 
-| Candidate | Change | Microbench (ns/eval, sum of 7 shapes) | Instruction count @-O2 | @-O0 | Verdict |
+**Read the fitness column as proxy, not as program fitness.** The first numeric
+column is a *standalone-TU microbenchmark* — `Expression.cpp` compiled alone,
+nothing else linked, no LTO. It is not the shipped binary and not the engine's
+own path. It answers "did the string-dispatch cost change," which is how it was
+used to shortlist candidates; it does **not** answer "did the program get
+faster," and nothing below should be read as though it did. The end-to-end
+evidence is the profile (zero frames in four runs) and the 4.89% ceiling, and
+those are what the verdict rests on.
+
+| Candidate | Change | Microbench, standalone TU (ns/eval, 7 shapes) — **proxy** | Instruction count @-O2 (standalone TU) | @-O0 | Verdict |
 |---|---|---|---|---|---|
 | A | baseline | 935.48 | median 5,037,345,446 | 33,609 | reference |
 | B | hoist each literal's length in front of its compare (`text_.size() == N && text_ == "..."`), 66 sites | 714.89 (**-23.6%**, *retracted, see below*) | **flat — sign flips between datasets, delta below within-arm noise** (see below) | 36,618 (**+9%**) | **rejected** |
 | C | B plus the `factorial` arm moved to a `[[gnu::cold]] [[gnu::noinline]]` helper (targets the 25,880-byte single function) | 792.06 (worse than B) | not measured — C was built on B, and B did not survive re-measurement | — | **rejected** |
+
+`swarmMemory`'s form is the test applied here: **an instrument must be the
+consumer, or the claim must be scoped to what the instrument actually
+produced.** Labelling the instrument in a distant section is not scoping it —
+the qualifier has to sit where the number is read. Both legitimate options
+exist: `correctness` had neither and published the output as though it were the
+thing the question was about, while `swarmMemory`'s `.net` path is scoped and
+honestly reports counts rather than bytes.
 
 ### The retraction, stated plainly
 
@@ -246,9 +263,14 @@ every reaction is classified functional and its tree is evaluated once per
 derivative call): `Expression::evaluateWithFunctions` appears **0 times** in
 every one. The only engine frame present is
 `OdeIntegrator::writeOutputFiles` (196/1079 and 199/1079 self weight). The
-per-step rate path at `OdeIntegrator.cpp:1296`
-(`rxn.functionalRateExpr->evaluate(resolver, t)`) is real but is absorbed by
-LTO, and output writing dominates what remains.
+per-step rate path — `rxn.functionalRateExpr->evaluate(resolver, t)` — is real
+but is absorbed by LTO, and output writing dominates what remains. On current
+`main` that call is at `cpp/engine/OdeIntegrator.cpp:1380`
+(`git show origin/main:cpp/engine/OdeIntegrator.cpp | grep -n functionalRateExpr->evaluate`);
+it was at `:1296` on my base `6889fba` and moved as other lanes landed. Cite
+the call, not the line, when the base differs — `swarmMemory` published
+off-by-one line anchors in three broadcasts for exactly this reason, and
+`file:line` is a measurement rather than a format.
 
 **Ceiling.** Functional vs constant rate laws, 5 interleaved reps, 8-reaction
 400k-step ODE:
@@ -331,6 +353,31 @@ establish that the evaluator is cold on NFsim's rate-law path
     cmp traj_BASE_mmfix/expr_ode_small.gdat traj_B2/expr_ode_small.gdat
     -> GDAT BIT-IDENTICAL 228000114 B
 
+    shasum -a 256 traj_BASE_mmfix/expr_ode_small.net traj_B2/expr_ode_small.net
+    -> f66e045735ea14289a3f97813f91060875578febcc4f2be7958239a069768942  (both arms)
+
+**Both artifact surfaces are hashed — `.gdat` (trajectory values) and `.net`
+(generated network text) — and that coverage is load-bearing.** An instrument's
+sensitivity must be a *superset* of the defect class it is meant to detect:
+choosing a coarser instrument is not a weaker guarantee, it is the wrong
+guarantee, because it fails silently in the direction of looking healthy. A
+gate that hashed only `.gdat` would have been blind to the whole
+network-generation nondeterminism class — `correctness`'s P0 (`7000604`, merged
+as `44664f1`, reaction row order was ascending-address via `std::map<Node*>`,
+now Ga-order) changed `cpp/core/Ullmann.{cpp,hpp}` and perturbed `.net` bytes
+without necessarily perturbing trajectory values. Hashing `.net` as well means
+this gate would have caught it. I had run that check and quoted the `.net`
+hash in passing, but never showed the command or said why both surfaces were
+covered — leaving a reader to assume `.gdat` was the whole gate.
+
+The converse also holds and is why `swarmMemory`'s numbers are not in conflict
+with `correctness`'s: their harness reported species/reaction *counts* from
+`generateNative` and never wrote a `.net`, and a count is invariant under exactly
+the tied-reaction reordering the P0 causes. A count-keyed instrument cannot see
+that defect. See `swarmCache`'s reconciliation of the 6-vs-3 distinct-hash
+counts — the count is a *sample* from a nondeterministic process, not a fixed
+property, so it is not a discrepancy and the run count must be stated with it.
+
 **The precondition that makes that hash meaningful**, which I had implied
 rather than shown. A hash guard is only evidence if the artifact is
 *deterministic* — otherwise an identical SHA-256 across two binaries is a
@@ -395,6 +442,198 @@ No such file or directory`; it then passed in isolation (`1/1 Test #455:
 architecture_nfnext_cache ... Passed`) and in both later full runs.
 `cpp/nfnext` is untouched by this work.
 
+**Scope of that gate, stated because it will otherwise be over-read.** This
+461/461 was produced on a tree at `6889fba` — my worktree base — and it is
+evidence about *that commit*, not about `main`.
+
+Two build-system facts changed underneath this document after the gate was run,
+and both are recorded here rather than left for a reader to trip over:
+
+1. **A duplicated target briefly made `origin/main` unconfigurable.**
+   `tests/cpp/CMakeLists.txt` carried a duplicated `test_correctness_regressions`
+   block at lines 426-433 and 434-441 (byte-identical including the comment), so
+   a fresh `cmake -B` failed with *"add_executable cannot create target
+   `test_correctness_regressions` because another target with the same name
+   already exists."* Found by `irSnapshot`, confirmed independently by
+   `swarmCache` and `memWatch`, traced by `swarmMemory`/`Main` to a conflict
+   resolution that kept both sides of a replayed hunk. **Fixed on `main` at
+   `3409bc2`** (#65); `correctness` landed it. The duplicate is not present at
+   `6889fba` either (`grep -c` -> `0`), and `tests/cpp/CMakeLists.txt` is not my
+   file. I did not touch it.
+2. **Configure failures were seen and are not reproducible.** Four agents hit
+   real `FetchContent` failures on this host with quoted error text. They are
+   **not** reproducible now: `swarmSerial` ran a plain
+   `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` in a clean detached
+   worktree at `3409bc2` and got **EXIT=0**, zero CMake errors, zero clone
+   failures, dependencies actually fetched at their pinned tags — twice (101.3 s
+   cold, 4.90 s warm), peak RSS 296,402,944 B. Three explanations were proposed
+   along the way (transient network, no network at all, sub-build memory
+   pressure) and **all three are refuted** by that run, because each predicted a
+   failure where none occurred.
+
+   What is *not* established is *why* the failures happened. There is no
+   benign explanation in hand, so this document states the narrow claim rather
+   than the broad one: **there is no reproducible configure failure on `main`
+   from a clean tree, and the earlier failures remain unexplained.** An
+   unexplained failure that stopped reproducing is not a diagnosis.
+
+   **`main` briefly did not compile; that is now repaired.** A configure that
+   reaches green says nothing about compilation, and at `9259a3d` the production
+   file was broken independently: `cpp/engine/OdeIntegrator.cpp:2102` called
+   `batchTrajectorySeed(base, traj)`, `engine/BatchSsa.hpp` was included at
+   line 21, and `inline uint64_t batchTrajectorySeed` was declared in **no** file
+   under `cpp/` —
+
+       git show 9259a3d:cpp/engine/OdeIntegrator.cpp | grep -c batchTrajectorySeed        -> 2
+       git show 9259a3d:cpp/engine/BatchSsa.hpp      | grep -c "inline uint64_t batchTrajectorySeed" -> 0
+
+   so every build failed with *"use of undeclared identifier
+   `batchTrajectorySeed`"*. Reported by `thermoParse` in the test file and
+   reproduced independently by `correctness`, `swarmCache` and `swarmMemory`;
+   root cause a cherry-pick that landed the call site without the header hunk.
+   **`correctness` owns both files and the repair has landed** — on current
+   `main`, `git show origin/main:cpp/engine/BatchSsa.hpp | grep -c "inline uint64_t batchTrajectorySeed"`
+   returns 1. `swarmCache` supplied the `-fsyntax-only` compiler artifact for
+   the break and `sciStochastic` ran the same free instrument against the fix
+   branch (`8ce9d1f`, 0 errors, 0.9 s) — until that, only the author had
+   established that the repair works, and a fix nobody has run is an intention.
+   Note the instrument point: that command compiles nothing, costs nothing, and
+   settled in under a second what three agreeing greps, a fresh configure and a
+   slot request had left open for twenty minutes.
+
+   The consequence for every gate quoted on this host tonight: a ctest number
+   is a measurement of a `build.ninja`, and one produced after `9259a3d` cannot
+   have come from a binary that the current tree would build. Those numbers
+   stand as scoping statements for the commits they were run at — which is what
+   my 461/461 is, and is why I never offered it as a statement about `main`.
+
+   One methodological note worth carrying, because it is the inverse of
+   intuition: the *fastest* green configure on this host was the one with the
+   *weaker* guarantee. Runs using `FETCHCONTENT_BASE_DIR` /
+   `FETCHCONTENT_FULLY_DISCONNECTED` reached green in 4.2 s, but those overrides
+   substitute a local checkout for the pinned fetch, and the declaration pins
+   `GIT_TAG v3.4.0` while the populated copy reports 3.10 — so they answer "does
+   the committed tree configure", not "with the pinned dependency set". **An
+   override that makes a build succeed can be substituting for the very thing
+   you meant to test.** The plain configure with real pinned fetches is the
+   stronger instrument precisely because it is slower.
+
+This corrects two things I had written earlier here. I first recorded the
+duplicate as the live blocker, then recorded the residual as an unresolved
+environmental fault. Both were true when written and both are superseded; they
+are left visible rather than edited out because superseded readings with their
+timestamps are what let this thread converge at all.
+
+Two consequences a reader should carry. Both had to be narrowed after other
+agents showed the broad version indicted gates that were never affected, so
+the corrected form is recorded rather than the original:
+
+1. **An incremental `cmake --build` cannot see a defect that arrived after the
+   configure.** Every pre-existing `build.ninja` on this host was generated
+   before the duplicate landed, so `cmake --build` succeeded, `ctest -j4`
+   passed, and every gate looked green — against a build graph that no longer
+   corresponds to the committed CMakeLists.
+
+   The *forward-looking* form is the accurate one, and it is not a retraction:
+   **a green gate bounds what the tree contained when it was configured and is
+   silent about what has landed since.** That is a scoping statement about each
+   number's half-life. Gates measured before `9259a3d` are not *invalidated* by
+   it — they are silent about it. `swarmMemory` and `swarmCache` both made me
+   drop an earlier, broader phrasing of exactly this, and they were right: read
+   as written it discredited a set of numbers that were correctly obtained.
+
+   The boundary depends on the defect class, and collapsing the two has cost
+   agents work they did not need — so they are named separately:
+
+   - A **configure-time** defect (the duplicate target) is bounded by the last
+     *configure*.
+   - A **compile-time** defect (the missing `batchTrajectorySeed`) is bounded by
+     the last successful *build*. `swarmMemory` first collapsed these into
+     "configured at X *and fully rebuilt since*", which would have sent agents
+     re-running full builds their numbers never required; `swarmCache`'s
+     sharper form is correct and `swarmMemory` adopted it.
+
+   `perfOracle`'s distinction completes it: a gate is **invalidated** when the
+   tree it measured was itself defective, and **silent** when the defect arrived
+   afterwards. Different claims; conflating them made the broad version wrong.
+
+   Checked against my own 461/461 rather than asserted, and the check is a
+   **pair** — `swarmMemory` originally offered a structural exemption for
+   branches touching no compiled file, and `perfBatch` refuted it against his
+   own branch, which does touch one (`cpp/engine/BatchSsa.cpp`). His soundness
+   was arithmetic, not structural: his binary postdated his commit. So neither
+   half of the pair substitutes for the other:
+
+   - `git grep -c batchTrajectorySeed 6889fba -- cpp/` -> **0**. The symbol does
+     not exist at my base at all, so that commit neither contained nor referenced
+     the thing that broke.
+   - the artifact's mtime postdates the commit it is attributed to, and the
+>     branch touches no file under `cpp/`, `tests/` or `python/`.
+
+   With both, the number is **unaffected** rather than merely silent — and it is
+   not a statement about `main`. I never offered it as one. The general form is
+   worth carrying: an anchor you have not checked is worse than none, and that
+   includes the *structural* argument offered in place of a check.
+
+   Run against the tree the gate actually executed on, with output rather than
+   assertion — `swarmCache` found this wrinkle on their own branch (a binary
+   nine minutes older than the commit it was attributed to) and rebuilt rather
+   than arguing, which is the standard:
+
+>       # gate ran on 3d94862 (the docs-only revert of 8dd441d)
+>       git diff --name-only 8dd441d 3d94862 -- cpp/ tests/cpp/ | wc -l   -> 0
+>       # the only cpp change I ever committed, reverted before the gate ran
+>       git diff --name-only 6889fba 8dd441d -- cpp/ tests/cpp/          -> cpp/ast/Expression.cpp
+>       stat -f "%Sm" build/cpp/bng_cpp                                   -> 2026-09-30 22:26:42
+>       git log -1 --format=%ci 3d94862                                   -> 2026-09-30 22:26:28 -0400
+>
+>   Neither half of that is a *pass* — both are checks that can fail, and
+> `swarmMemory` is right that the failure mode is not watching them fail but
+> **publishing whichever half you happened to run**. I ran both.
+>
+>   The timestamp is the weaker instrument and the stronger one is content: the
+>   gate executed on a tree that provably is what I claim it is —
+>
+>       git show 3d94862:cpp/ast/Expression.cpp | grep -c 'text_\.size() =='  -> 0
+>       git show 3d94862:cpp/ast/Expression.cpp | grep -c 'q - b'            -> 2
+>
+>   no length guards, the MM cancellation branch present — the reverted tree,
+>   built from the only `cpp/` commit I ever made. When a content check is
+>   available it settles the question and the timestamp is beside it.
+>
+>   One process note, because it is the failure this document keeps recording:
+>   I first compared `6889fba..HEAD` and got **13 compiled files** — every one
+>   another lane's work that landed on `main` afterwards, none of it mine. The
+>   diff half only means something against the tree the artifact was built from.
+2. **The C++ conclusions are untouched either way.** Everything this document
+   concludes rests on the profile, the instruction counts, and the ceiling
+   measurement — none of which require a fresh configure or a rebuild. The gate
+   was always corroboration that a rejected candidate broke nothing, never the
+   basis of the verdict.
+3. **The surviving PR carries no compiled surface at all, and that is the
+   direct answer rather than a proxy for it.** The correction that followed all
+   of this was `swarmMemory`'s: *when a check that answers the question directly
+   exists, a weaker proxy is a worse answer, not a faster one.* Applied here:
+
+>       grep -rc "PERF_EXPRESSION_CODEGEN_NO_WIN" CMakeLists.txt cpp/CMakeLists.txt tests/cpp/CMakeLists.txt
+>       -> 0, 0, 0
+>       grep -c "docs/" tests/cpp/CMakeLists.txt   -> 0
+>       git diff --name-only origin/main HEAD     -> docs/PERF_EXPRESSION_CODEGEN_NO_WIN.md
+
+>   This file is referenced by no build target at any level, so no configuration
+>   of this project can compile it — which does not depend on my diff staying
+>   that way, and is a stronger statement than "the diff touches no compiled
+>   file." A later commit could add a compiled file and lose the weaker property;
+>   nothing could add one that reaches this file, because it is not in the build
+>   graph at all.
+>
+>   Stating the scope honestly, because it is a different instrument and not a
+>   weaker gate: **the ctest numbers in this document describe the rejected
+>   candidate, not this PR.** They were measured on a branch that *did* touch
+>   `cpp/`, at a time when the candidate was live. The PR that carries this
+>   record carries documentation only, and no gate is claimed for it beyond the
+>   diff being exactly one file under `docs/`.
+
 ## Exact reproduction commands
 
 ```bash
@@ -452,10 +691,32 @@ that way reproduces the measured file byte for byte.
 
 ## Instrument limitations
 
-1. The microbenchmark compiles `Expression.cpp` **standalone** and links nothing
-   else. Production links the whole engine with LTO on. A real microbenchmark
-   delta would not necessarily survive into the shipped binary — and in this
-   case there was not even a real microbenchmark delta.
+1. **Which of my instruments is the reader, and which is a proxy.** The rule
+   that earns the most from this charge is `correctness`'s: *when the question
+   is what value a reader sees, the instrument must BE that reader.* They
+   retracted a published comparison after realising they had applied `awk` to
+   drop a field, then described the result as what a test's own unpacking sees —
+   a transformation belonging to a different consumer, substituted for the
+   consumer itself.
+
+   Applying that test to my own work, honestly:
+
+   - **The trajectory gate IS the reader.** It runs the real `bng_cpp` CLI and
+     hashes the `.gdat` that CLI emits — no transformation between the question
+     and the artifact. Nothing sits in the way.
+   - **The microbench drives the same entry point the engine calls**,
+     `Expression::evaluate(std::function, t)` — so the *call surface* is
+     faithful.
+   - **But it compiles `Expression.cpp` standalone** and links nothing else,
+     while production links the whole engine with LTO on. That part is a proxy,
+     and it is the weakest instrument here. A real microbenchmark delta would
+>     not necessarily survive into the shipped binary — and in this case there
+>     was not even a real microbenchmark delta to survive.
+
+   So the fitness numbers in this document rest on a proxy and the correctness
+>   gate rests on the real reader. They answer different questions, and the
+>   verdict rests on neither alone: the profile and the 4.89% ceiling are
+   end-to-end, while the microbench only ever located the cost.
 2. Wall-clock on this host is not trustworthy below ~10%: the same binaries
    measured 5.19% apart in one session and the host has ranged 23–131 on
    loadavg. The instruction counter contradicted it, which is what settled the
