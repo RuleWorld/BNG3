@@ -3779,9 +3779,7 @@ def test_zero_dimensional_compartment_does_not_default_to_three_dimensions():
         )
         reaction = SBMLReaction(id="r", compartment="C")
 
-        assert (
-            _requires_explicit_compartment_flux(reaction, model) is expected
-        )
+        assert _requires_explicit_compartment_flux(reaction, model) is expected
 
 
 @pytest.mark.parametrize("spatial_dimensions", [2.5, 3.5])
