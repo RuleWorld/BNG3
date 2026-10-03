@@ -43,6 +43,33 @@ run_smoke()   { (cd "$(lean_dir "$1")" && lake env lean tests/Smoke.lean) >"$2" 
 run_coverage(){ (cd "$(lean_dir "$1")" && lake env lean tests/Coverage.lean) >"$2" 2>&1; }
 run_axioms()  { (cd "$(lean_dir "$1")" && ./scripts/check_axiom_dependencies.sh) >"$2" 2>&1; }
 
+tree_digest() {
+  (cd "$1" && find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort | shasum -a 256 | awk '{print $1}')
+}
+
+gate_rejection_matches() {
+  local runner="$1"
+  local out="$2"
+  case "$runner" in
+    run_static) grep -Fq "STATIC VALIDATION FAILED" "$out" ;;
+    run_header) grep -Fq "NFNEXT HEADER CONTRACT FAILED" "$out" ;;
+    run_smoke)
+      grep -Fq "tests/Smoke.lean:" "$out" &&
+        grep -Fq "evaluated that the proposition" "$out" &&
+        grep -Fq "is false" "$out" &&
+        ! grep -Eq "unexpected end of input|unexpected identifier|Type mismatch|unknown constant|object file .* does not exist|unknown module prefix|invalid 'import' command" "$out"
+      ;;
+    run_coverage)
+      grep -Fq "tests/Coverage.lean:" "$out" &&
+        grep -Fq "evaluated that the proposition" "$out" &&
+        grep -Fq "is false" "$out" &&
+        ! grep -Eq "unexpected end of input|unexpected identifier|Type mismatch|unknown constant|object file .* does not exist|unknown module prefix|invalid 'import' command" "$out"
+      ;;
+    run_axioms) grep -Fq "AXIOM AUDIT FAILED" "$out" ;;
+    *) return 1 ;;
+  esac
+}
+
 pass=0
 fail=0
 
@@ -95,21 +122,69 @@ make_tree() {
 }
 
 # expect_reject <case> <gate-fn> <mutation-shell>
-# Applies the mutation, runs the gate, and requires a NON-ZERO exit.
+# Applies a verified mutation and requires the gate's expected diagnostic.
 expect_reject() {
   local name="$1"; shift
   local runner="$1"; shift
   local mutate="$1"; shift
 
   local tree; tree="$(make_tree "$name")"
-  ( cd "$tree" && eval "$mutate" ) >/dev/null 2>&1
-  # If the mutation touched a LIBRARY file, the cached oleans must be rebuilt.
-  # `lake env lean tests/Coverage.lean` resolves BNG.* from .lake/build/lib, so
-  # without this an edit to formal/lean/BNG/*.lean is invisible to the test --
-  # the test would pass on a stale library.  This was the cause of the first
-  # version of `coverage-semantic-flip` "passing".
-  if grep -q 'formal/lean/BNG/' <<<"$mutate"; then
-    ( cd "$tree/formal/lean" && lake build ) >/dev/null 2>&1 || true
+  local mutation_out="$SCRATCH/$name.mutation.out"
+  local before after
+  before="$(tree_digest "$tree")"
+  if ! ( cd "$tree" && eval "$mutate" ) >"$mutation_out" 2>&1; then
+    echo "FAIL  $name  (mutation command failed)"
+    echo "      $(head -3 "$mutation_out" | tr '\n' ' | ' | cut -c1-160)"
+    fail=$((fail + 1))
+    rm -rf "$tree"
+    return
+  fi
+  after="$(tree_digest "$tree")"
+  if [ "$before" = "$after" ]; then
+    echo "FAIL  $name  (mutation did not change the scratch tree)"
+    fail=$((fail + 1))
+    rm -rf "$tree"
+    return
+  fi
+
+  # Semantic mutations must rebuild cached oleans before Smoke/Coverage. If a
+  # general library theorem rejects a mutation, count it only when Lean names
+  # the changed module and reports the expected proof failure. Parse/type
+  # errors, missing tools, and stale caches must not count as semantic passes.
+  if [[ "$runner" == run_coverage || "$runner" == run_smoke ]] &&
+      grep -q 'formal/lean/BNG/' <<<"$mutate"; then
+    local build_out="$SCRATCH/$name.build.out"
+    if ! ( cd "$tree/formal/lean" && lake build ) >"$build_out" 2>&1; then
+      local source_path source_name
+      source_path="$(grep -oE 'formal/lean/BNG/[A-Za-z0-9_]+\.lean' <<<"$mutate" | head -1)"
+      source_name="${source_path##*/}"
+      local expected_build_marker=""
+      case "$name" in
+        coverage-semantic-flip|smoke-semantic-flip)
+          expected_build_marker="evaluated that the proposition"
+          ;;
+        coverage-bngir-too-permissive)
+          expected_build_marker="unsolved goals"
+          ;;
+        coverage-lowering-divergence)
+          expected_build_marker="failed: The left-hand side"
+          ;;
+      esac
+      if [ -n "$source_name" ] &&
+          grep -Fq "error: BNG/$source_name:" "$build_out" &&
+          [ -n "$expected_build_marker" ] &&
+          grep -Fq "$expected_build_marker" "$build_out"; then
+        echo "PASS  $name  (lake build rejected the changed $source_name module)"
+        echo "      $(grep -m1 -F "$expected_build_marker" "$build_out" | cut -c1-160)"
+        pass=$((pass + 1))
+      else
+        echo "FAIL  $name  (library rebuild failed outside the changed module)"
+        echo "      $(head -3 "$build_out" | tr '\n' ' | ' | cut -c1-160)"
+        fail=$((fail + 1))
+      fi
+      rm -rf "$tree"
+      return
+    fi
   fi
 
   local out="$SCRATCH/$name.out"
@@ -117,9 +192,15 @@ expect_reject() {
   "$runner" "$tree" "$out" || rc=$?
 
   if [ "$rc" -ne 0 ]; then
-    echo "PASS  $name  (gate exited $rc, as required)"
-    echo "      $(head -3 "$out" | tr '\n' ' | ' | cut -c1-160)"
-    pass=$((pass + 1))
+    if ! gate_rejection_matches "$runner" "$out"; then
+      echo "FAIL  $name  (gate failed for an unexpected reason)"
+      echo "      $(head -3 "$out" | tr '\n' ' | ' | cut -c1-160)"
+      fail=$((fail + 1))
+    else
+      echo "PASS  $name  (gate exited $rc, as required)"
+      echo "      $(head -3 "$out" | tr '\n' ' | ' | cut -c1-160)"
+      pass=$((pass + 1))
+    fi
   else
     echo "FAIL  $name  (gate exited 0 on a deliberately broken tree)"
     echo "      output was: $(head -3 "$out" | tr '\n' ' | ' | cut -c1-160)"
@@ -149,6 +230,35 @@ expect_accept() {
 
 CASES="${*:-all}"
 want() { [ "$CASES" = all ] || case " $CASES " in *" $1 "*) return 0;; *) return 1;; esac; }
+
+expect_malformed_lean_rejected() {
+  local name="harness-malformed-mutation"
+  local tree; tree="$(make_tree "$name")"
+  local before after out="$SCRATCH/$name.out" rc=0
+  before="$(tree_digest "$tree")"
+  (cd "$tree" && printf '\ndef malformedMutation : Nat := (1 + 2\n' >> formal/lean/tests/Coverage.lean)
+  after="$(tree_digest "$tree")"
+  if [ "$before" = "$after" ]; then
+    echo "FAIL  $name  (malformed mutation did not change the scratch tree)"
+    fail=$((fail + 1))
+    rm -rf "$tree"
+    return
+  fi
+  run_coverage "$tree" "$out" || rc=$?
+  if [ "$rc" -ne 0 ] &&
+      grep -Fq "tests/Coverage.lean:" "$out" &&
+      grep -Fq "unexpected end of input" "$out" &&
+      ! gate_rejection_matches run_coverage "$out"; then
+    echo "PASS  $name  (syntax failure is rejected as an invalid mutation case)"
+    echo "      $(grep -m1 -F "unexpected end of input" "$out" | cut -c1-160)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL  $name  (malformed syntax was accepted as a semantic gate rejection)"
+    echo "      $(head -3 "$out" | tr '\n' ' | ' | cut -c1-160)"
+    fail=$((fail + 1))
+  fi
+  rm -rf "$tree"
+}
 
 echo "=== harness self-test: every case mutates a scratch copy, never this tree ==="
 echo
@@ -251,10 +361,10 @@ if want header-enum-reordered; then
 fi
 
 if want header-token-in-comment; then
-  # Move a required field name so it survives ONLY inside a comment.  The old
-  # check counted comment text as a declaration.
+  # Remove two required field declarations while leaving their names in method
+  # uses and comments. Presence-only checks must not count either as a field.
   expect_reject header-token-in-comment run_header \
-    "printf '\n// connected_to is intentionally not implemented\n' >> cpp/nfnext/include/nfnext/nfir.hpp && perl -ni -e 'print unless /std::vector<std::pair<std::size_t, std::size_t>> connected_to;/' cpp/nfnext/include/nfnext/nfir.hpp"
+    "printf '\n// connected_to is intentionally not implemented\n// interchangeable is intentionally not implemented\n' >> cpp/nfnext/include/nfnext/nfir.hpp && perl -ni -e 'print unless /connected_to;|interchangeable;/' cpp/nfnext/include/nfnext/nfir.hpp && ! grep -Fq 'std::vector<std::pair<std::size_t, std::size_t>> connected_to;' cpp/nfnext/include/nfnext/nfir.hpp && ! grep -Fq 'std::vector<std::vector<std::size_t>> interchangeable;' cpp/nfnext/include/nfnext/nfir.hpp"
 fi
 
 if want header-rename-predicate; then
@@ -276,9 +386,8 @@ fi
 # ---------------------------------------------------------------------------
 
 if want coverage-semantic-flip; then
-  # A plausible wrong future edit: the reference rule phosphorylates to the
-  # WRONG state.  Before Coverage.lean existed, nothing outside the library
-  # build noticed; now the pinned post-state assertion must fail.
+  # A plausible wrong edit to the worked rule fixture. Its library
+  # native_decide theorem should fail during lake build before Coverage runs.
   expect_reject coverage-semantic-flip run_coverage \
     "sed -i '' 's/^      .changeState rx sP,$/      .changeState rx sU,/' formal/lean/BNG/Examples.lean"
 fi
@@ -295,7 +404,7 @@ if want coverage-species-bond-blind; then
   # same species as `A+B`.  Demonstrated to pass lake build, Smoke.lean and the
   # OLD static_validate.py before this work.
   expect_reject coverage-species-bond-blind run_coverage \
-    "perl -0pi -e 's/^  left\\.bonds\\.length == right\\.bonds\\.length &&\\n//m' formal/lean/BNG/Species.lean"
+    "perl -0pi -e 's/bondsPreservedForward left right mapping &&\\n  left\\.bonds\\.length == right\\.bonds\\.length/true/' formal/lean/BNG/Species.lean && perl -0pi -e 's/  left\\.bonds\\.length == right\\.bonds\\.length &&\\n  \\(candidateSpeciesIsoMaps/  (candidateSpeciesIsoMaps/' formal/lean/BNG/Species.lean"
 fi
 
 if want coverage-capability-vacuous; then
@@ -306,10 +415,10 @@ if want coverage-capability-vacuous; then
 fi
 
 if want coverage-bngir-too-permissive; then
-  # Make the BNGIR decoder accept ANY version, so unknown IR is silently
-  # accepted instead of refused.
+  # Make the BNGIR decoder accept ANY version. The general decode-refusal
+  # theorem should reject this edit during lake build.
   expect_reject coverage-bngir-too-permissive run_coverage \
-    "perl -0pi -e 's/if ir\.version == \(\{ major := 0, minor := 2 \} : BNGIRVersion\)\n  then some ir\.document\n  else none/if true then some ir.document else none/' formal/lean/BNG/BNGIR.lean"
+    "perl -0pi -e 's/if structuralAccepted ir then some ir\\.document else none/some ir.document/' formal/lean/BNG/BNGIR.lean"
 fi
 
 if want coverage-protocol-legacy-allowed; then
@@ -323,7 +432,7 @@ if want coverage-seed-too-permissive; then
   # Let seed construction accept an ambiguous `!+` bond requirement, i.e. accept
   # a SET of possible graphs where one concrete seed state is required.
   expect_reject coverage-seed-too-permissive run_coverage \
-    "sed -i '' 's/^    | .any => false$/    | .any => true/' formal/lean/BNG/Seeds.lean"
+    "sed -i '' 's/| .bound => false)/| .bound => true)/' formal/lean/BNG/Seeds.lean"
 fi
 
 if want coverage-lowering-divergence; then
@@ -358,6 +467,8 @@ fi
 # ---------------------------------------------------------------------------
 
 if want smoke-semantic-flip; then
+  # The worked fixture's library theorem catches this wrong state before the
+  # explicitly invoked Smoke test can run.
   expect_reject smoke-semantic-flip run_smoke \
     "sed -i '' 's/^      .changeState rx sP,$/      .changeState rx sU,/' formal/lean/BNG/Examples.lean"
 fi
@@ -367,7 +478,7 @@ if want smoke-badpattern-accepted; then
   # thing that catches this is Coverage.lean's negative instance; Smoke.lean's
   # own assertions do not, which is why both files exist.
   expect_reject smoke-badpattern-accepted run_coverage \
-    "perl -0pi -e 's/(def Pattern\.wellFormed \(p : Pattern\) \(sig : Signature\) :=)/\$1\n  let _ := sig; true \&\& (by/' formal/lean/BNG/Pattern.lean"
+    "sed -i '' 's/^  | \\.exact s => component.hasState s$/  | .exact _ => true/' formal/lean/BNG/Pattern.lean"
 fi
 
 # ---------------------------------------------------------------------------
@@ -380,6 +491,10 @@ if want axioms-new-native; then
   # static_validate.py is what makes it a failure.
   expect_reject axioms-new-native run_static \
     "printf '\ntheorem sneakyNative : 1 = 1 := by native_decide\n' >> formal/lean/BNG/Util.lean"
+fi
+
+if want harness-malformed-mutation; then
+  expect_malformed_lean_rejected
 fi
 
 echo
