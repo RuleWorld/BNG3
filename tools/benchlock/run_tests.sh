@@ -1,118 +1,207 @@
 #!/usr/bin/env bash
-# benchlock acceptance tests. Every assertion is a real concurrency
-# observation, not an inspection of the source.
+# benchlock acceptance tests. Every assertion is a real lock observation.
 set -u
-BL=/tmp/bng-bench-lock/benchlock
-# A UNIQUE lockdir per invocation. Two runs of this suite must never contend:
-# the suite asserts exact free-slot counts, which are only meaningful if it is
-# the only user of the directory. Running it in a loop (which I did, hunting a
-# flake) made iterations fight over a shared dir and produced failures that
-# looked exactly like a slot leak in benchlock. It was not one -- an isolated
-# repro shows the lock releases correctly on SIGKILL. The bug was here.
-export BENCHLOCK_DIR="/tmp/bng-bench-lock-test.$$.$RANDOM"
-rm -rf "$BENCHLOCK_DIR"
-trap 'rm -rf "$BENCHLOCK_DIR"' EXIT
-PASS=0; FAIL=0
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BL="$SCRIPT_DIR/benchlock"
+TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/bng3-benchlock-test.XXXXXX")"
+export BENCHLOCK_DIR="$TEST_ROOT/locks"
+export BENCHLOCK_MAX=2
+export BENCHLOCK_POLL=0.05
+
+PASS=0
+FAIL=0
+PA=""
+PB=""
+PD=""
+PG=""
+
 ok()  { echo "  PASS  $1"; PASS=$((PASS+1)); }
 bad() { echo "  FAIL  $1"; FAIL=$((FAIL+1)); }
-free_count() { $BL status | head -1 | sed 's/.*free \([0-9]*\).*/\1/'; }
+
+cleanup() {
+  for pid in "$PA" "$PB" "$PD" "$PG"; do
+    if [ -n "$pid" ]; then
+      kill -9 "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+    fi
+  done
+  for pid_file in "$TEST_ROOT"/*.pid; do
+    [ -f "$pid_file" ] || continue
+    child=$(cat "$pid_file" 2>/dev/null || true)
+    [ -n "$child" ] && kill -9 "$child" 2>/dev/null || true
+  done
+  rm -rf "$TEST_ROOT"
+}
+trap cleanup EXIT
+
+free_count() {
+  "$BL" status | head -1 | sed 's/.*free \([0-9]*\).*/\1/'
+}
+
+wait_for_file() {
+  path="$1"
+  remaining=100
+  while [ "$remaining" -gt 0 ] && [ ! -f "$path" ]; do
+    sleep 0.05
+    remaining=$((remaining-1))
+  done
+  [ -f "$path" ]
+}
+
+cat > "$TEST_ROOT/hold_command.py" <<'PY'
+import os
+import pathlib
+import sys
+import time
+
+pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))
+time.sleep(float(sys.argv[2]))
+PY
 
 echo "=== T1: two concurrent acquires succeed, third blocks ==="
-$BL acquire --agent A --what "t1" -- sleep 30 > /tmp/bl_a.out 2>&1 & PA=$!
-$BL acquire --agent B --what "t2" -- sleep 30 > /tmp/bl_b.out 2>&1 & PB=$!
-sleep 1.5
+"$BL" acquire --agent A --what "t1" -- \
+  python3 "$TEST_ROOT/hold_command.py" "$TEST_ROOT/a.pid" 30 > "$TEST_ROOT/a.out" 2>&1 &
+PA=$!
+"$BL" acquire --agent B --what "t2" -- \
+  python3 "$TEST_ROOT/hold_command.py" "$TEST_ROOT/b.pid" 30 > "$TEST_ROOT/b.out" 2>&1 &
+PB=$!
+if wait_for_file "$TEST_ROOT/a.pid" && wait_for_file "$TEST_ROOT/b.pid"; then
+  sleep 0.2
+else
+  bad "benchmark children failed to start"
+fi
 if [ "$(free_count)" = "0" ]; then ok "two holders occupy both slots (free=0)"
 else bad "expected free=0, got free=$(free_count)"; fi
-$BL acquire --agent C --what "t3" --timeout 3 > /tmp/bl_c.out 2>&1; RC_C=$?
+"$BL" acquire --agent C --what "t3" --timeout 1 > "$TEST_ROOT/c.out" 2>&1
+RC_C=$?
 if [ "$RC_C" -eq 2 ]; then ok "third acquirer blocked and timed out (exit 2)"
 else bad "third acquirer exited $RC_C, expected 2"; fi
-if grep -q "all 2 benchmark slots busy" /tmp/bl_c.out; then ok "third acquirer announced it was waiting"
+if grep -q "all 2 benchmark slots busy" "$TEST_ROOT/c.out"; then ok "third acquirer announced the wait"
 else bad "third acquirer did not announce the wait"; fi
-if grep -q "HELD by A" /tmp/bl_c.out && grep -q "HELD by B" /tmp/bl_c.out; then
-  ok "third acquirer named BOTH current holders"
-else bad "third acquirer did not name both holders"; cat /tmp/bl_c.out; fi
+if grep -q "HELD by A" "$TEST_ROOT/c.out" && grep -q "HELD by B" "$TEST_ROOT/c.out"; then
+  ok "third acquirer named both current holders"
+else bad "third acquirer did not name both holders"; cat "$TEST_ROOT/c.out"; fi
 
-echo "=== T2: status never blocks and never takes a slot ==="
-timeout 5 $BL status > /tmp/bl_status.out 2>&1; RC_S=$?
+echo "=== T2: status does not block or consume a slot ==="
+python3 - "$BL" "$TEST_ROOT/status.out" <<'PY'
+import subprocess
+import sys
+
+result = subprocess.run([sys.argv[1], "status"], capture_output=True, text=True,
+                        timeout=5)
+open(sys.argv[2], "w").write(result.stdout)
+raise SystemExit(result.returncode)
+PY
+RC_S=$?
 if [ "$RC_S" -eq 0 ]; then ok "status exited 0 under full capacity"
 else bad "status exited $RC_S"; fi
-if [ "$(free_count)" = "0" ]; then ok "status did not consume a slot while reading"
+if [ "$(free_count)" = "0" ]; then ok "status did not consume a slot"
 else bad "status consumed a slot"; fi
 
-echo "=== T3: SIGKILL releases exactly one slot, with no cleanup step ==="
-kill -9 $PA 2>/dev/null; wait $PA 2>/dev/null
-sleep 1.5
+echo "=== T3: live command keeps slot after wrapper SIGKILL ==="
+A_CHILD=$(cat "$TEST_ROOT/a.pid" 2>/dev/null || true)
+kill -9 "$PA" 2>/dev/null || true
+wait "$PA" 2>/dev/null || true
+sleep 0.2
 FC=$(free_count)
-if [ "$FC" = "1" ]; then ok "SIGKILLed holder released its slot immediately (free=1, other still held)"
-else bad "expected free=1 after one kill, got free=$FC"; fi
-if $BL status | grep -q "HELD by B"; then ok "the surviving holder is still HELD and correctly named"
-else bad "surviving holder lost"; $BL status; fi
-
-echo "=== T4: freed slot is reusable at once ==="
-$BL acquire --agent D --what "t4" -- sleep 20 > /tmp/bl_d.out 2>&1 & PD=$!
-sleep 1.5
-if [ "$(free_count)" = "0" ]; then ok "freed slot immediately acquired by a new agent"
-else bad "freed slot not acquirable"; fi
-if grep -q "acquired slot" /tmp/bl_d.out; then ok "acquire printed its slot token"
-else bad "acquire printed no token"; cat /tmp/bl_d.out; fi
-
-echo "=== T5: normal exit releases the slot ==="
-kill -TERM $PB 2>/dev/null; wait $PB 2>/dev/null
-kill -TERM $PD 2>/dev/null; wait $PD 2>/dev/null
-sleep 1
+if [ "$FC" = "0" ]; then ok "live child retained A's slot after wrapper SIGKILL"
+else bad "expected both slots held, got free=$FC"; fi
+if "$BL" status | grep -q "HELD by B"; then ok "B's slot remains held"
+else bad "B's slot was lost"; "$BL" status; fi
+if [ -n "$A_CHILD" ]; then kill -9 "$A_CHILD" 2>/dev/null || true; fi
+sleep 0.2
 FC=$(free_count)
-if [ "$FC" = "2" ]; then ok "all slots free after holders exit (free=2)"
-else bad "slots not free after exit (free=$FC)"; fi
+if [ "$FC" = "1" ]; then ok "A's slot freed after its command exited"
+else bad "expected free=1 after A child exit, got free=$FC"; fi
+
+echo "=== T4: freed slot is reusable ==="
+"$BL" acquire --agent D --what "t4" -- \
+  python3 "$TEST_ROOT/hold_command.py" "$TEST_ROOT/d.pid" 20 > "$TEST_ROOT/d.out" 2>&1 &
+PD=$!
+if wait_for_file "$TEST_ROOT/d.pid"; then sleep 0.2; else bad "D child failed to start"; fi
+if [ "$(free_count)" = "0" ]; then ok "freed slot acquired by a new holder"
+else bad "freed slot not acquired"; fi
+if grep -q "acquired slot" "$TEST_ROOT/d.out"; then ok "acquire printed its slot token"
+else bad "acquire printed no token"; fi
+
+echo "=== T5: command exit releases the slot ==="
+B_CHILD=$(cat "$TEST_ROOT/b.pid" 2>/dev/null || true)
+D_CHILD=$(cat "$TEST_ROOT/d.pid" 2>/dev/null || true)
+[ -n "$B_CHILD" ] && kill -TERM "$B_CHILD" 2>/dev/null || true
+[ -n "$D_CHILD" ] && kill -TERM "$D_CHILD" 2>/dev/null || true
+wait "$PB" 2>/dev/null || true
+wait "$PD" 2>/dev/null || true
+sleep 0.2
+FC=$(free_count)
+if [ "$FC" = "2" ]; then ok "all slots free after wrapped commands exit"
+else bad "slots not free after command exit (free=$FC)"; fi
 
 echo "=== T6: child exit code propagates through -- ==="
-$BL acquire --agent E --what "t6" -- sh -c 'exit 42' > /tmp/bl_e.out 2>&1; RC_E=$?
-if [ "$RC_E" -eq 42 ]; then ok "benchlock returned the child's exit code (42)"
+"$BL" acquire --agent E --what "t6" -- sh -c 'exit 42' > "$TEST_ROOT/e.out" 2>&1
+RC_E=$?
+if [ "$RC_E" -eq 42 ]; then ok "benchlock returned child's exit code (42)"
 else bad "benchlock returned $RC_E, expected 42"; fi
-$BL acquire --agent F --what "t6b" -- sh -c 'exit 0' > /dev/null 2>&1; RC_F=$?
+"$BL" acquire --agent F --what "t6b" -- sh -c 'exit 0' > /dev/null 2>&1
+RC_F=$?
 if [ "$RC_F" -eq 0 ]; then ok "benchlock returned 0 for a succeeding child"
 else bad "benchlock returned $RC_F for a succeeding child"; fi
-if [ "$(free_count)" = "2" ]; then ok "slot released after the child exited"
+if [ "$(free_count)" = "2" ]; then ok "slot released after child exit"
 else bad "slot leaked after child exit"; fi
 
 echo "=== T7: holder metadata is machine-readable and complete ==="
-$BL acquire --agent G --what "metadata probe" --worktree /tmp/some-worktree -- sleep 25 > /dev/null 2>&1 & PG=$!
-sleep 1.5
-H=$($BL holders)
-if echo "$H" | grep -q '"agent": *"G"'; then ok "holders reports the agent name"
+"$BL" acquire --agent G --what "metadata probe" --worktree "$TEST_ROOT" -- \
+  python3 "$TEST_ROOT/hold_command.py" "$TEST_ROOT/g.pid" 25 > "$TEST_ROOT/g.out" 2>&1 &
+PG=$!
+if wait_for_file "$TEST_ROOT/g.pid"; then sleep 0.2; else bad "G child failed to start"; fi
+H=$("$BL" holders)
+if echo "$H" | grep -q '"agent": *"G"'; then ok "holders reports agent"
 else bad "holders missing agent"; echo "$H"; fi
-if echo "$H" | grep -q "\"pid\": *$PG"; then ok "holders reports the holder's pid ($PG)"
-else bad "holders missing/incorrect pid"; echo "$H"; fi
-if echo "$H" | grep -q 'metadata probe'; then ok "holders reports what is being measured"
-else bad "holders missing measurement description"; fi
-if echo "$H" | grep -q '/tmp/some-worktree'; then ok "holders reports the owning worktree"
+if echo "$H" | grep -q "\"pid\": *$PG"; then ok "holders reports wrapper pid ($PG)"
+else bad "holders missing/incorrect wrapper pid"; echo "$H"; fi
+if echo "$H" | grep -q 'metadata probe'; then ok "holders reports measurement"
+else bad "holders missing measurement"; fi
+if echo "$H" | grep -q "$TEST_ROOT"; then ok "holders reports worktree"
 else bad "holders missing worktree"; fi
 
-echo "=== T8: stale metadata cannot masquerade as a live hold ==="
-kill -9 $PG 2>/dev/null; wait $PG 2>/dev/null
-sleep 1.5
-if [ "$(free_count)" = "2" ]; then
-  ok "killed holder shows FREE in status despite the lingering metadata file"
-else bad "killed holder still reported as held"; $BL status; fi
+echo "=== T8: killed wrapper leaves no false free slot or stale hold ==="
+G_CHILD=$(cat "$TEST_ROOT/g.pid" 2>/dev/null || true)
+kill -9 "$PG" 2>/dev/null || true
+wait "$PG" 2>/dev/null || true
+sleep 0.2
+if [ "$(free_count)" = "1" ]; then ok "live G child retains its slot after wrapper death"
+else bad "G slot not retained by live child"; "$BL" status; fi
+[ -n "$G_CHILD" ] && kill -9 "$G_CHILD" 2>/dev/null || true
+sleep 0.2
+if [ "$(free_count)" = "2" ]; then ok "slot free after child dies despite stale metadata"
+else bad "dead child still reported as holder"; "$BL" status; fi
 
 echo "=== T9: capacity is configurable ==="
-BENCHLOCK_MAX=3 BENCHLOCK_DIR="${BENCHLOCK_DIR}.max3" $BL status > /tmp/bl_c3.$$ 2>&1
-if grep -q "capacity 3  free 3  in_use 0" /tmp/bl_c3.$$; then ok "BENCHLOCK_MAX=3 honoured"
-else bad "BENCHLOCK_MAX ignored"; cat /tmp/bl_c3.$$; fi
-rm -rf "${BENCHLOCK_DIR}.max3" /tmp/bl_c3.$$
+BENCHLOCK_MAX=3 BENCHLOCK_DIR="$TEST_ROOT/max3" "$BL" status > "$TEST_ROOT/max3.out" 2>&1
+if grep -q "capacity 3  free 3  in_use 0" "$TEST_ROOT/max3.out"; then ok "BENCHLOCK_MAX=3 honoured"
+else bad "BENCHLOCK_MAX ignored"; cat "$TEST_ROOT/max3.out"; fi
+rm -rf "$TEST_ROOT/max3"
 
-echo "=== T10: concurrency invariant under contention (delegated) ==="
-# The invariant is "never more than MAX held at any instant", not "only MAX
-# racers ever win" -- a holder that finishes legitimately frees its slot, so
-# with N > MAX racers all of them may eventually acquire. That is correct
-# behaviour, and asserting otherwise would have been testing the wrong thing.
-if python3 /tmp/bng-bench-lock/race_test.py > /tmp/bl_race.out 2>&1; then
-  ok "peak concurrency never exceeded capacity under a 6-way race"
-  grep -E 'PEAK CONCURRENCY|PASS ' /tmp/bl_race.out | sed 's/^/        /'
+echo "=== T10: concurrency invariant under six-way race ==="
+if python3 "$SCRIPT_DIR/race_test.py" > "$TEST_ROOT/race.out" 2>&1; then
+  ok "peak concurrency never exceeded capacity"
+  grep -E 'PEAK CONCURRENCY|PASS ' "$TEST_ROOT/race.out" | sed 's/^/        /'
 else
-  bad "race test failed"; cat /tmp/bl_race.out
+  bad "race test failed"; cat "$TEST_ROOT/race.out"
+fi
+
+echo "=== T11: advisory and live-child regressions ==="
+if python3 "$SCRIPT_DIR/advisory_test.py" > "$TEST_ROOT/advisory.out" 2>&1; then
+  grep 'ADVISORY TESTS:' "$TEST_ROOT/advisory.out"
+else
+  bad "advisory test failed"; cat "$TEST_ROOT/advisory.out"
+fi
+if python3 "$SCRIPT_DIR/test_signal_hold.py" > "$TEST_ROOT/signal.out" 2>&1; then
+  cat "$TEST_ROOT/signal.out"
+else
+  bad "signal-lifetime regression failed"; cat "$TEST_ROOT/signal.out"
 fi
 
 echo
 echo "=== RESULT: $PASS passed, $FAIL failed ==="
-rm -rf "$BENCHLOCK_DIR"
 [ "$FAIL" -eq 0 ]

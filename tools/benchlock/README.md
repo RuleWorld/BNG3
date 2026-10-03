@@ -36,8 +36,9 @@ nobody can defend.
 ## Usage
 
 ```sh
-# Wrap a measurement. This BLOCKS if both slots are busy, and holds the slot
-# for the command and everything it spawns.
+# Wrap a measurement. This BLOCKS if all slots are busy, and holds a slot until
+# the wrapped command exits. The command inherits the flock, so killing the
+# benchlock wrapper cannot free the slot while that command still runs.
 tools/benchlock/benchlock acquire \
     --agent <name> --what "<what you are measuring>" --worktree "$PWD" \
     -- python3 bench/run_bench.py --reps 5
@@ -52,6 +53,10 @@ Exit codes: `0` acquired (or the child's own code, when wrapping a command),
 
 Environment: `BENCHLOCK_MAX` (default 2), `BENCHLOCK_DIR` (default
 `/tmp/bng-bench-lock`), `BENCHLOCK_POLL` (default 2.0 s).
+
+For coordinated acceptance measurements that must run one at a time, every
+lane must share the same `BENCHLOCK_DIR` and set `BENCHLOCK_MAX=1` before
+starting the wrapper. Build and correctness commands do not need a slot.
 
 ## Protocol
 
@@ -94,9 +99,9 @@ one cannot. That is the failure the advisory exists to prevent.
 ## Design notes
 
 **`fcntl.flock`, not `mkdir`.** A directory lock goes stale when the holder
-dies, and on a host where agents are routinely culled and replaced that wedges
-the protocol permanently. The kernel releases `flock` when the descriptor closes
-or the process dies, for any reason. A crashed holder cannot block anyone.
+dies. The lock is released when the last inherited descriptor closes, including
+when the wrapper dies but its measured command is still running. Once the
+command exits, the kernel releases it without a cleanup step.
 
 **Release on observed absence of compiler processes, never on a self-report.**
 "Who is holding slot 1" is answered by `ps` plus `lsof` on each holder's working
@@ -110,12 +115,13 @@ slot. The advisory code comments this because it was tried and reverted.
 ## Tests
 
 ```sh
-tools/benchlock/run_tests.sh       # 21 assertions
-tools/benchlock/advisory_test.py   # 9 assertions
+tools/benchlock/run_tests.sh       # slot lifecycle, command status, and capacity
+tools/benchlock/advisory_test.py   # NEW/PERSIST co-tenant detection
 tools/benchlock/race_test.py       # concurrency invariant under a 6-way race
+tools/benchlock/test_signal_hold.py # wrapper death cannot unlock a live command
 ```
 
-All three use a **unique lock directory per invocation**. That is not
+All tests use a **unique lock directory per invocation**. That is not
 housekeeping. Every assertion in them concerns exact slot occupancy, which is
 only meaningful if the run is the sole user of the directory; a shared path
 makes concurrent runs fight and report slot leaks that do not exist. This was
