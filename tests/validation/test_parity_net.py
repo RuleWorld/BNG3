@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from scripts.cross_validate import _stage_model
 from tests.validation import compare, corpus, exception_ledger, oracle_perl, runner
 from tests.validation.strict import require_oracle
 
@@ -15,13 +16,29 @@ EXCEPTIONS = exception_ledger.load_ledger()
 
 
 def _net_parity(model_name: str, bng_cpp, work_dir):
-    ref_path, ref_src = oracle_perl.net(model_name, work_dir / "perl")
+    source = corpus.resolve(model_name)
+    require_oracle(source is not None, f"model {model_name!r} not on disk")
+    source_root = next(
+        (root for root in corpus.MODEL_DIRS if source.is_relative_to(root)),
+        source.parent,
+    )
+
+    # Run the same source-preserving, network-only model through both engines.
+    # This strips simulation/output actions and appends one explicit network
+    # generation action while retaining model definitions and setup actions.
+    perl_model = _stage_model(source, source_root, work_dir / "perl")
+    cpp_model = _stage_model(source, source_root, work_dir / "cpp")
+    assert perl_model.read_bytes() == cpp_model.read_bytes()
+
+    ref_path, ref_src = oracle_perl.net(
+        model_name, work_dir / "perl", source_path=perl_model
+    )
     require_oracle(
         ref_path is not None,
         f"no reference .net for {model_name}: {ref_src}",
     )
 
-    test_net, _, err = runner.run_cli(bng_cpp, model_name, work_dir / "cpp")
+    test_net, _, err = runner.run_cli_path(bng_cpp, cpp_model, work_dir / "cpp")
     assert test_net is not None, f"engine produced no .net: {err}"
 
     # parse_net defaults to rate_mode="value": auto-generated rate-parameter

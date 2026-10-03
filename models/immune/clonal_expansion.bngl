@@ -38,5 +38,8 @@ end reaction rules
 begin actions
   generate_network({overwrite=>1})
   simulate({suffix=>"_ode",method=>"ode",t_end=>8,n_steps=>8,atol=>1e-10,rtol=>1e-10})
+  # The ODE action leaves the network at its final state. Restore the declared
+  # seed so the independent SSA trajectory starts from E0.
+  setConcentration("Effector()",E0)
   simulate({suffix=>"_ssa",method=>"ssa",t_end=>8,n_steps=>40,seed=>20260930})
 end actions

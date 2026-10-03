@@ -92,3 +92,123 @@ Envelope: the v2 baseline run (5 reps) measured **23.76 s wall, peak RSS
 slots active — inside the 60 s envelope even on this heavily contended host
 (the v1 4-component run measured 5.83 s in a quiet ~10-20 band). No network
 access; stdlib only.
+
+## Generate-only network fixtures
+
+Regenerate the PR42 fixture set and check it against independent Perl BNG2
+network generation:
+
+```bash
+python3 bench/make_fixtures.py
+python3 bench/check_netgen_semantics.py \
+  --binary build/cpp/bng_cpp \
+  --bng2 /path/to/pinned-bionetgen/bng2/BNG2.pl \
+  --preserve-adapters bench/evidence/bng2-adapters \
+  --json-report bench/evidence/netgen-semantics.json
+```
+
+The checker compares species graphs, reaction multiplicity, observable groups,
+and rates with `tests.validation.compare`; it reports oracle rejection as
+`UNSUPPORTED`. The 2026-10-03 qualification used RuleWorld/bionetgen revision
+`9601746f8884ed19ab2acea49fe87fc4660ace46`: 10 fixtures passed, while
+`fceri_ji_gen.bngl` remains unsupported by that oracle because its rule contains
+a dangling numbered bond (`Lig(l,l!1)`). The saved evidence keeps the original
+fixture, syntax-only block-marker adapter, and exact BNG2 error together.
+
+Measure the four-fixture preset or full 11-fixture corpus with:
+
+```bash
+BENCHLOCK_DIR=/tmp/bng-bench-lock BENCHLOCK_MAX=1 \
+  tools/benchlock/benchlock acquire --agent netgen --what "network generation A/B" \
+  --worktree "$PWD" -- \
+  python3 bench/netgen_bench.py --binary /path/to/base/bng_cpp \
+    --binary build/cpp/bng_cpp --reps 7 --full \
+    --json bench/evidence/netgen-ab.json
+```
+
+The order alternates each round; the run fails if any raw `.net` digest varies
+across reps or binaries, including `tlbr`. Current main fixed the address-order
+cause in `44664f1`. Peak RSS is normalized to bytes before displaying MiB
+(macOS `ru_maxrss` is already bytes; Linux reports KiB).
+
+## Seeded SSA A/B qualification
+
+`verify/ab_bench.py` measures fixed-event SSA runs with alternating binary order
+and a fresh directory for every simulator child. It records raw `.gdat` and
+`.net` hashes, child CPU time, wall time, peak child RSS in bytes, binary/model
+hashes, and load-average context in JSON. It exits nonzero and suppresses
+throughput tables if either raw output differs between variants or reps.
+
+Run it under the shared timing lock:
+
+```bash
+BENCHLOCK_DIR=/tmp/bng-bench-lock BENCHLOCK_MAX=1 \
+  tools/benchlock/benchlock acquire --agent perfOracle --what "seeded SSA A/B" \
+  --worktree "$PWD" -- \
+  python3 verify/ab_bench.py \
+    --bin baseline=/path/to/baseline/bng_cpp \
+    --bin candidate=build/cpp/bng_cpp \
+    --species 150 --events 2000000 --reps 5 \
+    --json bench/evidence/ssa-ab.json
+```
+
+The benchmark reports full-process CPU throughput, throughput after subtracting
+a paired two-event process probe, wall throughput, and per-child peak RSS. The
+probe-corrected figure is an estimate; keep the full-process figure and raw
+samples with any comparison.
+
+`verify/identity_check.py` runs repository and synthetic seeded cases. Compare
+its output trees before timing:
+
+```bash
+python3 verify/identity_check.py /path/to/baseline/bng_cpp \
+  build/qualification/identity-baseline --only \
+  isomerization,gene_expr_simple,edge_dimer,edge_zero_plateau,\
+edge_reactant_is_product,edge_negative_rate,edge_chain_wide,edge_ring_long
+python3 verify/identity_check.py build/cpp/bng_cpp \
+  build/qualification/identity-candidate --only \
+  isomerization,gene_expr_simple,edge_dimer,edge_zero_plateau,\
+edge_reactant_is_product,edge_negative_rate,edge_chain_wide,edge_ring_long
+python3 verify/compare_identity.py build/qualification/identity-baseline \
+  build/qualification/identity-candidate
+```
+
+The synthetic cases cover identical reactants, zero-rate plateaus, a species
+that is both reactant and product, negative-rate selection fallback, and wide
+and long reaction chains. The BLBR network retains its source stoichiometry cap
+when the identity checker reconstructs the model actions.
+
+## CPU batch SSA pool
+
+`benchmarks/batch_ssa/build_driver.sh` builds the direct CPU-pool measurement
+driver against the configured `bng_cpp` libraries. It supports both CMake
+Makefiles and Ninja builds. `run_ab.sh` alternates which binary goes first,
+checks that baseline and candidate report the same total-event samples, and on
+macOS prints each child process's real/user/system time plus peak RSS in bytes
+from `/usr/bin/time -l`.
+
+Run a fixed-seed comparison under the shared lock:
+
+```bash
+benchmarks/batch_ssa/build_driver.sh "$PWD" build/qualification/batch-current
+BENCHLOCK_DIR=/tmp/bng-bench-lock BENCHLOCK_MAX=1 \
+  tools/benchlock/benchlock acquire --agent batch-ssa \
+  --what "CPU batch SSA A/B" --worktree "$PWD" -- \
+  benchmarks/batch_ssa/run_ab.sh \
+    build/qualification/batch-baseline \
+    build/qualification/batch-candidate 3 \
+    --model models/egfr_net.bngl --batch 60 --threads 15 --seed 42 \
+    --t-end 10 --n-steps 10 --reps 1 --mode bench
+```
+
+Before timing, run each binary with the same configuration and `--mode dump`,
+then compare the output files with `cmp`. A dump includes final species,
+observables, per-trajectory event counts, and all reported mean/std arrays.
+Keep the seed derivation the same in baseline and candidate. The PR58
+qualification baseline preserves current per-trajectory seed fixes while
+reverting only the integrator-sharing change.
+
+The parity lane is repairing an observable-dependent functional-rate SSA
+correctness issue in `michment`. Until that correction passes its independent
+gate, do not treat dynamic-functional SSA timings as scientifically qualified.
+The fixed-parameter fixtures above do not exercise that rate path.

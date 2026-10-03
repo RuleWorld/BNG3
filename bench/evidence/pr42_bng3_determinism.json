@@ -1,0 +1,85 @@
+{
+  "binary": "/private/tmp/bng3-20261002-performance/build/cpp/bng_cpp",
+  "binary_sha256": "7d6c31e805f4d92fd226cae2cd9c68f1a92f4407f25d48cf82c0fdcc472b5dc8",
+  "results": {
+    "PushPull_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "92ff39438ed7fed852cadad02c176a547ed89cd8f8dd2e66f1362d98eb2a10e4": 2
+      },
+      "runs": 2
+    },
+    "Repressilator_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "94444e7c8672307d15104a8cf86560380bf88b23ea1eda4d357a9dac3d498e17": 2
+      },
+      "runs": 2
+    },
+    "blbr_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "e9711a4e298fd08122026c8b497c9477e75b3072eb774d2c360522cb2a0110d7": 2
+      },
+      "runs": 2
+    },
+    "e4_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "7d82d9b15ad31b72d9407af1b4d1138a5dfd0b91176a2c03100816cf29cd43d9": 2
+      },
+      "runs": 2
+    },
+    "e5_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "0848af039a55fc2561318d0d96511155c4560ae25df7c7abd2d41ea5ab7f93a3": 2
+      },
+      "runs": 2
+    },
+    "e6_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "43311859fb165b4a641ed05f7834062ff6c6356be279f951edc606070f9718d2": 2
+      },
+      "runs": 2
+    },
+    "e7_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "df85c5e28d53801bbd0558e6268d6260ea94ee414aa589f706fcdf5598b13065": 2
+      },
+      "runs": 2
+    },
+    "egfr_net_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "5d7cde15deda01e53fb89f8f3bb290463b658d6b56aea8877629cf969ade6919": 2
+      },
+      "runs": 2
+    },
+    "fceri_ji_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "cfde50e558c151632f7462a565f6b85831757af7e0e515a2275937fd8f962785": 2
+      },
+      "runs": 2
+    },
+    "heise_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "56b132425434e18a44d25e59eec6732caa7c25ab3f29a38de35286748c5d3a0c": 2
+      },
+      "runs": 2
+    },
+    "tlbr_gen.bngl": {
+      "deterministic": true,
+      "hash_counts": {
+        "9630a77b3c707656730c55a58fe11b5924d5f7a865d060158c0e4709781c90fd": 20
+      },
+      "runs": 20
+    }
+  },
+  "semantic_fix_44664f1_ancestor": true,
+  "source_head": "cd447865b3c6c2d889d3ba74551d283bfeba4364"
+}

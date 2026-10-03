@@ -20,9 +20,12 @@
       "capability": "Guard empty graph canonicalization, reject invalid bridge-bond dissociation products, and report action exceptions",
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/core/PatternGraph.cpp; cpp/ast/ReactionRule.cpp; cpp/main.cpp",
-      "tests": [],
+      "tests": [
+        "tests/cpp/test_node_operator.cpp::PatternGraph canonicalization defines the empty graph",
+        "tests/cpp/CMakeLists.txt::bng_cpp_action_errors"
+      ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "All three behaviors are present in the BNG3-native implementation: empty graphs short-circuit canonicalization, pure bond-breaking rules reject undeclared fragments, and action exceptions are reported with a nonzero process result."
+      "rationale": "The source claims map to three behaviors. Current CTest directly covers empty-graph canonicalization and nonzero action-error reporting. No dedicated regression for rejecting an invalid bridge-bond dissociation product was identified; these two tests do not establish that third behavior. Maintainer review remains pending."
     },
     {
       "source_revision": "dca95a6aa80e249f1adf981037b61bf020f7b5ad",
@@ -31,7 +34,7 @@
       "bng3_reference": "legacy/perl/Perl2/BNGAction.pm; BNGOutput.pm; Expression.pm; MacroBNGModel.pm; RateLaw.pm; RxnRule.pm; SpeciesGraph.pm",
       "tests": [],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "Applicable legacy behavior changes were ported to BNG3 compatibility code, including scan-header preservation, child-process status handling, safer expression handling, compartment checks, canonical reaction labels, export corrections, and fail-closed input parsing. BNG3-specific unsupported semantics remain fail-closed."
+      "rationale": "Applicable compatibility changes are present in BNG3 compatibility/runtime code, but this upstream commit bundles scan-header preservation, child-process status, expression safety, compartment checks, reaction labels, exports, and fail-closed parsing. The exact per-behavior test map has not been completed; the general compatibility suite is not treated as proof for every item. Maintainer review remains pending."
     },
     {
       "source_revision": "39ec47764ac6ad97a2bd4ca16e7762bd55d2ca57",
@@ -256,7 +259,7 @@
       "bng3_reference": "legacy/perl/Perl2/RxnRule.pm; legacy/perl/Perl2/SpeciesGraph.pm",
       "tests": [],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "Invalid compartment-bond products now follow topology rejection in the retained Perl compatibility engine rather than aborting the run.",
+      "rationale": "Invalid compartment-bond products now follow topology rejection in the retained Perl compatibility engine. No focused current BNG3 regression test for the invalid product was identified; the cross-volume bond-formation rejection test is not equivalent. Maintainer review remains pending.",
       "issue": "#339"
     },
     {
@@ -266,7 +269,7 @@
       "bng3_reference": "legacy/perl/Perl2/RateLaw.pm",
       "tests": [],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "Arrhenius activation energy validation now excludes only variables shared by every energy-pattern free-energy expression, preserving rejection for motif-specific dependencies.",
+      "rationale": "The source change permits a shared energy-pattern normalization variable in Arrhenius actE. A direct regression mapping for that exact shared-variable behavior has not been established; existing thermodynamic parse-path tests cover barrier/driving-work metadata, not this normalization rule. Maintainer review remains pending.",
       "issue": "#340"
     }
   ]

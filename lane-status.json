@@ -1,0 +1,110 @@
+{
+  "lane": "ssa-repair",
+  "goal_status": "active",
+  "objective": "Isolate and repair assigned BNG3 SSA/immune acceptance failures from candidate f90ead11c2bd56ae254914da6443048a2f49b7ea; preserve fixed scientific tolerances, seeds, immutable artifacts, and independent oracle semantics; verify in this worktree and publish a small draft PR without merging.",
+  "worktree": "/private/tmp/bng3-20261003-ssa-repair",
+  "branch": "codex/bng3-20261003-ssa-repair",
+  "source_sha": "3ae00e00db49f0b87d73f8828ea8d76a125efe10",
+  "tested_code_head_sha": "3f22f8c7a05d84d77a183e62436a563c0ea503b2",
+  "merged_remote_main_sha": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
+  "draft_pr_url": "https://github.com/RuleWorld/BNG3/pull/94",
+  "commits_ready_for_integration": ["e6c46f6"],
+  "test_commands_results": [
+    {
+      "command": "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=OFF -DBUILD_TESTS=OFF -DNFSIM_ENABLE_LTO=OFF",
+      "result": "failed before generation: offline DNS could not resolve github.com for the pinned ANTLR4 FetchContent dependency; no source changed"
+    },
+    {
+      "command": "cmake configure with FETCHCONTENT_FULLY_DISCONNECTED=ON and read-only cached ANTLR4 4.13.2, SUNDIALS 7.6.0, pybind11 2.13.6 source directories",
+      "result": "passed; CMAKE_HOME_DIRECTORY is this worktree"
+    },
+    {
+      "command": "cmake --build build -j2",
+      "result": "passed, exit 0; built this worktree's build/cpp/bng_cpp sha256 c60906c28ab58f1282e9cd7ff27a002409ebc3f085789d57cd85393c63acb59b and _bionetgen_cpp.cpython-314-darwin.so sha256 b7d5d7f9cdeb1c8d2957eb797dd7eec3b57d966b0c65896bf857d62f170579e2"
+    },
+    {
+      "command": "BNG_CPP=/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp /opt/anaconda3/bin/python -m pytest --noconftest -q tests/python/test_immune_models.py::test_seeded_ssa_concentrates_near_the_deterministic_trajectory (before model reset)",
+      "result": "expected failure reproduced: initial SSA row was [0.0, 932.0], final E(8)=997.0 vs wrongly assumed E0=200 logistic value 931.7384593585715"
+    },
+    {
+      "command": "Run original unmodified clonal_expansion.bngl sequentially with this worktree CLI and pinned BNG2 2.9.3",
+      "result": "both exit 0 and agree: ODE E(8)=931.7384598981/931.7384598982; following SSA starts [0.0, 932.0], ends [8.0, 997.0], 41 samples. BNG2 updates concentrations from preceding ODE cdat; SSA time starts at 0 while state carries forward."
+    },
+    {
+      "command": "Scratch-only explicit setConcentration(\"Effector()\",E0) before the original seeded SSA action, run by both engines",
+      "result": "both start SSA at [0.0, 200.0]; candidate ends 935 and BNG2 ends 919, each within unchanged 5% of logistic E(8)=931.7384593586. Seed and simulation settings unchanged."
+    },
+    {
+      "command": "BNG_CPP=/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp /opt/anaconda3/bin/python -m pytest --noconftest -q tests/python/test_immune_models.py::test_seeded_ssa_concentrates_near_the_deterministic_trajectory (after explicit reset)",
+      "result": "1 passed; new initial-state assertion was observed failing first at [0.0, 932.0] before the model change"
+    },
+    {
+      "command": "BNG_CPP=/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp /opt/anaconda3/bin/python -m pytest --noconftest -q tests/python/test_immune_models.py::test_verify_harness_itself_passes",
+      "result": "1 passed"
+    },
+    {
+      "command": "BNG_CPP=/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp /opt/anaconda3/bin/python -m pytest --noconftest -q tests/python/test_immune_models.py",
+      "result": "22 passed in 0.51s"
+    },
+    {
+      "command": "BNG_CPP=/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp /opt/anaconda3/bin/python models/immune/verify_immune.py",
+      "result": "exit 0; all checks passed, including explicit seeded SSA reset (E(8)=935.0 vs logistic 931.7385)"
+    },
+    {
+      "command": "After normal merge of remote main dc421c3, cmake --build build -j2",
+      "result": "passed; Ninja reported no work because merged parser/formal changes did not change this worktree's built source inputs"
+    },
+    {
+      "command": "At source head 3f22f8c, BNG_CPP=/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp /opt/anaconda3/bin/python -m pytest --noconftest -q tests/python/test_immune_models.py",
+      "result": "22 passed in 0.62s"
+    },
+    {
+      "command": "At source head 3f22f8c, BNG_CPP=/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp /opt/anaconda3/bin/python models/immune/verify_immune.py",
+      "result": "exit 0; all harness checks passed"
+    }
+  ],
+  "artifact_paths": [
+    "/private/tmp/bng3-20261003-ssa-repair/build/cpp/bng_cpp",
+    "/private/tmp/bng3-20261003-ssa-repair/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+    "/private/tmp/bng3-ssa-repair/candidate-sequential/clonal_expansion__ssa.gdat",
+    "/private/tmp/bng3-ssa-repair/bng2-sequential/clonal_expansion__ssa.gdat",
+    "/private/tmp/bng3-ssa-repair/candidate-final/clonal_expansion__ssa.gdat",
+    "/private/tmp/bng3-ssa-repair/bng2-final/clonal_expansion__ssa.gdat"
+  ],
+  "artifact_sha256s": {
+    "original_model_input": "86f1135fd96c1fdea85f122551ab2787b63c64aa8c933f6c35ec95ca839d930f",
+    "reset_model_input": "d969d2ea45a1530f5fafe15ab0f901cfaf39f8d3b09cc68cd48d26fe09396d5c",
+    "candidate_bng_cpp": "c60906c28ab58f1282e9cd7ff27a002409ebc3f085789d57cd85393c63acb59b",
+    "candidate_python_extension": "b7d5d7f9cdeb1c8d2957eb797dd7eec3b57d966b0c65896bf857d62f170579e2",
+    "original_sequential_candidate_ode_gdat": "b9a35fe39d38fb8cb87c4acff2f34b143f6e71c11cd7959539a71ab6d6639254",
+    "original_sequential_bng2_ode_gdat": "12127a2798a121bad6acecaec59c6a33e990463349b2c0c29f4e0bf4aa8b970f",
+    "original_sequential_candidate_ssa_gdat": "dc5a4bf97eb874f66298f9f8a191bee2e01cc3d49fb0d3ea523202b09f6701a7",
+    "original_sequential_bng2_ssa_gdat": "99c6d26b8e7af9b7227f64f082fbc33748769214202430ec975f45f45421ec49",
+    "explicit_reset_candidate_ode_gdat": "b9a35fe39d38fb8cb87c4acff2f34b143f6e71c11cd7959539a71ab6d6639254",
+    "explicit_reset_bng2_ode_gdat": "12127a2798a121bad6acecaec59c6a33e990463349b2c0c29f4e0bf4aa8b970f",
+    "explicit_reset_candidate_ssa_gdat": "a7bb6828c7dd2153a6bb51124789ea036a402224a6fa8f8f6bb1fe80ae00f061",
+    "explicit_reset_bng2_ssa_gdat": "273dd22d25f73e375c0111419783f5b24fe346ea118b6ca22bfcc0d52e125fef"
+  },
+  "oracle_artifact_evidence": {
+    "pinned_bng2_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "pinned_bng2_script_sha256": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4",
+    "pinned_bng2_run_network_sha256": "73761b79bfe9e3ae52932ea700a4ee7172f3089a703404590c27ef1678b5c931",
+    "observed_bng2_script_sha256": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4",
+    "observed_bng2_run_network_sha256": "73761b79bfe9e3ae52932ea700a4ee7172f3089a703404590c27ef1678b5c931",
+    "immutable_ensemble_manifest": "tests/validation/evidence/bng2-ssa-ensembles/manifest.json",
+    "note": "Pinned oracle checkout is read-only. Original sequential comparison and reset-action proof used disposable staging directories."
+  },
+  "exact_head_hosted_state": "PR #94 is draft; 13 hosted checks pending at published head 3ae00e00db49f0b87d73f8828ea8d76a125efe10",
+  "files_changed": [
+    "models/immune/clonal_expansion.bngl",
+    "tests/python/test_immune_models.py",
+    "lane-status.json"
+  ],
+  "workflow_requirements": [],
+  "blockers_dependencies": [
+    "michment's fixed 200-member failure still requires own-package/worker reproduction and root-cause diagnosis.",
+    "Coordinate exact engine file ownership with parent before any engine/parser edit; no engine files have been touched."
+  ],
+  "integration_dependency_note": "The assigned branch includes the f90ead1 integration candidate. Its current diff from main is 711 inherited files; focused repair commit is e6c46f6 and parent may cherry-pick it without the candidate lanes.",
+  "next_step": "Publish the PR URL in this ledger, push its evidence-only update, then continue package/worker identity proof and the original fixed 200-member michment failure while hosted checks run."
+}

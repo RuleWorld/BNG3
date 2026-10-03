@@ -11,9 +11,23 @@ set -euo pipefail
 
 ROOT="$1"
 OUT="$2"
+ROOT="$(cd "$ROOT" && pwd)"
+if [[ "$OUT" != /* ]]; then
+  OUT="$ROOT/$OUT"
+fi
+mkdir -p "$(dirname "$OUT")"
 BUILD="$ROOT/build"
 FLAGS="$BUILD/cpp/CMakeFiles/bng_cpp.dir/flags.make"
 LINK="$BUILD/cpp/CMakeFiles/bng_cpp.dir/link.txt"
+
+if [[ ! -f "$FLAGS" || ! -f "$LINK" ]]; then
+  if [[ -f "$BUILD/build.ninja" ]]; then
+    python3 "$ROOT/benchmarks/batch_ssa/build_driver_ninja.py" "$ROOT" "$OUT"
+    exit 0
+  fi
+  echo "no supported CMake build metadata found under $BUILD" >&2
+  exit 1
+fi
 
 INCLUDES=$(sed -n 's/^CXX_INCLUDES = //p' "$FLAGS")
 DEFINES=$(sed -n 's/^CXX_DEFINES = //p' "$FLAGS")

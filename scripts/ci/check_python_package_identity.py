@@ -11,19 +11,19 @@ from pathlib import Path
 import subprocess
 import sys
 
+if __package__:
+    from .python_package_mode import editable_finders_for_package
+else:
+    from python_package_mode import editable_finders_for_package
+
 
 def inspect_installed_package(source_revision: str | None = None) -> dict[str, str]:
     """Verify package and extension come from one installed distribution."""
 
-    editable_finders = [
-        finder
-        for finder in sys.meta_path
-        if "editable" in type(finder).__module__.lower()
-        or "editable" in getattr(finder, "__name__", "").lower()
-    ]
+    editable_finders = editable_finders_for_package(sys.meta_path, "bionetgen")
     if editable_finders:
         raise RuntimeError(
-            "installed-package identity check found an editable import finder"
+            "installed-package identity check found a BNG3 editable import finder"
         )
 
     try:

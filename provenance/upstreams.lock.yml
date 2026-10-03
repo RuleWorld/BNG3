@@ -4,11 +4,12 @@
   "baseline": {
     "date": "2026-09-23",
     "status": "pending-maintainer-approval",
-    "approved_by": null,
-    "approved_at": null,
-    "notes": [
-      "Revisions remain observed snapshots, not accepted import cutoffs; maintainer approval, oracle recipes, artifact digests, and compiler images remain pending.",
-      "On 2026-09-23, gh verified the current RuleWorld/bionetgen, RuleWorld/nfsim, and RuleWorld/PyBioNetGen remote heads. The BNG3 revision records the local main base used for this reconciliation.",
+      "approved_by": null,
+      "approved_at": null,
+      "notes": [
+        "Revisions remain observed snapshots, not accepted import cutoffs; maintainer approval, oracle recipes, artifact digests, and compiler images remain pending.",
+        "On 2026-10-03, gh verified the BNG3 main remote head and the source row was refreshed. The RuleWorld/bionetgen, RuleWorld/nfsim, and RuleWorld/PyBioNetGen rows retain their 2026-09-23 observations.",
+        "Locked BNG2 Network3 and NFsim builds now have reproducible local recipes and sha256 artifact digests; their statuses remain pending maintainer approval.",
       "Other source rows retain their earlier observation dates and were not refreshed in this pass.",
       "The 2026-09-23 per-commit triage is recorded in provenance/reconciliation/ and docs/UPSTREAM_RECONCILIATION_2026-09-23.md."
     ]
@@ -17,12 +18,12 @@
     "bng3": {
       "repository": "https://github.com/RuleWorld/BNG3.git",
       "branch": "main",
-      "revision": "7b61ecc704e6ef775a2f6a3f2c22e8d721fc6701",
+      "revision": "c345f3aa635aac0048681b79c6a4ff1e75a298f7",
       "role": "destination-and-future-authority",
       "status": "observed",
       "evidence": {
-        "kind": "local-checkout",
-        "checked_at": "2026-09-23"
+        "kind": "remote-head",
+        "checked_at": "2026-10-03"
       }
     },
     "bionetgen": {
@@ -91,6 +92,17 @@
         "checked_at": "2026-09-08"
       }
     },
+    "sbml-test-suite": {
+      "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+      "branch": "3.5.0",
+      "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+      "role": "official-validation-corpus-not-oracle",
+      "status": "observed",
+      "evidence": {
+        "kind": "local-checkout",
+        "checked_at": "2026-10-02"
+      }
+    },
     "rulehub": {
       "repository": "https://github.com/RuleWorld/RuleHub.git",
       "branch": "master",
@@ -107,14 +119,14 @@
     "bng2": {
       "source": "bionetgen",
       "status": "pending",
-      "build_recipe": null,
-      "artifact_digest": null
+      "build_recipe": "At locked bionetgen revision 9601746f8884ed19ab2acea49fe87fc4660ace46: PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin make -C bng2/Network3 --jobs=1 (AppleClang 21.0.0.21000334).",
+      "artifact_digest": "sha256:73761b79bfe9e3ae52932ea700a4ee7172f3089a703404590c27ef1678b5c931"
     },
     "nfsim": {
       "source": "nfsim",
       "status": "pending",
-      "build_recipe": null,
-      "artifact_digest": null
+      "build_recipe": "At locked nfsim revision 9b00d42f734dcc3e695205600f12cae5b44d1daa: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNFSIM_BUILD_EXECUTABLE=ON -DNFSIM_BUILD_LIBRARY=OFF; cmake --build build --target NFsim --parallel 2 (AppleClang 21.0.0.21000334).",
+      "artifact_digest": "sha256:7621bb850efc6cf203ec2c42004c2cffcc0115af7e3ce03d62aabab100bf31a1"
     }
   },
   "dependencies": {

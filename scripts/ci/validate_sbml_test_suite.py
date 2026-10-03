@@ -13,14 +13,19 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import csv
+import hashlib
+import importlib.metadata
 import itertools
 import json
 import math
+import platform
 import re
 import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -46,13 +51,448 @@ UNSUPPORTED_MARKERS = (
     "lcm(",
     "notanumber",
 )
+DEFAULT_SUITE_LOCK = (
+    Path(__file__).resolve().parents[2] / "provenance" / "upstreams.lock.yml"
+)
+SUITE_LOCK_NAME = "sbml-test-suite"
+GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+class SuiteLockError(ValueError):
+    """Raised when the suite checkout does not match its immutable source lock."""
+
+
+class OfficialReferenceUnsupported(ValueError):
+    """Raised when a locked case has no deterministic time-course reference."""
+
+
+def _suite_lock_entry(lock_path: Path = DEFAULT_SUITE_LOCK) -> dict[str, str]:
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SuiteLockError(
+            f"cannot read suite source lock {lock_path}: {exc}"
+        ) from exc
+    sources = lock.get("sources") if isinstance(lock, dict) else None
+    source = sources.get(SUITE_LOCK_NAME) if isinstance(sources, dict) else None
+    if not isinstance(source, dict):
+        raise SuiteLockError(
+            f"sources.{SUITE_LOCK_NAME} is missing from the source lock"
+        )
+    repository = source.get("repository")
+    revision = source.get("revision")
+    if not isinstance(repository, str) or not re.fullmatch(
+        r"https://github\.com/[^/]+/[^/]+\.git", repository
+    ):
+        raise SuiteLockError(
+            f"sources.{SUITE_LOCK_NAME}.repository must be a canonical GitHub .git URL"
+        )
+    if not isinstance(revision, str) or not GIT_SHA_RE.fullmatch(revision):
+        raise SuiteLockError(
+            f"sources.{SUITE_LOCK_NAME}.revision must be a full lowercase Git SHA"
+        )
+    if source.get("status") not in {"observed", "accepted"}:
+        raise SuiteLockError(
+            f"sources.{SUITE_LOCK_NAME}.status must be observed or accepted"
+        )
+    return {
+        "repository": repository,
+        "revision": revision,
+        "status": str(source["status"]),
+    }
+
+
+def _validate_suite_checkout(
+    suite_dir: Path, lock_path: Path = DEFAULT_SUITE_LOCK
+) -> dict[str, Any]:
+    """Require the clean suite repository and HEAD to match the source lock."""
+
+    lock_path = lock_path.expanduser().resolve()
+    source = _suite_lock_entry(lock_path)
+    suite_dir = suite_dir.expanduser().resolve()
+    if not suite_dir.is_dir():
+        raise SuiteLockError(f"suite directory does not exist: {suite_dir}")
+
+    def git(*arguments: str) -> str:
+        try:
+            return subprocess.check_output(
+                ["git", "-C", str(suite_dir), *arguments],
+                text=True,
+                stderr=subprocess.PIPE,
+            ).strip()
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or "").strip()
+            raise SuiteLockError(
+                f"cannot inspect suite checkout {suite_dir}: {detail or exc}"
+            ) from exc
+
+    root = Path(git("rev-parse", "--show-toplevel")).resolve()
+    if root != suite_dir:
+        raise SuiteLockError(
+            f"suite directory must be repository root: {suite_dir} (root: {root})"
+        )
+    actual_revision = git("rev-parse", "HEAD")
+    if actual_revision != source["revision"]:
+        raise SuiteLockError(
+            "suite revision mismatch: "
+            f"checked out {actual_revision}, locked {source['revision']}"
+        )
+    try:
+        repository = git("remote", "get-url", "origin")
+    except SuiteLockError as exc:
+        raise SuiteLockError("suite checkout has no origin remote") from exc
+    if repository != source["repository"]:
+        raise SuiteLockError(
+            f"suite origin mismatch: found {repository}, locked {source['repository']}"
+        )
+    if git("status", "--porcelain", "--untracked-files=all"):
+        raise SuiteLockError(f"suite checkout is dirty: {suite_dir}")
+    return {
+        "repository": repository,
+        "revision": actual_revision,
+        "source_lock_status": source["status"],
+        "source_lock_path": str(lock_path),
+        "source_lock_sha256": _sha256_file(lock_path),
+        "clean": True,
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _read_reference_case(case: dict[str, Any]) -> dict[str, Any]:
+    """Read one deterministic SSTS settings/results pair without guessing."""
+
+    if case.get("category") != "semantic":
+        raise ValueError(
+            "official deterministic reference reader requires a semantic case"
+        )
+    case_dir = Path(case["path"]).resolve().parent
+    case_id = str(case["id"])
+    settings_path = case_dir / f"{case_id}-settings.txt"
+    results_path = case_dir / f"{case_id}-results.csv"
+    try:
+        settings_text = settings_path.read_text(encoding="utf-8-sig")
+        results_text = results_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"cannot read official reference data: {exc}") from exc
+
+    settings: dict[str, str] = {}
+    for line_number, line in enumerate(settings_text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        if ":" not in line:
+            raise ValueError(f"settings line {line_number} has no ':' delimiter")
+        key, value = (part.strip() for part in line.split(":", 1))
+        if not key or key in settings:
+            raise ValueError(
+                f"settings line {line_number} has an empty or duplicate key"
+            )
+        settings[key] = value
+    required = {
+        "start",
+        "duration",
+        "steps",
+        "variables",
+        "absolute",
+        "relative",
+        "amount",
+        "concentration",
+    }
+    missing = sorted(required - settings.keys())
+    if missing:
+        raise ValueError("settings are missing required keys: " + ", ".join(missing))
+    time_fields = [settings[key] for key in ("start", "duration", "steps")]
+    if all(not value for value in time_fields):
+        raise OfficialReferenceUnsupported(
+            "case does not define an official time-course reference"
+        )
+    if any(not value for value in time_fields):
+        raise ValueError("settings must provide start, duration, and steps together")
+
+    try:
+        start = float(settings["start"])
+        duration = float(settings["duration"])
+        absolute = float(settings["absolute"])
+        relative = float(settings["relative"])
+        steps_text = settings["steps"]
+        steps = int(steps_text)
+    except ValueError as exc:
+        raise ValueError(f"settings contain an invalid numeric value: {exc}") from exc
+    if not all(math.isfinite(value) for value in (start, duration, absolute, relative)):
+        raise ValueError("settings numeric values must be finite")
+    if duration < 0 or steps <= 0:
+        raise ValueError("settings duration must be non-negative and steps positive")
+    if steps_text.strip() != str(steps):
+        raise ValueError("settings steps must be a base-10 integer")
+    if absolute < 0 or relative < 0:
+        raise ValueError("settings tolerances must be non-negative")
+
+    def parse_ids(key: str) -> list[str]:
+        ids = [value.strip() for value in settings[key].split(",") if value.strip()]
+        if len(ids) != len(set(ids)):
+            raise ValueError(f"settings {key} list contains duplicate identifiers")
+        return ids
+
+    variables = parse_ids("variables")
+    amount = parse_ids("amount")
+    concentration = parse_ids("concentration")
+    if not variables or len(variables) != len(set(variables)):
+        raise ValueError("settings variables must contain unique identifiers")
+    variable_set = set(variables)
+    if not set(amount) <= variable_set or not set(concentration) <= variable_set:
+        raise ValueError("amount and concentration IDs must appear in variables")
+    if set(amount) & set(concentration):
+        raise ValueError("an output variable cannot be both amount and concentration")
+
+    rows = list(csv.reader(results_text.splitlines()))
+    if not rows or any(not row for row in rows):
+        raise ValueError("official results CSV is empty or contains a blank row")
+    expected_header = ["time", *variables]
+    first = [cell.strip() for cell in rows[0]]
+    has_header = bool(first and first[0].lower() == "time")
+    if has_header:
+        normalized_header = [first[0].lower(), *first[1:]]
+        if normalized_header != expected_header:
+            raise ValueError(
+                "official results header does not match settings variable order: "
+                f"expected {expected_header}, found {first}"
+            )
+        data_rows = rows[1:]
+        row_offset = 1
+    else:
+        data_rows = rows
+        row_offset = 0
+    if len(data_rows) != steps + 1:
+        raise ValueError(
+            f"official results row count {len(data_rows)} does not equal steps + 1 ({steps + 1})"
+        )
+    expected_grid = np.linspace(start, start + duration, steps + 1, dtype=float)
+    values: list[list[float]] = []
+    time_rounding_tolerances = []
+    for row_number, row in enumerate(data_rows, start=row_offset + 1):
+        if len(row) != len(expected_header):
+            raise ValueError(
+                f"official results row {row_number} has {len(row)} columns; "
+                f"expected {len(expected_header)}"
+            )
+        try:
+            values.append([float(cell.strip()) for cell in row])
+        except ValueError as exc:
+            raise ValueError(
+                f"official results row {row_number} is not numeric"
+            ) from exc
+        try:
+            decimal_time = Decimal(row[0].strip())
+        except InvalidOperation as exc:
+            raise ValueError(
+                f"official results row {row_number} has invalid time"
+            ) from exc
+        if not decimal_time.is_finite():
+            raise ValueError(f"official results row {row_number} has non-finite time")
+        time_token = row[0].strip().lower()
+        if "." not in time_token and "e" not in time_token:
+            time_rounding_tolerances.append(1e-12)
+        else:
+            rounding_exponent = decimal_time.as_tuple().exponent
+            time_rounding_tolerances.append(
+                max(1e-12, float(Decimal(5).scaleb(rounding_exponent - 1)))
+            )
+    matrix = np.asarray(values, dtype=float)
+    times = matrix[:, 0]
+    grid_tolerances = np.asarray(time_rounding_tolerances, dtype=float)
+    grid_tolerances = np.maximum(
+        grid_tolerances, np.maximum(1e-12, np.abs(expected_grid) * 1e-14)
+    )
+    if not np.all(np.isfinite(times)) or not np.all(
+        np.abs(times - expected_grid) <= grid_tolerances
+    ):
+        raise ValueError(
+            "official results time grid does not match settings start/duration/steps"
+        )
+    return {
+        "settings_path": str(settings_path),
+        "results_path": str(results_path),
+        "settings_sha256": _sha256_file(settings_path),
+        "results_sha256": _sha256_file(results_path),
+        "start": start,
+        "duration": duration,
+        "steps": steps,
+        "times": times,
+        "variables": variables,
+        "amount": amount,
+        "concentration": concentration,
+        "absolute": absolute,
+        "relative": relative,
+        "expected": {
+            variable: matrix[:, index + 1] for index, variable in enumerate(variables)
+        },
+    }
+
+
+def _compare_reference_series(
+    expected: dict[str, Any],
+    actual: dict[str, Any],
+    *,
+    absolute: float,
+    relative: float,
+    sample_times: Any | None = None,
+) -> dict[str, Any]:
+    """Apply the official pointwise absolute-plus-relative error formula."""
+
+    if not math.isfinite(absolute) or not math.isfinite(relative):
+        raise ValueError("official tolerances must be finite")
+    if absolute < 0 or relative < 0:
+        raise ValueError("official tolerances must be non-negative")
+    times = None if sample_times is None else np.asarray(sample_times, dtype=float)
+    formula = "abs(expected-actual) <= absolute + relative*abs(expected)"
+    comparisons: dict[str, dict[str, Any]] = {}
+    failed_variables = []
+    total_points = 0
+    passed_points = 0
+    for variable, expected_values in expected.items():
+        left = np.asarray(expected_values, dtype=float)
+        right_raw = actual.get(variable)
+        if right_raw is None:
+            failed_indices = list(range(int(left.size)))
+            comparisons[variable] = {
+                "passed": False,
+                "reason": "actual output is missing",
+                "sample_count": int(left.size),
+                "passed_points": 0,
+                "failed_points": int(left.size),
+                "failed_sample_index_count": int(left.size),
+                "failed_sample_indices": failed_indices[:25],
+                "failed_sample_indices_truncated": len(failed_indices) > 25,
+                "finite_points": int(np.isfinite(left).sum()),
+                "nonfinite_points": int((~np.isfinite(left)).sum()),
+                "max_abs_difference": None,
+                "max_scaled_error": None,
+            }
+            failed_variables.append(variable)
+            total_points += int(left.size)
+            continue
+        right = np.asarray(right_raw, dtype=float)
+        if left.ndim != 1 or right.ndim != 1 or left.shape != right.shape:
+            failed_indices = list(range(int(left.size)))
+            comparisons[variable] = {
+                "passed": False,
+                "reason": f"actual shape {right.shape} does not match reference shape {left.shape}",
+                "sample_count": int(left.size),
+                "passed_points": 0,
+                "failed_points": int(left.size),
+                "failed_sample_index_count": int(left.size),
+                "failed_sample_indices": failed_indices[:25],
+                "failed_sample_indices_truncated": len(failed_indices) > 25,
+                "finite_points": int(np.isfinite(left).sum()),
+                "nonfinite_points": int((~np.isfinite(left)).sum()),
+                "max_abs_difference": None,
+                "max_scaled_error": None,
+            }
+            failed_variables.append(variable)
+            total_points += int(left.size)
+            continue
+        if times is not None and (times.ndim != 1 or times.shape != left.shape):
+            raise ValueError(
+                f"sample time shape {times.shape} does not match reference shape {left.shape}"
+            )
+
+        left_finite = np.isfinite(left)
+        right_finite = np.isfinite(right)
+        finite_match = left_finite & right_finite
+        nonfinite_match = (np.isnan(left) & np.isnan(right)) | (
+            np.isinf(left) & np.isinf(right) & (left == right)
+        )
+        point_passed = nonfinite_match.copy()
+        differences = np.abs(left[finite_match] - right[finite_match])
+        tolerances = absolute + relative * np.abs(left[finite_match])
+        finite_passed = differences <= tolerances
+        point_passed[finite_match] = finite_passed
+        max_scaled = 0.0
+        if differences.size:
+            scaled = np.divide(
+                differences,
+                tolerances,
+                out=np.where(
+                    differences == 0.0, 0.0, math.inf * np.ones_like(differences)
+                ),
+                where=tolerances != 0.0,
+            )
+            max_scaled = float(np.max(scaled))
+        variable_passed = bool(np.all(point_passed))
+        passed_count = int(point_passed.sum())
+        failed_indices = np.flatnonzero(~point_passed).astype(int).tolist()
+        total_points += int(left.size)
+        passed_points += passed_count
+        if not variable_passed:
+            failed_variables.append(variable)
+        failed_examples = []
+        for index in failed_indices[:5]:
+            expected_value = float(left[index])
+            actual_value = float(right[index])
+            expected_finite = math.isfinite(expected_value)
+            actual_finite = math.isfinite(actual_value)
+            example = {
+                "index": index,
+                "expected": expected_value if expected_finite else str(expected_value),
+                "actual": actual_value if actual_finite else str(actual_value),
+                "absolute_difference": (
+                    abs(expected_value - actual_value)
+                    if expected_finite and actual_finite
+                    else None
+                ),
+                "tolerance": (
+                    absolute + relative * abs(expected_value)
+                    if expected_finite
+                    else None
+                ),
+            }
+            if times is not None:
+                example["time"] = float(times[index])
+            failed_examples.append(example)
+        comparisons[variable] = {
+            "passed": variable_passed,
+            "sample_count": int(left.size),
+            "passed_points": passed_count,
+            "failed_points": int(left.size - passed_count),
+            "failed_sample_index_count": len(failed_indices),
+            "failed_sample_indices": failed_indices[:25],
+            "failed_sample_indices_truncated": len(failed_indices) > 25,
+            "failed_sample_examples": failed_examples,
+            "finite_points": int(finite_match.sum()),
+            "nonfinite_points": int((~left_finite).sum()),
+            "max_abs_difference": (
+                float(np.max(differences)) if differences.size else None
+            ),
+            "max_scaled_error": max_scaled,
+        }
+    return {
+        "passed": not failed_variables,
+        "tolerance_formula": formula,
+        "absolute": absolute,
+        "relative": relative,
+        "sample_count": total_points,
+        "passed_points": passed_points,
+        "failed_points": total_points - passed_points,
+        "failed_variables": failed_variables,
+        "variables": comparisons,
+    }
 
 
 def _repository_provenance(repo_root: Path) -> dict[str, Any]:
-    """Return the BNG3 source revision and tracked-worktree state."""
+    """Return commit identity and a digest of all non-coordination source edits."""
 
+    repo_root = repo_root.resolve()
     commit = None
     tracked_worktree_clean = None
+    changed_files: list[str] = []
+    untracked_files: list[str] = []
+    source_diff_sha256 = hashlib.sha256(b"").hexdigest()
     try:
         commit = subprocess.check_output(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
@@ -72,9 +512,92 @@ def _repository_provenance(repo_root: Path) -> dict[str, Any]:
                 tracked_worktree_clean = result.returncode == 0
         except Exception:
             pass
+        try:
+            changed_files = sorted(
+                path
+                for path in subprocess.check_output(
+                    ["git", "-C", str(repo_root), "diff", "--name-only", "HEAD"],
+                    text=True,
+                ).splitlines()
+                if path != "lane-status.json"
+            )
+            untracked_files = sorted(
+                path
+                for path in subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(repo_root),
+                        "ls-files",
+                        "--others",
+                        "--exclude-standard",
+                    ],
+                    text=True,
+                ).splitlines()
+                if path != "lane-status.json"
+            )
+            digest = hashlib.sha256()
+            digest.update(
+                subprocess.check_output(
+                    ["git", "-C", str(repo_root), "diff", "--binary", "HEAD"]
+                )
+            )
+            for relative_path in untracked_files:
+                digest.update(relative_path.encode("utf-8") + b"\0")
+                digest.update((repo_root / relative_path).read_bytes())
+            source_diff_sha256 = digest.hexdigest()
+        except Exception:
+            pass
+
+    worktree_clean_for_report = (
+        tracked_worktree_clean is True and not changed_files and not untracked_files
+    )
     return {
         "bng3_commit": commit,
         "bng3_tracked_worktree_clean": tracked_worktree_clean,
+        "bng3_worktree_clean_for_report": worktree_clean_for_report,
+        "bng3_changed_files": changed_files,
+        "bng3_untracked_files": untracked_files,
+        "bng3_source_diff_sha256": source_diff_sha256,
+        "excluded_coordination_files": ["lane-status.json"],
+    }
+
+
+def _runtime_provenance(cpp: Any) -> dict[str, Any]:
+    """Record interpreter, Python package, native extension, and oracle versions."""
+
+    import bionetgen
+
+    extension_path = Path(cpp.__file__)
+    resolved_extension_path = extension_path.resolve()
+    try:
+        import libsbml
+
+        libsbml_version = libsbml.getLibSBMLDottedVersion()
+    except ImportError:
+        libsbml_version = None
+    try:
+        import roadrunner
+
+        roadrunner_version = getattr(roadrunner, "__version__", None)
+    except ImportError:
+        roadrunner_version = None
+    try:
+        bionetgen_version = importlib.metadata.version("bionetgen")
+    except importlib.metadata.PackageNotFoundError:
+        bionetgen_version = getattr(bionetgen, "__version__", None)
+    return {
+        "python_executable": sys.executable,
+        "python_version": platform.python_version(),
+        "platform": platform.platform(),
+        "bionetgen_version": bionetgen_version,
+        "bionetgen_package_path": str(Path(bionetgen.__file__).resolve()),
+        "native_extension_path": str(extension_path),
+        "native_extension_resolved_path": str(resolved_extension_path),
+        "native_extension_sha256": _sha256_file(resolved_extension_path),
+        "numpy_version": np.__version__,
+        "libsbml_version": libsbml_version,
+        "roadrunner_version": roadrunner_version,
     }
 
 
@@ -339,6 +862,14 @@ def _case_files(suite_dir: Path, categories: list[str]) -> list[dict[str, Any]]:
     return cases
 
 
+def _is_partial_run(
+    categories: list[str], max_cases: int, only_case: str | None
+) -> bool:
+    """Report a run as partial unless it covers both full suite categories."""
+
+    return bool(max_cases or only_case or set(categories) != {"semantic", "stochastic"})
+
+
 def _classify_error(message: str) -> str:
     lower = message.lower()
     return (
@@ -405,6 +936,226 @@ def _event_translation_limitations(bngl: str) -> list[str]:
         "state-dependent or dynamic event scheduling is outside the BNGL action engine."
         + (f" Details: {detail}" if detail else "")
     ]
+
+
+def _reference_output_target(
+    variable: str,
+    reference: dict[str, Any],
+    parsed: Any,
+    observable_map: dict[str, str],
+    standardize_name: Any,
+) -> str | None:
+    """Map an SBML result id to its exact generated BNGL output symbol."""
+
+    if variable == "time":
+        return "time"
+
+    def compartment_volume(compartment_id: str) -> str | None:
+        if not compartment_id:
+            return None
+        compartment_name = standardize_name(compartment_id)
+        if any(
+            rule.type == "rate" and rule.variable == compartment_id
+            for rule in parsed.rules
+        ):
+            return f"{compartment_name}_amt"
+        if any(
+            rule.type == "assignment" and rule.variable == compartment_id
+            for rule in parsed.rules
+        ):
+            return compartment_name
+        return f"__compartment_{compartment_name}__"
+
+    species = parsed.species.get(variable)
+    if species is not None:
+        observable = observable_map.get(variable)
+        if observable is None:
+            if not any(
+                rule.type == "assignment" and rule.variable == variable
+                for rule in parsed.rules
+            ):
+                return None
+            observable = standardize_name(variable)
+            amount_unit = variable in reference["amount"] or (
+                variable not in reference["concentration"]
+                and species.has_only_substance_units
+            )
+            volume = compartment_volume(species.compartment or "")
+            if amount_unit:
+                if species.has_only_substance_units:
+                    return observable
+                return f"{observable} * {volume}" if volume else None
+            if not species.has_only_substance_units:
+                return observable
+            return f"{observable} / {volume}" if volume else None
+        if variable in reference["amount"] or (
+            variable not in reference["concentration"]
+            and species.has_only_substance_units
+        ):
+            return f"{observable}_amt"
+        volume = compartment_volume(species.compartment or "")
+        return f"{observable}_amt / {volume}" if volume else None
+    if any(rule.type == "rate" and rule.variable == variable for rule in parsed.rules):
+        return f"{standardize_name(variable)}_amt"
+    if variable in parsed.compartments:
+        return compartment_volume(variable)
+    if variable in parsed.parameters:
+        return standardize_name(variable)
+    if any(rule.variable == variable for rule in parsed.rules):
+        return standardize_name(variable)
+    return None
+
+
+def _with_reference_output_functions(
+    bngl: str, targets: dict[str, str], case_id: str
+) -> tuple[str, dict[str, str]]:
+    """Add named result aliases to a private BNGL copy for conformance output."""
+
+    expressions: dict[str, str] = {}
+    used_names = set(re.findall(r"(?m)^\s*([A-Za-z_][A-Za-z_0-9]*)\s*\(", bngl))
+    for index, (variable, target) in enumerate(targets.items()):
+        base = f"SSTSREF_{case_id}_{index:04d}"
+        alias = base
+        suffix = 1
+        while alias in used_names:
+            alias = f"{base}_{suffix}"
+            suffix += 1
+        used_names.add(alias)
+        expressions[variable] = alias
+    additions = "".join(
+        f"  {expressions[variable]}() = {target}\n"
+        for variable, target in targets.items()
+    )
+    end_functions = re.search(r"(?im)^\s*end functions\s*$", bngl)
+    if end_functions:
+        bngl = bngl[: end_functions.start()] + additions + bngl[end_functions.start() :]
+    else:
+        end_model = re.search(r"(?im)^\s*end model\s*$", bngl)
+        if not end_model:
+            raise ValueError("generated BNGL has no end model marker")
+        block = f"begin functions\n{additions}end functions\n\n"
+        bngl = bngl[: end_model.start()] + block + bngl[end_model.start() :]
+    return bngl, expressions
+
+
+def _compare_case_to_reference(
+    case: dict[str, Any],
+    cpp_model: Any,
+    bngl: str,
+    parsed: Any,
+    atomized: Any,
+    reference: dict[str, Any],
+    cpp: Any,
+) -> dict[str, Any]:
+    """Run BNG3 on the official grid and compare to the suite reference."""
+
+    if cpp_model.actions:
+        return {
+            "status": "unsupported",
+            "reason": (
+                "generated BNGL contains scheduled actions; the in-memory CVODE "
+                "reference runner cannot execute actions on the official output grid"
+            ),
+        }
+    from bionetgen.atomizer.modern.types import standardize_name
+
+    targets = {}
+    unresolved = []
+    for variable in reference["variables"]:
+        target = _reference_output_target(
+            variable,
+            reference,
+            parsed,
+            dict(atomized.observable_map),
+            standardize_name,
+        )
+        if target is None:
+            unresolved.append(variable)
+        else:
+            targets[variable] = target
+    if unresolved:
+        return {
+            "status": "unsupported",
+            "reason": "no exact BNG3 result mapping for: " + ", ".join(unresolved),
+        }
+
+    try:
+        reference_bngl, output_aliases = _with_reference_output_functions(
+            bngl, targets, str(case["id"])
+        )
+        output_model = cpp.parse_string(reference_bngl)
+        available = (
+            {item.name for item in output_model.observables}
+            | {item.name for item in output_model.functions}
+            | {item.name for item in output_model.parameters}
+        )
+        target_symbols = {
+            symbol
+            for target in targets.values()
+            if target != "time"
+            for symbol in re.findall(r"[A-Za-z_][A-Za-z_0-9]*", target)
+            if symbol != "time"
+        }
+        missing_targets = sorted(target_symbols - available)
+        if missing_targets:
+            return {
+                "status": "unsupported",
+                "reason": "generated model does not expose exact result symbols: "
+                + ", ".join(missing_targets),
+            }
+        from bionetgen import BioNetGenModel
+
+        result = BioNetGenModel(output_model).simulate(
+            method="ode",
+            t_start=reference["start"],
+            t_end=reference["start"] + reference["duration"],
+            n_steps=0,
+            sample_times=reference["times"].tolist(),
+            rtol=1e-9,
+            atol=1e-14,
+        )
+        if not np.array_equal(np.asarray(result.time, dtype=float), reference["times"]):
+            return {
+                "status": "failed",
+                "reason": "BNG3 result time grid differs from official reference grid",
+            }
+        actual = {
+            variable: result.functions.get(alias)
+            for variable, alias in output_aliases.items()
+        }
+        comparison = _compare_reference_series(
+            reference["expected"],
+            actual,
+            absolute=reference["absolute"],
+            relative=reference["relative"],
+            sample_times=reference["times"],
+        )
+    except Exception as exc:
+        message = f"{type(exc).__name__}: {exc}"
+        status = (
+            "unsupported" if _classify_error(message) == "unsupported" else "failed"
+        )
+        return {"status": status, "reason": message}
+
+    return {
+        "status": "passed" if comparison["passed"] else "failed",
+        "reason": (
+            ""
+            if comparison["passed"]
+            else _official_comparison_failure_reason(comparison)
+        ),
+        "method": "BNG3 native CVODE",
+        "solver_rtol": 1e-9,
+        "solver_atol": 1e-14,
+        "start": reference["start"],
+        "duration": reference["duration"],
+        "steps": reference["steps"],
+        "settings_sha256": reference["settings_sha256"],
+        "results_sha256": reference["results_sha256"],
+        "output_targets": targets,
+        "output_aliases": output_aliases,
+        "comparison": comparison,
+    }
 
 
 def _warnings(model: Any) -> list[dict[str, Any]]:
@@ -493,6 +1244,73 @@ def _record_ref(record: dict[str, Any]) -> str:
     category = str(record.get("category", "")).strip()
     identifier = str(record.get("id", "")).strip()
     return f"{category}/{identifier}" if category else identifier
+
+
+def _official_comparison_failure_reason(comparison: dict[str, Any]) -> str:
+    """Turn numeric mismatch metrics into a concise, reproducible case reason."""
+
+    failed_variables = comparison.get("failed_variables", [])
+    details = []
+    for variable in failed_variables[:8]:
+        metrics = comparison.get("variables", {}).get(variable, {})
+        variable_reason = metrics.get("reason")
+        if variable_reason:
+            details.append(f"{variable}: {variable_reason}")
+            continue
+        detail = (
+            f"{variable}: {metrics.get('failed_points', 0)}/"
+            f"{metrics.get('sample_count', 0)} samples failed"
+        )
+        max_abs = metrics.get("max_abs_difference")
+        max_scaled = metrics.get("max_scaled_error")
+        if max_abs is not None:
+            detail += f", max abs diff {float(max_abs):.6g}"
+        if max_scaled is not None:
+            detail += f", max scaled error {float(max_scaled):.6g}"
+        indices = metrics.get("failed_sample_indices", [])
+        if indices:
+            detail += f", sample indices {indices[:8]}"
+            if metrics.get("failed_sample_indices_truncated"):
+                detail += "..."
+        details.append(detail)
+    if len(failed_variables) > 8:
+        details.append(f"{len(failed_variables) - 8} more variables failed")
+    summary = (
+        f"reference mismatch: {comparison.get('failed_points', 0)}/"
+        f"{comparison.get('sample_count', 0)} output points failed"
+    )
+    return summary + ("; " + "; ".join(details) if details else "")
+
+
+def _official_conformance_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize official-reference outcomes independently of the legacy gate."""
+
+    groups: dict[tuple[str, str], list[str]] = {}
+    non_passed = []
+    for record in records:
+        result = record.get("official_conformance", {})
+        status = str(result.get("status", "missing"))
+        reason = str(result.get("reason", ""))
+        if status == "failed" and not reason and result.get("comparison"):
+            reason = _official_comparison_failure_reason(result["comparison"])
+        if status != "passed":
+            non_passed.append(
+                {"case": _record_ref(record), "status": status, "reason": reason}
+            )
+            groups.setdefault((status, reason), []).append(_record_ref(record))
+    return {
+        "non_passed_count": len(non_passed),
+        "non_passed_records": non_passed,
+        "by_status_and_reason": [
+            {
+                "status": status,
+                "reason": reason,
+                "count": len(cases),
+                "cases": cases,
+            }
+            for (status, reason), cases in sorted(groups.items())
+        ],
+    }
 
 
 def _stoichiometry_subcauses(reason: str) -> list[str]:
@@ -736,6 +1554,20 @@ def _atomizer_actions_for_category(
     )
 
 
+def _atomizer_horizon(
+    category: str,
+    reference: dict[str, Any] | None,
+    *,
+    simulation_t_end: float,
+    simulation_n_steps: int,
+) -> tuple[float, int]:
+    """Use the official semantic interval when classifying event behavior."""
+
+    if category == "semantic" and reference is not None:
+        return reference["start"] + reference["duration"], reference["steps"]
+    return simulation_t_end, simulation_n_steps
+
+
 def _validate_case(
     case: dict[str, Any],
     cpp: Any,
@@ -754,15 +1586,52 @@ def _validate_case(
     from bionetgen.atomizer.modern.types import standardize_name
 
     source_path = Path(case["path"])
-    sbml = source_path.read_text(encoding="utf-8-sig")
     record: dict[str, Any] = {
         "category": case["category"],
         "id": case["id"],
         "version": case["version"],
         "source": str(source_path),
     }
+    case_dir = source_path.parent
+    reference_settings = case_dir / f"{case['id']}-settings.txt"
+    reference_results = case_dir / f"{case['id']}-results.csv"
+    record["input_sha256"] = {
+        "sbml": _sha256_file(source_path) if source_path.is_file() else None,
+        "settings": (
+            _sha256_file(reference_settings) if reference_settings.is_file() else None
+        ),
+        "results": (
+            _sha256_file(reference_results) if reference_results.is_file() else None
+        ),
+    }
+    reference = None
+    if case["category"] == "stochastic":
+        record["official_conformance"] = {
+            "status": "unsupported",
+            "reason": (
+                "official stochastic conformance requires repeated-run mean and "
+                "standard-deviation evaluation; one ODE or SSA trajectory is not conformance"
+            ),
+        }
+    else:
+        try:
+            reference = _read_reference_case(case)
+            record["official_conformance"] = {"status": "pending"}
+        except OfficialReferenceUnsupported as exc:
+            record["official_conformance"] = {
+                "status": "unsupported",
+                "reason": str(exc),
+            }
+        except Exception as exc:
+            record["official_conformance"] = {
+                "status": "invalid-source",
+                "reason": f"{type(exc).__name__}: {exc}",
+            }
+    source_xml_valid = False
     try:
+        sbml = source_path.read_text(encoding="utf-8-sig")
         record["source_xml"] = _validate_xml(sbml, "source SBML")
+        source_xml_valid = True
         parsed = SBMLParser().parse(sbml, source_path=source_path)
         record["source_model"] = {
             "species": len(parsed.species),
@@ -771,14 +1640,20 @@ def _validate_case(
             "metadata": source_metadata_summary(parsed),
         }
         source_metadata = source_metadata_payload(parsed)
+        atomizer_t_end, atomizer_n_steps = _atomizer_horizon(
+            case["category"],
+            reference,
+            simulation_t_end=simulation_t_end,
+            simulation_n_steps=simulation_n_steps,
+        )
         atomizer = Atomizer(
             atomize=False,
             quiet_mode=True,
             actions=_atomizer_actions_for_category(
-                case["category"], simulation_t_end, simulation_n_steps
+                case["category"], atomizer_t_end, atomizer_n_steps
             ),
-            t_end=simulation_t_end,
-            n_steps=simulation_n_steps,
+            t_end=atomizer_t_end,
+            n_steps=atomizer_n_steps,
         )
         atomized = atomizer.atomize(sbml, source_path=source_path)
         if not atomized.success:
@@ -796,6 +1671,11 @@ def _validate_case(
         if source_limitations:
             record["status"] = "unsupported"
             record["unsupported_reason"] = " ".join(source_limitations)
+            if record["official_conformance"]["status"] == "pending":
+                record["official_conformance"] = {
+                    "status": "unsupported",
+                    "reason": record["unsupported_reason"],
+                }
             record["simulation_comparison"] = {
                 "passed": False,
                 "skipped": True,
@@ -811,6 +1691,10 @@ def _validate_case(
             "species": network.num_species,
             "reactions": network.num_reactions,
         }
+        if record["official_conformance"]["status"] == "pending":
+            record["official_conformance"] = _compare_case_to_reference(
+                case, cpp_model, atomized.bngl, parsed, atomized, reference, cpp
+            )
 
         output_path = work_dir / f"{case['category']}_{case['id']}.xml"
         cpp.io.write_sbml(
@@ -919,6 +1803,20 @@ def _validate_case(
         )
         record["core_passed"] = False
         record["error"] = message
+        if record["official_conformance"]["status"] == "pending":
+            if not source_xml_valid:
+                official_status = "invalid-source"
+            else:
+                official_status = (
+                    "unsupported"
+                    if _classify_error(message + " " + " ".join(warning_limitations))
+                    == "unsupported"
+                    else "failed"
+                )
+            record["official_conformance"] = {
+                "status": official_status,
+                "reason": message,
+            }
         if record["status"] == "unsupported" and warning_limitations:
             record["unsupported_reason"] = " ".join(warning_limitations)
     return record
@@ -938,6 +1836,8 @@ def _run_isolated_case(
         str(Path(__file__).resolve()),
         "--suite-dir",
         str(args.suite_dir.resolve()),
+        "--lock",
+        str(args.lock.resolve()),
         "--json",
         str(worker_json),
         "--categories",
@@ -977,6 +1877,10 @@ def _run_isolated_case(
             "status": "timeout",
             "core_passed": False,
             "error": f"per-case timeout after {args.case_timeout}s",
+            "official_conformance": {
+                "status": "timed-out",
+                "reason": f"per-case timeout after {args.case_timeout}s",
+            },
         }
     except Exception as exc:
         return {
@@ -987,6 +1891,10 @@ def _run_isolated_case(
             "status": "failed",
             "core_passed": False,
             "error": f"{type(exc).__name__}: {exc}",
+            "official_conformance": {
+                "status": "failed",
+                "reason": f"{type(exc).__name__}: {exc}",
+            },
         }
     finally:
         worker_json.unlink(missing_ok=True)
@@ -995,7 +1903,13 @@ def _run_isolated_case(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite-dir", type=Path, required=True)
-    parser.add_argument("--json", type=Path, required=True)
+    parser.add_argument("--lock", type=Path, default=DEFAULT_SUITE_LOCK)
+    parser.add_argument("--json", type=Path)
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="verify the clean suite checkout against the source lock and exit",
+    )
     parser.add_argument("--categories", nargs="+", default=["semantic", "stochastic"])
     parser.add_argument("--max-cases", type=int, default=0)
     parser.add_argument("--only-case", help="validate one case as CATEGORY/ID")
@@ -1018,13 +1932,32 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        commit = subprocess.check_output(
-            ["git", "-C", str(args.suite_dir), "rev-parse", "HEAD"],
-            text=True,
-        ).strip()
-    except Exception:
-        commit = None
+        suite_info = _validate_suite_checkout(args.suite_dir, args.lock)
+    except SuiteLockError as exc:
+        print(f"suite preflight failed: {exc}", file=sys.stderr)
+        return 1
+    if args.validate_only:
+        print(
+            json.dumps(
+                {
+                    "status": "passed",
+                    "validate_only": True,
+                    **suite_info,
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.json is None:
+        parser.error("--json is required unless --validate-only is set")
+
     cases = _case_files(args.suite_dir, args.categories)
+    full_suite_cases = _case_files(args.suite_dir, ["semantic", "stochastic"])
+    full_suite_inventory = {
+        category: sum(case["category"] == category for case in full_suite_cases)
+        for category in ("semantic", "stochastic")
+    }
+    full_suite_inventory["total"] = len(full_suite_cases)
     if args.only_case:
         try:
             only_category, only_id = args.only_case.split("/", 1)
@@ -1039,13 +1972,14 @@ def main() -> int:
             raise SystemExit(f"case is not in the suite inventory: {args.only_case}")
     else:
         selected = cases[: args.max_cases] if args.max_cases else cases
-    partial = bool(args.max_cases or args.only_case)
+    partial = _is_partial_run(args.categories, args.max_cases, args.only_case)
     try:
         import bionetgen._bionetgen_cpp as cpp
     except ImportError as exc:
         raise SystemExit(
             "BNG3 C++ extension is unavailable; set PYTHONPATH=python:build/cpp"
         ) from exc
+    runtime_info = _runtime_provenance(cpp)
 
     records = []
     with tempfile.TemporaryDirectory(prefix="bng3-sbml-suite-") as temp:
@@ -1094,22 +2028,67 @@ def main() -> int:
         }
         for category in args.categories
     }
+    official_statuses = (
+        "passed",
+        "unsupported",
+        "failed",
+        "timed-out",
+        "invalid-source",
+        "pending",
+        "missing",
+    )
+    official_counts = {
+        status: sum(
+            record.get("official_conformance", {}).get("status") == status
+            for record in records
+        )
+        for status in official_statuses
+    }
+    official_by_category = {
+        category: {
+            status: sum(
+                record["category"] == category
+                and record.get("official_conformance", {}).get("status") == status
+                for record in records
+            )
+            for status in official_statuses
+        }
+        for category in args.categories
+    }
+    official_summary = _official_conformance_summary(records)
     report = {
-        "schema_version": 4,
+        "schema_version": 6,
         "suite_dir": str(args.suite_dir.resolve()),
-        "suite_commit": commit,
+        "suite_commit": suite_info["revision"],
+        "suite_source_lock": suite_info,
+        "command": {
+            "executable": sys.executable,
+            "arguments": [str(Path(__file__).resolve()), *sys.argv[1:]],
+            "working_directory": str(Path.cwd()),
+        },
         "source_provenance": _repository_provenance(
             Path(__file__).resolve().parents[2]
         ),
+        "runtime_provenance": runtime_info,
         "writer_sbml_version": "L3V2",
         "categories": args.categories,
         "canonical_version_priority": list(VERSION_PRIORITY),
         "case_inventory": len(cases),
+        "full_suite_inventory": full_suite_inventory,
         "selected_cases": len(selected),
         "partial_run": partial,
         "counts": counts,
         "by_category": by_category,
         "records": records,
+        "official_conformance": {
+            "reference": "official SBML Test Suite results CSV",
+            "method": "BNG3 native CVODE on the official reference time grid",
+            "comparison": "abs(expected-actual) <= absolute + relative*abs(expected)",
+            "counts": official_counts,
+            "by_category": official_by_category,
+            "summary": official_summary,
+            "passed": not partial and official_summary["non_passed_count"] == 0,
+        },
         "unsupported_summary": unsupported_summary,
         "sbml_unsupported_summary": unsupported_summary,
         "roundtrip_gate": "SBML XML validation + modern Atomizer/C++ network generation + C++ SBML writer + modern reimport + native C++ reader count check + BNG3 CVODE/libRoadRunner all-observable comparison",
@@ -1122,7 +2101,11 @@ def main() -> int:
             "comparison": "all generated BNGL observables on the same time grid",
             "engines": ["BNG3 CVODE", "libRoadRunner CVODE"],
         },
-        "numerical_conformance": "SBML Test Suite reference-result conformance not run; direct BNG3/libRoadRunner parity is run",
+        "numerical_conformance": (
+            "official deterministic time-course reference conformance is reported "
+            "separately from the BNG3/libRoadRunner round-trip comparison; stochastic "
+            "ensemble statistics are unsupported in this runner"
+        ),
         "core_passed": (
             not partial
             and counts["failed"] == 0
@@ -1139,6 +2122,10 @@ def main() -> int:
         f"cases={len(records)} passed={counts['passed']} "
         f"unsupported={counts['unsupported']} failed={counts['failed']} "
         f"timeouts={counts['timeout']} "
+        f"official_passed={official_counts['passed']} "
+        f"official_unsupported={official_counts['unsupported']} "
+        f"official_failed={official_counts['failed']} "
+        f"official_timeouts={official_counts['timed-out']} "
         f"core={'PASS' if report['core_passed'] else 'FAIL'}"
     )
     return 0 if report["core_passed"] else 1

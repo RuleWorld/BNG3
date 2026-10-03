@@ -246,9 +246,10 @@ every reaction is classified functional and its tree is evaluated once per
 derivative call): `Expression::evaluateWithFunctions` appears **0 times** in
 every one. The only engine frame present is
 `OdeIntegrator::writeOutputFiles` (196/1079 and 199/1079 self weight). The
-per-step rate path at `OdeIntegrator.cpp:1296`
-(`rxn.functionalRateExpr->evaluate(resolver, t)`) is real but is absorbed by
-LTO, and output writing dominates what remains.
+per-step rate path was at `OdeIntegrator.cpp:1296` in the profiled source
+revision; in current main `c345f3a` the same call is at line 1380
+(`rxn.functionalRateExpr->evaluate(resolver, t)`). The call is real but is
+absorbed by LTO, and output writing dominates what remains.
 
 **Ceiling.** Functional vs constant rate laws, 5 interleaved reps, 8-reaction
 400k-step ODE:

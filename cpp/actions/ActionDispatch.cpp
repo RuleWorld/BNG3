@@ -1235,8 +1235,10 @@ void runSimulation(
         opts.batchGpuBackend = stripQuotes(readArgument(action, "batch_gpu_backend", "auto"));
     }
 
-    // Parse tolerances if provided
-    const auto atolText = readArgument(action, "atol", "");
+    // BNG2's Perl action path defaults both CVODE tolerances to 1e-8. Keep
+    // that action-level contract here without changing the stricter defaults
+    // used by OdeOptions and the direct Python API.
+    const auto atolText = readArgument(action, "atol", "1e-8");
     if (!atolText.empty()) {
         opts.atol = parseScalarValue(atolText, model);
     }

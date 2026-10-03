@@ -1,0 +1,1 @@
+Preserved as contaminated exploratory evidence. Benchlock reported one persistent BNG2 Perl netgen/check process across the A/B window. Follow-up ps showed it remained active afterward on chemotaxisAdaptation/AN.bngl; per-process CPU values on this host are unreliable and are not used for interpretation. Do not use these timing values for PR58 conclusions.
