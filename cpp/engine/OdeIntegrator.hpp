@@ -64,6 +64,10 @@ public:
     void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
     void writeBatchStdDevsFile(const std::string& prefix, const OdeResult& result) const;
     void derivs(double t, const double* y, double* dydt) const;
+    // Return compiled per-reaction coefficients in generated-network order,
+    // before ordinary mass-action species factors are applied. This supports
+    // independent parity checks of the runtime expression evaluator.
+    std::vector<double> evaluateRateCoefficients(double t, const double* y) const;
     // CVODE integrates a scaled state to keep very small SBML amounts and
     // very large converted rate constants numerically well-conditioned.
     void cvodeDerivs(double t, const double* y, double* dydt) const;
@@ -118,6 +122,7 @@ private:
 
     // Performance optimizations
     mutable std::vector<double> groupValues_;                  // Pre-allocated for derivs()
+    mutable std::vector<double> functionalRateCoefficients_;  // Pre-allocated for derivs()
     std::unordered_map<std::string, std::size_t> observableIndex_; // O(1) observable lookup
     std::vector<std::size_t> constantRxnIndices_;              // Fallback indices for small networks
     std::vector<CompiledConstantReaction> constantReactions_;  // Compact constant-rate reaction data
@@ -144,6 +149,9 @@ private:
 
     void compile();
     void compileGroups();
+    void evaluateFunctionalRateCoefficients(double t,
+                                            const double* y,
+                                            double* rates) const;
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
     void updateFunctions(const std::vector<double>& groupValues,
                          double time,

@@ -116,16 +116,13 @@ def _value(
     return result
 
 
-def evaluate_rhs(network: Network, state: Sequence[float], time: float) -> list[float]:
-    """Evaluate a frozen-tier .net RHS from its serialized BNG2 formulas.
+def evaluate_rate_coefficients(
+    network: Network, state: Sequence[float], time: float
+) -> list[float]:
+    """Evaluate per-reaction rate expressions from serialized BNG2 formulas.
 
-    All selected expression-tier reaction records use ordinary mass-action
-    coefficients (functional formulas are coefficients, not total rates).
-    Stoichiometric reactant repetition therefore both multiplies the rate and
-    accumulates its negative derivative; product repetition accumulates the
-    positive derivative. A ``$``-prefixed .net species is fixed: it still
-    contributes to a reaction rate but receives no derivative. Typed
-    Sat/MM/Hill total-rate records are rejected instead of guessed.
+    These values are the coefficients before ordinary mass-action species
+    factors are applied. Unknown syntax and non-finite results fail closed.
     """
     if len(state) != network.n_species:
         raise ValueError(
@@ -145,9 +142,28 @@ def evaluate_rhs(network: Network, state: Sequence[float], time: float) -> list[
             weight * values[index - 1] for index, weight in weights.items()
         )
 
+    return [
+        _value(rate_expression, network.rate_defs, environment)
+        for _, _, rate_expression in network._raw
+    ]
+
+
+def evaluate_rhs(network: Network, state: Sequence[float], time: float) -> list[float]:
+    """Evaluate a frozen-tier .net RHS from its serialized BNG2 formulas.
+
+    All selected expression-tier reaction records use ordinary mass-action
+    coefficients (functional formulas are coefficients, not total rates).
+    Stoichiometric reactant repetition therefore both multiplies the rate and
+    accumulates its negative derivative; product repetition accumulates the
+    positive derivative. A ``$``-prefixed .net species is fixed: it still
+    contributes to a reaction rate but receives no derivative. Typed
+    Sat/MM/Hill total-rate records are rejected instead of guessed.
+    """
+    values = [float(value) for value in state]
+    coefficients = evaluate_rate_coefficients(network, values, time)
     derivative = [0.0] * network.n_species
-    for reactants, products, rate_expression in network._raw:
-        rate = _value(rate_expression, network.rate_defs, environment)
+    for (reactants, products, _), coefficient in zip(network._raw, coefficients):
+        rate = coefficient
         for index in reactants:
             rate *= values[index - 1]
         for index in reactants:

@@ -952,6 +952,7 @@ void OdeIntegrator::compile() {
 
     // 2. Pre-allocate groupValues for reuse in derivs()
     groupValues_.resize(compiledGroups_.size(), 0.0);
+    functionalRateCoefficients_.resize(compiledRxns_.size(), 0.0);
 
     // 3. Keep large constant-reaction networks in compact, contiguous arrays
     // for derivs(). Small networks retain the original indexed representation
@@ -1272,13 +1273,94 @@ void OdeIntegrator::updateFunctions(
     }
 }
 
+std::vector<double> OdeIntegrator::evaluateRateCoefficients(
+    double t, const double* y) const {
+    std::vector<double> rates;
+    rates.reserve(compiledRxns_.size());
+    for (const auto& rxn : compiledRxns_) {
+        rates.push_back(rxn.rateConstant);
+    }
+    if (hasFunctionalRates_) {
+        evaluateFunctionalRateCoefficients(t, y, rates.data());
+    }
+    return rates;
+}
+
+void OdeIntegrator::evaluateFunctionalRateCoefficients(
+    double t, const double* y, double* rates) const {
+    updateGroups(y, groupValues_);
+
+    // Build resolver with O(1) observable lookup. Keep this shared with the
+    // validation value hook so it exercises the same compiled expression
+    // evaluation used by derivs().
+    std::function<double(const std::string&)> resolver;
+    resolver = [&](const std::string& name) -> double {
+        if (name == "time") return t;
+
+        // TFUN resolution: __tfun_NAME__ -> interpolate at current time (or custom index value)
+        if (name.rfind("__tfun_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 2) == "__") {
+            auto atPos = name.find("_AT_");
+            if (atPos != std::string::npos) {
+                std::string tfunName = name.substr(7, atPos - 7);
+                try {
+                    double val = std::stod(name.substr(atPos + 4, name.size() - atPos - 6));
+                    if (tfunRegistry_.has(tfunName)) {
+                        return tfunRegistry_.evaluate(tfunName, val);
+                    }
+                } catch (...) {}
+            }
+            std::string tfunName = name.substr(7, name.size() - 9);
+            if (tfunRegistry_.has(tfunName)) {
+                return tfunRegistry_.evaluate(tfunName, t);
+            }
+        }
+
+        // Sat/MM/Hill substrate references: __substrate_N -> y[N]
+        if (name.rfind("__substrate_", 0) == 0) {
+            std::size_t idx = std::stoul(name.substr(12));
+            return (idx < nSpecies_) ? y[idx] : 0.0;
+        }
+
+        const auto observable = observableIndex_.find(name);
+        if (observable != observableIndex_.end()) {
+            return groupValues_[observable->second];
+        }
+
+        for (const auto& func : model_.getFunctions()) {
+            if (func.getName() == name) {
+                return func.getExpression().evaluate(resolver, t);
+            }
+        }
+
+        // `t` must be passed: a parameter whose expression reads `time` is
+        // evaluated at the current derivative time, not memoized at t=0.
+        return model_.getParameters().evaluate(name, t);
+    };
+
+    for (const auto idx : functionalRxnIndices_) {
+        const auto& rxn = compiledRxns_[idx];
+        double rate;
+        if (rxn.functionalRateExpr.has_value()) {
+            try {
+                rate = rxn.functionalRateExpr->evaluate(resolver, t);
+            } catch (const std::exception&) {
+                rate = rxn.rateConstant;
+            }
+        } else {
+            rate = rxn.rateConstant;
+        }
+        rates[idx] = rate;
+    }
+}
+
 void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
     // Zero derivatives
     std::fill(dydt, dydt + nSpecies_, 0.0);
 
     // Update observables for functional rates (using pre-allocated buffer)
     if (hasFunctionalRates_) {
-        updateGroups(y, groupValues_);
+        evaluateFunctionalRateCoefficients(
+            t, y, functionalRateCoefficients_.data());
     }
 
     // Process constant-rate reactions first (no expression evaluation needed).
@@ -1322,68 +1404,9 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
 
     // Process functional-rate reactions (require expression evaluation)
     if (hasFunctionalRates_) {
-        // Build resolver with O(1) observable lookup
-        // Use std::function to allow recursive self-reference for function evaluation
-        std::function<double(const std::string&)> resolver;
-        resolver = [&](const std::string& name) -> double {
-            if (name == "time") return t;
-
-            // TFUN resolution: __tfun_NAME__ → interpolate at current time (or custom index value)
-            if (name.rfind("__tfun_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 2) == "__") {
-                auto atPos = name.find("_AT_");
-                if (atPos != std::string::npos) {
-                    std::string tfunName = name.substr(7, atPos - 7);
-                    try {
-                        double val = std::stod(name.substr(atPos + 4, name.size() - atPos - 6));
-                        if (tfunRegistry_.has(tfunName)) {
-                            return tfunRegistry_.evaluate(tfunName, val);
-                        }
-                    } catch (...) {}
-                }
-                std::string tfunName = name.substr(7, name.size() - 9);
-                if (tfunRegistry_.has(tfunName)) {
-                    return tfunRegistry_.evaluate(tfunName, t);
-                }
-            }
-
-            // Sat/MM/Hill substrate references: __substrate_N → y[N]
-            if (name.rfind("__substrate_", 0) == 0) {
-                std::size_t idx = std::stoul(name.substr(12));
-                return (idx < nSpecies_) ? y[idx] : 0.0;
-            }
-
-            // O(1) observable lookup via precomputed map
-            auto it = observableIndex_.find(name);
-            if (it != observableIndex_.end()) {
-                return groupValues_[it->second];
-            }
-
-            // Check user-defined functions (Bug 2 fix)
-            for (const auto& func : model_.getFunctions()) {
-                if (func.getName() == name) {
-                    return func.getExpression().evaluate(resolver, t);
-                }
-            }
-
-            // Otherwise try as parameter. `t` must be passed: a parameter whose
-            // expression reads `time` is not memoized, so dropping it here
-            // would silently evaluate it at t=0 inside a derivative.
-            return model_.getParameters().evaluate(name, t);
-        };
-
         for (const auto idx : functionalRxnIndices_) {
             const auto& rxn = compiledRxns_[idx];
-            double rate;
-
-            if (rxn.functionalRateExpr.has_value()) {
-                try {
-                    rate = rxn.functionalRateExpr->evaluate(resolver, t);
-                } catch (const std::exception&) {
-                    rate = rxn.rateConstant;
-                }
-            } else {
-                rate = rxn.rateConstant;
-            }
+            double rate = functionalRateCoefficients_[idx];
 
             if (!rxn.isTotalRate) {
                 for (const auto ri : rxn.reactantIndices) {

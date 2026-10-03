@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.validation.compare import parse_net
+from tests.validation import rhs
 from tests.validation.rhs import UnsupportedExpressionError, evaluate_rhs
 
 
@@ -48,11 +49,24 @@ def test_rhs_evaluator_resolves_parameters_groups_and_time(tmp_path):
     assert actual == pytest.approx([-19 / 24, 19 / 24])
 
 
+def test_rate_evaluator_returns_expression_values_before_mass_action(tmp_path):
+    network = _network(tmp_path / "model.net")
+
+    actual = rhs.evaluate_rate_coefficients(network, [0.5, 1.0], time=0.25)
+
+    # flux = k / (K + A) + time = 2/1.5 + 0.25.  The reactant amount
+    # 0.5 belongs to the ODE mass-action multiplier, not this expression value.
+    assert actual == pytest.approx([19 / 12])
+
+
 def test_rhs_evaluator_fails_closed_on_unknown_functions(tmp_path):
     network = _network(tmp_path / "model.net", rate_expression="privateFn(1)")
 
     with pytest.raises(UnsupportedExpressionError, match="privateFn"):
         evaluate_rhs(network, [0.5, 1.0], time=0.25)
+
+    with pytest.raises(UnsupportedExpressionError, match="privateFn"):
+        rhs.evaluate_rate_coefficients(network, [0.5, 1.0], time=0.25)
 
 
 def test_rhs_evaluator_keeps_dollar_species_fixed_but_in_flux(tmp_path):

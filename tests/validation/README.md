@@ -79,7 +79,15 @@ legacy structured-SBML `atomize=>1` contract for the `plain2` validation model.
   ensemble.
 - `test_parity_nfsim` — WO-2. ast-direct vs native binary, and ast-direct vs in-memory-XML (`BNG_NFSIM_FORCE_XML=1`).
 - `test_parity_expressions` — action-aware `.net` structure and rate-expression parity for the deterministic function fixtures.
-- `test_parity_rhs` — instantaneous `OdeIntegrator::derivs` against an independent, restricted evaluator of pinned BNG2 `.net` expressions across all five frozen `expr` tier models. It uses three positive synthetic states and three times per model (`rtol=1e-9`, `atol=1e-12`); unsupported syntax and rate laws fail closed. This compares derivative vectors; it does not separately compare intermediate parameter, function, or group values.
+- `test_parity_rhs` — per-reaction rate coefficients and instantaneous
+  `OdeIntegrator::derivs` against an independent, restricted evaluator of
+  pinned BNG2 `.net` expressions across all five frozen `expr` tier models.
+  Coefficients are compared before mass-action species factors. It uses three
+  positive synthetic states and three times per model (`rtol=1e-9`,
+  `atol=1e-12`); unsupported syntax and non-finite values fail closed. This
+  checks each selected reaction's expression result and the accumulated
+  derivative. It does not export intermediate parameter, function, or group
+  symbols as standalone outputs.
 - `test_oracle_perl` — exact model-stem output selection, unambiguous phase fallback, and source-only network generation flags.
 - `test_export_formats` — WO-5. BNG-XML/SBML valid, `.net` idempotent.
 
