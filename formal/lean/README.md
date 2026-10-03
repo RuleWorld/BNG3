@@ -458,7 +458,9 @@ This gives BNG3 several layers of defense:
 2. differential tests against legacy BioNetGen/NFsim;
 3. property-based generated molecular graphs;
 4. an executable slow reference semantics;
-5. selected machine-checked refinement theorems.
+5. selected machine-checked refinement theorems for the subset built from
+   `BNG/**`; see [Verification status](#verification-status) for the proof and
+   executable-check boundaries.
 
 AI makes this more attractive because agents can generate large numbers of weird
 rules and mixtures. A simple reference semantics gives those generated tests a
@@ -626,47 +628,32 @@ true    -- A.x-B.y bond exists
 
 # Verification status
 
-The local execution environment used for this package does not provide `lean`,
-`lake`, or `elan`. Therefore the Lean kernel could not type-check the project
-locally at the 2026-09-14 checkpoint.
-
-That means:
-
-- this is concrete Lean source, not pseudocode;
-- imports/delimiters/placeholders can be checked statically here;
-- **theorems are not trusted artifacts until `lake build` succeeds on a machine
-  with the pinned toolchain**.
-
-See `VALIDATION.md` for the exact checks and limitations.
-
-Pull requests run the pinned kernel and smoke gate in
+The package pins `leanprover/lean4:v4.33.1`. From `formal/lean/`, run
+`./scripts/validate_all.sh` for the static and header checks, NFnext contract,
+Lean build, explicit Smoke and Coverage runs, and named axiom audit. See
+[`VALIDATION.md`](VALIDATION.md) for the measured results and exact limits.
+Pull requests run the same gate at their exact head in
 [`../../.github/workflows/formal.yml`](../../.github/workflows/formal.yml).
-This keeps kernel evidence attached to the exact PR head; local static
-validation and NFnext contract success remain useful preflight checks but are
-not theorem-validation evidence.
+
+The default `lake build` target compiles `BNG/**` only; it does not compile
+`tests/Smoke.lean` or `tests/Coverage.lean`, which the validation script invokes
+separately. Most concrete fixture assertions use `native_decide`: Lean evaluates
+them with its compiled evaluator and records a kernel-opaque per-declaration
+axiom. They are executable regression checks, not kernel-reduced proofs. The
+named declaration audit and its measured dependencies are listed in
+[`VALIDATION.md`](VALIDATION.md).
 
 ---
 
-# What should be done next?
+# Current scope and next proof steps
 
-The next step should **not** be "formalize all of BNGL." It should connect this
-reference semantics to one real backend representation.
-
-Best sequence:
-
-```text
-1. Kernel-build/fix this Lean project under Lean 4.33.1.
-2. Add canonical C++ export for a small CompiledRule/Pattern subset.
-3. Generate parity fixtures from real BNGL models.
-4. Mirror the relevant NFnext PredicateIR/ActionIR subset in Lean.
-5. Prove/validate that CompiledRule -> NFIR lowering preserves one-step graph edits.
-6. Add generated/property tests comparing C++ backend results to the reference matcher.
-7. Expand semantic coverage only when a real BNGL feature requires it.
-```
-
-After that, the difficult high-value features are `DeleteMolecules`, complete
-species deletion, `MoveConnected`, and symmetry/multiplicity. Those are exactly
-the cases where independent backend implementations are most likely to drift.
+The immediate open theorem is `ReferenceMatcherCorrect`, the soundness and
+completeness obligation defined in `BNG/MatcherSpec.lean`. The production C++
+bridge currently checks a concrete BNGL fixture; proving a general backend
+correspondence requires the complete, source-string-free compiled-model
+boundary described in [`CXX_MIGRATION_BLOCKERS.md`](CXX_MIGRATION_BLOCKERS.md).
+Executable fixtures provide regression evidence for their cases, not substitutes
+for either theorem.
 
 ---
 
@@ -799,30 +786,28 @@ complex destruction.
 
 No binary is checked into the repository.
 
-The current continuation also adds a bounded production-boundary contract.
-Lean and C++ use `A(x~u) + B(y) -> A(x~p!1).B(y!1) k`; the C++ contract
-parses BNGL, builds `bng::compile::CompiledModel`, calls
-`nfnext::lowerFromBioNetGen`, and checks distinct-reactant molecularity, a
-state update, and a bond. This is a regression slice, not complete backend
-equivalence or a machine-checked C++ refinement theorem.
+The production-boundary regression fixture parses
+`A(x~u) + B(y) -> A(x~p!1).B(y!1) k`, builds
+`bng::compile::CompiledModel`, calls `nfnext::lowerFromBioNetGen`, and checks
+distinct-reactant molecularity, a state update, and a bond. It tests one
+lowering case; it does not establish complete backend equivalence or a
+machine-checked C++ refinement theorem.
 
 ## What is still not a theorem
 
 The formalization is intentionally explicit about the remaining boundary:
 
-1. `lake build` has not run in this packaging environment because Lean/Lake is
-   not installed.
-2. `ReferenceMatcherCorrect` is a proof obligation; the independent
+1. `ReferenceMatcherCorrect` is a proof obligation; the independent
    proposition-level specification exists, but the full iff proof is not being
    assumed.
-3. The C++ repository still lacks one complete production
+2. The C++ repository still lacks one complete production
    `CompiledModel -> nfnext::ModelIR/TransformationIR` boundary matching this
-   target architecture. Therefore no theorem claims that current production
-   BNG3->NFnext lowering is fully refined.
-4. Exact semantics of every special rate law, every builtin/table function,
+   target architecture. The concrete bridge fixture above does not prove that
+   current production BNG3-to-NFnext lowering is fully refined.
+3. Exact semantics of every special rate law, every builtin/table function,
    and floating-point/numerical backend behavior are not formalized. The
    evaluator is intentionally partial.
-5. A fast canonical-label algorithm is not proved correct; graph isomorphism is
+4. A fast canonical-label algorithm is not proved correct; graph isomorphism is
    currently a brute-force reference oracle.
 
 These are deliberate trust boundaries, not hidden TODOs.
