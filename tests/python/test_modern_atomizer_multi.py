@@ -1732,7 +1732,9 @@ def test_multi_invalid_xml_fails_closed_with_diagnostic():
     )
 
 
-def test_real_sbml_multi_validation_model_reconstructs_and_parses_with_bng_cpp():
+def test_real_sbml_multi_validation_model_reconstructs_and_parses_with_bng_cpp(
+    tmp_path: Path,
+):
     from bionetgen.atomizer.modern import (
         SBMLParser,
         build_species_composition_table,
@@ -1767,9 +1769,11 @@ def test_real_sbml_multi_validation_model_reconstructs_and_parses_with_bng_cpp()
     )
     if not oracle.exists():
         pytest.skip("bng_cpp execution oracle is not built")
+    input_path = tmp_path / "reconstructed_sbml_multi.bngl"
+    input_path.write_text(bngl, encoding="utf-8")
     completed = subprocess.run(
-        [str(oracle), "/dev/stdin"],
-        input=bngl,
+        [str(oracle), str(input_path)],
+        cwd=tmp_path,
         text=True,
         capture_output=True,
         check=False,
