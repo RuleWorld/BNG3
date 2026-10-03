@@ -379,10 +379,20 @@ def test_ssts_checkout_preflight_rejects_dirty_or_wrong_origin(
 ):
     suite, lock, _revision = _locked_ssts_checkout(tmp_path)
     if mutation == "dirty":
-        (suite / "untracked.txt").write_text("not a locked checkout\n", encoding="utf-8")
+        (suite / "untracked.txt").write_text(
+            "not a locked checkout\n", encoding="utf-8"
+        )
     else:
         subprocess.run(
-            ["git", "-C", str(suite), "remote", "set-url", "origin", "https://example.com/other.git"],
+            [
+                "git",
+                "-C",
+                str(suite),
+                "remote",
+                "set-url",
+                "origin",
+                "https://example.com/other.git",
+            ],
             check=True,
         )
 
