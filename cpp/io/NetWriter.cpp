@@ -1065,9 +1065,31 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         return visit(expression);
     };
 
+    // A rate law that reads the simulation clock is dynamic even when it names
+    // neither an observable nor a model function: the parameter-only resolver
+    // used to fold it cannot evaluate the clock, so folding `kon*time()` would
+    // silently emit the rate at t=0 for the whole run. Both spellings of the
+    // builtin are recognised, bare and called.
+    auto referencesSimulationTime = [&](const ast::Expression& expression) {
+        std::function<bool(const ast::Expression&)> visit = [&](
+            const ast::Expression& current) {
+            if ((current.kind() == ast::ExpressionKind::Identifier ||
+                 current.kind() == ast::ExpressionKind::Function) &&
+                (current.name() == "time" || current.name() == "t")) {
+                return true;
+            }
+            for (const auto& child : current.args()) {
+                if (visit(child)) return true;
+            }
+            return false;
+        };
+        return visit(expression);
+    };
+
     auto isDynamicRateExpression = [&](const std::string& expression,
                                        const ast::Expression& expressionTree) {
-        return referencesObservables(expression) ||
+        return referencesSimulationTime(expressionTree) ||
+               referencesObservables(expression) ||
                referencesModelFunction(expressionTree);
     };
 
