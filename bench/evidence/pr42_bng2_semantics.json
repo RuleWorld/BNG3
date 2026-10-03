@@ -1,0 +1,109 @@
+{
+  "bng2_script": "/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl",
+  "bng2_script_sha256": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4",
+  "bng2_source_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+  "bng3_binary": "/private/tmp/bng3-20261002-performance/build/cpp/bng_cpp",
+  "bng3_binary_sha256": "7d6c31e805f4d92fd226cae2cd9c68f1a92f4407f25d48cf82c0fdcc472b5dc8",
+  "fixture_count": 11,
+  "results": [
+    {
+      "adapter_changes": [],
+      "fixture": "PushPull_gen.bngl",
+      "fixture_sha256": "203a2bbd40519b90ea9f06387a1fdaad2b33202e7d4da8bad9f11b947954bd34",
+      "oracle_input_sha256": "203a2bbd40519b90ea9f06387a1fdaad2b33202e7d4da8bad9f11b947954bd34",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "Repressilator_gen.bngl",
+      "fixture_sha256": "d46bc555467b8170ae03d9c574eb7f0b70b4e30dcbc7521875b87237b65c76a2",
+      "oracle_input_sha256": "d46bc555467b8170ae03d9c574eb7f0b70b4e30dcbc7521875b87237b65c76a2",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "blbr_gen.bngl",
+      "fixture_sha256": "7dbf1141df4d32e532614de4abb385c74a09ab6312f3ae2ca1258f5dde32ad31",
+      "oracle_input_sha256": "7dbf1141df4d32e532614de4abb385c74a09ab6312f3ae2ca1258f5dde32ad31",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "e4_gen.bngl",
+      "fixture_sha256": "173fdf032c5c005e2a66f0f330f433b8c04b966aaab929d92bbb1a60e0d464f0",
+      "oracle_input_sha256": "173fdf032c5c005e2a66f0f330f433b8c04b966aaab929d92bbb1a60e0d464f0",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "e5_gen.bngl",
+      "fixture_sha256": "fa07420563b14579764df31a1b9772a715ed0fb456e31b0d64b178dfcb833033",
+      "oracle_input_sha256": "fa07420563b14579764df31a1b9772a715ed0fb456e31b0d64b178dfcb833033",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "e6_gen.bngl",
+      "fixture_sha256": "84470046136c55943494d18a019d85e4c2e01ee8c3a7eea332695039b4c80410",
+      "oracle_input_sha256": "84470046136c55943494d18a019d85e4c2e01ee8c3a7eea332695039b4c80410",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "e7_gen.bngl",
+      "fixture_sha256": "cf3f8d5845b6d63121018e0c1ea921dd37508d9b000937a3c863df7f20a8d886",
+      "oracle_input_sha256": "cf3f8d5845b6d63121018e0c1ea921dd37508d9b000937a3c863df7f20a8d886",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "egfr_net_gen.bngl",
+      "fixture_sha256": "fbbc3f9358f65d23a245c64f10d61cb990a13e0ae8c171a9e1586254ec9dab2e",
+      "oracle_input_sha256": "fbbc3f9358f65d23a245c64f10d61cb990a13e0ae8c171a9e1586254ec9dab2e",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [
+        "begin/end reaction_rules block markers changed to BNG2's begin/end reaction rules"
+      ],
+      "adapter_diff": "--- a/fceri_ji_gen.bngl\n+++ b/fceri_ji_gen.bngl.bng2\n@@ -36,7 +36,7 @@\n end species\n \n \n-begin reaction_rules\n+begin reaction rules\n # Ligand-receptor binding\n 1 Rec(a) + Lig(l,l) <-> Rec(a!1).Lig(l!1,l) kp1, km1\n \n@@ -94,7 +94,7 @@\n 18 Syk(tSH2,l~pY)-> Syk(tSH2,l~Y) dc\n 19 Syk(tSH2,a~pY)-> Syk(tSH2,a~Y) dc\n \n-end reaction_rules\n+end reaction rules\n \n begin observables\n Molecules     LynFree     Lyn(U,SH2)\n",
+      "adapter_path": "bench/evidence/pr42_bng2_adapters/fceri_ji_gen.bngl",
+      "bng2_exit_code": 1,
+      "bng2_output": "ABORT: Reaction rule list could not be read because of errors.\n\nBioNetGen version 2.9.3\nReading from file /var/folders/cl/rt1592vn0sq5jw5vv4shrs4m0000gn/T/bng3-netgen-parity-wzb_v_pb/bng2/fceri_ji_gen.bngl (level 0)\nRead 26 parameters.\nRead 4 species.\nERROR: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!\n  at line 44\n",
+      "fixture": "fceri_ji_gen.bngl",
+      "fixture_sha256": "ea5ecd3f76c8aeb4dcf905b11a9ac3d4627196f631fbd63d01b1598ca1170f59",
+      "oracle_input_sha256": "879bf2055a9a1d4200dd1047a005ec64e19d2f78ac792cda6fbb80800b00c455",
+      "reason": "pinned BNG2 rejects a dangling numbered bond in the fixture",
+      "status": "UNSUPPORTED"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "heise_gen.bngl",
+      "fixture_sha256": "fc09dada5c5f322fc125eba0b3d9202ea9ec41c024339f642f312ae8b7c17f13",
+      "oracle_input_sha256": "fc09dada5c5f322fc125eba0b3d9202ea9ec41c024339f642f312ae8b7c17f13",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    },
+    {
+      "adapter_changes": [],
+      "fixture": "tlbr_gen.bngl",
+      "fixture_sha256": "b55b8538263173c9fdc63651708d6c1f1a26fd57d479d28c28c6c7b06e949cef",
+      "oracle_input_sha256": "b55b8538263173c9fdc63651708d6c1f1a26fd57d479d28c28c6c7b06e949cef",
+      "reason": "graph/reaction/group/rate parity",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "failed": 0,
+    "passed": 10,
+    "unsupported": 1
+  }
+}
