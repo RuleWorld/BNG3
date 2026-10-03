@@ -283,7 +283,11 @@ def _locked_ssts_checkout(tmp_path: Path) -> tuple[Path, Path, str]:
         check=True,
     )
     (suite / "README.md").write_text("locked suite\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(suite), "add", "README.md"], check=True)
+    for category in ("semantic", "stochastic"):
+        case_dir = suite / "cases" / category / "00001"
+        case_dir.mkdir(parents=True)
+        (case_dir / "00001-sbml-l3v2.xml").write_text("<sbml/>\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(suite), "add", "README.md", "cases"], check=True)
     subprocess.run(
         ["git", "-C", str(suite), "commit", "-m", "initial"],
         check=True,
@@ -398,6 +402,73 @@ def test_ssts_checkout_preflight_rejects_dirty_or_wrong_origin(
 
     with pytest.raises(validate_sbml_test_suite.SuiteLockError, match=expected_error):
         validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_checkout_preflight_rejects_missing_locked_case_tree(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="case tree"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_missing_case_tree_writes_incomplete_report(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+    report = tmp_path / "incomplete-report.json"
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--json",
+        str(report),
+        "--categories",
+        "semantic",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "case tree" in result.stderr
+    incomplete = json.loads(report.read_text(encoding="utf-8"))
+    assert incomplete["status"] == "incomplete"
+    assert incomplete["preflight_status"] == "failed"
+    assert incomplete["partial_run"] is True
+    assert incomplete["selected_cases"] is None
+    assert incomplete["core_passed"] is False
+    assert incomplete["official_conformance"]["status"] == "incomplete"
+    assert incomplete["official_conformance"]["passed"] is False
+
+
+def test_ssts_incomplete_report_preserves_existing_output(tmp_path: Path):
+    report = tmp_path / "existing-report.json"
+    report.write_text('{"preserve": true}\n', encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        validate_sbml_test_suite._write_incomplete_report(
+            report, tmp_path, ["semantic", "stochastic"], "missing case data"
+        )
+
+    assert report.read_text(encoding="utf-8") == '{"preserve": true}\n'
 
 
 def test_ssts_run_scope_marks_category_cohorts_partial():
