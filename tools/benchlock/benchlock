@@ -305,7 +305,9 @@ def run_child(fd, i, args):
 
     cmd = args.exec
     try:
-        proc = subprocess.Popen(cmd)
+        # The child must retain the flock if this wrapper is killed. Otherwise
+        # the slot becomes reusable while the measured command is still live.
+        proc = subprocess.Popen(cmd, pass_fds=(fd,))
     except FileNotFoundError:
         release(_HELD[-1])
         sys.stderr.write(f"benchlock: command not found: {cmd[0]}\n")
