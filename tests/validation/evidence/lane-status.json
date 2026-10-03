@@ -1,0 +1,115 @@
+{
+  "schema": "bng3-parity-lane-status/v1",
+  "updated_at_utc": "2026-10-03T10:24:14.767109+00:00",
+  "status": "local validation recorded; strict stochastic and Tier-P network gates remain unresolved",
+  "source": {
+    "branch": "codex/bng3-20261002-parity",
+    "baseline_head": "bf5f7d7684b4f758c2d81811c6733442e410e9bf",
+    "tested_code_head": "8c168e71e88a12ba65e6600e24798eed03b7340f",
+    "code_commits": [
+      {
+        "commit": "1d238cc",
+        "subject": "fix(ssa): refresh functional rate coefficients after events"
+      },
+      {
+        "commit": "8c168e7",
+        "subject": "test(validation): pin BNG2 SSA ensembles"
+      }
+    ],
+    "source_patch_sha256_from_baseline": "80552c5b05b4b3948a8f3ea2b297d63d4905453cbc53e1c166b17ab3d4f8d1df",
+    "worktree_clean_when_tests_were_run": false,
+    "bng3_cli_sha256": "4a5414a1d36488b3024839a0d71d0d7687eda7fbc8c58340cc45cdc16dbc7816",
+    "python_extension_sha256": "b64a68c58f8bf2dc3bc7d16eae4958feaa933f5103b4b00d38cc5b14ee767fa3",
+    "tested_source_identity": "The tested working-tree patch was committed unchanged after gates; the source patch SHA records the exact tree."
+  },
+  "implementation": {
+    "state_functional_rates": "Evaluate strict finite coefficients at the initial state and refresh every functional coefficient after each reaction; constant-rate propensity refresh remains dependency-indexed.",
+    "explicit_time_dependence": "Direct SSA rejects explicit clock-dependent rates because event-only coefficient refresh does not implement a non-homogeneous hazard.",
+    "batch_ssa": "Existing batch functional-rate rejection remains unchanged.",
+    "fast_path": "Constant-rate networks do not allocate a dynamic functional coefficient vector."
+  },
+  "reference_ensembles": {
+    "oracle_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "oracle_script_sha256": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4",
+    "run_network_sha256": "73761b79bfe9e3ae52932ea700a4ee7172f3089a703404590c27ef1678b5c931",
+    "method": "SSA; t_start=0; t_end=10; n_steps=50; seeds 1..200; reset concentrations before every member",
+    "models": {
+      "gene_expr": {
+        "members": 200,
+        "aggregate_sha256": "2d17dbee19482c30b242138e3c1f6a0ca3bb8d6521a49bf8ce57ca73e4eb8b62"
+      },
+      "michment": {
+        "members": 200,
+        "aggregate_sha256": "88a1ee4c32af992ae6284213d56d82601ef1d1c5ff994d20c73c381e3758cf3e"
+      },
+      "simple_system": {
+        "members": 200,
+        "aggregate_sha256": "e4b2eec6387b9bdb1f3e287cf2f4805699cabf9d87828fa16fb143df09d0e4ff"
+      }
+    },
+    "manifest": "tests/validation/evidence/bng2-ssa-ensembles/manifest.json",
+    "fixture_directories": [
+      "tests/validation/golden/gene_expr.ens",
+      "tests/validation/golden/michment.ens",
+      "tests/validation/golden/simple_system.ens"
+    ]
+  },
+  "verification": {
+    "configure": {
+      "command": "python /private/tmp/bng3_parity_lock_exec.py cmake -S . -B build -DBUILD_TESTS=ON",
+      "result": "passed"
+    },
+    "build": {
+      "command": "python /private/tmp/bng3_parity_lock_exec.py cmake --build build -j2",
+      "result": "passed"
+    },
+    "native_ctest": {
+      "command": "python /private/tmp/bng3_parity_lock_exec.py ctest --test-dir build --output-on-failure -j2",
+      "result": "483/483 passed"
+    },
+    "focused_functional_ssa": {
+      "command": "PYTHONPATH=.:python:build/cpp BNG3_CI_STRICT_ORACLES=1 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -q tests/validation/test_ssa_functional_rates.py",
+      "result": "5 passed"
+    },
+    "strict_ssa_ensemble": {
+      "result": "2 passed, 1 failed; michment 10/306 points outside mean +/- 3 pooled SE; worst |z|=9.344938257977688 at ScT",
+      "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 BNG_ENSEMBLE_WORKERS=2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_stochastic.py::test_ssa_ensemble_vs_perl -q"
+    },
+    "tier_p_net": {
+      "result": "57 passed, 43 failed because BNG2 reference .net/.gdat artifacts were not produced (see parity-report.json)",
+      "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py::test_net_parity_full --bng-cpp build/cpp/bng_cpp -q"
+    },
+    "full_non_slow": {
+      "result": "241 passed, 44 failed, 10 deselected; 43 Tier-P reference artifact failures and 1 stale selection manifest",
+      "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 NFSIM_BIN=/private/tmp/bng3-20261002-oracles/nfsim/build/NFsim BNG_ENSEMBLE_WORKERS=2 BNG_SWEEP_WORKERS=2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation -m 'not slow' -q"
+    },
+    "tier_p_nfsim_direct_path": {
+      "report": "tests/validation/evidence/nfsim-tierp-direct-path.json",
+      "result": "100 classified; 78 accepted; 16 attributed declines; 4 not loadable; 2 incomplete; 0 diverged; test passed",
+      "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 BNG_SWEEP_WORKERS=2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_nfsim.py::test_tierp_direct_path_outcome_is_measured_and_attributed -q"
+    },
+    "corpus_manifest_check": {
+      "command": ".venv/bin/python scripts/generate_corpus_manifest.py --check",
+      "result": "failed: 6 unselected on-disk models"
+    },
+    "diff_check": {
+      "command": "git diff --check",
+      "result": "passed"
+    },
+    "ensemble_generation": {
+      "command": "BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl python scripts/regen_golden.py --models gene_expr michment simple_system --ensemble 200",
+      "result": "3/3 generated; 200 fixed-seed members each; manifest and per-member hashes recorded",
+      "manifest": "tests/validation/evidence/bng2-ssa-ensembles/manifest.json"
+    }
+  },
+  "known_diagnostics": {
+    "sequential_seed_rng_bias": "BNG2 libc rand first-draw mean over seeds 1..200 was 0.0007865501105722739; the source uses srand(seed) then rand()/RAND_MAX.",
+    "two_state_oracle_mean": "BNG2-only 1000-seed diagnostic was 72.718 at t=0.2 versus analytic 69.92077573960177; used diagnostically only, not to replace the 1..200 references.",
+    "manual_AN_netgen": "Interrupted after more than 12 minutes; no output artifact; excluded from all pass/fail gate counts.",
+    "selection_cohort": "The Tier-P sweep preserves the committed 100-model set. Six additional on-disk immune fixtures are present; commit 2b8fe24 on codex/bng3-20261002-ci contains the reviewed selection update but is not integrated into this branch."
+  },
+  "hosted_ci": {
+    "status": "not_run",
+    "reason": "Draft PR not yet created."
+  }
+}
