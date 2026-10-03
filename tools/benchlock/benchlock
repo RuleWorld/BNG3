@@ -24,13 +24,16 @@ Usage
     benchlock acquire --agent NAME --what DESC [--worktree PATH] [--timeout S]
     benchlock status
     benchlock holders
-    benchlock release            # only needed if acquired in a long-lived shell
 
 `acquire` prints a one-line token on success and holds the slot until the
-process exits (or `release` is called). It is meant to wrap the measurement:
+wrapped command exits. It is meant to wrap the measurement:
 
     benchlock acquire --agent swarmSerial --what "out_write 40k rows" \\
         -- python3 bench/run_bench.py --reps 5
+
+An `acquire` call without a command only waits for a slot and then exits; it
+does not create a hold that another CLI invocation can release. A separate CLI
+process cannot unlock another process's flock.
 
 The wrapped command inherits the flock descriptor. If this wrapper dies while
 that command is still running, the kernel keeps the slot held until the command
@@ -50,6 +53,7 @@ import fcntl
 import json
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -77,17 +81,26 @@ BENCH_TOKEN = re.compile(
     r"(bng_cpp|_bionetgen_cpp|mem_bench|mvec_bench|vb_base|vb_cand|"
     r"bench_|harness|determinism|identity_check|verify/|\.bench|"
     r"/tmp/(?:oracle|cachebench|compilerbench|membench|swm|bench))", re.I)
-WORKTREE_RE = re.compile(r"/Users/\S*BioNetGen/BNG3-[A-Za-z0-9_.-]+")
+WORKTREE_RE = re.compile(r"(?:^|/)bng3-[A-Za-z0-9_.-]+(?:/|$)", re.I)
 
 
 def snapshot():
-    out = subprocess.run(["ps", "-axo", "pid=,command="],
-                         capture_output=True, text=True).stdout
+    try:
+        result = subprocess.run(["ps", "-axo", "pid=,command="],
+                                 capture_output=True, text=True)
+    except OSError as e:
+        raise RuntimeError(f"could not read process table with ps: {e}") from e
+    if result.returncode != 0:
+        detail = result.stderr.strip() or "no diagnostic"
+        raise RuntimeError(f"ps exited {result.returncode}: {detail}")
     procs = {}
-    for line in out.splitlines():
+    for line in result.stdout.splitlines():
         parts = line.split(None, 1)
         if len(parts) == 2 and parts[0].isdigit():
             procs[int(parts[0])] = parts[1].strip()
+    if os.getpid() not in procs:
+        raise RuntimeError("ps snapshot omitted the benchlock process; "
+                           "process-table access may be restricted")
     return procs
 
 
@@ -108,7 +121,13 @@ def cotenant_advisory(baseline, agent):
     Anything matching the holder's own benchlock command is excluded: it is the
     measurement, not a co-tenant.
     """
-    final = snapshot()
+    if _BASELINE_ERROR:
+        return (f"BENCHLOCK_COTENANT class=ERROR holder={agent} "
+                f"baseline unavailable: {_BASELINE_ERROR}")
+    try:
+        final = snapshot()
+    except RuntimeError as e:
+        return f"BENCHLOCK_COTENANT class=ERROR holder={agent} {e}"
     new, persist = [], []
     for pid, cmd in sorted(final.items()):
         if "benchlock" in cmd:
@@ -197,13 +216,6 @@ def write_info(fd, i, agent, what, worktree):
     return rec
 
 
-def clear_info(i):
-    try:
-        os.unlink(info_path(i))
-    except OSError:
-        pass
-
-
 def probe_slot(i):
     """True if slot i is currently free (without taking it for long)."""
     fd = os.open(slot_path(i), os.O_RDWR | os.O_CREAT, 0o644)
@@ -263,6 +275,7 @@ def emit(event, i, agent=""):
 
 
 def cmd_acquire(args):
+    global _BASELINE_ERROR
     ensure_dir()
     deadline = time.time() + args.timeout if args.timeout else None
     announced = False
@@ -278,7 +291,11 @@ def cmd_acquire(args):
                       f"({args.what})", flush=True)
                 emit("ACQUIRED", i, args.agent)
                 _BASELINE.clear()
-                _BASELINE.update(snapshot())
+                _BASELINE_ERROR = ""
+                try:
+                    _BASELINE.update(snapshot())
+                except RuntimeError as e:
+                    _BASELINE_ERROR = str(e)
                 if args.exec:
                     return run_child(fd, i, args)
                 return 0
@@ -305,15 +322,45 @@ def run_child(fd, i, args):
 
 
     cmd = args.exec
+    proc = None
+    pending_signals = []
+    previous_handlers = {}
+
+    def forward_signal(signum, _frame):
+        if proc is None:
+            pending_signals.append(signum)
+        elif proc.poll() is None:
+            try:
+                proc.send_signal(signum)
+            except ProcessLookupError:
+                pass
+
     try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.signal(signum, forward_signal)
         # The child must retain the flock if this wrapper is killed. Otherwise
         # the slot becomes reusable while the measured command is still live.
         proc = subprocess.Popen(cmd, pass_fds=(fd,))
+        for signum in pending_signals:
+            try:
+                proc.send_signal(signum)
+            except ProcessLookupError:
+                pass
+        pending_signals.clear()
     except FileNotFoundError:
         release(_HELD[-1])
         sys.stderr.write(f"benchlock: command not found: {cmd[0]}\n")
         return 127
-    rc = proc.wait()
+    finally:
+        # If spawn failed, restore any handlers installed above.
+        if proc is None:
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)
+    try:
+        rc = proc.wait()
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
     try:
         print(cotenant_advisory(_BASELINE, getattr(args, "agent", "?")),
               flush=True)
@@ -326,27 +373,22 @@ def run_child(fd, i, args):
 
 
 def release(entry):
-    fd, i = entry
-    try:
-        clear_info(i)
-        fcntl.flock(fd, fcntl.LOCK_UN)
-    finally:
-        os.close(fd)
+    fd, _slot = entry
+    # Keep metadata until the next acquirer atomically replaces it. A
+    # descendant may still hold an inherited descriptor after the direct
+    # child exits; status probes the kernel lock before trusting metadata.
+    # Close only this process's descriptor. LOCK_UN affects the shared
+    # open-file description and would unlock even while an inherited child
+    # descriptor still holds it.
+    os.close(fd)
     try:
         _HELD.remove(entry)
     except ValueError:
         pass
 
 
-def cmd_release(args):
-    n = len(_HELD)
-    while _HELD:
-        release(_HELD[-1])
-    print(f"benchlock: released {n} slot(s)")
-    return 0
-
-
 _HELD = []
+_BASELINE_ERROR = ""
 
 
 def main():
@@ -369,9 +411,6 @@ def main():
 
     s = sub.add_parser("holders", help="print holder metadata as JSON lines")
     s.set_defaults(func=cmd_holders)
-
-    s = sub.add_parser("release", help="release slots held by this process")
-    s.set_defaults(func=cmd_release)
 
     args = p.parse_args()
     if getattr(args, "exec", None):

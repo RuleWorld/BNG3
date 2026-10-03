@@ -201,6 +201,18 @@ if python3 "$SCRIPT_DIR/test_signal_hold.py" > "$TEST_ROOT/signal.out" 2>&1; the
 else
   bad "signal-lifetime regression failed"; cat "$TEST_ROOT/signal.out"
 fi
+if python3 "$SCRIPT_DIR/test_interrupt_forwarding.py" > "$TEST_ROOT/interrupt.out" 2>&1; then
+  cat "$TEST_ROOT/interrupt.out"
+  ok "SIGINT and SIGTERM forward while the wrapper retains the slot"
+else
+  bad "interrupt-forwarding regression failed"; cat "$TEST_ROOT/interrupt.out"
+fi
+if python3 "$SCRIPT_DIR/test_advisory_errors.py" > "$TEST_ROOT/advisory-errors.out" 2>&1; then
+  cat "$TEST_ROOT/advisory-errors.out"
+  ok "process-table failures and worktree path detection are explicit"
+else
+  bad "advisory error regression failed"; cat "$TEST_ROOT/advisory-errors.out"
+fi
 
 echo
 echo "=== RESULT: $PASS passed, $FAIL failed ==="

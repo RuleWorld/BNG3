@@ -48,6 +48,10 @@ tools/benchlock/benchlock status     # capacity, per-slot holder, age
 tools/benchlock/benchlock holders    # JSON lines: agent, what, worktree, pid, since
 ```
 
+An `acquire` call without a wrapped command waits for availability and exits;
+it does not leave a hold for a later CLI call to release. The lock is tied to
+open descriptors in the acquiring process and its descendants.
+
 Exit codes: `0` acquired (or the child's own code, when wrapping a command),
 `2` timed out waiting, `3` usage error, `127` command not found.
 
@@ -84,10 +88,11 @@ long-running correctness sweep that began before your A/B acquired its slot
 never "starts during the window", yet loads the machine throughout it.
 
 This is **advisory**. It judges nothing and blocks on nothing. It matches on
-process name and worktree path, so it is deliberately over-inclusive — a reader
-can dismiss a line in a second but cannot recover a process that was never
-shown. A `class=NONE` result means nothing matched, **not** that you were
-alone.
+process name and checkout path when those appear in the command line. `ps` does
+not report process working directories, so a command that hides both its name
+and checkout path cannot be identified. If `ps` fails or omits the benchlock
+process, the result is `class=ERROR`, never `class=NONE`. A `class=NONE` result
+means nothing matched, **not** that you were alone.
 
 ## The obligation the advisory supports
 
@@ -100,8 +105,20 @@ one cannot. That is the failure the advisory exists to prevent.
 
 **`fcntl.flock`, not `mkdir`.** A directory lock goes stale when the holder
 dies. The lock is released when the last inherited descriptor closes, including
-when the wrapper dies but its measured command is still running. Once the
-command exits, the kernel releases it without a cleanup step.
+when the wrapper dies but its measured command is still running. Cleanup closes
+the wrapper's descriptor without issuing `LOCK_UN`, because that would unlock
+the shared open-file description while a child still has it. Once the last
+command or descendant exits, the kernel releases the lock.
+
+`SIGINT` and `SIGTERM` are forwarded to the wrapped command. The wrapper waits
+for that command to exit before closing its descriptor. There is no standalone
+`release` subcommand: another CLI process cannot release a lock held by the
+acquiring process.
+
+`status` probes the kernel lock before showing a holder. The metadata file may
+remain after a hold ends; it is ignored while the slot is free and replaced by
+the next acquirer. This also keeps useful holder details if a child descendant
+still has an inherited descriptor.
 
 **Release on observed absence of compiler processes, never on a self-report.**
 "Who is holding slot 1" is answered by `ps` plus `lsof` on each holder's working
@@ -119,6 +136,8 @@ tools/benchlock/run_tests.sh       # slot lifecycle, command status, and capacit
 tools/benchlock/advisory_test.py   # NEW/PERSIST co-tenant detection
 tools/benchlock/race_test.py       # concurrency invariant under a 6-way race
 tools/benchlock/test_signal_hold.py # wrapper death cannot unlock a live command
+tools/benchlock/test_interrupt_forwarding.py # signals forward; wrapper waits
+tools/benchlock/test_advisory_errors.py # ps errors and worktree paths
 ```
 
 All tests use a **unique lock directory per invocation**. That is not
