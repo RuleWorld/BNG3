@@ -334,6 +334,8 @@ def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
     parity_jobs = parity_doc.get("jobs") or {}
     for job in ("oracle-lock", "bng2-parity", "nfsim-parity", "pybionetgen-compat"):
         assert job in parity_jobs, f"parity.yml must define a {job} job"
+    oracle_lock = _workflow_job_from(PARITY_WORKFLOW, "oracle-lock")
+    assert "python -m pip install pytest numpy pyyaml" in oracle_lock
 
 
 def _assert_exact_head_concurrency(path: Path, label: str) -> None:
@@ -558,6 +560,35 @@ def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
     assert "pip install -e" not in integration_job
     assert "check_python_package_identity.py" in integration_job
     assert "pytest tests/test_workflow_contract.py" in integration_job
+
+
+def test_python_test_jobs_download_the_matching_native_cli_artifact():
+    """CLI-backed Python contracts must use the same-head OS binary."""
+
+    ci = parse_workflow(CI_WORKFLOW)
+    matrix_job = ci["jobs"]["python-test"]
+    integration_job = ci["jobs"]["python-integration"]
+
+    assert "cpp-build" in matrix_job["needs"]
+    assert "${{ matrix.cpp_artifact }}" in _workflow_job("python-test")
+    artifacts = {
+        entry["os"]: entry["cpp_artifact"]
+        for entry in matrix_job["strategy"]["matrix"]["include"]
+    }
+    assert artifacts == {
+        "ubuntu-22.04": "bng_cpp-ubuntu-22.04-gcc-12",
+        "macos-14": "bng_cpp-macos-14-clang-arm64",
+        "windows-2022": "bng_cpp-windows-2022-msvc",
+    }
+    assert "${{ github.workspace }}/build/cpp/bng_cpp" in matrix_job["env"]["BNG_CPP"]
+    assert "windows" in matrix_job["env"]["BNG_CPP"]
+
+    assert "python-test" in integration_job["needs"]
+    assert "cpp-build" in integration_job["needs"]
+    assert "bng_cpp-ubuntu-22.04-gcc-12" in _workflow_job("python-integration")
+    assert (
+        integration_job["env"]["BNG_CPP"] == "${{ github.workspace }}/build/cpp/bng_cpp"
+    )
 
     checker = (REPO / "scripts" / "ci" / "check_python_package_identity.py").read_text(
         encoding="utf-8"

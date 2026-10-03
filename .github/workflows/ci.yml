@@ -470,17 +470,36 @@ jobs:
 
   python-test:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
+    needs: [cpp-build]
     runs-on: ${{ matrix.os }}
     env:
       BNG3_PYTHON_TEST_MODE: installed
+      BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-14, windows-2022]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: ubuntu-22.04
+            cpp_artifact: bng_cpp-ubuntu-22.04-gcc-12
+          - os: macos-14
+            cpp_artifact: bng_cpp-macos-14-clang-arm64
+          - os: windows-2022
+            cpp_artifact: bng_cpp-windows-2022-msvc
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download matching bng_cpp artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.cpp_artifact }}
+          path: build/cpp/
+
+      - name: Make bng_cpp executable (Unix)
+        if: "!startsWith(matrix.os, 'windows')"
+        run: chmod +x build/cpp/bng_cpp
 
       - uses: actions/setup-python@v5
         with:
@@ -556,12 +575,22 @@ jobs:
 
   python-integration:
     name: Integration Tests
-    needs: python-test
+    needs: [cpp-build, python-test]
     runs-on: ubuntu-22.04
     env:
       BNG3_PYTHON_TEST_MODE: installed
+      BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download bng_cpp artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bng_cpp-ubuntu-22.04-gcc-12
+          path: build/cpp/
+
+      - name: Make bng_cpp executable
+        run: chmod +x build/cpp/bng_cpp
 
       - uses: actions/setup-python@v5
         with:

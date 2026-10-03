@@ -40,8 +40,11 @@
       "actin_branch",
       "actin_branch_forFitToData",
       "actin_simple",
+      "antigen_binding",
       "blbr",
+      "clonal_expansion",
       "continue",
+      "cytotoxic_killing",
       "deleteMolecules",
       "e1",
       "e2",
@@ -54,6 +57,7 @@
       "e9",
       "egfr_net",
       "empty_compartments_block",
+      "exhaustion_switch",
       "fceri_fyn",
       "fceri_fyn_lig",
       "fceri_fyn_trimer",
@@ -120,6 +124,8 @@
       "test_tfun_xml",
       "test_time",
       "test_write_sbml_multi",
+      "threshold_observable",
+      "threshold_observable_species",
       "tlbr",
       "tlbr_performance",
       "tlmr",
@@ -276,6 +282,15 @@
       ]
     },
     {
+      "id": "antigen_binding",
+      "path": "models/immune/antigen_binding.bngl",
+      "sha256": "sha256:035113fc870c5ff2ec59e00448da34e84c4cb95a60ef5defbe5a0e484a087fed",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
       "id": "blbr",
       "path": "models/blbr.bngl",
       "sha256": "sha256:8fe594ef0de3e7ceb4a8aeba9a49f163ca58232b6cbc9a2162459e395b98a959",
@@ -286,9 +301,27 @@
       ]
     },
     {
+      "id": "clonal_expansion",
+      "path": "models/immune/clonal_expansion.bngl",
+      "sha256": "sha256:86f1135fd96c1fdea85f122551ab2787b63c64aa8c933f6c35ec95ca839d930f",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
       "id": "continue",
       "path": "models/continue.bngl",
       "sha256": "sha256:452e2138ce01ef9fbc4bd2690762ade765c7371b73dd274ae7b1e94532f1c3bc",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "cytotoxic_killing",
+      "path": "models/immune/cytotoxic_killing.bngl",
+      "sha256": "sha256:ba488893948a7b4af4e6e539262209a5a2451e464de832ec931e5e7857fb4ae0",
       "origin": "repository-fixture",
       "tiers": [
         "p"
@@ -398,6 +431,15 @@
       "id": "empty_compartments_block",
       "path": "models/empty_compartments_block.bngl",
       "sha256": "sha256:bcb353e5f47708c82fa406c5cb3e16cc1999301e073cfc16427704267943783a",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "exhaustion_switch",
+      "path": "models/immune/exhaustion_switch.bngl",
+      "sha256": "sha256:374cc22529dfb9eb1f546574a2141478237488ecda28055e897d605be865a23f",
       "origin": "repository-fixture",
       "tiers": [
         "p"
@@ -1003,6 +1045,24 @@
       "id": "test_write_sbml_multi",
       "path": "models/test_write_sbml_multi.bngl",
       "sha256": "sha256:cff3da31ae446f00fe199b95c74e01897cff770dfe9166ba65ea47a9eb172ba7",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "threshold_observable",
+      "path": "models/immune/threshold_observable.bngl",
+      "sha256": "sha256:dee5e526b290b0560d546749cf5de4b2fc664cc6dbbaa1eca45a4e4a6a8c9fae",
+      "origin": "repository-fixture",
+      "tiers": [
+        "p"
+      ]
+    },
+    {
+      "id": "threshold_observable_species",
+      "path": "models/immune/threshold_observable_species.bngl",
+      "sha256": "sha256:7f014f91bc630a79726932041f0c3d3a4f8a84d0c5d59b4016dedad9c4090b1b",
       "origin": "repository-fixture",
       "tiers": [
         "p"
