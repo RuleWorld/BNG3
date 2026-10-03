@@ -67,7 +67,8 @@ starting the wrapper. Build and correctness commands do not need a slot.
 1. Run `acquire`. It blocks if full.
 2. **Once it prints `acquired slot.N`**, announce that you are live, including
    the slot number.
-3. Announce again when it finishes, so the slot frees.
+3. Announce when the wrapped command finishes. A descendant may still hold the
+   inherited descriptor; use `status` to confirm the slot is free.
 
 If you merely want to warn people you are waiting, say *queued* — that is a
 different message. **Never announce a benchmark as live before you hold the
@@ -76,11 +77,11 @@ every reader has to guess whether an announcement means running or waiting.
 
 ## The co-tenant advisory
 
-On release, every holder receives a `BENCHLOCK_COTENANT` block listing processes
-it should **review** before reporting:
+When the wrapped command exits, every holder receives a `BENCHLOCK_COTENANT`
+block listing processes it should **review** before reporting:
 
 - `class=NEW` — started during your hold.
-- `class=PERSIST` — alive at release *and* already alive when you acquired, so
+- `class=PERSIST` — alive at the advisory snapshot *and* already alive when you acquired, so
   it may have started **before** you took the slot.
 
 `PERSIST` exists because a start-time diff alone misses the common case. A
@@ -115,6 +116,10 @@ for that command to exit before closing its descriptor. There is no standalone
 `release` subcommand: another CLI process cannot release a lock held by the
 acquiring process.
 
+`BENCHLOCK_EVENT ACQUIRED` records a successful kernel lock. `COMMAND_EXITED`
+records only the direct wrapped command's exit; a descendant may still hold
+the lock. Use `status` as the source of truth for slot availability.
+
 `status` probes the kernel lock before showing a holder. The metadata file may
 remain after a hold ends; it is ignored while the slot is free and replaced by
 the next acquirer. This also keeps useful holder details if a child descendant
@@ -138,6 +143,7 @@ tools/benchlock/race_test.py       # concurrency invariant under a 6-way race
 tools/benchlock/test_signal_hold.py # wrapper death cannot unlock a live command
 tools/benchlock/test_interrupt_forwarding.py # signals forward; wrapper waits
 tools/benchlock/test_advisory_errors.py # ps errors and worktree paths
+tools/benchlock/test_descendant_hold.py # direct-command exit can precede slot release
 ```
 
 All tests use a **unique lock directory per invocation**. That is not

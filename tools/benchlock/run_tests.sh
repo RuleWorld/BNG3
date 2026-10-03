@@ -213,6 +213,12 @@ if python3 "$SCRIPT_DIR/test_advisory_errors.py" > "$TEST_ROOT/advisory-errors.o
 else
   bad "advisory error regression failed"; cat "$TEST_ROOT/advisory-errors.out"
 fi
+if python3 "$SCRIPT_DIR/test_descendant_hold.py" > "$TEST_ROOT/descendant.out" 2>&1; then
+  cat "$TEST_ROOT/descendant.out"
+  ok "child-exit event does not claim inherited lock is free"
+else
+  bad "descendant-lock regression failed"; cat "$TEST_ROOT/descendant.out"
+fi
 
 echo
 echo "=== RESULT: $PASS passed, $FAIL failed ==="

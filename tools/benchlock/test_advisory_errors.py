@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,7 +40,23 @@ def main() -> int:
     ):
         assert module.is_candidate(command), command
     assert not module.is_candidate("/private/tmp/unrelated/custom_tool")
-    print("PASS: ps failure is explicit; this host's BNG3 worktree paths match")
+
+    # ps reports argv but not cwd. A generic long-lived process started in the
+    # BNG3 checkout must not be reported as a worktree match when argv omits it.
+    with subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(5)"],
+        cwd=Path(__file__).resolve().parents[1],
+    ) as process:
+        try:
+            command = module.snapshot()[process.pid]
+            assert str(Path(__file__).resolve().parents[1]) not in command, command
+            assert not module.is_candidate(command), command
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+
+    print("PASS: ps errors stay explicit; argv checkout paths match; cwd-only "
+          "processes remain outside the advisory")
     return 0
 
 
