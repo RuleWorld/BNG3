@@ -98,6 +98,17 @@ def gdat(path: Path) -> list[list[float]]:
     ]
 
 
+def net_groups(path: Path) -> dict[str, list[str]]:
+    text = path.read_text()
+    groups = text.split("begin groups", 1)[1].split("end groups", 1)[0]
+    result = {}
+    for line in groups.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[0].isdigit():
+            result[fields[1]] = fields[2:]
+    return result
+
+
 # ---------------------------------------------------------------------------
 # 1. Clonal expansion against a crowding-limited carrying capacity.
 # ---------------------------------------------------------------------------
@@ -480,6 +491,17 @@ def test_species_count_predicates_still_work(tmp_path):
     assert seff == 100.0
 
 
+def test_species_count_predicates_are_applied_to_network_groups(tmp_path):
+    work = run_model("threshold_observable_species", tmp_path)
+    assert int((work / ".exitcode").read_text()) == 0, (work / ".output").read_text()
+
+    group_rows = net_groups(work / "threshold_observable_species.net")
+    assert group_rows["SGt0"] == ["1"]
+    assert (
+        group_rows["SGt1"] == []
+    ), "Eff()>1 must not include the species with one structural embedding"
+
+
 @pytest.mark.skipif(
     not BNG2.exists(), reason="BNG2 2.9.3 oracle not present at the pinned path"
 )
@@ -503,9 +525,13 @@ def test_species_count_predicates_match_the_bng2_oracle(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
     bng2_rows = gdat(work / "threshold_observable_species.gdat")
+    bng2_groups = net_groups(work / "threshold_observable_species.net")
 
     mine = run_model("threshold_observable_species", tmp_path)
     bng3_rows = gdat(mine / "threshold_observable_species.gdat")
+    bng3_groups = net_groups(mine / "threshold_observable_species.net")
+
+    assert bng2_groups == bng3_groups
 
     assert len(bng2_rows) == len(bng3_rows)
     for theirs, ours in zip(bng2_rows, bng3_rows):

@@ -78,6 +78,17 @@ enum class ObservableKind {
     Unknown,
 };
 
+struct ObservablePatternSource {
+    std::string pattern;
+    std::string relation;
+    int quantity = 0;
+};
+
+std::optional<ObservablePatternSource> splitObservablePattern(
+    const std::string& source, std::string& error);
+bool observablePatternCountMatches(std::size_t count, const std::string& relation,
+                                  int quantity);
+
 struct CompiledEnergyFactor {
     EnergyPatternId id;
     std::size_t index = 0;

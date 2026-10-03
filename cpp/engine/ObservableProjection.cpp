@@ -5,21 +5,6 @@
 #include <stdexcept>
 
 namespace bng::engine {
-namespace {
-
-bool compare(std::size_t lhs, const std::string& relation, int rhs) {
-    const auto value = static_cast<long long>(lhs);
-    if (relation.empty()) return lhs > 0;
-    if (relation == "==") return value == rhs;
-    if (relation == "!=") return value != rhs;
-    if (relation == "<") return value < rhs;
-    if (relation == "<=") return value <= rhs;
-    if (relation == ">") return value > rhs;
-    if (relation == ">=") return value >= rhs;
-    throw std::runtime_error("unsupported observable relation: " + relation);
-}
-
-} // namespace
 
 ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
     : loweringContext_(model) {
@@ -85,7 +70,8 @@ int ObservableProjection::weight(std::size_t observableIndex,
     for (const auto& term : observable.terms) {
         const auto count = core::countPatternMatches(term.pattern, species);
         if (observable.kind == compile::ObservableKind::Species) {
-            if (compare(count, term.relation, term.quantity)) {
+            if (compile::observablePatternCountMatches(count, term.relation,
+                                                      term.quantity)) {
                 ++total;
                 // CountUnique: a species contributes once regardless of how
                 // many of this observable's patterns it matches. Mirrors
