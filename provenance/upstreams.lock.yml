@@ -91,6 +91,17 @@
         "checked_at": "2026-09-08"
       }
     },
+    "sbml-test-suite": {
+      "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+      "branch": "3.5.0",
+      "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+      "role": "official-validation-corpus-not-oracle",
+      "status": "observed",
+      "evidence": {
+        "kind": "local-checkout",
+        "checked_at": "2026-10-02"
+      }
+    },
     "rulehub": {
       "repository": "https://github.com/RuleWorld/RuleHub.git",
       "branch": "master",

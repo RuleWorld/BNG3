@@ -1040,6 +1040,11 @@ def bngl_function(
     result = convert_math_expression(result)
 
     for compartment in compartments:
+        if (
+            compartment in assignment_rule_variables
+            or standardize_name(compartment) in assignment_rule_variables
+        ):
+            continue
         result = re.sub(
             rf"\b{re.escape(compartment)}\b",
             f"__compartment_{standardize_name(compartment)}__",
@@ -2059,6 +2064,39 @@ def _strip_compartment_rate_factors(
     return result.strip() or "1"
 
 
+def _requires_explicit_compartment_flux(
+    reaction: SBMLReaction, model: SBMLModel
+) -> bool:
+    """Keep SBML's full flux where BNGL geometry cannot track its volume."""
+
+    compartment_ids = set()
+    if reaction.compartment:
+        compartment_ids.add(reaction.compartment)
+    for reference in [*reaction.reactants, *reaction.products]:
+        species = model.species.get(reference.species)
+        if species is not None and species.compartment:
+            compartment_ids.add(species.compartment)
+
+    volume_rules = [*_assignment_rules_for_writer(model), *model.rules]
+    variable_compartments = {
+        rule.variable
+        for rule in volume_rules
+        if rule.variable in model.compartments
+        and getattr(rule, "type", "") in {"assignment", "rate"}
+    }
+    for compartment_id in compartment_ids:
+        compartment = model.compartments.get(compartment_id)
+        if compartment_id in variable_compartments:
+            return True
+        if compartment is not None:
+            spatial_dimensions = compartment.spatial_dimensions
+            if spatial_dimensions is None:
+                spatial_dimensions = 3
+            if float(spatial_dimensions) not in {2.0, 3.0}:
+                return True
+    return False
+
+
 def _local_parameter_entries(model: SBMLModel) -> List[Tuple[str, object]]:
     """Return source-scoped local parameters under stable BNGL identifiers."""
 
@@ -2123,6 +2161,9 @@ def _rate_for_reaction(
             if reference.species != "EmptySet"
             for _ in range(max(0, int(round(reference.stoichiometry))))
         ]
+    )
+    requires_explicit_compartment_flux = _requires_explicit_compartment_flux(
+        reaction, model
     )
     species_map = {}
     for species_id in model.species:
@@ -2228,6 +2269,7 @@ def _rate_for_reaction(
         or functional
         or has_nonreactant_species
         or has_missing_reactant
+        or requires_explicit_compartment_flux
         or bool(
             re.search(r"\^\s*\(\s*-\s*\d", classification_math)
             or re.search(r"\^\s*-\s*\d", classification_math)
@@ -2261,6 +2303,7 @@ def _rate_for_reaction(
         and not functional
         and not has_saturation
         and not (preserved_compartment_flux and nonlinear)
+        and not requires_explicit_compartment_flux
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
         and len(converted_for_check) < _MASS_ACTION_SKIP_EXPR_LEN
         and not re.search(r"\btime\s*\(", converted_for_check)
@@ -4700,6 +4743,16 @@ def write_functions(
         for rule in model.rules
         if rule.variable and rule.type == "rate"
     }
+    rate_ruled_compartments = {
+        standardize_name(rule.variable)
+        for rule in model.rules
+        if (
+            rule.variable
+            and rule.type == "rate"
+            and rule.variable in model.compartments
+            and rule.variable in synthetic_rate_rule_variables
+        )
+    }
     function_name_map = OrderedDict(
         (
             str(function_id),
@@ -4727,6 +4780,11 @@ def write_functions(
         for rule in model.rules
         if rule.variable and rule.type == "rate"
         for alias in (str(rule.variable), standardize_name(str(rule.variable)))
+    }
+    assignment_rule_compartments = {
+        standardize_name(str(rule.variable))
+        for rule in assignment_rules
+        if rule.variable and str(rule.variable) in model.compartments
     }
     species_map = {
         alias: species_id
@@ -4771,7 +4829,17 @@ def write_functions(
         if species.has_only_substance_units or not species.compartment:
             body = name
         else:
-            body = f"{name} / __compartment_{standardize_name(species.compartment)}__"
+            compartment_name = standardize_name(species.compartment)
+            compartment_volume = (
+                f"{compartment_name}_amt"
+                if compartment_name in rate_ruled_compartments
+                else (
+                    f"{compartment_name}()"
+                    if compartment_name in assignment_rule_compartments
+                    else f"__compartment_{compartment_name}__"
+                )
+            )
+            body = f"{name} / {compartment_volume}"
         lines.append(f"{function_name}() = {body}")
 
     for function_id, function in model.function_definitions.items():
@@ -4864,6 +4932,7 @@ def write_functions(
             {
                 parameter_id: parameter.value
                 for parameter_id, parameter in model.parameters.items()
+                if parameter.constant
                 if str(parameter_id) not in assignment_rule_parameter_ids
                 and standardize_name(str(parameter_id))
                 not in assignment_rule_parameter_ids

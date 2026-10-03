@@ -1,5 +1,6 @@
 """Acceptance contracts for the Python package CI installation path."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -253,18 +254,266 @@ def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
 
     clean = validate_sbml_test_suite._repository_provenance(repo)
 
-    assert clean == {
-        "bng3_commit": revision,
-        "bng3_tracked_worktree_clean": True,
-    }
+    assert clean["bng3_commit"] == revision
+    assert clean["bng3_tracked_worktree_clean"] is True
+    assert clean["bng3_worktree_clean_for_report"] is True
+    assert clean["bng3_changed_files"] == []
+    assert clean["bng3_source_diff_sha256"]
+    clean_digest = clean["bng3_source_diff_sha256"]
 
     source.write_text("model = False\n", encoding="utf-8")
     dirty = validate_sbml_test_suite._repository_provenance(repo)
 
-    assert dirty == {
-        "bng3_commit": revision,
-        "bng3_tracked_worktree_clean": False,
+    assert dirty["bng3_commit"] == revision
+    assert dirty["bng3_tracked_worktree_clean"] is False
+    assert dirty["bng3_worktree_clean_for_report"] is False
+    assert dirty["bng3_changed_files"] == ["model.py"]
+    assert dirty["bng3_source_diff_sha256"] != clean_digest
+
+
+def _locked_ssts_checkout(tmp_path: Path) -> tuple[Path, Path, str]:
+    suite = tmp_path / "suite"
+    suite.mkdir()
+    subprocess.run(["git", "-C", str(suite), "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(suite), "config", "user.name", "SSTS test"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(suite), "config", "user.email", "ssts@example.invalid"],
+        check=True,
+    )
+    (suite / "README.md").write_text("locked suite\n", encoding="utf-8")
+    for category in ("semantic", "stochastic"):
+        case_dir = suite / "cases" / category / "00001"
+        case_dir.mkdir(parents=True)
+        (case_dir / "00001-sbml-l3v2.xml").write_text("<sbml/>\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(suite), "add", "README.md", "cases"], check=True)
+    subprocess.run(
+        ["git", "-C", str(suite), "commit", "-m", "initial"],
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.check_output(
+        ["git", "-C", str(suite), "rev-parse", "HEAD"], text=True
+    ).strip()
+    repository = "https://github.com/sbmlteam/sbml-test-suite.git"
+    subprocess.run(
+        ["git", "-C", str(suite), "remote", "add", "origin", repository],
+        check=True,
+    )
+    lock = tmp_path / "upstreams.lock.yml"
+    lock.write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "sbml-test-suite": {
+                        "repository": repository,
+                        "branch": "3.5.0",
+                        "revision": revision,
+                        "role": "official-validation-corpus-not-oracle",
+                        "status": "observed",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return suite, lock, revision
+
+
+def test_ssts_validate_only_accepts_the_clean_locked_checkout(tmp_path: Path):
+    suite, lock, revision = _locked_ssts_checkout(tmp_path)
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--validate-only",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "status": "passed",
+        "validate_only": True,
+        "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+        "revision": revision,
+        "source_lock_status": "observed",
+        "source_lock_path": str(lock.resolve()),
+        "source_lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
+        "clean": True,
     }
+
+
+def test_ssts_runner_rejects_revision_mismatch_before_case_execution(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    document = json.loads(lock.read_text(encoding="utf-8"))
+    document["sources"]["sbml-test-suite"]["revision"] = "a" * 40
+    lock.write_text(json.dumps(document), encoding="utf-8")
+    report = tmp_path / "report.json"
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--json",
+        str(report),
+        "--categories",
+        "semantic",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "suite revision mismatch" in result.stderr
+    assert not report.exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    (("dirty", "dirty"), ("origin", "origin mismatch")),
+)
+def test_ssts_checkout_preflight_rejects_dirty_or_wrong_origin(
+    tmp_path: Path, mutation: str, expected_error: str
+):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    if mutation == "dirty":
+        (suite / "untracked.txt").write_text(
+            "not a locked checkout\n", encoding="utf-8"
+        )
+    else:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(suite),
+                "remote",
+                "set-url",
+                "origin",
+                "https://example.com/other.git",
+            ],
+            check=True,
+        )
+
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match=expected_error):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_checkout_preflight_rejects_missing_locked_case_tree(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="case tree"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+@pytest.mark.parametrize("index_flag", ("--skip-worktree", "--assume-unchanged"))
+def test_ssts_checkout_preflight_rejects_case_edits_hidden_by_git_flags(
+    tmp_path: Path, index_flag: str
+):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    case_file = "cases/semantic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", index_flag, case_file],
+        check=True,
+    )
+    (suite / case_file).write_text(
+        "<sbml>modified after locked commit</sbml>\n", encoding="utf-8"
+    )
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="index flags"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_missing_case_tree_writes_incomplete_report(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+    report = tmp_path / "incomplete-report.json"
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--json",
+        str(report),
+        "--categories",
+        "semantic",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "case tree" in result.stderr
+    incomplete = json.loads(report.read_text(encoding="utf-8"))
+    assert incomplete["status"] == "incomplete"
+    assert incomplete["preflight_status"] == "failed"
+    assert incomplete["partial_run"] is True
+    assert incomplete["selected_cases"] is None
+    assert incomplete["core_passed"] is False
+    assert incomplete["official_conformance"]["status"] == "incomplete"
+    assert incomplete["official_conformance"]["passed"] is False
+
+
+def test_ssts_incomplete_report_preserves_existing_output(tmp_path: Path):
+    report = tmp_path / "existing-report.json"
+    report.write_text('{"preserve": true}\n', encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        validate_sbml_test_suite._write_incomplete_report(
+            report, tmp_path, ["semantic", "stochastic"], "missing case data"
+        )
+
+    assert report.read_text(encoding="utf-8") == '{"preserve": true}\n'
+
+
+def test_ssts_run_scope_marks_category_cohorts_partial():
+    assert (
+        validate_sbml_test_suite._is_partial_run(
+            ["semantic", "stochastic"], max_cases=0, only_case=None
+        )
+        is False
+    )
+    assert (
+        validate_sbml_test_suite._is_partial_run(
+            ["semantic"], max_cases=0, only_case=None
+        )
+        is True
+    )
+    assert (
+        validate_sbml_test_suite._is_partial_run(
+            ["semantic", "stochastic"], max_cases=10, only_case=None
+        )
+        is True
+    )
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
