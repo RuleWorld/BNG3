@@ -51,7 +51,9 @@ UNSUPPORTED_MARKERS = (
     "lcm(",
     "notanumber",
 )
-DEFAULT_SUITE_LOCK = Path(__file__).resolve().parents[2] / "provenance" / "upstreams.lock.yml"
+DEFAULT_SUITE_LOCK = (
+    Path(__file__).resolve().parents[2] / "provenance" / "upstreams.lock.yml"
+)
 SUITE_LOCK_NAME = "sbml-test-suite"
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -68,11 +70,15 @@ def _suite_lock_entry(lock_path: Path = DEFAULT_SUITE_LOCK) -> dict[str, str]:
     try:
         lock = json.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise SuiteLockError(f"cannot read suite source lock {lock_path}: {exc}") from exc
+        raise SuiteLockError(
+            f"cannot read suite source lock {lock_path}: {exc}"
+        ) from exc
     sources = lock.get("sources") if isinstance(lock, dict) else None
     source = sources.get(SUITE_LOCK_NAME) if isinstance(sources, dict) else None
     if not isinstance(source, dict):
-        raise SuiteLockError(f"sources.{SUITE_LOCK_NAME} is missing from the source lock")
+        raise SuiteLockError(
+            f"sources.{SUITE_LOCK_NAME} is missing from the source lock"
+        )
     repository = source.get("repository")
     revision = source.get("revision")
     if not isinstance(repository, str) or not re.fullmatch(
@@ -163,7 +169,9 @@ def _read_reference_case(case: dict[str, Any]) -> dict[str, Any]:
     """Read one deterministic SSTS settings/results pair without guessing."""
 
     if case.get("category") != "semantic":
-        raise ValueError("official deterministic reference reader requires a semantic case")
+        raise ValueError(
+            "official deterministic reference reader requires a semantic case"
+        )
     case_dir = Path(case["path"]).resolve().parent
     case_id = str(case["id"])
     settings_path = case_dir / f"{case_id}-settings.txt"
@@ -182,7 +190,9 @@ def _read_reference_case(case: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"settings line {line_number} has no ':' delimiter")
         key, value = (part.strip() for part in line.split(":", 1))
         if not key or key in settings:
-            raise ValueError(f"settings line {line_number} has an empty or duplicate key")
+            raise ValueError(
+                f"settings line {line_number} has an empty or duplicate key"
+            )
         settings[key] = value
     required = {
         "start",
@@ -274,11 +284,15 @@ def _read_reference_case(case: dict[str, Any]) -> dict[str, Any]:
         try:
             values.append([float(cell.strip()) for cell in row])
         except ValueError as exc:
-            raise ValueError(f"official results row {row_number} is not numeric") from exc
+            raise ValueError(
+                f"official results row {row_number} is not numeric"
+            ) from exc
         try:
             decimal_time = Decimal(row[0].strip())
         except InvalidOperation as exc:
-            raise ValueError(f"official results row {row_number} has invalid time") from exc
+            raise ValueError(
+                f"official results row {row_number} has invalid time"
+            ) from exc
         if not decimal_time.is_finite():
             raise ValueError(f"official results row {row_number} has non-finite time")
         time_token = row[0].strip().lower()
@@ -298,7 +312,9 @@ def _read_reference_case(case: dict[str, Any]) -> dict[str, Any]:
     if not np.all(np.isfinite(times)) or not np.all(
         np.abs(times - expected_grid) <= grid_tolerances
     ):
-        raise ValueError("official results time grid does not match settings start/duration/steps")
+        raise ValueError(
+            "official results time grid does not match settings start/duration/steps"
+        )
     return {
         "settings_path": str(settings_path),
         "results_path": str(results_path),
@@ -314,8 +330,7 @@ def _read_reference_case(case: dict[str, Any]) -> dict[str, Any]:
         "absolute": absolute,
         "relative": relative,
         "expected": {
-            variable: matrix[:, index + 1]
-            for index, variable in enumerate(variables)
+            variable: matrix[:, index + 1] for index, variable in enumerate(variables)
         },
     }
 
@@ -403,7 +418,9 @@ def _compare_reference_series(
             scaled = np.divide(
                 differences,
                 tolerances,
-                out=np.where(differences == 0.0, 0.0, math.inf * np.ones_like(differences)),
+                out=np.where(
+                    differences == 0.0, 0.0, math.inf * np.ones_like(differences)
+                ),
                 where=tolerances != 0.0,
             )
             max_scaled = float(np.max(scaled))
@@ -449,7 +466,9 @@ def _compare_reference_series(
             "failed_sample_examples": failed_examples,
             "finite_points": int(finite_match.sum()),
             "nonfinite_points": int((~left_finite).sum()),
-            "max_abs_difference": float(np.max(differences)) if differences.size else None,
+            "max_abs_difference": (
+                float(np.max(differences)) if differences.size else None
+            ),
             "max_scaled_error": max_scaled,
         }
     return {
@@ -976,10 +995,7 @@ def _reference_output_target(
             return f"{observable}_amt"
         volume = compartment_volume(species.compartment or "")
         return f"{observable}_amt / {volume}" if volume else None
-    if any(
-        rule.type == "rate" and rule.variable == variable
-        for rule in parsed.rules
-    ):
+    if any(rule.type == "rate" and rule.variable == variable for rule in parsed.rules):
         return f"{standardize_name(variable)}_amt"
     if variable in parsed.compartments:
         return compartment_volume(variable)
@@ -1068,11 +1084,11 @@ def _compare_case_to_reference(
             bngl, targets, str(case["id"])
         )
         output_model = cpp.parse_string(reference_bngl)
-        available = {
-            item.name for item in output_model.observables
-        } | {item.name for item in output_model.functions} | {
-            item.name for item in output_model.parameters
-        }
+        available = (
+            {item.name for item in output_model.observables}
+            | {item.name for item in output_model.functions}
+            | {item.name for item in output_model.parameters}
+        )
         target_symbols = {
             symbol
             for target in targets.values()
@@ -1116,13 +1132,17 @@ def _compare_case_to_reference(
         )
     except Exception as exc:
         message = f"{type(exc).__name__}: {exc}"
-        status = "unsupported" if _classify_error(message) == "unsupported" else "failed"
+        status = (
+            "unsupported" if _classify_error(message) == "unsupported" else "failed"
+        )
         return {"status": status, "reason": message}
 
     return {
         "status": "passed" if comparison["passed"] else "failed",
         "reason": (
-            "" if comparison["passed"] else _official_comparison_failure_reason(comparison)
+            ""
+            if comparison["passed"]
+            else _official_comparison_failure_reason(comparison)
         ),
         "method": "BNG3 native CVODE",
         "solver_rtol": 1e-9,

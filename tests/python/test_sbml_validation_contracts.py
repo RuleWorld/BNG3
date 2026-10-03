@@ -107,9 +107,7 @@ def test_official_results_reject_column_order_or_time_grid_mismatch(tmp_path):
 
     case = _write_reference_case(tmp_path)
     result_path = tmp_path / "00001-results.csv"
-    result_path.write_text(
-        "time,S1,C\n2,10,1\n2.4,9,2\n3,8,3\n", encoding="utf-8"
-    )
+    result_path.write_text("time,S1,C\n2,10,1\n2.4,9,2\n3,8,3\n", encoding="utf-8")
     try:
         validator._read_reference_case(case)
     except ValueError as exc:
@@ -118,7 +116,9 @@ def test_official_results_reject_column_order_or_time_grid_mismatch(tmp_path):
         raise AssertionError("off-grid official sample times must be rejected")
 
 
-def test_official_results_accept_case_insensitive_time_header_and_headerless_csv(tmp_path):
+def test_official_results_accept_case_insensitive_time_header_and_headerless_csv(
+    tmp_path,
+):
     validator = _load_validator("validate_sbml_test_suite")
     case = _write_reference_case(tmp_path, header="Time,S1,C")
 
@@ -146,7 +146,9 @@ def test_non_timecourse_official_reference_is_reported_as_unsupported(tmp_path):
     except validator.OfficialReferenceUnsupported as exc:
         assert "time-course" in str(exc)
     else:
-        raise AssertionError("non-timecourse references need an explicit unsupported status")
+        raise AssertionError(
+            "non-timecourse references need an explicit unsupported status"
+        )
 
 
 def test_official_reference_comparison_uses_each_expected_value_and_suite_tolerance():
@@ -163,7 +165,10 @@ def test_official_reference_comparison_uses_each_expected_value_and_suite_tolera
     assert result["failed_variables"] == ["large", "small"]
     assert result["variables"]["large"]["passed_points"] == 1
     assert result["variables"]["small"]["passed_points"] == 1
-    assert result["tolerance_formula"] == "abs(expected-actual) <= absolute + relative*abs(expected)"
+    assert (
+        result["tolerance_formula"]
+        == "abs(expected-actual) <= absolute + relative*abs(expected)"
+    )
 
 
 def test_official_comparison_records_failed_sample_indices():
@@ -290,9 +295,7 @@ def test_dynamic_compartment_rate_rule_maps_to_its_integrated_amount_observable(
 def test_official_concentration_uses_amount_and_current_compartment_volume():
     validator = _load_validator("validate_sbml_test_suite")
     parsed = SimpleNamespace(
-        species={
-            "S": SimpleNamespace(compartment="C", has_only_substance_units=True)
-        },
+        species={"S": SimpleNamespace(compartment="C", has_only_substance_units=True)},
         compartments={"C": object()},
         parameters={},
         rules=[SimpleNamespace(type="rate", variable="C")],
