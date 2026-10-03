@@ -3784,6 +3784,28 @@ def test_zero_dimensional_compartment_does_not_default_to_three_dimensions():
         )
 
 
+@pytest.mark.parametrize("spatial_dimensions", [2.5, 3.5])
+def test_fractional_spatial_dimension_is_not_truncated_to_supported_geometry(
+    spatial_dimensions,
+):
+    from bionetgen.atomizer.modern.types import (
+        SBMLCompartment,
+        SBMLModel,
+        SBMLReaction,
+    )
+    from bionetgen.atomizer.modern.writer import _requires_explicit_compartment_flux
+
+    model = SBMLModel(
+        id="fractional_compartment_dimensions",
+        compartments={
+            "C": SBMLCompartment(id="C", spatial_dimensions=spatial_dimensions)
+        },
+    )
+    reaction = SBMLReaction(id="r", compartment="C")
+
+    assert _requires_explicit_compartment_flux(reaction, model) is True
+
+
 def test_mass_action_flux_tracks_rate_ruled_compartment_volume():
     from bionetgen import BioNetGenModel
     from bionetgen.atomizer.modern import Atomizer

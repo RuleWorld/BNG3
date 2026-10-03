@@ -2092,7 +2092,7 @@ def _requires_explicit_compartment_flux(
             spatial_dimensions = compartment.spatial_dimensions
             if spatial_dimensions is None:
                 spatial_dimensions = 3
-            if int(spatial_dimensions) not in {2, 3}:
+            if float(spatial_dimensions) not in {2.0, 3.0}:
                 return True
     return False
 
