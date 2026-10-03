@@ -12,24 +12,27 @@ measurement cannot be skewed by observer latency.
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+from pathlib import Path
 
-BL = "/tmp/bng-bench-lock/benchlock"
+BL = str(Path(__file__).with_name("benchlock").resolve())
 MAX = 2
 RACERS = 6
 # UNIQUE lockdir per invocation. Two concurrent runs of this test must not
 # share a directory: every assertion here is about exact slot occupancy, which
 # is only meaningful if this process is the only user. A fixed path made
 # concurrent runs fight and report slot leaks that do not exist.
-LOCKDIR = f"/tmp/bl-race-{os.getpid()}-{int(time.time() * 1000) % 100000}"
+LOCKDIR = tempfile.mkdtemp(prefix="bng3-bl-race-")
 HOLD = 3.0
 
 
-env = dict(os.environ, BENCHLOCK_DIR=LOCKDIR)
-subprocess.run(["rm", "-rf", LOCKDIR], check=False)
+env = dict(os.environ, BENCHLOCK_DIR=LOCKDIR, BENCHLOCK_MAX=str(MAX))
+shutil.rmtree(LOCKDIR, ignore_errors=True)
 
 results = {}
 out_lines = {}
@@ -133,7 +136,7 @@ else:
     print("  NOTE  the queue drained inside the timeout, so nobody had to wait; "
           "capacity was still never exceeded")
 
-subprocess.run(["rm", "-rf", LOCKDIR], check=False)
+shutil.rmtree(LOCKDIR, ignore_errors=True)
 print()
 print("RACE TEST:", "PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)

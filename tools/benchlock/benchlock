@@ -32,8 +32,9 @@ process exits (or `release` is called). It is meant to wrap the measurement:
     benchlock acquire --agent swarmSerial --what "out_write 40k rows" \\
         -- python3 bench/run_bench.py --reps 5
 
-Nested/child processes inherit the hold only while the parent lives, which is
-the intended semantics: the benchmark and everything it spawns are covered.
+The wrapped command inherits the flock descriptor. If this wrapper dies while
+that command is still running, the kernel keeps the slot held until the command
+exits.
 
 Exit codes
 ----------
