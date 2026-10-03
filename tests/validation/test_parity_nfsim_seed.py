@@ -113,11 +113,11 @@ def _trajectory(result) -> tuple:
 def _identity_report(left, right) -> str | None:
     """None when the two legs agree exactly on observables; else why they do not.
 
-    Strictly stricter than `compare_trajectories`, which intersects the column
-    sets: a leg that silently drops an observable compares clean against the
-    leg that still reports it, and a population ceasing to be reported is
-    exactly how a seed-handling regression would present. So the observable
-    columns must match by identity, in order, and match bit-for-bit in value.
+    `compare_trajectories` defaults to intersecting column sets, so a leg that
+    silently drops an observable can compare clean against the leg that still
+    reports it. A population ceasing to be reported is exactly how a
+    seed-handling regression would present. This helper therefore requires the
+    observable columns to match by identity, in order, and bit-for-bit in value.
 
     The time column is deliberately excluded from the bit-for-bit clause. The
     two legs do not compute it the same way -- native NFsim formats and reparses
@@ -269,14 +269,13 @@ def test_strict_oracle_flag_is_not_read_from_the_tree_under_test(monkeypatch):
 def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
     model_name, api, work_dir
 ):
-    """One seed, one trajectory, on BNG3's direct path and on native NFsim.
+    """Compare fixed-seed direct and native trajectories across tier-NF models.
 
-    `test_nf_fixed_seed_direct_matches_native_at_final_endpoint` pins
-    `simple_system` alone. The other three tier-NF models are named as
-    fixed-seed parity targets in `docs/CI_PARITY.md:38` and
-    `docs/BNG3_INTEGRATION_PLAN.md:39`, but no test compares them against the
-    oracle at a fixed seed, so a seed-handling regression in any of them would
-    be reported by nothing. rtol=atol=0: this is a trajectory-identity claim.
+    This parametrized contract covers the four-model set documented in
+    `docs/CI_PARITY.md:38`; the separately named endpoint node in
+    `test_parity_nfsim.py` remains pinned to `simple_system`. The exact-column
+    comparison below makes this a trajectory-identity claim, so a dropped
+    observable cannot disappear through the default intersection policy.
     """
     require_oracle(
         oracle_nfsim.nfsim_available(), "native NFsim binary not found (set NFSIM_BIN)"
