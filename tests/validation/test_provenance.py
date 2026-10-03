@@ -44,6 +44,21 @@ def test_source_lock_does_not_claim_unmade_decisions():
     assert all(oracle["status"] == "pending" for oracle in lock["oracles"].values())
 
 
+def test_ssts_revision_is_locked_without_approving_the_source_baseline():
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    suite = lock["sources"]["sbml-test-suite"]
+
+    assert suite == {
+        "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+        "branch": "3.5.0",
+        "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+        "role": "official-validation-corpus-not-oracle",
+        "status": "observed",
+        "evidence": {"kind": "local-checkout", "checked_at": "2026-10-02"},
+    }
+    assert lock["baseline"]["status"] == "pending-maintainer-approval"
+
+
 def test_malformed_revision_is_rejected(tmp_path):
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     lock["sources"]["nfsim"]["revision"] = "short"
