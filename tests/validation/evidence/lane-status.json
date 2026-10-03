@@ -1,7 +1,7 @@
 {
   "schema": "bng3-parity-lane-status/v1",
-  "updated_at_utc": "2026-10-03T14:53:38+00:00",
-  "status": "matched-source Tier-P network results classified; action-filter repair is focused-verified, with the required exact-commit full Tier-P rerun pending",
+  "updated_at_utc": "2026-10-03T15:42:51Z",
+  "status": "explicit source_path/golden precedence defect fixed with regression coverage; all earlier matched-source runs are historical mixed-reference evidence; corrected frozen 100-model and separate six-model gates are pending",
   "source": {
     "branch": "codex/bng3-20261002-parity",
     "baseline_head": "bf5f7d7684b4f758c2d81811c6733442e410e9bf",
@@ -107,7 +107,8 @@
       "pre_filter_full_run": {
         "tested_head": "8031e4f1ac71578efe46b4f43b4d9a495bdbfb5b",
         "result": "68 passed, 32 failed in 3150.19s",
-        "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py::test_net_parity_full --bng-cpp build/cpp/bng_cpp -q"
+        "command": "PYTHONPATH=.:python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_net.py::test_net_parity_full --bng-cpp build/cpp/bng_cpp -q",
+        "acceptance_status": "historical_mixed_reference_not_acceptance"
       },
       "pre_filter_failure_classification": {
         "result": "32 failed in 3002.10s; all 32 original failing IDs reproduced",
@@ -204,7 +205,8 @@
             "reason": "same species/reaction counts; four rate expressions differ in TFUN/tfun serialization, argument ordering, and displayed factors",
             "semantic_status": "not adjudicated by this parity run"
           }
-        ]
+        ],
+        "acceptance_status": "historical_mixed_reference_not_acceptance"
       },
       "filter_repair": {
         "commit": "pending",
@@ -219,12 +221,14 @@
             "test_setconc",
             "nfkb_illustrating_protocols"
           ],
-          "result": "3 passed in 0.34s"
-        }
+          "result": "3 passed in 0.34s",
+          "acceptance_status": "historical_mixed_reference_not_acceptance; rerun after source guard"
+        },
+        "acceptance_status": "historical_mixed_reference_not_acceptance"
       },
       "required_post_fix_full_run": {
-        "status": "pending exact-commit run",
-        "note": "The pre-filter 68/32 result and post-filter 3-case result are separate snapshots and must not be combined into a current full-tier pass count."
+        "status": "pending_corrected_source_precedence_commit",
+        "note": "The 68/32 run, 32-case classification, three focused passes, and interrupted 23/18 run all predate the source_path guard and are not acceptance results. Run the frozen 100-model selection at the committed guard with existing 300-second timeout, tolerances, and seeds unchanged."
       },
       "supplemental_on_disk_models_outside_frozen_selection": {
         "models": [
@@ -235,7 +239,34 @@
           "threshold_observable",
           "threshold_observable_species"
         ],
-        "status": "pending separate run after the frozen 100-model Tier-P gate"
+        "status": "pending separate run after corrected frozen 100-model gate"
+      },
+      "acceptance_status": "invalidated_historical_mixed_reference",
+      "invalidating_defect": "oracle_perl.net returned golden_net(model_name) before honoring source_path, so earlier runs could compare a golden reference to a staged source.",
+      "source_path_precedence_regression": {
+        "tests": [
+          "test_explicit_staged_source_bypasses_golden_network",
+          "test_explicit_staged_source_never_falls_back_to_golden"
+        ],
+        "red": "both regression tests failed before the guard because golden output was returned",
+        "green": "6 passed in tests/validation/test_oracle_perl.py; black and ruff checks passed",
+        "code_commit": "pending"
+      },
+      "interrupted_mixed_reference_run": {
+        "tested_head": "e34773252abc21e6d7ce614fdf1fffa79021e695",
+        "acceptance_status": "historical_mixed_reference_not_acceptance",
+        "result": "23 passed, 18 failed, 0 skipped, 1 incomplete JUnit testcase; interrupted after 2157.89s",
+        "current_case": "hybrid_test_hpp",
+        "artifacts": {
+          "log": "tests/validation/evidence/partial-runs/tierp-matched-source-postfix-interrupted.log",
+          "junit": "tests/validation/evidence/partial-runs/tierp-matched-source-postfix-interrupted.xml",
+          "metadata": "tests/validation/evidence/partial-runs/tierp-matched-source-postfix-interrupted.json",
+          "retained_basetemp": "/private/tmp/bng3-net-tierp-postfix-basetemp",
+          "basetemp_archive": "/private/tmp/bng3-net-tierp-postfix-interrupted-basetemp.tar.gz",
+          "basetemp_archive_sha256": "b0d5491b30e5982fbab3835f9e3b41d79f1b39da1ed40009c8b03ff3c18fa9e9",
+          "log_sha256": "313fd0aaa8cccbc9d8232c2656e8fde6d83603f9af373c21aea49b31c7285c7a",
+          "junit_sha256": "24927c7f5c0d16beb1988aa6324f3df144e05b6c83951d7cd5cb46a005709fd6"
+        }
       }
     }
   },

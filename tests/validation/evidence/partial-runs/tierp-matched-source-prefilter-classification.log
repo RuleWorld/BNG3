@@ -1,0 +1,382 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/bng3-20261002-parity/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/bng3-20261002-parity/tests/validation
+configfile: pytest.ini
+collecting ... collected 32 items
+
+tests/validation/test_parity_net.py::test_net_parity_full[AN] FAILED     [  3%]
+tests/validation/test_parity_net.py::test_net_parity_full[ANx] FAILED    [  6%]
+tests/validation/test_parity_net.py::test_net_parity_full[ANx_noActivity] FAILED [  9%]
+tests/validation/test_parity_net.py::test_net_parity_full[actin_branch] FAILED [ 12%]
+tests/validation/test_parity_net.py::test_net_parity_full[actin_branch_forFitToData] FAILED [ 15%]
+tests/validation/test_parity_net.py::test_net_parity_full[actin_simple] FAILED [ 18%]
+tests/validation/test_parity_net.py::test_net_parity_full[blbr] FAILED   [ 21%]
+tests/validation/test_parity_net.py::test_net_parity_full[e8] FAILED     [ 25%]
+tests/validation/test_parity_net.py::test_net_parity_full[e9] FAILED     [ 28%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn] FAILED [ 31%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_lig] FAILED [ 34%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_trimer] FAILED [ 37%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_gamma2] FAILED [ 40%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji] FAILED [ 43%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji_red] FAILED [ 46%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_lyn_745] FAILED [ 50%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_trimer] FAILED [ 53%]
+tests/validation/test_parity_net.py::test_net_parity_full[hybrid_test] FAILED [ 56%]
+tests/validation/test_parity_net.py::test_net_parity_full[hybrid_test_hpp] FAILED [ 59%]
+tests/validation/test_parity_net.py::test_net_parity_full[michment_cont] FAILED [ 62%]
+tests/validation/test_parity_net.py::test_net_parity_full[motor] FAILED  [ 65%]
+tests/validation/test_parity_net.py::test_net_parity_full[nfkb_illustrating_protocols] FAILED [ 68%]
+tests/validation/test_parity_net.py::test_net_parity_full[oscSystem] FAILED [ 71%]
+tests/validation/test_parity_net.py::test_net_parity_full[push_pull] FAILED [ 75%]
+tests/validation/test_parity_net.py::test_net_parity_full[test_sat_cont] FAILED [ 78%]
+tests/validation/test_parity_net.py::test_net_parity_full[test_sbml_flat] FAILED [ 81%]
+tests/validation/test_parity_net.py::test_net_parity_full[test_sbml_structured] FAILED [ 84%]
+tests/validation/test_parity_net.py::test_net_parity_full[test_setconc] FAILED [ 87%]
+tests/validation/test_parity_net.py::test_net_parity_full[test_tfun] FAILED [ 90%]
+tests/validation/test_parity_net.py::test_net_parity_full[test_write_sbml_multi] FAILED [ 93%]
+tests/validation/test_parity_net.py::test_net_parity_full[tlbr] FAILED   [ 96%]
+tests/validation/test_parity_net.py::test_net_parity_full[tlbr_performance] FAILED [100%]
+
+=================================== FAILURES ===================================
+___________________________ test_net_parity_full[AN] ___________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for AN: perl failed: perl timeout after 300s
+__________________________ test_net_parity_full[ANx] ___________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for ANx: perl failed: perl timeout after 300s
+_____________________ test_net_parity_full[ANx_noActivity] _____________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for ANx_noActivity: perl failed: perl timeout after 300s
+______________________ test_net_parity_full[actin_branch] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for actin_branch: perl failed: ABORT: While reading observable Actin_ADF: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!
+E     at line 181
+_______________ test_net_parity_full[actin_branch_forFitToData] ________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for actin_branch_forFitToData: perl failed: Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2449.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2453.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2469.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2449.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2453.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2469.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1031.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1035.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1078.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1031.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1035.
+E   Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1078.
+E   ABORT: [at line 243] Reaction rule label 'Barbed end elongation' contains white space. This is deprecated (BioNetGen >= 2.2.3).
+______________________ test_net_parity_full[actin_simple] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for actin_simple: perl failed: ABORT: While reading observable Actin_ADF: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!
+E     at line 103
+__________________________ test_net_parity_full[blbr] __________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for blbr: perl failed: ABORT: SpeciesLabel option can only be changed prior to defining species.
+E     at line 30
+___________________________ test_net_parity_full[e8] ___________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for e8: perl failed: perl timeout after 300s
+___________________________ test_net_parity_full[e9] ___________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for e9: perl failed: perl timeout after 300s
+_______________________ test_net_parity_full[fceri_fyn] ________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_fyn: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 121
+_____________________ test_net_parity_full[fceri_fyn_lig] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_fyn_lig: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 126
+____________________ test_net_parity_full[fceri_fyn_trimer] ____________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_fyn_trimer: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 121
+______________________ test_net_parity_full[fceri_gamma2] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_gamma2: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 108
+________________________ test_net_parity_full[fceri_ji] ________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_ji: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 97
+______________________ test_net_parity_full[fceri_ji_red] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_ji_red: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 97
+_____________________ test_net_parity_full[fceri_lyn_745] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_lyn_745: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 104
+______________________ test_net_parity_full[fceri_trimer] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for fceri_trimer: perl failed: ABORT: Could not process block type 'reaction_rules'
+E     at line 97
+______________________ test_net_parity_full[hybrid_test] _______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for hybrid_test: perl failed: perl timeout after 300s
+____________________ test_net_parity_full[hybrid_test_hpp] _____________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for hybrid_test_hpp: perl failed: perl timeout after 300s
+_____________________ test_net_parity_full[michment_cont] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for michment_cont: perl failed: ABORT: Couldn't read from file /private/tmp/bng3-net-tierp-basetemp/test_net_parity_full_michment_0/perl/michment_cont.net: No such file or directory
+E     at line 10
+_________________________ test_net_parity_full[motor] __________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for motor: perl failed: ABORT: Could not process block type 'molecule type'
+E     at line 40
+______________ test_net_parity_full[nfkb_illustrating_protocols] _______________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for nfkb_illustrating_protocols: perl failed: ABORT: Can't use an undefined value as an ARRAY reference at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/BNGAction.pm line 45.
+E   
+E     at line 236
+_______________________ test_net_parity_full[oscSystem] ________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:58: in _net_parity
+    assert diff.ok, f"net mismatch [{model_name}] (ref={ref_src}):\n{diff.summary()}"
+E   AssertionError: net mismatch [oscSystem] (ref=perl):
+E     species:   ref=6 test=6
+E     reactions: ref=8 test=8 (delta=+0)
+E       reactions only in test (1) — candidates for the over-count / failed merge:
+E         Prot(loc~NUCLEUS) -> Trash()  [expr:8*(NucProt/(10+NucProt))()]
+E       reactions only in ref (1):
+E         Prot(loc~NUCLEUS) -> Trash()  [expr:8*NucProt/(10+NucProt)()]
+E   assert False
+E    +  where False = NetDiff(ok=False, n_species_ref=6, n_species_test=6, n_reactions_ref=8, n_reactions_test=8, species_only_ref=set(), species_only_test=set(), reactions_only_ref=[(['Prot(loc~NUCLEUS)'], ['Trash()'], 'expr:8*NucProt/(10+NucProt)()')], reactions_only_test=[(['Prot(loc~NUCLEUS)'], ['Trash()'], 'expr:8*(NucProt/(10+NucProt))()')], groups_only_ref=set(), groups_only_test=set(), groups_changed=set(), groups_renamed=set()).ok
+_______________________ test_net_parity_full[push_pull] ________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for push_pull: perl failed: ABORT: Invalid action: simulate_ps
+E     at line 58
+_____________________ test_net_parity_full[test_sat_cont] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for test_sat_cont: perl failed: ABORT: Couldn't read from file /private/tmp/bng3-net-tierp-basetemp/test_net_parity_full_test_sat_0/perl/test_sat_cont.net: No such file or directory
+E     at line 5
+_____________________ test_net_parity_full[test_sbml_flat] _____________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for test_sbml_flat: perl failed: ABORT: Could not find 'INPUT_FILES/test_sbml_flat_SBML.xml'
+E     at line 5
+__________________ test_net_parity_full[test_sbml_structured] __________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for test_sbml_structured: perl failed: ABORT: Could not find 'INPUT_FILES/test_sbml_structured_SBML.xml'
+E     at line 5
+______________________ test_net_parity_full[test_setconc] ______________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for test_setconc: perl failed: ABORT: resetConcentrations(): cannot find saved concentrations with label "post2"
+E     at line 37
+_______________________ test_net_parity_full[test_tfun] ________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:58: in _net_parity
+    assert diff.ok, f"net mismatch [{model_name}] (ref={ref_src}):\n{diff.summary()}"
+E   AssertionError: net mismatch [test_tfun] (ref=perl):
+E     species:   ref=5 test=5
+E     reactions: ref=5 test=5 (delta=+0)
+E       reactions only in test (4) — candidates for the over-count / failed merge:
+E         A() ->   [expr:tfun('DAT_validate/test.dat',dum/10000)]
+E         B() ->   [expr:tfun('DAT_validate/test.dat',dum/10000)/10]
+E         C() ->   [expr:tfun('DAT_validate/test.dat',dum/10000)/2]
+E         D() ->   [expr:tfun('DAT_validate/test.dat',dum/10000)/(dum/10000)]
+E       reactions only in ref (4):
+E         A() ->   [expr:TFUN(dum/10000,'DAT_validate/test.dat')]
+E         B() ->   [expr:TFUN(dum/10000,'DAT_validate/test.dat')]
+E         C() ->   [expr:TFUN(dum/10000,'DAT_validate/test.dat')]
+E         D() ->   [expr:TFUN(dum/10000,'DAT_validate/test.dat')]
+E   assert False
+E    +  where False = NetDiff(ok=False, n_species_ref=5, n_species_test=5, n_reactions_ref=5, n_reactions_test=5, species_only_ref=set(), species_only_test=set(), reactions_only_ref=[(['A()'], [], "expr:TFUN(dum/10000,'DAT_validate/test.dat')"), (['B()'], [], "expr:TFUN(dum/10000,'DAT_validate/test.dat')"), (['C()'], [], "expr:TFUN(dum/10000,'DAT_validate/test.dat')"), (['D()'], [], "expr:TFUN(dum/10000,'DAT_validate/test.dat')")], reactions_only_test=[(['A()'], [], "expr:tfun('DAT_validate/test.dat',dum/10000)"), (['B()'], [], "expr:tfun('DAT_validate/test.dat',dum/10000)/10"), (['C()'], [], "expr:tfun('DAT_validate/test.dat',dum/10000)/2"), (['D()'], [], "expr:tfun('DAT_validate/test.dat',dum/10000)/(dum/10000)")], groups_only_ref=set(), groups_only_test=set(), groups_changed=set(), groups_renamed=set()).ok
+_________________ test_net_parity_full[test_write_sbml_multi] __________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for test_write_sbml_multi: perl failed: perl timeout after 300s
+__________________________ test_net_parity_full[tlbr] __________________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for tlbr: perl failed: perl timeout after 300s
+____________________ test_net_parity_full[tlbr_performance] ____________________
+tests/validation/test_parity_net.py:74: in test_net_parity_full
+    _net_parity(model_name, bng_cpp, work_dir)
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+tests/validation/strict.py:16: in require_oracle
+    pytest.fail(message)
+E   Failed: no reference .net for tlbr_performance: perl failed: perl timeout after 300s
+--------- generated xml file: /private/tmp/bng3-net-tierp-failures.xml ---------
+=========================== short test summary info ============================
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[AN] - Failed...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[ANx] - Faile...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[ANx_noActivity]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[actin_branch]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[actin_branch_forFitToData]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[actin_simple]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[blbr] - Fail...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[e8] - Failed...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[e9] - Failed...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_lig]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_trimer]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_gamma2]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji] - ...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji_red]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_lyn_745]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_trimer]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[hybrid_test]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[hybrid_test_hpp]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[michment_cont]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[motor] - Fai...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[nfkb_illustrating_protocols]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[oscSystem]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[push_pull]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[test_sat_cont]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[test_sbml_flat]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[test_sbml_structured]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[test_setconc]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[test_tfun]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[test_write_sbml_multi]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[tlbr] - Fail...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[tlbr_performance]
+======================= 32 failed in 3002.10s (0:50:02) ========================

@@ -59,3 +59,40 @@ def test_network_oracle_can_skip_nf_simulation(monkeypatch, tmp_path):
     assert "--no-nfsim" in captured["command"]
     assert "--check" in captured["command"]
     assert "--netgen" in captured["command"]
+
+
+def test_explicit_staged_source_bypasses_golden_network(monkeypatch, tmp_path):
+    staged = tmp_path / "staged" / "model.bngl"
+    staged.parent.mkdir()
+    staged.write_text("begin model\nend model\n", encoding="utf-8")
+    golden = tmp_path / "model.net"
+    golden.write_text("golden", encoding="utf-8")
+    live = tmp_path / "live.net"
+    captured = {}
+
+    def run_perl(model_name, work_dir, **kwargs):
+        captured.update(model_name=model_name, work_dir=work_dir, **kwargs)
+        return live, None, ""
+
+    monkeypatch.setattr(oracle_perl, "golden_net", lambda _name: golden)
+    monkeypatch.setattr(oracle_perl, "perl_available", lambda: True)
+    monkeypatch.setattr(oracle_perl, "run_perl", run_perl)
+
+    result = oracle_perl.net("model", tmp_path / "output", source_path=staged)
+
+    assert result == (live, "perl")
+    assert captured["source_path"] == staged
+
+
+def test_explicit_staged_source_never_falls_back_to_golden(monkeypatch, tmp_path):
+    staged = tmp_path / "model.bngl"
+    staged.write_text("begin model\nend model\n", encoding="utf-8")
+    golden = tmp_path / "model.net"
+    golden.write_text("golden", encoding="utf-8")
+
+    monkeypatch.setattr(oracle_perl, "golden_net", lambda _name: golden)
+    monkeypatch.setattr(oracle_perl, "perl_available", lambda: False)
+
+    result = oracle_perl.net("model", tmp_path / "output", source_path=staged)
+
+    assert result == (None, "explicit source requires a live Perl oracle")

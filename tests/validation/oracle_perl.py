@@ -151,10 +151,11 @@ def net(
     network_only: bool = False,
     source_path: Path | None = None,
 ) -> tuple[Path | None, str]:
-    """Reference .net: golden first, then live Perl, else (None, reason)."""
-    g = golden_net(model_name)
-    if g is not None:
-        return g, "golden"
+    """Use explicit sources live; otherwise prefer golden, then live Perl."""
+    if source_path is None:
+        g = golden_net(model_name)
+        if g is not None:
+            return g, "golden"
     if perl_available():
         p, _, err = run_perl(
             model_name,
@@ -164,6 +165,8 @@ def net(
             source_path=source_path,
         )
         return (p, "perl") if p else (None, f"perl failed: {err}")
+    if source_path is not None:
+        return None, "explicit source requires a live Perl oracle"
     return None, "no golden and no perl"
 
 
