@@ -1,16 +1,17 @@
-"""Direct expression-vector/RHS parity over the frozen expression tier.
+"""Direct per-reaction expression-value/RHS parity over the frozen tier.
 
 The documented vectors are positive synthetic species concentrations indexed
 by BNG2 structural species order:
 
     y[i] = 0.375 + 0.125 * ((7*i + 11*case) mod 17)
 
-They are evaluated at t = 0, 0.375, and 2.5. BNG2 .net expressions and
+They are evaluated at t = 0, 0.375, and 2.5. BNG2 .net rate expressions and
 stoichiometry are interpreted by the independent restricted Python evaluator;
-BNG3 derivatives come directly from OdeIntegrator::derivs. The 1e-9 relative
-and 1e-12 absolute tolerances leave only floating-point evaluation order while
-still bounding cancellation near zero. This checks derivative vectors; it does
-not separately compare intermediate parameter, function, or group values.
+BNG3 per-reaction coefficients and derivatives come from OdeIntegrator. The
+coefficients are checked before mass-action factors. The 1e-9 relative and
+1e-12 absolute tolerances bound floating-point evaluation order and cancellation
+near zero. Intermediate parameter, function, and group symbols are not
+compared as standalone outputs.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import numpy as np
 import pytest
 
 from tests.validation import compare, corpus, oracle_perl
-from tests.validation.rhs import evaluate_rhs
+from tests.validation.rhs import evaluate_rate_coefficients, evaluate_rhs
 from tests.validation.strict import require_oracle
 
 
@@ -40,6 +41,18 @@ EXPECTED_RHS_MODELS = (
 def test_rhs_gate_covers_the_nonempty_frozen_expression_tier():
     assert RHS_MODELS == EXPECTED_RHS_MODELS
     assert RHS_TIMES
+
+
+def _reaction_rate_buckets(net, species_to_reference):
+    buckets = {}
+    for index, (reactants, products, rate) in enumerate(net._raw):
+        key = (
+            tuple(sorted(species_to_reference[species] for species in reactants)),
+            tuple(sorted(species_to_reference[species] for species in products)),
+            compare._resolve_rate(rate, net.rate_defs, net.rate_mode),
+        )
+        buckets.setdefault(key, []).append(index)
+    return buckets
 
 
 @pytest.mark.expressions
@@ -80,10 +93,25 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
         )
     ref_to_generated = compare._species_index_mapping(ref_net, test_net)
     assert len(ref_to_generated) == ref_net.n_species == generated.num_species
+    ref_rate_buckets = _reaction_rate_buckets(
+        ref_net, {index: index for index in ref_net.species_by_index}
+    )
+    generated_to_ref = {
+        generated_index: ref_index
+        for ref_index, generated_index in ref_to_generated.items()
+    }
+    generated_rate_buckets = _reaction_rate_buckets(test_net, generated_to_ref)
+    assert {
+        key: len(indices) for key, indices in ref_rate_buckets.items()
+    } == {
+        key: len(indices) for key, indices in generated_rate_buckets.items()
+    }, f"reaction expression identities drifted [{model_name}]"
 
     from bionetgen import _bionetgen_cpp as cpp
 
     evaluated_vectors = 0
+    evaluated_expression_vectors = 0
+    evaluated_expression_values = 0
     for case, time in enumerate(RHS_TIMES):
         state = np.asarray(
             [0.375 + 0.125 * ((7 * index + 11 * case) % 17)
@@ -94,6 +122,40 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
         state_generated = np.zeros(generated.num_species, dtype=float)
         for ref_index, generated_index in ref_to_generated.items():
             state_generated[generated_index - 1] = state[ref_index - 1]
+
+        expected_rates = np.asarray(
+            evaluate_rate_coefficients(ref_net, state, time), dtype=float
+        )
+        assert expected_rates.size == ref_net.n_reactions > 0
+        assert np.isfinite(expected_rates).all(), (
+            f"reference expression values contain a non-finite value "
+            f"[{model_name}] at t={time:g}"
+        )
+        actual_rates = np.asarray(
+            cpp._validation_ode_rate_coefficients(
+                model._model, generated, time, state_generated.tolist()
+            ),
+            dtype=float,
+        )
+        assert actual_rates.size == test_net.n_reactions > 0
+        assert np.isfinite(actual_rates).all(), (
+            f"BNG3 expression values contain a non-finite value "
+            f"[{model_name}] at t={time:g}"
+        )
+        for key, ref_indices in ref_rate_buckets.items():
+            generated_indices = generated_rate_buckets[key]
+            np.testing.assert_allclose(
+                np.sort(actual_rates[generated_indices]),
+                np.sort(expected_rates[ref_indices]),
+                rtol=RHS_RTOL,
+                atol=RHS_ATOL,
+                err_msg=(
+                    f"per-reaction expression value mismatch [{model_name}] "
+                    f"at t={time:g}, reaction={key!r}"
+                ),
+            )
+        evaluated_expression_vectors += 1
+        evaluated_expression_values += expected_rates.size
 
         expected = np.asarray(evaluate_rhs(ref_net, state, time), dtype=float)
         assert expected.size == ref_net.n_species > 0
@@ -129,3 +191,5 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
         )
         evaluated_vectors += 1
     assert evaluated_vectors == len(RHS_TIMES) > 0
+    assert evaluated_expression_vectors == len(RHS_TIMES) > 0
+    assert evaluated_expression_values == len(RHS_TIMES) * ref_net.n_reactions > 0
