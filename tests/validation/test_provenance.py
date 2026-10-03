@@ -44,6 +44,22 @@ def test_source_lock_does_not_claim_unmade_decisions():
     assert all(oracle["status"] == "pending" for oracle in lock["oracles"].values())
 
 
+def test_built_oracle_digests_are_recorded_without_claiming_approval():
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    assert lock["oracles"]["bng2"]["build_recipe"].startswith(
+        "At locked bionetgen revision 9601746f"
+    )
+    assert lock["oracles"]["bng2"]["artifact_digest"] == (
+        "sha256:73761b79bfe9e3ae52932ea700a4ee7172f3089a703404590c27ef1678b5c931"
+    )
+    assert lock["oracles"]["nfsim"]["build_recipe"].startswith(
+        "At locked nfsim revision 9b00d42f"
+    )
+    assert lock["oracles"]["nfsim"]["artifact_digest"] == (
+        "sha256:7621bb850efc6cf203ec2c42004c2cffcc0115af7e3ce03d62aabab100bf31a1"
+    )
+
+
 def test_ssts_revision_is_locked_without_approving_the_source_baseline():
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     suite = lock["sources"]["sbml-test-suite"]
