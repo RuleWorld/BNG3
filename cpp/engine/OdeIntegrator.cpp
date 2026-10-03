@@ -316,6 +316,61 @@ void OdeIntegrator::compile() {
 
     std::string lowerRawRL;
     bool lowerRawRLPopulated = false;
+    std::function<bool(const ast::Expression&, std::unordered_set<std::string>&)>
+        expressionReadsTime;
+    expressionReadsTime = [&](const ast::Expression& expression,
+                              std::unordered_set<std::string>& visitedFunctions) {
+        switch (expression.kind()) {
+        case ast::ExpressionKind::Identifier: {
+            const auto& name = expression.name();
+            return name == "time" || name == "t" ||
+                   (model_.getParameters().contains(name) &&
+                    model_.getParameters().isTimeDependent(name));
+        }
+        case ast::ExpressionKind::Function: {
+            const auto& name = expression.name();
+            const auto& args = expression.args();
+            if (name == "time" || name == "t") {
+                return true;
+            }
+            // TFUN(name) uses the simulation clock. With an explicit counter,
+            // only that counter determines time dependence; the table name is
+            // metadata and must not be resolved as a model parameter.
+            if (name == "TFUN" || name == "tfun") {
+                if (args.size() == 1) {
+                    return true;
+                }
+                return !args.empty() && expressionReadsTime(args.front(), visitedFunctions);
+            }
+            for (const auto& arg : args) {
+                if (expressionReadsTime(arg, visitedFunctions)) {
+                    return true;
+                }
+            }
+            for (const auto& function : model_.getFunctions()) {
+                if (function.getName() == name &&
+                    visitedFunctions.insert(name).second &&
+                    expressionReadsTime(function.getExpression(), visitedFunctions)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        case ast::ExpressionKind::TableFunction:
+        case ast::ExpressionKind::Unary:
+        case ast::ExpressionKind::Binary:
+            for (const auto& arg : expression.args()) {
+                if (expressionReadsTime(arg, visitedFunctions)) {
+                    return true;
+                }
+            }
+            return false;
+        case ast::ExpressionKind::Number:
+        case ast::ExpressionKind::ObservableRef:
+            return false;
+        }
+        return false;
+    };
     std::size_t rxnIndex = 0;
     for (const auto& rxn : network_.reactions.all()) {
         lowerRawRLPopulated = false;
@@ -916,6 +971,11 @@ void OdeIntegrator::compile() {
             }
         }
 
+        if (crxn.functionalRateExpr.has_value()) {
+            std::unordered_set<std::string> visitedFunctions;
+            crxn.isTimeDependent = expressionReadsTime(
+                *crxn.functionalRateExpr, visitedFunctions);
+        }
         compiledRxns_.push_back(crxn);
         ++rxnIndex;
     }
@@ -1287,7 +1347,7 @@ std::vector<double> OdeIntegrator::evaluateRateCoefficients(
 }
 
 void OdeIntegrator::evaluateFunctionalRateCoefficients(
-    double t, const double* y, double* rates) const {
+    double t, const double* y, double* rates, bool failOnError) const {
     updateGroups(y, groupValues_);
 
     // Build resolver with O(1) observable lookup. Keep this shared with the
@@ -1343,11 +1403,26 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         if (rxn.functionalRateExpr.has_value()) {
             try {
                 rate = rxn.functionalRateExpr->evaluate(resolver, t);
-            } catch (const std::exception&) {
+            } catch (const std::exception& error) {
+                if (failOnError) {
+                    throw std::runtime_error(
+                        "SSA failed to evaluate functional rate coefficient for "
+                        "reaction " + std::to_string(idx + 1) + ": " + error.what());
+                }
                 rate = rxn.rateConstant;
             }
         } else {
+            if (failOnError) {
+                throw std::runtime_error(
+                    "SSA has no compiled functional rate expression for reaction " +
+                    std::to_string(idx + 1));
+            }
             rate = rxn.rateConstant;
+        }
+        if (failOnError && !std::isfinite(rate)) {
+            throw std::runtime_error(
+                "SSA produced a non-finite functional rate coefficient for reaction " +
+                std::to_string(idx + 1));
         }
         rates[idx] = rate;
     }
@@ -2500,19 +2575,14 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     return result;
 }
 
-double OdeIntegrator::computePropensity(const CompiledReaction& rxn, const std::vector<double>& y) const {
+double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
+                                        const std::vector<double>& y,
+                                        double rateCoefficient) const {
     // Compute discrete propensity for SSA
     // For identical reactants A+A: propensity = k * n * (n-1)
     // The stat_factor is already baked into rateConstant
 
-    double rateConstant = rxn.rateConstant;
-
-    // If this is a functional rate, we need to evaluate it with current observables/time
-    // For SSA, this is called at each propensity update, so we need the time
-    // But we don't have time here - need to pass it
-    // For now, use the cached rateConstant (functional rates in SSA need more work)
-
-    double propensity = rateConstant;
+    double propensity = rateCoefficient;
 
     // For TotalRate, the propensity IS the rate constant (no species multiplication)
     if (rxn.isTotalRate) {
@@ -2542,6 +2612,12 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn, const std::
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Direct Gillespie algorithm (matches BNG2 implementation)
+    for (const auto& rxn : compiledRxns_) {
+        if (rxn.isTimeDependent) {
+            throw std::runtime_error(
+                "SSA does not support explicitly time-dependent rate laws");
+        }
+    }
     const auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     const bool explicitTimes = !opts.sampleTimes.empty();
@@ -2602,6 +2678,18 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Compute initial propensities
     std::vector<double> propensities(compiledRxns_.size());
     std::vector<double> prefixSums(compiledRxns_.size());
+    std::vector<double> rateCoefficients;
+    if (hasFunctionalRates_) {
+        rateCoefficients.resize(compiledRxns_.size());
+        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+            rateCoefficients[r] = compiledRxns_[r].rateConstant;
+        }
+    }
+    const auto rateCoefficientFor = [&](std::size_t r) {
+        return compiledRxns_[r].isFunctional
+                   ? rateCoefficients[r]
+                   : compiledRxns_[r].rateConstant;
+    };
     double totalPropensity = 0.0;
 
     // Reaction selection needs the first cumulative propensity that reaches
@@ -2613,17 +2701,21 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // constant falls back to a linear scan over the same prefix values, which
     // reproduces the original cumulative scan exactly for any sign pattern.
     bool monotonePrefix = true;
-    for (const auto& rxn : compiledRxns_) {
-        if (!(rxn.rateConstant >= 0.0)) {
-            monotonePrefix = false;
-            break;
-        }
-    }
 
     auto recomputePropensities = [&]() {
+        if (hasFunctionalRates_) {
+            evaluateFunctionalRateCoefficients(
+                t, y.data(), rateCoefficients.data(), true);
+        }
         totalPropensity = 0.0;
+        monotonePrefix = true;
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-            propensities[r] = computePropensity(compiledRxns_[r], y);
+            const double rateCoefficient = rateCoefficientFor(r);
+            if (!(rateCoefficient >= 0.0)) {
+                monotonePrefix = false;
+            }
+            propensities[r] = computePropensity(
+                compiledRxns_[r], y, rateCoefficient);
             totalPropensity += propensities[r];
             prefixSums[r] = totalPropensity;
         }
@@ -2673,11 +2765,25 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     auto refreshAfterEvent = [&](std::size_t firedIndex) {
         const auto& fired = compiledRxns_[firedIndex];
+        if (hasFunctionalRates_) {
+            // An observable-backed function may read any species in the
+            // model, so refresh every functional coefficient after a state
+            // change. Constant-rate reactions retain dependency-indexed work.
+            evaluateFunctionalRateCoefficients(
+                t, y.data(), rateCoefficients.data(), true);
+            for (const auto r : functionalRxnIndices_) {
+                propensities[r] = computePropensity(
+                    compiledRxns_[r], y, rateCoefficients[r]);
+            }
+        }
         auto refreshSpecies = [&](std::size_t speciesIndex) {
             for (std::size_t p = depOffset[speciesIndex];
                  p < depOffset[speciesIndex + 1]; ++p) {
                 const std::size_t r = depReactions[p];
-                propensities[r] = computePropensity(compiledRxns_[r], y);
+                if (!compiledRxns_[r].isFunctional) {
+                    propensities[r] = computePropensity(
+                        compiledRxns_[r], y, rateCoefficientFor(r));
+                }
             }
         };
         for (const auto idx : fired.reactantIndices) {
@@ -2687,7 +2793,11 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             refreshSpecies(idx);
         }
         totalPropensity = 0.0;
+        monotonePrefix = true;
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+            if (!(rateCoefficientFor(r) >= 0.0)) {
+                monotonePrefix = false;
+            }
             totalPropensity += propensities[r];
             prefixSums[r] = totalPropensity;
         }
