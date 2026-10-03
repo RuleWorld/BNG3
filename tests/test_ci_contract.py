@@ -423,6 +423,30 @@ def test_ssts_checkout_preflight_rejects_missing_locked_case_tree(tmp_path: Path
         validate_sbml_test_suite._validate_suite_checkout(suite, lock)
 
 
+@pytest.mark.parametrize("index_flag", ("--skip-worktree", "--assume-unchanged"))
+def test_ssts_checkout_preflight_rejects_case_edits_hidden_by_git_flags(
+    tmp_path: Path, index_flag: str
+):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    case_file = "cases/semantic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", index_flag, case_file],
+        check=True,
+    )
+    (suite / case_file).write_text(
+        "<sbml>modified after locked commit</sbml>\n", encoding="utf-8"
+    )
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="index flags"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
 def test_ssts_missing_case_tree_writes_incomplete_report(tmp_path: Path):
     suite, lock, _revision = _locked_ssts_checkout(tmp_path)
     missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"

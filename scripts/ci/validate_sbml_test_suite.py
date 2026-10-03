@@ -139,6 +139,23 @@ def _validate_materialized_case_tree(suite_dir: Path, git: Callable[..., str]) -
             f"examples: {examples}{suffix}"
         )
 
+    hidden_index_entries = [
+        entry
+        for entry in git(
+            "ls-files", "-v", "-z", "--", "cases/semantic", "cases/stochastic"
+        ).split("\0")
+        if entry and entry[:1] != "H"
+    ]
+    if hidden_index_entries:
+        examples = ", ".join(
+            entry[2:] if entry[1:2] == " " else entry
+            for entry in hidden_index_entries[:5]
+        )
+        raise SuiteLockError(
+            "suite case tree has index flags that can hide changes "
+            f"from Git status: {examples}; clear the flags and retry"
+        )
+
     case_directories: set[tuple[str, str]] = set()
     case_sources: set[tuple[str, str]] = set()
     for path in tracked_paths:
