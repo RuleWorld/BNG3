@@ -81,8 +81,9 @@ def _simulate(
     executable = _bng_cpp()
     path = tmp_path / f"mm_{st:g}_{km:g}_{et:g}_{t_end:g}.bngl"
     path.write_text(_mm_model(st, km, et, kcat, t_end))
-    subprocess.run([executable, path.name], cwd=tmp_path, check=True,
-                   capture_output=True)
+    subprocess.run(
+        [executable, path.name], cwd=tmp_path, check=True, capture_output=True
+    )
     gdat = tmp_path / f"{path.stem}.gdat"
     assert gdat.exists(), sorted(p.name for p in tmp_path.iterdir())
     return [
@@ -107,7 +108,11 @@ def exact_free_substrate(st: float, km: float, et: float) -> float:
 
 
 def reference_trajectory(
-    st: float, km: float, et: float, kcat: float, t_end: float,
+    st: float,
+    km: float,
+    et: float,
+    kcat: float,
+    t_end: float,
     steps: int = 20000,
 ) -> tuple[float, float]:
     """RK4 on dSt/dt = -v(St), dPt/dt = v(St) with v built from the exact root.

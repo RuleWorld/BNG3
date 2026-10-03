@@ -34,7 +34,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install linters and policy dependencies
-        run: pip install black ruff pytest numpy
+        run: pip install black ruff pytest numpy pyyaml
 
       - name: Check Python formatting (Black)
         run: black --check --diff --target-version py312 python/ tests/python/ scripts/
@@ -470,15 +470,36 @@ jobs:
 
   python-test:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
+    needs: [cpp-build]
     runs-on: ${{ matrix.os }}
+    env:
+      BNG3_PYTHON_TEST_MODE: installed
+      BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-22.04, macos-14, windows-2022]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - os: ubuntu-22.04
+            cpp_artifact: bng_cpp-ubuntu-22.04-gcc-12
+          - os: macos-14
+            cpp_artifact: bng_cpp-macos-14-clang-arm64
+          - os: windows-2022
+            cpp_artifact: bng_cpp-windows-2022-msvc
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download matching bng_cpp artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.cpp_artifact }}
+          path: build/cpp/
+
+      - name: Make bng_cpp executable (Unix)
+        if: "!startsWith(matrix.os, 'windows')"
+        run: chmod +x build/cpp/bng_cpp
 
       - uses: actions/setup-python@v5
         with:
@@ -497,7 +518,7 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Python build dependencies
-        run: pip install scikit-build-core pybind11 numpy click pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
+        run: pip install scikit-build-core pybind11 numpy click packaging pytest pytest-cov cement colorlog pyparsing pylru pandas matplotlib python-libsbml pyyaml lxml networkx sympy seaborn xmltodict
 
       - name: Build and install package (Windows)
         if: startsWith(matrix.os, 'windows')
@@ -513,6 +534,12 @@ jobs:
           python -m pip install --force-reinstall --no-deps wheelhouse/*.whl
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
+
+      - name: Verify installed package identity
+        run: python scripts/ci/check_python_package_identity.py
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Seed isolated Matplotlib font cache (Unix)
         if: matrix.os == 'ubuntu-22.04' && (matrix.python-version == '3.9' || matrix.python-version == '3.10')
@@ -548,10 +575,22 @@ jobs:
 
   python-integration:
     name: Integration Tests
-    needs: python-test
+    needs: [cpp-build, python-test]
     runs-on: ubuntu-22.04
+    env:
+      BNG3_PYTHON_TEST_MODE: installed
+      BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download bng_cpp artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: bng_cpp-ubuntu-22.04-gcc-12
+          path: build/cpp/
+
+      - name: Make bng_cpp executable
+        run: chmod +x build/cpp/bng_cpp
 
       - uses: actions/setup-python@v5
         with:
@@ -561,9 +600,15 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cmake ninja-build
           pip install scikit-build-core pybind11 numpy pytest
-          pip install -e .[full]
+          pip install ".[full]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
+
+      - name: Verify installed package identity
+        run: python scripts/ci/check_python_package_identity.py
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Run atomizer tests
         run: pytest tests/python/ -v -k "atomizer" --tb=short
@@ -572,6 +617,12 @@ jobs:
 
       - name: Run model loading tests
         run: pytest tests/python/ -v -k "model" --tb=short
+        env:
+          SYMPY_USE_GMPY: "0"
+
+      - name: Check workflow YAML integrity and test-selector reachability
+        # The full extra supplies PyYAML for the root-level workflow contracts.
+        run: pytest tests/test_workflow_contract.py -q --tb=short
         env:
           SYMPY_USE_GMPY: "0"
 
@@ -608,6 +659,8 @@ jobs:
     name: Package Smoke (sdist)
     needs: [python-test]
     runs-on: ubuntu-22.04
+    env:
+      BNG3_PYTHON_TEST_MODE: installed
     steps:
       - uses: actions/checkout@v4
 
@@ -630,17 +683,25 @@ jobs:
           set -eu
           python -m venv "$RUNNER_TEMP/bng3-package-smoke"
           "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install --upgrade pip
-          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install numpy click
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install numpy click packaging pytest
           "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pip install --no-deps dist/*.tar.gz
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
+
+      - name: Verify sdist package identity
+        run: >-
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python"
+          scripts/ci/check_python_package_identity.py
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Smoke installed package
         shell: bash
         run: |
           set -eu
-          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -c \
-            "import bionetgen; import bionetgen._bionetgen_cpp"
+          "$RUNNER_TEMP/bng3-package-smoke/bin/python" -m pytest \
+            tests/python/test_thermodynamic_parse_path.py -q --tb=short
           "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --version
           "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --help
 
@@ -660,7 +721,9 @@ jobs:
           - os: ubuntu-22.04
             macos_arch: x86_64
             macos_deployment_target: "11.0"
-          - os: macos-13
+          # macos-13 is retired; macos-15-intel is the supported x86_64 label
+          # for public GitHub-hosted runners.
+          - os: macos-15-intel
             macos_arch: x86_64
             macos_deployment_target: "10.13"
           - os: macos-14
@@ -696,8 +759,8 @@ jobs:
             bionetgen --version &&
             bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
-          # Build one native architecture per macOS runner; macos-13 supplies
-          # x86_64 and macos-14 supplies arm64 without cross-target duplication.
+          # Build one native architecture per macOS runner; macos-15-intel
+          # supplies x86_64 and macos-14 supplies arm64 without duplication.
           CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}
           CIBW_ENVIRONMENT_MACOS: >-
             MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}
