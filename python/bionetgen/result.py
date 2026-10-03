@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import TYPE_CHECKING, Dict, Optional
 
-import numpy as np
+if TYPE_CHECKING:
+    import numpy as np
 
 
 class SimResult:
@@ -36,7 +37,14 @@ class SimResult:
     """
 
     def __init__(self, raw: dict):
-        self.time: np.ndarray = raw.get("time", np.array([]))
+        if "time" in raw:
+            self.time = raw["time"]
+        else:
+            # NumPy is imported here rather than at module scope so that
+            # loading a model does not pay for it.
+            import numpy as np
+
+            self.time = np.array([])
         self.observables: Dict[str, np.ndarray] = raw.get("observables", {})
         self.functions: Dict[str, np.ndarray] = raw.get("functions", {})
         self.concentrations: Optional[np.ndarray] = raw.get("concentrations", None)
