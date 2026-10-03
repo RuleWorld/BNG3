@@ -65,11 +65,37 @@ def main() -> int:
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--reps", type=int, default=2,
                     help="reps per run_bench.py invocation (>= 2)")
+    ap.add_argument("--expect-a", default=None,
+                    help="fail if arm A's git SHA is not this prefix (e.g. c345f3a). "
+                         "Use it whenever A is meant to be the untouched base: "
+                         "pointing --a at a tree that already carries other "
+                         "changes silently measures THOSE changes as the "
+                         "candidate's win, and the delta looks like a real result.")
+    ap.add_argument("--expect-b", default=None,
+                    help="same check for arm B")
     args = ap.parse_args()
 
     for tree in (args.a, args.b):
         if not (tree / "bench" / "run_bench.py").is_file():
             raise SystemExit(f"{tree} is not a BNG3 worktree with bench/run_bench.py")
+
+    # A run where an arm is not what the caller thinks it is produces a
+    # confident, wrong number rather than an obvious failure, so refuse to
+    # score it silently.
+    for arm, tree, expect in (("A", args.a, args.expect_a),
+                              ("B", args.b, args.expect_b)):
+        if expect is None:
+            continue
+        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(tree),
+                             capture_output=True, text=True).stdout.strip()
+        if not sha.startswith(expect):
+            raise SystemExit(
+                f"arm {arm} is at {sha}, not the expected {expect} ({tree}).\n"
+                f"Measuring against a tree that already carries other changes "
+                f"attributes those changes to the candidate. Point "
+                f"--{arm.lower()} at the untouched base, or drop "
+                f"--expect-{arm.lower()} if that is genuinely what you mean."
+            )
 
     print(f"load1={os.getloadavg()[0]:.1f} at start "
           f"(quote with any timing; also check `ps -axo pid,etime,command`)")
