@@ -87,6 +87,7 @@ public:
         double rateConstant;          // evaluated rate (for elementary)
         double statFactor;            // statistical factor
         bool isFunctional = false;    // true if rate depends on time/observables
+        bool isTimeDependent = false; // SSA cannot use the direct method for these rates
         std::optional<ast::Expression> functionalRateExpr;  // for runtime evaluation
         bool isTotalRate = false;     // true if rate is total (not multiplied by reactant conc)
     };
@@ -151,7 +152,8 @@ private:
     void compileGroups();
     void evaluateFunctionalRateCoefficients(double t,
                                             const double* y,
-                                            double* rates) const;
+                                            double* rates,
+                                            bool failOnError = false) const;
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
     void updateFunctions(const std::vector<double>& groupValues,
                          double time,
@@ -171,7 +173,9 @@ private:
     OdeResult integrateSSA(const OdeOptions& opts);
     OdeResult integrateBatchSSA(const OdeOptions& opts);
 
-    double computePropensity(const CompiledReaction& rxn, const std::vector<double>& y) const;
+    double computePropensity(const CompiledReaction& rxn,
+                             const std::vector<double>& y,
+                             double rateCoefficient) const;
 };
 
 } // namespace bng::engine
