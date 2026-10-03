@@ -6,9 +6,10 @@ at any single instant -- rather than "only MAX racers ever win", which is not
 an invariant: a holder that finishes legitimately frees its slot for the next
 waiter, so with 6 racers and 2 slots all 6 may eventually acquire.
 
-Concurrency is reconstructed from benchlock's own BENCHLOCK_EVENT lifecycle
-lines (emitted at the instant of acquire/release, not post-hoc), so the
-measurement cannot be skewed by observer latency.
+The trace covers leaf children, where direct-command exit precedes the wrapper
+closing the inherited lock descriptor. COMMAND_EXITED is not a claim that a
+descendant-free kernel slot was already released; test_descendant_hold.py checks
+the longer inherited-descriptor case directly through status probes.
 """
 import os
 import re
@@ -59,11 +60,15 @@ for t in threads:
     t.join()
 
 events = []
+unexpected = []
 for i, out in out_lines.items():
     for line in out.splitlines():
         m = EVENT.search(line)
         if m:
             kind, slot, agent, pid, epoch = m.groups()
+            if kind not in ("ACQUIRED", "COMMAND_EXITED"):
+                unexpected.append(kind)
+                continue
             events.append((float(epoch), 1 if kind == "ACQUIRED" else -1,
                            int(slot), agent))
 
@@ -71,8 +76,8 @@ if not events:
     print("  FAIL  no BENCHLOCK_EVENT lines emitted at all")
     sys.exit(1)
 
-# Tie-break deterministically: at equal timestamps a release must be processed
-# before an acquire, otherwise a slot that is handed over directly would be
+# Tie-break deterministically: at equal timestamps a command exit must be
+# processed before an acquire, otherwise a directly handed-off slot would be
 # double-counted for an instant.
 events.sort(key=lambda e: (e[0], e[1]))
 
@@ -97,7 +102,7 @@ timedout = sum(1 for r in results.values() if r == 2)
 
 print(f"racers              : {RACERS}   capacity: {MAX}   hold: {HOLD}s")
 print(f"acquire events      : {acq}")
-print(f"release events      : {rel}")
+print(f"command-exit events : {rel}")
 print(f"exit 0 (got a slot) : {winners}")
 print(f"exit 2 (timed out)  : {timedout}")
 print(f"PEAK CONCURRENCY    : {peak}  (must never exceed {MAX})")
@@ -117,10 +122,14 @@ if any(v[0] for v in violations):
 else:
     print("  PASS  no concurrency violations and no negative count")
 
+if unexpected:
+    print(f"  FAIL  unexpected lifecycle events: {unexpected}")
+    ok = False
+
 if all(v == 0 for v in per_slot.values()):
-    print("  PASS  every slot balanced (acquires == releases per slot)")
+    print("  PASS  every slot balanced (acquires == child exits per slot)")
 else:
-    print(f"  FAIL  unbalanced slots: {per_slot}")
+    print(f"  FAIL  unbalanced command lifecycle counts: {per_slot}")
     ok = False
 
 if winners + timedout != RACERS:

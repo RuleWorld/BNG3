@@ -266,8 +266,12 @@ def cmd_holders(args):
     return 0
 
 def emit(event, i, agent=""):
-    """Machine-readable lifecycle event so an observer can reconstruct exact
-    concurrency rather than inferring it from holder metadata."""
+    """Emit lock acquisition or direct-command completion, not slot release.
+
+    A descendant can retain the inherited open-file description after the
+    direct command exits, so only a kernel lock probe proves that a slot is
+    free.
+    """
     print(f"BENCHLOCK_EVENT {event} slot={i} agent={agent} pid={os.getpid()} "
           f"epoch={time.time():.6f}", flush=True)
 
@@ -367,7 +371,7 @@ def run_child(fd, i, args):
     except Exception as e:  # an advisory must never break a measurement
         print(f"BENCHLOCK_COTENANT class=ERROR holder={args.agent} {e!r}",
               flush=True)
-    emit("RELEASED", i, getattr(args, "agent", ""))
+    emit("COMMAND_EXITED", i, getattr(args, "agent", ""))
     release(_HELD[-1])
     return rc
 
