@@ -4932,6 +4932,7 @@ def write_functions(
             {
                 parameter_id: parameter.value
                 for parameter_id, parameter in model.parameters.items()
+                if parameter.constant
                 if str(parameter_id) not in assignment_rule_parameter_ids
                 and standardize_name(str(parameter_id))
                 not in assignment_rule_parameter_ids
