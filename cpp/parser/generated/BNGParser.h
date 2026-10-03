@@ -101,7 +101,7 @@ public:
     RuleAnd_expr = 98, RuleEquality_expr = 99, RuleRelational_expr = 100,
     RuleAdditive_expr = 101, RuleMultiplicative_expr = 102, RulePower_expr = 103,
     RuleUnary_expr = 104, RulePrimary_expr = 105, RuleFunction_call = 106,
-    RuleObservable_ref = 107, RuleLiteral = 108
+    RuleObservable_ref = 107, RuleLiteral = 108, RuleObservable_name = 109
   };
 
   explicit BNGParser(antlr4::TokenStream *input);
@@ -230,6 +230,7 @@ public:
   class Function_callContext;
   class Observable_refContext;
   class LiteralContext;
+  class Observable_nameContext;
 
   class  ProgContext : public antlr4::ParserRuleContext {
   public:
@@ -644,6 +645,7 @@ public:
     antlr4::tree::TerminalNode *GROUPS();
     antlr4::tree::TerminalNode *POPULATION();
     antlr4::tree::TerminalNode *COUNTER();
+    antlr4::tree::TerminalNode *PRIORITY();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -988,9 +990,9 @@ public:
   public:
     Observable_defContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    std::vector<antlr4::tree::TerminalNode *> STRING();
-    antlr4::tree::TerminalNode* STRING(size_t i);
+    Observable_nameContext *observable_name();
     Observable_pattern_listContext *observable_pattern_list();
+    antlr4::tree::TerminalNode *STRING();
     antlr4::tree::TerminalNode *COLON();
     Observable_typeContext *observable_type();
 
@@ -2278,6 +2280,7 @@ public:
     antlr4::tree::TerminalNode *EXECUTE();
     antlr4::tree::TerminalNode *TEXTREACTION();
     antlr4::tree::TerminalNode *TEXTSPECIES();
+    antlr4::tree::TerminalNode *PRIORITY();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -2586,7 +2589,7 @@ public:
   public:
     Observable_refContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *STRING();
+    Observable_nameContext *observable_name();
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *RPAREN();
     Expression_listContext *expression_list();
@@ -2617,6 +2620,22 @@ public:
   };
 
   LiteralContext* literal();
+
+  class  Observable_nameContext : public antlr4::ParserRuleContext {
+  public:
+    Observable_nameContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *STRING();
+    antlr4::tree::TerminalNode *PRIORITY();
+
+    virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
+    virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+
+  };
+
+  Observable_nameContext* observable_name();
 
 
   // By default the static state used to implement the parser is lazily initialized during the first
