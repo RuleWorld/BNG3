@@ -303,7 +303,7 @@
     {
       "id": "clonal_expansion",
       "path": "models/immune/clonal_expansion.bngl",
-      "sha256": "sha256:86f1135fd96c1fdea85f122551ab2787b63c64aa8c933f6c35ec95ca839d930f",
+      "sha256": "sha256:d969d2ea45a1530f5fafe15ab0f901cfaf39f8d3b09cc68cd48d26fe09396d5c",
       "origin": "repository-fixture",
       "tiers": [
         "p"

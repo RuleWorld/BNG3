@@ -1,7 +1,7 @@
 {
   "schema": "bng3-parity-lane-status/v1",
-  "updated_at_utc": "2026-10-03T19:25:35Z",
-  "status": "Latest main merged; focused comparator, network-group, RHS, and SSA action-state fixes pass locally. The frozen Tier-P 71/29 result remains unchanged at 2d760cc; targeted oscSystem is resolved, test_tfun remains a documented BNG2 export-stub mismatch, and threshold species groups match BNG2. PR #91 exact-head hosted checks await push.",
+  "updated_at_utc": "2026-10-03T19:34:05Z",
+  "status": "Latest main merged; focused comparator, network-group, RHS, and SSA action-state fixes pass locally. The 71/29 Tier-P result remains immutable at 2d760cc; test_tfun is a documented BNG2 export-stub mismatch. The first exact-head CI run caught one stale clonal_expansion fixture digest; the generated digest refresh passes local provenance and corpus gates and awaits push.",
   "source": {
     "branch": "codex/bng3-20261002-parity",
     "baseline_head": "bf5f7d7684b4f758c2d81811c6733442e410e9bf",
@@ -383,7 +383,7 @@
     }
   },
   "current_targeted_followup": {
-    "recorded_at_utc": "2026-10-03T19:25:35Z",
+    "recorded_at_utc": "2026-10-03T19:34:05Z",
     "tested_code_head": "6d9857829ca1c439b7acc55f394587affa80de7f",
     "base_main_head": "dc421c3f2571c8ab2a70e647bccc40db0a1fbfc6",
     "fix_commits": [
@@ -443,7 +443,7 @@
       "focused_immune": "4 passed, 19 deselected for seeded SSA and species-count predicates; harness self-test 1 passed"
     },
     "hosted_status_at_recording": {
-      "pr91": "Previously pushed head e385afa had 18 Python matrix failures from the seeded SSA trajectory and harness-self-test cases. The focused repair is cherry-picked and verified locally at 6d9857829ca1c439b7acc55f394587affa80de7f; this updated head awaits push and exact-head hosted CI.",
+      "pr91": "Exact PR head 6ca1250 CI run 37147927865 failed the Lint & Format job at the corpus digest check; the remaining jobs were still running or queued when recorded. The one-line digest refresh now passes the relevant local manifest, provenance, exception-ledger, and CI-contract gates; a new pushed head is needed for exact-head CI.",
       "pr84": "Open at d31e79a; UNSTABLE with lint/format, MSVC, Python matrix, and PyBioNetGen API compatibility failures. Hold for rebase and exact-head review; no merge or closure performed."
     },
     "clonal_expansion_ssa": {
@@ -451,6 +451,48 @@
       "result": "seeded trajectory regression and harness self-test both pass; focused immune selection is 4 passed, 19 deselected, plus harness self-test 1 passed",
       "change": "Set Effector() back to E0 after the ODE action and before SSA, then assert the SSA first sample is exactly t=0, E=200.",
       "oracle_and_seed_evidence": "Pinned BNG2 reproduces ODE carryover at 932 and final 997 with the old action order; explicit E200 reset yields candidate 935 versus BNG2 919 within the unchanged 5% acceptance band. Seed 20260930 and tolerances are unchanged."
+    },
+    "manifest_integrity_fix": {
+      "finding": "The first exact-head CI run after the SSA repair failed Validate frozen corpus selection because the recorded clonal_expansion fixture SHA-256 was stale.",
+      "cause": "The authorized clonal_expansion.bngl reset changed a Tier-P fixture; provenance/corpus/selection.json still held the old digest.",
+      "repair": "Regenerated provenance/corpus/selection.json with scripts/generate_corpus_manifest.py. The diff updates only the clonal_expansion digest; tier IDs are unchanged by this repair.",
+      "verification": {
+        "validate_provenance": "passed; pending-maintainer-approval warning only",
+        "validate_corpus_manifest": "passed; 106 model records validated",
+        "generate_corpus_manifest_check": "passed",
+        "exception_ledger": "passed; 0 active exceptions",
+        "ci_contract_tests": "44 passed",
+        "golden_manifests": "none committed; workflow informational message reproduced"
+      },
+      "previous_exact_head_run": {
+        "head": "6ca1250fb0cded66bf2aca99695053ae8165e791",
+        "run_id": 37147927865,
+        "failed_job": "Lint & Format",
+        "failed_step": "Validate frozen corpus selection",
+        "result": "One record digest mismatch; fixed in the local worktree and awaiting a new push."
+      },
+      "historical_selection_boundary": "The corrected 100-model Tier-P run remains the immutable artifact at 2d760cc with selection hash 60cbbdad41b926278aae04ed69bb54846f72299d815706ff2d040df4fddc9f4c. Current generated provenance manifest validates 106 records; this digest-only repair does not rewrite the historical run or its result."
     }
+  },
+  "current_manifest_repair": {
+    "finding": "The first exact-head CI run after the SSA repair failed Validate frozen corpus selection because the recorded clonal_expansion fixture SHA-256 was stale.",
+    "cause": "The authorized clonal_expansion.bngl reset changed a Tier-P fixture; provenance/corpus/selection.json still held the old digest.",
+    "repair": "Regenerated provenance/corpus/selection.json with scripts/generate_corpus_manifest.py. The diff updates only the clonal_expansion digest; tier IDs are unchanged by this repair.",
+    "verification": {
+      "validate_provenance": "passed; pending-maintainer-approval warning only",
+      "validate_corpus_manifest": "passed; 106 model records validated",
+      "generate_corpus_manifest_check": "passed",
+      "exception_ledger": "passed; 0 active exceptions",
+      "ci_contract_tests": "44 passed",
+      "golden_manifests": "none committed; workflow informational message reproduced"
+    },
+    "previous_exact_head_run": {
+      "head": "6ca1250fb0cded66bf2aca99695053ae8165e791",
+      "run_id": 37147927865,
+      "failed_job": "Lint & Format",
+      "failed_step": "Validate frozen corpus selection",
+      "result": "One record digest mismatch; fixed in the local worktree and awaiting a new push."
+    },
+    "historical_selection_boundary": "The corrected 100-model Tier-P run remains the immutable artifact at 2d760cc with selection hash 60cbbdad41b926278aae04ed69bb54846f72299d815706ff2d040df4fddc9f4c. Current generated provenance manifest validates 106 records; this digest-only repair does not rewrite the historical run or its result."
   }
 }
