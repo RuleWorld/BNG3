@@ -52,7 +52,9 @@ def ensemble_model_source(
 
     seed_list = list(seeds)
     if not seed_list or any(int(seed) < 1 for seed in seed_list):
-        raise ValueError("ensemble seeds must be a non-empty sequence of positive integers")
+        raise ValueError(
+            "ensemble seeds must be a non-empty sequence of positive integers"
+        )
     if len({int(seed) for seed in seed_list}) != len(seed_list):
         raise ValueError("ensemble seeds must be unique")
     if n_steps < 1 or t_end <= 0:
@@ -67,7 +69,7 @@ def ensemble_model_source(
                 "resetConcentrations()",
                 (
                     f'simulate_ssa({{suffix=>"seed_{seed:04d}",seed=>{seed},'
-                    f't_start=>0,t_end=>{t_end_text},n_steps=>{n_steps}}})'
+                    f"t_start=>0,t_end=>{t_end_text},n_steps=>{n_steps}}})"
                 ),
             ]
         )
@@ -110,9 +112,7 @@ def _ensemble_oracle_identity() -> dict:
         "name": "Perl BNG2.pl plus run_network",
         "revision": revision,
         "BNG2_PERL": str(bng2.resolve()),
-        "sha256": {
-            name: _sha256(path) for name, path in helper_paths.items()
-        },
+        "sha256": {name: _sha256(path) for name, path in helper_paths.items()},
     }
 
 
@@ -170,7 +170,9 @@ def _generate_ensemble(model_name: str, n_runs: int, identity: dict) -> dict:
         for seed in range(1, n_runs + 1):
             output = output_dir / f"{stem}_seed_{seed:04d}.gdat"
             if not output.is_file() or output.stat().st_size == 0:
-                raise RuntimeError(f"BNG2 did not produce a valid member for seed {seed}")
+                raise RuntimeError(
+                    f"BNG2 did not produce a valid member for seed {seed}"
+                )
             data, columns = parse_gdat(output)
             if (
                 data is None
