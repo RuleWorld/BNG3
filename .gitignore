@@ -3,6 +3,7 @@ build/
 b_build/
 _build/
 build-bngsim/
+.lake/
 build-clean/
 *.egg-info/
 dist/

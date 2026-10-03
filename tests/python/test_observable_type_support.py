@@ -91,9 +91,7 @@ def test_a_concentration_observable_is_refused_with_a_named_diagnostic(
 
 
 @pytest.mark.parametrize("spelling", ["Molecules", "Species", "Counter", "Fraction"])
-def test_the_other_observable_types_still_parse_and_generate(
-    spelling, tmp_path
-):
+def test_the_other_observable_types_still_parse_and_generate(spelling, tmp_path):
     # BNG3 accepts any string here and ignores the type, so all of these
     # produce the same network.  That is a separate, reported finding; what
     # matters for this commit is that refusing `Concentration` did not take the
@@ -121,10 +119,18 @@ def test_a_compartment_observable_reports_the_state_value_not_a_count(
     # Species 3 is A() in the volume-2 compartment, seeded at 100, and the
     # .net carries no volume factor -- that is the whole mechanism.
     assert species.split() == [
-        "1", "@V1::A()", "100",
-        "2", "@V1::B()", "0",
-        "3", "@V2::A()", "100",
-        "4", "@V2::B()", "0",
+        "1",
+        "@V1::A()",
+        "100",
+        "2",
+        "@V1::B()",
+        "0",
+        "3",
+        "@V2::A()",
+        "100",
+        "4",
+        "@V2::B()",
+        "0",
     ], species
     # Both observables are plain weight-1 groups; no volume is applied.
     assert groups.split() == ["1", "At", "1", "2", "Bt", "2"], groups
