@@ -238,5 +238,7 @@ public:
 
     virtual std::any visitLiteral(BNGParser::LiteralContext *context) = 0;
 
+    virtual std::any visitObservable_name(BNGParser::Observable_nameContext *context) = 0;
+
 
 };
