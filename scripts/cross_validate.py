@@ -38,13 +38,17 @@ def _sha256_file(path: Path) -> str:
 _ACTION_LINE = re.compile(r"^\s*([A-Za-z_]\w*)\s*\(")
 _SKIP_ACTIONS = {
     "generate_network",
+    "parameter_scan",
+    "resetConcentrations",
     "saveConcentrations",
     "saveParameters",
     "simulate",
     "simulate_ode",
     "simulate_nf",
     "simulate_pla",
+    "simulate_ps",
     "simulate_psa",
+    "simulate_rm",
     "simulate_ssa",
     "visualize",
     "writeMfile",
