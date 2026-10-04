@@ -26,6 +26,8 @@ import numpy as np
 
 from . import corpus
 
+_API_PACKAGE_MODE: str | None = None
+
 # --------------------------------------------------------------------------- #
 # CLI path
 # --------------------------------------------------------------------------- #
@@ -119,20 +121,102 @@ def _result_to_trajectory(result) -> Trajectory:
 
 
 def _ensure_source_python_path() -> None:
-    """Make the in-tree Python package importable in spawned validation workers.
+    """Make spawned API workers use the package selected by the test mode."""
+    global _API_PACKAGE_MODE
+    if _API_PACKAGE_MODE is not None:
+        return
 
-    Installed-package CI does not need this, but source-tree differential runs
-    commonly execute with ``PYTHONPATH=python`` only in the parent process.
-    Spawned workers reconstruct ``sys.path`` and may otherwise lose that
-    repository-relative entry.  Anchor both the repository root (for the
-    validation package itself) and its Python source directory so serial and
-    parallel parity gates exercise the same API implementation.
-    """
-    source_root = str(corpus.REPO.resolve())
-    source_python = str((corpus.REPO / "python").resolve())
-    for path in (source_python, source_root):
-        if path not in sys.path:
-            sys.path.insert(0, path)
+    source_root = corpus.REPO.resolve()
+    source_package = (source_root / "python" / "bionetgen").resolve()
+    source_python = source_package.parent
+    extension_dir = (source_root / "build" / "cpp").resolve()
+    root_text = str(source_root)
+    if root_text not in sys.path:
+        sys.path.insert(0, root_text)
+
+    from scripts.ci.python_package_mode import (
+        editable_finders_for_package,
+        editable_source_roots,
+        resolve_test_mode,
+        verify_package_locations,
+    )
+
+    requested = os.environ.get("BNG3_PYTHON_TEST_MODE", "auto")
+    source_path_present = any(
+        Path(path or ".").resolve() == source_python for path in sys.path
+    )
+    loaded_package = sys.modules.get("bionetgen")
+    loaded_from_source = bool(
+        loaded_package
+        and getattr(loaded_package, "__file__", None)
+        and Path(loaded_package.__file__).resolve().is_relative_to(source_package)
+    )
+    mode, editable_finders = resolve_test_mode(
+        requested,
+        finders=sys.meta_path,
+        source_path_present=source_path_present,
+        loaded_from_source=loaded_from_source,
+        auto_default="source",
+    )
+
+    if mode == "installed":
+        sys.path[:] = [
+            path
+            for path in sys.path
+            if Path(path or ".").resolve() not in {source_python, extension_dir}
+        ]
+        from scripts.ci.check_python_package_identity import (
+            inspect_installed_package,
+        )
+
+        identity = inspect_installed_package()
+        import bionetgen.model as model_module
+
+        model_native = getattr(model_module, "_cpp", None)
+        if (
+            model_native is None
+            or Path(model_native.__file__).resolve()
+            != Path(identity["native_extension"]).resolve()
+        ):
+            raise RuntimeError(
+                "spawned API worker did not bind the installed native extension"
+            )
+        _API_PACKAGE_MODE = "installed"
+        return
+
+    if loaded_package is not None and not loaded_from_source:
+        raise RuntimeError(
+            "spawned API worker imported bionetgen before source mode selected "
+            f"this worktree: {getattr(loaded_package, '__file__', None)}"
+        )
+    if editable_finders:
+        sys.meta_path = [
+            finder for finder in sys.meta_path if finder not in editable_finders
+        ]
+        editable_roots = editable_source_roots(editable_finders, "bionetgen")
+        sys.path[:] = [
+            path
+            for path in sys.path
+            if Path(path or ".").resolve() not in editable_roots
+        ]
+    for path in (extension_dir, source_python):
+        path_text = str(path)
+        if path_text not in sys.path:
+            sys.path.insert(0, path_text)
+
+    import bionetgen
+    import bionetgen.model as model_module
+
+    model_native = getattr(model_module, "_cpp", None)
+    if model_native is not None:
+        verify_package_locations(
+            bionetgen.__file__,
+            model_native.__file__,
+            package_dir=source_package,
+            extension_dir=extension_dir,
+            mode="source",
+        )
+    _API_PACKAGE_MODE = "source"
 
 
 def api_available() -> bool:

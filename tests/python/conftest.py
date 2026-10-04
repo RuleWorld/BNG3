@@ -27,7 +27,20 @@ import os
 import pathlib
 import sys
 
+# The pytest console script may not put the repository root on sys.path.
+# Append it only to expose the in-tree CI helper without taking precedence over
+# an installed bionetgen package from site-packages.
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.append(str(_ROOT))
+
+from scripts.ci.python_package_mode import (
+    editable_finders_for_package,
+    editable_source_roots,
+    resolve_test_mode,
+    verify_package_locations,
+)
+
 _SOURCE_PACKAGE = (_ROOT / "python" / "bionetgen").resolve()
 _LOCAL_EXTENSION_DIR = (_ROOT / "build" / "cpp").resolve()
 _MODE = os.environ.get("BNG3_PYTHON_TEST_MODE", "auto").lower()
@@ -37,28 +50,7 @@ if _MODE not in {"auto", "source", "installed"}:
         f"received {_MODE!r}"
     )
 
-_EDITABLE_FINDERS = [
-    finder
-    for finder in sys.meta_path
-    if "editable" in type(finder).__module__.lower()
-    or "editable" in getattr(finder, "__name__", "").lower()
-]
-_EDITABLE_SOURCES = set()
-for _finder in _EDITABLE_FINDERS:
-    _paths = getattr(_finder, "search_paths", None) or ()
-    if isinstance(_paths, dict):
-        _paths = _paths.values()
-    for _path in _paths:
-        _editable_path = pathlib.Path(_path).resolve()
-        _EDITABLE_SOURCES.add(_editable_path)
-        if _editable_path.name == "bionetgen":
-            _EDITABLE_SOURCES.add(_editable_path.parent)
-if _EDITABLE_FINDERS and not _EDITABLE_SOURCES:
-    _EDITABLE_SOURCES = {
-        pathlib.Path(p).resolve().parent
-        for p in sys.path
-        if "BioNetGen" in p and pathlib.Path(p or ".").resolve() != _ROOT
-    }
+_EDITABLE_FINDERS = editable_finders_for_package(sys.meta_path, "bionetgen")
 _SOURCE_PATH_PRESENT = any(
     pathlib.Path(p or ".").resolve() == (_ROOT / "python").resolve() for p in sys.path
 )
@@ -68,25 +60,28 @@ _LOADED_FROM_SOURCE = bool(
     and getattr(_LOADED_PACKAGE, "__file__", None)
     and pathlib.Path(_LOADED_PACKAGE.__file__).resolve().is_relative_to(_SOURCE_PACKAGE)
 )
-_USE_SOURCE = _MODE == "source" or (
-    _MODE == "auto"
-    and (_EDITABLE_FINDERS or _SOURCE_PATH_PRESENT or _LOADED_FROM_SOURCE)
+_RESOLVED_MODE, _EDITABLE_FINDERS = resolve_test_mode(
+    _MODE,
+    finders=sys.meta_path,
+    source_path_present=_SOURCE_PATH_PRESENT,
+    loaded_from_source=_LOADED_FROM_SOURCE,
+    auto_default="installed",
 )
-
-if _MODE == "installed" and _EDITABLE_FINDERS:
-    raise RuntimeError(
-        "installed package tests found a scikit-build editable import finder; "
-        "install a regular wheel before running this suite"
-    )
+if _RESOLVED_MODE is not None:
+    # Spawned API workers reconstruct a fresh interpreter. Carry the mode that
+    # this conftest resolved so workers cannot fall back to another checkout.
+    os.environ["BNG3_PYTHON_TEST_MODE"] = _RESOLVED_MODE
+_USE_SOURCE = _RESOLVED_MODE == "source"
 
 if _USE_SOURCE:
     if not (_SOURCE_PACKAGE / "__init__.py").is_file():
         raise RuntimeError(f"source package is missing: {_SOURCE_PACKAGE}")
 
-    # Remove only paths registered by the editable finder. Other PYTHONPATH
-    # entries and shared build artifacts remain available.
+    # Remove only this package's editable finder and registered roots. Unrelated
+    # editable packages remain available to the test environment.
     if _EDITABLE_FINDERS:
         sys.meta_path = [f for f in sys.meta_path if f not in _EDITABLE_FINDERS]
+        _EDITABLE_SOURCES = editable_source_roots(_EDITABLE_FINDERS, "bionetgen")
         sys.path[:] = [
             p
             for p in sys.path
@@ -126,23 +121,7 @@ else:
             "installed package mode requires an installed bionetgen distribution"
         ) from exc
 
-    if (
-        _LOADED_PACKAGE
-        and pathlib.Path(_LOADED_PACKAGE.__file__).resolve().parent != _DIST_PACKAGE
-    ):
-        raise RuntimeError(
-            "bionetgen was imported from outside the installed distribution: "
-            f"{getattr(_LOADED_PACKAGE, '__file__', None)} (expected under "
-            f"{_DIST_PACKAGE})"
-        )
     import bionetgen as _pkg
-
-    _PACKAGE_FILE = pathlib.Path(_pkg.__file__).resolve()
-    if _PACKAGE_FILE.parent != _DIST_PACKAGE:
-        raise RuntimeError(
-            "installed bionetgen package was shadowed: "
-            f"{_PACKAGE_FILE} (distribution package is {_DIST_PACKAGE})"
-        )
 
 try:
     import bionetgen._bionetgen_cpp as _cpp_probe  # noqa: F401
@@ -163,15 +142,20 @@ except ImportError as exc:
 
 _EXTENSION_FILE = pathlib.Path(_cpp_probe.__file__).resolve()
 if _USE_SOURCE:
-    if _EXTENSION_FILE.parent != _LOCAL_EXTENSION_DIR:
-        raise RuntimeError(
-            "source mode loaded the native extension from another build: "
-            f"{_EXTENSION_FILE} (expected under {_LOCAL_EXTENSION_DIR})"
-        )
-elif _EXTENSION_FILE.parent != _DIST_PACKAGE:
-    raise RuntimeError(
-        "installed native extension was shadowed: "
-        f"{_EXTENSION_FILE} (expected under {_DIST_PACKAGE})"
+    verify_package_locations(
+        _pkg.__file__,
+        _EXTENSION_FILE,
+        package_dir=_SOURCE_PACKAGE,
+        extension_dir=_LOCAL_EXTENSION_DIR,
+        mode="source",
+    )
+elif _RESOLVED_MODE == "installed":
+    verify_package_locations(
+        _pkg.__file__,
+        _EXTENSION_FILE,
+        package_dir=_DIST_PACKAGE,
+        extension_dir=_DIST_PACKAGE,
+        mode="installed",
     )
 
 import shutil
