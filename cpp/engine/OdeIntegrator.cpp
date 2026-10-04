@@ -1878,15 +1878,42 @@ namespace {
 // same bytes without the per-value ostream sentry, num_put facet lookup and
 // num_put locale grouping that dominate this loop.
 //
-// std::to_chars(chars_format::scientific, 12) was verified to emit identical
-// digits to operator<< over 8,998,531 doubles (including 0.0, -0.0, 5e-324,
-// -5e-324, DBL_MIN, DBL_MAX and raw 64-bit patterns) on this toolchain; see
-// the bench/format_probe evidence quoted in the PR. The emitted bytes are
-// identical, so the .cdat/.gdat files are unchanged byte-for-byte.
+// std::to_chars(chars_format::scientific, 12) was checked against operator<<
+// over 8,998,531 doubles (including 0.0, -0.0, 5e-324, -5e-324, DBL_MIN,
+// DBL_MAX and raw 64-bit patterns) on this toolchain; see the bench/format_probe
+// evidence quoted in the PR. Finite output fields are byte-identical, so
+// ordinary .cdat/.gdat files are unchanged.
+//
+// NaN spelling is standard-library-specific: Apple libc++ may include the NaN
+// payload in to_chars output, while the stream form prints "nan". The portable
+// path retains the legacy stream spelling for older deployment targets.
+//
+// libc++ only makes the floating-point std::to_chars overloads available for
+// macOS deployment targets >= 13.3. Keep the fast path out of builds whose
+// target is older and use the original stream formatting there instead.
 //
 // `leadingSpace` reproduces the literal " " the caller inserted before every
 // field except the first on a row.
+#if !defined(_LIBCPP_AVAILABILITY_HAS_TO_CHARS_FLOATING_POINT) || \
+    _LIBCPP_AVAILABILITY_HAS_TO_CHARS_FLOATING_POINT
+#define BNG3_FP_TO_CHARS_AVAILABLE 1
+#else
+#define BNG3_FP_TO_CHARS_AVAILABLE 0
+#endif
+
+void appendScientificFieldPortable(std::string& row, double value,
+                                   bool leadingSpace) {
+    if (leadingSpace) {
+        row.push_back(' ');
+    }
+    std::ostringstream fallback;
+    fallback << std::setw(18) << std::setprecision(12) << std::scientific
+             << value;
+    row += fallback.str();
+}
+
 void appendScientificField(std::string& row, double value, bool leadingSpace) {
+#if BNG3_FP_TO_CHARS_AVAILABLE
     constexpr std::size_t kWidth = 18;
     char buf[64];
     char* cursor = buf;
@@ -1900,11 +1927,7 @@ void appendScientificField(std::string& row, double value, bool leadingSpace) {
         // Cannot happen with a 64-byte buffer and this format (the longest
         // field is 20 characters), but the length below feeds a memmove, so
         // do not trust an errored result.
-        std::ostringstream fallback;
-        fallback << std::setw(18) << std::setprecision(12) << std::scientific
-                  << value;
-        const std::string text = fallback.str();
-        row.append(text);
+        appendScientificFieldPortable(row, value, leadingSpace);
         return;
     }
     const std::size_t length = static_cast<std::size_t>(result.ptr - fieldStart);
@@ -1919,6 +1942,9 @@ void appendScientificField(std::string& row, double value, bool leadingSpace) {
         std::memset(fieldStart, ' ', pad);
     }
     row.append(buf, static_cast<std::size_t>(cursor - buf) + pad + length);
+#else
+    appendScientificFieldPortable(row, value, leadingSpace);
+#endif
 }
 
 } // namespace

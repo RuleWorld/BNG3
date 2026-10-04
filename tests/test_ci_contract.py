@@ -13,7 +13,6 @@ import yaml
 
 from tests.workflow_yaml import (
     concurrency_of,
-    job_matrix_values,
     job_subtree_text,
     parse_workflow,
 )
@@ -537,9 +536,19 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
         assert (
             "DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
         )
-        targets = job_matrix_values(workflow_path, job_name, "macos_deployment_target")
-        assert "10.13" in targets, f"{job_name} must retain its 10.13 target: {targets}"
-        assert "11.0" in targets, f"{job_name} must retain its 11.0 target: {targets}"
+        workflow = parse_workflow(workflow_path)
+        entries = workflow["jobs"][job_name]["strategy"]["matrix"]["include"]
+        macos_targets = {
+            (entry.get("os"), entry.get("macos_arch")): entry.get(
+                "macos_deployment_target"
+            )
+            for entry in entries
+            if str(entry.get("os", "")).startswith("macos")
+        }
+        assert macos_targets == {
+            ("macos-15-intel", "x86_64"): "10.15",
+            ("macos-14", "arm64"): "11.0",
+        }, f"{job_name} must preserve the supported macOS arch/target pairs"
         assert "CIBW_TEST_REQUIRES: pytest numpy click" in job
         assert "cp314-*" in job
 
