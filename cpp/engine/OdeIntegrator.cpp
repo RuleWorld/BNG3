@@ -2640,7 +2640,6 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
 // fresh allocation.  Every field is written in full before it is read, and
 // integrateSSA never recurses, so nothing leaks between trajectories or
 // between threads.
-namespace {
 
 struct SsaScratch {
     std::vector<double> state;
@@ -2651,8 +2650,6 @@ struct SsaScratch {
 };
 
 thread_local SsaScratch tls_scratch;
-
-} // anonymous namespace
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Direct Gillespie algorithm (matches BNG2 implementation)
