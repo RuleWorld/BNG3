@@ -17,8 +17,95 @@
 #include <sstream>
 #include <stdexcept>
 
+// ---------------------------------------------------------------------------
+// Filesystem portability
+//
+// <filesystem> is a C++17 library, but the standard library only *ships* it
+// starting with macOS 10.15: libc++ annotates its entry points with
+// `availability(macos, introduced = 10.15)`, so building against an older
+// deployment target turns `std::filesystem::exists`, `::rename`, `::remove`
+// and `path` into hard compile errors even though the compiler understands the
+// header. The binary distribution targets macOS 10.13 (x86_64) and 11.0
+// (arm64), so this file must build without it on those targets.
+//
+// __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ is the predefined macro libc++
+// reads when it decides which features a target has, so keying the selection
+// off it picks exactly the set of targets libc++ would accept.
+//
+// Only three primitives on plain paths are needed -- existence, rename and
+// remove -- and both branches reduce to the same system calls: <filesystem> is
+// specified in terms of them, and the fallback calls them directly. Failure
+// reporting is matched too (see below), so behaviour is identical on every
+// target.
+// ---------------------------------------------------------------------------
+#if defined(__APPLE__) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) && \
+    __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101500
+#define BNG3_HAS_STD_FILESYSTEM 0
+#else
+#define BNG3_HAS_STD_FILESYSTEM 1
+#endif
+
+#if !BNG3_HAS_STD_FILESYSTEM
+#include <cerrno>
+#include <system_error>
+#include <sys/stat.h>
+#endif
+
 namespace bng {
 namespace ast {
+
+namespace {
+
+#if BNG3_HAS_STD_FILESYSTEM
+
+bool fileExists(const std::string& path) {
+    return std::filesystem::exists(path);
+}
+
+void renameFile(const std::string& from, const std::string& to) {
+    std::filesystem::rename(from, to);
+}
+
+void removeFile(const std::string& path) {
+    std::filesystem::remove(path);
+}
+
+#else
+
+// <filesystem> reports a failed rename or remove by throwing, so the fallback
+// has to throw too: silently continuing where every other target aborts would
+// let a target without <filesystem> produce a wrong result instead of failing
+// loudly. std::filesystem::filesystem_error derives from std::system_error,
+// which is what is thrown here, so a handler written against either type
+// catches the other. The path arguments that filesystem_error adds to its
+// message are omitted.
+[[noreturn]] void throwFilesystemError(const char* op, int err) {
+    throw std::system_error(std::error_code(err, std::generic_category()),
+                            std::string("filesystem error: in ") + op);
+}
+
+bool fileExists(const std::string& path) {
+    struct stat sb;
+    return ::stat(path.c_str(), &sb) == 0;
+}
+
+void renameFile(const std::string& from, const std::string& to) {
+    if (std::rename(from.c_str(), to.c_str()) != 0) {
+        throwFilesystemError("rename", errno);
+    }
+}
+
+void removeFile(const std::string& path) {
+    // A path that was not there is not an error, matching
+    // std::filesystem::remove returning false.
+    if (std::remove(path.c_str()) != 0 && errno != ENOENT) {
+        throwFilesystemError("remove", errno);
+    }
+}
+
+#endif
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // 1. Constructor / Destructor
@@ -303,8 +390,8 @@ std::string MacroBNGModel::readFile(const std::map<std::string, std::string>& pa
     // Rename macr_*.bngl -> macr_*.bnglisx and write the simulation file
     std::string filen = "macr_" + param_prefix + ".bnglisx";
     std::string bngl_file = "macr_" + param_prefix + ".bngl";
-    if (std::filesystem::exists(bngl_file)) {
-        std::filesystem::rename(bngl_file, filen);
+    if (fileExists(bngl_file)) {
+        renameFile(bngl_file, filen);
     }
 
     {
@@ -569,8 +656,8 @@ std::string MacroBNGModel::pre_macr(const std::string& param_prefix) {
     // Delete intermediate files (Perl lines 366-370)
     for (const auto& suff : {"obser", "par", "spec2", "spec1", "rules", "cdat"}) {
         std::string f = "macr_" + param_prefix + "." + suff;
-        if (std::filesystem::exists(f)) {
-            std::filesystem::remove(f);
+        if (fileExists(f)) {
+            removeFile(f);
         }
     }
 
@@ -2231,8 +2318,6 @@ void MacroBNGModel::obs_mac(
 // ---------------------------------------------------------------------------
 
 void MacroBNGModel::cor_net(const std::string& param_prefix) {
-    namespace fs = std::filesystem;
-
     ts3n_.clear();
     species_.clear();
 
@@ -2621,8 +2706,8 @@ void MacroBNGModel::cor_net(const std::string& param_prefix) {
     WFILErab.close();
 
     // Rename: netfile -> netfile.isx, rabfile -> netfile
-    fs::rename(netfile, netfile + "isx");
-    fs::rename(rabfile, netfile);
+    renameFile(netfile, netfile + "isx");
+    renameFile(rabfile, netfile);
 }
 
 // ---------------------------------------------------------------------------
