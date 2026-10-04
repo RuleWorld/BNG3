@@ -23,12 +23,21 @@ def test_jax_ssa_flatten_output():
 
     # Check required keys
     required_keys = [
-        "num_species", "num_reactions", "num_observables",
-        "initial_species", "rate_constants",
-        "reactant_offsets", "reactant_species", "reactant_stoich_offsets",
-        "react_change_offsets", "react_change_species",
-        "prod_change_offsets", "prod_change_species",
-        "obs_offsets", "obs_species", "obs_weights",
+        "num_species",
+        "num_reactions",
+        "num_observables",
+        "initial_species",
+        "rate_constants",
+        "reactant_offsets",
+        "reactant_species",
+        "reactant_stoich_offsets",
+        "react_change_offsets",
+        "react_change_species",
+        "prod_change_offsets",
+        "prod_change_species",
+        "obs_offsets",
+        "obs_species",
+        "obs_weights",
         "observable_names",
     ]
     for key in required_keys:
@@ -46,6 +55,7 @@ def test_jax_ssa_flatten_output():
 def test_jax_ssa_import_safety():
     """Ensure import bionetgen doesn't eagerly import jax."""
     import sys
+
     # Remove jax from modules if present
     for mod in list(sys.modules.keys()):
         if "jax" in mod:
@@ -53,6 +63,7 @@ def test_jax_ssa_import_safety():
 
     # Fresh import should not pull in jax
     import bionetgen
+
     assert "jax" not in sys.modules
 
 

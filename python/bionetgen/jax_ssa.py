@@ -18,6 +18,7 @@ try:
     import jax
     import jax.numpy as jnp
     from jax import lax
+
     _JAX_AVAILABLE = True
 except ImportError:
     _JAX_AVAILABLE = False
@@ -45,19 +46,25 @@ def _pcg32_step(state: jnp.uint64, inc: jnp.uint64) -> Tuple[jnp.uint64, jnp.uin
 
 
 @jax.jit
-def _pcg32_next_u32(state: jnp.uint64, inc: jnp.uint64) -> Tuple[jnp.uint64, jnp.uint32, jnp.uint64]:
+def _pcg32_next_u32(
+    state: jnp.uint64, inc: jnp.uint64
+) -> Tuple[jnp.uint64, jnp.uint32, jnp.uint64]:
     """PCG32 next_u32 exact port."""
     old_state = state
     new_state, new_inc = _pcg32_step(state, inc)
     xorshifted = ((old_state >> jnp.uint64(18)) ^ old_state) >> jnp.uint64(27)
     rot = (old_state >> jnp.uint64(59)).astype(jnp.uint32)
     xorshifted_32 = xorshifted.astype(jnp.uint32)
-    result = (xorshifted_32 >> rot) | (xorshifted_32 << ((-rot.astype(jnp.int32)) & jnp.uint32(31)))
+    result = (xorshifted_32 >> rot) | (
+        xorshifted_32 << ((-rot.astype(jnp.int32)) & jnp.uint32(31))
+    )
     return new_state, new_inc, result
 
 
 @jax.jit
-def _pcg32_next_float01(state: jnp.uint64, inc: jnp.uint64) -> Tuple[jnp.uint64, jnp.uint64, jnp.float32]:
+def _pcg32_next_float01(
+    state: jnp.uint64, inc: jnp.uint64
+) -> Tuple[jnp.uint64, jnp.uint64, jnp.float32]:
     """PCG32 next_float01 exact port."""
     new_state, new_inc, u32 = _pcg32_next_u32(state, inc)
     # (u32 >> 8) + 1.0) / 16777218.0
@@ -66,11 +73,14 @@ def _pcg32_next_float01(state: jnp.uint64, inc: jnp.uint64) -> Tuple[jnp.uint64,
 
 
 @jax.jit
-def _compute_propensity(r: int, rate_constants: jnp.ndarray,
-                        reactant_offsets: jnp.ndarray,
-                        reactant_species: jnp.ndarray,
-                        reactant_stoich_offsets: jnp.ndarray,
-                        y: jnp.ndarray) -> jnp.float32:
+def _compute_propensity(
+    r: int,
+    rate_constants: jnp.ndarray,
+    reactant_offsets: jnp.ndarray,
+    reactant_species: jnp.ndarray,
+    reactant_stoich_offsets: jnp.ndarray,
+    y: jnp.ndarray,
+) -> jnp.float32:
     """Compute propensity for reaction r."""
     prop = rate_constants[r]
     r_start = reactant_offsets[r]
@@ -98,7 +108,9 @@ def _simulate_trajectory_jax(
     num_reactions = flat["num_reactions"]
     num_observables = flat["num_observables"]
     num_output_points = flat["obs_offsets"].shape[0] - 1
-    output_times = flat["output_times"] if "output_times" in flat else jnp.linspace(0.0, t_end, 11)
+    output_times = (
+        flat["output_times"] if "output_times" in flat else jnp.linspace(0.0, t_end, 11)
+    )
 
     # Initialize state
     y = initial_species.astype(jnp.int32)
@@ -128,7 +140,10 @@ def _simulate_trajectory_jax(
 
     # Initial outputs
     t = jnp.float32(0.0)
-    while next_output_idx < num_output_points and output_times[next_output_idx] <= t + 1e-6:
+    while (
+        next_output_idx < num_output_points
+        and output_times[next_output_idx] <= t + 1e-6
+    ):
         obs_buffer = record_obs(y, next_output_idx)
         next_output_idx += 1
 
@@ -142,14 +157,19 @@ def _simulate_trajectory_jax(
 
         # Record outputs up to current time
         def record_up_to(t_val, next_out_idx, obs_buffer):
-            while next_out_idx < num_output_points and output_times[next_out_idx] <= t_val + 1e-6:
+            while (
+                next_out_idx < num_output_points
+                and output_times[next_out_idx] <= t_val + 1e-6
+            ):
                 for g in range(num_observables):
                     start = int(flat["obs_offsets"][g])
                     end = int(flat["obs_offsets"][g + 1])
                     species_idx = flat["obs_species"][start:end]
                     weights = flat["obs_weights"][start:end]
                     pops = y_state[species_idx].astype(jnp.float32)
-                    obs_buffer = obs_buffer.at[next_out_idx, g].set(jnp.sum(pops * weights))
+                    obs_buffer = obs_buffer.at[next_out_idx, g].set(
+                        jnp.sum(pops * weights)
+                    )
                 next_out_idx += 1
             return next_out_idx, obs_buffer
 
@@ -158,16 +178,27 @@ def _simulate_trajectory_jax(
         # Pass 1: compute total propensity
         total_prop = jnp.float32(0.0)
         for r in range(num_reactions):
-            total_prop += _compute_propensity(r, flat["rate_constants"],
-                                             flat["reactant_offsets"],
-                                             flat["reactant_species"],
-                                             flat["reactant_stoich_offsets"],
-                                             y_state)
+            total_prop += _compute_propensity(
+                r,
+                flat["rate_constants"],
+                flat["reactant_offsets"],
+                flat["reactant_species"],
+                flat["reactant_stoich_offsets"],
+                y_state,
+            )
 
         # Check for termination
         def terminate(state):
             t, y_state, rng_s, rng_i, next_out, events, obs_buf = state
-            return (state[0], state[1], state[2], state[3], state[4], state[5], state[6])
+            return (
+                state[0],
+                state[1],
+                state[2],
+                state[3],
+                state[4],
+                state[5],
+                state[6],
+            )
 
         def continue_sim(state):
             t, y_state, rng_s, rng_i, next_out, events, obs_buf = state
@@ -197,11 +228,14 @@ def _simulate_trajectory_jax(
                 _ = num_reactions - 1
 
                 for r in range(num_reactions):
-                    prop = _compute_propensity(r, flat["rate_constants"],
-                                              flat["reactant_offsets"],
-                                              flat["reactant_species"],
-                                              flat["reactant_stoich_offsets"],
-                                              y_state)
+                    prop = _compute_propensity(
+                        r,
+                        flat["rate_constants"],
+                        flat["reactant_offsets"],
+                        flat["reactant_species"],
+                        flat["reactant_stoich_offsets"],
+                        y_state,
+                    )
                     cum = cum + prop
                     # We can't break in JAX, so use argmax on (cum >= target)
                     # Simplified: find first index where cum >= target
@@ -214,8 +248,7 @@ def _simulate_trajectory_jax(
                 return (t2, y_state, rng_s, rng_i, next_out2, events + 1, obs_buf2)
 
             # Simplified: just check if tau would exceed t_end
-            return lax.cond(t + tau > flat["t_end"],
-                           terminate, continue_sim, state)
+            return lax.cond(t + tau > flat["t_end"], terminate, continue_sim, state)
 
         # This is a placeholder - full implementation requires
         # proper JAX control flow with lax.while_loop
@@ -229,8 +262,15 @@ def _simulate_trajectory_jax(
     )
 
 
-def simulate(model, network, batch_size: int, t_end: float, base_seed: int,
-             n_steps: int = 10, max_steps: int = 0) -> Dict[str, Any]:
+def simulate(
+    model,
+    network,
+    batch_size: int,
+    t_end: float,
+    base_seed: int,
+    n_steps: int = 10,
+    max_steps: int = 0,
+) -> Dict[str, Any]:
     """Simulate batch SSA using JAX backend (opt-in).
 
     Args:
