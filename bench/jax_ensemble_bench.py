@@ -305,7 +305,7 @@ def main(argv: list[str] | None = None) -> int:
         return time.perf_counter() - t0
 
     # Sensitivity: same model, one parameter perturbed around its nominal.
-    nominal = model.get_parameter(args.param).value
+    _ = model.get_parameter(args.param).value
     sens_params = [args.param]
 
     def block_sens():

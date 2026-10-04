@@ -39,7 +39,7 @@ def main():
     path, batch, threads = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
     b, events, names, arr, d, o = parse(path)
 
-    time_points = arr('<f')    # timePoints
+    _ = arr('<f')    # timePoints
     arr('<d')                 # timePointsDouble
     counts = arr('<I')        # trajectoryEventCounts
     final_species = arr('<i') # finalSpecies

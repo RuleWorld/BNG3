@@ -18,7 +18,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 from pathlib import Path
 
 BL = str(Path(__file__).with_name("benchlock").resolve())

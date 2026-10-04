@@ -16,8 +16,7 @@ Usage:
 
 from __future__ import annotations
 
-import warnings
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List
 
 try:
     import jax
@@ -45,7 +44,7 @@ def _check_jax() -> None:
 def _extract_rate_laws(model) -> List[Dict[str, Any]]:
     """Extract rate law expressions from a loaded model."""
     # Use the C++ binding to get compiled reaction data
-    network = cpp.generate_network(model)
+    _ = cpp.generate_network(model)
     integrator = cpp.OdeIntegrator(model, network)
     compiled_rxns = integrator.getCompiledReactions()
     
@@ -138,8 +137,8 @@ def simulate_jax_ode(model, t_end: float, n_steps: int = 1000,
     
     # Get initial state
     from bionetgen import _bionetgen_cpp as cpp
-    network = cpp.generate_network(model)
-    n_species = len(model.getSpecies())
+    _ = cpp.generate_network(model)
+    _ = len(model.getSpecies())
     initial_state = jnp.array([float(s.getAmount()) for s in model.getSpecies()], dtype=jnp.float32)
     
     rhs = compile_rhs(model)
