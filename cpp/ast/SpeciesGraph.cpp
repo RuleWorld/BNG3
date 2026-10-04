@@ -36,13 +36,15 @@ std::string SpeciesGraph::toStringForDedup() const {
     std::vector<std::string> molComps;
     std::string base = graph_.get_BNG2_string(molComps);
 
-    std::string result;
-    if (!compartment_.empty()) {
-        result += "@" + compartment_ + "::";
+    // Unscoped species: the result is exactly the base serialization, so hand
+    // it back directly instead of copying it through an empty accumulator.
+    if (compartment_.empty()) {
+        return base;
     }
+    std::string result = "@" + compartment_ + "::";
 
     // Annotate molecules with compartments that differ from species-level
-    if (!compartment_.empty() && !molComps.empty()) {
+    if (!molComps.empty()) {
         std::size_t molIdx = 0, pos = 0;
         while (pos < base.size()) {
             int parenDepth = 0;
@@ -53,7 +55,7 @@ std::string SpeciesGraph::toStringForDedup() const {
                 else if (base[molEnd] == '.' && parenDepth == 0) break;
                 molEnd++;
             }
-            result += base.substr(pos, molEnd - pos);
+            result.append(base, pos, molEnd - pos);
             if (molIdx < molComps.size() && !molComps[molIdx].empty() &&
                 molComps[molIdx] != compartment_) {
                 result += "@" + molComps[molIdx];
