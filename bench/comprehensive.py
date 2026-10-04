@@ -87,7 +87,7 @@ model = cpp.parse_file("bench/fixtures/ode_many_functions.bngl")
 network = cpp.generate_network(model)""",
         "profiled": """\
 res = cpp.simulate_ode(model, network, t_end=100.0, n_steps=5000)
-assert res.get("concentrations"), "no concentrations" """,
+assert res.get("concentrations") is not None, "no concentrations" """,
     },
     "ssa": {
         "setup": """\
