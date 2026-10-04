@@ -2605,9 +2605,30 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
         propensity *= std::max(0.0, population - n_offset);
     }
 
+    return propensity;
+}
 
-
-namespace {
+double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
+                                        const double* y,
+                                        double rateCoefficient) const {
+    // Overload for raw pointer (from thread-local scratch)
+    double propensity = rateCoefficient;
+    if (rxn.isTotalRate) {
+        return propensity;
+    }
+    double n_offset = 0.0;
+    for (size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
+        std::size_t idx = rxn.reactantIndices[i];
+        if (i > 0 && rxn.reactantIndices[i] == rxn.reactantIndices[i-1]) {
+            n_offset += 1.0;
+        } else {
+            n_offset = 0.0;
+        }
+        double population = y[idx];
+        propensity *= std::max(0.0, population - n_offset);
+    }
+    return propensity;
+}
 
 // Per-thread scratch for integrateSSA.
 //
@@ -2619,6 +2640,8 @@ namespace {
 // fresh allocation.  Every field is written in full before it is read, and
 // integrateSSA never recurses, so nothing leaks between trajectories or
 // between threads.
+namespace {
+
 struct SsaScratch {
     std::vector<double> state;
     std::vector<double> propensities;
@@ -2629,7 +2652,7 @@ struct SsaScratch {
 
 thread_local SsaScratch tls_scratch;
 
-} // namespace
+} // anonymous namespace
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Direct Gillespie algorithm (matches BNG2 implementation)
@@ -2665,14 +2688,14 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     double t = opts.tStart;
     std::size_t nextOutputTime = 0;
-    std::size_t ssaStepCount = 0;
+    std::size_t ssaStepCount = 0;  // track internal SSA steps for output_step_interval
     bool stoppedEarly = false;
 
     const auto appendScheduledBefore = [&](double until) {
         while (nextOutputTime < times.size() &&
                times[nextOutputTime] < until - 1e-12) {
             result.timePoints.push_back(times[nextOutputTime]);
-            result.concentrations.push_back(std::vector<double>(y, y + nSpecies_));
+            result.concentrations.emplace_back(y, y + nSpecies_);
             ++nextOutputTime;
         }
     };
@@ -2681,7 +2704,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         while (nextOutputTime < times.size() &&
                times[nextOutputTime] <= until + 1e-12) {
             result.timePoints.push_back(times[nextOutputTime]);
-            result.concentrations.push_back(std::vector<double>(y, y + nSpecies_));
+            result.concentrations.emplace_back(y, y + nSpecies_);
             ++nextOutputTime;
         }
     };
@@ -2690,12 +2713,15 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         if (result.timePoints.empty() ||
             std::abs(result.timePoints.back() - t) > 1e-12) {
             result.timePoints.push_back(t);
-            result.concentrations.push_back(std::vector<double>(y, y + nSpecies_));
+            result.concentrations.emplace_back(y, y + nSpecies_);
         } else {
+            // An event may land exactly on an explicit output time.  The
+            // sample at that instant represents the post-event state.
             result.concentrations.back() = std::vector<double>(y, y + nSpecies_);
         }
     };
 
+    
     s.propensities.resize(compiledRxns_.size());
     s.prefixSums.resize(compiledRxns_.size());
     std::vector<double> rateCoefficients;
@@ -2704,11 +2730,6 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
             rateCoefficients[r] = compiledRxns_[r].rateConstant;
         }
-        s.depOffset.resize(nSpecies_ + 1);
-        s.depReactions.resize(0);
-    } else {
-        s.depOffset.clear();
-        s.depReactions.clear();
     }
     const auto rateCoefficientFor = [&](std::size_t r) {
         return compiledRxns_[r].isFunctional
@@ -2739,10 +2760,10 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             if (!(rateCoefficient >= 0.0)) {
                 monotonePrefix = false;
             }
-            s.propensities[r] = computePropensity(
+            tls_scratch.propensities[r] = computePropensity(
                 compiledRxns_[r], y, rateCoefficient);
-            totalPropensity += s.propensities[r];
-            s.prefixSums[r] = totalPropensity;
+            totalPropensity += tls_scratch.propensities[r];
+            tls_scratch.prefixSums[r] = totalPropensity;
         }
     };
 
@@ -2756,6 +2777,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // same in-order summation as recomputePropensities(), keeping each
     // propensity value, the total, and therefore the seeded trajectory
     // bit-identical to recomputing everything on every step.
+    
     s.depOffset.assign(nSpecies_ + 1, 0);
     for (const auto& rxn : compiledRxns_) {
         for (const auto idx : rxn.reactantIndices) {
@@ -2776,22 +2798,23 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             }
         }
     }
+
     auto refreshAfterEvent = [&](std::size_t firedIndex) {
         const auto& fired = compiledRxns_[firedIndex];
         if (hasFunctionalRates_) {
             evaluateFunctionalRateCoefficients(
                 t, y, rateCoefficients.data(), true);
             for (const auto r : functionalRxnIndices_) {
-                s.propensities[r] = computePropensity(
+                tls_scratch.propensities[r] = computePropensity(
                     compiledRxns_[r], y, rateCoefficients[r]);
             }
         }
         auto refreshSpecies = [&](std::size_t speciesIndex) {
-            for (std::size_t p = s.depOffset[speciesIndex];
-                 p < s.depOffset[speciesIndex + 1]; ++p) {
-                const std::size_t r = s.depReactions[p];
+            for (std::size_t p = tls_scratch.depOffset[speciesIndex];
+                 p < tls_scratch.depOffset[speciesIndex + 1]; ++p) {
+                const std::size_t r = tls_scratch.depReactions[p];
                 if (!compiledRxns_[r].isFunctional) {
-                    s.propensities[r] = computePropensity(
+                    tls_scratch.propensities[r] = computePropensity(
                         compiledRxns_[r], y, rateCoefficientFor(r));
                 }
             }
@@ -2808,8 +2831,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             if (!(rateCoefficientFor(r) >= 0.0)) {
                 monotonePrefix = false;
             }
-            totalPropensity += s.propensities[r];
-            s.prefixSums[r] = totalPropensity;
+            totalPropensity += tls_scratch.propensities[r];
+            tls_scratch.prefixSums[r] = totalPropensity;
         }
     };
 
@@ -2870,6 +2893,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             // First index whose prefix sum reaches the target (binary search
             // over a non-decreasing sequence: same first crossing the
             // cumulative scan finds, including equal-value plateaus).
+            
             std::size_t lo = 0;
             std::size_t hi = compiledRxns_.size();
             while (lo < hi) {
@@ -2882,6 +2906,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             }
             selectedRxn = lo;
         } else {
+            
             for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
                 if (s.prefixSums[r] >= target) {
                     selectedRxn = r;
@@ -2897,13 +2922,14 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
 
         // Fire the selected reaction
+        
         const auto& rxn = compiledRxns_[selectedRxn];
         for (const auto idx : rxn.reactantIndices) {
-            y[idx] -= 1.0;
-            if (y[idx] < 0.0) y[idx] = 0.0;  // Safety clamp
+            s.state[idx] -= 1.0;
+            if (s.state[idx] < 0.0) s.state[idx] = 0.0;  // Safety clamp
         }
         for (const auto idx : rxn.productIndices) {
-            y[idx] += 1.0;
+            s.state[idx] += 1.0;
         }
 
         // Recompute propensities.  Only reactions that read a species whose
@@ -2917,6 +2943,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             appendScheduledThrough(t);
         }
 
+        // output_step_interval: record output every N internal SSA steps
+        ++ssaStepCount;
         if (opts.outputStepInterval > 0 && !explicitTimes &&
             (ssaStepCount % opts.outputStepInterval) == 0) {
             result.timePoints.push_back(t);
@@ -2951,28 +2979,6 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     result.eventCount = ssaStepCount;
 
     return result;
-}
-
-double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
-                                        const double* y,
-                                        double rateCoefficient) const {
-    // Overload for raw pointer (from thread-local scratch)
-    double propensity = rateCoefficient;
-    if (rxn.isTotalRate) {
-        return propensity;
-    }
-    double n_offset = 0.0;
-    for (size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
-        std::size_t idx = rxn.reactantIndices[i];
-        if (i > 0 && rxn.reactantIndices[i] == rxn.reactantIndices[i-1]) {
-            n_offset += 1.0;
-        } else {
-            n_offset = 0.0;
-        }
-        double population = y[idx];
-        propensity *= std::max(0.0, population - n_offset);
-    }
-    return propensity;
 }
 
 } // namespace bng::engine

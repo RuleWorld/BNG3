@@ -174,10 +174,10 @@ private:
     OdeResult integrateBatchSSA(const OdeOptions& opts);
 
     double computePropensity(const CompiledReaction& rxn,
-                             const double* y,
+                             const std::vector<double>& y,
                              double rateCoefficient) const;
     double computePropensity(const CompiledReaction& rxn,
-                             const std::vector<double>& y,
+                             const double* y,
                              double rateCoefficient) const;
 };
 
