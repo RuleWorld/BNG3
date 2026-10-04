@@ -12,8 +12,7 @@ Usage:
 
 from __future__ import annotations
 
-import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Tuple
 
 try:
     import jax
@@ -95,7 +94,7 @@ def _simulate_trajectory_jax(
     max_steps: int,
 ) -> Tuple[jnp.ndarray, int]:
     """Simulate one trajectory using JAX (lax.while_loop)."""
-    num_species = flat["num_species"]
+    _ = flat["num_species"]
     num_reactions = flat["num_reactions"]
     num_observables = flat["num_observables"]
     num_output_points = flat["obs_offsets"].shape[0] - 1
@@ -114,7 +113,7 @@ def _simulate_trajectory_jax(
     # Output recording
     obs_buffer = jnp.zeros((num_output_points, num_observables), dtype=jnp.float32)
     next_output_idx = 0
-    event_count = 0
+    _ = 0
 
     # Record initial state
     def record_obs(y_state, time_idx):
@@ -193,9 +192,9 @@ def _simulate_trajectory_jax(
 
                 # Pass 2: reaction selection
                 rng_s, rng_i, r2 = _pcg32_next_float01(rng_s, rng_i)
-                target = r2 * total_prop
+                _ = r2 * total_prop
                 cum = jnp.float32(0.0)
-                selected = num_reactions - 1
+                _ = num_reactions - 1
 
                 for r in range(num_reactions):
                     prop = _compute_propensity(r, flat["rate_constants"],
@@ -252,7 +251,7 @@ def simulate(model, network, batch_size: int, t_end: float, base_seed: int,
     flat = cpp.jax_ssa_flatten(model, network)
 
     # Convert to JAX arrays
-    initial_species = jnp.array(flat["initial_species"], dtype=jnp.int32)
+    _ = jnp.array(flat["initial_species"], dtype=jnp.int32)
 
     # For now, this is a stub - full implementation in progress
     raise NotImplementedError(
