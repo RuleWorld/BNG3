@@ -2563,6 +2563,37 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
     }
 
+    // Optional solver profile for bench/ode_large_bench.py: one stderr line
+    // with CVODE's own counters (steps, RHS evals, Jacobian evals, linear
+    // work). Off unless BNG3_CVODE_STATS is set; the default path only pays
+    // one getenv per integration.
+    if (std::getenv("BNG3_CVODE_STATS") != nullptr) {
+        long int nsteps = 0, nfevals = 0, njevals = 0, nsetups = 0;
+        long int netfails = 0, nni = 0, nnf = 0, nliters = 0, nlnfails = 0;
+        long int nfeDQ = 0;
+        CVodeGetNumSteps(cvode_mem, &nsteps);
+        CVodeGetNumRhsEvals(cvode_mem, &nfevals);
+        CVodeGetNumJacEvals(cvode_mem, &njevals);
+        CVodeGetNumLinRhsEvals(cvode_mem, &nfeDQ);
+        CVodeGetNumLinSolvSetups(cvode_mem, &nsetups);
+        CVodeGetNumErrTestFails(cvode_mem, &netfails);
+        CVodeGetNumNonlinSolvIters(cvode_mem, &nni);
+        CVodeGetNumNonlinSolvConvFails(cvode_mem, &nnf);
+        CVodeGetNumLinIters(cvode_mem, &nliters);
+        CVodeGetNumLinConvFails(cvode_mem, &nlnfails);
+        std::cerr << "BNG3_CVODE_STATS {\"steps\": " << nsteps
+                  << ", \"rhs_evals\": " << nfevals
+                  << ", \"jac_evals\": " << njevals
+                  << ", \"jac_rhs_evals\": " << nfeDQ
+                  << ", \"lin_setups\": " << nsetups
+                  << ", \"err_test_fails\": " << netfails
+                  << ", \"nonlin_iters\": " << nni
+                  << ", \"nonlin_conv_fails\": " << nnf
+                  << ", \"lin_iters\": " << nliters
+                  << ", \"lin_conv_fails\": " << nlnfails
+                  << ", \"n_species\": " << nSpecies_ << "}\n";
+    }
+
     // Cleanup (v7: also free linear solver, matrix, and context)
     SUNLinSolFree(LS);
     if (A) SUNMatDestroy(A);
