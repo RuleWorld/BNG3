@@ -2605,8 +2605,31 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
         propensity *= std::max(0.0, population - n_offset);
     }
 
-    return propensity;
-}
+
+
+namespace {
+
+// Per-thread scratch for integrateSSA.
+//
+// The batch pool drives one trajectory per call against a single shared
+// integrator, so the state vector, the propensity table, its prefix sums and
+// the species->reaction dependency graph are rebuilt once per trajectory --
+// a million times over a pool run -- while depending only on the compiled
+// network.  Holding them here makes that rebuild a resize instead of a
+// fresh allocation.  Every field is written in full before it is read, and
+// integrateSSA never recurses, so nothing leaks between trajectories or
+// between threads.
+struct SsaScratch {
+    std::vector<double> state;
+    std::vector<double> propensities;
+    std::vector<double> prefixSums;
+    std::vector<std::size_t> depOffset;
+    std::vector<std::size_t> depReactions;
+};
+
+thread_local SsaScratch tls_scratch;
+
+} // namespace
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Direct Gillespie algorithm (matches BNG2 implementation)
@@ -2628,11 +2651,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     }
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
-    // Initialize state (round to nearest integer)
-    std::vector<double> y(nSpecies_);
+    // Use per-thread scratch to avoid repeated allocations across trajectories
+    auto& s = tls_scratch;
+    s.state.resize(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
-        y[i] = std::round(network_.species.get(i).getAmount());
+        s.state[i] = std::round(network_.species.get(i).getAmount());
     }
+    double* y = s.state.data();
 
     OdeResult result;
     result.timePoints.reserve(times.size() + 1);
@@ -2640,14 +2665,14 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     double t = opts.tStart;
     std::size_t nextOutputTime = 0;
-    std::size_t ssaStepCount = 0;  // track internal SSA steps for output_step_interval
+    std::size_t ssaStepCount = 0;
     bool stoppedEarly = false;
 
     const auto appendScheduledBefore = [&](double until) {
         while (nextOutputTime < times.size() &&
                times[nextOutputTime] < until - 1e-12) {
             result.timePoints.push_back(times[nextOutputTime]);
-            result.concentrations.push_back(y);
+            result.concentrations.push_back(std::vector<double>(y, y + nSpecies_));
             ++nextOutputTime;
         }
     };
@@ -2656,7 +2681,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         while (nextOutputTime < times.size() &&
                times[nextOutputTime] <= until + 1e-12) {
             result.timePoints.push_back(times[nextOutputTime]);
-            result.concentrations.push_back(y);
+            result.concentrations.push_back(std::vector<double>(y, y + nSpecies_));
             ++nextOutputTime;
         }
     };
@@ -2665,23 +2690,25 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         if (result.timePoints.empty() ||
             std::abs(result.timePoints.back() - t) > 1e-12) {
             result.timePoints.push_back(t);
-            result.concentrations.push_back(y);
+            result.concentrations.push_back(std::vector<double>(y, y + nSpecies_));
         } else {
-            // An event may land exactly on an explicit output time.  The
-            // sample at that instant represents the post-event state.
-            result.concentrations.back() = y;
+            result.concentrations.back() = std::vector<double>(y, y + nSpecies_);
         }
     };
 
-    // Compute initial propensities
-    std::vector<double> propensities(compiledRxns_.size());
-    std::vector<double> prefixSums(compiledRxns_.size());
+    s.propensities.resize(compiledRxns_.size());
+    s.prefixSums.resize(compiledRxns_.size());
     std::vector<double> rateCoefficients;
     if (hasFunctionalRates_) {
         rateCoefficients.resize(compiledRxns_.size());
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
             rateCoefficients[r] = compiledRxns_[r].rateConstant;
         }
+        s.depOffset.resize(nSpecies_ + 1);
+        s.depReactions.resize(0);
+    } else {
+        s.depOffset.clear();
+        s.depReactions.clear();
     }
     const auto rateCoefficientFor = [&](std::size_t r) {
         return compiledRxns_[r].isFunctional
@@ -2703,7 +2730,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     auto recomputePropensities = [&]() {
         if (hasFunctionalRates_) {
             evaluateFunctionalRateCoefficients(
-                t, y.data(), rateCoefficients.data(), true);
+                t, y, rateCoefficients.data(), true);
         }
         totalPropensity = 0.0;
         monotonePrefix = true;
@@ -2712,10 +2739,10 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             if (!(rateCoefficient >= 0.0)) {
                 monotonePrefix = false;
             }
-            propensities[r] = computePropensity(
+            s.propensities[r] = computePropensity(
                 compiledRxns_[r], y, rateCoefficient);
-            totalPropensity += propensities[r];
-            prefixSums[r] = totalPropensity;
+            totalPropensity += s.propensities[r];
+            s.prefixSums[r] = totalPropensity;
         }
     };
 
@@ -2729,57 +2756,42 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // same in-order summation as recomputePropensities(), keeping each
     // propensity value, the total, and therefore the seeded trajectory
     // bit-identical to recomputing everything on every step.
-    std::vector<std::size_t> depOffset(nSpecies_ + 1, 0);
+    s.depOffset.assign(nSpecies_ + 1, 0);
     for (const auto& rxn : compiledRxns_) {
         for (const auto idx : rxn.reactantIndices) {
-            // Reactant indices are network species indices, so they are in
-            // [0, nSpecies_) — the same invariant the pre-existing ODE and
-            // SSA code relies on when it reads y[idx].  depOffset is sized
-            // nSpecies_ + 1 precisely so idx + 1 stays in range; assert the
-            // invariant where the index first crosses this new write.
-            // Beyond the assertion, this bound was audited empirically over
-            // the repository's generated networks (perfOracle's audit, 2026-
-            // 09-30): 2,711 generated .net files, 792,960 reaction lines,
-            // max 1-based reactant index == nSpecies and zero references
-            // outside [1, nSpecies] in every file, so idx+1 never exceeds
-            // depOffset[nSpecies_].
             assert(idx < nSpecies_);
-            ++depOffset[idx + 1];
+            ++s.depOffset[idx + 1];
         }
     }
     for (std::size_t i = 0; i < nSpecies_; ++i) {
-        depOffset[i + 1] += depOffset[i];
+        s.depOffset[i + 1] += s.depOffset[i];
     }
-    std::vector<std::size_t> depReactions(depOffset[nSpecies_]);
+    s.depReactions.resize(s.depOffset[nSpecies_]);
     {
-        std::vector<std::size_t> cursor(depOffset.begin(),
-                                        depOffset.end() - 1);
+        std::vector<std::size_t> cursor(s.depOffset.begin(),
+                                        s.depOffset.end() - 1);
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
             for (const auto idx : compiledRxns_[r].reactantIndices) {
-                depReactions[cursor[idx]++] = r;
+                s.depReactions[cursor[idx]++] = r;
             }
         }
     }
-
     auto refreshAfterEvent = [&](std::size_t firedIndex) {
         const auto& fired = compiledRxns_[firedIndex];
         if (hasFunctionalRates_) {
-            // An observable-backed function may read any species in the
-            // model, so refresh every functional coefficient after a state
-            // change. Constant-rate reactions retain dependency-indexed work.
             evaluateFunctionalRateCoefficients(
-                t, y.data(), rateCoefficients.data(), true);
+                t, y, rateCoefficients.data(), true);
             for (const auto r : functionalRxnIndices_) {
-                propensities[r] = computePropensity(
+                s.propensities[r] = computePropensity(
                     compiledRxns_[r], y, rateCoefficients[r]);
             }
         }
         auto refreshSpecies = [&](std::size_t speciesIndex) {
-            for (std::size_t p = depOffset[speciesIndex];
-                 p < depOffset[speciesIndex + 1]; ++p) {
-                const std::size_t r = depReactions[p];
+            for (std::size_t p = s.depOffset[speciesIndex];
+                 p < s.depOffset[speciesIndex + 1]; ++p) {
+                const std::size_t r = s.depReactions[p];
                 if (!compiledRxns_[r].isFunctional) {
-                    propensities[r] = computePropensity(
+                    s.propensities[r] = computePropensity(
                         compiledRxns_[r], y, rateCoefficientFor(r));
                 }
             }
@@ -2796,8 +2808,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             if (!(rateCoefficientFor(r) >= 0.0)) {
                 monotonePrefix = false;
             }
-            totalPropensity += propensities[r];
-            prefixSums[r] = totalPropensity;
+            totalPropensity += s.propensities[r];
+            s.prefixSums[r] = totalPropensity;
         }
     };
 
@@ -2806,7 +2818,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         appendScheduledThrough(t);
     } else {
         result.timePoints.push_back(t);
-        result.concentrations.push_back(y);
+        result.concentrations.emplace_back(y, y + nSpecies_);
     }
 
     // Main SSA loop
@@ -2862,7 +2874,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             std::size_t hi = compiledRxns_.size();
             while (lo < hi) {
                 const std::size_t mid = lo + (hi - lo) / 2;
-                if (prefixSums[mid] >= target) {
+                if (s.prefixSums[mid] >= target) {
                     hi = mid;
                 } else {
                     lo = mid + 1;
@@ -2871,7 +2883,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             selectedRxn = lo;
         } else {
             for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-                if (prefixSums[r] >= target) {
+                if (s.prefixSums[r] >= target) {
                     selectedRxn = r;
                     break;
                 }
@@ -2905,16 +2917,14 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             appendScheduledThrough(t);
         }
 
-        // output_step_interval: record output every N internal SSA steps
-        ++ssaStepCount;
         if (opts.outputStepInterval > 0 && !explicitTimes &&
             (ssaStepCount % opts.outputStepInterval) == 0) {
             result.timePoints.push_back(t);
-            result.concentrations.push_back(y);
+            result.concentrations.emplace_back(y, y + nSpecies_);
         }
 
         if (stopIfExpr.has_value() &&
-            stopConditionMet(*stopIfExpr, t, y)) {
+            stopConditionMet(*stopIfExpr, t, std::vector<double>(y, y + nSpecies_))) {
             stoppedEarly = true;
             break;
         }
@@ -2941,6 +2951,28 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     result.eventCount = ssaStepCount;
 
     return result;
+}
+
+double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
+                                        const double* y,
+                                        double rateCoefficient) const {
+    // Overload for raw pointer (from thread-local scratch)
+    double propensity = rateCoefficient;
+    if (rxn.isTotalRate) {
+        return propensity;
+    }
+    double n_offset = 0.0;
+    for (size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
+        std::size_t idx = rxn.reactantIndices[i];
+        if (i > 0 && rxn.reactantIndices[i] == rxn.reactantIndices[i-1]) {
+            n_offset += 1.0;
+        } else {
+            n_offset = 0.0;
+        }
+        double population = y[idx];
+        propensity *= std::max(0.0, population - n_offset);
+    }
+    return propensity;
 }
 
 } // namespace bng::engine
