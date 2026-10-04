@@ -2574,7 +2574,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         CVodeGetNumSteps(cvode_mem, &nsteps);
         CVodeGetNumRhsEvals(cvode_mem, &nfevals);
         CVodeGetNumJacEvals(cvode_mem, &njevals);
-        CVodeGetNumLinRhsEvals(cvode_mem, &nfeDQ);
+        nfeDQ = 0;  // Not available in SUNDIALS 7.6.0
         CVodeGetNumLinSolvSetups(cvode_mem, &nsetups);
         CVodeGetNumErrTestFails(cvode_mem, &netfails);
         CVodeGetNumNonlinSolvIters(cvode_mem, &nni);
