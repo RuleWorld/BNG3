@@ -42,6 +42,34 @@
 #include "sunlinsol/sunlinsol_spgmr.h"
 #include "sunmatrix/sunmatrix_dense.h"
 
+// Floating-point std::to_chars availability.
+//
+// std::to_chars for floating-point types is a C++17 library, but the standard
+// library only *ships* it starting with macOS 13.3: libc++ annotates those
+// overloads with `availability(macos, introduced = 13.3)`, so building against
+// an older deployment target makes the call a hard compile error even though
+// the compiler understands the header. The binary distribution targets macOS
+// 10.13 (x86_64) and 11.0 (arm64), so the numeric field writer below has to
+// produce the same bytes on those targets as everywhere else.
+//
+// _LIBCPP_AVAILABILITY_HAS_TO_CHARS_FLOATING_POINT is the 0/1 predicate libc++
+// itself uses for that gate: it is what qualifies the declarations in
+// <__charconv/to_chars_floating_point.h> and what <version> tests. Where it is
+// not defined the standard library is not libc++ (libstdc++, MSVC STL), which
+// provides the floating-point overloads unconditionally. The explicit
+// deployment-target test is a second gate for a libc++ that predates that
+// macro: it is the same predefined macro, at the same 13.3 threshold, that
+// libc++ derives its own value from.
+#if defined(_LIBCPP_AVAILABILITY_HAS_TO_CHARS_FLOATING_POINT) && \
+    !_LIBCPP_AVAILABILITY_HAS_TO_CHARS_FLOATING_POINT
+#define BNG3_HAS_FLOATING_TO_CHARS 0
+#elif defined(__APPLE__) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) && \
+    __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 130300
+#define BNG3_HAS_FLOATING_TO_CHARS 0
+#else
+#define BNG3_HAS_FLOATING_TO_CHARS 1
+#endif
+
 namespace bng::engine {
 
 namespace {
@@ -1869,14 +1897,34 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
 
 namespace {
 
+// Width of one numeric field: "%18.12e" right-justifies into 18 columns.
+constexpr std::size_t kScientificFieldWidth = 18;
+
+// Appends the 18-column right-justified form of "%.12e" that a C++ stream
+// produces with scientific/precision(12) latched, preceded by `leadingSpace`.
+// That stream form is the byte format this writer has always emitted; it is
+// what appendScientificField falls back to where the standard library does not
+// provide floating-point std::to_chars, and it is how non-finite values are
+// formatted on every target.
+void appendStreamField(std::string& row, double value, bool leadingSpace) {
+    if (leadingSpace) {
+        row += ' ';
+    }
+    std::ostringstream stream;
+    stream << std::setw(static_cast<int>(kScientificFieldWidth))
+           << std::setprecision(12) << std::scientific << value;
+    row.append(stream.str());
+}
+
 // Emits one .cdat/.gdat numeric field.
 //
 // The writer's established byte format is
 //     out << " " << std::setw(18) << value
 // with `std::scientific` and `std::setprecision(12)` latched on the stream, i.e.
-// the 18-column right-justified form of "%.12e". This helper produces those
-// same bytes without the per-value ostream sentry, num_put facet lookup and
-// num_put locale grouping that dominate this loop.
+// the 18-column right-justified form of "%.12e". Where the standard library
+// provides it, this helper produces those same bytes without the per-value
+// ostream sentry, num_put facet lookup and num_put locale grouping that
+// dominate this loop.
 //
 // std::to_chars(chars_format::scientific, 12) was verified to emit identical
 // digits to operator<< over 8,998,531 doubles (including 0.0, -0.0, 5e-324,
@@ -1884,41 +1932,58 @@ namespace {
 // the bench/format_probe evidence quoted in the PR. The emitted bytes are
 // identical, so the .cdat/.gdat files are unchanged byte-for-byte.
 //
+// Where floating-point std::to_chars is not available at the deployment target
+// (BNG3_HAS_FLOATING_TO_CHARS, see above) appendStreamField produces the field
+// instead; both routes are byte-identical for every finite value, including
+// signed zeros, denormals, DBL_MIN, DBL_MAX and three-digit exponents.
+//
+// Non-finite values always take appendStreamField, on every target and for
+// both routes. std::to_chars spells NaN "nan(ind)" or "nan(snan)" depending on
+// its payload while a stream spells it plain "nan" (prefixed "-" when the sign
+// bit is set), so the payload-dependent spelling would otherwise make the
+// emitted bytes depend on which target produced the file. The stream spelling
+// is the one this writer has always emitted, so it is used everywhere. The
+// two formatters already agree on infinity ("inf" / "-inf").
+//
 // `leadingSpace` reproduces the literal " " the caller inserted before every
 // field except the first on a row.
 void appendScientificField(std::string& row, double value, bool leadingSpace) {
-    constexpr std::size_t kWidth = 18;
-    char buf[64];
-    char* cursor = buf;
-    if (leadingSpace) {
-        *cursor++ = ' ';
-    }
-    char* const fieldStart = cursor;
-    const auto result = std::to_chars(fieldStart, buf + sizeof(buf), value,
-                                      std::chars_format::scientific, 12);
-    if (result.ec != std::errc{}) {
+#if BNG3_HAS_FLOATING_TO_CHARS
+    if (std::isfinite(value)) {
+        char buf[64];
+        char* cursor = buf;
+        if (leadingSpace) {
+            *cursor++ = ' ';
+        }
+        char* const fieldStart = cursor;
+        const auto result = std::to_chars(fieldStart, buf + sizeof(buf), value,
+                                          std::chars_format::scientific, 12);
+        if (result.ec == std::errc{}) {
+            const std::size_t length =
+                static_cast<std::size_t>(result.ptr - fieldStart);
+            // "%18.12e" right-justifies into 18 columns. The digit string is
+            // shorter than that for an ordinary value (17 characters, e.g.
+            // "1.000000000000e+00") and LONGER for a three-digit exponent or a
+            // wider one with a sign (19 characters, or 20 for -DBL_MAX). Only
+            // the short case is padded; the long case is emitted in full,
+            // exactly as the stream would.
+            const std::size_t pad =
+                (length < kScientificFieldWidth)
+                    ? (kScientificFieldWidth - length)
+                    : 0;
+            if (pad != 0) {
+                std::memmove(fieldStart + pad, fieldStart, length);
+                std::memset(fieldStart, ' ', pad);
+            }
+            row.append(buf, static_cast<std::size_t>(cursor - buf) + pad + length);
+            return;
+        }
         // Cannot happen with a 64-byte buffer and this format (the longest
-        // field is 20 characters), but the length below feeds a memmove, so
+        // field is 20 characters), but the length above feeds a memmove, so
         // do not trust an errored result.
-        std::ostringstream fallback;
-        fallback << std::setw(18) << std::setprecision(12) << std::scientific
-                  << value;
-        const std::string text = fallback.str();
-        row.append(text);
-        return;
     }
-    const std::size_t length = static_cast<std::size_t>(result.ptr - fieldStart);
-    // "%18.12e" right-justifies into 18 columns. The digit string is shorter
-    // than that for an ordinary value (17 characters, e.g. "1.000000000000e+00")
-    // and LONGER for a three-digit exponent or a wider one with a sign
-    // (19 characters, or 20 for -DBL_MAX). Only the short case is padded; the
-    // long case is emitted in full, exactly as the stream would.
-    const std::size_t pad = (length < kWidth) ? (kWidth - length) : 0;
-    if (pad != 0) {
-        std::memmove(fieldStart + pad, fieldStart, length);
-        std::memset(fieldStart, ' ', pad);
-    }
-    row.append(buf, static_cast<std::size_t>(cursor - buf) + pad + length);
+#endif
+    appendStreamField(row, value, leadingSpace);
 }
 
 } // namespace
