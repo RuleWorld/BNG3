@@ -159,11 +159,16 @@ def _run_gate(nodeid: str, env_overrides: dict[str, str], tmp_path: Path):
     env = dict(os.environ)
     env.pop("NFSIM_BIN", None)
     env.pop("BNG3_CI_STRICT_ORACLES", None)
-    python_paths = [str(corpus.REPO / "python"), str(corpus.REPO)]
-    extension_dir = corpus.REPO / "build" / "cpp"
-    if extension_dir.is_dir():
-        python_paths.insert(0, str(extension_dir))
-    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    if env.get("BNG3_PYTHON_TEST_MODE") == "installed":
+        # Keep the installed wheel selected in package-identity CI. This child
+        # process checks oracle failure behavior, not source-tree imports.
+        env.pop("PYTHONPATH", None)
+    else:
+        python_paths = [str(corpus.REPO / "python"), str(corpus.REPO)]
+        extension_dir = corpus.REPO / "build" / "cpp"
+        if extension_dir.is_dir():
+            python_paths.insert(0, str(extension_dir))
+        env["PYTHONPATH"] = os.pathsep.join(python_paths)
     env.update(env_overrides)
     argv = [
         sys.executable,

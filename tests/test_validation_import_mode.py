@@ -47,6 +47,9 @@ def _fake_installed_site(tmp_path: Path) -> Path:
     (package / "_bionetgen_cpp.py").write_text(
         "IDENTITY = 'fake-installed'\n", encoding="utf-8"
     )
+    (package / "model.py").write_text(
+        "from . import _bionetgen_cpp as _cpp\n", encoding="utf-8"
+    )
     metadata = fake_site / "bionetgen-0.0.dist-info"
     metadata.mkdir()
     (metadata / "METADATA").write_text(
@@ -162,6 +165,7 @@ from scripts.ci.check_python_package_identity import inspect_installed_package
 identity = inspect_installed_package()
 assert identity['package_file'].startswith(os.environ['BNG3_TEST_SITE'])
 assert identity['native_extension'].startswith(os.environ['BNG3_TEST_SITE'])
+assert identity['model_native_extension'] == identity['native_extension']
 assert any(type(f).__module__ == '_editable_unrelated' for f in sys.meta_path)
 """,
     )
