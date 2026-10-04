@@ -1966,7 +1966,21 @@ char* appendScientificFieldPortable(char* dst, double value, bool leadingSpace) 
     return dst + offset + text.size();
 }
 
-#if defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+// Select the direct byte-building path only where the standard library
+// actually provides floating-point std::to_chars.
+//
+// Note __cpp_lib_to_chars is NOT a usable signal here: this libc++ does not
+// define it at all, even where the facility works, so testing it selects the
+// portable path everywhere and costs an ostringstream per emitted field.
+// libc++'s own availability macro is the signal that carries information.
+#if defined(_LIBCPP_AVAILABILITY_HAS_TO_CHARS_FLOATING_POINT)
+#if _LIBCPP_AVAILABILITY_HAS_TO_CHARS_FLOATING_POINT
+#define BNG3_HAS_FP_TO_CHARS 1
+#endif
+#elif defined(__cpp_lib_to_chars) && __cpp_lib_to_chars >= 201611L
+#define BNG3_HAS_FP_TO_CHARS 1
+#endif
+#if defined(BNG3_HAS_FP_TO_CHARS)
 
 // Floating-point std::to_chars is available: build the bytes directly.
 //
@@ -2914,7 +2928,6 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                    ? rateCoefficients[r]
                    : compiledRxns_[r].rateConstant;
     };
-=====
     double totalPropensity = 0.0;
 
     // Reaction selection needs the first cumulative propensity that reaches
@@ -2942,9 +2955,6 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             propensities[r] = computePropensity(
                 compiledRxns_[r], y, rateCoef);
             totalPropensity += propensities[r];
-            prefixSums[r] = totalPropensity;
-        }
-    };
             prefixSums[r] = totalPropensity;
         }
     };
