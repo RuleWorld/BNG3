@@ -1,0 +1,503 @@
+{
+  "analysis_head": "71cf6c1a409710e438902d540c1a04bb5c9f5367",
+  "binaries": {
+    "baseline_sha256": "69d8a2b42b288386bac5fb722ec5115b5b8927d6e89287bb06fdeef1fca7d730",
+    "candidate_sha256": "010ffb3027271003c445e0de0c9a0280f59a9cc3fea868397f18374173650995",
+    "helper_equivalence_case": "isomerization, batch=1000, threads=15, t_end=10, n_steps=10, seed=42",
+    "helper_equivalence_dump_sha256": "3b7dcfc05e2ea309acbd24603514ac6cf1f858e00a3bc131757fccb792641462",
+    "permanent_ninja_wrapper_output_sha256": "253129bf59e17d585db9d20cf854b3dfa6db1903e0c5b5cca310fc5044e4451d"
+  },
+  "build_environment": {
+    "build_type": "Release",
+    "cmake": "4.4.3",
+    "compile_flags": "-O3 -DNDEBUG -std=gnu++17 -flto=thin -arch arm64 -fPIE",
+    "compiler": "Apple clang 21.0.0 (clang-2100.3.34.2), /usr/bin/c++",
+    "generator": "Ninja 1.13.2",
+    "options": {
+      "BUILD_CLI": true,
+      "BUILD_NFSIM_CLI": false,
+      "BUILD_PYTHON_BINDINGS": false,
+      "BUILD_TESTS": false,
+      "NFSIM_ENABLE_LTO": true
+    },
+    "platform": "Darwin arm64, kernel Darwin 27.0.0"
+  },
+  "historical_pr_commit": "b251de68c4de08b240efaf36e99dcd59a83004e0",
+  "identity_gate": {
+    "dynamic_function_scope": "All passing model fixtures use fixed parameter rates; michment (observable-dependent functional coefficient) excluded pending parity-lane correction and independent gate.",
+    "historical_batch_800_single_thread": {
+      "baseline_status": "TERMINATED_BY_SIGTERM_AFTER_56S",
+      "batch": 800,
+      "candidate_status": "NOT_RUN",
+      "dump_status": "UNVERIFIED",
+      "model": "models/egfr_net.bngl",
+      "reason": "Roughly 2B events and exercises simulateSingleWorker, which PR58 does not modify; replaced by passing isomerization batch-1000 one-thread control.",
+      "threads": 1
+    },
+    "passing_cases": [
+      {
+        "baseline_dump_sha256": "4c0b164a75e448536403397ef5c8ead4095f20af00788d47cb547d584db6f4f2",
+        "batch": 20000,
+        "candidate_dump_sha256": "4c0b164a75e448536403397ef5c8ead4095f20af00788d47cb547d584db6f4f2",
+        "dump_bytes": 481481,
+        "events_baseline": 1293170,
+        "events_candidate": 1293170,
+        "identical": true,
+        "model": "models/isomerization.bngl",
+        "n_steps": 10,
+        "name": "isomerization_20000",
+        "seed": 42,
+        "t_end": 10,
+        "threads": 15
+      },
+      {
+        "baseline_dump_sha256": "4d1046f1d8a23a4786369c787557385ebd9c48de34d91078c865932201eee1a1",
+        "batch": 20000,
+        "candidate_dump_sha256": "4d1046f1d8a23a4786369c787557385ebd9c48de34d91078c865932201eee1a1",
+        "dump_bytes": 401211,
+        "events_baseline": 184,
+        "events_candidate": 184,
+        "identical": true,
+        "model": "models/gene_expr_simple.bngl",
+        "n_steps": 10,
+        "name": "gene_expr_simple_20000",
+        "seed": 42,
+        "t_end": 10,
+        "threads": 15
+      },
+      {
+        "baseline_dump_sha256": "362b0fd039d1095f09472ecdc386734be08c80f96833bee26804b77967a99f38",
+        "batch": 5000,
+        "candidate_dump_sha256": "362b0fd039d1095f09472ecdc386734be08c80f96833bee26804b77967a99f38",
+        "dump_bytes": 101211,
+        "events_baseline": 36,
+        "events_candidate": 36,
+        "identical": true,
+        "model": "models/gene_expr_simple.bngl",
+        "n_steps": 10,
+        "name": "gene_expr_simple_5000",
+        "seed": 42,
+        "t_end": 10,
+        "threads": 8
+      },
+      {
+        "baseline_dump_sha256": "df98ac30946b459c4867883868aafbe3112b7b79dfec6c2e81ede2a6de8739ec",
+        "batch": 5000,
+        "candidate_dump_sha256": "df98ac30946b459c4867883868aafbe3112b7b79dfec6c2e81ede2a6de8739ec",
+        "dump_bytes": 703519,
+        "events_baseline": 9982,
+        "events_candidate": 9982,
+        "identical": true,
+        "model": "models/toy-jim.bngl",
+        "n_steps": 10,
+        "name": "toy_jim_5000",
+        "seed": 42,
+        "t_end": 10,
+        "threads": 15
+      },
+      {
+        "baseline_dump_sha256": "d7c7c35cccef05d2ba8d99727e044ecbf1285c03bf1f3076939c91c08ea8dfa7",
+        "batch": 500,
+        "candidate_dump_sha256": "d7c7c35cccef05d2ba8d99727e044ecbf1285c03bf1f3076939c91c08ea8dfa7",
+        "dump_bytes": 754492,
+        "events_baseline": 1282918039,
+        "events_candidate": 1282918039,
+        "identical": true,
+        "model": "models/egfr_net.bngl",
+        "n_steps": 10,
+        "name": "egfr_net_500",
+        "seed": 42,
+        "t_end": 10,
+        "threads": 15
+      },
+      {
+        "baseline_dump_sha256": "52ef0a113bbb1582f586323d1f5f2f699dae84141f16d77d4ba841b97e6117b6",
+        "batch": 400,
+        "candidate_dump_sha256": "52ef0a113bbb1582f586323d1f5f2f699dae84141f16d77d4ba841b97e6117b6",
+        "dump_bytes": 601926,
+        "events_baseline": 10261800,
+        "events_candidate": 10261800,
+        "identical": true,
+        "model": "models/performance_test_models/egfr_net.bngl",
+        "n_steps": 10,
+        "name": "performance_egfr_400",
+        "seed": 42,
+        "t_end": 10,
+        "threads": 15
+      },
+      {
+        "baseline_dump_sha256": "3b7dcfc05e2ea309acbd24603514ac6cf1f858e00a3bc131757fccb792641462",
+        "batch": 1000,
+        "candidate_dump_sha256": "3b7dcfc05e2ea309acbd24603514ac6cf1f858e00a3bc131757fccb792641462",
+        "dump_bytes": 25481,
+        "events_baseline": 64637,
+        "events_candidate": 64637,
+        "identical": true,
+        "model": "models/isomerization.bngl",
+        "n_steps": 10,
+        "name": "isomerization_1000_single",
+        "seed": 42,
+        "t_end": 10,
+        "threads": 1
+      }
+    ],
+    "status": "PASS_WITH_ONE_HISTORICAL_CONTROL_ABORTED"
+  },
+  "interpretation": {
+    "heavy_fixture": "egfr_net batch=60, threads=15: three exact-event pairs; median paired candidate process CPU is about 2.2% higher than baseline, so no CPU speedup observed. Candidate median peak RSS is 48.64% lower.",
+    "historical_batch_800_single_thread": "UNVERIFIED: baseline stopped by SIGTERM after 56 seconds before output; candidate not run; exercises unchanged simulateSingleWorker path.",
+    "small_controls": "Timing samples are short and noisy; controls verify equal event work and show fixture-specific behavior only."
+  },
+  "lane": "PR58 CPU batch-SSA integrator sharing",
+  "measurement": {
+    "arm_order": "A_then_B, B_then_A, A_then_B",
+    "benchlock_cotenant": "class=NONE",
+    "cases": {
+      "egfr_net batch=60": {
+        "baseline": {
+          "peak_rss_bytes": [
+            52903936,
+            55492608,
+            54263808
+          ],
+          "prep_ms": [
+            76.584,
+            77.735,
+            77.098
+          ],
+          "process_cpu_user_system_s": [
+            [
+              367.63,
+              0.75
+            ],
+            [
+              408.75,
+              0.92
+            ],
+            [
+              424.83,
+              0.83
+            ]
+          ],
+          "sim_ms": [
+            26138.692,
+            28639.101,
+            30206.782
+          ],
+          "total_ms": [
+            26215.282,
+            28716.85,
+            30283.886
+          ]
+        },
+        "candidate": {
+          "peak_rss_bytes": [
+            27967488,
+            27852800,
+            27869184
+          ],
+          "prep_ms": [
+            77.354,
+            81.06,
+            76.924
+          ],
+          "process_cpu_user_system_s": [
+            [
+              382.46,
+              0.75
+            ],
+            [
+              417.89,
+              0.64
+            ],
+            [
+              411.38,
+              0.66
+            ]
+          ],
+          "sim_ms": [
+            27536.051,
+            30073.58,
+            29163.693
+          ],
+          "total_ms": [
+            27613.411,
+            30154.647,
+            29240.624
+          ]
+        },
+        "candidate_rss_reduction_percent": 48.64,
+        "events_per_run": {
+          "all_samples_equal": true,
+          "baseline": 153968452,
+          "candidate": 153968452
+        },
+        "execution_order": [
+          "A_then_B",
+          "B_then_A",
+          "A_then_B"
+        ],
+        "median_paired_candidate_over_baseline_process_cpu": 1.0216271633265799,
+        "median_peak_rss_bytes": {
+          "baseline": 54263808,
+          "candidate": 27869184
+        },
+        "paired_candidate_over_baseline_process_cpu": [
+          1.0402573429610729,
+          1.0216271633265799,
+          0.9680026312080066
+        ],
+        "paired_candidate_over_baseline_sim_wall_time": [
+          1.0534594079918,
+          1.050088129512166,
+          0.9654683838880951
+        ],
+        "repetitions_per_arm": 3
+      },
+      "gene_expr_simple batch=20000": {
+        "baseline": {
+          "peak_rss_bytes": [
+            13467648,
+            13418496,
+            13320192
+          ],
+          "prep_ms": [
+            0.169,
+            0.163,
+            0.155
+          ],
+          "process_cpu_user_system_s": [
+            [
+              0.06,
+              0.0
+            ],
+            [
+              0.06,
+              0.0
+            ],
+            [
+              0.07,
+              0.0
+            ]
+          ],
+          "sim_ms": [
+            5.858,
+            5.251,
+            5.747
+          ],
+          "total_ms": [
+            6.047,
+            5.439,
+            5.925
+          ]
+        },
+        "candidate": {
+          "peak_rss_bytes": [
+            12599296,
+            12517376,
+            12075008
+          ],
+          "prep_ms": [
+            0.166,
+            0.154,
+            0.156
+          ],
+          "process_cpu_user_system_s": [
+            [
+              0.06,
+              0.0
+            ],
+            [
+              0.06,
+              0.0
+            ],
+            [
+              0.06,
+              0.0
+            ]
+          ],
+          "sim_ms": [
+            4.802,
+            5.092,
+            5.352
+          ],
+          "total_ms": [
+            4.988,
+            5.269,
+            5.531
+          ]
+        },
+        "candidate_rss_reduction_percent": 6.72,
+        "events_per_run": {
+          "all_samples_equal": true,
+          "baseline": 184,
+          "candidate": 184
+        },
+        "execution_order": [
+          "A_then_B",
+          "B_then_A",
+          "A_then_B"
+        ],
+        "median_paired_candidate_over_baseline_process_cpu": 1.0,
+        "median_peak_rss_bytes": {
+          "baseline": 13418496,
+          "candidate": 12517376
+        },
+        "paired_candidate_over_baseline_process_cpu": [
+          1.0,
+          1.0,
+          0.857142857142857
+        ],
+        "paired_candidate_over_baseline_sim_wall_time": [
+          0.8197336975076818,
+          0.9697200533231765,
+          0.931268487906734
+        ],
+        "repetitions_per_arm": 3
+      },
+      "isomerization batch=20000": {
+        "baseline": {
+          "peak_rss_bytes": [
+            12353536,
+            13008896,
+            12615680
+          ],
+          "prep_ms": [
+            0.169,
+            0.152,
+            0.152
+          ],
+          "process_cpu_user_system_s": [
+            [
+              0.14,
+              0.0
+            ],
+            [
+              0.11,
+              0.0
+            ],
+            [
+              0.11,
+              0.0
+            ]
+          ],
+          "sim_ms": [
+            13.346,
+            8.781,
+            8.431
+          ],
+          "total_ms": [
+            13.542,
+            8.958,
+            8.617
+          ]
+        },
+        "candidate": {
+          "peak_rss_bytes": [
+            12173312,
+            12025856,
+            12140544
+          ],
+          "prep_ms": [
+            0.137,
+            0.133,
+            0.136
+          ],
+          "process_cpu_user_system_s": [
+            [
+              0.18,
+              0.0
+            ],
+            [
+              0.12,
+              0.0
+            ],
+            [
+              0.11,
+              0.0
+            ]
+          ],
+          "sim_ms": [
+            17.143,
+            10.096,
+            9.44
+          ],
+          "total_ms": [
+            17.311,
+            10.253,
+            9.611
+          ]
+        },
+        "candidate_rss_reduction_percent": 3.77,
+        "events_per_run": {
+          "all_samples_equal": true,
+          "baseline": 1293170,
+          "candidate": 1293170
+        },
+        "execution_order": [
+          "A_then_B",
+          "B_then_A",
+          "A_then_B"
+        ],
+        "median_paired_candidate_over_baseline_process_cpu": 1.0909090909090908,
+        "median_peak_rss_bytes": {
+          "baseline": 12615680,
+          "candidate": 12140544
+        },
+        "paired_candidate_over_baseline_process_cpu": [
+          1.2857142857142856,
+          1.0909090909090908,
+          1.0
+        ],
+        "paired_candidate_over_baseline_sim_wall_time": [
+          1.2845047205155102,
+          1.1497551531716206,
+          1.1196773810935832
+        ],
+        "repetitions_per_arm": 3
+      }
+    },
+    "host_context": {
+      "end": {
+        "load_average_1_5_15": [
+          30.0,
+          18.6,
+          13.69
+        ],
+        "uptime": " 6:28  up 1 day, 23:48, 3 users, load averages: 30.00 18.60 13.69",
+        "utc": "Sat Oct  3 10:28:41 UTC 2026"
+      },
+      "start": {
+        "load_average_1_5_15": [
+          2.42,
+          8.42,
+          9.67
+        ],
+        "uptime": " 6:25  up 1 day, 23:46, 3 users, load averages: 2.42 8.42 9.67",
+        "utc": "Sat Oct  3 10:25:46 UTC 2026"
+      }
+    },
+    "log": "bench/evidence/pr58_batch_ssa_ab.log",
+    "matching_benchmark_processes_at_end": [],
+    "matching_benchmark_processes_at_start": [],
+    "runner_sha256": "956d5972ef9eb360ca6db7f2012e45129a913d668781e65c16c0b37750674974",
+    "scope": "All timing fixtures use fixed parameter rates. michment excluded pending parity-lane observable-dependent functional-rate correction.",
+    "shared_slot_capacity": 1,
+    "wall_interpretation": "Wall samples are exploratory because one-minute load average rose from 2.42 to 30.00 during the run, despite BENCHLOCK_COTENANT class=NONE. Do not claim wall-time speedup."
+  },
+  "model_sha256": {
+    "models/egfr_net.bngl": "e3f3547959d21da108415e6196fd66fe2746737e5c26e21895f532f0b94a386d",
+    "models/gene_expr_simple.bngl": "6fc64dc44c46189127f39704f847aeb8571b5b00b11ae655e373c7ef2bba5f4f",
+    "models/isomerization.bngl": "98da79720d49acc88894858020daf0117bfbb954d0a7f88cba49ca229bdbb40f"
+  },
+  "source_pair": {
+    "baseline_patch": "bench/evidence/pr58_exact_baseline.patch",
+    "baseline_patch_sha256": "1f645386b7b057fe72604391cef8b5163cac8e9df00f9f5f6156c566a1a4e2f4",
+    "baseline_sha256": "7bed76a969c7af40fa01db9eee36490bcc81a9325d81e9ab598d15e2b2aedea7",
+    "candidate_sha256": "d446c398032c61006fa309404f2b5ad5fb3859af4cbc4622fc8dc6b65958f525",
+    "file": "cpp/engine/BatchSsa.cpp",
+    "seed_semantics": "Pre-PR58 worker-integrator source with current batchTrajectorySeed derivation applied to both single- and multi-worker paths."
+  },
+  "source_revision": "c345f3aa635aac0048681b79c6a4ff1e75a298f7",
+  "status": "IDENTITY_PASS; TIMING_MEASURED_WITH_WALL_CONTEXT_LIMITATION"
+}

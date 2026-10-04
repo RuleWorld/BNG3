@@ -1,0 +1,1 @@
+Preserved as exploratory evidence, not canonical timing: BENCHLOCK_COTENANT class=NONE, but load averages rose from 3.14/3.95/6.55 at start to 44.11/21.41/13.27 at end; following snapshot remained elevated. End process list showed no BNG benchmark process, but system suggestd and on-device inference activity. Do not use these timing values for PR58 conclusions.

@@ -2196,9 +2196,7 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
                 // hash of (base, traj) rather than base + traj, and why it must
                 // match the GPU backends' derivation exactly.
                 const unsigned int base = (opts.seed == 0) ? 1u : opts.seed;
-                trajOpts.seed = static_cast<unsigned int>(
-                    batchTrajectorySeed(base, traj) & 0xFFFFFFFFULL);
-                trajOpts.seed = trajOpts.seed == 0u ? 1u : trajOpts.seed;
+                trajOpts.seed = batchTrajectoryEngineSeed(base, traj);
                 OdeResult r = localInt.integrate(trajOpts);
                 locEvents += r.eventCount;
                 for (std::size_t t = 0; t < std::min(T, r.timePoints.size()); ++t) {

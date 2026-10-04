@@ -1,0 +1,263 @@
+{
+  "benchmark": {
+    "command": "BENCHLOCK_DIR=/tmp/bng-bench-lock BENCHLOCK_MAX=1 tools/benchlock/benchlock acquire --agent perf --what \"PR44 exact-patch matched SSA A/B\" --worktree \"$PWD\" -- python3 verify/ab_bench.py --bin current_without_pr44=build/qualification/pr44_exact_baseline.bin --bin current_with_pr44=build/qualification/pr44_exact_candidate.bin --species 150 --events 2000000 --reps 5 --json bench/evidence/pr44_ssa_ab.json",
+    "identity_gate_pass": true,
+    "loadavg_end": [
+      3.7568359375,
+      5.84814453125,
+      6.8876953125
+    ],
+    "loadavg_start": [
+      3.72119140625,
+      5.91162109375,
+      6.92236328125
+    ],
+    "output_identity": "Raw .gdat and .net hashes matched across both binaries and all five repetitions.",
+    "script": "/private/tmp/bng3-20261002-performance/verify/ab_bench.py",
+    "script_repository_head": "71cf6c1a409710e438902d540c1a04bb5c9f5367",
+    "script_sha256": "ad2129d628911ba9afac3b7949d8aa6908955b71a53cf1df9283d37c9dca74f5",
+    "shared_slot": {
+      "actual_lock_output_observed_during_this_run": true,
+      "agent": "perf",
+      "capacity": 1,
+      "cotenant_class": "NONE",
+      "cotenant_output": "no benchmark-shaped processes besides the measured command; process-name/worktree matching is advisory"
+    }
+  },
+  "build": {
+    "build_type": "Release",
+    "cmake_options": {
+      "BUILD_CLI": "ON",
+      "BUILD_NFSIM_CLI": "OFF",
+      "BUILD_PYTHON_BINDINGS": "OFF",
+      "BUILD_TESTS": "OFF",
+      "NFSIM_ENABLE_LTO": "ON"
+    },
+    "cmake_version": "cmake version 4.4.3",
+    "command": "cmake --build build --target bng_cpp -j 2",
+    "compile_options": [
+      "-O3",
+      "-DNDEBUG",
+      "-std=gnu++17",
+      "-flto=thin",
+      "-arch arm64",
+      "-fPIE"
+    ],
+    "compiler": "/usr/bin/c++",
+    "compiler_version": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+    "generator": "Ninja",
+    "host": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "lto_contract": [
+      "NFSIM_ENABLE_LTO=ON",
+      "NFSIM_IPO_SUPPORTED=TRUE",
+      "nfsim_core_RELEASE_IPO=TRUE",
+      "bng_cpp_RELEASE_IPO=TRUE",
+      "_bionetgen_cpp_RELEASE_IPO=NOT_BUILT",
+      "NFsim_RELEASE_IPO=NOT_BUILT"
+    ],
+    "ninja_version": "1.13.2",
+    "target_triple": "arm64-apple-darwin27.0.0"
+  },
+  "historical_optimization": "Commit 3471714 adds dependency-indexed propensity refresh and prefix-sum reaction selection (binary search for non-negative rates) in OdeIntegrator::integrateSSA.",
+  "independent_correctness": {
+    "case_names": [
+      "isomerization",
+      "gene_expr_simple",
+      "edge_dimer",
+      "edge_zero_plateau",
+      "edge_reactant_is_product",
+      "edge_negative_rate",
+      "edge_chain_wide",
+      "edge_ring_long"
+    ],
+    "comparison_log": "/private/tmp/bng3-20261002-performance/build/qualification/pr44_exact_identity_compare.log",
+    "result": "8/8 cases exited 0; each emitted 3 artifacts; all .gdat/.cdat/.net SHA-256 files matched byte-for-byte.",
+    "script": "verify/identity_check.py",
+    "script_sha256": "fb6c557c884a67b243d4120fd4400546453b665c5ee23ad655fe67a4776a8643"
+  },
+  "measured_fixture": {
+    "description": "Synthetic ring: 150 X_i species, 450 reactions (birth, death, nearest-neighbor conversion), fixed seed 4242, 2,000,000 fired events per rep.",
+    "generation": "verify/ab_bench.py:model_text(species=150, events=2000000, seed=4242); the probe uses events=2.",
+    "model_path": "/private/tmp/bng3-20261002-performance/bench/evidence/pr44_ssa_model.bngl",
+    "model_sha256": "24c458b662264c8d3f73f3fa6c3d53d6baaf74a9e9d1df333d940a715dd6b622",
+    "parameters": {
+      "initial_count_per_species": 800,
+      "kb": 8,
+      "kc": 0.002,
+      "kd": 0.005,
+      "n_steps": 3,
+      "t_end": 1000000000,
+      "t_start": 0
+    },
+    "probe_path": "/private/tmp/bng3-20261002-performance/bench/evidence/pr44_ssa_probe.bngl",
+    "probe_sha256": "ac60091a8b2e8fff0add948ee6b879afdd9d326ca4be71fbaf7b7f8ddcda0f7e"
+  },
+  "qualification": "qualified for this measured synthetic fixture; not a general BNG3 speedup claim",
+  "results": {
+    "all_output_identity_pass": true,
+    "max_rss_bytes": {
+      "current_with_pr44": 20021248,
+      "current_without_pr44": 19955712
+    },
+    "median_corrected_throughput_ratio": 1.4852414242595886,
+    "median_raw_throughput_ratio": 1.45293570373966,
+    "median_wall_throughput_ratio": 1.4566341235472158,
+    "probe_corrected_cpu_events_per_s": {
+      "current_with_pr44": {
+        "cv_pct": 0.12804253369165597,
+        "max": 3108056.2371695554,
+        "mean": 3103691.496815761,
+        "median": 3103638.2399267545,
+        "min": 3096660.715916991,
+        "n": 5,
+        "samples": [
+          3096660.715916991,
+          3103209.6497407267,
+          3108056.2371695554,
+          3103638.2399267545,
+          3106892.641324779
+        ],
+        "stdev": 3974.045230495383
+      },
+      "current_without_pr44": {
+        "cv_pct": 0.8376459456450283,
+        "max": 2109430.949359946,
+        "mean": 2085156.0160073317,
+        "median": 2089652.3549859626,
+        "min": 2055487.8957456541,
+        "n": 5,
+        "samples": [
+          2109430.949359946,
+          2081405.8647773052,
+          2089803.0151677902,
+          2089652.3549859626,
+          2055487.8957456541
+        ],
+        "stdev": 17466.22482845881
+      }
+    },
+    "raw_cpu_events_per_s": {
+      "current_with_pr44": {
+        "cv_pct": 0.11395688215231016,
+        "max": 2893150.177639421,
+        "mean": 2888511.6790501988,
+        "median": 2889329.993267861,
+        "min": 2883211.205312028,
+        "n": 5,
+        "samples": [
+          2883211.205312028,
+          2889329.993267861,
+          2893150.177639421,
+          2887040.2208008366,
+          2889826.798230848
+        ],
+        "stdev": 3291.6578500509504
+      },
+      "current_without_pr44": {
+        "cv_pct": 0.7786074876050403,
+        "max": 2004572.4297121735,
+        "mean": 1984332.1188100744,
+        "median": 1988615.1781053469,
+        "min": 1957253.581774055,
+        "n": 5,
+        "samples": [
+          2004572.4297121735,
+          1981801.1203121734,
+          1988615.1781053469,
+          1989418.284146624,
+          1957253.581774055
+        ],
+        "stdev": 15450.158456006984
+      }
+    },
+    "reps": 5,
+    "rss_per_rep": {
+      "current_with_pr44": {
+        "cv_pct": 0.24016973958837287,
+        "max": 20021248,
+        "mean": 19958988.8,
+        "median": 19972096,
+        "min": 19873792,
+        "n": 5,
+        "samples": [
+          20021248,
+          19873792,
+          19972096,
+          19972096,
+          19955712
+        ],
+        "stdev": 47935.45142543251
+      },
+      "current_without_pr44": {
+        "cv_pct": 0.35575202941534123,
+        "max": 19955712,
+        "mean": 19883622.4,
+        "median": 19922944,
+        "min": 19775488,
+        "n": 5,
+        "samples": [
+          19824640,
+          19955712,
+          19939328,
+          19775488,
+          19922944
+        ],
+        "stdev": 70736.39020928337
+      }
+    },
+    "wall_events_per_s": {
+      "current_with_pr44": {
+        "cv_pct": 0.4417307766074047,
+        "max": 2857644.9861643747,
+        "mean": 2844674.231786325,
+        "median": 2851742.032490113,
+        "min": 2824262.059874148,
+        "n": 5,
+        "samples": [
+          2853652.3999761604,
+          2851742.032490113,
+          2857644.9861643747,
+          2824262.059874148,
+          2836069.6804268295
+        ],
+        "stdev": 12565.801576020458
+      },
+      "current_without_pr44": {
+        "cv_pct": 0.4870733406241018,
+        "max": 1974910.328409563,
+        "mean": 1961659.414955077,
+        "median": 1957761.3804251067,
+        "min": 1950044.4914899124,
+        "n": 5,
+        "samples": [
+          1974910.328409563,
+          1954783.6549386187,
+          1957761.3804251067,
+          1970797.2195121844,
+          1950044.4914899124
+        ],
+        "stdev": 9554.720044088905
+      }
+    }
+  },
+  "scope": "PR44 historical seeded SSA reaction-selection optimization only",
+  "source_provenance": {
+    "analysis_checkout_head": "71cf6c1a409710e438902d540c1a04bb5c9f5367",
+    "baseline_binary": "/private/tmp/bng3-20261002-performance/build/qualification/pr44_exact_baseline.bin",
+    "baseline_binary_sha256": "fd180c0e625678f8aada57af640807df81aa58518a7543e527f9d5d5ee560f44",
+    "baseline_file": "/private/tmp/bng3-20261002-performance/build/qualification/pr44_exact_pre/cpp/engine/OdeIntegrator.cpp",
+    "baseline_file_sha256": "e30d7bb22f365e66e74fd2caef8157912aee255e37364e34102c39119a288291",
+    "baseline_method": "Start from the same current checkout and reverse-apply only the exact diff of commit 3471714 to cpp/engine/OdeIntegrator.cpp. The patch applied cleanly; later PR39/43/55/64 changes in this file remain present.",
+    "candidate_binary": "/private/tmp/bng3-20261002-performance/build/qualification/pr44_exact_candidate.bin",
+    "candidate_binary_sha256": "7d6c31e805f4d92fd226cae2cd9c68f1a92f4407f25d48cf82c0fdcc472b5dc8",
+    "candidate_file": "cpp/engine/OdeIntegrator.cpp",
+    "candidate_file_sha256": "6e27d7e999e58d0e2db2e0e1d83c3074cc96e03bec1cb12af03992a2faffad52",
+    "historical_parent_file_sha256": "4d571586cb863d96d646261f6f10ff65958c2afbad56e26f5e02e1b852e60054",
+    "historical_whole_parent_comparison": "Preserved separately as pr44_ssa_ab_parent_rollback_exploratory.json; excluded from qualification because it removed later changes in OdeIntegrator.cpp.",
+    "production_checkout_sha": "c345f3aa635aac0048681b79c6a4ff1e75a298f7",
+    "selected_patch_path": "/private/tmp/bng3-20261002-performance/bench/evidence/pr44_exact_baseline.patch",
+    "selected_patch_sha256": "1232024534833eac2223fba825c9dd9fcfaa7be6509c356e8b71dc461784953d",
+    "selected_pr44_commit": "3471714032bd880b03d776b922a02d16c4317ebb",
+    "selected_pr44_parent": "38efbb62c2e1396f61433303cee93f762beac7db"
+  }
+}

@@ -1,0 +1,444 @@
+#!/usr/bin/env python3
+"""Host-level benchmark exclusion for the BNG3 agent swarm.
+
+Enforces: at most MAX_HOLDERS timing-sensitive benchmarks run concurrently
+across the whole host, regardless of which agent or worktree each belongs to.
+
+Why this exists
+---------------
+memWatch measured the contention that actually bound this host: 1-minute
+loadavg band 70-131, runnable count 46-74, with 2 concurrent -j4 builds plus
+4-5 timing-sensitive benchmark binaries live at once. Builds were never the
+problem -- every build measured between 381 and 471 MiB peak RSS, an order of
+magnitude under the 4 GiB cap. Serializing BENCHMARKS is the lever.
+
+Why flock and not mkdir
+-----------------------
+A mkdir lock goes stale when the holder dies, and on a 30-agent host agents
+die, get culled, and get replaced constantly. fcntl.flock is released by the
+kernel when the fd closes or the process dies, for any reason. A crashed or
+culled holder cannot wedge the protocol.
+
+Usage
+-----
+    benchlock acquire --agent NAME --what DESC [--worktree PATH] [--timeout S]
+    benchlock status
+    benchlock holders
+
+`acquire` prints a one-line token on success and holds the slot until the
+wrapped command exits. It is meant to wrap the measurement:
+
+    benchlock acquire --agent swarmSerial --what "out_write 40k rows" \\
+        -- python3 bench/run_bench.py --reps 5
+
+An `acquire` call without a command only waits for a slot and then exits; it
+does not create a hold that another CLI invocation can release. A separate CLI
+process cannot unlock another process's flock.
+
+The wrapped command inherits the flock descriptor. If this wrapper dies while
+that command is still running, the kernel keeps the slot held until the command
+exits.
+
+Exit codes
+----------
+    0  acquired / command succeeded
+    2  timed out waiting (slots never freed within --timeout)
+    3  usage error
+"""
+
+
+import argparse
+import errno
+import fcntl
+import json
+import os
+import re
+import signal
+import socket
+import subprocess
+import sys
+import time
+
+_BASELINE = {}
+
+MAX_HOLDERS = int(os.environ.get("BENCHLOCK_MAX", "2"))
+LOCKDIR = os.environ.get("BENCHLOCK_DIR", "/tmp/bng-bench-lock")
+POLL_SECONDS = float(os.environ.get("BENCHLOCK_POLL", "2.0"))
+STALE_SECONDS = int(os.environ.get("BENCHLOCK_STALE", "900"))
+# ---------------------------------------------------------------------------
+# Co-tenant ADVISORY.
+#
+# Deliberately advisory, not enforcement. The lock stops more than MAX_HOLDERS
+# timing-sensitive benchmarks running at once; it cannot know whether an
+# arbitrary process is timing-sensitive and must not guess. Putting correctness
+# runs behind the lock would serialise the whole swarm to protect measurements
+# that no amount of load can perturb.
+#
+# What it CAN do is list processes a holder should LOOK at before broadcasting,
+# so an undeclared co-tenant becomes a declared one.
+
+BENCH_TOKEN = re.compile(
+    r"(bng_cpp|_bionetgen_cpp|mem_bench|mvec_bench|vb_base|vb_cand|"
+    r"bench_|harness|determinism|identity_check|verify/|\.bench|"
+    r"/tmp/(?:oracle|cachebench|compilerbench|membench|swm|bench))", re.I)
+WORKTREE_RE = re.compile(r"(?:^|/)bng3-[A-Za-z0-9_.-]+(?:/|$)", re.I)
+
+
+def snapshot():
+    try:
+        result = subprocess.run(["ps", "-axo", "pid=,command="],
+                                 capture_output=True, text=True)
+    except OSError as e:
+        raise RuntimeError(f"could not read process table with ps: {e}") from e
+    if result.returncode != 0:
+        detail = result.stderr.strip() or "no diagnostic"
+        raise RuntimeError(f"ps exited {result.returncode}: {detail}")
+    procs = {}
+    for line in result.stdout.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            procs[int(parts[0])] = parts[1].strip()
+    if os.getpid() not in procs:
+        raise RuntimeError("ps snapshot omitted the benchlock process; "
+                           "process-table access may be restricted")
+    return procs
+
+
+def is_candidate(cmd):
+    return bool(BENCH_TOKEN.search(cmd) or WORKTREE_RE.search(cmd))
+
+
+def cotenant_advisory(baseline, agent):
+    """Processes worth reviewing before this holder broadcasts.
+
+    Two classes, both necessary:
+      NEW     - started during the hold (the obvious case)
+      PERSIST - present at acquire AND still alive at release, matching the
+                candidate pattern. A start-time diff alone misses this class,
+                and it is exactly perfOracle's identity sweep: it started two
+                minutes BEFORE the A/B took its slot and ran throughout all 9
+                reps, undeclared because it was classified as correctness work.
+    Anything matching the holder's own benchlock command is excluded: it is the
+    measurement, not a co-tenant.
+    """
+    if _BASELINE_ERROR:
+        return (f"BENCHLOCK_COTENANT class=ERROR holder={agent} "
+                f"baseline unavailable: {_BASELINE_ERROR}")
+    try:
+        final = snapshot()
+    except RuntimeError as e:
+        return f"BENCHLOCK_COTENANT class=ERROR holder={agent} {e}"
+    new, persist = [], []
+    for pid, cmd in sorted(final.items()):
+        if "benchlock" in cmd:
+            continue
+        if not is_candidate(cmd):
+            continue
+        (persist if pid in baseline else new).append((pid, cmd))
+
+    out = []
+    if new:
+        out.append(f"BENCHLOCK_COTENANT class=NEW count={len(new)} holder={agent}")
+        out += [f"  + {p}  {c[:140]}" for p, c in new]
+    if persist:
+        out.append(f"BENCHLOCK_COTENANT class=PERSIST count={len(persist)} "
+                   f"holder={agent}")
+        out.append("  (alive across your whole window; may have started BEFORE "
+                   "your hold -- the class a start-time diff misses)")
+        out += [f"  ~ {p}  {c[:140]}" for p, c in persist]
+    if not out:
+        out.append(f"BENCHLOCK_COTENANT class=NONE holder={agent} -- no "
+                   f"benchmark-shaped processes besides your own. ADVISORY: "
+                   f"this matches on process name and worktree path, so a "
+                   f"co-tenant naming itself something else will not appear. "
+                   f"Declare what you ran.")
+    return "\n".join(out)
+
+
+
+def slot_path(i):
+    return os.path.join(LOCKDIR, f"slot.{i}.lock")
+
+
+def info_path(i):
+    return os.path.join(LOCKDIR, f"slot.{i}.json")
+
+
+def ensure_dir():
+    os.makedirs(LOCKDIR, exist_ok=True)
+
+
+def try_acquire(i):
+    """Non-blocking flock on slot i. Returns (fd, None) or (None, holder_dict)."""
+    fd = os.open(slot_path(i), os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fd, None
+    except OSError as e:
+        if e.errno not in (errno.EACCES, errno.EAGAIN):
+            os.close(fd)
+            raise
+        os.close(fd)
+        return None, read_info(i)
+
+
+def read_info(i):
+    """Holder metadata for slot i, or a synthetic record if it is unreadable."""
+    p = info_path(i)
+    try:
+        with open(p) as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return {"slot": i, "agent": "?", "what": "?", "pid": None,
+                "since": None, "note": "held but holder metadata unreadable"}
+    d["slot"] = i
+    return d
+
+
+def write_info(fd, i, agent, what, worktree):
+    rec = {
+        "agent": agent,
+        "what": what,
+        "worktree": worktree,
+        "pid": os.getpid(),
+        "host": socket.gethostname(),
+        "since": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "since_epoch": time.time(),
+    }
+    tmp = info_path(i) + f".tmp{os.getpid()}"
+    with open(tmp, "w") as f:
+        json.dump(rec, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, info_path(i))
+    # Keep the descriptor open for the lifetime of the hold; the flock lives on it.
+    os.write(fd, json.dumps(rec).encode() + b"\n")
+    return rec
+
+
+def probe_slot(i):
+    """True if slot i is currently free (without taking it for long)."""
+    fd = os.open(slot_path(i), os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return True
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def describe_now():
+    parts = []
+    for i in range(MAX_HOLDERS):
+        if probe_slot(i):
+            parts.append(f"slot.{i}: FREE")
+        else:
+            h = read_info(i)
+            age = ""
+            if h.get("since_epoch"):
+                age = f" for {int(time.time() - h['since_epoch'])}s"
+            parts.append(f"slot.{i}: HELD by {h.get('agent')} "
+                         f"(pid {h.get('pid')}){age} -- {h.get('what')}")
+    return parts
+
+
+def cmd_status(args):
+    ensure_dir()
+    free = sum(1 for i in range(MAX_HOLDERS) if probe_slot(i))
+    print(f"capacity {MAX_HOLDERS}  free {free}  in_use {MAX_HOLDERS - free}")
+    for line in describe_now():
+        print("  " + line)
+    return 0
+
+
+def cmd_holders(args):
+    ensure_dir()
+    any_held = False
+    for i in range(MAX_HOLDERS):
+        if not probe_slot(i):
+            any_held = True
+            h = read_info(i)
+            print(json.dumps(h, sort_keys=True))
+    if not any_held:
+        print("(no holders)")
+    return 0
+
+def emit(event, i, agent=""):
+    """Emit lock acquisition or direct-command completion, not slot release.
+
+    A descendant can retain the inherited open-file description after the
+    direct command exits, so only a kernel lock probe proves that a slot is
+    free.
+    """
+    print(f"BENCHLOCK_EVENT {event} slot={i} agent={agent} pid={os.getpid()} "
+          f"epoch={time.time():.6f}", flush=True)
+
+
+
+
+def cmd_acquire(args):
+    global _BASELINE_ERROR
+    ensure_dir()
+    deadline = time.time() + args.timeout if args.timeout else None
+    announced = False
+
+    while True:
+        for i in range(MAX_HOLDERS):
+            fd, holder = try_acquire(i)
+            if fd is not None:
+                rec = write_info(fd, i, args.agent, args.what, args.worktree)
+                # Keep fd in a global so it survives until process exit.
+                _HELD.append((fd, i))
+                print(f"benchlock: acquired slot.{i} for {args.agent} "
+                      f"({args.what})", flush=True)
+                emit("ACQUIRED", i, args.agent)
+                _BASELINE.clear()
+                _BASELINE_ERROR = ""
+                try:
+                    _BASELINE.update(snapshot())
+                except RuntimeError as e:
+                    _BASELINE_ERROR = str(e)
+                if args.exec:
+                    return run_child(fd, i, args)
+                return 0
+        if deadline and time.time() > deadline:
+            sys.stderr.write(
+                f"benchlock: TIMEOUT after {args.timeout}s waiting for a slot.\n")
+            for line in describe_now():
+                sys.stderr.write("  " + line + "\n")
+            sys.stderr.write(
+                "  All benchmarks are timing-sensitive. Wait for a release, or "
+                "run your measurement and label it contended.\n")
+            return 2
+        if not announced:
+            sys.stderr.write(
+                f"benchlock: all {MAX_HOLDERS} benchmark slots busy; waiting.\n")
+            for line in describe_now():
+                sys.stderr.write("  " + line + "\n")
+            announced = True
+        time.sleep(POLL_SECONDS)
+
+
+def run_child(fd, i, args):
+    """Hold the slot for the lifetime of the child, then release."""
+
+
+    cmd = args.exec
+    proc = None
+    pending_signals = []
+    previous_handlers = {}
+
+    def forward_signal(signum, _frame):
+        if proc is None:
+            pending_signals.append(signum)
+        elif proc.poll() is None:
+            try:
+                proc.send_signal(signum)
+            except ProcessLookupError:
+                pass
+
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_handlers[signum] = signal.signal(signum, forward_signal)
+        # The child must retain the flock if this wrapper is killed. Otherwise
+        # the slot becomes reusable while the measured command is still live.
+        proc = subprocess.Popen(cmd, pass_fds=(fd,))
+        for signum in pending_signals:
+            try:
+                proc.send_signal(signum)
+            except ProcessLookupError:
+                pass
+        pending_signals.clear()
+    except FileNotFoundError:
+        release(_HELD[-1])
+        sys.stderr.write(f"benchlock: command not found: {cmd[0]}\n")
+        return 127
+    finally:
+        # If spawn failed, restore any handlers installed above.
+        if proc is None:
+            for signum, handler in previous_handlers.items():
+                signal.signal(signum, handler)
+    try:
+        rc = proc.wait()
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+    try:
+        print(cotenant_advisory(_BASELINE, getattr(args, "agent", "?")),
+              flush=True)
+    except Exception as e:  # an advisory must never break a measurement
+        print(f"BENCHLOCK_COTENANT class=ERROR holder={args.agent} {e!r}",
+              flush=True)
+    emit("COMMAND_EXITED", i, getattr(args, "agent", ""))
+    release(_HELD[-1])
+    return rc
+
+
+def release(entry):
+    fd, _slot = entry
+    # Keep metadata until the next acquirer atomically replaces it. A
+    # descendant may still hold an inherited descriptor after the direct
+    # child exits; status probes the kernel lock before trusting metadata.
+    # Close only this process's descriptor. LOCK_UN affects the shared
+    # open-file description and would unlock even while an inherited child
+    # descriptor still holds it.
+    os.close(fd)
+    try:
+        _HELD.remove(entry)
+    except ValueError:
+        pass
+
+
+_HELD = []
+_BASELINE_ERROR = ""
+
+
+def main():
+    p = argparse.ArgumentParser(prog="benchlock", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    s = sub.add_parser("acquire", help="take a benchmark slot (blocking)")
+    s.add_argument("--agent", required=True)
+    s.add_argument("--what", required=True, help="what is being measured")
+    s.add_argument("--worktree", default="", help="owning worktree, for the ledger")
+    s.add_argument("--timeout", type=float, default=1800.0,
+                   help="give up after N seconds (default 1800)")
+    s.add_argument("exec", nargs=argparse.REMAINDER,
+                   help="command to run while holding the slot")
+    s.set_defaults(func=cmd_acquire)
+
+    s = sub.add_parser("status", help="show capacity and slot state")
+    s.set_defaults(func=cmd_status)
+
+    s = sub.add_parser("holders", help="print holder metadata as JSON lines")
+    s.set_defaults(func=cmd_holders)
+
+    args = p.parse_args()
+    if getattr(args, "exec", None):
+        args.exec = [a for a in args.exec if a != "--"]
+    try:
+        return args.func(args)
+    finally:
+        # Belt and braces: the kernel releases on exit regardless.
+        while _HELD:
+            release(_HELD[-1])
+
+
+if __name__ == "__main__":
+    # Agents run `benchlock status | head -1` constantly, so a BrokenPipeError
+    # traceback is noise. Catch the exception -- do NOT set SIGPIPE to SIG_DFL.
+    # I tried that first and it was WORSE: it turns a benign closed pipe into
+    # process death mid-run, which broke 8 of 21 tests under host load. Catching
+    # only affects the final write, after the slot has already been released.
+    try:
+        rc = main()
+    except BrokenPipeError:
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except OSError:
+            pass
+        rc = 0
+    sys.exit(rc)
