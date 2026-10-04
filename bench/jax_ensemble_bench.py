@@ -139,7 +139,10 @@ def _jax_post_time(scan, times: tuple[float, ...]):
     # point: the numpy numbers above already include their own extraction).
     time0 = np.asarray(scan.results[0].time, dtype=float)
     stacked = jnp.stack(
-        [jnp.asarray(np.asarray(r.observables[names[0]], dtype=float)) for r in scan.results]
+        [
+            jnp.asarray(np.asarray(r.observables[names[0]], dtype=float))
+            for r in scan.results
+        ]
     )
     t_end = time0[-1]
 
@@ -259,10 +262,7 @@ def main(argv: list[str] | None = None) -> int:
         sparse=False,
         check_product_scale=0.0,
     )
-    at_times = tuple(
-        float(v)
-        for v in np.linspace(0.0, args.t_end, 5)[1:-1]
-    )
+    at_times = tuple(float(v) for v in np.linspace(0.0, args.t_end, 5)[1:-1])
 
     def block_scan():
         return bionetgen.parameter_scan(model, **scan_kwargs)
@@ -392,8 +392,7 @@ def main(argv: list[str] | None = None) -> int:
             np_finals, np_at = ref
             j_finals, j_at = vals
             max_abs = max(
-                float(np.max(np.abs(a - b)))
-                for a, b in zip(np_finals, j_finals)
+                float(np.max(np.abs(a - b))) for a, b in zip(np_finals, j_finals)
             )
             denom = max(float(np.max(np.abs(a))) for a in np_finals)
             max_rel = max_abs / denom if denom else max_abs
@@ -410,9 +409,11 @@ def main(argv: list[str] | None = None) -> int:
             shares["max_speedup_with_measured_jax_ratio"] = realistic
             shares["reaches_2x_with_measured_ratio"] = realistic >= 2.0
 
-    verdict = "WIN-candidate" if shares.get(
-        "reaches_2x_with_measured_jax_ratio", shares["reaches_2x"]
-    ) else "NO-WIN"
+    verdict = (
+        "WIN-candidate"
+        if shares.get("reaches_2x_with_measured_jax_ratio", shares["reaches_2x"])
+        else "NO-WIN"
+    )
 
     report = {
         "meta": {
@@ -453,8 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     ):
         print(f"  {key:26s} {shares[key] * 100:6.2f}%")
     print(
-        f"max speedup if JAX array math free: "
-        f"{shares['max_speedup_if_jax_free']:.3f}x"
+        f"max speedup if JAX array math free: {shares['max_speedup_if_jax_free']:.3f}x"
     )
     if jax_block:
         print(

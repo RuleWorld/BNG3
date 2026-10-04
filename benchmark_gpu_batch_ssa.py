@@ -17,12 +17,13 @@ Metrics:
 - Memory usage
 - Relative speedups (GPU / CPU 1W, GPU / CPU MC)
 """
+
 import sys
 import json
 import platform
 
-sys.path.insert(0, 'build/cpp')
-sys.path.insert(0, 'python')
+sys.path.insert(0, "build/cpp")
+sys.path.insert(0, "python")
 try:
     import _bionetgen_cpp as cpp
 except ImportError:  # installed as part of the bionetgen package
@@ -35,7 +36,7 @@ BENCHMARK_MODELS = [
         "path": "models/isomerization.bngl",
         "t_end": 20.0,
         "n_steps": 10,
-        "desc": "2 species, 2 reactions (analytical reversible equilibrium)"
+        "desc": "2 species, 2 reactions (analytical reversible equilibrium)",
     },
     {
         "id": "gene_expr_simple",
@@ -43,7 +44,7 @@ BENCHMARK_MODELS = [
         "path": "models/gene_expr_simple.bngl",
         "t_end": 500.0,
         "n_steps": 10,
-        "desc": "2 species, 4 reactions (stochastic birth-death dynamics)"
+        "desc": "2 species, 4 reactions (stochastic birth-death dynamics)",
     },
     {
         "id": "toy_jim",
@@ -51,7 +52,7 @@ BENCHMARK_MODELS = [
         "path": "models/toy-jim.bngl",
         "t_end": 50.0,
         "n_steps": 10,
-        "desc": "25 species, 101 reactions (receptor recruitment & phosphorylation)"
+        "desc": "25 species, 101 reactions (receptor recruitment & phosphorylation)",
     },
     {
         "id": "egfr_net",
@@ -59,11 +60,12 @@ BENCHMARK_MODELS = [
         "path": "models/performance_test_models/egfr_net.bngl",
         "t_end": 0.02,
         "n_steps": 10,
-        "desc": "356 species, 3749 reactions (large-scale combinatorial network)"
-    }
+        "desc": "356 species, 3749 reactions (large-scale combinatorial network)",
+    },
 ]
 
 BATCH_SIZES = [100, 1000, 10000]
+
 
 def run_benchmark():
     print("=" * 88)
@@ -106,7 +108,7 @@ def run_benchmark():
             "num_reactions": num_rxns,
             "t_end": t_end,
             "n_steps": n_steps,
-            "runs": []
+            "runs": [],
         }
 
         for B in BATCH_SIZES:
@@ -115,44 +117,57 @@ def run_benchmark():
             # 1. CPU Single Worker
             print("  Running CPU (1 worker)...", end="", flush=True)
             cpu_sw = cpp.simulate_batch_ssa_cpu(
-                model, net,
+                model,
+                net,
                 batch_size=B,
                 t_end=t_end,
                 n_steps=n_steps,
                 threads=1,
-                base_seed=100
+                base_seed=100,
             )
-            print(f" done ({cpu_sw['sim_time_ms']:.2f} ms sim, {cpu_sw['total_wall_time_ms']:.2f} ms wall)")
+            print(
+                f" done ({cpu_sw['sim_time_ms']:.2f} ms sim, {cpu_sw['total_wall_time_ms']:.2f} ms wall)"
+            )
 
             # 2. CPU Multi-core
             print("  Running CPU (multi-core)...", end="", flush=True)
             cpu_mc = cpp.simulate_batch_ssa_cpu(
-                model, net,
+                model,
+                net,
                 batch_size=B,
                 t_end=t_end,
                 n_steps=n_steps,
                 threads=0,
-                base_seed=200
+                base_seed=200,
             )
-            print(f" done ({cpu_mc['sim_time_ms']:.2f} ms sim, {cpu_mc['total_wall_time_ms']:.2f} ms wall)")
+            print(
+                f" done ({cpu_mc['sim_time_ms']:.2f} ms sim, {cpu_mc['total_wall_time_ms']:.2f} ms wall)"
+            )
 
             # 3. GPU backend
             print(f"  Running {active} GPU backend...", end="", flush=True)
             gpu = cpp.simulate_batch_ssa_gpu(
-                model, net,
+                model,
+                net,
                 batch_size=B,
                 t_end=t_end,
                 n_steps=n_steps,
                 base_seed=300,
-                backend=active
+                backend=active,
             )
-            print(f" done ({gpu['sim_time_ms']:.2f} ms sim, {gpu['total_wall_time_ms']:.2f} ms wall)")
+            print(
+                f" done ({gpu['sim_time_ms']:.2f} ms sim, {gpu['total_wall_time_ms']:.2f} ms wall)"
+            )
 
             # Compute speedups
-            speedup_sw_sim = cpu_sw['sim_time_ms'] / max(1e-6, gpu['sim_time_ms'])
-            speedup_mc_sim = cpu_mc['sim_time_ms'] / max(1e-6, gpu['sim_time_ms'])
-            speedup_sw_tot = cpu_sw['total_wall_time_ms'] / max(1e-6, gpu['total_wall_time_ms'])
-            speedup_mc_tot = cpu_mc['total_wall_time_ms'] / max(1e-6, gpu['total_wall_time_ms'])
+            speedup_sw_sim = cpu_sw["sim_time_ms"] / max(1e-6, gpu["sim_time_ms"])
+            speedup_mc_sim = cpu_mc["sim_time_ms"] / max(1e-6, gpu["sim_time_ms"])
+            speedup_sw_tot = cpu_sw["total_wall_time_ms"] / max(
+                1e-6, gpu["total_wall_time_ms"]
+            )
+            speedup_mc_tot = cpu_mc["total_wall_time_ms"] / max(
+                1e-6, gpu["total_wall_time_ms"]
+            )
 
             run_entry = {
                 "batch_size": B,
@@ -165,7 +180,7 @@ def run_benchmark():
                     "traj_per_sec_tot": cpu_sw["trajectories_per_sec_total"],
                     "events_per_sec_sim": cpu_sw["events_per_sec_sim"],
                     "events_per_sec_tot": cpu_sw["events_per_sec_total"],
-                    "memory_bytes": cpu_sw["memory_usage_bytes"]
+                    "memory_bytes": cpu_sw["memory_usage_bytes"],
                 },
                 "cpu_mc": {
                     "model_prep_ms": cpu_mc["model_prep_time_ms"],
@@ -176,7 +191,7 @@ def run_benchmark():
                     "traj_per_sec_tot": cpu_mc["trajectories_per_sec_total"],
                     "events_per_sec_sim": cpu_mc["events_per_sec_sim"],
                     "events_per_sec_tot": cpu_mc["events_per_sec_total"],
-                    "memory_bytes": cpu_mc["memory_usage_bytes"]
+                    "memory_bytes": cpu_mc["memory_usage_bytes"],
                 },
                 "gpu": {
                     "model_prep_ms": gpu["model_prep_time_ms"],
@@ -189,22 +204,36 @@ def run_benchmark():
                     "traj_per_sec_tot": gpu["trajectories_per_sec_total"],
                     "events_per_sec_sim": gpu["events_per_sec_sim"],
                     "events_per_sec_tot": gpu["events_per_sec_total"],
-                    "memory_bytes": gpu["memory_usage_bytes"]
+                    "memory_bytes": gpu["memory_usage_bytes"],
                 },
                 "speedup_vs_cpu_sw_sim": speedup_sw_sim,
                 "speedup_vs_cpu_mc_sim": speedup_mc_sim,
                 "speedup_vs_cpu_sw_tot": speedup_sw_tot,
-                "speedup_vs_cpu_mc_tot": speedup_mc_tot
+                "speedup_vs_cpu_mc_tot": speedup_mc_tot,
             }
             model_results["runs"].append(run_entry)
 
-            print(f"    Sim Time   : CPU-1W={cpu_sw['sim_time_ms']:8.2f} ms | CPU-MC={cpu_mc['sim_time_ms']:8.2f} ms | GPU={gpu['sim_time_ms']:8.2f} ms")
-            print(f"    Wall Time  : CPU-1W={cpu_sw['total_wall_time_ms']:8.2f} ms | CPU-MC={cpu_mc['total_wall_time_ms']:8.2f} ms | GPU={gpu['total_wall_time_ms']:8.2f} ms (Prep={gpu['model_prep_time_ms']:.1f}ms, H2D={gpu['h2d_transfer_ms']:.2f}ms, D2H={gpu['d2h_transfer_ms']:.2f}ms)")
-            print(f"    Traj/sec   : CPU-1W={cpu_sw['trajectories_per_sec_sim']:10.1f} | CPU-MC={cpu_mc['trajectories_per_sec_sim']:10.1f} | GPU={gpu['trajectories_per_sec_sim']:10.1f}")
-            print(f"    Events/sec : CPU-1W={cpu_sw['events_per_sec_sim']:10.1e} | CPU-MC={cpu_mc['events_per_sec_sim']:10.1e} | GPU={gpu['events_per_sec_sim']:10.1e}")
-            print(f"    Speedup Sim: GPU vs CPU-1W = {speedup_sw_sim:6.2f}x | GPU vs CPU-MC = {speedup_mc_sim:6.2f}x")
-            print(f"    Speedup Tot: GPU vs CPU-1W = {speedup_sw_tot:6.2f}x | GPU vs CPU-MC = {speedup_mc_tot:6.2f}x")
-            print(f"    GPU Memory : {gpu['memory_usage_bytes'] / (1024*1024):.2f} MB")
+            print(
+                f"    Sim Time   : CPU-1W={cpu_sw['sim_time_ms']:8.2f} ms | CPU-MC={cpu_mc['sim_time_ms']:8.2f} ms | GPU={gpu['sim_time_ms']:8.2f} ms"
+            )
+            print(
+                f"    Wall Time  : CPU-1W={cpu_sw['total_wall_time_ms']:8.2f} ms | CPU-MC={cpu_mc['total_wall_time_ms']:8.2f} ms | GPU={gpu['total_wall_time_ms']:8.2f} ms (Prep={gpu['model_prep_time_ms']:.1f}ms, H2D={gpu['h2d_transfer_ms']:.2f}ms, D2H={gpu['d2h_transfer_ms']:.2f}ms)"
+            )
+            print(
+                f"    Traj/sec   : CPU-1W={cpu_sw['trajectories_per_sec_sim']:10.1f} | CPU-MC={cpu_mc['trajectories_per_sec_sim']:10.1f} | GPU={gpu['trajectories_per_sec_sim']:10.1f}"
+            )
+            print(
+                f"    Events/sec : CPU-1W={cpu_sw['events_per_sec_sim']:10.1e} | CPU-MC={cpu_mc['events_per_sec_sim']:10.1e} | GPU={gpu['events_per_sec_sim']:10.1e}"
+            )
+            print(
+                f"    Speedup Sim: GPU vs CPU-1W = {speedup_sw_sim:6.2f}x | GPU vs CPU-MC = {speedup_mc_sim:6.2f}x"
+            )
+            print(
+                f"    Speedup Tot: GPU vs CPU-1W = {speedup_sw_tot:6.2f}x | GPU vs CPU-MC = {speedup_mc_tot:6.2f}x"
+            )
+            print(
+                f"    GPU Memory : {gpu['memory_usage_bytes'] / (1024 * 1024):.2f} MB"
+            )
 
         results.append(model_results)
 
@@ -215,6 +244,7 @@ def run_benchmark():
     print(f"\nAll benchmark results saved to {out_json}")
 
     return results
+
 
 if __name__ == "__main__":
     results = run_benchmark()
