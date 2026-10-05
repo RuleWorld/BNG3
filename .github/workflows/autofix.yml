@@ -29,6 +29,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install formatters
+        # Pinned in lockstep with ci.yml: the patch artifact must match the gate.
         run: pip install "black==26.10.0" "ruff==0.15.1"
 
       - name: Apply Black locally
