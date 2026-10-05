@@ -259,6 +259,7 @@ class Function:
         self.adjusted_def = None
         self.volume_adjusted = False
         self._simplify_cache = {}
+
     def replaceLoc(self, func_def, pdict):
         if self.compartmentList is not None:
             if len(self.compartmentList) > 0:
@@ -578,7 +579,9 @@ class Function:
                 fdef = self._simplify_cache[fdef]
             else:
                 sdef = sympy.sympify(fdef, locals=self.all_syms)
-                simplified = prnter.doprint(sdef.nsimplify().evalf().simplify()).replace("**", "^")
+                simplified = prnter.doprint(
+                    sdef.nsimplify().evalf().simplify()
+                ).replace("**", "^")
                 self._simplify_cache[fdef] = simplified
                 fdef = simplified
         except:
