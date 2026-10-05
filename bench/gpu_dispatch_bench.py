@@ -21,20 +21,29 @@ MODELS = [
 
 BATCH_SIZES = [100, 1000, 10000]
 
+
 def run_child(code: str, what: str) -> dict:
     proc = subprocess.run(
-        [sys.executable, "-c", f"""
+        [
+            sys.executable,
+            "-c",
+            f"""
 import sys
 sys.path.insert(0, '{ROOT}/build/cpp')
 sys.path.insert(0, '{ROOT}/python')
 sys.meta_path[:] = [f for f in sys.meta_path if not type(f).__module__.startswith('_editable')]
 {code}
-        """, str(ROOT)],
-        capture_output=True, text=True, timeout=300,
+        """,
+            str(ROOT),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     if proc.returncode != 0:
         raise SystemExit(f"{what}: child exited {proc.returncode}\n{proc.stderr}")
     return json.loads(proc.stdout)
+
 
 def measure_gpu_cpu(model_path, t_end, batch, base_seed=12345):
     code = f"""
@@ -68,15 +77,17 @@ print(json.dumps({{
 """
     return run_child(code, f"gpu_dispatch_{Path(model_path).stem}_{batch}")
 
+
 def main():
     results = []
     for name, path, t_end, n_reactions in MODELS:
         for batch in BATCH_SIZES:
             print(f"Measuring {name} batch={batch}...")
             results.append(measure_gpu_cpu(path, t_end, batch))
-    
+
     print(json.dumps(results, indent=2))
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

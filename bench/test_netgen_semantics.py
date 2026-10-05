@@ -9,16 +9,8 @@ from bench.check_netgen_semantics import normalize_bng2_source
 
 class NetgenSemanticTests(unittest.TestCase):
     def test_normalizes_only_reaction_rules_block_markers(self) -> None:
-        source = (
-            "begin reaction_rules\n"
-            "A(x!1) -> A(x) k\n"
-            "end reaction_rules\n"
-        )
-        expected = (
-            "begin reaction rules\n"
-            "A(x!1) -> A(x) k\n"
-            "end reaction rules\n"
-        )
+        source = "begin reaction_rules\nA(x!1) -> A(x) k\nend reaction_rules\n"
+        expected = "begin reaction rules\nA(x!1) -> A(x) k\nend reaction rules\n"
         self.assertEqual(normalize_bng2_source(source), expected)
 
     def test_leaves_standard_bngl_unchanged(self) -> None:

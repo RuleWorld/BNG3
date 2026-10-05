@@ -125,7 +125,7 @@ class BNGDefaults:
         self.lib_path = lib_path
         # version banner
         VERSION_BANNER = (
-            "BioNetGen simple command line interface {}\n" "BioNetGen version: {}\n{}\n"
+            "BioNetGen simple command line interface {}\nBioNetGen version: {}\n{}\n"
         ).format(get_version(), get_latest_bng_version(), get_version_banner())
         # set attributes
         self.banner = VERSION_BANNER

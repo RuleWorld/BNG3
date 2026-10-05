@@ -37,7 +37,8 @@ def _model(parameter_ids, reaction_refs, local=False):
             for pid, value in zip(parameter_ids, _COLLIDING_VALUES)
         )
         law_inner = ""
-    reactions_xml = "\n".join(f"""<reaction id="{ref_index}" reversible="false">
+    reactions_xml = "\n".join(
+        f"""<reaction id="{ref_index}" reversible="false">
               <listOfReactants>
                 <speciesReference species="{ref_index}" stoichiometry="1" constant="true"/>
               </listOfReactants>
@@ -47,7 +48,9 @@ def _model(parameter_ids, reaction_refs, local=False):
                 </math>
                 {law_inner}
               </kineticLaw>
-            </reaction>""" for ref_index, ref in zip(("R0", "R1"), reaction_refs))
+            </reaction>"""
+        for ref_index, ref in zip(("R0", "R1"), reaction_refs)
+    )
     species_xml = "\n".join(
         f"""<species id="{sid}" compartment="c" initialConcentration="1"
               hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>"""

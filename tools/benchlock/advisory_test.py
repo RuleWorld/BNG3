@@ -7,6 +7,7 @@ because it had started BEFORE the A/B took its slot. A naive "what started
 during my window" diff misses that case entirely. These tests exercise both
 classes, plus the exclusion of the holder's own command.
 """
+
 import os
 import shutil
 import subprocess
@@ -41,12 +42,28 @@ def run_hold(agent, seconds, extra_bg=None, env=None):
         e.update(env)
     bg = None
     if extra_bg:
-        bg = subprocess.Popen(extra_bg, env=e,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        bg = subprocess.Popen(
+            extra_bg, env=e, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
     p = subprocess.Popen(
-        [BL, "acquire", "--agent", agent, "--what", "advisory probe",
-         "--timeout", "30", "--", "sleep", str(seconds)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=e)
+        [
+            BL,
+            "acquire",
+            "--agent",
+            agent,
+            "--what",
+            "advisory probe",
+            "--timeout",
+            "30",
+            "--",
+            "sleep",
+            str(seconds),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=e,
+    )
     out, _ = p.communicate()
     if bg:
         bg.kill()
@@ -62,7 +79,9 @@ print("=== T1: PERSIST co-tenant (started BEFORE the hold) ===")
 shutil.rmtree(LOCKDIR, ignore_errors=True)
 preexisting = subprocess.Popen(
     [sys.executable, "-c", "import time; time.sleep(60)", "bng_cpp_persistent"],
-    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
 os.environ["BENCHLOCK_DIR"] = LOCKDIR
 time.sleep(0.4)
 out = run_hold("advtest1", 2)
@@ -86,9 +105,11 @@ else:
 # --- T2: a REAL benchmark-shaped co-tenant started DURING the hold ----------
 print("=== T2: NEW co-tenant (started during the hold) ===")
 shutil.rmtree(LOCKDIR, ignore_errors=True)
-bg = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(6)",
-                       "bng_cpp_new"],
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+bg = subprocess.Popen(
+    [sys.executable, "-c", "import time; time.sleep(6)", "bng_cpp_new"],
+    stdout=subprocess.DEVNULL,
+    stderr=subprocess.DEVNULL,
+)
 time.sleep(0.3)
 out = run_hold("advtest2", 3)
 bg.kill()
@@ -105,9 +126,11 @@ else:
 print("=== T3: holder's own benchlock process is not a co-tenant ===")
 shutil.rmtree(LOCKDIR, ignore_errors=True)
 out = run_hold("advtest3", 2)
-self_lines = [l for l in out.splitlines()
-              if ("benchlock" in l and (l.strip().startswith("+")
-                                        or l.strip().startswith("~")))]
+self_lines = [
+    l
+    for l in out.splitlines()
+    if ("benchlock" in l and (l.strip().startswith("+") or l.strip().startswith("~")))
+]
 if not self_lines:
     ok("benchlock never lists itself as a co-tenant")
 else:
@@ -118,10 +141,24 @@ print("=== T4: advisory failure cannot change the child's exit code ===")
 shutil.rmtree(LOCKDIR, ignore_errors=True)
 for code in (0, 42, 3):
     rc = subprocess.run(
-        [BL, "acquire", "--agent", f"advtest4_{code}", "--what", "exit probe",
-         "--timeout", "20", "--", "sh", "-c", f"exit {code}"],
-        capture_output=True, text=True,
-        env=dict(os.environ, BENCHLOCK_DIR=LOCKDIR)).returncode
+        [
+            BL,
+            "acquire",
+            "--agent",
+            f"advtest4_{code}",
+            "--what",
+            "exit probe",
+            "--timeout",
+            "20",
+            "--",
+            "sh",
+            "-c",
+            f"exit {code}",
+        ],
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, BENCHLOCK_DIR=LOCKDIR),
+    ).returncode
     if rc == code:
         ok(f"child exit {code} propagated unchanged")
     else:
@@ -131,8 +168,12 @@ for code in (0, 42, 3):
 print("=== T5: advisory does not leak the slot ===")
 shutil.rmtree(LOCKDIR, ignore_errors=True)
 run_hold("advtest5", 1)
-st = subprocess.run([BL, "status"], capture_output=True, text=True,
-                    env=dict(os.environ, BENCHLOCK_DIR=LOCKDIR))
+st = subprocess.run(
+    [BL, "status"],
+    capture_output=True,
+    text=True,
+    env=dict(os.environ, BENCHLOCK_DIR=LOCKDIR),
+)
 if "free 2  in_use 0" in st.stdout:
     ok("both slots free after an advisory-emitting hold")
 else:

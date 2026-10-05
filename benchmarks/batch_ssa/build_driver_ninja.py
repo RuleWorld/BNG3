@@ -7,6 +7,7 @@ The driver links the same static libraries as bng_cpp. Extracting its compile
 and link commands from Ninja avoids duplicating the CMake include paths,
 definitions, LTO settings, and link dependencies in this benchmark helper.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -56,7 +57,9 @@ def main() -> int:
         if out_i >= 0 and out_i + 1 < len(words) and words[out_i + 1] == "cpp/bng_cpp":
             link_words = _link_command(words)
     if compile_words is None or link_words is None:
-        raise RuntimeError("could not extract configured compile/link commands for bng_cpp")
+        raise RuntimeError(
+            "could not extract configured compile/link commands for bng_cpp"
+        )
 
     compile_args = []
     i = 0
