@@ -136,7 +136,7 @@ struct __align__(8) Pcg32 {
     unsigned long long state;
     unsigned long long inc;
 
-    void init(unsigned long long initstate, unsigned long long initseq) {
+    __host__ __device__ void init(unsigned long long initstate, unsigned long long initseq) {
         state = 0ULL;
         inc = (initseq << 1ULL) | 1ULL;
         step();
@@ -144,11 +144,11 @@ struct __align__(8) Pcg32 {
         step();
     }
 
-    void step() {
+    __host__ __device__ void step() {
         state = state * 6364136223846793005ULL + inc;
     }
 
-    unsigned int next_u32() {
+    __host__ __device__ unsigned int next_u32() {
         const unsigned long long oldstate = state;
         step();
         const unsigned long long xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
@@ -157,7 +157,7 @@ struct __align__(8) Pcg32 {
                (static_cast<unsigned int>(xorshifted) << ((0u - rot) & 31u));
     }
 
-    float next_float01() {
+    __host__ __device__ float next_float01() {
         const unsigned int v = next_u32();
         return (static_cast<float>(v >> 8) + 1.0f) / 16777218.0f;
     }
