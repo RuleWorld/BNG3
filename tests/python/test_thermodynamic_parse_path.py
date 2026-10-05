@@ -58,26 +58,38 @@ end seed species
 
 _FOOTER = "end model\n"
 
-_BARRIER_FIRST = _HEADER + """begin barrier patterns
+_BARRIER_FIRST = (
+    _HEADER
+    + """begin barrier patterns
   slow: A(s~U) -> A(s~P) Gbar
 end barrier patterns
 begin reaction rules
   R1: A(s~U) <-> A(s~P) Arrhenius(phi,Ea) driven_by(muATP)
 end reaction rules
-""" + _FOOTER
+"""
+    + _FOOTER
+)
 
-_BARRIER_LAST = _HEADER + """begin reaction rules
+_BARRIER_LAST = (
+    _HEADER
+    + """begin reaction rules
   R1: A(s~U) <-> A(s~P) Arrhenius(phi,Ea) driven_by(muATP)
 end reaction rules
 begin barrier patterns
   slow: A(s~U) -> A(s~P) Gbar
 end barrier patterns
-""" + _FOOTER
+"""
+    + _FOOTER
+)
 
-_NO_BARRIER = _HEADER + """begin reaction rules
+_NO_BARRIER = (
+    _HEADER
+    + """begin reaction rules
   R1: A(s~U) <-> A(s~P) Arrhenius(phi,Ea) driven_by(muATP)
 end reaction rules
-""" + _FOOTER
+"""
+    + _FOOTER
+)
 
 
 def _ordinary_names(model) -> list[str]:
@@ -107,10 +119,14 @@ def test_driven_by_work_survives_the_python_parse_path():
 
 
 def test_a_model_without_driven_by_reports_no_driving_work():
-    model = _cpp.parse_string(_HEADER + """begin reaction rules
+    model = _cpp.parse_string(
+        _HEADER
+        + """begin reaction rules
   A(s~U) <-> A(s~P) Arrhenius(phi,Ea)
 end reaction rules
-""" + _FOOTER)
+"""
+        + _FOOTER
+    )
 
     rule = model.reaction_rules[0]
     assert rule.has_driving_work is False

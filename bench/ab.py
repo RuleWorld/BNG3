@@ -46,9 +46,17 @@ def run_arm(tree: Path, reps: int) -> dict:
     """One run_bench.py invocation in `tree`; returns its parsed --json result."""
     with tempfile.NamedTemporaryFile(suffix=".json") as tmp:
         proc = subprocess.run(
-            [sys.executable, str(tree / "bench" / "run_bench.py"),
-             "--reps", str(reps), "--json", tmp.name],
-            cwd=str(tree), capture_output=True, text=True,
+            [
+                sys.executable,
+                str(tree / "bench" / "run_bench.py"),
+                "--reps",
+                str(reps),
+                "--json",
+                tmp.name,
+            ],
+            cwd=str(tree),
+            capture_output=True,
+            text=True,
         )
         if proc.returncode != 0:
             raise SystemExit(
@@ -63,16 +71,19 @@ def main() -> int:
     ap.add_argument("--a", type=Path, required=True, help="baseline worktree root")
     ap.add_argument("--b", type=Path, required=True, help="candidate worktree root")
     ap.add_argument("--rounds", type=int, default=4)
-    ap.add_argument("--reps", type=int, default=2,
-                    help="reps per run_bench.py invocation (>= 2)")
-    ap.add_argument("--expect-a", default=None,
-                    help="fail if arm A's git SHA is not this prefix (e.g. c345f3a). "
-                         "Use it whenever A is meant to be the untouched base: "
-                         "pointing --a at a tree that already carries other "
-                         "changes silently measures THOSE changes as the "
-                         "candidate's win, and the delta looks like a real result.")
-    ap.add_argument("--expect-b", default=None,
-                    help="same check for arm B")
+    ap.add_argument(
+        "--reps", type=int, default=2, help="reps per run_bench.py invocation (>= 2)"
+    )
+    ap.add_argument(
+        "--expect-a",
+        default=None,
+        help="fail if arm A's git SHA is not this prefix (e.g. c345f3a). "
+        "Use it whenever A is meant to be the untouched base: "
+        "pointing --a at a tree that already carries other "
+        "changes silently measures THOSE changes as the "
+        "candidate's win, and the delta looks like a real result.",
+    )
+    ap.add_argument("--expect-b", default=None, help="same check for arm B")
     args = ap.parse_args()
 
     for tree in (args.a, args.b):
@@ -82,12 +93,18 @@ def main() -> int:
     # A run where an arm is not what the caller thinks it is produces a
     # confident, wrong number rather than an obvious failure, so refuse to
     # score it silently.
-    for arm, tree, expect in (("A", args.a, args.expect_a),
-                              ("B", args.b, args.expect_b)):
+    for arm, tree, expect in (
+        ("A", args.a, args.expect_a),
+        ("B", args.b, args.expect_b),
+    ):
         if expect is None:
             continue
-        sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(tree),
-                             capture_output=True, text=True).stdout.strip()
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(tree),
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
         if not sha.startswith(expect):
             raise SystemExit(
                 f"arm {arm} is at {sha}, not the expected {expect} ({tree}).\n"
@@ -97,8 +114,10 @@ def main() -> int:
                 f"--expect-{arm.lower()} if that is genuinely what you mean."
             )
 
-    print(f"load1={os.getloadavg()[0]:.1f} at start "
-          f"(quote with any timing; also check `ps -axo pid,etime,command`)")
+    print(
+        f"load1={os.getloadavg()[0]:.1f} at start "
+        f"(quote with any timing; also check `ps -axo pid,etime,command`)"
+    )
 
     arms: dict[str, list[dict]] = {"A": [], "B": []}
     for rnd in range(1, args.rounds + 1):
@@ -111,15 +130,22 @@ def main() -> int:
     guards_a = arms["A"][0]["guards"]
     guards_b = arms["B"][0]["guards"]
     if guards_a != guards_b:
-        print("GUARD MISMATCH -- correctness failure, not a timing result:",
-              file=sys.stderr)
+        print(
+            "GUARD MISMATCH -- correctness failure, not a timing result:",
+            file=sys.stderr,
+        )
         for key in sorted(set(guards_a) | set(guards_b)):
             if guards_a.get(key) != guards_b.get(key):
-                print(f"  {key}:\n    A={guards_a.get(key)}\n    B={guards_b.get(key)}",
-                      file=sys.stderr)
+                print(
+                    f"  {key}:\n    A={guards_a.get(key)}\n    B={guards_b.get(key)}",
+                    file=sys.stderr,
+                )
         return 1
-    if any(arms[a][i]["guards"] != arms[a][0]["guards"] for a in arms
-           for i in range(len(arms[a]))):
+    if any(
+        arms[a][i]["guards"] != arms[a][0]["guards"]
+        for a in arms
+        for i in range(len(arms[a]))
+    ):
         print("GUARD UNSTABLE WITHIN AN ARM -- nondeterminism", file=sys.stderr)
         return 1
 
@@ -137,17 +163,25 @@ def main() -> int:
     print(f"\n{'component':<12}{'A median':>11}{'B median':>11}{'B/A':>9}{'weight':>9}")
     for name in WEIGHTS:
         a, b = med("A", name), med("B", name)
-        print(f"{name:<12}{a:>11.4f}{b:>11.4f}{(b / a if a else float('nan')):>9.3f}"
-              f"{WEIGHTS[name]:>9.2f}")
-    print(f"\nCOMPOSITE  A={a_c:.4f}  B={b_c:.4f}  "
-          f"B/A={b_c / a_c:.4f}  ({(b_c / a_c - 1) * 100:+.1f}%)")
+        print(
+            f"{name:<12}{a:>11.4f}{b:>11.4f}{(b / a if a else float('nan')):>9.3f}"
+            f"{WEIGHTS[name]:>9.2f}"
+        )
+    print(
+        f"\nCOMPOSITE  A={a_c:.4f}  B={b_c:.4f}  "
+        f"B/A={b_c / a_c:.4f}  ({(b_c / a_c - 1) * 100:+.1f}%)"
+    )
     delta = b_c / a_c - 1
     if abs(delta) < RESOLUTION_FLOOR:
-        print(f"VERDICT: inside the {RESOLUTION_FLOOR * 100:.0f}% host resolution "
-              f"floor -- not a win and not a regression; re-measure before claiming")
+        print(
+            f"VERDICT: inside the {RESOLUTION_FLOOR * 100:.0f}% host resolution "
+            f"floor -- not a win and not a regression; re-measure before claiming"
+        )
     else:
-        print(f"VERDICT: {'B faster' if delta < 0 else 'B slower'} by "
-              f"{abs(delta) * 100:.1f}% (outside the {RESOLUTION_FLOOR * 100:.0f}% floor)")
+        print(
+            f"VERDICT: {'B faster' if delta < 0 else 'B slower'} by "
+            f"{abs(delta) * 100:.1f}% (outside the {RESOLUTION_FLOOR * 100:.0f}% floor)"
+        )
     print(f"\nA git={arms['A'][0]['meta']['git']} ({args.a})")
     print(f"B git={arms['B'][0]['meta']['git']} ({args.b})")
     print(f"measured {time.strftime('%Y-%m-%dT%H:%M:%S')}")
