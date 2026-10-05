@@ -578,7 +578,12 @@ def test_lint_job_installs_ci_contract_dependencies():
     """The lint job must install dependencies required during test collection."""
 
     lint_job = _workflow_job_from(CI_WORKFLOW, "lint")
-    assert "pip install black ruff pytest numpy pyyaml" in lint_job
+    for package in ("black", "ruff", "pytest", "numpy", "pyyaml"):
+        assert package in lint_job
+    # Linter installs must be version-pinned: an unpinned float (black
+    # 26.5.1 -> 26.10.0 overnight) red-lit every open PR branch at once.
+    for package in ("black", "ruff"):
+        assert re.search(rf'["\']?{package}==[^ "\']+["\']?', lint_job)
 
 
 def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
