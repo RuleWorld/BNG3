@@ -82,7 +82,7 @@ def inspect_installed_package(source_revision: str | None = None) -> dict[str, s
             capture_output=True,
             text=True,
         ).stdout.strip()
-    except OSError, subprocess.CalledProcessError:
+    except (OSError, subprocess.CalledProcessError):
         pass
 
     digest = hashlib.sha256()

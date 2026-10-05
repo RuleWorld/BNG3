@@ -34,7 +34,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install linters and policy dependencies
-        run: pip install black ruff pytest numpy pyyaml
+        run: pip install "black==26.10.0" "ruff==0.15.1" pytest numpy pyyaml
 
       - name: Check Python formatting (Black)
         run: black --check --diff --target-version py312 python/ tests/python/ scripts/
