@@ -577,7 +577,8 @@ def test_static_species_reference_parameters_are_hash_seed_deterministic(tmp_pat
           <stoichiometryMath><math xmlns="http://www.w3.org/1998/Math/MathML">
             <cn>1</cn>
           </math></stoichiometryMath>
-        </speciesReference>""" for species_id in species_ids
+        </speciesReference>"""
+        for species_id in species_ids
     )
     xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level2/version5"
         level="2" version="5">
