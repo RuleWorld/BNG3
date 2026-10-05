@@ -12,14 +12,18 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
 def run_child(code: str, what: str) -> dict:
     proc = subprocess.run(
         [sys.executable, "-c", code, str(ROOT)],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True,
+        text=True,
+        timeout=300,
     )
     if proc.returncode != 0:
         raise SystemExit(f"{what}: child exited {proc.returncode}\n{proc.stderr}")
     return json.loads(proc.stdout)
+
 
 def measure_allocs(model_path, max_iter=32, n_runs=5):
     code = f"""
@@ -55,7 +59,10 @@ print(json.dumps({{"median_ms": statistics.median(times)*1000, "stdev_ms": stati
 """
     # We'll run a simpler measurement
     proc = subprocess.run(
-        [sys.executable, "-c", f"""
+        [
+            sys.executable,
+            "-c",
+            f"""
 import json, time, sys
 sys.path.insert(0, '{ROOT}/build/cpp')
 sys.path.insert(0, '{ROOT}/python')
@@ -69,10 +76,17 @@ for _ in range({5}):
     times.append(time.perf_counter() - t0)
 import statistics
 print(json.dumps({{"median_ms": statistics.median(times)*1000, "stdev_ms": statistics.stdev(times)*1000 if len(times)>1 else 0}}))
-""", str(ROOT)], capture_output=True, text=True, timeout=300)
+""",
+            str(ROOT),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
     if proc.returncode != 0:
         raise SystemExit(f"alloc bench failed: {proc.stderr}")
     return json.loads(proc.stdout)
+
 
 def main():
     models = [
@@ -86,6 +100,7 @@ def main():
         results[Path(path).stem] = measure_allocs(path)
     print(json.dumps(results, indent=2))
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

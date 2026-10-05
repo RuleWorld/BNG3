@@ -80,10 +80,17 @@ for k in (1, 2, 5, 10, 100, 500, 1000):
         f"  {t[i]:.3e}  {val:.10f}  {(val - want0) / want0:+.3e}"
         f"   (predicted {-(kon * (L0 + R0) * kon * L0 * R0 * t[i] / 2) / want0:+.3e})"
     )
-ok &= check("LR(t_end)/t_end vs kon*L0*R0 (t=1e-3)", LR[-1] / t[-1], want0, 1e-3 * want0)
+ok &= check(
+    "LR(t_end)/t_end vs kon*L0*R0 (t=1e-3)", LR[-1] / t[-1], want0, 1e-3 * want0
+)
 # the Taylor prediction must match to 3rd order
 exact_series = want0 * t[-1] - kon * (L0 + R0) * want0 * t[-1] ** 2 / 2
-ok &= check("LR(t_end) vs 2-term Taylor", LR[-1], exact_series, 1e-2 * kon * (L0 + R0) * want0 * t[-1] ** 3)
+ok &= check(
+    "LR(t_end) vs 2-term Taylor",
+    LR[-1],
+    exact_series,
+    1e-2 * kon * (L0 + R0) * want0 * t[-1] ** 3,
+)
 record("M1a", ok)
 
 # =============================================== M1b reversible binding SS
@@ -231,8 +238,14 @@ c2, r2, _ = run("m5_v1000.bngl")
 g1 = {n: col(c1, r1, n)[0] for n in ("Lfree", "Rfree", "LR")}
 g2 = {n: col(c2, r2, n)[0] for n in ("Lfree", "Rfree", "LR")}
 ok = True
-print("  V=1    SS: L=%.10g R=%.10g LR=%.10g" % (g1["Lfree"][-1], g1["Rfree"][-1], g1["LR"][-1]))
-print("  V=1000 SS: L=%.10g R=%.10g LR=%.10g" % (g2["Lfree"][-1], g2["Rfree"][-1], g2["LR"][-1]))
+print(
+    "  V=1    SS: L=%.10g R=%.10g LR=%.10g"
+    % (g1["Lfree"][-1], g1["Rfree"][-1], g1["LR"][-1])
+)
+print(
+    "  V=1000 SS: L=%.10g R=%.10g LR=%.10g"
+    % (g2["Lfree"][-1], g2["Rfree"][-1], g2["LR"][-1])
+)
 for nm in ("Lfree", "Rfree", "LR"):
     # V=1000 counts divided by 1000 must reproduce the V=1 concentration.
     ok &= check(
@@ -248,8 +261,12 @@ xs = (bq - math.sqrt(bq * bq - 4 * cq)) / 2
 ok &= check("V=1 SS [LR] vs exact quadratic root", g1["LR"][-1], xs, 1e-6 * xs)
 ok &= check("V=1 free-L + LR = 1 (Ltot)", g1["Lfree"][-1] + g1["LR"][-1], 1.0, 1e-9)
 ok &= check("V=1 free-R + LR = 3 (Rtot)", g1["Rfree"][-1] + g1["LR"][-1], 3.0, 1e-9)
-ok &= check("V=1000 free-L + LR = 1000 (Ltot)", g2["Lfree"][-1] + g2["LR"][-1], 1000.0, 1e-6)
-ok &= check("V=1000 free-R + LR = 3000 (Rtot)", g2["Rfree"][-1] + g2["LR"][-1], 3000.0, 1e-6)
+ok &= check(
+    "V=1000 free-L + LR = 1000 (Ltot)", g2["Lfree"][-1] + g2["LR"][-1], 1000.0, 1e-6
+)
+ok &= check(
+    "V=1000 free-R + LR = 3000 (Rtot)", g2["Rfree"][-1] + g2["LR"][-1], 3000.0, 1e-6
+)
 # exact SS occupancy must equal the closed-form at BOTH volumes
 Kd = koff / kon
 bq, cq = Kd + 1.0 + 3.0, 1.0 * 3.0
@@ -263,18 +280,22 @@ print("=" * 70)
 print("M6  closed feedback loop: every pool conserved")
 R0, A0, S0 = 200.0, 2000.0, 1000.0
 cols, rows, _ = run("m6_conservation.bngl")
-G = {n: col(cols, rows, n)[0] for n in ("Rfree", "RA", "RS", "Rtot",
-                                        "Phos", "Sunph", "Stot", "Atot")}
+G = {
+    n: col(cols, rows, n)[0]
+    for n in ("Rfree", "RA", "RS", "Rtot", "Phos", "Sunph", "Stot", "Atot")
+}
 ok = True
-wR = max(abs(G["Rfree"][i] + G["RA"][i] + G["RS"][i] - R0)
-         for i in range(len(G["Rfree"])))
+wR = max(
+    abs(G["Rfree"][i] + G["RA"][i] + G["RS"][i] - R0) for i in range(len(G["Rfree"]))
+)
 ok &= check("max |Rfree+RA+RS+RSP - R0|", wR, 0.0, 1e-6 * R0)
 # Stot already includes the S held in the R.S complex (species 3,5,6), so the
 # conservation identity is Stot == S0 and Phos <= Stot.
 wS = max(abs(G["Stot"][i] - S0) for i in range(len(G["Stot"])))
 ok &= check("max |Stot - S0| (incl. complex-bound S)", wS, 0.0, 1e-6 * S0)
-wS2 = max(abs(G["Phos"][i] + G["Sunph"][i] + G["RS"][i] - S0)
-          for i in range(len(G["Phos"])))
+wS2 = max(
+    abs(G["Phos"][i] + G["Sunph"][i] + G["RS"][i] - S0) for i in range(len(G["Phos"]))
+)
 ok &= check("max |Phos+Sunph+RS - S0|", wS2, 0.0, 1e-6 * S0)
 wA = max(abs(G["Atot"][i] - A0) for i in range(len(G["Atot"])))
 ok &= check("max |Atot - A0|", wA, 0.0, 1e-6 * A0)
@@ -302,10 +323,15 @@ ok &= check("conservation: Efree+ES = E0", efr + es, E0, 1e-6 * E0)
 # MM prediction of 24.3145, a 2.5% gap that is the expected QSSA error, not a
 # BNG3 discrepancy. What IS exact, and is what a wrong reactant or a lost
 # reverse rate would break, is the enzyme balance below.
-ok &= check("SS: konE*Efree*Sfree = (koffE+kcatE)*ES  (enzyme balance)",
-            konE * efr * s2, (koffE + kcatE) * es, 1e-6 * konE * efr * s2)
-ok &= check("SS: kcatE*ES* = km*P  (flux balance)", kcatE * es, km * pp,
-            1e-4 * kcatE * es)
+ok &= check(
+    "SS: konE*Efree*Sfree = (koffE+kcatE)*ES  (enzyme balance)",
+    konE * efr * s2,
+    (koffE + kcatE) * es,
+    1e-6 * konE * efr * s2,
+)
+ok &= check(
+    "SS: kcatE*ES* = km*P  (flux balance)", kcatE * es, km * pp, 1e-4 * kcatE * es
+)
 print(f"  KM = {KM}")
 print(f"  ES*    = {es:.10g}   MM prediction = {efr * s2 / (KM + s2):.10g}")
 print(f"  kcatE*ES* = {kcatE * es:.10g}   km*P* = {km * pp:.10g}")
@@ -325,8 +351,12 @@ _td8 = pathlib.Path(tempfile.mkdtemp())
 shutil.copy(HERE / "m8_r1.bngl", _td8 / "m8_r1.bngl")
 r = subprocess.run([BNGCPP, "m8_r1.bngl"], cwd=_td8, capture_output=True, text=True)
 out = r.stdout + r.stderr
-ok &= check("R1 (two laws on '->') is REFUSED, not silently run",
-            float("only one rate law" in out), 1.0, 0.0)
+ok &= check(
+    "R1 (two laws on '->') is REFUSED, not silently run",
+    float("only one rate law" in out),
+    1.0,
+    0.0,
+)
 print("  R1 diagnostic:", [l for l in out.splitlines() if "rate law" in l][-1][:100])
 
 # R2 and R3 are the two supported spellings of the same pair and must agree
@@ -344,7 +374,9 @@ for i, tag in ((2, "R2 two-way arrow"), (3, "R3 two separate rules")):
 want_ratio = ka / kb  # U -> P at ka, P -> U at kb, so ka*U = kb*P
 for i in (2, 3):
     P, U, t = traj[i]
-    ok &= check(f"R{i} SS ratio P/U vs kb/ka", P[-1] / U[-1], want_ratio, 1e-6 * want_ratio)
+    ok &= check(
+        f"R{i} SS ratio P/U vs kb/ka", P[-1] / U[-1], want_ratio, 1e-6 * want_ratio
+    )
     w = max(abs(P[j] + U[j] - Rtot) for j in range(len(P)))
     ok &= check(f"R{i} max |P+U-Rtot|", w, 0.0, 1e-6 * Rtot)
     w2 = max(
@@ -353,7 +385,9 @@ for i in (2, 3):
     )
     ok &= check(f"R{i} max |P - closed form|", w2, 0.0, 1e-6 * Rtot)
 w = max(abs(traj[3][0][j] - traj[2][0][j]) for j in range(len(traj[2][0])))
-ok &= check("max |P_R3 - P_R2| (the two supported spellings agree)", w, 0.0, 1e-9 * Rtot)
+ok &= check(
+    "max |P_R3 - P_R2| (the two supported spellings agree)", w, 0.0, 1e-9 * Rtot
+)
 for i in (2, 3):
     print(f"  R{i} network reaction lines:")
     for ln in nets[i].splitlines():
