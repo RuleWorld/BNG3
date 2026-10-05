@@ -136,7 +136,9 @@ def _run_child(code: str, *, what: str, timeout: float = 300.0) -> dict:
     try:
         return json.loads(proc.stdout)
     except json.JSONDecodeError as exc:
-        raise ComponentError(f"{what}: unparseable child output: {proc.stdout!r}") from exc
+        raise ComponentError(
+            f"{what}: unparseable child output: {proc.stdout!r}"
+        ) from exc
 
 
 def _assert_under_root(path_str: str, *, what: str) -> None:
@@ -322,8 +324,12 @@ def _stats(values: list[float]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--reps", type=int, default=5)
-    parser.add_argument("--json", type=Path, default=None,
-                        help="write machine-readable results to this file")
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="write machine-readable results to this file",
+    )
     args = parser.parse_args()
     if args.reps < 2:
         parser.error("--reps must be >= 2 (variance is part of the score)")
@@ -334,10 +340,15 @@ def main() -> int:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 
-    git_rev = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        cwd=str(ROOT), capture_output=True, text=True,
-    ).stdout.strip() or "unknown"
+    git_rev = (
+        subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        or "unknown"
+    )
 
     print(f"BNG3 fitness harness  reps={args.reps}  git={git_rev}")
     print(f"bng_cpp={bng_cpp}")
@@ -349,16 +360,21 @@ def main() -> int:
     # reader can see whether this worktree built its own or is inheriting
     # another tree's build/ (visibility, not a pass/fail decision).
     ext_path = _run_child(
-        'import json\n'
-        'import _bionetgen_cpp as _c\n'
+        "import json\n"
+        "import _bionetgen_cpp as _c\n"
         'print(json.dumps({"path": _c.__file__ or ""}))\n',
         what="extension preflight",
     )["path"]
-    ext_scope = "worktree" if str(Path(ext_path).resolve()).startswith(str(ROOT)) \
+    ext_scope = (
+        "worktree"
+        if str(Path(ext_path).resolve()).startswith(str(ROOT))
         else "OUTSIDE WORKTREE (shared/other build)"
+    )
     print(f"_bionetgen_cpp={ext_path}  [{ext_scope}]")
-    print(f"load1={load1_start:.1f} (1-min loadavg at start; quote this with "
-          f"any timing, plus concurrent benchmark processes)")
+    print(
+        f"load1={load1_start:.1f} (1-min loadavg at start; quote this with "
+        f"any timing, plus concurrent benchmark processes)"
+    )
     print(f"weights={WEIGHTS}  composite = sum(weight*seconds); lower is better")
 
     per_rep: dict[str, list[float]] = {name: [] for name in WEIGHTS}
@@ -432,9 +448,7 @@ def main() -> int:
             errors.append(str(exc))
 
         line = "  ".join(
-            f"{name}={per_rep[name][-1]:.4f}s"
-            for name in WEIGHTS
-            if per_rep[name]
+            f"{name}={per_rep[name][-1]:.4f}s" for name in WEIGHTS if per_rep[name]
         )
         print(f"rep {rep}/{args.reps}: {line}", flush=True)
 
@@ -454,20 +468,27 @@ def main() -> int:
     print(f"{'component':<12}{'min':>10}{'median':>10}{'stdev':>10}{'weight':>9}")
     for name in WEIGHTS:
         s = stats[name]
-        print(f"{name:<12}{s['min']:>10.4f}{s['median']:>10.4f}"
-              f"{s['stdev']:>10.4f}{WEIGHTS[name]:>9.2f}")
+        print(
+            f"{name:<12}{s['min']:>10.4f}{s['median']:>10.4f}"
+            f"{s['stdev']:>10.4f}{WEIGHTS[name]:>9.2f}"
+        )
     cv = (composite["stdev"] / composite["mean"] * 100.0) if composite["mean"] else 0.0
     print()
-    print(f"COMPOSITE (weighted seconds, lower=better): "
-          f"mean={composite['mean']:.4f}  stdev={composite['stdev']:.4f}  "
-          f"min={composite['min']:.4f}  cv={cv:.1f}%")
+    print(
+        f"COMPOSITE (weighted seconds, lower=better): "
+        f"mean={composite['mean']:.4f}  stdev={composite['stdev']:.4f}  "
+        f"min={composite['min']:.4f}  cv={cv:.1f}%"
+    )
     print(f"per-rep composites: {[round(x, 4) for x in composite_reps]}")
-    print(f"determinism guards: netgen .net sha256 stable "
-          f"({str(guards['netgen_sha'])[:16]}...); "
-          f"ssa events {guards['ssa_events']} stable across {args.reps} reps; "
-          f"ode final-state digests stable; "
-          f"out_write hashes { {k: v[:16] + '...' for k, v in
-                                guards['out_write_hashes'].items()} } stable")
+    print(
+        f"determinism guards: netgen .net sha256 stable "
+        f"({str(guards['netgen_sha'])[:16]}...); "
+        f"ssa events {guards['ssa_events']} stable across {args.reps} reps; "
+        f"ode final-state digests stable; "
+        f"out_write hashes {
+            {k: v[:16] + '...' for k, v in guards['out_write_hashes'].items()}
+        } stable"
+    )
 
     if args.json:
         try:
@@ -492,8 +513,8 @@ def main() -> int:
                 "ssa_batch": SSA_BATCH,
                 "ode_models": ODE_MODELS,
                 "note": "shared machine; quote load1_start with these timings; "
-                        "compare min and stdev, not single runs; ~11% "
-                        "cross-session drift is the resolution floor",
+                "compare min and stdev, not single runs; ~11% "
+                "cross-session drift is the resolution floor",
             },
             "components": stats,
             "composite": composite,

@@ -103,7 +103,7 @@ def _ensemble_oracle_identity() -> dict:
             text=True,
             timeout=10,
         ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         pass
     missing = [str(path) for path in helper_paths.values() if not path.is_file()]
     if missing:

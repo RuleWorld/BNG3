@@ -46,9 +46,9 @@ BASE_SEED = 12345
 
 # Diagnostic phases: (t_end, n_steps) overrides per phase; None = harness value.
 PHASES = {
-    "full": None,               # (20/500, 10) — the guarded configuration
-    "setup": (0.0, 10),         # no events, full output grid
-    "rows": (0.0, 1),           # no events, minimal output grid
+    "full": None,  # (20/500, 10) — the guarded configuration
+    "setup": (0.0, 10),  # no events, full output grid
+    "rows": (0.0, 1),  # no events, minimal output grid
 }
 
 BOOTSTRAP = """\
@@ -120,16 +120,24 @@ def sum_field(res: dict, field: str) -> float:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--a", type=Path, help="build root of arm A")
     ap.add_argument("--b", type=Path, help="build root of arm B (enables paired mode)")
     ap.add_argument("--rounds", type=int, default=4, help="paired rounds (default 4)")
     ap.add_argument("--reps", type=int, default=3, help="reps per single-tree run")
-    ap.add_argument("--phases", default="full",
-                    help="comma list from full,setup,rows (default full)")
-    ap.add_argument("--threads", type=int, default=0,
-                    help="pool size; 0 = all cores (harness value)")
+    ap.add_argument(
+        "--phases",
+        default="full",
+        help="comma list from full,setup,rows (default full)",
+    )
+    ap.add_argument(
+        "--threads",
+        type=int,
+        default=0,
+        help="pool size; 0 = all cores (harness value)",
+    )
     args = ap.parse_args()
 
     phases = [p.strip() for p in args.phases.split(",") if p.strip()]
@@ -137,8 +145,10 @@ def main() -> int:
         if p not in PHASES:
             raise SystemExit(f"unknown phase {p!r}; choose from {sorted(PHASES)}")
 
-    print(f"ssa_pool_bench load1={load1():.1f} threads={args.threads} "
-          f"phases={phases} python={sys.version.split()[0]}")
+    print(
+        f"ssa_pool_bench load1={load1():.1f} threads={args.threads} "
+        f"phases={phases} python={sys.version.split()[0]}"
+    )
 
     # ---- paired mode: interleave two roots in one session ------------------
     if args.a and args.b:
@@ -158,17 +168,21 @@ def main() -> int:
                         if guard is None:
                             guard = ev
                         elif ev != guard:
-                            print(f"GUARD MISMATCH arm={arm} round={rnd}: "
-                                  f"{guard} -> {ev}", file=sys.stderr)
+                            print(
+                                f"GUARD MISMATCH arm={arm} round={rnd}: "
+                                f"{guard} -> {ev}",
+                                file=sys.stderr,
+                            )
                             return 2
-                    rows.append({"round": rnd, "arm": arm, "phase": phase,
-                                 "res": res})
-                    print(f"round={rnd} arm={arm} phase={phase} "
-                          f"wall={sum_field(res, 'wall'):.4f} "
-                          f"cpu={sum_field(res, 'cpu'):.4f} "
-                          f"iso_wall={res['models']['iso']['wall']:.4f} "
-                          f"ge_wall={res['models']['ge']['wall']:.4f} "
-                          f"events={ev} load1={load1():.1f}")
+                    rows.append({"round": rnd, "arm": arm, "phase": phase, "res": res})
+                    print(
+                        f"round={rnd} arm={arm} phase={phase} "
+                        f"wall={sum_field(res, 'wall'):.4f} "
+                        f"cpu={sum_field(res, 'cpu'):.4f} "
+                        f"iso_wall={res['models']['iso']['wall']:.4f} "
+                        f"ge_wall={res['models']['ge']['wall']:.4f} "
+                        f"events={ev} load1={load1():.1f}"
+                    )
         print(f"guard(full events, both arms, all rounds): {guard}")
         for phase in phases:
             a = [r["res"] for r in rows if r["phase"] == phase and r["arm"] == "A"]
@@ -178,10 +192,12 @@ def main() -> int:
                 vb = sorted(sum_field(x, field) for x in b)
                 ma, mb = va[len(va) // 2], vb[len(vb) // 2]
                 pct = 100.0 * (mb - ma) / ma if ma else 0.0
-                print(f"summary phase={phase} {field} "
-                      f"A_median={ma:.4f} B_median={mb:.4f} delta={pct:+.1f}% "
-                      f"A={['%.4f' % v for v in va]} B={['%.4f' % v for v in vb]} "
-                      f"load1={load1():.1f}")
+                print(
+                    f"summary phase={phase} {field} "
+                    f"A_median={ma:.4f} B_median={mb:.4f} delta={pct:+.1f}% "
+                    f"A={['%.4f' % v for v in va]} B={['%.4f' % v for v in vb]} "
+                    f"load1={load1():.1f}"
+                )
         return 0
 
     # ---- single-tree mode ---------------------------------------------------
@@ -195,33 +211,40 @@ def main() -> int:
                 if guard is None:
                     guard = ev
                 elif ev != guard:
-                    print(f"GUARD MISMATCH rep={rep}: {guard} -> {ev}",
-                          file=sys.stderr)
+                    print(f"GUARD MISMATCH rep={rep}: {guard} -> {ev}", file=sys.stderr)
                     return 2
             per_phase[phase]["wall"].append(sum_field(res, "wall"))
             per_phase[phase]["cpu"].append(sum_field(res, "cpu"))
-            print(f"rep={rep} phase={phase} wall={sum_field(res, 'wall'):.4f} "
-                  f"cpu={sum_field(res, 'cpu'):.4f} "
-                  f"iso_wall={res['models']['iso']['wall']:.4f} "
-                  f"ge_wall={res['models']['ge']['wall']:.4f} "
-                  f"events={ev} load1={load1():.1f}")
+            print(
+                f"rep={rep} phase={phase} wall={sum_field(res, 'wall'):.4f} "
+                f"cpu={sum_field(res, 'cpu'):.4f} "
+                f"iso_wall={res['models']['iso']['wall']:.4f} "
+                f"ge_wall={res['models']['ge']['wall']:.4f} "
+                f"events={ev} load1={load1():.1f}"
+            )
     if guard is not None:
         print(f"guard(full events, all reps): {guard}")
     for phase in phases:
         w = per_phase[phase]["wall"]
         c = per_phase[phase]["cpu"]
-        print(f"summary phase={phase} wall_median={sorted(w)[len(w) // 2]:.4f} "
-              f"cpu_median={sorted(c)[len(c) // 2]:.4f} "
-              f"wall={['%.4f' % v for v in w]} cpu={['%.4f' % v for v in c]} "
-              f"load1={load1():.1f}")
+        print(
+            f"summary phase={phase} wall_median={sorted(w)[len(w) // 2]:.4f} "
+            f"cpu_median={sorted(c)[len(c) // 2]:.4f} "
+            f"wall={['%.4f' % v for v in w]} cpu={['%.4f' % v for v in c]} "
+            f"load1={load1():.1f}"
+        )
     if "full" in phases and "setup" in phases:
+
         def med(vals):
             s = sorted(vals)
             return s[len(s) // 2]
+
         fe = med(per_phase["full"]["cpu"])
         se = med(per_phase["setup"]["cpu"])
-        print(f"split(event loop cpu ~= full - setup = {fe - se:.4f}s; "
-              f"setup+recording cpu = {se:.4f}s)")
+        print(
+            f"split(event loop cpu ~= full - setup = {fe - se:.4f}s; "
+            f"setup+recording cpu = {se:.4f}s)"
+        )
     return 0
 
 

@@ -513,7 +513,7 @@ def _elemental_species(sbml_species: SBMLSpecies) -> Species:
             for molecule in parsed.molecules:
                 molecule.idx = sbml_species.id
             return parsed
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         pass
     result = Species()
     result.add_molecule(Molecule(standardize_name(sbml_species.id), sbml_species.id))
@@ -812,7 +812,7 @@ def get_molecule_types(
     for pattern in explicit_patterns or []:
         try:
             parsed = read_from_string(pattern)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         for molecule in parsed.molecules:
             existing = molecule_types.get(molecule.name)
