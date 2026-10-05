@@ -132,8 +132,10 @@ def run_paired(trees: list[Path], reps: int, json_out: Path | None) -> int:
         mn = min(times)
         avg = statistics.mean(times)
         cv = statistics.pstdev(times) / avg if avg else 0.0
-        print(f"{tree}: median {med*1e3:.3f} ms  min {mn*1e3:.3f} ms  "
-              f"cv {cv*100:.1f}%  reps={[round(t*1e3, 2) for t in times]}")
+        print(
+            f"{tree}: median {med * 1e3:.3f} ms  min {mn * 1e3:.3f} ms  "
+            f"cv {cv * 100:.1f}%  reps={[round(t * 1e3, 2) for t in times]}"
+        )
     unique = set(digests.values())
     if len(unique) == 1:
         print(f"digests identical across arms: {next(iter(unique))[:120]}...")
@@ -148,17 +150,25 @@ def run_paired(trees: list[Path], reps: int, json_out: Path | None) -> int:
     a, b = trees[0], trees[1]
     for i in range(reps):
         ratios.append(per_arm[str(a)][i] / per_arm[str(b)][i])
-    print(f"paired A/B ratio (arm0/arm1): median {statistics.median(ratios):.4f} "
-          f"min {min(ratios):.4f} max {max(ratios):.4f}")
+    print(
+        f"paired A/B ratio (arm0/arm1): median {statistics.median(ratios):.4f} "
+        f"min {min(ratios):.4f} max {max(ratios):.4f}"
+    )
 
     if json_out:
         payload = {
-            "meta": {"load1_start": start_load, "load1_end": end_load,
-                     "reps": reps, "fixture": FIXTURE,
-                     "t_end": T_END, "n_steps": N_STEPS},
-            "arms": {t: {"times_s": v,
-                         "median_s": statistics.median(v),
-                         "min_s": min(v)} for t, v in per_arm.items()},
+            "meta": {
+                "load1_start": start_load,
+                "load1_end": end_load,
+                "reps": reps,
+                "fixture": FIXTURE,
+                "t_end": T_END,
+                "n_steps": N_STEPS,
+            },
+            "arms": {
+                t: {"times_s": v, "median_s": statistics.median(v), "min_s": min(v)}
+                for t, v in per_arm.items()
+            },
             "digests": digests,
             "paired_ratios": ratios,
         }
@@ -171,20 +181,31 @@ def run_hold(tree: Path, iters: int) -> int:
     proc = spawn_child(tree, iters=iters, hold=True)
     res = finish_child(proc)
     times = res["times"]
-    print(f"{tree}: iters={len(times)} median {statistics.median(times)*1e3:.3f} ms "
-          f"min {min(times)*1e3:.3f} ms max {max(times)*1e3:.3f} ms")
+    print(
+        f"{tree}: iters={len(times)} median {statistics.median(times) * 1e3:.3f} ms "
+        f"min {min(times) * 1e3:.3f} ms max {max(times) * 1e3:.3f} ms"
+    )
     print(f"digest={json.dumps(res['digest'])[:120]}")
     return 0
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--tree", action="append", type=Path, required=True,
-                    help="worktree root (repeatable; >=2 for paired mode)")
+    ap.add_argument(
+        "--tree",
+        action="append",
+        type=Path,
+        required=True,
+        help="worktree root (repeatable; >=2 for paired mode)",
+    )
     ap.add_argument("--reps", type=int, default=7)
     ap.add_argument("--json", type=Path, default=None)
-    ap.add_argument("--hold", type=int, default=0,
-                    help="run N in-process repetitions in one child (for sampling)")
+    ap.add_argument(
+        "--hold",
+        type=int,
+        default=0,
+        help="run N in-process repetitions in one child (for sampling)",
+    )
     args = ap.parse_args()
     trees = [t.resolve() for t in args.tree]
     if args.hold > 0:

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regressions for the imported PR78 identity and A/B harnesses."""
+
 from __future__ import annotations
 
 import json
@@ -78,17 +79,16 @@ def make_trajectory_binary(path: Path) -> Path:
     )
 
 
-def make_output_binary(path: Path, *, network: bytes | None,
-                       trajectory: bytes | None) -> Path:
+def make_output_binary(
+    path: Path, *, network: bytes | None, trajectory: bytes | None
+) -> Path:
     writes = []
     if network is not None:
         writes.append(f"Path('model.net').write_bytes({network!r})")
     if trajectory is not None:
         writes.append(f"Path('model_s.gdat').write_bytes({trajectory!r})")
     path.write_text(
-        "#!/usr/bin/env python3\n"
-        "from pathlib import Path\n"
-        + "\n".join(writes) + "\n",
+        "#!/usr/bin/env python3\nfrom pathlib import Path\n" + "\n".join(writes) + "\n",
         encoding="utf-8",
     )
     path.chmod(0o755)
@@ -116,8 +116,9 @@ def test_sampling_grid(case: str) -> dict[str, int | float]:
     }
 
 
-def make_identity_output(root: Path, cases: list[str], *,
-                         trajectory: bool = True, valid: bool = True) -> None:
+def make_identity_output(
+    root: Path, cases: list[str], *, trajectory: bool = True, valid: bool = True
+) -> None:
     case_records = {}
     for name in cases:
         case = root / name
@@ -129,8 +130,9 @@ def make_identity_output(root: Path, cases: list[str], *,
         if trajectory:
             trajectory_path = case / "model_s.gdat"
             trajectory_path.write_bytes(
-                trajectory_table(sampling["t_start"], sampling["t_end"],
-                                 sampling["n_steps"])
+                trajectory_table(
+                    sampling["t_start"], sampling["t_end"], sampling["n_steps"]
+                )
             )
             trajectory_files.append(trajectory_path.name)
             usable_trajectory_files.append(trajectory_path.name)
@@ -154,9 +156,9 @@ def make_identity_output(root: Path, cases: list[str], *,
     manifest = {
         "schema_version": 1,
         "selected_cases": cases,
-        "valid": valid and bool(cases) and all(
-            record["valid"] for record in case_records.values()
-        ),
+        "valid": valid
+        and bool(cases)
+        and all(record["valid"] for record in case_records.values()),
         "cases": case_records,
     }
     root.mkdir(parents=True, exist_ok=True)
@@ -165,8 +167,7 @@ def make_identity_output(root: Path, cases: list[str], *,
 
 def refresh_case_hashes(case: Path) -> None:
     artifacts = sorted(
-        path for pattern in ("*.gdat", "*.cdat", "*.net")
-        for path in case.glob(pattern)
+        path for pattern in ("*.gdat", "*.cdat", "*.net") for path in case.glob(pattern)
     )
     sums = [
         f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}"
@@ -183,8 +184,7 @@ class PR78HarnessTests(unittest.TestCase):
         }
         self.assertEqual(
             grids["isomerization"],
-            {"t_start": 0.0, "t_end": 20000.0,
-             "n_steps": 400, "expected_rows": 401},
+            {"t_start": 0.0, "t_end": 20000.0, "n_steps": 400, "expected_rows": 401},
         )
         self.assertEqual(grids["gene_expr_simple"]["t_end"], 100000.0)
         self.assertEqual(grids["edge_ring_long"]["t_end"], 200.0)
@@ -194,10 +194,13 @@ class PR78HarnessTests(unittest.TestCase):
     def test_blbr_identity_case_keeps_its_stoichiometry_bound(self) -> None:
         with tempfile.TemporaryDirectory(prefix="pr78-blbr-") as tmp:
             case = identity_check.build_case(
-                "blbr", "models/blbr.bngl", [
+                "blbr",
+                "models/blbr.bngl",
+                [
                     'simulate_ssa({suffix=>"s",t_start=>0,t_end=>10,'
-                    'n_steps=>300,seed=>31})'
-                ], Path(tmp),
+                    "n_steps=>300,seed=>31})"
+                ],
+                Path(tmp),
             )
             text = (case / "model.bngl").read_text()
             self.assertIn(
@@ -217,10 +220,25 @@ class PR78HarnessTests(unittest.TestCase):
             b = make_binary(root / "b", b"trajectory-B")
             report = root / "report.json"
             result = subprocess.run(
-                [sys.executable, str(AB_BENCH), "--bin", f"A={a}", "--bin",
-                 f"B={b}", "--reps", "1", "--species", "2", "--events",
-                 "10", "--json", str(report)],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(AB_BENCH),
+                    "--bin",
+                    f"A={a}",
+                    "--bin",
+                    f"B={b}",
+                    "--reps",
+                    "1",
+                    "--species",
+                    "2",
+                    "--events",
+                    "10",
+                    "--json",
+                    str(report),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -230,10 +248,25 @@ class PR78HarnessTests(unittest.TestCase):
             binary = make_binary(root / "binary", b"same-trajectory")
             report = root / "report.json"
             result = subprocess.run(
-                [sys.executable, str(AB_BENCH), "--bin", f"A={binary}", "--bin",
-                 f"B={binary}", "--reps", "1", "--species", "2", "--events",
-                 "10", "--json", str(report)],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(AB_BENCH),
+                    "--bin",
+                    f"A={binary}",
+                    "--bin",
+                    f"B={binary}",
+                    "--reps",
+                    "1",
+                    "--species",
+                    "2",
+                    "--events",
+                    "10",
+                    "--json",
+                    str(report),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             data = json.loads(report.read_text())
@@ -245,22 +278,44 @@ class PR78HarnessTests(unittest.TestCase):
             root = Path(tmp)
             binary = make_once_only_binary(root / "binary")
             result = subprocess.run(
-                [sys.executable, str(AB_BENCH), "--bin", f"A={binary}",
-                 "--reps", "2", "--species", "2", "--events", "10"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(AB_BENCH),
+                    "--bin",
+                    f"A={binary}",
+                    "--reps",
+                    "2",
+                    "--species",
+                    "2",
+                    "--events",
+                    "10",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_identity_check_fails_for_nonzero_model_exit_without_slow_cases(self) -> None:
+    def test_identity_check_fails_for_nonzero_model_exit_without_slow_cases(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory(prefix="pr78-exit-") as tmp:
             root = Path(tmp)
             failing = root / "failing-bng-cpp"
             failing.write_text("#!/bin/sh\nexit 17\n", encoding="utf-8")
             failing.chmod(0o755)
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(failing),
-                 str(root / "identity"), "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(failing),
+                    str(root / "identity"),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
@@ -269,9 +324,17 @@ class PR78HarnessTests(unittest.TestCase):
             root = Path(tmp)
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(root / "missing-bng-cpp"),
-                 str(out), "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(root / "missing-bng-cpp"),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             manifest = json.loads((out / "identity_manifest.json").read_text())
@@ -281,15 +344,25 @@ class PR78HarnessTests(unittest.TestCase):
             self.assertIsNone(record["exit_code"])
             self.assertIn("No such file", record["error"])
 
-    def test_identity_check_rejects_net_only_success_and_records_invalid_manifest(self) -> None:
+    def test_identity_check_rejects_net_only_success_and_records_invalid_manifest(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory(prefix="pr92-net-only-") as tmp:
             root = Path(tmp)
             binary = make_net_only_binary(root / "net-only-bng-cpp")
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             manifest = json.loads((out / "identity_manifest.json").read_text())
@@ -299,7 +372,8 @@ class PR78HarnessTests(unittest.TestCase):
                 "missing_trajectory",
             )
             self.assertEqual(
-                manifest["cases"]["edge_dimer"]["trajectory_files"], [],
+                manifest["cases"]["edge_dimer"]["trajectory_files"],
+                [],
             )
 
     def test_identity_check_records_valid_fresh_trajectory_output(self) -> None:
@@ -308,9 +382,17 @@ class PR78HarnessTests(unittest.TestCase):
             binary = make_trajectory_binary(root / "trajectory-bng-cpp")
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             manifest = json.loads((out / "identity_manifest.json").read_text())
@@ -319,7 +401,9 @@ class PR78HarnessTests(unittest.TestCase):
             self.assertEqual(record["status"], "pass")
             self.assertTrue(record["fresh_output_directory"])
             self.assertEqual(record["trajectory_files"], ["model_s.gdat"])
-            self.assertEqual(record["expected_sampling"], test_sampling_grid("edge_dimer"))
+            self.assertEqual(
+                record["expected_sampling"], test_sampling_grid("edge_dimer")
+            )
             self.assertEqual(record["network_files"], ["model.net"])
             self.assertEqual(record["usable_trajectory_files"], ["model_s.gdat"])
 
@@ -333,13 +417,22 @@ class PR78HarnessTests(unittest.TestCase):
             )
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            record = json.loads((out / "identity_manifest.json").read_text())[
-                "cases"]["edge_dimer"]
+            record = json.loads((out / "identity_manifest.json").read_text())["cases"][
+                "edge_dimer"
+            ]
             self.assertEqual(record["status"], "invalid_trajectory")
             self.assertEqual(record["usable_trajectory_files"], [])
 
@@ -353,13 +446,22 @@ class PR78HarnessTests(unittest.TestCase):
             )
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            record = json.loads((out / "identity_manifest.json").read_text())[
-                "cases"]["edge_dimer"]
+            record = json.loads((out / "identity_manifest.json").read_text())["cases"][
+                "edge_dimer"
+            ]
             self.assertEqual(record["status"], "invalid_trajectory")
             self.assertEqual(record["usable_trajectory_files"], [])
 
@@ -373,13 +475,22 @@ class PR78HarnessTests(unittest.TestCase):
             )
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            record = json.loads((out / "identity_manifest.json").read_text())[
-                "cases"]["edge_dimer"]
+            record = json.loads((out / "identity_manifest.json").read_text())["cases"][
+                "edge_dimer"
+            ]
             self.assertEqual(record["status"], "invalid_trajectory")
             self.assertEqual(record["expected_sampling"]["expected_rows"], 301)
 
@@ -393,13 +504,22 @@ class PR78HarnessTests(unittest.TestCase):
             )
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            record = json.loads((out / "identity_manifest.json").read_text())[
-                "cases"]["edge_dimer"]
+            record = json.loads((out / "identity_manifest.json").read_text())["cases"][
+                "edge_dimer"
+            ]
             self.assertEqual(record["status"], "invalid_trajectory")
 
     def test_identity_check_rejects_trajectory_without_network(self) -> None:
@@ -412,13 +532,22 @@ class PR78HarnessTests(unittest.TestCase):
             )
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            record = json.loads((out / "identity_manifest.json").read_text())[
-                "cases"]["edge_dimer"]
+            record = json.loads((out / "identity_manifest.json").read_text())["cases"][
+                "edge_dimer"
+            ]
             self.assertEqual(record["status"], "missing_network")
             self.assertEqual(record["network_files"], [])
 
@@ -432,13 +561,22 @@ class PR78HarnessTests(unittest.TestCase):
             )
             out = root / "identity"
             result = subprocess.run(
-                [sys.executable, str(IDENTITY_CHECK), str(binary), str(out),
-                 "--only", "edge_dimer"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    str(IDENTITY_CHECK),
+                    str(binary),
+                    str(out),
+                    "--only",
+                    "edge_dimer",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-            record = json.loads((out / "identity_manifest.json").read_text())[
-                "cases"]["edge_dimer"]
+            record = json.loads((out / "identity_manifest.json").read_text())["cases"][
+                "edge_dimer"
+            ]
             self.assertEqual(record["status"], "missing_network")
             self.assertEqual(record["network_files"], ["model.net"])
 
@@ -451,7 +589,9 @@ class PR78HarnessTests(unittest.TestCase):
             make_identity_output(changed, ["edge_dimer"], trajectory=False, valid=False)
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("INVALID", result.stdout + result.stderr)
@@ -465,7 +605,9 @@ class PR78HarnessTests(unittest.TestCase):
             make_identity_output(changed, ["edge_dimer"])
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("IDENTICAL", result.stdout)
@@ -483,12 +625,16 @@ class PR78HarnessTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest))
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("INVALID", result.stdout + result.stderr)
 
-    def test_compare_identity_rejects_manifest_claim_for_wrong_sampling_grid(self) -> None:
+    def test_compare_identity_rejects_manifest_claim_for_wrong_sampling_grid(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory(prefix="pr92-comparator-wrong-grid-") as tmp:
             root = Path(tmp)
             base = root / "base"
@@ -506,7 +652,9 @@ class PR78HarnessTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest))
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("INVALID", result.stdout + result.stderr)
@@ -523,7 +671,9 @@ class PR78HarnessTests(unittest.TestCase):
             refresh_case_hashes(changed_case)
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("INVALID", result.stdout + result.stderr)
@@ -546,13 +696,17 @@ class PR78HarnessTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest))
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("INVALID", result.stdout + result.stderr)
 
     def test_compare_identity_rejects_empty_network(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="pr92-comparator-empty-network-") as tmp:
+        with tempfile.TemporaryDirectory(
+            prefix="pr92-comparator-empty-network-"
+        ) as tmp:
             root = Path(tmp)
             base = root / "base"
             changed = root / "changed"
@@ -563,7 +717,9 @@ class PR78HarnessTests(unittest.TestCase):
             refresh_case_hashes(changed_case)
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("INVALID", result.stdout + result.stderr)
@@ -577,7 +733,9 @@ class PR78HarnessTests(unittest.TestCase):
             make_identity_output(changed, ["edge_dimer", "edge_extra"])
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("coverage mismatch", result.stdout + result.stderr)
@@ -591,7 +749,9 @@ class PR78HarnessTests(unittest.TestCase):
             make_identity_output(changed, ["edge_dimer"])
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("coverage mismatch", result.stdout + result.stderr)
@@ -605,7 +765,9 @@ class PR78HarnessTests(unittest.TestCase):
             changed.mkdir()
             result = subprocess.run(
                 [sys.executable, str(COMPARE_IDENTITY), str(base), str(changed)],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn("empty case set", result.stdout + result.stderr)

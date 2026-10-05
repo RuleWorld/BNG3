@@ -354,9 +354,9 @@ def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(api, work_dir):
         atol=0.0,
         columns=compare.COLUMNS_EXACT,
     )
-    assert (
-        diff.ok or diff.max_rel_err == 0.0
-    ), f"fixed-seed direct/native NFsim mismatch: {diff.summary()}"
+    assert diff.ok or diff.max_rel_err == 0.0, (
+        f"fixed-seed direct/native NFsim mismatch: {diff.summary()}"
+    )
 
 
 @pytest.mark.nf
@@ -393,9 +393,9 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
         atol=0.0,
         columns=compare.COLUMNS_EXACT,
     )
-    assert (
-        diff.ok or diff.max_rel_err == 0.0
-    ), f"ast-direct diverges from in-memory-XML [{model_name}]: {diff.summary()}"
+    assert diff.ok or diff.max_rel_err == 0.0, (
+        f"ast-direct diverges from in-memory-XML [{model_name}]: {diff.summary()}"
+    )
 
 
 # A site whose states are only ever mentioned from patterns has no declared
@@ -460,8 +460,9 @@ def _result_to_trajectory(result) -> tuple:
 
 @pytest.mark.nf
 @pytest.mark.parametrize("block_order", sorted(_SEED_STATE_ORDER_CASES))
-def test_nf_seed_site_state_is_resolved_by_name(block_order, api, work_dir,
-                                                monkeypatch):
+def test_nf_seed_site_state_is_resolved_by_name(
+    block_order, api, work_dir, monkeypatch
+):
     """A seed's site state must be bound by name, not by discovery order.
 
     Both construction routes must also agree with each other at rtol=atol=0:
@@ -494,7 +495,9 @@ def test_nf_seed_site_state_is_resolved_by_name(block_order, api, work_dir,
     # alone would also pass if every observable had collapsed onto one pool.
     for leg, result in (("direct", direct_result), ("xml", xml_result)):
         final = {name: float(values[-1]) for name, values in result.observables.items()}
-        assert final["O2"] == 100.0, f"[{block_order}/{leg}] seed pool not under O2: {final}"
+        assert final["O2"] == 100.0, (
+            f"[{block_order}/{leg}] seed pool not under O2: {final}"
+        )
         assert final["Otot"] == 100.0, f"[{block_order}/{leg}] Otot: {final}"
         for name in ("O0", "O1", "O3"):
             assert final[name] == 0.0, f"[{block_order}/{leg}] {name}: {final}"
@@ -510,9 +513,9 @@ def test_nf_seed_site_state_is_resolved_by_name(block_order, api, work_dir,
         atol=0.0,
         columns=compare.COLUMNS_EXACT,
     )
-    assert (
-        diff.ok or diff.max_rel_err == 0.0
-    ), f"ast-direct diverges from in-memory-XML [{block_order}]: {diff.summary()}"
+    assert diff.ok or diff.max_rel_err == 0.0, (
+        f"ast-direct diverges from in-memory-XML [{block_order}]: {diff.summary()}"
+    )
 
 
 @pytest.mark.nf
@@ -579,8 +582,7 @@ def test_tierp_direct_path_outcome_is_measured_and_attributed(api):
     for record in compared:
         if record["xml_construction_path"] != "in-memory-xml":
             raise AssertionError(
-                f"XML leg ran {record['xml_construction_path']!r} "
-                f"[{record['model']}]"
+                f"XML leg ran {record['xml_construction_path']!r} [{record['model']}]"
             )
         shared = set(record["direct_columns"]) & set(record["xml_columns"])
         if not shared:
@@ -704,19 +706,18 @@ def test_tierp_direct_path_outcome_is_measured_and_attributed(api):
         f"{len(not_loadable)} not loadable + {len(incomplete)} incomplete + "
         f"{len(unattributed)} unclassified"
     )
-    assert len(compared) + len(parity_unavailable) == len(
-        accepted
-    ), "accepted models must each be compared or explicitly unavailable"
+    assert len(compared) + len(parity_unavailable) == len(accepted), (
+        "accepted models must each be compared or explicitly unavailable"
+    )
     assert accepted, (
         "direct-path sweep accepted nothing; the probe is broken "
         f"({len(incomplete)} incomplete, first: "
         f"{incomplete[0].get('error') if incomplete else 'n/a'})"
     )
     accepted_names = {r["model"] for r in accepted}
-    assert (
-        set(NF_MODELS) <= accepted_names
-    ), "tier-NF models not accepted by the sweep: " + ", ".join(
-        sorted(set(NF_MODELS) - accepted_names)
+    assert set(NF_MODELS) <= accepted_names, (
+        "tier-NF models not accepted by the sweep: "
+        + ", ".join(sorted(set(NF_MODELS) - accepted_names))
     )
 
     # Asserted last, after the artifact is on disk, so a divergence or an

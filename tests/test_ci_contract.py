@@ -601,9 +601,9 @@ def _assert_exact_head_concurrency(path: Path, label: str) -> None:
     assert "${{ github.event.pull_request.head.sha || github.sha }}" in str(
         concurrency.get("group")
     ), f"{label} concurrency group must key on the PR head"
-    assert (
-        concurrency.get("cancel-in-progress") is False
-    ), f"{label} must not cancel an in-flight exact-head run"
+    assert concurrency.get("cancel-in-progress") is False, (
+        f"{label} must not cancel an in-flight exact-head run"
+    )
 
 
 def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
@@ -795,9 +795,9 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
         if re.search(r"(?:pip|python\s+-m\s+pip)\s+install", line)
     ]
     assert install_lines, "python-test must install package/test dependencies"
-    assert any(
-        re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
-    ), "python-test no-deps wheel path must install declared click dependency"
+    assert any(re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines), (
+        "python-test no-deps wheel path must install declared click dependency"
+    )
 
 
 def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
