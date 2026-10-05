@@ -123,29 +123,45 @@ def load_context() -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--binary", action="append", type=Path,
+        "--binary",
+        action="append",
+        type=Path,
         help="bng_cpp executable; repeat for paired A/B runs",
     )
-    parser.add_argument("--reps", type=int, default=7, help="rounds per binary (default 7)")
     parser.add_argument(
-        "--primary", choices=("min", "median", "mean"), default="median",
+        "--reps", type=int, default=7, help="rounds per binary (default 7)"
+    )
+    parser.add_argument(
+        "--primary",
+        choices=("min", "median", "mean"),
+        default="median",
         help="summary statistic used for the headline delta (default: median)",
     )
     parser.add_argument(
-        "--full", action="store_true",
+        "--full",
+        action="store_true",
         help="run all 11 fixtures instead of the four-fixture heavy preset",
     )
     parser.add_argument(
-        "--models", nargs="*", default=None,
+        "--models",
+        nargs="*",
+        default=None,
         help="fixture basenames (overrides --full)",
     )
-    parser.add_argument("--json", type=Path, default=None,
-                        help="write samples, hashes, contexts, and RSS as JSON")
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="write samples, hashes, contexts, and RSS as JSON",
+    )
     args = parser.parse_args()
     if args.reps < 1:
         parser.error("--reps must be at least 1")
 
-    binaries = [path.expanduser().resolve() for path in (args.binary or [ROOT / "build/cpp/bng_cpp"])]
+    binaries = [
+        path.expanduser().resolve()
+        for path in (args.binary or [ROOT / "build/cpp/bng_cpp"])
+    ]
     for binary in binaries:
         if not binary.is_file():
             raise SystemExit(f"binary not found: {binary}")
@@ -201,8 +217,7 @@ def main() -> int:
 
     mismatches = raw_identity_mismatches(raw_hashes)
     for fixture in mismatches:
-        print(f"RAW MISMATCH/NONDETERMINISTIC {fixture}: "
-              f"{raw_hashes[fixture]}")
+        print(f"RAW MISMATCH/NONDETERMINISTIC {fixture}: {raw_hashes[fixture]}")
 
     end_context = load_context()
     print("\n== per-fixture wall time (s), median over reps ==")
@@ -227,36 +242,52 @@ def main() -> int:
     for index, binary in enumerate(binaries):
         series = totals[index]
         summary = (
-            min(series), statistics.median(series), statistics.fmean(series),
+            min(series),
+            statistics.median(series),
+            statistics.fmean(series),
             statistics.stdev(series) if len(series) > 1 else 0.0,
         )
         stats.append(summary)
-        print(f"{binary.name:28s}{summary[0]:10.3f}{summary[1]:10.3f}"
-              f"{summary[2]:10.3f}{summary[3]:10.3f}")
-        print(f"{'  sorted:':28s}" + "".join(f"{value:10.3f}" for value in sorted(series)))
+        print(
+            f"{binary.name:28s}{summary[0]:10.3f}{summary[1]:10.3f}"
+            f"{summary[2]:10.3f}{summary[3]:10.3f}"
+        )
+        print(
+            f"{'  sorted:':28s}" + "".join(f"{value:10.3f}" for value in sorted(series))
+        )
         if summary[1] - summary[0] > summary[0] * NOISE_SPREAD:
-            print(f"  NOISE WARNING {binary.name}: median-min exceeds "
-                  f"{NOISE_SPREAD * 100:.0f}% of min; small deltas are unresolved")
+            print(
+                f"  NOISE WARNING {binary.name}: median-min exceeds "
+                f"{NOISE_SPREAD * 100:.0f}% of min; small deltas are unresolved"
+            )
 
     statistic_index = {"min": 0, "median": 1, "mean": 2}[args.primary]
     primary = [summary[statistic_index] for summary in stats]
-    print(f"\nPRIMARY ({args.primary} total): "
-          + "  ".join(f"{binary.name}={value:.3f}s"
-                      for binary, value in zip(binaries, primary)))
+    print(
+        f"\nPRIMARY ({args.primary} total): "
+        + "  ".join(
+            f"{binary.name}={value:.3f}s" for binary, value in zip(binaries, primary)
+        )
+    )
     if len(binaries) == 2:
         paired_deltas = [
             (candidate - baseline) / baseline * 100.0
-            for baseline, candidate in zip(totals[0], totals[1]) if baseline > 0
+            for baseline, candidate in zip(totals[0], totals[1])
+            if baseline > 0
         ]
         selected_delta = (primary[1] - primary[0]) / primary[0] * 100.0
         print(f"candidate vs baseline: {selected_delta:+.1f}% on {args.primary}")
-        print("paired per-round deltas (%): "
-              + ", ".join(f"{delta:+.1f}" for delta in paired_deltas))
+        print(
+            "paired per-round deltas (%): "
+            + ", ".join(f"{delta:+.1f}" for delta in paired_deltas)
+        )
         print(f"paired median delta: {statistics.median(paired_deltas):+.1f}%")
     print(f"context at start: {start_context}")
     print(f"context at end:   {end_context}")
-    print("raw .net identity across all reps and binaries: "
-          + ("PASS" if not mismatches else "FAIL  <-- CORRECTNESS FAILURE"))
+    print(
+        "raw .net identity across all reps and binaries: "
+        + ("PASS" if not mismatches else "FAIL  <-- CORRECTNESS FAILURE")
+    )
     if args.json is not None:
         report = {
             "fixtures": [fixture.name for fixture in fixtures],
@@ -270,21 +301,23 @@ def main() -> int:
             "binaries": [],
         }
         for index, binary in enumerate(binaries):
-            report["binaries"].append({
-                "path": str(binary),
-                "sha256": sha256(binary.read_bytes()),
-                "total_wall_s": totals[index],
-                "per_fixture_wall_s": {
-                    name: series[index] for name, series in per_fixture.items()
-                },
-                "peak_rss_bytes": {
-                    name: per_binary[index]
-                    for name, per_binary in peak_rss_bytes.items()
-                },
-                "raw_hash_counts": {
-                    name: raw_hashes[name][index] for name in raw_hashes
-                },
-            })
+            report["binaries"].append(
+                {
+                    "path": str(binary),
+                    "sha256": sha256(binary.read_bytes()),
+                    "total_wall_s": totals[index],
+                    "per_fixture_wall_s": {
+                        name: series[index] for name, series in per_fixture.items()
+                    },
+                    "peak_rss_bytes": {
+                        name: per_binary[index]
+                        for name, per_binary in peak_rss_bytes.items()
+                    },
+                    "raw_hash_counts": {
+                        name: raw_hashes[name][index] for name in raw_hashes
+                    },
+                }
+            )
         report_path = args.json.expanduser().resolve()
         report_path.parent.mkdir(parents=True, exist_ok=True)
         report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

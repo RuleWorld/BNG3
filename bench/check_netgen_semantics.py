@@ -146,7 +146,13 @@ def run_model(
 
         try:
             bng2 = subprocess.run(
-                [perl_path, str(bng2_script), "--outdir", str(oracle_out), str(oracle_input)],
+                [
+                    perl_path,
+                    str(bng2_script),
+                    "--outdir",
+                    str(oracle_out),
+                    str(oracle_input),
+                ],
                 cwd=oracle_dir,
                 env=env,
                 capture_output=True,
@@ -175,8 +181,10 @@ def run_model(
         if not bng3_net.is_file() or len(bng2_nets) != 1:
             record.update(
                 status="FAIL",
-                reason=(f"missing/ambiguous network output: BNG3={bng3_net.is_file()}, "
-                        f"BNG2_count={len(bng2_nets)}"),
+                reason=(
+                    f"missing/ambiguous network output: BNG3={bng3_net.is_file()}, "
+                    f"BNG2_count={len(bng2_nets)}"
+                ),
             )
             return record
 
@@ -198,7 +206,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=ROOT / "build/cpp/bng_cpp")
     parser.add_argument(
-        "--bng2", type=Path, default=ROOT / "legacy/perl/BNG2.pl",
+        "--bng2",
+        type=Path,
+        default=ROOT / "legacy/perl/BNG2.pl",
         help="independent Perl BNG2.pl script",
     )
     parser.add_argument("--models", nargs="*", default=None, help="fixture basenames")
@@ -249,7 +259,10 @@ def main() -> int:
         report["results"].append(result)
         print(f"{result['status']:11s} {fixture.name}: {result.get('reason', '')}")
         if result.get("bng2_output"):
-            print(result["bng2_output"], end="" if result["bng2_output"].endswith("\n") else "\n")
+            print(
+                result["bng2_output"],
+                end="" if result["bng2_output"].endswith("\n") else "\n",
+            )
         if result.get("comparison"):
             print(result["comparison"])
         if result.get("adapter_diff"):
@@ -260,7 +273,9 @@ def main() -> int:
     unsupported = statuses.count("UNSUPPORTED")
     failed = statuses.count("FAIL")
     report["summary"] = {"passed": passed, "unsupported": unsupported, "failed": failed}
-    print(f"RESULT {passed}/{len(fixtures)} passed, {unsupported} unsupported, {failed} failed")
+    print(
+        f"RESULT {passed}/{len(fixtures)} passed, {unsupported} unsupported, {failed} failed"
+    )
     if args.json_report is not None:
         report_path = args.json_report.expanduser().resolve()
         report_path.parent.mkdir(parents=True, exist_ok=True)

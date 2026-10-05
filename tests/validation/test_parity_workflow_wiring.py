@@ -171,9 +171,9 @@ def test_parity_workflow_env_still_pins_the_strict_oracle_flag():
     strict-mode behaviour being reachable.
     """
     text = PARITY_WORKFLOW.read_text(encoding="utf-8")
-    assert re.search(
-        r'^\s*BNG3_CI_STRICT_ORACLES:\s*"1"\s*$', text, re.MULTILINE
-    ), "parity.yml no longer sets BNG3_CI_STRICT_ORACLES=1; oracle-gated parity steps would skip instead of failing"
+    assert re.search(r'^\s*BNG3_CI_STRICT_ORACLES:\s*"1"\s*$', text, re.MULTILINE), (
+        "parity.yml no longer sets BNG3_CI_STRICT_ORACLES=1; oracle-gated parity steps would skip instead of failing"
+    )
 
 
 def test_orchestrated_steps_keep_their_shell_before_their_run():
@@ -198,7 +198,11 @@ def test_orchestrated_steps_keep_their_shell_before_their_run():
             if len(candidate) - len(candidate.lstrip()) <= indent:
                 break
             body.append((len(candidate) - len(candidate.lstrip()), stripped))
-        keys = [text for _, text in body if text.split(":")[0] in {"shell", "run", "uses", "env"}]
+        keys = [
+            text
+            for _, text in body
+            if text.split(":")[0] in {"shell", "run", "uses", "env"}
+        ]
         if "run" in keys and "shell" in keys:
             assert keys.index("shell") < keys.index("run"), (
                 f"step at {PARITY_WORKFLOW.name}:{index + 1} has 'run:' before "

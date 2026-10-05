@@ -8,7 +8,6 @@ def test_queryBioGridByName_httperror_with_organism():
         patch("urllib.request.urlopen") as mock_urlopen,
         patch("bionetgen.atomizer.utils.pathwaycommons.logMess") as mock_logMess,
     ):
-
         # Setup mock to raise HTTPError
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url="http://test.com",
@@ -40,7 +39,6 @@ def test_queryBioGridByName_httperror_no_organism():
         patch("urllib.request.urlopen") as mock_urlopen,
         patch("bionetgen.atomizer.utils.pathwaycommons.logMess") as mock_logMess,
     ):
-
         # Setup mock to raise HTTPError
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url="http://test.com",

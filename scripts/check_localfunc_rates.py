@@ -69,7 +69,7 @@ def main() -> int:
         print(f"\n=== {args.model}: reference ({ref_src}) ===")
         print(
             f"reactions: {len(ref_rows)}   generated rate params: "
-            f"{sum(1 for k in ref.rate_defs if k.startswith(('rateLaw','_rateLaw','__R')))}"
+            f"{sum(1 for k in ref.rate_defs if k.startswith(('rateLaw', '_rateLaw', '__R')))}"
         )
         for r, p, raw, val in ref_rows:
             print(f"  {' + '.join(r)} -> {' + '.join(p)}   name={raw:<14} value={val}")
@@ -77,7 +77,7 @@ def main() -> int:
         print(f"\n=== {args.model}: C++ engine ===")
         print(
             f"reactions: {len(test_rows)}   generated rate params: "
-            f"{sum(1 for k in test.rate_defs if k.startswith(('rateLaw','_rateLaw','__R')))}"
+            f"{sum(1 for k in test.rate_defs if k.startswith(('rateLaw', '_rateLaw', '__R')))}"
         )
         for r, p, raw, val in test_rows:
             print(f"  {' + '.join(r)} -> {' + '.join(p)}   name={raw:<14} value={val}")
