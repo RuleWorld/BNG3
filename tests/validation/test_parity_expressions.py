@@ -33,6 +33,6 @@ def test_expression_rate_parity(model_name, bng_cpp, work_dir):
     assert ref_net is not None, f"could not parse reference network ({ref_src})"
     assert test_net is not None, "could not parse engine network"
     diff = compare.compare_net(ref_net, test_net)
-    assert (
-        diff.ok
-    ), f"expression rate drift [{model_name}] (ref={ref_src}): {diff.summary()}"
+    assert diff.ok, (
+        f"expression rate drift [{model_name}] (ref={ref_src}): {diff.summary()}"
+    )
