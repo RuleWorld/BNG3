@@ -64,7 +64,7 @@ def _float(value: Any, default: float = 0.0) -> float:
     try:
         result = float(value)
         return result if math.isfinite(result) else default
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return default
 
 
@@ -138,7 +138,7 @@ def _source_metadata_payload(element: Optional[Any]) -> str:
         if str(_attribute(candidate, "encoding", "")).lower() == "base64":
             try:
                 return base64.b64decode(value, validate=True).decode("utf-8")
-            except (ValueError, UnicodeDecodeError):
+            except ValueError, UnicodeDecodeError:
                 return ""
         return value
     return ""
@@ -352,7 +352,7 @@ def _flatten_simple_external_comp(
         return None
     try:
         child_root = ET.parse(referenced_path).getroot()
-    except (ET.ParseError, OSError):
+    except ET.ParseError, OSError:
         return None
     if not child_root.tag.startswith("{"):
         return None
@@ -1078,7 +1078,7 @@ def _evaluate_static_arithmetic(
         if position != len(tokens) or not math.isfinite(value):
             return None
         return value
-    except (ArithmeticError, TypeError, ValueError, OverflowError):
+    except ArithmeticError, TypeError, ValueError, OverflowError:
         return None
 
 
@@ -1208,7 +1208,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         value = getattr(reference, "stoichiometry", None)
         try:
             number = float(value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             number = None
         if not getattr(reference, "variable_stoichiometry", False):
             if number is None or not math.isfinite(number) or number < 0:
@@ -1264,7 +1264,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             )
             try:
                 value = float(parameter_value)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return ""
             if not parameter_id or not math.isfinite(value):
                 return ""
@@ -1305,7 +1305,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             return False, ""
         try:
             value = float(parameter.value)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return False, ""
         if not math.isfinite(value):
             return False, ""
@@ -1443,7 +1443,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
                 if compartment.constant:
                     try:
                         size = float(compartment.size)
-                    except (TypeError, ValueError):
+                    except TypeError, ValueError:
                         unsafe.add(target_key)
                         continue
                     if not math.isfinite(size) or size == 0:
@@ -1637,7 +1637,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
     for rule in algebraic:
         try:
             expression = parse_expression(str(rule.math))
-        except (SyntaxError, ValueError):
+        except SyntaxError, ValueError:
             continue
         parsed[id(rule)] = expression
         names = {node.id for node in ast.walk(expression) if isinstance(node, ast.Name)}
@@ -1740,7 +1740,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
                     ast.Div: lambda: left / right,
                     ast.Pow: lambda: left**right,
                 }[type(node.op)]()
-            except (ArithmeticError, OverflowError, ValueError):
+            except ArithmeticError, OverflowError, ValueError:
                 return None
             return (
                 value
@@ -1883,7 +1883,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         # Keep the output compact for the common x - constant = 0 form.
         try:
             folded = numeric(parse_expression(value).body)
-        except (SyntaxError, ValueError):
+        except SyntaxError, ValueError:
             folded = None
         if folded is not None:
             value = number(folded)
@@ -2081,7 +2081,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
             return False
         try:
             node = ast.parse(expanded.replace("^", "**"), mode="eval").body
-        except (SyntaxError, ValueError, TypeError):
+        except SyntaxError, ValueError, TypeError:
             return False
         symbols = dict(static_symbols)
         symbols.update(extra_symbols)
@@ -2089,7 +2089,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         def static_number(value: ast.AST) -> Optional[float]:
             try:
                 rendered = ast.unparse(value)
-            except (AttributeError, ValueError):
+            except AttributeError, ValueError:
                 return None
             if any(
                 standardize_name(name) == "time"
@@ -2210,7 +2210,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 static = _evaluate_static_arithmetic(
                     ast.unparse(node), dict(symbols), model.function_definitions
                 )
-            except (AttributeError, ValueError):
+            except AttributeError, ValueError:
                 static = None
             if static is not None:
                 return 0.0, static
@@ -2262,7 +2262,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     return None
                 try:
                     coefficient = float(reference.stoichiometry)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return None
                 if not math.isfinite(coefficient) or coefficient < 0:
                     return None
@@ -2298,14 +2298,14 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 try:
                     if name:
                         symbols[str(name)] = float(value)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return None
             try:
                 expression_ast = ast.parse(
                     str(expression or "").replace("^", "**"), mode="eval"
                 ).body
                 flux = affine(expression_ast, symbols)
-            except (SyntaxError, ValueError, TypeError):
+            except SyntaxError, ValueError, TypeError:
                 flux = None
             if flux is None:
                 return None
@@ -2383,7 +2383,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         def static_value(node: ast.AST) -> Optional[float]:
             try:
                 expression = ast.unparse(node)
-            except (AttributeError, ValueError):
+            except AttributeError, ValueError:
                 return None
             return _evaluate_static_arithmetic(
                 expression, symbols, model.function_definitions
@@ -2434,7 +2434,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
             try:
                 formula = str(rule.math or "").replace("^", "**")
                 derivative = affine(ast.parse(formula, mode="eval").body)
-            except (SyntaxError, ValueError, TypeError):
+            except SyntaxError, ValueError, TypeError:
                 derivative = None
             if derivative is None:
                 return None
@@ -2620,7 +2620,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
             try:
                 if name:
                     local_values[str(name)] = float(value)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 continue
         if isinstance(law, Mapping):
             law["math"] = replace(
@@ -2933,12 +2933,12 @@ class SBMLParser:
         level = _attribute(root, "level")
         try:
             level_value = int(level) if level is not None else None
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             level_value = None
         version = _attribute(root, "version")
         try:
             version_value = int(version) if version is not None else None
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             version_value = None
         events = SBMLParser._parse_xml_events(
             model,

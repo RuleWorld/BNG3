@@ -438,7 +438,7 @@ def _number(value: object) -> str:
         return str(value)
     try:
         number = float(value)
-    except (OverflowError, TypeError, ValueError):
+    except OverflowError, TypeError, ValueError:
         return str(value)
     if number.is_integer():
         return str(int(number))
@@ -457,7 +457,7 @@ def _evaluate_arithmetic(expression: str) -> Optional[float]:
     normalized = normalized.replace("^", "**")
     try:
         tree = ast.parse(normalized, mode="eval")
-    except (RecursionError, SyntaxError, ValueError):
+    except RecursionError, SyntaxError, ValueError:
         return None
 
     def evaluate(node: ast.AST) -> object:
@@ -527,14 +527,14 @@ def _evaluate_arithmetic(expression: str) -> Optional[float]:
             return None
         number = float(value)
         return number if math.isfinite(number) else None
-    except (ArithmeticError, OverflowError, RecursionError, TypeError, ValueError):
+    except ArithmeticError, OverflowError, RecursionError, TypeError, ValueError:
         return None
 
 
 def _numeric_value(value: object) -> Optional[float]:
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
     return number if math.isfinite(number) else None
 
@@ -1533,7 +1533,7 @@ def _numeric_parameter_value(value: object) -> float:
         value = getattr(value, "value", value)
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return float("nan")
 
 
@@ -1664,7 +1664,7 @@ def _safe_numeric_expression(
 
     try:
         result = evaluate(tree)
-    except (ArithmeticError, TypeError, ValueError, OverflowError):
+    except ArithmeticError, TypeError, ValueError, OverflowError:
         return None
     if isinstance(result, complex):
         return None
@@ -2480,7 +2480,7 @@ def _reaction_species_ids(
             stoichiometry = reference.get("stoichiometry", 1)
         try:
             count = max(0, int(round(float(stoichiometry))))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             count = 0
         species_ids.extend([str(species_id)] * count)
     return species_ids
@@ -3087,7 +3087,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         """Prove a simple affine-in-time comparison has one truth value."""
         try:
             condition = ast.parse(expression, mode="eval").body
-        except (SyntaxError, ValueError):
+        except SyntaxError, ValueError:
             return None
         if not isinstance(condition, ast.Compare) or len(condition.ops) != 1:
             return None
@@ -3294,7 +3294,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             assigned_duration = initial_expression(
                 assignments[0][1], require_immutable_symbols=True
             )
-        except (TypeError, ValueError, OverflowError):
+        except TypeError, ValueError, OverflowError:
             return None
         if (
             initial_duration is None
@@ -3351,7 +3351,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 )
                 if duration is None:
                     duration = bounded_constant_expression(arguments[1])
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 return expression, 0
             delayed_expression = arguments[0].strip()
             state_match = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", delayed_expression)
@@ -3703,7 +3703,7 @@ def _curated_parameter_value(model: SBMLModel, parameter_id: str, value: object)
 
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return str(value)
     if math.isnan(number):
         _record_import_warning(
@@ -3801,7 +3801,7 @@ def _inline_reaction_fluxes(
                 species_with_conc_functions=species_with_conc_functions,
                 sbml_to_bngl_id=sbml_to_bngl_id,
             )
-        except (TypeError, ValueError, re.error):
+        except TypeError, ValueError, re.error:
             flux = None
         cache[reaction_id] = flux
         return flux
@@ -3860,7 +3860,7 @@ def _conversion_factor_for_species(species_id: str, model: SBMLModel) -> Optiona
         value = parameter.get("value")
     try:
         numeric_value = float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         numeric_value = None
     if numeric_value is not None and numeric_value == numeric_value:
         return _number(numeric_value)
@@ -5013,7 +5013,7 @@ def _reaction_pattern(
     if model.multi_executable and multi_pattern:
         try:
             structure = read_from_string(multi_pattern)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             structure = None
         if structure is not None:
             if compartment_override:
@@ -5123,7 +5123,7 @@ def _multi_product_structure(
     try:
         result = read_from_string(type_pattern)
         explicit = read_from_string(species_pattern)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
     # Type pattern supplies complete molecule/bond topology.  Species pattern
@@ -5182,7 +5182,7 @@ def _multi_product_structure(
             continue
         try:
             source_structure = read_from_string(source_pattern)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         source_location = _multi_alias_location(
             model, source_type, mapping.reactant_component
@@ -6317,7 +6317,7 @@ def generate_bngl(
             initial = float(initial_value)
             if not math.isfinite(initial):
                 initial = 0.0
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             initial = 0.0
         augmented_seed_species.append(
             SeedSpeciesEntry(
@@ -6817,7 +6817,7 @@ def generate_bngl(
                 )
                 try:
                     parsed = ast.parse(expression, mode="eval")
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return True
                 path.add(normalized)
                 dependent_symbols = {
@@ -7295,7 +7295,7 @@ def generate_bngl(
                             return None
                     try:
                         folded = fold_numeric(ast.unparse(node), resolve_immutable)
-                    except (TypeError, ValueError, SyntaxError):
+                    except TypeError, ValueError, SyntaxError:
                         return None
                     if folded is None or not math.isfinite(folded):
                         return None
@@ -7303,7 +7303,7 @@ def generate_bngl(
 
                 try:
                     parsed = ast.parse(derivative, mode="eval")
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
                 coefficients = parameter_polynomial(parsed.body)
                 if coefficients is None or coefficients[0] != 0:
@@ -7403,7 +7403,7 @@ def generate_bngl(
                         return None
                 try:
                     folded = fold_numeric(ast.unparse(node), resolve_immutable)
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
                 if folded is None or not math.isfinite(folded):
                     return None
@@ -7450,7 +7450,7 @@ def generate_bngl(
                 expression = extend_function(expression, {}, model.function_definitions)
                 try:
                     parsed = ast.parse(expression, mode="eval")
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
                 coefficients = polynomial(parsed.body)
                 if coefficients is None or coefficients[0] != 0:
@@ -7559,7 +7559,7 @@ def generate_bngl(
                 expression = extend_function(expression, {}, model.function_definitions)
                 try:
                     parsed = ast.parse(expression, mode="eval").body
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
 
                 raw_local_parameters = (
@@ -7581,7 +7581,7 @@ def generate_bngl(
                     )
                     try:
                         value = float(raw_value)
-                    except (TypeError, ValueError):
+                    except TypeError, ValueError:
                         return None
                     if not local_id or not math.isfinite(value):
                         return None
@@ -7742,7 +7742,7 @@ def generate_bngl(
             expression = extend_function(expression, {}, model.function_definitions)
             try:
                 parsed = ast.parse(expression, mode="eval").body
-            except (TypeError, ValueError, SyntaxError):
+            except TypeError, ValueError, SyntaxError:
                 return None
 
             raw_local_parameters = (
@@ -7764,7 +7764,7 @@ def generate_bngl(
                 )
                 try:
                     value = float(raw_value)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return None
                 if not local_id or not math.isfinite(value):
                     return None
@@ -7957,7 +7957,7 @@ def generate_bngl(
                         model.function_definitions,
                     )
                     rule_node = ast.parse(rule_expression, mode="eval").body
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
 
                 def linear_terms(
@@ -8137,7 +8137,7 @@ def generate_bngl(
                         str(rule.math or ""), {}, model.function_definitions
                     )
                     node = ast.parse(expression, mode="eval").body
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     continue
                 if isinstance(node, ast.Name) and standardize_name(
                     node.id
@@ -8209,7 +8209,7 @@ def generate_bngl(
                         else None
                     ),
                 )
-            except (TypeError, ValueError, SyntaxError):
+            except TypeError, ValueError, SyntaxError:
                 return None
             if (
                 assigned_size is None
@@ -8418,7 +8418,7 @@ def generate_bngl(
                 expression = extend_function(expression, {}, model.function_definitions)
                 try:
                     parsed = ast.parse(expression, mode="eval").body
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
                 if not (
                     isinstance(parsed, ast.BinOp)
@@ -8611,7 +8611,7 @@ def generate_bngl(
                 )
                 try:
                     parsed = ast.parse(expression, mode="eval").body
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
                 polynomial = parse(parsed)
                 if polynomial is None:
@@ -9130,7 +9130,7 @@ def generate_bngl(
                 expression = extend_function(expression, {}, model.function_definitions)
                 try:
                     parsed = ast.parse(expression, mode="eval").body
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
                 local_parameters = (
                     kinetic_law.get("localParameters", [])
@@ -9151,7 +9151,7 @@ def generate_bngl(
                     )
                     try:
                         local_values[standardize_name(local_id)] = float(raw_value)
-                    except (TypeError, ValueError):
+                    except TypeError, ValueError:
                         return None
                 polynomial = rate_polynomial(parsed, local_values)
                 if polynomial is None:
@@ -9416,7 +9416,7 @@ def generate_bngl(
                 )
                 try:
                     local_values[standardize_name(local_id)] = float(raw_value)
-                except (TypeError, ValueError):
+                except TypeError, ValueError:
                     return None
 
             assigned_here = {
@@ -9520,7 +9520,7 @@ def generate_bngl(
                 )
                 try:
                     parsed = ast.parse(expression, mode="eval")
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     return None
                 dependencies = {
                     standardize_name(node.id)

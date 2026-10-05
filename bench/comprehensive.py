@@ -123,8 +123,14 @@ def run_harness(reps: int) -> dict:
         tmp_path = Path(tmp.name)
     try:
         proc = subprocess.run(
-            [sys.executable, str(ROOT / "bench" / "run_bench.py"),
-             "--reps", str(reps), "--json", str(tmp_path)],
+            [
+                sys.executable,
+                str(ROOT / "bench" / "run_bench.py"),
+                "--reps",
+                str(reps),
+                "--json",
+                str(tmp_path),
+            ],
             cwd=str(ROOT),
         )
         if proc.returncode != 0 or not tmp_path.is_file():
@@ -144,7 +150,10 @@ def run_gpu() -> dict:
         return {"error": "benchmark_gpu_batch_ssa.py not present in this tree"}
     proc = subprocess.run(
         [sys.executable, str(script)],
-        cwd=str(ROOT), capture_output=True, text=True, timeout=900,
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=900,
     )
     results_path = ROOT / "benchmark_batch_ssa_results.json"
     out: dict = {"returncode": proc.returncode, "backend_line": None}
@@ -167,38 +176,42 @@ def _run_profile_child(case: dict) -> dict:
     excluding subcalls), totaltime = pstats "cumtime". `code` is a code object
     for Python functions and a plain string for C/builtin calls.
     """
-    child = BOOTSTRAP + "\n".join([
-        "import cProfile, json, time",
-        case["setup"],
-        "_prof = cProfile.Profile()",
-        "_t0 = time.perf_counter()",
-        "_prof.enable()",
-        "try:",
-        _indent(case["profiled"], "    "),
-        "finally:",
-        "    _prof.disable()",
-        "_wall = time.perf_counter() - _t0",
-        "_EXTRA = locals().get('_EXTRA', {})",
-        "_rows = []",
-        "for _e in _prof.getstats():",
-        "    _code = _e.code",
-        "    if hasattr(_code, 'co_filename'):",
-        "        _where = _code.co_filename + ':' + str(_code.co_firstlineno)",
-        "        _name = _code.co_name",
-        "    else:",
-        "        _where = str(_code)",
-        "        _name = str(_code)",
-        "    _rows.append({'where': _where, 'func': _name,",
-        "                  'calls': int(_e.callcount),",
-        "                  'tottime': float(_e.inlinetime),",
-        "                  'cumtime': float(_e.totaltime)})",
-        "_rows.sort(key=lambda r: -r['tottime'])",
-        "print(json.dumps({'wall': _wall, 'top': _rows[:%d], **_EXTRA}))" % _TOP_N,
-        "",
-    ])
+    child = BOOTSTRAP + "\n".join(
+        [
+            "import cProfile, json, time",
+            case["setup"],
+            "_prof = cProfile.Profile()",
+            "_t0 = time.perf_counter()",
+            "_prof.enable()",
+            "try:",
+            _indent(case["profiled"], "    "),
+            "finally:",
+            "    _prof.disable()",
+            "_wall = time.perf_counter() - _t0",
+            "_EXTRA = locals().get('_EXTRA', {})",
+            "_rows = []",
+            "for _e in _prof.getstats():",
+            "    _code = _e.code",
+            "    if hasattr(_code, 'co_filename'):",
+            "        _where = _code.co_filename + ':' + str(_code.co_firstlineno)",
+            "        _name = _code.co_name",
+            "    else:",
+            "        _where = str(_code)",
+            "        _name = str(_code)",
+            "    _rows.append({'where': _where, 'func': _name,",
+            "                  'calls': int(_e.callcount),",
+            "                  'tottime': float(_e.inlinetime),",
+            "                  'cumtime': float(_e.totaltime)})",
+            "_rows.sort(key=lambda r: -r['tottime'])",
+            "print(json.dumps({'wall': _wall, 'top': _rows[:%d], **_EXTRA}))" % _TOP_N,
+            "",
+        ]
+    )
     proc = subprocess.run(
         [sys.executable, "-c", child, str(ROOT)],
-        capture_output=True, text=True, timeout=600,
+        capture_output=True,
+        text=True,
+        timeout=600,
     )
     if proc.returncode != 0:
         return {"error": f"child exit {proc.returncode}: {proc.stderr.strip()[-500:]}"}
@@ -235,34 +248,51 @@ def _print_profile(profile: dict) -> None:
             continue
         if "events" in data:
             print(f"  events={data['events']} (guard for comparability)")
-        print(f"  {'tottime':>9} {'per-call':>10} {'calls':>8} "
-              f"{'cumtime':>9}  location")
+        print(
+            f"  {'tottime':>9} {'per-call':>10} {'calls':>8} {'cumtime':>9}  location"
+        )
         for row in data["top"]:
             per = row["tottime"] / row["calls"] if row["calls"] else 0.0
             where = row["where"].replace(str(ROOT) + "/", "")
-            print(f"  {row['tottime']:>9.4f} {per:>10.6f} {row['calls']:>8} "
-                  f"{row['cumtime']:>9.4f}  {row['func']}  ({where})")
+            print(
+                f"  {row['tottime']:>9.4f} {per:>10.6f} {row['calls']:>8} "
+                f"{row['cumtime']:>9.4f}  {row['func']}  ({where})"
+            )
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--reps", type=int, default=5)
-    ap.add_argument("--json", type=Path, default=None,
-                    help="write the full machine-readable report here")
+    ap.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="write the full machine-readable report here",
+    )
     ap.add_argument("--skip-gpu", action="store_true")
     ap.add_argument("--skip-profile", action="store_true")
-    ap.add_argument("--skip-harness", action="store_true",
-                    help="gpu/profile only (harness needs a quiet host)")
+    ap.add_argument(
+        "--skip-harness",
+        action="store_true",
+        help="gpu/profile only (harness needs a quiet host)",
+    )
     args = ap.parse_args()
 
-    git_rev = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        cwd=str(ROOT), capture_output=True, text=True,
-    ).stdout.strip() or "unknown"
+    git_rev = (
+        subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        or "unknown"
+    )
 
     print("=" * 78)
-    print(f"BNG3 comprehensive benchmark  git={git_rev}  "
-          f"python={sys.version.split()[0]}  platform={platform.platform()}")
+    print(
+        f"BNG3 comprehensive benchmark  git={git_rev}  "
+        f"python={sys.version.split()[0]}  platform={platform.platform()}"
+    )
     print(f"load1={_load1():.1f} at start -- quote with every timing")
     print("=" * 78)
 
@@ -297,11 +327,13 @@ def main() -> int:
                     g = run.get("gpu") or {}
                     if g.get("sim_time_ms"):
                         speedup = mc["sim_time_ms"] / g["sim_time_ms"]
-                        print(f"  {model['model_id']:<16} "
-                              f"batch={run['batch_size']:>6}  "
-                              f"CPU-MC={mc['sim_time_ms']:>9.2f}ms  "
-                              f"GPU={g['sim_time_ms']:>9.2f}ms  "
-                              f"speedup={speedup:>6.2f}x")
+                        print(
+                            f"  {model['model_id']:<16} "
+                            f"batch={run['batch_size']:>6}  "
+                            f"CPU-MC={mc['sim_time_ms']:>9.2f}ms  "
+                            f"GPU={g['sim_time_ms']:>9.2f}ms  "
+                            f"speedup={speedup:>6.2f}x"
+                        )
 
     if not args.skip_profile:
         print("\n########## 3. profile (cProfile, top-20 self time) ##########")

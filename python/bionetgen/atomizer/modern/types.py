@@ -307,7 +307,7 @@ def coerce_import_warning(warning: Any) -> SBMLImportWarning:
     if isinstance(warning, Mapping):
         try:
             count = int(warning.get("count", 1))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             count = 1
         return SBMLImportWarning(
             category=str(warning.get("category", "import")),

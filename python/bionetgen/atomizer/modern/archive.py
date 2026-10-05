@@ -57,7 +57,7 @@ def _manifest_sbml_locations(
     for manifest_name in manifest_names:
         try:
             root = ET.fromstring(archive.read(members[manifest_name]))
-        except (ET.ParseError, KeyError, RuntimeError, zipfile.BadZipFile):
+        except ET.ParseError, KeyError, RuntimeError, zipfile.BadZipFile:
             continue
         base = posixpath.dirname(manifest_name)
         for content in root.iter():
@@ -114,7 +114,7 @@ def _sbml_members(archive: zipfile.ZipFile, members: dict[str, str]) -> list[str
             continue
         try:
             root = ET.fromstring(archive.read(member))
-        except (ET.ParseError, KeyError, RuntimeError, UnicodeError):
+        except ET.ParseError, KeyError, RuntimeError, UnicodeError:
             continue
         if _local_name(root.tag) == "sbml":
             candidates.append(name)
