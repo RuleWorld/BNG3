@@ -23,6 +23,7 @@ Each arm child imports its own tree's extension in a fresh interpreter,
 so the two arms never share a binary. Exit is non-zero if any arm's
 outputs differ from each other (identity failure) or a child errors.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -47,8 +48,9 @@ def _sha(arr) -> str:
     return hashlib.sha256(arr.tobytes()).hexdigest()
 
 
-def run_child(tree: str, model_id: str, batch: int, seed: int, n_steps: int,
-              backend: str) -> dict:
+def run_child(
+    tree: str, model_id: str, batch: int, seed: int, n_steps: int, backend: str
+) -> dict:
     """Run one GPU simulation in this process against `tree`'s extension."""
     sys.path.insert(0, os.path.join(tree, "build", "cpp"))
     sys.path.insert(0, os.path.join(tree, "python"))
@@ -62,7 +64,8 @@ def run_child(tree: str, model_id: str, batch: int, seed: int, n_steps: int,
     model = cpp.parse_file(abs_path)
     net = cpp.generate_network(model)
     gpu = cpp.simulate_batch_ssa_gpu(
-        model, net,
+        model,
+        net,
         batch_size=batch,
         t_end=t_end,
         n_steps=n_steps,
@@ -99,28 +102,38 @@ def run_child(tree: str, model_id: str, batch: int, seed: int, n_steps: int,
     return out
 
 
-def spawn_child(tree: str, model_id: str, batch: int, seed: int, n_steps: int,
-                backend: str) -> dict:
+def spawn_child(
+    tree: str, model_id: str, batch: int, seed: int, n_steps: int, backend: str
+) -> dict:
     cmd = [
-        sys.executable, os.path.abspath(__file__),
-        "--child", tree,
-        "--model", model_id,
-        "--batch", str(batch),
-        "--seed", str(seed),
-        "--n-steps", str(n_steps),
-        "--backend", backend,
+        sys.executable,
+        os.path.abspath(__file__),
+        "--child",
+        tree,
+        "--model",
+        model_id,
+        "--batch",
+        str(batch),
+        "--seed",
+        str(seed),
+        "--n-steps",
+        str(n_steps),
+        "--backend",
+        backend,
     ]
     env = dict(os.environ)
     env.pop("PYTHONPATH", None)
     # A scikit-build editable install can redirect `import bionetgen` to
     # another checkout; strip its meta_path hook the way bench/run_bench.py does.
     env["SKBUILD_EDITABLE_SKIP"] = "1"
-    proc = subprocess.run(cmd, capture_output=True, text=True, env=env,
-                          cwd=REPO_ROOT, timeout=600)
+    proc = subprocess.run(
+        cmd, capture_output=True, text=True, env=env, cwd=REPO_ROOT, timeout=600
+    )
     if proc.returncode != 0:
         raise RuntimeError(
             f"child failed (rc={proc.returncode}) tree={tree} model={model_id}\n"
-            f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}")
+            f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+        )
     lines = [l for l in proc.stdout.splitlines() if l.strip().startswith("{")]
     if not lines:
         raise RuntimeError(f"child produced no JSON\n{proc.stdout}\n{proc.stderr}")
@@ -131,8 +144,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--a", help="baseline tree root")
     ap.add_argument("--b", help="candidate tree root (default: this tree)")
-    ap.add_argument("--model", default="egfr_net",
-                    choices=sorted(MODELS.keys()))
+    ap.add_argument("--model", default="egfr_net", choices=sorted(MODELS.keys()))
     ap.add_argument("--batch", type=int, default=10000)
     ap.add_argument("--seed", type=int, default=300)
     ap.add_argument("--n-steps", type=int, default=10)
@@ -144,8 +156,9 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.child:
-        res = run_child(args.child, args.model, args.batch, args.seed,
-                        args.n_steps, args.backend)
+        res = run_child(
+            args.child, args.model, args.batch, args.seed, args.n_steps, args.backend
+        )
         print(json.dumps(res))
         return 0
 
@@ -154,8 +167,10 @@ def main() -> int:
     tree_b = args.b or REPO_ROOT
 
     load1_start = os.getloadavg()[0]
-    print(f"model={args.model} batch={args.batch} seed={args.seed} "
-          f"rounds={args.rounds} load1={load1_start:.1f}")
+    print(
+        f"model={args.model} batch={args.batch} seed={args.seed} "
+        f"rounds={args.rounds} load1={load1_start:.1f}"
+    )
     print(f"A={args.a}\nB={tree_b}")
 
     rounds = []
@@ -164,12 +179,15 @@ def main() -> int:
         row = {"round": r, "order": order}
         for arm in order:
             tree = args.a if arm == "a" else tree_b
-            row[arm] = spawn_child(tree, args.model, args.batch, args.seed,
-                                   args.n_steps, args.backend)
-            print(f"  round {r} {arm.upper()}: sim={row[arm]['sim_ms']:.3f} ms "
-                  f"prep={row[arm]['model_prep_ms']:.3f} "
-                  f"d2h={row[arm]['d2h_ms']:.3f} wall={row[arm]['wall_ms']:.3f} "
-                  f"events={row[arm]['total_events']}")
+            row[arm] = spawn_child(
+                tree, args.model, args.batch, args.seed, args.n_steps, args.backend
+            )
+            print(
+                f"  round {r} {arm.upper()}: sim={row[arm]['sim_ms']:.3f} ms "
+                f"prep={row[arm]['model_prep_ms']:.3f} "
+                f"d2h={row[arm]['d2h_ms']:.3f} wall={row[arm]['wall_ms']:.3f} "
+                f"events={row[arm]['total_events']}"
+            )
         rounds.append(row)
 
     load1_end = os.getloadavg()[0]
@@ -232,10 +250,14 @@ def main() -> int:
         with open(args.json, "w") as f:
             json.dump(report, f, indent=2)
 
-    print(f"\nsim_ms A (baseline) median={med_a:.3f} cv={report['cv_a_pct']:.1f}% "
-          f"samples={[round(x, 3) for x in sims_a]}")
-    print(f"sim_ms B (candidate) median={med_b:.3f} cv={report['cv_b_pct']:.1f}% "
-          f"samples={[round(x, 3) for x in sims_b]}")
+    print(
+        f"\nsim_ms A (baseline) median={med_a:.3f} cv={report['cv_a_pct']:.1f}% "
+        f"samples={[round(x, 3) for x in sims_a]}"
+    )
+    print(
+        f"sim_ms B (candidate) median={med_b:.3f} cv={report['cv_b_pct']:.1f}% "
+        f"samples={[round(x, 3) for x in sims_b]}"
+    )
     print(f"delta = {delta:+.1f}%  (load1={load1_start:.1f}-{load1_end:.1f})")
     print(f"identity_ok = {identity_ok}")
     return 0 if identity_ok else 2

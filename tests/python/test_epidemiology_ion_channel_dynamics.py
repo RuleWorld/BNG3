@@ -733,9 +733,9 @@ def test_markovian_infector_offspring_pmf_is_geometric_not_poisson():
     chi2, dof = _chi_square(counts, total, geometric)
     assert chi2 < 3.84 * dof, f"geometric rejected: chi2={chi2} dof={dof}"
     chi2_poisson, dof_poisson = _chi_square(counts, total, poisson)
-    assert (
-        chi2_poisson > 50 * dof_poisson
-    ), f"Poisson not decisively rejected: chi2={chi2_poisson} dof={dof_poisson}"
+    assert chi2_poisson > 50 * dof_poisson, (
+        f"Poisson not decisively rejected: chi2={chi2_poisson} dof={dof_poisson}"
+    )
 
 
 def test_erlang_parent_offspring_pmf_is_negative_binomial():
@@ -749,6 +749,6 @@ def test_erlang_parent_offspring_pmf_is_negative_binomial():
     chi2, dof = _chi_square(counts, total, negbin)
     assert chi2 < 3.84 * dof, f"negative binomial rejected: chi2={chi2} dof={dof}"
     chi2_geo, dof_geo = _chi_square(counts, total, geometric)
-    assert (
-        chi2_geo > 20 * dof_geo
-    ), f"geometric not decisively rejected: chi2={chi2_geo} dof={dof_geo}"
+    assert chi2_geo > 20 * dof_geo, (
+        f"geometric not decisively rejected: chi2={chi2_geo} dof={dof_geo}"
+    )

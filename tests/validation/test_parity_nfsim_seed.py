@@ -86,8 +86,9 @@ def _write_xml(source: Path, out_xml: Path) -> Path | None:
     return out_xml if out_xml.exists() else None
 
 
-def _native_trajectory(xml_path: Path, work_dir: Path, *, seed: int, t_end: float,
-                       n_steps: int):
+def _native_trajectory(
+    xml_path: Path, work_dir: Path, *, seed: int, t_end: float, n_steps: int
+):
     """(data, columns) from native NFsim, or (None, reason)."""
     gdat, error = oracle_nfsim.run_nfsim(
         xml_path, work_dir, t_end=t_end, n_steps=n_steps, seed=seed
@@ -182,7 +183,11 @@ def _run_gate(nodeid: str, env_overrides: dict[str, str], tmp_path: Path):
         "no:randomly",
     ]
     proc = subprocess.run(
-        argv, cwd=str(corpus.REPO), env=env, capture_output=True, text=True,
+        argv,
+        cwd=str(corpus.REPO),
+        env=env,
+        capture_output=True,
+        text=True,
         timeout=900,
     )
     return proc, proc.stdout + proc.stderr
@@ -221,6 +226,7 @@ def test_parity_gate_fails_rather_than_skips_when_the_oracle_is_missing(tmp_path
     # report `passed` here and the assertion below catches it.
     assert "skipped" in lenient_out, lenient_out
     assert "1 passed" not in lenient_out, lenient_out
+
 
 @pytest.mark.slow
 def test_every_oracle_gated_parity_node_is_reachable_under_strict_mode(tmp_path):
@@ -290,8 +296,7 @@ def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
         model_name, method="nf", seed=SEED, t_end=T_END, n_steps=N_STEPS
     )
     assert direct.construction_path == "direct", (
-        f"{model_name} did not run on the direct path: "
-        f"{direct.construction_path!r}"
+        f"{model_name} did not run on the direct path: {direct.construction_path!r}"
     )
 
     xml_path = oracle_nfsim.write_model_xml(
@@ -335,7 +340,9 @@ def test_fixed_seed_is_deterministic_within_bng3(api, work_dir):
     report = _identity_report(
         (first.data, first.columns), (second.data, second.columns)
     )
-    assert report is None, f"the same seed produced two different trajectories: {report}"
+    assert report is None, (
+        f"the same seed produced two different trajectories: {report}"
+    )
 
 
 @pytest.mark.nf
@@ -366,15 +373,25 @@ def test_different_seeds_produce_different_trajectories_on_both_legs(api, work_d
     )
     require_oracle(xml_path is not None, "no BNG-XML emitted for simple_system")
     native_base, error_a = _native_trajectory(
-        xml_path, work_dir / "native" / f"seed{SEED}",
-        seed=SEED, t_end=T_END, n_steps=N_STEPS,
+        xml_path,
+        work_dir / "native" / f"seed{SEED}",
+        seed=SEED,
+        t_end=T_END,
+        n_steps=N_STEPS,
     )
-    require_oracle(native_base is not None, f"native NFsim produced no output: {error_a}")
+    require_oracle(
+        native_base is not None, f"native NFsim produced no output: {error_a}"
+    )
     native_other, error_b = _native_trajectory(
-        xml_path, work_dir / "native" / f"seed{SEED + 1}",
-        seed=SEED + 1, t_end=T_END, n_steps=N_STEPS,
+        xml_path,
+        work_dir / "native" / f"seed{SEED + 1}",
+        seed=SEED + 1,
+        t_end=T_END,
+        n_steps=N_STEPS,
     )
-    require_oracle(native_other is not None, f"native NFsim produced no output: {error_b}")
+    require_oracle(
+        native_other is not None, f"native NFsim produced no output: {error_b}"
+    )
     native_report = _identity_report(native_base, native_other)
     assert native_report is not None, (
         "native NFsim produced identical trajectories for two different seeds; "
