@@ -138,8 +138,7 @@ def main() -> int:
         walls.append(wall)
         compare_phases.append(_compare_phase)
         print(
-            f"repeat {repeat + 1}: wall {wall:7.2f}s "
-            f"(compare {_compare_phase:6.2f}s)"
+            f"repeat {repeat + 1}: wall {wall:7.2f}s (compare {_compare_phase:6.2f}s)"
         )
 
     mean = statistics.mean(walls)

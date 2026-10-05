@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Advisory failures stay explicit and worktree candidates cover this host."""
+
 from __future__ import annotations
 
 import importlib.machinery
@@ -19,7 +20,8 @@ loader.exec_module(module)
 
 def main() -> int:
     failed_ps = subprocess.CompletedProcess(
-        ["ps", "-axo", "pid=,command="], 1, "", "permission denied")
+        ["ps", "-axo", "pid=,command="], 1, "", "permission denied"
+    )
     with patch.object(module.subprocess, "run", return_value=failed_ps):
         try:
             module.snapshot()
@@ -55,8 +57,10 @@ def main() -> int:
             process.terminate()
             process.wait(timeout=5)
 
-    print("PASS: ps errors stay explicit; argv checkout paths match; cwd-only "
-          "processes remain outside the advisory")
+    print(
+        "PASS: ps errors stay explicit; argv checkout paths match; cwd-only "
+        "processes remain outside the advisory"
+    )
     return 0
 
 

@@ -24,6 +24,7 @@ The bench model is the same synthetic ring shape the originating agent used
 numbers are comparable, but the generator, statistics and event cap here are
 independent.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -110,8 +111,7 @@ def wait4_child(process: subprocess.Popen, timeout: float) -> resource.struct_ru
 
 def run_once(binary: Path, model: Path, timeout: float = 1800.0) -> dict:
     """Run in a fresh directory so no prior artifact can satisfy this run."""
-    run_dir = Path(tempfile.mkdtemp(prefix=f"pr78-{model.stem}-",
-                                    dir=model.parent))
+    run_dir = Path(tempfile.mkdtemp(prefix=f"pr78-{model.stem}-", dir=model.parent))
     try:
         run_model = run_dir / model.name
         shutil.copyfile(model, run_model)
@@ -119,8 +119,10 @@ def run_once(binary: Path, model: Path, timeout: float = 1800.0) -> dict:
         start = time.perf_counter()
         with log_path.open("wb") as log:
             process = subprocess.Popen(
-                [str(binary), str(run_model)], cwd=run_dir,
-                stdout=log, stderr=subprocess.STDOUT,
+                [str(binary), str(run_model)],
+                cwd=run_dir,
+                stdout=log,
+                stderr=subprocess.STDOUT,
             )
             usage = wait4_child(process, timeout)
         wall = time.perf_counter() - start
@@ -178,8 +180,10 @@ def load_context() -> list[float] | None:
 def git_revision(root: Path) -> str | None:
     try:
         return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=root,
-            stderr=subprocess.DEVNULL, text=True,
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            stderr=subprocess.DEVNULL,
+            text=True,
         ).strip()
     except (OSError, subprocess.SubprocessError):
         return None
@@ -240,7 +244,8 @@ def _main() -> int:
                 if corrected_cpu <= 0:
                     raise RuntimeError(
                         f"non-positive corrected CPU time for {name}: "
-                        f"full={f['cpu_s']:.6f}s probe={p['cpu_s']:.6f}s")
+                        f"full={f['cpu_s']:.6f}s probe={p['cpu_s']:.6f}s"
+                    )
                 raw[name].append(args.events / f["cpu_s"])
                 corr[name].append(args.events / corrected_cpu)
                 wall[name].append(args.events / f["wall_s"])
@@ -249,16 +254,18 @@ def _main() -> int:
                 rss_samples[name].append(f["max_rss_bytes"])
                 gdat[name].add(f["gdat_sha256"])
                 net[name].add(f["net_sha256"])
-                runs[name].append({
-                    "rep": rep + 1,
-                    "full_cpu_s": f["cpu_s"],
-                    "probe_cpu_s": p["cpu_s"],
-                    "corrected_cpu_s": corrected_cpu,
-                    "full_wall_s": f["wall_s"],
-                    "full_max_rss_bytes": f["max_rss_bytes"],
-                    "gdat_sha256": f["gdat_sha256"],
-                    "net_sha256": f["net_sha256"],
-                })
+                runs[name].append(
+                    {
+                        "rep": rep + 1,
+                        "full_cpu_s": f["cpu_s"],
+                        "probe_cpu_s": p["cpu_s"],
+                        "corrected_cpu_s": corrected_cpu,
+                        "full_wall_s": f["wall_s"],
+                        "full_max_rss_bytes": f["max_rss_bytes"],
+                        "gdat_sha256": f["gdat_sha256"],
+                        "net_sha256": f["net_sha256"],
+                    }
+                )
             print(f"  rep {rep + 1}/{args.reps} done", file=sys.stderr)
 
     result: dict = {
@@ -305,16 +312,26 @@ def _main() -> int:
     ratios = {}
     for n in names[1:]:
         ratios[f"{n}_vs_{ref}"] = {
-            "raw_min": (result["raw_events_per_cpu_s"][n]["min"]
-                        / result["raw_events_per_cpu_s"][ref]["min"]),
-            "raw_median": (result["raw_events_per_cpu_s"][n]["median"]
-                           / result["raw_events_per_cpu_s"][ref]["median"]),
-            "corrected_min": (result["corrected_events_per_cpu_s"][n]["min"]
-                              / result["corrected_events_per_cpu_s"][ref]["min"]),
-            "corrected_median": (result["corrected_events_per_cpu_s"][n]["median"]
-                                 / result["corrected_events_per_cpu_s"][ref]["median"]),
-            "wall_min": (result["events_per_wall_s"][n]["min"]
-                         / result["events_per_wall_s"][ref]["min"]),
+            "raw_min": (
+                result["raw_events_per_cpu_s"][n]["min"]
+                / result["raw_events_per_cpu_s"][ref]["min"]
+            ),
+            "raw_median": (
+                result["raw_events_per_cpu_s"][n]["median"]
+                / result["raw_events_per_cpu_s"][ref]["median"]
+            ),
+            "corrected_min": (
+                result["corrected_events_per_cpu_s"][n]["min"]
+                / result["corrected_events_per_cpu_s"][ref]["min"]
+            ),
+            "corrected_median": (
+                result["corrected_events_per_cpu_s"][n]["median"]
+                / result["corrected_events_per_cpu_s"][ref]["median"]
+            ),
+            "wall_min": (
+                result["events_per_wall_s"][n]["min"]
+                / result["events_per_wall_s"][ref]["min"]
+            ),
         }
     result["ratios"] = ratios
 
@@ -323,30 +340,45 @@ def _main() -> int:
         json_path.parent.mkdir(parents=True, exist_ok=True)
         json_path.write_text(json.dumps(result, indent=2) + "\n")
     if not result["identity_gate_pass"]:
-        print("ERROR: raw output identity gate failed; do not report throughput "
-              "as a valid matched-pair result", file=sys.stderr)
+        print(
+            "ERROR: raw output identity gate failed; do not report throughput "
+            "as a valid matched-pair result",
+            file=sys.stderr,
+        )
         return 2
 
-    print(f"\n== events/sec (species={args.species}, R={3 * args.species}, "
-          f"events/rep={args.events}, reps={args.reps})")
-    for label, key in (("raw cpu", "raw_events_per_cpu_s"),
-                       ("corrected cpu", "corrected_events_per_cpu_s"),
-                       ("wall", "events_per_wall_s")):
+    print(
+        f"\n== events/sec (species={args.species}, R={3 * args.species}, "
+        f"events/rep={args.events}, reps={args.reps})"
+    )
+    for label, key in (
+        ("raw cpu", "raw_events_per_cpu_s"),
+        ("corrected cpu", "corrected_events_per_cpu_s"),
+        ("wall", "events_per_wall_s"),
+    ):
         print(f"-- {label}")
         for n in names:
             s = result[key][n]
-            print(f"  {n:<10} min={s['min']:>12,.0f}  median={s['median']:>12,.0f}  "
-                  f"mean={s['mean']:>12,.0f}  sd={s['stdev']:>9,.0f}  "
-                  f"cv={s['cv_pct']:.2f}%")
+            print(
+                f"  {n:<10} min={s['min']:>12,.0f}  median={s['median']:>12,.0f}  "
+                f"mean={s['mean']:>12,.0f}  sd={s['stdev']:>9,.0f}  "
+                f"cv={s['cv_pct']:.2f}%"
+            )
     print(f"\n== ratios vs {ref}")
     for k, v in ratios.items():
-        print(f"  {k}: raw min={v['raw_min']:.4f} median={v['raw_median']:.4f} | "
-              f"corrected min={v['corrected_min']:.4f} "
-              f"median={v['corrected_median']:.4f} | wall min={v['wall_min']:.4f}")
-    print(f"\n== peak child max RSS (bytes): "
-          + ", ".join(f"{n}={rss_bytes[n]}" for n in names))
-    print(f"== raw .gdat and .net identity across variants and reps: "
-          f"{result['identity_gate_pass']}")
+        print(
+            f"  {k}: raw min={v['raw_min']:.4f} median={v['raw_median']:.4f} | "
+            f"corrected min={v['corrected_min']:.4f} "
+            f"median={v['corrected_median']:.4f} | wall min={v['wall_min']:.4f}"
+        )
+    print(
+        f"\n== peak child max RSS (bytes): "
+        + ", ".join(f"{n}={rss_bytes[n]}" for n in names)
+    )
+    print(
+        f"== raw .gdat and .net identity across variants and reps: "
+        f"{result['identity_gate_pass']}"
+    )
     return 0
 
 

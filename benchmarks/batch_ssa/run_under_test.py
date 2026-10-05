@@ -10,6 +10,7 @@ This wrapper drops the editable finders, puts the worktree's own python/ and
 build/cpp first, prints the paths that actually resolved, and only then hands
 off to pytest. The printed lines are the evidence.
 """
+
 import os
 import subprocess
 import sys

@@ -185,9 +185,7 @@ def test_api_fixture_fails_in_strict_ci_and_skips_locally(monkeypatch):
     # Reference the module, not the bare name: `api` in this namespace is the
     # fixture object pytest injects, not conftest's attribute, and calling that
     # silently skips this very test.
-    fixture = getattr(
-        sys.modules["tests.validation.conftest"].api, "__wrapped__", None
-    )
+    fixture = getattr(sys.modules["tests.validation.conftest"].api, "__wrapped__", None)
     assert fixture is not None, "conftest.api is not a plain fixture function"
 
     monkeypatch.delenv("BNG3_CI_STRICT_ORACLES", raising=False)

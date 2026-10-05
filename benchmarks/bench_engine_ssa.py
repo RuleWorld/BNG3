@@ -211,9 +211,9 @@ def main() -> int:
             name: {
                 "binary": str(path),
                 **summarize([r["events_per_sec"] for r in per_variant[name]]),
-                "wall_median": summarize(
-                    [r["wall_full_s"] for r in per_variant[name]]
-                )["median"],
+                "wall_median": summarize([r["wall_full_s"] for r in per_variant[name]])[
+                    "median"
+                ],
                 "runs": per_variant[name],
             }
             for name, path in variants

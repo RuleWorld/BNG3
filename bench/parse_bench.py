@@ -59,10 +59,12 @@ sys.meta_path[:] = [
 
 def run_child(ext_dir: Path, reps: int, root: Path, timeout: float = 600.0) -> dict:
     """Run one measurement child against the extension in `ext_dir`."""
-    code = _BOOTSTRAP + f"""
+    code = (
+        _BOOTSTRAP
+        + f"""
 import hashlib, json, sys, time
 sys.path.insert(0, {str(ext_dir)!r})
-sys.path.insert(0, {str(root / 'python')!r})
+sys.path.insert(0, {str(root / "python")!r})
 import _bionetgen_cpp as cpp
 import pathlib
 
@@ -101,6 +103,7 @@ for rel in INPUTS:
 out["ext"] = cpp.__file__
 print(json.dumps(out))
 """
+    )
     proc = subprocess.run(
         [sys.executable, "-c", code, str(root), str(reps)],
         capture_output=True,
@@ -135,7 +138,7 @@ def stats(samples: list[float]) -> dict:
     median = ordered[mid] if n % 2 else 0.5 * (ordered[mid - 1] + ordered[mid])
     mean = sum(ordered) / n
     var = sum((s - mean) ** 2 for s in ordered) / n
-    cv = (var ** 0.5) / mean if mean else 0.0
+    cv = (var**0.5) / mean if mean else 0.0
     return {
         "min": ordered[0],
         "median": median,
@@ -158,15 +161,24 @@ def find_ext(build_cpp: Path) -> Path:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--a", default=str(ROOT / "build" / "cpp"),
-                    help="extension dir A (default: this worktree's build/cpp)")
-    ap.add_argument("--b", default=None,
-                    help="extension dir B; enables interleaved A/B rounds")
-    ap.add_argument("--reps", type=int, default=50,
-                    help="parses per input per round (default 50)")
+    ap.add_argument(
+        "--a",
+        default=str(ROOT / "build" / "cpp"),
+        help="extension dir A (default: this worktree's build/cpp)",
+    )
+    ap.add_argument(
+        "--b", default=None, help="extension dir B; enables interleaved A/B rounds"
+    )
+    ap.add_argument(
+        "--reps", type=int, default=50, help="parses per input per round (default 50)"
+    )
     ap.add_argument("--rounds", type=int, default=5)
-    ap.add_argument("--inputs", nargs="*", default=None,
-                    help="BNGL paths relative to repo root (default: fixed set)")
+    ap.add_argument(
+        "--inputs",
+        nargs="*",
+        default=None,
+        help="BNGL paths relative to repo root (default: fixed set)",
+    )
     ap.add_argument("--json", default=None, help="write full results here")
     args = ap.parse_args()
 
@@ -217,8 +229,7 @@ def main() -> int:
                 g = tuple(res["guards"][rel])
                 if rel in guards[v] and guards[v][rel] != g:
                     raise SystemExit(
-                        f"guard mismatch for {v}/{rel}: "
-                        f"{guards[v][rel]} -> {g}"
+                        f"guard mismatch for {v}/{rel}: {guards[v][rel]} -> {g}"
                     )
                 guards[v][rel] = g
 
@@ -232,8 +243,10 @@ def main() -> int:
                 )
 
     report = {"meta": meta, "results": {}}
-    print(f"load1={meta['load1_start']:.1f}  reps={args.reps} "
-          f"rounds={args.rounds}  head={meta['git']}")
+    print(
+        f"load1={meta['load1_start']:.1f}  reps={args.reps} "
+        f"rounds={args.rounds}  head={meta['git']}"
+    )
     for rel in DEFAULT_INPUTS:
         row = {"a": stats(collected["a"][rel])}
         if b_dir:
@@ -241,12 +254,16 @@ def main() -> int:
             sa, sb = row["a"]["median"], row["b"]["median"]
             delta = (sb - sa) / sa * 100.0 if sa else 0.0
             row["delta_median_pct"] = delta
-            print(f"{rel:52s} A(med)={sa*1e3:8.3f} ms  "
-                  f"B(med)={sb*1e3:8.3f} ms  {delta:+6.2f}%")
+            print(
+                f"{rel:52s} A(med)={sa * 1e3:8.3f} ms  "
+                f"B(med)={sb * 1e3:8.3f} ms  {delta:+6.2f}%"
+            )
         else:
-            print(f"{rel:52s} A(min)={row['a']['min']*1e3:8.3f} ms  "
-                  f"A(med)={row['a']['median']*1e3:8.3f} ms  "
-                  f"cv={row['a']['cv']*100:4.1f}%")
+            print(
+                f"{rel:52s} A(min)={row['a']['min'] * 1e3:8.3f} ms  "
+                f"A(med)={row['a']['median'] * 1e3:8.3f} ms  "
+                f"cv={row['a']['cv'] * 100:4.1f}%"
+            )
         report["results"][rel] = row
     report["meta"]["load1_end"] = load1()
     print(f"load1_end={report['meta']['load1_end']:.1f}")
@@ -261,7 +278,10 @@ def _git_head() -> str:
     try:
         out = subprocess.run(
             ["git", "rev-parse", "--short", "HEAD"],
-            cwd=str(ROOT), capture_output=True, text=True, timeout=10,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
         return out.stdout.strip() or "unknown"
     except OSError:

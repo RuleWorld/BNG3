@@ -240,8 +240,7 @@ def antigen_binding() -> None:
     check(
         "binding equilibrium equals the physical root of the mass-balance quadratic",
         rel < 1e-9,
-        f"bound={rows[-1][2]:.9f}, analytic={x:.9f}, rel {rel:.3e} "
-        f"(Kd=koff/kon={kd})",
+        f"bound={rows[-1][2]:.9f}, analytic={x:.9f}, rel {rel:.3e} (Kd=koff/kon={kd})",
     )
 
     reactions = (

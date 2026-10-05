@@ -20,6 +20,7 @@ per binary and compare the output trees with compare_identity.py. Deliberately
 independent of the originating agent's harness (different model set, different
 edge cases, own model synthesis).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -242,12 +243,24 @@ end model
 """
 
 SYNTH_ACTIONS: dict[str, list[str]] = {
-    "edge_dimer": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>61})'],
-    "edge_zero_plateau": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>50,n_steps=>300,seed=>67})'],
-    "edge_reactant_is_product": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>71})'],
-    "edge_negative_rate": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>73})'],
-    "edge_chain_wide": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>89,max_sim_steps=>600000})'],
-    "edge_ring_long": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>200,n_steps=>300,seed=>83,max_sim_steps=>400000})'],
+    "edge_dimer": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>61})'
+    ],
+    "edge_zero_plateau": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>50,n_steps=>300,seed=>67})'
+    ],
+    "edge_reactant_is_product": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>71})'
+    ],
+    "edge_negative_rate": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>73})'
+    ],
+    "edge_chain_wide": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>89,max_sim_steps=>600000})'
+    ],
+    "edge_ring_long": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>200,n_steps=>300,seed=>83,max_sim_steps=>400000})'
+    ],
 }
 
 # Keep model-specific generation bounds from source model action blocks when
@@ -287,25 +300,59 @@ CASES: list[tuple[str, str | None, list[str] | None]] = [
 ]
 
 REPO_ACTIONS: dict[str, list[str]] = {
-    "isomerization": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>20000,n_steps=>400,seed=>7})'],
-    "gene_expr_simple": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>100000,n_steps=>400,seed=>7})'],
-    "gene_expr_func": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>100000,n_steps=>400,seed=>7})'],
-    "michment": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>10000,n_steps=>400,seed=>7})'],
-    "continue_rates": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>10,n_steps=>300,seed=>11})'],
-    "statfactor": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>100,n_steps=>300,seed=>13})'],
-    "localfunc": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>100,n_steps=>300,seed=>17})'],
-    "isingspin_localfcn": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>200,n_steps=>300,seed=>19})'],
-    "synth_angles": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>50,n_steps=>300,seed=>23})'],
-    "synth_complex": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>200,n_steps=>300,seed=>29})'],
+    "isomerization": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>20000,n_steps=>400,seed=>7})'
+    ],
+    "gene_expr_simple": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>100000,n_steps=>400,seed=>7})'
+    ],
+    "gene_expr_func": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>100000,n_steps=>400,seed=>7})'
+    ],
+    "michment": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>10000,n_steps=>400,seed=>7})'
+    ],
+    "continue_rates": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>10,n_steps=>300,seed=>11})'
+    ],
+    "statfactor": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>100,n_steps=>300,seed=>13})'
+    ],
+    "localfunc": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>100,n_steps=>300,seed=>17})'
+    ],
+    "isingspin_localfcn": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>200,n_steps=>300,seed=>19})'
+    ],
+    "synth_angles": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>50,n_steps=>300,seed=>23})'
+    ],
+    "synth_complex": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>200,n_steps=>300,seed=>29})'
+    ],
     "blbr": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>10,n_steps=>300,seed=>31})'],
-    "haugh2b": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>10,n_steps=>300,seed=>37})'],
-    "repressilator": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>100,n_steps=>300,seed=>41})'],
-    "mm_saturating": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>97})'],
-    "sat_rate": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>101})'],
+    "haugh2b": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>10,n_steps=>300,seed=>37})'
+    ],
+    "repressilator": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>100,n_steps=>300,seed=>41})'
+    ],
+    "mm_saturating": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>97})'
+    ],
+    "sat_rate": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>101})'
+    ],
     "heise": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>10,n_steps=>300,seed=>43})'],
-    "simple_system": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>47})'],
-    "caosc_sat": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>53})'],
-    "caosc_func": ['simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>59})'],
+    "simple_system": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>20,n_steps=>300,seed=>47})'
+    ],
+    "caosc_sat": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>53})'
+    ],
+    "caosc_func": [
+        'simulate_ssa({suffix=>"s",t_start=>0,t_end=>500,n_steps=>300,seed=>59})'
+    ],
 }
 
 
@@ -391,9 +438,12 @@ def _is_usable_trajectory(path: Path, sampling: SamplingExpectation) -> bool:
             return False
         if data_rows >= sampling["expected_rows"]:
             return False
-        expected_time = sampling["t_start"] + (
-            sampling["t_end"] - sampling["t_start"]
-        ) * data_rows / sampling["n_steps"]
+        expected_time = (
+            sampling["t_start"]
+            + (sampling["t_end"] - sampling["t_start"])
+            * data_rows
+            / sampling["n_steps"]
+        )
         if not math.isclose(numbers[0], expected_time, rel_tol=1e-12, abs_tol=1e-9):
             return False
         data_rows += 1
@@ -411,13 +461,10 @@ def inspect_case_outputs(case: Path, case_name: str) -> CaseOutputAudit:
     """List hashed outputs and identify whether required artifacts are usable."""
     sampling = expected_sampling(case_name)
     artifacts = sorted(
-        path for pattern in ("*.gdat", "*.cdat", "*.net")
-        for path in case.glob(pattern)
+        path for pattern in ("*.gdat", "*.cdat", "*.net") for path in case.glob(pattern)
     )
     networks = [path for path in artifacts if path.suffix == ".net"]
-    trajectories = [
-        path for path in artifacts if path.suffix in {".gdat", ".cdat"}
-    ]
+    trajectories = [path for path in artifacts if path.suffix in {".gdat", ".cdat"}]
     usable_trajectories = [
         path for path in trajectories if _is_usable_trajectory(path, sampling)
     ]
@@ -457,10 +504,15 @@ def build_case(name: str, src: str | None, actions: list[str], out: Path) -> Pat
         text = ring()
     else:
         text = SYNTH[name]
-    generate = NETWORK_GENERATION.get(
-        name, "generate_network({overwrite=>1})")
-    body = (text.rstrip("\n") + "\n\n## actions ##\n" + generate + "\n"
-            + "\n".join(actions) + "\n")
+    generate = NETWORK_GENERATION.get(name, "generate_network({overwrite=>1})")
+    body = (
+        text.rstrip("\n")
+        + "\n\n## actions ##\n"
+        + generate
+        + "\n"
+        + "\n".join(actions)
+        + "\n"
+    )
     (case / "model.bngl").write_text(body)
     return case
 
@@ -470,9 +522,13 @@ def main() -> int:
     ap.add_argument("binary")
     ap.add_argument("outdir")
     ap.add_argument("--only", default=None)
-    ap.add_argument("--timeout", type=float, default=180.0,
-                    help="per-case wall-clock cap; a case that exceeds it is "
-                         "reported SKIPPED_SLOW and excluded from the verdict")
+    ap.add_argument(
+        "--timeout",
+        type=float,
+        default=180.0,
+        help="per-case wall-clock cap; a case that exceeds it is "
+        "reported SKIPPED_SLOW and excluded from the verdict",
+    )
     args = ap.parse_args()
 
     out = Path(args.outdir)
@@ -492,9 +548,13 @@ def main() -> int:
         case = build_case(name, src, actions, out)
         launch_error = None
         try:
-            done = subprocess.run([str(Path(args.binary).resolve()), "model.bngl"],
-                                  cwd=case, capture_output=True, text=True,
-                                  timeout=args.timeout)
+            done = subprocess.run(
+                [str(Path(args.binary).resolve()), "model.bngl"],
+                cwd=case,
+                capture_output=True,
+                text=True,
+                timeout=args.timeout,
+            )
             rc = done.returncode
         except subprocess.TimeoutExpired:
             rc = None
@@ -506,7 +566,9 @@ def main() -> int:
         networks = output_audit["network_files"]
         trajectories = output_audit["trajectory_files"]
         usable_trajectories = output_audit["usable_trajectory_files"]
-        lines = [f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}" for p in arts]
+        lines = [
+            f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}" for p in arts
+        ]
         (case / "SHA256SUMS").write_text("\n".join(lines) + ("\n" if lines else ""))
         if launch_error is not None:
             status = "launch_error"
@@ -559,11 +621,15 @@ def main() -> int:
         return 1
     width = max(len(n) for n, *_ in summary)
     for name, rc, nart, nnet, ntraj, status in summary:
-        exit_text = "SKIPPED_SLOW" if status == "timeout" else (
-            "NOT_STARTED" if rc is None else str(rc)
+        exit_text = (
+            "SKIPPED_SLOW"
+            if status == "timeout"
+            else ("NOT_STARTED" if rc is None else str(rc))
         )
-        print(f"{name:<{width}}  exit={exit_text}  status={status}  "
-              f"artifacts={nart}  networks={nnet}  trajectories={ntraj}")
+        print(
+            f"{name:<{width}}  exit={exit_text}  status={status}  "
+            f"artifacts={nart}  networks={nnet}  trajectories={ntraj}"
+        )
     bad = [name for name, _, *_ in summary if not case_results[name]["valid"]]
     slow = [entry[0] for entry in summary if entry[-1] == "timeout"]
     if slow:
@@ -571,8 +637,10 @@ def main() -> int:
         print(f"INCONCLUSIVE: {', '.join(bad)}", file=sys.stderr)
         return 2
     if bad:
-        print(f"FAIL: incomplete or invalid identity cases: {', '.join(bad)}",
-              file=sys.stderr)
+        print(
+            f"FAIL: incomplete or invalid identity cases: {', '.join(bad)}",
+            file=sys.stderr,
+        )
         return 1
     print(f"identity manifest: {manifest_path} status=VALID")
     return 0

@@ -45,9 +45,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-_RATE_RE = re.compile(
-    r"You just simulated\s+(\d+)\s+reactions in\s+([0-9.eE+-]+)s"
-)
+_RATE_RE = re.compile(r"You just simulated\s+(\d+)\s+reactions in\s+([0-9.eE+-]+)s")
 _REACTIONS_PER_SEC_RE = re.compile(r"\(\s*([0-9.eE+-]+)\s+reactions/sec")
 
 
