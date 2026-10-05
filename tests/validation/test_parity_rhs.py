@@ -89,9 +89,9 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
     # remaining graph spelling with the public C++ graph labels by index.
     for index, generated_name in enumerate(generated.species_names, 1):
         serialized_name = test_net.species_by_index[index].removeprefix("$")
-        assert compare.species_isomorphic(
-            serialized_name, generated_name
-        ), f"network serialization order changed at species {index} [{model_name}]"
+        assert compare.species_isomorphic(serialized_name, generated_name), (
+            f"network serialization order changed at species {index} [{model_name}]"
+        )
     ref_to_generated = compare._species_index_mapping(ref_net, test_net)
     assert len(ref_to_generated) == ref_net.n_species == generated.num_species
     ref_rate_buckets = _reaction_rate_buckets(
@@ -160,9 +160,7 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
 
         expected = np.asarray(evaluate_rhs(ref_net, state, time), dtype=float)
         assert expected.size == ref_net.n_species > 0
-        assert np.isfinite(
-            expected
-        ).all(), (
+        assert np.isfinite(expected).all(), (
             f"reference RHS contains a non-finite value [{model_name}] at t={time:g}"
         )
         actual_generated = np.asarray(
@@ -171,16 +169,14 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
             ),
             dtype=float,
         )
-        assert np.isfinite(
-            actual_generated
-        ).all(), f"BNG3 RHS contains a non-finite value [{model_name}] at t={time:g}"
+        assert np.isfinite(actual_generated).all(), (
+            f"BNG3 RHS contains a non-finite value [{model_name}] at t={time:g}"
+        )
         actual = np.zeros(ref_net.n_species, dtype=float)
         for ref_index, generated_index in ref_to_generated.items():
             actual[ref_index - 1] = actual_generated[generated_index - 1]
         assert actual.size == ref_net.n_species > 0
-        assert np.isfinite(
-            actual
-        ).all(), (
+        assert np.isfinite(actual).all(), (
             f"mapped BNG3 RHS contains a non-finite value [{model_name}] at t={time:g}"
         )
 
@@ -190,8 +186,7 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
             rtol=RHS_RTOL,
             atol=RHS_ATOL,
             err_msg=(
-                f"direct RHS mismatch [{model_name}] at t={time:g} "
-                f"(ref={ref_source})"
+                f"direct RHS mismatch [{model_name}] at t={time:g} (ref={ref_source})"
             ),
         )
         evaluated_vectors += 1

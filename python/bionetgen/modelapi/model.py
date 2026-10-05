@@ -519,9 +519,11 @@ class bngmodel:
             self.simulator = bng.sim_getter(model_file=self, sim_type=sim_type)
             return self.simulator
         else:
-            print('Sim type {} is not recognized, only libroadrunner \
+            print(
+                'Sim type {} is not recognized, only libroadrunner \
                    is supported currently by passing "libRR" to \
-                   sim_type keyword argument'.format(sim_type))
+                   sim_type keyword argument'.format(sim_type)
+            )
             return None
         # for now we return the underlying simulator
         return self.simulator.simulator

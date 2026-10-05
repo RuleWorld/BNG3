@@ -11,6 +11,7 @@ closing the inherited lock descriptor. COMMAND_EXITED is not a claim that a
 descendant-free kernel slot was already released; test_descendant_hold.py checks
 the longer inherited-descriptor case directly through status probes.
 """
+
 import os
 import re
 import shutil
@@ -39,15 +40,31 @@ results = {}
 out_lines = {}
 barrier = threading.Barrier(RACERS)
 EVENT = re.compile(
-    r"BENCHLOCK_EVENT (\w+) slot=(\d+) agent=(\S*) pid=(\d+) epoch=([\d.]+)")
+    r"BENCHLOCK_EVENT (\w+) slot=(\d+) agent=(\S*) pid=(\d+) epoch=([\d.]+)"
+)
 
 
 def racer(i):
     barrier.wait()  # maximise simultaneity
     p = subprocess.Popen(
-        [BL, "acquire", "--agent", f"race{i}", "--what", f"race {i}",
-         "--timeout", "60", "--", "sleep", str(HOLD)],
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
+        [
+            BL,
+            "acquire",
+            "--agent",
+            f"race{i}",
+            "--what",
+            f"race {i}",
+            "--timeout",
+            "60",
+            "--",
+            "sleep",
+            str(HOLD),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=env,
+    )
     out, _ = p.communicate()
     out_lines[i] = out
     results[i] = p.returncode
@@ -69,8 +86,9 @@ for i, out in out_lines.items():
             if kind not in ("ACQUIRED", "COMMAND_EXITED"):
                 unexpected.append(kind)
                 continue
-            events.append((float(epoch), 1 if kind == "ACQUIRED" else -1,
-                           int(slot), agent))
+            events.append(
+                (float(epoch), 1 if kind == "ACQUIRED" else -1, int(slot), agent)
+            )
 
 if not events:
     print("  FAIL  no BENCHLOCK_EVENT lines emitted at all")
@@ -136,14 +154,20 @@ if winners + timedout != RACERS:
     print(f"  FAIL  unexpected exit codes: {results}")
     ok = False
 else:
-    print(f"  PASS  all {RACERS} racers exited 0 or 2 (waited rather than overcommitting)")
+    print(
+        f"  PASS  all {RACERS} racers exited 0 or 2 (waited rather than overcommitting)"
+    )
 
 if timedout:
-    print(f"  NOTE  {timedout} racer(s) timed out, which is the protocol working: "
-          f"they waited instead of running a third concurrent benchmark")
+    print(
+        f"  NOTE  {timedout} racer(s) timed out, which is the protocol working: "
+        f"they waited instead of running a third concurrent benchmark"
+    )
 else:
-    print("  NOTE  the queue drained inside the timeout, so nobody had to wait; "
-          "capacity was still never exceeded")
+    print(
+        "  NOTE  the queue drained inside the timeout, so nobody had to wait; "
+        "capacity was still never exceeded"
+    )
 
 shutil.rmtree(LOCKDIR, ignore_errors=True)
 print()
