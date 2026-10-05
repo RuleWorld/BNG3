@@ -866,9 +866,7 @@ def _validate_direction_v02(
         patterns = (
             reactants
             if side == "reactant"
-            else direction.get("products", [])
-            if side == "product"
-            else None
+            else direction.get("products", []) if side == "product" else None
         )
         pi = filter_.get("pattern_index")
         if patterns is None or not isinstance(pi, int) or pi < 0 or pi >= len(patterns):

@@ -171,9 +171,9 @@ def test_seeded_ssa_concentrates_near_the_deterministic_trajectory(tmp_path):
     ), "the SSA action must explicitly reset Effector() to its declared seed"
     t_last, amount = rows[-1]
     analytic = logistic(1000.0, 0.5, 200.0, t_last)
-    assert abs(amount - analytic) / analytic < 0.05, (
-        f"ssa E({t_last})={amount}, ode={analytic:.4f}"
-    )
+    assert (
+        abs(amount - analytic) / analytic < 0.05
+    ), f"ssa E({t_last})={amount}, ode={analytic:.4f}"
 
 
 # ---------------------------------------------------------------------------
@@ -197,9 +197,9 @@ def test_saturating_kill_flux_matches_its_exact_closed_form(tmp_path):
 
     for row in rows:
         expected = t0 * math.exp(-rate_constant * row[0])
-        assert abs(row[1] - expected) <= 1e-8 * expected, (
-            f"t={row[0]}: got {row[1]}, expected {expected}"
-        )
+        assert (
+            abs(row[1] - expected) <= 1e-8 * expected
+        ), f"t={row[0]}: got {row[1]}, expected {expected}"
 
 
 def test_the_effector_pool_is_untouched_by_the_killing_reaction(tmp_path):
@@ -320,9 +320,9 @@ def test_the_switch_fires_where_the_hill_threshold_predicts(tmp_path):
     half = next(t for t, _, _ in fluxes if s0 + a * t >= theta)
     band = theta * (10.0 ** (1.0 / n) - 1.0) / a
     t_star = (theta - s0) / a
-    assert abs(half - t_star) <= band + 0.05, (
-        f"switch at t={half}, analytic t*={t_star}, band={band:.3f}"
-    )
+    assert (
+        abs(half - t_star) <= band + 0.05
+    ), f"switch at t={half}, analytic t*={t_star}, band={band:.3f}"
 
     # The memory compartment must be monotonically non-decreasing: a cell
     # never leaves the memory pool.
@@ -372,9 +372,9 @@ def test_antigen_is_conserved_at_every_sampled_step(tmp_path, suffix):
     for index, row in enumerate(rows):
         drift = abs((row[1] + row[2]) - total0)
         worst = max(worst, drift)
-        assert drift == 0.0 or drift < 1e-8 * total0, (
-            f"row {index} at t={row[0]}: drift {drift:.3e}"
-        )
+        assert (
+            drift == 0.0 or drift < 1e-8 * total0
+        ), f"row {index} at t={row[0]}: drift {drift:.3e}"
     # SSA must be exact, not merely small: the count is an integer at every
     # firing.  ODE carries the integrator's own roundoff.
     if suffix == "ssa":
@@ -502,9 +502,9 @@ def test_species_count_predicates_are_applied_to_network_groups(tmp_path):
 
     group_rows = net_groups(work / "threshold_observable_species.net")
     assert group_rows["SGt0"] == ["1"]
-    assert group_rows["SGt1"] == [], (
-        "Eff()>1 must not include the species with one structural embedding"
-    )
+    assert (
+        group_rows["SGt1"] == []
+    ), "Eff()>1 must not include the species with one structural embedding"
 
 
 @pytest.mark.skipif(
@@ -600,19 +600,19 @@ def test_a_non_reactant_species_in_a_rate_law_carries_no_reactant_factor(tmp_pat
     vmax, kh, e0 = 0.05, 200.0, 200.0
     rate = vmax * e0 / (kh + e0)
     measured = -math.log(rows[-1][1] / rows[0][1]) / rows[-1][0]
-    assert abs(measured - rate) / rate < 1e-6, (
-        f"measured decay constant {measured}, expected {rate}"
-    )
+    assert (
+        abs(measured - rate) / rate < 1e-6
+    ), f"measured decay constant {measured}, expected {rate}"
     # If lowering double-counted the effector the rate constant would be
     # Vmax*E^2/(Kh+E), i.e. exactly E times too large (200x here).  Assert the
     # measured constant is the single-counted one and not that reading.
     wrong = vmax * e0 * e0 / (kh + e0)
-    assert abs(wrong / rate - e0) < 1e-9, (
-        "the double-counted rate is exactly E times larger"
-    )
-    assert abs(measured - wrong) > 0.5 * wrong, (
-        f"measured {measured} is close to the double-counted rate {wrong}"
-    )
+    assert (
+        abs(wrong / rate - e0) < 1e-9
+    ), "the double-counted rate is exactly E times larger"
+    assert (
+        abs(measured - wrong) > 0.5 * wrong
+    ), f"measured {measured} is close to the double-counted rate {wrong}"
 
 
 def test_verify_harness_itself_passes(tmp_path):
