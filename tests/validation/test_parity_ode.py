@@ -95,7 +95,9 @@ def test_python_api_ode_parity(
         atol=1e-9,
         columns=compare.COLUMNS_EXACT,
     )
-    assert diff.ok, f"Python API ODE mismatch [{model_name}] (ref={ref_src}): {diff.summary()}"
+    assert diff.ok, (
+        f"Python API ODE mismatch [{model_name}] (ref={ref_src}): {diff.summary()}"
+    )
 
 
 @pytest.mark.expressions
@@ -113,14 +115,11 @@ def test_action_explicit_ode_tolerances_override_bng2_compatible_default(
     explicit_source.write_text(
         source_text.replace(
             default_action,
-            "simulate_ode({t_start=>0,t_end=>40,n_steps=>100,"
-            "rtol=>1e-12,atol=>1e-12})",
+            "simulate_ode({t_start=>0,t_end=>40,n_steps=>100,rtol=>1e-12,atol=>1e-12})",
         ),
         encoding="utf-8",
     )
-    _, cli_gdat, err = runner.run_cli_path(
-        bng_cpp, explicit_source, tmp_path / "cli"
-    )
+    _, cli_gdat, err = runner.run_cli_path(bng_cpp, explicit_source, tmp_path / "cli")
     assert cli_gdat is not None, f"explicit-tolerance action failed: {err}"
     cli_data, cli_columns = compare.parse_gdat(cli_gdat)
     assert cli_data is not None, "could not parse explicit-tolerance action output"

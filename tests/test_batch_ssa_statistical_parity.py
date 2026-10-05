@@ -40,8 +40,8 @@ import math
 import numpy as np
 from scipy import stats
 
-sys.path.insert(0, 'build/cpp')
-sys.path.insert(0, 'python')
+sys.path.insert(0, "build/cpp")
+sys.path.insert(0, "python")
 try:
     import _bionetgen_cpp as cpp
 except ImportError:  # installed as part of the bionetgen package
@@ -163,12 +163,13 @@ def run_cpu_batch(bngl_path, t_end, n_steps, batch_size, base_seed, threads=0):
     model = cpp.parse_file(bngl_path)
     net = cpp.generate_network(model)
     res = cpp.simulate_batch_ssa_cpu(
-        model, net,
+        model,
+        net,
         batch_size=batch_size,
         t_end=t_end,
         n_steps=n_steps,
         threads=threads,
-        base_seed=base_seed
+        base_seed=base_seed,
     )
     return model, net, res
 
@@ -202,11 +203,15 @@ def check_conservation_identities(name, res, spec, batch_size):
         std_dev = float(np.max(np.abs(stds)))
         final_dev = float(np.max(np.abs(column - value)))
 
-        print(f"  {obs}: declared {value:g}; max |mean - {value:g}| = {mean_dev:.3e}, "
-              f"max std = {std_dev:.3e}, max |final - {value:g}| = {final_dev:.3e}")
+        print(
+            f"  {obs}: declared {value:g}; max |mean - {value:g}| = {mean_dev:.3e}, "
+            f"max std = {std_dev:.3e}, max |final - {value:g}| = {final_dev:.3e}"
+        )
         if mean_dev != 0.0 or std_dev != 0.0 or final_dev != 0.0:
-            print(f"  [FAIL] '{obs}' does not hold the constant {value:g} its model "
-                  f"declares -- conservation/stoichiometry mismatch")
+            print(
+                f"  [FAIL] '{obs}' does not hold the constant {value:g} its model "
+                f"declares -- conservation/stoichiometry mismatch"
+            )
             all_passed = False
 
     if spec["partition"]:
@@ -214,16 +219,21 @@ def check_conservation_identities(name, res, spec, batch_size):
         # exact sum of its parts on every trajectory.
         total_obs, part_obs = spec["partition"]
         total = np.asarray(finals[:, obs_names.index(total_obs)], dtype=float)
-        parts = [np.asarray(finals[:, obs_names.index(o)], dtype=float)
-                 for o in part_obs]
+        parts = [
+            np.asarray(finals[:, obs_names.index(o)], dtype=float) for o in part_obs
+        ]
         residual = total - sum(parts)
         worst = float(np.max(np.abs(residual)))
         identity = f"{total_obs} - ({' + '.join(part_obs)})"
-        print(f"  {identity}: max |residual| = {worst:.3e} over "
-              f"{finals.shape[0]} trajectories")
+        print(
+            f"  {identity}: max |residual| = {worst:.3e} over "
+            f"{finals.shape[0]} trajectories"
+        )
         if worst != 0.0:
-            print(f"  [FAIL] the declared partition does not hold exactly -- "
-                  f"a stoichiometry or observable-mapping bug")
+            print(
+                f"  [FAIL] the declared partition does not hold exactly -- "
+                f"a stoichiometry or observable-mapping bug"
+            )
             all_passed = False
 
     # Discover every other exactly-constant observable. A batch that invents
@@ -242,17 +252,23 @@ def check_conservation_identities(name, res, spec, batch_size):
         stds = np.asarray(res["observable_stds"][obs], dtype=float)
         drift = float(np.max(np.abs(means - value)))
         std_dev = float(np.max(np.abs(stds)))
-        print(f"  {obs}: undeclared but exactly constant at {value:g} "
-              f"(max |mean - const| = {drift:.3e}, max std = {std_dev:.3e})")
+        print(
+            f"  {obs}: undeclared but exactly constant at {value:g} "
+            f"(max |mean - const| = {drift:.3e}, max std = {std_dev:.3e})"
+        )
         if drift != 0.0 or std_dev != 0.0:
-            print(f"  [FAIL] '{obs}' is constant at t_end but varies over the "
-                  f"trajectory -- a conservation/stoichiometry mismatch")
+            print(
+                f"  [FAIL] '{obs}' is constant at t_end but varies over the "
+                f"trajectory -- a conservation/stoichiometry mismatch"
+            )
             all_passed = False
     print(f"  {discovered} additional exactly-constant observable(s) discovered")
 
     if not np.all(finals >= 0.0):
-        print("  [FAIL] a final-state observable is negative -- molecule counts "
-              "cannot be negative")
+        print(
+            "  [FAIL] a final-state observable is negative -- molecule counts "
+            "cannot be negative"
+        )
         all_passed = False
     if float(np.max(np.abs(finals - np.round(finals)))) != 0.0:
         print("  [FAIL] a final-state observable is not an integer molecule count")
@@ -301,25 +317,33 @@ def check_seed_reproducibility(name, bngl_path, t_end, n_steps, batch_size, base
     print(f"  threads=0 vs threads=1: final states bit-identical = {finals_exact}")
     if not finals_exact:
         all_passed = False
-        print("  [FAIL] the multi-core pool and the single-worker pool disagree "
-              "for a fixed base seed")
+        print(
+            "  [FAIL] the multi-core pool and the single-worker pool disagree "
+            "for a fixed base seed"
+        )
 
     aggregate_exact = True
     for key in ("observable_means", "observable_stds"):
         for obs in _observable_names(first):
-            if not _identical(np.asarray(first[key][obs]),
-                              np.asarray(single[key][obs])):
+            if not _identical(
+                np.asarray(first[key][obs]), np.asarray(single[key][obs])
+            ):
                 aggregate_exact = False
-                print(f"  [FAIL] {key}['{obs}'] differs between the multi-core and "
-                      f"single-worker pools")
-    print(f"  threads=0 vs threads=1: trajectory means/stds identical = "
-          f"{aggregate_exact}")
+                print(
+                    f"  [FAIL] {key}['{obs}'] differs between the multi-core and "
+                    f"single-worker pools"
+                )
+    print(
+        f"  threads=0 vs threads=1: trajectory means/stds identical = {aggregate_exact}"
+    )
     if not aggregate_exact:
         all_passed = False
 
     if all_passed:
-        print("  [PASS] the CPU pool is reproducible for a fixed seed and "
-              "independent of the thread count")
+        print(
+            "  [PASS] the CPU pool is reproducible for a fixed seed and "
+            "independent of the thread count"
+        )
     return all_passed
 
 
@@ -342,11 +366,15 @@ def check_analytical_binomial(name, res, spec, batch_size):
     expected_mean = n_mol * p_t
     expected_var = n_mol * p_t * (1.0 - p_t)
 
-    print(f"\nExact analytical parity check ({name}): "
-          f"{cfg['observable']} ~ Binomial({n_mol}, {p_t:.6f})")
+    print(
+        f"\nExact analytical parity check ({name}): "
+        f"{cfg['observable']} ~ Binomial({n_mol}, {p_t:.6f})"
+    )
     print(f"  Theoretical: mean = {expected_mean:.4f}, variance = {expected_var:.4f}")
-    print(f"  CPU sample : mean = {sample.mean():.4f}, "
-          f"variance = {sample.var(ddof=1):.4f}, n = {sample.size}")
+    print(
+        f"  CPU sample : mean = {sample.mean():.4f}, "
+        f"variance = {sample.var(ddof=1):.4f}, n = {sample.size}"
+    )
 
     all_passed = True
 
@@ -355,8 +383,10 @@ def check_analytical_binomial(name, res, spec, batch_size):
     # tail. The pooled tail probability is the remainder rather than a summed
     # term, so the expected counts always add up to batch_size and SciPy's
     # sum-check cannot fail.
-    pmf = [math.comb(n_mol, k) * (p_t ** k) * ((1.0 - p_t) ** (n_mol - k))
-           for k in range(n_mol + 1)]
+    pmf = [
+        math.comb(n_mol, k) * (p_t**k) * ((1.0 - p_t) ** (n_mol - k))
+        for k in range(n_mol + 1)
+    ]
 
     # Widest head whose every cell carries at least MIN_EXPECTED_COUNTS, so the
     # pooled tail is never thinner than the head cells it replaces.
@@ -373,9 +403,11 @@ def check_analytical_binomial(name, res, spec, batch_size):
     expected_counts = np.asarray(cell_probabilities) * batch_size
 
     if expected_counts.min() < MIN_EXPECTED_COUNTS:
-        print(f"  [FAIL] the Chi-square binning has a cell with only "
-              f"{expected_counts.min():.2f} expected counts; raise the batch size "
-              f"so every cell reaches {MIN_EXPECTED_COUNTS:g}")
+        print(
+            f"  [FAIL] the Chi-square binning has a cell with only "
+            f"{expected_counts.min():.2f} expected counts; raise the batch size "
+            f"so every cell reaches {MIN_EXPECTED_COUNTS:g}"
+        )
         return False
 
     def _counts(values):
@@ -389,34 +421,45 @@ def check_analytical_binomial(name, res, spec, batch_size):
 
     observed_counts = _counts(sample)
     chi2, p_value = stats.chisquare(observed_counts, expected_counts)
-    print(f"  Chi-square ({len(cell_probabilities)} cells, "
-          f"df = {len(cell_probabilities) - 1}) = {chi2:.3f}, "
-          f"p = {p_value:.4g} (threshold {BINOMIAL_CHI2_ALPHA:g}, "
-          f"min expected cell {expected_counts.min():.1f})")
+    print(
+        f"  Chi-square ({len(cell_probabilities)} cells, "
+        f"df = {len(cell_probabilities) - 1}) = {chi2:.3f}, "
+        f"p = {p_value:.4g} (threshold {BINOMIAL_CHI2_ALPHA:g}, "
+        f"min expected cell {expected_counts.min():.1f})"
+    )
     if p_value < BINOMIAL_CHI2_ALPHA:
-        print("  [FAIL] the CPU sample deviates significantly from the theoretical "
-              "binomial distribution")
+        print(
+            "  [FAIL] the CPU sample deviates significantly from the theoretical "
+            "binomial distribution"
+        )
         all_passed = False
 
     sem = math.sqrt(expected_var / sample.size)
     z = (sample.mean() - expected_mean) / sem
-    print(f"  Mean Z-score = {z:+.3f} (threshold |Z| <= {MEAN_Z_LIMIT:g}, "
-          f"SEM = {sem:.4f} molecules)")
+    print(
+        f"  Mean Z-score = {z:+.3f} (threshold |Z| <= {MEAN_Z_LIMIT:g}, "
+        f"SEM = {sem:.4f} molecules)"
+    )
     if abs(z) > MEAN_Z_LIMIT:
         print("  [FAIL] the sample mean is inconsistent with the theoretical mean")
         all_passed = False
 
     variance_ratio = sample.var(ddof=1) / expected_var
-    print(f"  Variance ratio = {variance_ratio:.4f} (allowed "
-          f"[{VARIANCE_RATIO_MIN:g}, {VARIANCE_RATIO_MAX:g}])")
+    print(
+        f"  Variance ratio = {variance_ratio:.4f} (allowed "
+        f"[{VARIANCE_RATIO_MIN:g}, {VARIANCE_RATIO_MAX:g}])"
+    )
     if not (VARIANCE_RATIO_MIN <= variance_ratio <= VARIANCE_RATIO_MAX):
-        print("  [FAIL] the sample variance is inconsistent with the theoretical "
-              "variance")
+        print(
+            "  [FAIL] the sample variance is inconsistent with the theoretical variance"
+        )
         all_passed = False
 
     if all_passed:
-        print(f"  [PASS] the CPU sample matches the exact analytical "
-              f"Binomial({n_mol}, {p_t:.6f}) distribution")
+        print(
+            f"  [PASS] the CPU sample matches the exact analytical "
+            f"Binomial({n_mol}, {p_t:.6f}) distribution"
+        )
     return all_passed
 
 
@@ -430,28 +473,41 @@ def run_cpu_reference_gate():
     for spec in CPU_REFERENCE_MODELS:
         name = spec["name"]
         print(f"\n{'=' * 70}")
-        print(f"CPU reference validation: {name} "
-              f"(batch_size={CPU_REFERENCE_BATCH}, seed={CPU_REFERENCE_SEED})")
+        print(
+            f"CPU reference validation: {name} "
+            f"(batch_size={CPU_REFERENCE_BATCH}, seed={CPU_REFERENCE_SEED})"
+        )
         print(f"{'=' * 70}")
 
         _, net, res = run_cpu_batch(
-            spec["path"], spec["t_end"], spec["n_steps"],
-            CPU_REFERENCE_BATCH, CPU_REFERENCE_SEED,
+            spec["path"],
+            spec["t_end"],
+            spec["n_steps"],
+            CPU_REFERENCE_BATCH,
+            CPU_REFERENCE_SEED,
         )
-        print(f"Model: {net.num_species} species, {net.num_reactions} reactions, "
-              f"{len(_observable_names(res))} observables")
+        print(
+            f"Model: {net.num_species} species, {net.num_reactions} reactions, "
+            f"{len(_observable_names(res))} observables"
+        )
 
-        results = [check_conservation_identities(
-            name, res, spec, CPU_REFERENCE_BATCH)]
+        results = [check_conservation_identities(name, res, spec, CPU_REFERENCE_BATCH)]
 
         if spec["binomial"]:
-            results.append(check_analytical_binomial(
-                name, res, spec, CPU_REFERENCE_BATCH))
+            results.append(
+                check_analytical_binomial(name, res, spec, CPU_REFERENCE_BATCH)
+            )
 
-        results.append(check_seed_reproducibility(
-            name, spec["path"], spec["t_end"], spec["n_steps"],
-            CPU_REFERENCE_BATCH, CPU_REFERENCE_SEED,
-        ))
+        results.append(
+            check_seed_reproducibility(
+                name,
+                spec["path"],
+                spec["t_end"],
+                spec["n_steps"],
+                CPU_REFERENCE_BATCH,
+                CPU_REFERENCE_SEED,
+            )
+        )
 
         if not all(results):
             all_ok = False
@@ -466,9 +522,9 @@ def run_cpu_reference_gate():
 
 
 def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"Statistical Validation: {name} (batch_size={batch_size})")
-    print(f"{'='*70}")
+    print(f"{'=' * 70}")
 
     model = cpp.parse_file(bngl_path)
     net = cpp.generate_network(model)
@@ -476,12 +532,13 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
 
     # Run CPU multi-core batch
     cpu_res = cpp.simulate_batch_ssa_cpu(
-        model, net,
+        model,
+        net,
         batch_size=batch_size,
         t_end=t_end,
         n_steps=n_steps,
         threads=0,
-        base_seed=1000
+        base_seed=1000,
     )
 
     # Run GPU batch on the backend that would be selected automatically.
@@ -491,12 +548,13 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         return True
     print(f"  GPU backend: {backend}")
     gpu_res = cpp.simulate_batch_ssa_gpu(
-        model, net,
+        model,
+        net,
         batch_size=batch_size,
         t_end=t_end,
         n_steps=n_steps,
         base_seed=5000,
-        backend=backend
+        backend=backend,
     )
 
     time_points = cpu_res["time"]
@@ -541,14 +599,26 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         n_cons_violations = int(np.count_nonzero(cons_violations))
 
         print(f"\nObservable '{obs}':")
-        print(f"  CPU Mean: start={cpu_mean[0]:.3f}, mid={cpu_mean[len(cpu_mean)//2]:.3f}, end={cpu_mean[-1]:.3f}")
-        print(f"  GPU Mean: start={gpu_mean[0]:.3f}, mid={gpu_mean[len(gpu_mean)//2]:.3f}, end={gpu_mean[-1]:.3f}")
-        print(f"  CPU Std : start={cpu_std[0]:.3f}, mid={cpu_std[len(cpu_std)//2]:.3f}, end={cpu_std[-1]:.3f}")
-        print(f"  GPU Std : start={gpu_std[0]:.3f}, mid={gpu_std[len(gpu_std)//2]:.3f}, end={gpu_std[-1]:.3f}")
-        print(f"  Max |Z| across {n_testable}/{cpu_mean.size} testable points: {max_z:.2f} (mean |Z|={mean_z:.2f})")
+        print(
+            f"  CPU Mean: start={cpu_mean[0]:.3f}, mid={cpu_mean[len(cpu_mean) // 2]:.3f}, end={cpu_mean[-1]:.3f}"
+        )
+        print(
+            f"  GPU Mean: start={gpu_mean[0]:.3f}, mid={gpu_mean[len(gpu_mean) // 2]:.3f}, end={gpu_mean[-1]:.3f}"
+        )
+        print(
+            f"  CPU Std : start={cpu_std[0]:.3f}, mid={cpu_std[len(cpu_std) // 2]:.3f}, end={cpu_std[-1]:.3f}"
+        )
+        print(
+            f"  GPU Std : start={gpu_std[0]:.3f}, mid={gpu_std[len(gpu_std) // 2]:.3f}, end={gpu_std[-1]:.3f}"
+        )
+        print(
+            f"  Max |Z| across {n_testable}/{cpu_mean.size} testable points: {max_z:.2f} (mean |Z|={mean_z:.2f})"
+        )
         if n_conserved:
             worst_c = float(np.max(abs_diff[conserved]))
-            print(f"  {n_conserved} conserved point(s) compared absolutely: max |CPU-GPU| = {worst_c:.3e} (atol {CONSERVATION_ATOL:g})")
+            print(
+                f"  {n_conserved} conserved point(s) compared absolutely: max |CPU-GPU| = {worst_c:.3e} (atol {CONSERVATION_ATOL:g})"
+            )
 
         failed = False
         if n_testable and max_z > Z_THRESHOLD:
@@ -556,10 +626,12 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
             failed = True
         if n_cons_violations:
             worst_idx = int(np.argmax(np.where(cons_violations, abs_diff, -1.0)))
-            print(f"  [FAIL] Conserved observable '{obs}' diverges by {abs_diff[worst_idx]:.3e} at "
-                  f"t={time_points[worst_idx]:.6g} (CPU={cpu_mean[worst_idx]:.6f}, "
-                  f"GPU={gpu_mean[worst_idx]:.6f}, tol {cons_tol[worst_idx]:.3e}) across "
-                  f"{n_cons_violations} point(s) -- conservation/stoichiometry mismatch")
+            print(
+                f"  [FAIL] Conserved observable '{obs}' diverges by {abs_diff[worst_idx]:.3e} at "
+                f"t={time_points[worst_idx]:.6g} (CPU={cpu_mean[worst_idx]:.6f}, "
+                f"GPU={gpu_mean[worst_idx]:.6f}, tol {cons_tol[worst_idx]:.3e}) across "
+                f"{n_cons_violations} point(s) -- conservation/stoichiometry mismatch"
+            )
             failed = True
         if not failed:
             # Report only the checks that actually ran. `max_z` defaults to 0.0
@@ -570,13 +642,17 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
             # The conserved-point comparison above still ran and is the
             # stronger check; it is what this PASS is reporting.
             if n_testable:
-                print(f"  [PASS] Mean trajectory matches CPU within sampling error "
-                      f"(max |Z| {max_z:.2f} < {Z_THRESHOLD}) and conserved points agree")
+                print(
+                    f"  [PASS] Mean trajectory matches CPU within sampling error "
+                    f"(max |Z| {max_z:.2f} < {Z_THRESHOLD}) and conserved points agree"
+                )
             else:
-                print(f"  [PASS] Conserved points agree; the mean-trajectory Z-test "
-                      f"examined nothing because all {cpu_mean.size} points have zero "
-                      f"sampling error (max |Z| reported as 0.00 is the empty-set "
-                      f"default, not a measurement)")
+                print(
+                    f"  [PASS] Conserved points agree; the mean-trajectory Z-test "
+                    f"examined nothing because all {cpu_mean.size} points have zero "
+                    f"sampling error (max |Z| reported as 0.00 is the empty-set "
+                    f"default, not a measurement)"
+                )
         all_passed = all_passed and not failed
 
     # 2. Compare final distributions using Two-Sample Kolmogorov-Smirnov Test
@@ -598,13 +674,17 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
                 # itself agrees between CPU and GPU.
                 diff = abs(float(c_samp[0]) - float(g_samp[0]))
                 if diff > CONSERVATION_ATOL:
-                    print(f"  '{obs}': [FAIL] conserved value differs on CPU/GPU: "
-                          f"{float(c_samp[0]):.6f} vs {float(g_samp[0]):.6f} "
-                          f"(|diff|={diff:.3e} > {CONSERVATION_ATOL:g})")
+                    print(
+                        f"  '{obs}': [FAIL] conserved value differs on CPU/GPU: "
+                        f"{float(c_samp[0]):.6f} vs {float(g_samp[0]):.6f} "
+                        f"(|diff|={diff:.3e} > {CONSERVATION_ATOL:g})"
+                    )
                     all_passed = False
                 else:
-                    print(f"  '{obs}': Conserved constant value {float(c_samp[0]):.1f} on both "
-                          f"CPU and GPU (|diff|={diff:.1e}). [PASS]")
+                    print(
+                        f"  '{obs}': Conserved constant value {float(c_samp[0]):.1f} on both "
+                        f"CPU and GPU (|diff|={diff:.1e}). [PASS]"
+                    )
                 continue
 
             # At least one sample varies, so run the real two-sample KS test.
@@ -617,13 +697,17 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
             c_sd = float(np.std(c_samp))
             g_sd = float(np.std(g_samp))
             if ks.pvalue < KS_ALPHA:
-                print(f"  '{obs}': [FAIL] KS D={ks.statistic:.4f}, p={ks.pvalue:.3e} "
-                      f"< {KS_ALPHA:g} (CPU std={c_sd:.4f}, GPU std={g_sd:.4f}) "
-                      f"-- CPU and GPU final-state distributions differ")
+                print(
+                    f"  '{obs}': [FAIL] KS D={ks.statistic:.4f}, p={ks.pvalue:.3e} "
+                    f"< {KS_ALPHA:g} (CPU std={c_sd:.4f}, GPU std={g_sd:.4f}) "
+                    f"-- CPU and GPU final-state distributions differ"
+                )
                 all_passed = False
             else:
-                print(f"  '{obs}': KS D={ks.statistic:.4f}, p={ks.pvalue:.4f} "
-                      f">= {KS_ALPHA:g} (CPU std={c_sd:.4f}, GPU std={g_sd:.4f}). [PASS]")
+                print(
+                    f"  '{obs}': KS D={ks.statistic:.4f}, p={ks.pvalue:.4f} "
+                    f">= {KS_ALPHA:g} (CPU std={c_sd:.4f}, GPU std={g_sd:.4f}). [PASS]"
+                )
     # 3. If isomerization, also test against analytical Binomial(N=20, p=1/6) using Chi-Square test
     if name == "isomerization":
         print("\nExact Analytical Parity Check for Isomerization (Binomial(20, 1/6)):")
@@ -636,12 +720,16 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         expected_mean = N_mol * p_t
         expected_var = N_mol * p_t * (1.0 - p_t)
 
-        print(f"  Theoretical: Mean = {expected_mean:.4f}, Variance = {expected_var:.4f}")
+        print(
+            f"  Theoretical: Mean = {expected_mean:.4f}, Variance = {expected_var:.4f}"
+        )
         print(f"  CPU Sample : Mean = {np.mean(c_t):.4f}, Variance = {np.var(c_t):.4f}")
         print(f"  GPU Sample : Mean = {np.mean(g_t):.4f}, Variance = {np.var(g_t):.4f}")
 
         # Binomial probabilities for k = 0..8, and 9..20
-        p_bins = [math.comb(20, k) * (p_t**k) * ((1 - p_t)**(20 - k)) for k in range(9)]
+        p_bins = [
+            math.comb(20, k) * (p_t**k) * ((1 - p_t) ** (20 - k)) for k in range(9)
+        ]
         p_bins.append(1.0 - sum(p_bins))  # 9-20
         expected_counts = np.array(p_bins) * batch_size
 
@@ -665,11 +753,14 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         print(f"  GPU Chi-square = {chi2_gpu:.2f}, p-value = {p_gpu:.4f}")
 
         if p_gpu < 0.01:
-            print("  [FAIL] GPU sample deviates significantly from theoretical binomial distribution")
+            print(
+                "  [FAIL] GPU sample deviates significantly from theoretical binomial distribution"
+            )
             all_passed = False
         else:
-            print(f"  [PASS] GPU sample matches exact analytical binomial distribution (p={p_gpu:.4f} >= 0.01)")
-
+            print(
+                f"  [PASS] GPU sample matches exact analytical binomial distribution (p={p_gpu:.4f} >= 0.01)"
+            )
 
     return all_passed
 
@@ -692,12 +783,12 @@ def run_gpu_parity_gate():
         if not ok:
             all_ok = False
 
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     if all_ok:
         print("ALL STATISTICAL PARITY TESTS PASSED SUCCESSFULLY!")
     else:
         print("SOME STATISTICAL TESTS FAILED.")
-    print("="*70)
+    print("=" * 70)
     return all_ok
 
 
