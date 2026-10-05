@@ -595,9 +595,9 @@ def test_event_unsupported_cause_is_subclassified():
     classified = {reason for reason, _ in EVENT_REFUSAL_REASONS}
     markers = [marker for _, marker in validator._EVENT_REFUSAL_SUBCAUSES]
     for reason in classified:
-        assert any(marker in reason.lower() for marker in markers), (
-            f"unclassified event refusal reason: {reason}"
-        )
+        assert any(
+            marker in reason.lower() for marker in markers
+        ), f"unclassified event refusal reason: {reason}"
 
     # 3. An event refusal with no recognised reason text is still booked, not
     #    collapsed into the bare ``events`` cause.
