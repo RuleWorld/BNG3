@@ -27,6 +27,13 @@ import os
 import pathlib
 import sys
 
+# The pytest console script may not put the repository root on sys.path.
+# Append it only to expose the in-tree CI helper without taking precedence over
+# an installed bionetgen package from site-packages.
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
+if str(_ROOT) not in sys.path:
+    sys.path.append(str(_ROOT))
+
 from scripts.ci.python_package_mode import (
     editable_finders_for_package,
     editable_source_roots,
@@ -34,7 +41,6 @@ from scripts.ci.python_package_mode import (
     verify_package_locations,
 )
 
-_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SOURCE_PACKAGE = (_ROOT / "python" / "bionetgen").resolve()
 _LOCAL_EXTENSION_DIR = (_ROOT / "build" / "cpp").resolve()
 _MODE = os.environ.get("BNG3_PYTHON_TEST_MODE", "auto").lower()
