@@ -168,9 +168,9 @@ def _gof(counts, pmf, batch):
     assert tail, "no sparse tail to pool; lower MIN_EXPECTED or widen the grid"
     obs = np.array([counts[i] for i in head] + [sum(counts[i] for i in tail)])
     exp = np.array([expected[i] for i in head] + [sum(expected[i] for i in tail)])
-    assert exp.min() >= MIN_EXPECTED, (
-        f"pooled tail holds only {exp[-1]:.1f} expected counts; raise BATCH"
-    )
+    assert (
+        exp.min() >= MIN_EXPECTED
+    ), f"pooled tail holds only {exp[-1]:.1f} expected counts; raise BATCH"
     chi2, p = scipy_stats.chisquare(obs, exp, sum_check=False)
     return chi2, len(exp) - 1, p, exp.min()
 
@@ -258,9 +258,9 @@ def test_birth_death_time_course_matches_deterministic_solution(tmp_path):
         # the measured spread must be the analytic Poisson spread, and the
         # Fano factor must be 1 to within sqrt(2/batch)
         worst_fano = max(worst_fano, abs(s * s / exp_sd**2 - 1.0))
-    assert worst_z < Z_LIMIT, (
-        f"SSA mean departs from the ODE solution, max |Z|={worst_z}"
-    )
+    assert (
+        worst_z < Z_LIMIT
+    ), f"SSA mean departs from the ODE solution, max |Z|={worst_z}"
     assert worst_fano < 5.0 * math.sqrt(2.0 / batch), "Fano factor is not 1"
 
 
@@ -274,8 +274,7 @@ def test_three_state_switching_is_multinomial(tmp_path):
     # Rates chosen so the stationary weights of the per-molecule chain are
     # exactly pi: detail balance gives piY/piX = kXY/kYX and piZ/piX = kXZ/kZX.
     pi = np.array([0.5, 1.0 / 3.0, 1.0 / 6.0])
-    bngl = (
-        """begin model
+    bngl = """begin model
 begin parameters
     kXY  0.40
     kYX  0.60
@@ -300,9 +299,7 @@ begin reaction rules
     A(s~X) <-> A(s~Z)  kXZ, kZX
 end reaction rules
 end model
-"""
-        % n_mol
-    )
+""" % n_mol
     # slowest mode of the per-molecule chain is kYX = 0.6 /s; t_end = 200
     # leaves e^{-120}.
     res, names = _batch(bngl, tmp_path, t_end=200.0)
@@ -310,9 +307,9 @@ end model
     nx, ny, nz = f["nX"], f["nY"], f["nZ"]
 
     # Conservation is exact, not statistical.
-    assert np.all(nx + ny + nz == n_mol), (
-        "the three conformations must partition the pool"
-    )
+    assert np.all(
+        nx + ny + nz == n_mol
+    ), "the three conformations must partition the pool"
     assert np.all(f["nT"] == n_mol)
 
     for obs, p in ((nx, pi[0]), (ny, pi[1]), (nz, pi[2])):
@@ -488,9 +485,9 @@ end model
         # P(j firings by t) for j = 0, 1, 2.
         chi2, p = scipy_stats.chisquare(observed, expected, sum_check=False)
         if label == "k*C(n,2)":
-            assert p > GOF_ALPHA, (
-                f"firing count departs from {label}: p={p:.3g} chi2={chi2}"
-            )
+            assert (
+                p > GOF_ALPHA
+            ), f"firing count departs from {label}: p={p:.3g} chi2={chi2}"
         else:
             assert p < GOF_ALPHA, f"firing count is indistinguishable from {label}"
 
@@ -552,9 +549,9 @@ def test_fixed_seed_is_reproducible_across_runs_and_thread_counts(tmp_path):
     for threads in (0, 1, 3):
         other = batch(threads)
         for key in ("final_observables", "final_species", "event_counts"):
-            assert np.array_equal(np.asarray(ref[key]), np.asarray(other[key])), (
-                f"{key} differs at threads={threads}"
-            )
+            assert np.array_equal(
+                np.asarray(ref[key]), np.asarray(other[key])
+            ), f"{key} differs at threads={threads}"
         for name in ref["observable_names"]:
             assert np.array_equal(
                 np.asarray(ref["observable_means"][name]),
@@ -602,6 +599,6 @@ def test_seed_zero_is_the_system_default_and_is_not_reproducible(tmp_path):
         )
         for _ in range(3)
     ]
-    assert not all(np.array_equal(runs[0], r) for r in runs[1:]), (
-        "seed=0 produced identical trajectories; it must draw a fresh seed"
-    )
+    assert not all(
+        np.array_equal(runs[0], r) for r in runs[1:]
+    ), "seed=0 produced identical trajectories; it must draw a fresh seed"
