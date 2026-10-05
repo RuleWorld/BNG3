@@ -87,7 +87,7 @@ class BNGFile:
                 try:
                     xml_file.seek(0)
                     xml_file.truncate(0)
-                except AttributeError, OSError:
+                except (AttributeError, OSError):
                     pass
                 xml_file.write(content)
                 xml_file.seek(0)
@@ -270,7 +270,7 @@ class BNGFile:
             try:
                 open_file.seek(0)
                 open_file.truncate(0)
-            except AttributeError, OSError:
+            except (AttributeError, OSError):
                 pass
             open_file.write(content)
             open_file.seek(0)

@@ -20,11 +20,11 @@ def _term_value(term: Any, key: str, index: int, default: float) -> float:
     else:
         try:
             value = term[index]
-        except IndexError, KeyError, TypeError:
+        except (IndexError, KeyError, TypeError):
             value = default
     try:
         result = float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
     return result if math.isfinite(result) else default
 
@@ -41,7 +41,7 @@ def unit_conversion_factor(terms: Iterable[Any]) -> float:
             return 1.0
         try:
             factor *= math.pow(multiplier * math.pow(10.0, scale), exponent)
-        except OverflowError, ValueError, ZeroDivisionError:
+        except (OverflowError, ValueError, ZeroDivisionError):
             return 1.0
         if not math.isfinite(factor):
             return 1.0
@@ -84,7 +84,7 @@ def _parameter_value(parameter: Any) -> float:
     )
     try:
         value = float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return 0.0
     return value
 

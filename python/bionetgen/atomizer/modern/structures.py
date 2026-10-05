@@ -22,7 +22,7 @@ def _bond_number(value: Bond) -> Optional[int]:
         return None
     try:
         return int(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 

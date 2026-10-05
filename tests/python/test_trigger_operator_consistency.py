@@ -491,9 +491,9 @@ def test_cosh_rewrite_of_a_reversed_trigger_keeps_its_direction(spelling):
     assert rewritten not in {"<kept>", "<refused>"}, f"{spelling} was not rewritten"
 
     for time_value in _TIMES:
-        assert _holds(original, time_value) == _holds(rewritten, time_value), (
-            f"{original} -> {rewritten} differs at t={time_value}"
-        )
+        assert _holds(original, time_value) == _holds(
+            rewritten, time_value
+        ), f"{original} -> {rewritten} differs at t={time_value}"
 
 
 @pytest.mark.parametrize("spelling", _SPELLINGS["gt"] + _SPELLINGS["geq"])
@@ -504,9 +504,9 @@ def test_cosh_rewrite_of_a_direct_trigger_keeps_its_direction(spelling):
     assert rewritten not in {"<kept>", "<refused>"}, f"{spelling} was not rewritten"
 
     for time_value in _TIMES:
-        assert _holds(original, time_value) == _holds(rewritten, time_value), (
-            f"{original} -> {rewritten} differs at t={time_value}"
-        )
+        assert _holds(original, time_value) == _holds(
+            rewritten, time_value
+        ), f"{original} -> {rewritten} differs at t={time_value}"
 
 
 @pytest.mark.parametrize("canonical", sorted(_SPELLINGS))

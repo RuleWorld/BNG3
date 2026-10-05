@@ -249,11 +249,11 @@ def generate_notebook(app):
     )
     try:
         stdout_loc = getattr(subprocess, app.config["bionetgen"]["stdout"])
-    except AttributeError, KeyError:
+    except (AttributeError, KeyError):
         stdout_loc = subprocess.PIPE
     try:
         stderr_loc = getattr(subprocess, app.config["bionetgen"]["stderr"])
-    except AttributeError, KeyError:
+    except (AttributeError, KeyError):
         stderr_loc = subprocess.STDOUT
 
     if args.open:
