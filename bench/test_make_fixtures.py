@@ -23,15 +23,18 @@ class MakeFixturesTests(unittest.TestCase):
 
             generated = build("fixture", source)
 
-        self.assertEqual(generated, (
-            "begin model\n"
-            "begin parameters\n"
-            "  k 1\n"
-            "end parameters\n"
-            "end model\n"
-            "\n## actions ##\n"
-            "generate_network({overwrite=>1})\n"
-        ))
+        self.assertEqual(
+            generated,
+            (
+                "begin model\n"
+                "begin parameters\n"
+                "  k 1\n"
+                "end parameters\n"
+                "end model\n"
+                "\n## actions ##\n"
+                "generate_network({overwrite=>1})\n"
+            ),
+        )
 
 
 if __name__ == "__main__":

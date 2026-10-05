@@ -115,7 +115,7 @@ def _extract_stats(stderr: str) -> dict | None:
     for line in stderr.splitlines():
         if line.startswith(_STATS_PREFIX):
             try:
-                return json.loads(line[len(_STATS_PREFIX):])
+                return json.loads(line[len(_STATS_PREFIX) :])
             except json.JSONDecodeError:
                 return None
     return None
@@ -169,13 +169,17 @@ def check_tree_shape(tree: Path) -> None:
     if not (tree / "python" / "bionetgen").is_dir():
         raise SystemExit(f"{tree} has no python/bionetgen package")
     if not any((tree / "build" / "cpp").glob("_bionetgen_cpp*.so")):
-        raise SystemExit(f"{tree} has no built _bionetgen_cpp extension under build/cpp")
+        raise SystemExit(
+            f"{tree} has no built _bionetgen_cpp extension under build/cpp"
+        )
 
 
 def git_head(tree: Path) -> str:
     return subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"], cwd=str(tree),
-        capture_output=True, text=True,
+        ["git", "rev-parse", "--short", "HEAD"],
+        cwd=str(tree),
+        capture_output=True,
+        text=True,
     ).stdout.strip()
 
 
@@ -213,33 +217,59 @@ def summarize(samples: dict[str, list[dict]]) -> dict:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--reps", type=int, default=5,
-                    help="samples per case in single-tree mode (default 5)")
-    ap.add_argument("--json", type=Path, default=None,
-                    help="write the full result JSON here (single-tree mode)")
+    ap.add_argument(
+        "--reps",
+        type=int,
+        default=5,
+        help="samples per case in single-tree mode (default 5)",
+    )
+    ap.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="write the full result JSON here (single-tree mode)",
+    )
     ap.add_argument("--a", type=Path, default=None, help="baseline worktree root")
     ap.add_argument("--b", type=Path, default=None, help="candidate worktree root")
     ap.add_argument("--rounds", type=int, default=4, help="A/B rounds (default 4)")
-    ap.add_argument("--reps-per-round", type=int, default=1,
-                    help="samples per case per arm invocation in A/B mode")
-    ap.add_argument("--expect-a", default=None,
-                    help="fail unless arm A's git SHA starts with this prefix")
-    ap.add_argument("--expect-b", default=None,
-                    help="fail unless arm B's git SHA starts with this prefix")
-    ap.add_argument("--max-deviation", type=float, default=1e-6,
-                    help="cross-tree max relative deviation gate (default 1e-6)")
+    ap.add_argument(
+        "--reps-per-round",
+        type=int,
+        default=1,
+        help="samples per case per arm invocation in A/B mode",
+    )
+    ap.add_argument(
+        "--expect-a",
+        default=None,
+        help="fail unless arm A's git SHA starts with this prefix",
+    )
+    ap.add_argument(
+        "--expect-b",
+        default=None,
+        help="fail unless arm B's git SHA starts with this prefix",
+    )
+    ap.add_argument(
+        "--max-deviation",
+        type=float,
+        default=1e-6,
+        help="cross-tree max relative deviation gate (default 1e-6)",
+    )
     ap.add_argument("--timeout", type=float, default=600.0)
     args = ap.parse_args()
 
     load1_start = os.getloadavg()[0]
-    print(f"ode_large_bench: load1={load1_start:.1f} at start "
-          f"(quote as a band with any timing; interleave within one session)")
+    print(
+        f"ode_large_bench: load1={load1_start:.1f} at start "
+        f"(quote as a band with any timing; interleave within one session)"
+    )
 
     if args.a or args.b:
         if not (args.a and args.b):
             raise SystemExit("--a and --b must be given together")
-        for arm, tree, expect in (("A", args.a, args.expect_a),
-                                  ("B", args.b, args.expect_b)):
+        for arm, tree, expect in (
+            ("A", args.a, args.expect_a),
+            ("B", args.b, args.expect_b),
+        ):
             check_tree_shape(tree)
             if expect is not None:
                 head = git_head(tree)
@@ -268,32 +298,47 @@ def main() -> int:
             ]
             worst = max(devs)
             if worst > args.max_deviation:
-                failures.append(f"{name}: max relative deviation {worst:.3e} "
-                                f"> {args.max_deviation:g}")
-            print(f"\n[{name}] n_species={arms['A'][-1][name]['n_species']} "
-                  f"max rel dev vs A-final = {worst:.3e}")
+                failures.append(
+                    f"{name}: max relative deviation {worst:.3e} "
+                    f"> {args.max_deviation:g}"
+                )
+            print(
+                f"\n[{name}] n_species={arms['A'][-1][name]['n_species']} "
+                f"max rel dev vs A-final = {worst:.3e}"
+            )
             for arm in ("A", "B"):
                 for r, summ in enumerate(arms[arm]):
                     s = summ[name]
-                    print(f"  arm {arm} round {r + 1}: sim={s['sim_median']:.4f}s "
-                          f"rss={s['peak_rss']} stats={s['cvode_stats']}")
+                    print(
+                        f"  arm {arm} round {r + 1}: sim={s['sim_median']:.4f}s "
+                        f"rss={s['peak_rss']} stats={s['cvode_stats']}"
+                    )
 
-        if any(not arms[arm][r][name]["stable"]
-               for arm in ("A", "B") for r in range(len(arms[arm]))
-               for name, *_ in CASES):
+        if any(
+            not arms[arm][r][name]["stable"]
+            for arm in ("A", "B")
+            for r in range(len(arms[arm]))
+            for name, *_ in CASES
+        ):
             failures.append("reps within an arm are not bit-identical")
 
         load1_end = os.getloadavg()[0]
-        print(f"\nload1={load1_start:.1f} start / {load1_end:.1f} end "
-              f"(~11% cross-session floor on this host; quote a band)")
+        print(
+            f"\nload1={load1_start:.1f} start / {load1_end:.1f} end "
+            f"(~11% cross-session floor on this host; quote a band)"
+        )
         print(f"\n{'case':<14}{'A median':>11}{'B median':>11}{'B/A':>9}{'delta':>9}")
         for name, *_ in CASES:
-            a = statistics.median(arms["A"][r][name]["sim_median"]
-                                  for r in range(len(arms["A"])))
-            b = statistics.median(arms["B"][r][name]["sim_median"]
-                                  for r in range(len(arms["B"])))
-            print(f"{name:<14}{a:>11.4f}{b:>11.4f}{b / a:>9.3f}"
-                  f"{(b / a - 1) * 100:>+8.1f}%")
+            a = statistics.median(
+                arms["A"][r][name]["sim_median"] for r in range(len(arms["A"]))
+            )
+            b = statistics.median(
+                arms["B"][r][name]["sim_median"] for r in range(len(arms["B"]))
+            )
+            print(
+                f"{name:<14}{a:>11.4f}{b:>11.4f}{b / a:>9.3f}"
+                f"{(b / a - 1) * 100:>+8.1f}%"
+            )
         if failures:
             print("\nCORRECTNESS FAILURE:", file=sys.stderr)
             for f in failures:
@@ -321,9 +366,11 @@ def main() -> int:
     print(f"\nload1={load1_start:.1f} start / {load1_end:.1f} end")
     for name, s in summary.items():
         stats = s["cvode_stats"] or {}
-        print(f"[{name}] n_species={s['n_species']} "
-              f"sim median={s['sim_median']:.4f}s min={s['sim_min']:.4f}s "
-              f"rss={s['peak_rss']}B stable={s['stable']}")
+        print(
+            f"[{name}] n_species={s['n_species']} "
+            f"sim median={s['sim_median']:.4f}s min={s['sim_min']:.4f}s "
+            f"rss={s['peak_rss']}B stable={s['stable']}"
+        )
         if stats:
             print(f"    cvode: {stats}")
     if not all(s["stable"] for s in summary.values()):

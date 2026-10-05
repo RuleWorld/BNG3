@@ -137,7 +137,9 @@ def evaluate_rate_coefficients(
     environment: dict[str, float] = {"time": float(time), "t": float(time)}
     for _, (name, weights) in network.groups.items():
         if name in environment:
-            raise UnsupportedExpressionError(f"group collides with reserved name {name!r}")
+            raise UnsupportedExpressionError(
+                f"group collides with reserved name {name!r}"
+            )
         environment[name] = sum(
             weight * values[index - 1] for index, weight in weights.items()
         )

@@ -311,8 +311,7 @@ def check_trusted_proof_tactics(errors: list[str]) -> None:
 NATIVE_DECIDE_ALLOWLIST = {
     # One entry, pre-existing before this validator learned to count.  The
     # statement is substantive; only the proof method is trusted.
-    "BNG/Examples.lean":
-        "nfnextBridgeContract_holds -- substantive statement, trusted proof method",
+    "BNG/Examples.lean": "nfnextBridgeContract_holds -- substantive statement, trusted proof method",
 }
 
 # A reason is not decoration.  Without this, `"BNG/Foo.lean": ""` silently
@@ -406,7 +405,9 @@ def main() -> int:
     umbrella = (ROOT / "BNG.lean").read_text(encoding="utf-8")
     umbrella_code, _ = mask_comments_and_strings(umbrella)
     umbrella_imports = {
-        m.group(1) for m in (IMPORT_RE.match(l) for l in umbrella_code.splitlines()) if m
+        m.group(1)
+        for m in (IMPORT_RE.match(l) for l in umbrella_code.splitlines())
+        if m
     }
     for module in (
         "BNG.Runtime",
@@ -432,9 +433,12 @@ def main() -> int:
         return 1
 
     native = sum(
-        1 for path in LEAN_FILES
-        if re.search(r"\bnative_decide\b", mask_comments_and_strings(
-            path.read_text(encoding="utf-8"))[0])
+        1
+        for path in LEAN_FILES
+        if re.search(
+            r"\bnative_decide\b",
+            mask_comments_and_strings(path.read_text(encoding="utf-8"))[0],
+        )
     )
     print(f"STATIC VALIDATION PASSED ({len(LEAN_FILES)} Lean files checked)")
     print("  every BNG/*.lean is transitively imported from BNG.lean")
