@@ -83,8 +83,7 @@ def test_event_model_is_rejected_by_execute_before_any_output(tmp_path):
     source = tmp_path / "rejected.bngl"
     _write_model(
         source,
-        _EVENT_BLOCK
-        + """
+        _EVENT_BLOCK + """
 begin actions
     generate_network({overwrite=>1})
     simulate({method=>"ode", t_end=>10, n_steps=>10})
@@ -124,8 +123,7 @@ end actions
     source = tmp_path / "simulate_rejected.bngl"
     _write_model(
         source,
-        _EVENT_BLOCK
-        + """
+        _EVENT_BLOCK + """
 begin actions
     readNetwork({file=>"base.net"})
     simulate({method=>"ode", t_end=>10, n_steps=>10})
@@ -172,8 +170,7 @@ def test_cli_execute_command_rejects_an_event_model(tmp_path):
 
     source = _write_model(
         tmp_path / "cli_execute.bngl",
-        _EVENT_BLOCK
-        + """
+        _EVENT_BLOCK + """
 begin actions
     generate_network({overwrite=>1})
     simulate({method=>"ode", t_end=>10, n_steps=>10})
