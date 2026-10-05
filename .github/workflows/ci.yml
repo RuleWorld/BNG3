@@ -34,7 +34,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install linters and policy dependencies
-        run: pip install black ruff pytest numpy pyyaml
+        # Pinned: unpinned black floated 26.5.1 -> 26.10.0 overnight (2026-10-04/05)
+        # and red-lit every PR branch whose content the old version accepted.
+        run: pip install "black==26.10.0" "ruff==0.15.1" pytest numpy pyyaml
 
       - name: Check Python formatting (Black)
         run: black --check --diff --target-version py312 python/ tests/python/ scripts/

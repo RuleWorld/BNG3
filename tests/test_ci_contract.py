@@ -578,7 +578,12 @@ def test_lint_job_installs_ci_contract_dependencies():
     """The lint job must install dependencies required during test collection."""
 
     lint_job = _workflow_job_from(CI_WORKFLOW, "lint")
-    assert "pip install black ruff pytest numpy pyyaml" in lint_job
+    for package in ("black", "ruff", "pytest", "numpy", "pyyaml"):
+        assert package in lint_job
+    # Linter installs must be version-pinned: an unpinned float (black
+    # 26.5.1 -> 26.10.0 overnight) red-lit every open PR branch at once.
+    for package in ("black", "ruff"):
+        assert re.search(rf'["\']?{package}==[^ "\']+["\']?', lint_job)
 
 
 def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
@@ -622,6 +627,23 @@ def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
     assert "build/NFsim" in nfsim
     assert "tests/validation/test_parity_nfsim.py" in nfsim
     assert "build/cpp/NFsim" not in nfsim
+
+
+def test_nfsim_parity_uses_regular_installed_api_and_pinned_native_oracle():
+    """NFsim parity uses installed BNG3 API and the independently built oracle."""
+
+    job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["nfsim-parity"]
+    job = _workflow_job_from(PARITY_WORKFLOW, "nfsim-parity")
+
+    assert (job_doc.get("env") or {}).get("BNG3_PYTHON_TEST_MODE") == "installed"
+    assert 'python -m pip install ".[full,dev]"' in job
+    assert "pip install -e" not in job
+    assert "check_python_package_identity.py" in job
+    assert "test_worker_package_identity.py" in job
+    assert 'PYTHONPATH="python:build/cpp"' not in job
+    assert "--bng-cpp build/cpp/bng_cpp" not in job
+    assert "NFSIM_BIN" in job
+    assert "$RUNNER_TEMP/oracle-nfsim/build/NFsim" in job
 
 
 def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
@@ -855,7 +877,9 @@ def test_python_test_jobs_download_the_matching_native_cli_artifact():
         "distribution_package",
         "package_file",
         "native_extension",
+        "model_module",
         "native_extension_sha256",
+        "model_native_extension",
         "source_revision",
     ):
         assert identity in checker

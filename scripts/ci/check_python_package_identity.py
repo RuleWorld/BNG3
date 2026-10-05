@@ -11,19 +11,19 @@ from pathlib import Path
 import subprocess
 import sys
 
+if __package__:
+    from .python_package_mode import editable_finders_for_package
+else:
+    from python_package_mode import editable_finders_for_package
+
 
 def inspect_installed_package(source_revision: str | None = None) -> dict[str, str]:
     """Verify package and extension come from one installed distribution."""
 
-    editable_finders = [
-        finder
-        for finder in sys.meta_path
-        if "editable" in type(finder).__module__.lower()
-        or "editable" in getattr(finder, "__name__", "").lower()
-    ]
+    editable_finders = editable_finders_for_package(sys.meta_path, "bionetgen")
     if editable_finders:
         raise RuntimeError(
-            "installed-package identity check found an editable import finder"
+            "installed-package identity check found a BNG3 editable import finder"
         )
 
     try:
@@ -40,10 +40,16 @@ def inspect_installed_package(source_revision: str | None = None) -> dict[str, s
 
     import bionetgen
     import bionetgen._bionetgen_cpp as native
+    import bionetgen.model as model
 
     distribution_package = Path(distribution.locate_file("bionetgen")).resolve()
     package_file = Path(bionetgen.__file__).resolve()
     extension_file = Path(native.__file__).resolve()
+    model_file = Path(model.__file__).resolve()
+    model_native = getattr(model, "_cpp", None)
+    if model_native is None:
+        raise RuntimeError("bionetgen.model did not bind a native extension")
+    model_native_file = Path(model_native.__file__).resolve()
     if package_file.parent != distribution_package:
         raise RuntimeError(
             "bionetgen package was shadowed: "
@@ -53,6 +59,16 @@ def inspect_installed_package(source_revision: str | None = None) -> dict[str, s
         raise RuntimeError(
             "bionetgen native extension was shadowed: "
             f"{extension_file} (expected under {distribution_package})"
+        )
+    if model_file.parent != distribution_package:
+        raise RuntimeError(
+            "bionetgen.model was shadowed: "
+            f"{model_file} (expected under {distribution_package})"
+        )
+    if model_native_file != extension_file:
+        raise RuntimeError(
+            "bionetgen.model loaded a different native extension: "
+            f"{model_native_file} (expected {extension_file})"
         )
 
     if source_revision is None:
@@ -85,6 +101,8 @@ def inspect_installed_package(source_revision: str | None = None) -> dict[str, s
         "distribution_package": str(distribution_package),
         "package_file": str(package_file),
         "native_extension": str(extension_file),
+        "model_module": str(model_file),
+        "model_native_extension": str(model_native_file),
         "native_extension_sha256": digest.hexdigest(),
     }
 
