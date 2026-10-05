@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Regression: a killed benchlock wrapper must not unlock a live measurement."""
+
 from __future__ import annotations
 
 import os
@@ -15,8 +16,9 @@ BL = Path(__file__).with_name("benchlock").resolve()
 
 
 def status(env: dict[str, str]) -> tuple[int, str]:
-    result = subprocess.run([str(BL), "status"], env=env, capture_output=True,
-                            text=True, check=True)
+    result = subprocess.run(
+        [str(BL), "status"], env=env, capture_output=True, text=True, check=True
+    )
     first = result.stdout.splitlines()[0]
     match = re.search(r"capacity (\d+)  free (\d+)  in_use (\d+)", first)
     if not match:
@@ -29,8 +31,12 @@ def main() -> int:
         root = Path(tmp)
         pid_file = root / "child.pid"
         log = root / "holder.log"
-        env = dict(os.environ, BENCHLOCK_DIR=str(root / "locks"),
-                   BENCHLOCK_MAX="1", BENCHLOCK_POLL="0.02")
+        env = dict(
+            os.environ,
+            BENCHLOCK_DIR=str(root / "locks"),
+            BENCHLOCK_MAX="1",
+            BENCHLOCK_POLL="0.02",
+        )
         code = (
             "import os,pathlib,sys,time;"
             "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));"
@@ -38,10 +44,23 @@ def main() -> int:
         )
         with log.open("w") as out:
             wrapper = subprocess.Popen(
-                [str(BL), "acquire", "--agent", "signal-test",
-                 "--what", "child fd lifetime", "--",
-                 sys.executable, "-c", code, str(pid_file)],
-                env=env, stdout=out, stderr=subprocess.STDOUT)
+                [
+                    str(BL),
+                    "acquire",
+                    "--agent",
+                    "signal-test",
+                    "--what",
+                    "child fd lifetime",
+                    "--",
+                    sys.executable,
+                    "-c",
+                    code,
+                    str(pid_file),
+                ],
+                env=env,
+                stdout=out,
+                stderr=subprocess.STDOUT,
+            )
 
         child_pid = None
         try:
@@ -59,8 +78,10 @@ def main() -> int:
             wrapper.wait()
             free, output = status(env)
             if free != 0:
-                print("FAIL: killing benchlock released slot while measured child "
-                      f"still lived (free={free})")
+                print(
+                    "FAIL: killing benchlock released slot while measured child "
+                    f"still lived (free={free})"
+                )
                 print(output, end="")
                 return 1
 

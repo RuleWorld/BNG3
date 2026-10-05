@@ -197,9 +197,9 @@ def test_bng2_stores_the_same_seed_amount_at_the_same_volumes(tmp_path):
         model, net = _model(tmp_path, vol)
         ssa = _cpp.simulate_ssa(model, net, t_end=0.0, n_steps=1, seed=SEED)
         got = float(np.asarray(ssa["concentrations"])[0][0])
-        assert (
-            got == oracle_amount
-        ), f"V={vol}: BNG3 stores {got}, BNG2 2.9.3 stores {oracle_amount}"
+        assert got == oracle_amount, (
+            f"V={vol}: BNG3 stores {got}, BNG2 2.9.3 stores {oracle_amount}"
+        )
 
 
 # ---------------------------------------------------------------------------

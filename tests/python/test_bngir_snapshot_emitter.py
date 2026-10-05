@@ -386,9 +386,9 @@ def test_population_map_snapshot_carries_no_illegal_symbol():
         snapshot = _cpp._compiled_snapshot(native)
     except RuntimeError as error:
         # Fail-closed is an acceptable outcome; the message must name it.
-        assert (
-            "population" in str(error).lower()
-        ), f"refusal must name the construct, got: {error}"
+        assert "population" in str(error).lower(), (
+            f"refusal must name the construct, got: {error}"
+        )
         return
     for symbol in collect_symbols(snapshot):
         assert symbol["kind"] in allowed

@@ -14,14 +14,14 @@ def generate(n: int) -> str:
     if n < 1 or n > 40:
         raise ValueError("n must be in [1,40]")
     a_sites = ["x"] + [f"c{i}" for i in range(n)]
-    params = "\n".join(f"  G{i} {0.1*(i+1):.6g}" for i in range(n))
+    params = "\n".join(f"  G{i} {0.1 * (i + 1):.6g}" for i in range(n))
     moltypes = [f"  A({','.join(a_sites)})", "  B(y)"] + [
         f"  C{i}(z)" for i in range(n)
     ]
     # Seed A already carries all context bonds, so all context predicates are present.
-    a_seed_sites = ["x"] + [f"c{i}!{i+2}" for i in range(n)]
+    a_seed_sites = ["x"] + [f"c{i}!{i + 2}" for i in range(n)]
     seed_complex = [f"A({','.join(a_seed_sites)})"] + [
-        f"C{i}(z!{i+2})" for i in range(n)
+        f"C{i}(z!{i + 2})" for i in range(n)
     ]
     energy = []
     for i in range(n):
@@ -36,7 +36,7 @@ begin molecule types
 {chr(10).join(moltypes)}
 end molecule types
 begin seed species
-  {'.'.join(seed_complex)} 100
+  {".".join(seed_complex)} 100
   B(y) 100
 end seed species
 begin energy patterns
