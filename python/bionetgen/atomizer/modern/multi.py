@@ -1554,7 +1554,7 @@ def _species_pattern_from_multi(
             continue
         try:
             has_positive_initial = has_positive_initial or float(raw_initial) > 0
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             pass
     if has_positive_initial:
         bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
@@ -3109,7 +3109,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             source_pattern = source_pattern or species_id
             try:
                 parsed_source = read_from_string(source_pattern)
-            except TypeError, ValueError:
+            except (TypeError, ValueError):
                 parsed_source = None
             if parsed_source is None or not getattr(parsed_source, "molecules", None):
                 warnings.append(
@@ -3422,7 +3422,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         raw = _attribute(reference, "stoichiometry", "1")
         try:
             value = float(raw)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return 0
         return int(value) if value.is_integer() and value >= 0 else 0
 

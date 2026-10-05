@@ -26,7 +26,7 @@ def _revision(path: Path) -> str | None:
             text=True,
             check=True,
         ).stdout.strip()
-    except OSError, subprocess.CalledProcessError:
+    except (OSError, subprocess.CalledProcessError):
         return None
 
 
