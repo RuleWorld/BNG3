@@ -685,7 +685,7 @@ def _sbml_surface_limitations(sbml: str) -> tuple[dict[str, int], list[str]]:
             continue
         try:
             value = float(raw)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if not math.isfinite(value) or value < 0:
             limitations.append(

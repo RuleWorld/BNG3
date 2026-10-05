@@ -784,7 +784,7 @@ class _NumericParser:
                 return None
             try:
                 base = base**exponent
-            except (OverflowError, ValueError):
+            except OverflowError, ValueError:
                 return None
         return base if self._finite(base) else None
 
@@ -972,7 +972,7 @@ class _NumericParser:
                         value = math.cosh(arguments[0]) / math.sinh(arguments[0])
                     else:
                         return None
-                except (ArithmeticError, OverflowError, TypeError, ValueError):
+                except ArithmeticError, OverflowError, TypeError, ValueError:
                     return None
                 return value if self._finite(value) else None
             self.take()
@@ -1371,7 +1371,7 @@ def expand_sinusoidal_assignment_rule_events(
     def constant(node: ast.AST) -> Optional[float]:
         try:
             value = fold_numeric(ast.unparse(node), resolve_constant)
-        except (TypeError, ValueError, SyntaxError):
+        except TypeError, ValueError, SyntaxError:
             return None
         return value if value is not None and math.isfinite(value) else None
 
@@ -1442,7 +1442,7 @@ def expand_sinusoidal_assignment_rule_events(
         )
         try:
             expression = ast.parse(formula, mode="eval").body
-        except (TypeError, ValueError, SyntaxError):
+        except TypeError, ValueError, SyntaxError:
             output.append(event)
             continue
         if not (
@@ -1629,7 +1629,7 @@ def expand_cosh_assignment_rule_events(
             )
             try:
                 left_node = ast.parse(expand_functions(left), mode="eval").body
-            except (TypeError, ValueError, SyntaxError):
+            except TypeError, ValueError, SyntaxError:
                 left_node = None
             if cosh_time(left_node):
                 function_node = left_node
@@ -1637,7 +1637,7 @@ def expand_cosh_assignment_rule_events(
             else:
                 try:
                     right_node = ast.parse(expand_functions(right), mode="eval").body
-                except (TypeError, ValueError, SyntaxError):
+                except TypeError, ValueError, SyntaxError:
                     right_node = None
                 if not cosh_time(right_node):
                     unsupported = True
@@ -1676,7 +1676,7 @@ def expand_cosh_assignment_rule_events(
                     ),
                     mode="eval",
                 ).body
-            except (TypeError, ValueError, SyntaxError):
+            except TypeError, ValueError, SyntaxError:
                 continue
             if (
                 isinstance(rule_expression, ast.Call)
@@ -1868,7 +1868,7 @@ def expand_static_parameter_event_system(
         try:
             tree = ast.parse(expanded, mode="eval")
             expanded = ast.unparse(RateHistoryRewriter().visit(tree))
-        except (TypeError, ValueError, SyntaxError):
+        except TypeError, ValueError, SyntaxError:
             return None
         if not _preserves_hyphenated_ids(source, expanded):
             return None
@@ -2325,7 +2325,7 @@ def expand_static_parameter_event_system(
                 )
             current_time = next_time
         return [event for _time, event in executions]
-    except (ArithmeticError, OverflowError, TypeError, ValueError):
+    except ArithmeticError, OverflowError, TypeError, ValueError:
         return None
 
 
@@ -2509,7 +2509,7 @@ def _parse_scaled_state_threshold(
         expression = _strip_outer_parens(value)
         try:
             parsed = ast.parse(expression, mode="eval").body
-        except (TypeError, ValueError, SyntaxError):
+        except TypeError, ValueError, SyntaxError:
             return []
         names = sorted(
             {
@@ -3003,7 +3003,7 @@ def synthesize_event_actions(
         source = expanded
         try:
             tree = ast.parse(expanded, mode="eval")
-        except (TypeError, ValueError, SyntaxError):
+        except TypeError, ValueError, SyntaxError:
             tree = None
         if tree is not None:
             rewritten = ast.unparse(DelayHistoryRewriter().visit(tree))
@@ -3144,7 +3144,7 @@ def synthesize_event_actions(
                     if isinstance(node.op, ast.Div):
                         return left / right if right != 0 else None
                     return left**right
-                except (OverflowError, TypeError, ValueError, ZeroDivisionError):
+                except OverflowError, TypeError, ValueError, ZeroDivisionError:
                     return None
             if isinstance(node, ast.Compare) and len(node.ops) == 1:
                 left, right = numeric_ast(node.left), numeric_ast(node.comparators[0])
@@ -3190,7 +3190,7 @@ def synthesize_event_actions(
                 TimeConditionalRewriter().visit(timed_tree)
             )
             reduced_expression = reduced_expression.replace("_event_if(", "if(")
-        except (TypeError, ValueError, SyntaxError):
+        except TypeError, ValueError, SyntaxError:
             reduced_expression = timed_expression.replace("_event_if(", "if(")
         if not _preserves_hyphenated_ids(timed_expression, reduced_expression):
             return None

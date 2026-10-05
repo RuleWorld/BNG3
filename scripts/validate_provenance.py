@@ -55,14 +55,14 @@ def _required(value: Any, keys: set[str], where: str, errors: list[str]) -> bool
 def _date(value: Any, where: str, errors: list[str]) -> None:
     try:
         date.fromisoformat(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         errors.append(f"{where} must be an ISO date")
 
 
 def _datetime(value: Any, where: str, errors: list[str]) -> None:
     try:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (AttributeError, TypeError, ValueError):
+    except AttributeError, TypeError, ValueError:
         errors.append(f"{where} must be an ISO date-time")
 
 

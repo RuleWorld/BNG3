@@ -288,7 +288,7 @@ class Atomizer:
     def _threshold(name: str, default: float) -> float:
         try:
             return float(os.environ.get(name, str(default)))
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             return float("nan")
 
     def _should_use_large_flat_fast_path(self, sbml_string: str) -> bool:
@@ -309,14 +309,14 @@ class Atomizer:
     def _initial_amount_expression(species: SBMLSpecies) -> str:
         try:
             amount = float(species.initial_amount)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             amount = float("nan")
         if math.isfinite(amount) and amount > 0:
             return str(int(amount)) if amount.is_integer() else format(amount, ".15g")
 
         try:
             concentration = float(species.initial_concentration)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             concentration = float("nan")
         if math.isfinite(concentration) and concentration > 0:
             compartment = standardizeName(species.compartment or "Compartment")
