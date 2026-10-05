@@ -117,6 +117,38 @@ def test_numeric_trajectory_comparison_can_explicitly_intersect_columns():
     assert diff.max_rel_err == 0.0
 
 
+def test_default_column_policy_intersects_when_an_observable_is_missing():
+    """Omitting ``columns`` retains the comparator's numeric-intersection default."""
+    diff = compare_trajectories(
+        REFERENCE,
+        REFERENCE_COLUMNS,
+        REFERENCE[:, :2],
+        ["time", "Ototal"],
+        rtol=0.0,
+        atol=0.0,
+    )
+
+    assert diff.ok
+    assert diff.max_rel_err == 0.0
+
+
+def test_exact_rejects_two_time_only_trajectories_as_unshared():
+    time_only = TIME[:, np.newaxis]
+
+    diff = compare_trajectories(
+        time_only,
+        ["time"],
+        time_only,
+        ["time"],
+        rtol=0.0,
+        atol=0.0,
+        columns=COLUMNS_EXACT,
+    )
+
+    assert not diff.ok
+    assert diff.note == "no shared observable columns"
+
+
 def test_stochastic_comparison_rejects_missing_or_phantom_observables():
     missing = (REFERENCE[:, :2], ["time", "Ototal"])
     phantom = (

@@ -235,9 +235,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
         // Decorrelated per-trajectory seed, shared with integrateBatchSSA's CPU
         // pool and the GPU backends. `baseSeed + b` aliased: batch runs whose
         // base seeds differ by delta shared batchSize - delta trajectories.
-        odeOpts.seed = static_cast<unsigned int>(
-            batchTrajectorySeed(options.baseSeed, b) & 0xFFFFFFFFULL);
-        if (odeOpts.seed == 0u) odeOpts.seed = 1u;
+        odeOpts.seed = batchTrajectoryEngineSeed(options.baseSeed, b);
         OdeResult res = integrator.integrate(odeOpts);
 
         if (b == 0) {
@@ -376,11 +374,8 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
             odeOpts.maxSimSteps = options.maxSimSteps;
 
             for (std::size_t b = startIdx; b < endIdx; ++b) {
-                // Same derivation as the single-worker loop above; see
-                // batchTrajectorySeed in engine/BatchSsa.hpp.
-                odeOpts.seed = static_cast<unsigned int>(
-                    batchTrajectorySeed(options.baseSeed, b) & 0xFFFFFFFFULL);
-                if (odeOpts.seed == 0u) odeOpts.seed = 1u;
+                // Same derivation as the single-worker loop above.
+                odeOpts.seed = batchTrajectoryEngineSeed(options.baseSeed, b);
                 OdeResult res = integrator.integrate(odeOpts);
 
                 if (wRes.timePoints.empty() && !res.timePoints.empty()) {

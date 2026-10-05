@@ -46,6 +46,13 @@ hybrid population backend. Missing compiled engines or independent oracle
 artifacts remain failures for the gate that requires them, rather than being
 silently replaced by BNG3's embedded target or an XML fallback.
 
+The four-model fixed-seed contract is covered by
+`test_parity_nfsim_seed.py::test_fixed_seed_reproduces_the_same_trajectory_on_both_legs`,
+parameterized over `corpus.tier_nf()`. The separately CI-selected
+`test_parity_nfsim.py::test_nf_fixed_seed_direct_matches_native_at_final_endpoint`
+remains pinned to `simple_system`. Both require exact observable column sets
+with `rtol=atol=0`, so a dropped or extra observable fails the identity check.
+
 The local continuation evidence immediately before the documentation merge is
 independent NFsim `10 passed`, CTest `308/308`, and strict full validation
 `71/71` with zero failures, errors, or skips. The final hosted check URLs and

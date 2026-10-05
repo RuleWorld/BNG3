@@ -1,0 +1,11 @@
+PASS  clonal_expansion
+species:   ref=1 test=1
+reactions: ref=1 test=1 (delta=+0)
+
+============================================================
+CROSS-VALIDATION SUMMARY
+  Total models: 1
+  PASS:  1
+  FAIL:  0
+  ERROR: 0
+============================================================

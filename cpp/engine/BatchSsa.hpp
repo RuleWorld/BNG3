@@ -132,6 +132,19 @@ inline uint64_t batchTrajectorySeed(uint64_t baseSeed, std::size_t trajectory) {
     return z ^ (z >> 31);
 }
 
+// OdeIntegrator treats seed 0 as a request for a random seed. Batch trajectories
+// must stay reproducible, so narrow to the engine's 32-bit seed and reserve 1
+// when the narrowed value is zero.
+inline unsigned int batchEngineSeed(uint64_t trajectorySeed) {
+    const unsigned int seed = static_cast<unsigned int>(trajectorySeed & 0xFFFFFFFFULL);
+    return seed == 0u ? 1u : seed;
+}
+
+inline unsigned int batchTrajectoryEngineSeed(uint64_t baseSeed,
+                                              std::size_t trajectory) {
+    return batchEngineSeed(batchTrajectorySeed(baseSeed, trajectory));
+}
+
 // CPU Batch SSA Simulator: reference implementation and fallback backend.
 class CpuBatchSsaSimulator {
 public:

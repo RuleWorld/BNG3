@@ -283,7 +283,11 @@ def _locked_ssts_checkout(tmp_path: Path) -> tuple[Path, Path, str]:
         check=True,
     )
     (suite / "README.md").write_text("locked suite\n", encoding="utf-8")
-    subprocess.run(["git", "-C", str(suite), "add", "README.md"], check=True)
+    for category in ("semantic", "stochastic"):
+        case_dir = suite / "cases" / category / "00001"
+        case_dir.mkdir(parents=True)
+        (case_dir / "00001-sbml-l3v2.xml").write_text("<sbml/>\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(suite), "add", "README.md", "cases"], check=True)
     subprocess.run(
         ["git", "-C", str(suite), "commit", "-m", "initial"],
         check=True,
@@ -398,6 +402,97 @@ def test_ssts_checkout_preflight_rejects_dirty_or_wrong_origin(
 
     with pytest.raises(validate_sbml_test_suite.SuiteLockError, match=expected_error):
         validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_checkout_preflight_rejects_missing_locked_case_tree(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="case tree"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+@pytest.mark.parametrize("index_flag", ("--skip-worktree", "--assume-unchanged"))
+def test_ssts_checkout_preflight_rejects_case_edits_hidden_by_git_flags(
+    tmp_path: Path, index_flag: str
+):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    case_file = "cases/semantic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", index_flag, case_file],
+        check=True,
+    )
+    (suite / case_file).write_text(
+        "<sbml>modified after locked commit</sbml>\n", encoding="utf-8"
+    )
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="index flags"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_missing_case_tree_writes_incomplete_report(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+    report = tmp_path / "incomplete-report.json"
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--json",
+        str(report),
+        "--categories",
+        "semantic",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "case tree" in result.stderr
+    incomplete = json.loads(report.read_text(encoding="utf-8"))
+    assert incomplete["status"] == "incomplete"
+    assert incomplete["preflight_status"] == "failed"
+    assert incomplete["partial_run"] is True
+    assert incomplete["selected_cases"] is None
+    assert incomplete["core_passed"] is False
+    assert incomplete["official_conformance"]["status"] == "incomplete"
+    assert incomplete["official_conformance"]["passed"] is False
+
+
+def test_ssts_incomplete_report_preserves_existing_output(tmp_path: Path):
+    report = tmp_path / "existing-report.json"
+    report.write_text('{"preserve": true}\n', encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        validate_sbml_test_suite._write_incomplete_report(
+            report, tmp_path, ["semantic", "stochastic"], "missing case data"
+        )
+
+    assert report.read_text(encoding="utf-8") == '{"preserve": true}\n'
 
 
 def test_ssts_run_scope_marks_category_cohorts_partial():
@@ -532,6 +627,23 @@ def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
     assert "build/NFsim" in nfsim
     assert "tests/validation/test_parity_nfsim.py" in nfsim
     assert "build/cpp/NFsim" not in nfsim
+
+
+def test_nfsim_parity_uses_regular_installed_api_and_pinned_native_oracle():
+    """NFsim parity uses installed BNG3 API and the independently built oracle."""
+
+    job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["nfsim-parity"]
+    job = _workflow_job_from(PARITY_WORKFLOW, "nfsim-parity")
+
+    assert (job_doc.get("env") or {}).get("BNG3_PYTHON_TEST_MODE") == "installed"
+    assert 'python -m pip install ".[full,dev]"' in job
+    assert "pip install -e" not in job
+    assert "check_python_package_identity.py" in job
+    assert "test_worker_package_identity.py" in job
+    assert 'PYTHONPATH="python:build/cpp"' not in job
+    assert "--bng-cpp build/cpp/bng_cpp" not in job
+    assert "NFSIM_BIN" in job
+    assert "$RUNNER_TEMP/oracle-nfsim/build/NFsim" in job
 
 
 def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
@@ -765,7 +877,9 @@ def test_python_test_jobs_download_the_matching_native_cli_artifact():
         "distribution_package",
         "package_file",
         "native_extension",
+        "model_module",
         "native_extension_sha256",
+        "model_native_extension",
         "source_revision",
     ):
         assert identity in checker

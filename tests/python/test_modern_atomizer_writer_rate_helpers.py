@@ -205,6 +205,19 @@ def test_write_functions_preserves_assignment_rule_that_shadows_parameter():
     assert "flux() = 0 * A" not in lines
 
 
+def test_write_functions_keeps_mutable_parameter_live_in_assignment_rule():
+    from bionetgen.atomizer.modern import write_functions
+
+    model = _mass_action_model()
+    model.parameters["k"] = SBMLParameter(id="k", value=3, constant=False)
+    model.rules = [SBMLRule(type="assignment", variable="flux", math="k * A")]
+
+    lines = write_functions(model)
+
+    assert "flux() = k * A" in lines
+    assert "flux() = 3 * A" not in lines
+
+
 def test_bngl_renames_legacy_time_alias_for_sbml_identifiers():
     from bionetgen.atomizer.modern import standardize_name
 

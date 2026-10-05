@@ -23,7 +23,6 @@ from tests.validation import compare, corpus, oracle_perl
 from tests.validation.rhs import evaluate_rate_coefficients, evaluate_rhs
 from tests.validation.strict import require_oracle
 
-
 RHS_TIMES = (0.0, 0.375, 2.5)
 RHS_RTOL = 1e-9
 RHS_ATOL = 1e-12
@@ -49,7 +48,9 @@ def _reaction_rate_buckets(net, species_to_reference):
         key = (
             tuple(sorted(species_to_reference[species] for species in reactants)),
             tuple(sorted(species_to_reference[species] for species in products)),
-            compare._resolve_rate(rate, net.rate_defs, net.rate_mode),
+            compare._resolve_rate(
+                rate, net.rate_defs, net.rate_mode, net.rate_functions
+            ),
         )
         buckets.setdefault(key, []).append(index)
     return buckets
@@ -88,9 +89,9 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
     # remaining graph spelling with the public C++ graph labels by index.
     for index, generated_name in enumerate(generated.species_names, 1):
         serialized_name = test_net.species_by_index[index].removeprefix("$")
-        assert compare.species_isomorphic(serialized_name, generated_name), (
-            f"network serialization order changed at species {index} [{model_name}]"
-        )
+        assert compare.species_isomorphic(
+            serialized_name, generated_name
+        ), f"network serialization order changed at species {index} [{model_name}]"
     ref_to_generated = compare._species_index_mapping(ref_net, test_net)
     assert len(ref_to_generated) == ref_net.n_species == generated.num_species
     ref_rate_buckets = _reaction_rate_buckets(
@@ -101,9 +102,7 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
         for ref_index, generated_index in ref_to_generated.items()
     }
     generated_rate_buckets = _reaction_rate_buckets(test_net, generated_to_ref)
-    assert {
-        key: len(indices) for key, indices in ref_rate_buckets.items()
-    } == {
+    assert {key: len(indices) for key, indices in ref_rate_buckets.items()} == {
         key: len(indices) for key, indices in generated_rate_buckets.items()
     }, f"reaction expression identities drifted [{model_name}]"
 
@@ -114,8 +113,10 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
     evaluated_expression_values = 0
     for case, time in enumerate(RHS_TIMES):
         state = np.asarray(
-            [0.375 + 0.125 * ((7 * index + 11 * case) % 17)
-             for index in range(ref_net.n_species)],
+            [
+                0.375 + 0.125 * ((7 * index + 11 * case) % 17)
+                for index in range(ref_net.n_species)
+            ],
             dtype=float,
         )
         assert state.size == ref_net.n_species > 0
@@ -159,7 +160,9 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
 
         expected = np.asarray(evaluate_rhs(ref_net, state, time), dtype=float)
         assert expected.size == ref_net.n_species > 0
-        assert np.isfinite(expected).all(), (
+        assert np.isfinite(
+            expected
+        ).all(), (
             f"reference RHS contains a non-finite value [{model_name}] at t={time:g}"
         )
         actual_generated = np.asarray(
@@ -168,14 +171,16 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
             ),
             dtype=float,
         )
-        assert np.isfinite(actual_generated).all(), (
-            f"BNG3 RHS contains a non-finite value [{model_name}] at t={time:g}"
-        )
+        assert np.isfinite(
+            actual_generated
+        ).all(), f"BNG3 RHS contains a non-finite value [{model_name}] at t={time:g}"
         actual = np.zeros(ref_net.n_species, dtype=float)
         for ref_index, generated_index in ref_to_generated.items():
             actual[ref_index - 1] = actual_generated[generated_index - 1]
         assert actual.size == ref_net.n_species > 0
-        assert np.isfinite(actual).all(), (
+        assert np.isfinite(
+            actual
+        ).all(), (
             f"mapped BNG3 RHS contains a non-finite value [{model_name}] at t={time:g}"
         )
 

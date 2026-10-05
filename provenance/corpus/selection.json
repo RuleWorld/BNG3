@@ -4,7 +4,7 @@
   "selection_status": "pending-maintainer-approval",
   "source_lock": {
     "path": "provenance/upstreams.lock.yml",
-    "sha256": "sha256:5115caf21f90a954de259e58a21e8efd6240170764ec0e2ffac3f13b43d96a49"
+    "sha256": "sha256:20f47779ff79e284c6cb0ba26d053dfaaf3fda7e6786c917c4aa9f275f02a1ce"
   },
   "rulehub": {
     "repository": "https://github.com/RuleWorld/RuleHub.git",
@@ -303,7 +303,7 @@
     {
       "id": "clonal_expansion",
       "path": "models/immune/clonal_expansion.bngl",
-      "sha256": "sha256:86f1135fd96c1fdea85f122551ab2787b63c64aa8c933f6c35ec95ca839d930f",
+      "sha256": "sha256:d969d2ea45a1530f5fafe15ab0f901cfaf39f8d3b09cc68cd48d26fe09396d5c",
       "origin": "repository-fixture",
       "tiers": [
         "p"

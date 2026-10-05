@@ -1,0 +1,716 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.7, pytest-9.1.1, pluggy-1.6.0 -- /private/tmp/bng3-20261002-parity/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /private/tmp/bng3-20261002-parity/tests/validation
+configfile: pytest.ini
+collecting ... collected 100 items
+
+tests/validation/test_parity_net.py::test_net_parity_full[AN] FAILED     [  1%]
+tests/validation/test_parity_net.py::test_net_parity_full[ANx] FAILED    [  2%]
+tests/validation/test_parity_net.py::test_net_parity_full[ANx_noActivity] FAILED [  3%]
+tests/validation/test_parity_net.py::test_net_parity_full[CaOscillate_Func] PASSED [  4%]
+tests/validation/test_parity_net.py::test_net_parity_full[CaOscillate_Sat] PASSED [  5%]
+tests/validation/test_parity_net.py::test_net_parity_full[Haugh2b] PASSED [  6%]
+tests/validation/test_parity_net.py::test_net_parity_full[Motivating_example] PASSED [  7%]
+tests/validation/test_parity_net.py::test_net_parity_full[Motivating_example_cBNGL] PASSED [  8%]
+tests/validation/test_parity_net.py::test_net_parity_full[PushPull] PASSED [  9%]
+tests/validation/test_parity_net.py::test_net_parity_full[Repressilator] PASSED [ 10%]
+tests/validation/test_parity_net.py::test_net_parity_full[SHP2_base_model] PASSED [ 11%]
+tests/validation/test_parity_net.py::test_net_parity_full[actin_branch] FAILED [ 12%]
+tests/validation/test_parity_net.py::test_net_parity_full[actin_branch_forFitToData] FAILED [ 13%]
+tests/validation/test_parity_net.py::test_net_parity_full[actin_simple] FAILED [ 14%]
+tests/validation/test_parity_net.py::test_net_parity_full[blbr] FAILED   [ 15%]
+tests/validation/test_parity_net.py::test_net_parity_full[continue] PASSED [ 16%]
+tests/validation/test_parity_net.py::test_net_parity_full[deleteMolecules] PASSED [ 17%]
+tests/validation/test_parity_net.py::test_net_parity_full[e1] PASSED     [ 18%]
+tests/validation/test_parity_net.py::test_net_parity_full[e2] PASSED     [ 19%]
+tests/validation/test_parity_net.py::test_net_parity_full[e3] PASSED     [ 20%]
+tests/validation/test_parity_net.py::test_net_parity_full[e4] PASSED     [ 21%]
+tests/validation/test_parity_net.py::test_net_parity_full[e5] PASSED     [ 22%]
+tests/validation/test_parity_net.py::test_net_parity_full[e6] PASSED     [ 23%]
+tests/validation/test_parity_net.py::test_net_parity_full[e7] PASSED     [ 24%]
+tests/validation/test_parity_net.py::test_net_parity_full[e8] FAILED     [ 25%]
+tests/validation/test_parity_net.py::test_net_parity_full[e9] FAILED     [ 26%]
+tests/validation/test_parity_net.py::test_net_parity_full[egfr_net] PASSED [ 27%]
+tests/validation/test_parity_net.py::test_net_parity_full[empty_compartments_block] PASSED [ 28%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn] FAILED [ 29%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_lig] FAILED [ 30%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_trimer] FAILED [ 31%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_gamma2] FAILED [ 32%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji] FAILED [ 33%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji_red] FAILED [ 34%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_lyn_745] FAILED [ 35%]
+tests/validation/test_parity_net.py::test_net_parity_full[fceri_trimer] FAILED [ 36%]
+tests/validation/test_parity_net.py::test_net_parity_full[gene_expr] PASSED [ 37%]
+tests/validation/test_parity_net.py::test_net_parity_full[gene_expr_func] PASSED [ 38%]
+tests/validation/test_parity_net.py::test_net_parity_full[gene_expr_simple] PASSED [ 39%]
+tests/validation/test_parity_net.py::test_net_parity_full[heise] PASSED  [ 40%]
+tests/validation/test_parity_net.py::test_net_parity_full[hybrid_test] FAILED [ 41%]
+tests/validation/test_parity_net.py::test_net_parity_full[hybrid_test_hpp] 
+
+=================================== FAILURES ===================================
+___________________________ test_net_parity_full[AN] ___________________________
+
+model_name = 'AN'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_AN_0')
+request = <FixtureRequest for <Function test_net_parity_full[AN]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for AN: perl failed: perl timeout after 300s'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for AN: perl failed: perl timeout after 300s
+
+tests/validation/strict.py:16: Failed
+__________________________ test_net_parity_full[ANx] ___________________________
+
+model_name = 'ANx'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_ANx_0')
+request = <FixtureRequest for <Function test_net_parity_full[ANx]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for ANx: perl failed: perl timeout after 300s'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for ANx: perl failed: perl timeout after 300s
+
+tests/validation/strict.py:16: Failed
+_____________________ test_net_parity_full[ANx_noActivity] _____________________
+
+model_name = 'ANx_noActivity'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_ANx_noAct0')
+request = <FixtureRequest for <Function test_net_parity_full[ANx_noActivity]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for ANx_noActivity: perl failed: perl timeout after 300s'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for ANx_noActivity: perl failed: perl timeout after 300s
+
+tests/validation/strict.py:16: Failed
+______________________ test_net_parity_full[actin_branch] ______________________
+
+model_name = 'actin_branch'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_actin_bra0')
+request = <FixtureRequest for <Function test_net_parity_full[actin_branch]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for actin_branch: perl failed: ABORT: While reading observable Actin_ADF: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!\n  at line 181\n'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for actin_branch: perl failed: ABORT: While reading observable Actin_ADF: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!
+E             at line 181
+
+tests/validation/strict.py:16: Failed
+_______________ test_net_parity_full[actin_branch_forFitToData] ________________
+
+model_name = 'actin_branch_forFitToData'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_actin_bra1')
+request = <FixtureRequest for <Function test_net_parity_full[actin_branch_forFitToData]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for actin_branch_forFitToData: perl failed: Use of uninitialized value $type in string eq at /priva...line 243] Reaction rule label 'Barbed end elongation' contains white space. This is deprecated (BioNetGen >= 2.2.3).\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for actin_branch_forFitToData: perl failed: Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2449.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2453.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2469.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2449.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2453.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 2469.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1031.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1035.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1078.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1031.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1035.
+E           Use of uninitialized value $type in string eq at /private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/Expression.pm line 1078.
+E           ABORT: [at line 243] Reaction rule label 'Barbed end elongation' contains white space. This is deprecated (BioNetGen >= 2.2.3).
+
+tests/validation/strict.py:16: Failed
+______________________ test_net_parity_full[actin_simple] ______________________
+
+model_name = 'actin_simple'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_actin_sim0')
+request = <FixtureRequest for <Function test_net_parity_full[actin_simple]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for actin_simple: perl failed: ABORT: While reading observable Actin_ADF: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!\n  at line 103\n'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for actin_simple: perl failed: ABORT: While reading observable Actin_ADF: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!
+E             at line 103
+
+tests/validation/strict.py:16: Failed
+__________________________ test_net_parity_full[blbr] __________________________
+
+model_name = 'blbr'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_blbr_0')
+request = <FixtureRequest for <Function test_net_parity_full[blbr]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for blbr: perl failed: ABORT: SpeciesLabel option can only be changed prior to defining species.\n  at line 30\n'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for blbr: perl failed: ABORT: SpeciesLabel option can only be changed prior to defining species.
+E             at line 30
+
+tests/validation/strict.py:16: Failed
+___________________________ test_net_parity_full[e8] ___________________________
+
+model_name = 'e8'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_e8_0')
+request = <FixtureRequest for <Function test_net_parity_full[e8]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for e8: perl failed: perl timeout after 300s'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for e8: perl failed: perl timeout after 300s
+
+tests/validation/strict.py:16: Failed
+___________________________ test_net_parity_full[e9] ___________________________
+
+model_name = 'e9'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_e9_0')
+request = <FixtureRequest for <Function test_net_parity_full[e9]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for e9: perl failed: perl timeout after 300s'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for e9: perl failed: perl timeout after 300s
+
+tests/validation/strict.py:16: Failed
+_______________________ test_net_parity_full[fceri_fyn] ________________________
+
+model_name = 'fceri_fyn'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_fyn0')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_fyn]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_fyn: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 121\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_fyn: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 121
+
+tests/validation/strict.py:16: Failed
+_____________________ test_net_parity_full[fceri_fyn_lig] ______________________
+
+model_name = 'fceri_fyn_lig'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_fyn1')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_fyn_lig]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_fyn_lig: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 126\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_fyn_lig: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 126
+
+tests/validation/strict.py:16: Failed
+____________________ test_net_parity_full[fceri_fyn_trimer] ____________________
+
+model_name = 'fceri_fyn_trimer'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_fyn2')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_fyn_trimer]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_fyn_trimer: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 121\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_fyn_trimer: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 121
+
+tests/validation/strict.py:16: Failed
+______________________ test_net_parity_full[fceri_gamma2] ______________________
+
+model_name = 'fceri_gamma2'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_gam0')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_gamma2]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_gamma2: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 108\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_gamma2: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 108
+
+tests/validation/strict.py:16: Failed
+________________________ test_net_parity_full[fceri_ji] ________________________
+
+model_name = 'fceri_ji'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_ji_0')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_ji]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_ji: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 97\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_ji: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 97
+
+tests/validation/strict.py:16: Failed
+______________________ test_net_parity_full[fceri_ji_red] ______________________
+
+model_name = 'fceri_ji_red'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_ji_1')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_ji_red]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_ji_red: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 97\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_ji_red: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 97
+
+tests/validation/strict.py:16: Failed
+_____________________ test_net_parity_full[fceri_lyn_745] ______________________
+
+model_name = 'fceri_lyn_745'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_lyn0')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_lyn_745]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_lyn_745: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 104\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_lyn_745: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 104
+
+tests/validation/strict.py:16: Failed
+______________________ test_net_parity_full[fceri_trimer] ______________________
+
+model_name = 'fceri_trimer'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_fceri_tri0')
+request = <FixtureRequest for <Function test_net_parity_full[fceri_trimer]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = "no reference .net for fceri_trimer: perl failed: ABORT: Could not process block type 'reaction_rules'\n  at line 97\n"
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for fceri_trimer: perl failed: ABORT: Could not process block type 'reaction_rules'
+E             at line 97
+
+tests/validation/strict.py:16: Failed
+______________________ test_net_parity_full[hybrid_test] _______________________
+
+model_name = 'hybrid_test'
+bng_cpp = PosixPath('/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp')
+work_dir = PosixPath('/private/tmp/bng3-net-tierp-postfix-basetemp/test_net_parity_full_hybrid_te0')
+request = <FixtureRequest for <Function test_net_parity_full[hybrid_test]>>
+
+    @pytest.mark.parity
+    @pytest.mark.parametrize("model_name", corpus.tier_p())
+    def test_net_parity_full(model_name, bng_cpp, work_dir, request):
+        entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
+        with exception_ledger.strict_expected_failure(entry):
+>           _net_parity(model_name, bng_cpp, work_dir)
+
+tests/validation/test_parity_net.py:72: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/validation/test_parity_net.py:36: in _net_parity
+    require_oracle(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+condition = False
+message = 'no reference .net for hybrid_test: perl failed: perl timeout after 300s'
+
+    def require_oracle(condition: bool, message: str) -> None:
+        """Fail in strict CI mode, otherwise preserve the local skip contract."""
+    
+        if condition:
+            return
+        if os.environ.get("BNG3_CI_STRICT_ORACLES") == "1":
+>           pytest.fail(message)
+E           Failed: no reference .net for hybrid_test: perl failed: perl timeout after 300s
+
+tests/validation/strict.py:16: Failed
+==================================== PASSES ====================================
+------- generated xml file: /private/tmp/bng3-net-tierp-postfix-full.xml -------
+=========================== short test summary info ============================
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[CaOscillate_Func]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[CaOscillate_Sat]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[Haugh2b]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[Motivating_example]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[Motivating_example_cBNGL]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[PushPull]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[Repressilator]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[SHP2_base_model]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[continue]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[deleteMolecules]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[e1]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[e2]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[e3]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[e4]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[e5]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[e6]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[e7]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[egfr_net]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[empty_compartments_block]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[gene_expr]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[gene_expr_func]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[gene_expr_simple]
+PASSED tests/validation/test_parity_net.py::test_net_parity_full[heise]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[AN] - Failed...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[ANx] - Faile...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[ANx_noActivity]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[actin_branch]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[actin_branch_forFitToData]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[actin_simple]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[blbr] - Fail...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[e8] - Failed...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[e9] - Failed...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_lig]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_fyn_trimer]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_gamma2]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji] - ...
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_ji_red]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_lyn_745]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[fceri_trimer]
+FAILED tests/validation/test_parity_net.py::test_net_parity_full[hybrid_test]
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/lib/python3.14/selectors.py:398: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+================== 18 failed, 23 passed in 2157.89s (0:35:57) ==================

@@ -27,7 +27,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -60,6 +60,10 @@ GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 class SuiteLockError(ValueError):
     """Raised when the suite checkout does not match its immutable source lock."""
+
+
+class IncompleteSuiteTreeError(SuiteLockError):
+    """Raised when locked suite case data is absent from the working tree."""
 
 
 class OfficialReferenceUnsupported(ValueError):
@@ -100,6 +104,91 @@ def _suite_lock_entry(lock_path: Path = DEFAULT_SUITE_LOCK) -> dict[str, str]:
         "revision": revision,
         "status": str(source["status"]),
     }
+
+
+def _validate_materialized_case_tree(suite_dir: Path, git: Callable[..., str]) -> None:
+    """Reject sparse or incomplete locked suite trees before case discovery."""
+
+    tracked_paths = [
+        path
+        for path in git(
+            "ls-tree",
+            "-r",
+            "--name-only",
+            "-z",
+            "HEAD",
+            "--",
+            "cases/semantic",
+            "cases/stochastic",
+        ).split("\0")
+        if path
+    ]
+    if not tracked_paths:
+        raise IncompleteSuiteTreeError(
+            "locked suite case tree has no tracked semantic or stochastic files"
+        )
+
+    missing_paths = [path for path in tracked_paths if not (suite_dir / path).is_file()]
+    if missing_paths:
+        examples = ", ".join(missing_paths[:5])
+        remaining = len(missing_paths) - 5
+        suffix = f" (and {remaining} more)" if remaining > 0 else ""
+        raise IncompleteSuiteTreeError(
+            "locked suite case tree is incomplete: "
+            f"{len(missing_paths)} tracked file(s) are not materialized; "
+            f"examples: {examples}{suffix}"
+        )
+
+    hidden_index_entries = [
+        entry
+        for entry in git(
+            "ls-files", "-v", "-z", "--", "cases/semantic", "cases/stochastic"
+        ).split("\0")
+        if entry and entry[:1] != "H"
+    ]
+    if hidden_index_entries:
+        examples = ", ".join(
+            entry[2:] if entry[1:2] == " " else entry
+            for entry in hidden_index_entries[:5]
+        )
+        raise SuiteLockError(
+            "suite case tree has index flags that can hide changes "
+            f"from Git status: {examples}; clear the flags and retry"
+        )
+
+    case_directories: set[tuple[str, str]] = set()
+    case_sources: set[tuple[str, str]] = set()
+    for path in tracked_paths:
+        parts = path.split("/")
+        if (
+            len(parts) < 4
+            or parts[0] != "cases"
+            or parts[1] not in {"semantic", "stochastic"}
+            or not re.fullmatch(r"\d{5}", parts[2])
+        ):
+            continue
+        key = (parts[1], parts[2])
+        case_directories.add(key)
+        if len(parts) == 4 and any(
+            parts[3] == f"{parts[2]}-sbml-{version}.xml" for version in VERSION_PRIORITY
+        ):
+            case_sources.add(key)
+
+    source_missing = sorted(case_directories - case_sources)
+    if source_missing:
+        examples = ", ".join(
+            f"{category}/{case_id}" for category, case_id in source_missing[:5]
+        )
+        raise IncompleteSuiteTreeError(
+            "locked suite case tree contains case directories without a supported "
+            f"SBML source: {examples}"
+        )
+
+    for category in ("semantic", "stochastic"):
+        if not any(case_category == category for case_category, _ in case_sources):
+            raise IncompleteSuiteTreeError(
+                f"locked suite case tree has no supported {category} SBML cases"
+            )
 
 
 def _validate_suite_checkout(
@@ -147,6 +236,7 @@ def _validate_suite_checkout(
         )
     if git("status", "--porcelain", "--untracked-files=all"):
         raise SuiteLockError(f"suite checkout is dirty: {suite_dir}")
+    _validate_materialized_case_tree(suite_dir, git)
     return {
         "repository": repository,
         "revision": actual_revision,
@@ -155,6 +245,40 @@ def _validate_suite_checkout(
         "source_lock_sha256": _sha256_file(lock_path),
         "clean": True,
     }
+
+
+def _write_incomplete_report(
+    report_path: Path, suite_dir: Path, categories: list[str], reason: str
+) -> None:
+    """Write fail-closed evidence when preflight finds an incomplete suite tree."""
+
+    report = {
+        "schema_version": 7,
+        "status": "incomplete",
+        "preflight_status": "failed",
+        "preflight_error": reason,
+        "suite_dir": str(suite_dir.expanduser().resolve()),
+        "categories": categories,
+        "case_inventory": None,
+        "full_suite_inventory": None,
+        "selected_cases": None,
+        "partial_run": True,
+        "counts": None,
+        "by_category": None,
+        "records": [],
+        "official_conformance": {
+            "status": "incomplete",
+            "passed": False,
+            "reason": reason,
+        },
+        "core_passed": False,
+        "supported_surface_passed": False,
+    }
+    report_path = report_path.expanduser()
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with report_path.open("x", encoding="utf-8") as stream:
+        json.dump(report, stream, indent=2)
+        stream.write("\n")
 
 
 def _sha256_file(path: Path) -> str:
@@ -1933,6 +2057,21 @@ def main() -> int:
 
     try:
         suite_info = _validate_suite_checkout(args.suite_dir, args.lock)
+    except IncompleteSuiteTreeError as exc:
+        print(f"suite preflight failed: {exc}", file=sys.stderr)
+        if args.json is not None:
+            try:
+                _write_incomplete_report(
+                    args.json, args.suite_dir, args.categories, str(exc)
+                )
+            except FileExistsError:
+                print(
+                    f"incomplete report not written; preserving existing file: {args.json}",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"incomplete report written: {args.json}", file=sys.stderr)
+        return 1
     except SuiteLockError as exc:
         print(f"suite preflight failed: {exc}", file=sys.stderr)
         return 1

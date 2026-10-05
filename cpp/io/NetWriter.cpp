@@ -24,6 +24,7 @@
 #include "generated/BNGLexer.h"
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
+#include "compile/CompiledModel.hpp"
 #include "compile/UnitAnalysis.hpp"
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/energy/BarrierTable.hpp"
@@ -2272,6 +2273,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
         const BNGcore::PatternGraph* graph;
         std::string compartment;
         bool hasMoleculeCompartment;
+        std::string relation;
+        int quantity;
     };
     std::unordered_map<std::string, CachedObservablePattern> parsedObservableCache;
 
@@ -2282,11 +2285,20 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
         std::vector<ParsedPatternInfo> parsedPatterns;
         parsedPatterns.reserve(observable.getPatterns().size());
         for (const auto& patternText : observable.getPatterns()) {
-            auto cacheIt = parsedObservableCache.find(patternText);
+            std::string parseError;
+            const auto observablePattern =
+                compile::splitObservablePattern(patternText, parseError);
+            if (!observablePattern.has_value()) {
+                throw std::runtime_error("invalid observable pattern '" + patternText +
+                                         "': " + parseError);
+            }
+
+            const auto& patternSource = observablePattern->pattern;
+            auto cacheIt = parsedObservableCache.find(patternSource);
             if (cacheIt == parsedObservableCache.end()) {
-                auto parsed = parseObservablePatternWithCompartment(patternText, model);
+                auto parsed = parseObservablePatternWithCompartment(patternSource, model);
                 cacheIt = parsedObservableCache.emplace(
-                    patternText,
+                    patternSource,
                     CachedObservablePattern {std::move(parsed.first), std::move(parsed.second)})
                               .first;
             }
@@ -2299,7 +2311,10 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                     break;
                 }
             }
-            parsedPatterns.push_back({&pattern, cacheIt->second.compartment, hasMoleculeCompartment});
+            parsedPatterns.push_back({&pattern, cacheIt->second.compartment,
+                                      hasMoleculeCompartment,
+                                      observablePattern->relation,
+                                      observablePattern->quantity});
         }
 
         for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
@@ -2326,11 +2341,18 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 BNGcore::UllmannSGIso matcher(pattern, network.species.get(speciesIndex).getSpeciesGraph().getGraph());
                 BNGcore::List<BNGcore::Map> maps;
                 std::size_t matchCount = matcher.find_maps(maps);
-                // For "Species" observables, each pattern contributes 0 or 1
-                // (presence/absence). The total weight is the number of
-                // patterns that match, NOT clamped to 1 across all patterns.
-                if (observable.getType() == "Species" && matchCount > 0) {
-                    matchCount = 1;
+                if (observable.getType() == "Species") {
+                    if (!parsedPattern.relation.empty()) {
+                        matchCount = compile::observablePatternCountMatches(
+                                         matchCount, parsedPattern.relation,
+                                         parsedPattern.quantity)
+                                         ? 1
+                                         : 0;
+                    } else if (matchCount > 0) {
+                        // Species observables contribute 0 or 1 per pattern.
+                        // Do not clamp the sum across distinct patterns.
+                        matchCount = 1;
+                    }
                 }
                 weight += matchCount;
             }

@@ -151,7 +151,7 @@ def net(
     network_only: bool = False,
     source_path: Path | None = None,
 ) -> tuple[Path | None, str]:
-    """Reference .net: golden first, then live Perl, else (None, reason)."""
+    """Use explicit sources live; otherwise prefer golden, then live Perl."""
     if source_path is None:
         g = golden_net(model_name)
         if g is not None:
