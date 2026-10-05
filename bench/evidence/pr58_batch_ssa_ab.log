@@ -1,0 +1,175 @@
+benchlock: acquired slot.0 for bng3-perf (PR58 fixed-rate batch-SSA A/B under settled host load)
+BENCHLOCK_EVENT ACQUIRED slot=0 agent=bng3-perf pid=63555 epoch=1791023145.490367
+
+=== exact run context start ===
+Sat Oct  3 10:25:46 UTC 2026
+ 6:25  up 1 day, 23:46, 3 users, load averages: 2.42 8.42 9.67
+71cf6c1a409710e438902d540c1a04bb5c9f5367
+69d8a2b42b288386bac5fb722ec5115b5b8927d6e89287bb06fdeef1fca7d730  /private/tmp/bng3-20261002-performance/build/qualification/pr58_exact_baseline.bin
+010ffb3027271003c445e0de0c9a0280f59a9cc3fea868397f18374173650995  /private/tmp/bng3-20261002-performance/build/qualification/pr58_candidate.bin
+253129bf59e17d585db9d20cf854b3dfa6db1903e0c5b5cca310fc5044e4451d  /private/tmp/bng3-20261002-performance/build/qualification/pr58_helper_check.bin
+956d5972ef9eb360ca6db7f2012e45129a913d668781e65c16c0b37750674974  benchmarks/batch_ssa/run_ab.sh
+=== benchmark-related processes at start ===
+helper-vs-verified-candidate dump: byte-identical (3b7dcfc05e2ea309acbd24603514ac6cf1f858e00a3bc131757fccb792641462)
+
+=== egfr_net batch=60 threads=15 ===
+=== execution order ===
+round 1: A then B
+round 2: B then A
+round 3: A then B
+=== A (/private/tmp/bng3-20261002-performance/build/qualification/pr58_exact_baseline.bin) ===
+model=models/egfr_net.bngl batch=60 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,76.584,26138.692,26215.282,153968452,2.3,5890442.2,2.3,5873232.8
+model=models/egfr_net.bngl batch=60 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,77.735,28639.101,28716.850,153968452,2.1,5376162.2,2.1,5361606.6
+model=models/egfr_net.bngl batch=60 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,77.098,30206.782,30283.886,153968452,2.0,5097148.5,2.0,5084171.0
+=== B (/private/tmp/bng3-20261002-performance/build/qualification/pr58_candidate.bin) ===
+model=models/egfr_net.bngl batch=60 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,77.354,27536.051,27613.411,153968452,2.2,5591522.7,2.2,5575857.8
+model=models/egfr_net.bngl batch=60 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,81.060,30073.580,30154.647,153968452,2.0,5119724.7,2.0,5105961.1
+model=models/egfr_net.bngl batch=60 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,76.924,29163.693,29240.624,153968452,2.1,5279456.6,2.1,5265566.6
+=== A process time samples (real/user/sys) ===
+       26.65 real       367.63 user         0.75 sys
+       29.13 real       408.75 user         0.92 sys
+       30.73 real       424.83 user         0.83 sys
+=== B process time samples (real/user/sys) ===
+       28.05 real       382.46 user         0.75 sys
+       30.62 real       417.89 user         0.64 sys
+       29.67 real       411.38 user         0.66 sys
+=== A peak RSS samples (bytes, /usr/bin/time -l) ===
+52903936
+55492608
+54263808
+=== B peak RSS samples (bytes, /usr/bin/time -l) ===
+27967488
+27852800
+27869184
+--- summary A ---
+  traj/s sim   min=2.0  max=2.3  spread=15.00%
+  events/s sim min=5097148.5  max=5890442.2  spread=15.56%
+  traj/s total min=2.0  max=2.3  spread=15.00%
+  ev/s   total min=5084171.0  max=5873232.8  spread=15.52%
+--- summary B ---
+  traj/s sim   min=2.0  max=2.2  spread=10.00%
+  events/s sim min=5119724.7  max=5591522.7  spread=9.22%
+  traj/s total min=2.0  max=2.2  spread=10.00%
+  ev/s   total min=5105961.1  max=5575857.8  spread=9.20%
+
+=== isomerization batch=20000 threads=15 ===
+=== execution order ===
+round 1: A then B
+round 2: B then A
+round 3: A then B
+=== A (/private/tmp/bng3-20261002-performance/build/qualification/pr58_exact_baseline.bin) ===
+model=models/isomerization.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.169,13.346,13.542,1293170,1498595.1,96896911.6,1476868.6,95492109.6
+model=models/isomerization.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.152,8.781,8.958,1293170,2277612.5,147267007.4,2232599.6,144356540.8
+model=models/isomerization.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.152,8.431,8.617,1293170,2372209.7,153383518.2,2321105.7,150079213.5
+=== B (/private/tmp/bng3-20261002-performance/build/qualification/pr58_candidate.bin) ===
+model=models/isomerization.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.137,17.143,17.311,1293170,1166631.4,75432638.0,1155329.2,74701854.3
+model=models/isomerization.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.133,10.096,10.253,1293170,1980950.0,128085255.3,1950712.1,126130120.7
+model=models/isomerization.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.136,9.440,9.611,1293170,2118662.7,136989551.9,2080849.8,134544623.7
+=== A process time samples (real/user/sys) ===
+        0.02 real         0.14 user         0.00 sys
+        0.01 real         0.11 user         0.00 sys
+        0.01 real         0.11 user         0.00 sys
+=== B process time samples (real/user/sys) ===
+        0.02 real         0.18 user         0.00 sys
+        0.01 real         0.12 user         0.00 sys
+        0.01 real         0.11 user         0.00 sys
+=== A peak RSS samples (bytes, /usr/bin/time -l) ===
+12353536
+13008896
+12615680
+=== B peak RSS samples (bytes, /usr/bin/time -l) ===
+12173312
+12025856
+12140544
+--- summary A ---
+  traj/s sim   min=1498595.1  max=2372209.7  spread=58.30%
+  events/s sim min=96896911.6  max=153383518.2  spread=58.30%
+  traj/s total min=1476868.6  max=2321105.7  spread=57.16%
+  ev/s   total min=95492109.6  max=150079213.5  spread=57.16%
+--- summary B ---
+  traj/s sim   min=1166631.4  max=2118662.7  spread=81.61%
+  events/s sim min=75432638.0  max=136989551.9  spread=81.61%
+  traj/s total min=1155329.2  max=2080849.8  spread=80.11%
+  ev/s   total min=74701854.3  max=134544623.7  spread=80.11%
+
+=== gene_expr_simple batch=20000 threads=15 ===
+=== execution order ===
+round 1: A then B
+round 2: B then A
+round 3: A then B
+=== A (/private/tmp/bng3-20261002-performance/build/qualification/pr58_exact_baseline.bin) ===
+model=models/gene_expr_simple.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.169,5.858,6.047,184,3413940.5,31408.3,3307448.1,30428.5
+model=models/gene_expr_simple.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.163,5.251,5.439,184,3808738.1,35040.4,3677315.6,33831.3
+model=models/gene_expr_simple.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.155,5.747,5.925,184,3479799.2,32014.2,3375385.0,31053.5
+=== B (/private/tmp/bng3-20261002-performance/build/qualification/pr58_candidate.bin) ===
+model=models/gene_expr_simple.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.166,4.802,4.988,184,4165293.0,38320.7,4009857.8,36890.7
+model=models/gene_expr_simple.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.154,5.092,5.269,184,3928019.1,36137.8,3795816.9,34921.5
+model=models/gene_expr_simple.bngl batch=20000 t_end=10 n_steps=10 seed=42 threads=15 reps=1
+rep,prep_ms,sim_ms,total_ms,events,traj_per_s_sim,events_per_s_sim,traj_per_s_total,events_per_s_total
+0,0.156,5.352,5.531,184,3736630.3,34377.0,3615900.9,33266.3
+=== A process time samples (real/user/sys) ===
+        0.01 real         0.06 user         0.00 sys
+        0.01 real         0.06 user         0.00 sys
+        0.01 real         0.07 user         0.00 sys
+=== B process time samples (real/user/sys) ===
+        0.01 real         0.06 user         0.00 sys
+        0.01 real         0.06 user         0.00 sys
+        0.01 real         0.06 user         0.00 sys
+=== A peak RSS samples (bytes, /usr/bin/time -l) ===
+13467648
+13418496
+13320192
+=== B peak RSS samples (bytes, /usr/bin/time -l) ===
+12599296
+12517376
+12075008
+--- summary A ---
+  traj/s sim   min=3413940.5  max=3808738.1  spread=11.56%
+  events/s sim min=31408.3  max=35040.4  spread=11.56%
+  traj/s total min=3307448.1  max=3677315.6  spread=11.18%
+  ev/s   total min=30428.5  max=33831.3  spread=11.18%
+--- summary B ---
+  traj/s sim   min=3736630.3  max=4165293.0  spread=11.47%
+  events/s sim min=34377.0  max=38320.7  spread=11.47%
+  traj/s total min=3615900.9  max=4009857.8  spread=10.90%
+  ev/s   total min=33266.3  max=36890.7  spread=10.90%
+
+=== exact run context end ===
+Sat Oct  3 10:28:41 UTC 2026
+ 6:28  up 1 day, 23:48, 3 users, load averages: 30.00 18.60 13.69
+BENCHLOCK_COTENANT class=NONE holder=bng3-perf -- no benchmark-shaped processes besides your own. ADVISORY: this matches on process name and worktree path, so a co-tenant naming itself something else will not appear. Declare what you ran.
+BENCHLOCK_EVENT COMMAND_EXITED slot=0 agent=bng3-perf pid=63555 epoch=1791023321.918723

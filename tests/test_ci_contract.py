@@ -1,5 +1,6 @@
 """Acceptance contracts for the Python package CI installation path."""
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,14 @@ import subprocess
 import sys
 
 import pytest
+import yaml
+
+from tests.workflow_yaml import (
+    concurrency_of,
+    job_matrix_values,
+    job_subtree_text,
+    parse_workflow,
+)
 
 from scripts.ci import validate_sbml_test_suite
 from scripts.validate import (
@@ -245,26 +254,272 @@ def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
 
     clean = validate_sbml_test_suite._repository_provenance(repo)
 
-    assert clean == {
-        "bng3_commit": revision,
-        "bng3_tracked_worktree_clean": True,
-    }
+    assert clean["bng3_commit"] == revision
+    assert clean["bng3_tracked_worktree_clean"] is True
+    assert clean["bng3_worktree_clean_for_report"] is True
+    assert clean["bng3_changed_files"] == []
+    assert clean["bng3_source_diff_sha256"]
+    clean_digest = clean["bng3_source_diff_sha256"]
 
     source.write_text("model = False\n", encoding="utf-8")
     dirty = validate_sbml_test_suite._repository_provenance(repo)
 
-    assert dirty == {
-        "bng3_commit": revision,
-        "bng3_tracked_worktree_clean": False,
+    assert dirty["bng3_commit"] == revision
+    assert dirty["bng3_tracked_worktree_clean"] is False
+    assert dirty["bng3_worktree_clean_for_report"] is False
+    assert dirty["bng3_changed_files"] == ["model.py"]
+    assert dirty["bng3_source_diff_sha256"] != clean_digest
+
+
+def _locked_ssts_checkout(tmp_path: Path) -> tuple[Path, Path, str]:
+    suite = tmp_path / "suite"
+    suite.mkdir()
+    subprocess.run(["git", "-C", str(suite), "init"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(suite), "config", "user.name", "SSTS test"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(suite), "config", "user.email", "ssts@example.invalid"],
+        check=True,
+    )
+    (suite / "README.md").write_text("locked suite\n", encoding="utf-8")
+    for category in ("semantic", "stochastic"):
+        case_dir = suite / "cases" / category / "00001"
+        case_dir.mkdir(parents=True)
+        (case_dir / "00001-sbml-l3v2.xml").write_text("<sbml/>\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(suite), "add", "README.md", "cases"], check=True)
+    subprocess.run(
+        ["git", "-C", str(suite), "commit", "-m", "initial"],
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.check_output(
+        ["git", "-C", str(suite), "rev-parse", "HEAD"], text=True
+    ).strip()
+    repository = "https://github.com/sbmlteam/sbml-test-suite.git"
+    subprocess.run(
+        ["git", "-C", str(suite), "remote", "add", "origin", repository],
+        check=True,
+    )
+    lock = tmp_path / "upstreams.lock.yml"
+    lock.write_text(
+        json.dumps(
+            {
+                "sources": {
+                    "sbml-test-suite": {
+                        "repository": repository,
+                        "branch": "3.5.0",
+                        "revision": revision,
+                        "role": "official-validation-corpus-not-oracle",
+                        "status": "observed",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    return suite, lock, revision
+
+
+def test_ssts_validate_only_accepts_the_clean_locked_checkout(tmp_path: Path):
+    suite, lock, revision = _locked_ssts_checkout(tmp_path)
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--validate-only",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "status": "passed",
+        "validate_only": True,
+        "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+        "revision": revision,
+        "source_lock_status": "observed",
+        "source_lock_path": str(lock.resolve()),
+        "source_lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest(),
+        "clean": True,
     }
+
+
+def test_ssts_runner_rejects_revision_mismatch_before_case_execution(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    document = json.loads(lock.read_text(encoding="utf-8"))
+    document["sources"]["sbml-test-suite"]["revision"] = "a" * 40
+    lock.write_text(json.dumps(document), encoding="utf-8")
+    report = tmp_path / "report.json"
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--json",
+        str(report),
+        "--categories",
+        "semantic",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "suite revision mismatch" in result.stderr
+    assert not report.exists()
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    (("dirty", "dirty"), ("origin", "origin mismatch")),
+)
+def test_ssts_checkout_preflight_rejects_dirty_or_wrong_origin(
+    tmp_path: Path, mutation: str, expected_error: str
+):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    if mutation == "dirty":
+        (suite / "untracked.txt").write_text(
+            "not a locked checkout\n", encoding="utf-8"
+        )
+    else:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(suite),
+                "remote",
+                "set-url",
+                "origin",
+                "https://example.com/other.git",
+            ],
+            check=True,
+        )
+
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match=expected_error):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_checkout_preflight_rejects_missing_locked_case_tree(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="case tree"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+@pytest.mark.parametrize("index_flag", ("--skip-worktree", "--assume-unchanged"))
+def test_ssts_checkout_preflight_rejects_case_edits_hidden_by_git_flags(
+    tmp_path: Path, index_flag: str
+):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    case_file = "cases/semantic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", index_flag, case_file],
+        check=True,
+    )
+    (suite / case_file).write_text(
+        "<sbml>modified after locked commit</sbml>\n", encoding="utf-8"
+    )
+
+    assert (
+        subprocess.check_output(
+            ["git", "-C", str(suite), "status", "--porcelain"], text=True
+        ).strip()
+        == ""
+    )
+    with pytest.raises(validate_sbml_test_suite.SuiteLockError, match="index flags"):
+        validate_sbml_test_suite._validate_suite_checkout(suite, lock)
+
+
+def test_ssts_missing_case_tree_writes_incomplete_report(tmp_path: Path):
+    suite, lock, _revision = _locked_ssts_checkout(tmp_path)
+    missing_case_file = "cases/stochastic/00001/00001-sbml-l3v2.xml"
+    subprocess.run(
+        ["git", "-C", str(suite), "update-index", "--skip-worktree", missing_case_file],
+        check=True,
+    )
+    (suite / missing_case_file).unlink()
+    report = tmp_path / "incomplete-report.json"
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"),
+        "--suite-dir",
+        str(suite),
+        "--lock",
+        str(lock),
+        "--json",
+        str(report),
+        "--categories",
+        "semantic",
+    ]
+
+    result = subprocess.run(command, cwd=REPO, capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "case tree" in result.stderr
+    incomplete = json.loads(report.read_text(encoding="utf-8"))
+    assert incomplete["status"] == "incomplete"
+    assert incomplete["preflight_status"] == "failed"
+    assert incomplete["partial_run"] is True
+    assert incomplete["selected_cases"] is None
+    assert incomplete["core_passed"] is False
+    assert incomplete["official_conformance"]["status"] == "incomplete"
+    assert incomplete["official_conformance"]["passed"] is False
+
+
+def test_ssts_incomplete_report_preserves_existing_output(tmp_path: Path):
+    report = tmp_path / "existing-report.json"
+    report.write_text('{"preserve": true}\n', encoding="utf-8")
+
+    with pytest.raises(FileExistsError):
+        validate_sbml_test_suite._write_incomplete_report(
+            report, tmp_path, ["semantic", "stochastic"], "missing case data"
+        )
+
+    assert report.read_text(encoding="utf-8") == '{"preserve": true}\n'
+
+
+def test_ssts_run_scope_marks_category_cohorts_partial():
+    assert (
+        validate_sbml_test_suite._is_partial_run(
+            ["semantic", "stochastic"], max_cases=0, only_case=None
+        )
+        is False
+    )
+    assert (
+        validate_sbml_test_suite._is_partial_run(
+            ["semantic"], max_cases=0, only_case=None
+        )
+        is True
+    )
+    assert (
+        validate_sbml_test_suite._is_partial_run(
+            ["semantic", "stochastic"], max_cases=10, only_case=None
+        )
+        is True
+    )
 
 
 def test_pull_request_runs_keep_exact_head_evidence_available():
     """A later PR push must not cancel validation for the preceding SHA."""
 
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert "github.event.pull_request.head.sha" in workflow
-    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
+    _assert_exact_head_concurrency(CI_WORKFLOW, "ci.yml")
 
 
 def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
@@ -282,13 +537,14 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
         assert (
             "DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
         )
-        assert 'macos_deployment_target: "10.13"' in job
-        assert 'macos_deployment_target: "11.0"' in job
+        targets = job_matrix_values(workflow_path, job_name, "macos_deployment_target")
+        assert "10.13" in targets, f"{job_name} must retain its 10.13 target: {targets}"
+        assert "11.0" in targets, f"{job_name} must retain its 11.0 target: {targets}"
         assert "CIBW_TEST_REQUIRES: pytest numpy click" in job
         assert "cp314-*" in job
 
-    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    assert re.search(r"^\s+workflow_dispatch:\s*$", ci_workflow, re.MULTILINE)
+    ci_doc = parse_workflow(CI_WORKFLOW)
+    assert "workflow_dispatch" in (ci_doc.get("on") or ci_doc.get(True) or {})
     wheels = _workflow_job_from(CI_WORKFLOW, "wheels")
     assert "github.event_name == 'workflow_dispatch'" in wheels
 
@@ -307,13 +563,7 @@ def test_wheel_tests_smoke_the_installed_console_script():
 
 
 def _workflow_job(name: str) -> str:
-    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
-    match = re.search(
-        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)",
-        workflow,
-    )
-    assert match, f"CI must define a {name} job"
-    return match.group("body")
+    return job_subtree_text(CI_WORKFLOW, name)
 
 
 def _python_test_job() -> str:
@@ -321,24 +571,39 @@ def _python_test_job() -> str:
 
 
 def _workflow_job_from(path: Path, name: str) -> str:
-    workflow = path.read_text(encoding="utf-8")
-    match = re.search(
-        rf"(?ms)^  {re.escape(name)}:\n(?P<body>.*?)(?=^  [a-z0-9-]+:\n|\Z)",
-        workflow,
-    )
-    assert match, f"{path.name} must define a {name} job"
-    return match.group("body")
+    return job_subtree_text(path, name)
+
+
+def test_lint_job_installs_ci_contract_dependencies():
+    """The lint job must install dependencies required during test collection."""
+
+    lint_job = _workflow_job_from(CI_WORKFLOW, "lint")
+    assert "pip install black ruff pytest numpy pyyaml" in lint_job
 
 
 def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
     """Cross-tool checks must be independently reproducible per PR head."""
 
-    workflow = PARITY_WORKFLOW.read_text(encoding="utf-8")
-    assert "github.event.pull_request.head.sha" in workflow
-    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
-    assert 'BNG3_CI_STRICT_ORACLES: "1"' in workflow
+    _assert_exact_head_concurrency(PARITY_WORKFLOW, "parity.yml")
+    parity_doc = parse_workflow(PARITY_WORKFLOW)
+    assert parity_doc["env"]["BNG3_CI_STRICT_ORACLES"] == "1"
+    parity_jobs = parity_doc.get("jobs") or {}
     for job in ("oracle-lock", "bng2-parity", "nfsim-parity", "pybionetgen-compat"):
-        assert re.search(rf"^  {job}:\n", workflow, re.MULTILINE), job
+        assert job in parity_jobs, f"parity.yml must define a {job} job"
+    oracle_lock = _workflow_job_from(PARITY_WORKFLOW, "oracle-lock")
+    assert "python -m pip install pytest numpy pyyaml" in oracle_lock
+
+
+def _assert_exact_head_concurrency(path: Path, label: str) -> None:
+    """Both halves of the per-head evidence contract, read from parsed YAML."""
+
+    concurrency = concurrency_of(path)
+    assert "${{ github.event.pull_request.head.sha || github.sha }}" in str(
+        concurrency.get("group")
+    ), f"{label} concurrency group must key on the PR head"
+    assert (
+        concurrency.get("cancel-in-progress") is False
+    ), f"{label} must not cancel an in-flight exact-head run"
 
 
 def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
@@ -359,22 +624,40 @@ def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
     assert "build/cpp/NFsim" not in nfsim
 
 
+def test_nfsim_parity_uses_regular_installed_api_and_pinned_native_oracle():
+    """NFsim parity uses installed BNG3 API and the independently built oracle."""
+
+    job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["nfsim-parity"]
+    job = _workflow_job_from(PARITY_WORKFLOW, "nfsim-parity")
+
+    assert (job_doc.get("env") or {}).get("BNG3_PYTHON_TEST_MODE") == "installed"
+    assert 'python -m pip install ".[full,dev]"' in job
+    assert "pip install -e" not in job
+    assert "check_python_package_identity.py" in job
+    assert "test_worker_package_identity.py" in job
+    assert 'PYTHONPATH="python:build/cpp"' not in job
+    assert "--bng-cpp build/cpp/bng_cpp" not in job
+    assert "NFSIM_BIN" in job
+    assert "$RUNNER_TEMP/oracle-nfsim/build/NFsim" in job
+
+
 def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     """The Lean reference must be kernel-checked on every PR head."""
 
-    workflow = FORMAL_WORKFLOW.read_text(encoding="utf-8")
-    assert "github.event.pull_request.head.sha" in workflow
-    assert re.search(r"^\s+cancel-in-progress:\s+false\s*$", workflow, re.MULTILINE)
-    assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in workflow
-    assert "lake-package-directory: formal/lean" in workflow
-    assert "auto-config: false" in workflow
+    _assert_exact_head_concurrency(FORMAL_WORKFLOW, "formal.yml")
+    formal = yaml.safe_dump(
+        parse_workflow(FORMAL_WORKFLOW), sort_keys=False, default_flow_style=False
+    )
+    assert "leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9" in formal
+    assert "lake-package-directory: formal/lean" in formal
+    assert "auto-config: false" in formal
     assert (REPO / "formal" / "lean" / "lean-toolchain").read_text(
         encoding="utf-8"
     ).strip() == ("leanprover/lean4:v4.33.1")
-    assert "scripts/static_validate.py" in workflow
-    assert "scripts/run_nfnext_contract.sh" in workflow
-    assert "lake build" in workflow
-    assert "lake env lean tests/Smoke.lean" in workflow
+    assert "scripts/static_validate.py" in formal
+    assert "scripts/run_nfnext_contract.sh" in formal
+    assert "lake build" in formal
+    assert "lake env lean tests/Smoke.lean" in formal
 
 
 def test_release_workflow_requires_exact_main_sha_qualification():
@@ -471,15 +754,29 @@ def test_pull_request_exercises_clean_source_distribution_install():
     assert "python -m build --sdist" in job
     assert "python -m venv" in job
     assert "pip install --no-deps dist/*.tar.gz" in job
-    assert "import bionetgen" in job
+    assert "check_python_package_identity.py" in job
+    assert "test_thermodynamic_parse_path.py" in job
     assert re.search(r"/bin/bionetgen\"?\s+--version", job)
 
 
-def test_project_declares_click_as_runtime_dependency():
+def test_project_declares_click_and_packaging_as_runtime_dependencies():
     project = PYPROJECT.read_text(encoding="utf-8")
     dependencies = re.search(r"(?ms)^dependencies\s*=\s*\[(?P<body>.*?)^\]", project)
     assert dependencies, "pyproject.toml must declare project dependencies"
-    assert re.search(r"['\"]click(?:[<>=!~].*)?['\"]", dependencies.group("body"))
+    for package in ("click", "packaging"):
+        assert re.search(
+            rf"['\"]{package}(?:[<>=!~].*)?['\"]", dependencies.group("body")
+        ), f"pyproject.toml must declare {package} as a runtime dependency"
+
+    python_job = _python_test_job()
+    install_lines = [
+        line
+        for line in python_job.splitlines()
+        if re.search(r"(?:pip|python\s+-m\s+pip)\s+install", line)
+    ]
+    assert any(re.search(r"\bpackaging\b", line) for line in install_lines)
+    package_smoke = _workflow_job("package-smoke")
+    assert re.search(r"pip install numpy click packaging pytest", package_smoke)
 
 
 def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
@@ -501,6 +798,130 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     assert any(
         re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
     ), "python-test no-deps wheel path must install declared click dependency"
+
+
+def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
+    """Package tests must prove they load their installed native extension."""
+
+    python_job = _python_test_job()
+    assert "BNG3_PYTHON_TEST_MODE: installed" in python_job
+    assert "scripts/ci/check_python_package_identity.py" in python_job
+    assert "BNG3_SOURCE_REVISION" in python_job
+    assert "BNG3_PR_HEAD_SHA" in python_job
+    for workflow_path, job_name, step_name in (
+        (CI_WORKFLOW, "python-test", "Verify installed package identity"),
+        (CI_WORKFLOW, "python-integration", "Verify installed package identity"),
+        (CI_WORKFLOW, "package-smoke", "Verify sdist package identity"),
+    ):
+        job = parse_workflow(workflow_path)["jobs"][job_name]
+        job_env = job.get("env") or {}
+        assert "BNG3_SOURCE_REVISION" not in job_env
+        assert "BNG3_PR_HEAD_SHA" not in job_env
+        step = next(s for s in job["steps"] if s.get("name") == step_name)
+        step_env = step.get("env") or {}
+        assert "BNG3_SOURCE_REVISION" in step_env
+        assert "BNG3_PR_HEAD_SHA" in step_env
+
+    smoke_job = _workflow_job("package-smoke")
+    assert "BNG3_PYTHON_TEST_MODE: installed" in smoke_job
+    assert "check_python_package_identity.py" in smoke_job
+    assert "test_thermodynamic_parse_path.py" in smoke_job
+
+    integration_job = _workflow_job("python-integration")
+    assert "BNG3_PYTHON_TEST_MODE: installed" in integration_job
+    assert 'pip install ".[full]"' in integration_job
+    assert "pip install -e" not in integration_job
+    assert "check_python_package_identity.py" in integration_job
+    assert "pytest tests/test_workflow_contract.py" in integration_job
+
+
+def test_python_test_jobs_download_the_matching_native_cli_artifact():
+    """CLI-backed Python contracts must use the same-head OS binary."""
+
+    ci = parse_workflow(CI_WORKFLOW)
+    matrix_job = ci["jobs"]["python-test"]
+    integration_job = ci["jobs"]["python-integration"]
+
+    assert "cpp-build" in matrix_job["needs"]
+    assert "${{ matrix.cpp_artifact }}" in _workflow_job("python-test")
+    artifacts = {
+        entry["os"]: entry["cpp_artifact"]
+        for entry in matrix_job["strategy"]["matrix"]["include"]
+    }
+    assert artifacts == {
+        "ubuntu-22.04": "bng_cpp-ubuntu-22.04-gcc-12",
+        "macos-14": "bng_cpp-macos-14-clang-arm64",
+        "windows-2022": "bng_cpp-windows-2022-msvc",
+    }
+    assert "${{ github.workspace }}/build/cpp/bng_cpp" in matrix_job["env"]["BNG_CPP"]
+    assert "windows" in matrix_job["env"]["BNG_CPP"]
+
+    assert "python-test" in integration_job["needs"]
+    assert "cpp-build" in integration_job["needs"]
+    assert "bng_cpp-ubuntu-22.04-gcc-12" in _workflow_job("python-integration")
+    assert (
+        integration_job["env"]["BNG_CPP"] == "${{ github.workspace }}/build/cpp/bng_cpp"
+    )
+
+    checker = (REPO / "scripts" / "ci" / "check_python_package_identity.py").read_text(
+        encoding="utf-8"
+    )
+    for identity in (
+        "import packaging",
+        "packaging_module",
+        "distribution_package",
+        "package_file",
+        "native_extension",
+        "model_module",
+        "native_extension_sha256",
+        "model_native_extension",
+        "source_revision",
+    ):
+        assert identity in checker
+
+    thermo_test = (
+        REPO / "tests" / "python" / "test_thermodynamic_parse_path.py"
+    ).read_text(encoding="utf-8")
+    assert "import bionetgen._bionetgen_cpp as _cpp" in thermo_test
+    assert "import _bionetgen_cpp" not in thermo_test
+    assert "sys.path.insert" not in thermo_test
+
+
+def test_pybionetgen_compatibility_runs_against_a_regular_installed_package():
+    """Editable finders and inherited source paths must not mask wheel code."""
+
+    job = _workflow_job_from(PARITY_WORKFLOW, "pybionetgen-compat")
+    assert 'python -m pip install ".[full,dev]"' in job
+    assert "pip install -e" not in job
+    assert "BNG3_PYTHON_TEST_MODE: installed" in job
+    job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["pybionetgen-compat"]
+    assert "BNG3_SOURCE_REVISION" not in (job_doc.get("env") or {})
+    compatibility_step = next(
+        step
+        for step in job_doc["steps"]
+        if step.get("name") == "Run source-derived compatibility contracts"
+    )
+    assert "BNG3_SOURCE_REVISION" in compatibility_step.get("env", {})
+    assert "BNG3_PR_HEAD_SHA" in compatibility_step.get("env", {})
+
+    checker = (REPO / "scripts" / "ci" / "check_pybionetgen_compat.py").read_text(
+        encoding="utf-8"
+    )
+    assert "inspect_installed_package()" in checker
+    assert 'env.pop("PYTHONPATH", None)' in checker
+    assert 'env.pop("BNG3_SOURCE_REVISION", None)' in checker
+    assert 'env.pop("BNG3_PR_HEAD_SHA", None)' in checker
+
+
+def test_gdat_output_test_claims_a_cross_process_unique_temp_directory():
+    """Concurrent test processes cannot overwrite each other's output files."""
+
+    source = (REPO / "tests" / "cpp" / "test_gdat_output_format.cpp").read_text(
+        encoding="utf-8"
+    )
+    assert "std::filesystem::create_directory(candidate, ec)" in source
+    assert "TempDirectoryGuard" in source
+    assert "remove_all(path, ec)" in source
 
 
 def test_python_tests_use_headless_isolated_matplotlib_cache():
@@ -650,6 +1071,31 @@ end actions
         'begin actions\n  setParameter("k", 2)\n'
         "  generate_network({overwrite=>1})\nend actions\n"
     )
+
+
+def test_cross_validation_drops_runtime_and_continuation_actions():
+    """Network-only staging must not retain simulations or state resets."""
+
+    staged = _network_only_text("""begin model
+end model
+begin actions
+simulate_ps({t_end=>10})
+simulate_rm({t_end=>10})
+parameter_scan({method=>"protocol"})
+saveConcentrations("post2")
+resetConcentrations("post2")
+end actions
+""")
+
+    assert "generate_network({overwrite=>1})" in staged
+    for action in (
+        "simulate_ps",
+        "simulate_rm",
+        "parameter_scan",
+        "saveConcentrations",
+        "resetConcentrations",
+    ):
+        assert action not in staged
 
 
 def test_weekly_cross_validation_uses_structural_oracle_runner():

@@ -1,0 +1,1321 @@
+{
+  "meta": {
+    "git": "abe0e414",
+    "host": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "python": "3.14.6",
+    "cpu_count": 15,
+    "load1_start": 9.02490234375,
+    "argv": [
+      "--reps",
+      "5",
+      "--json",
+      "bench/baseline-comprehensive.json"
+    ],
+    "load1_end": 9.6162109375
+  },
+  "harness": {
+    "meta": {
+      "git": "abe0e414",
+      "host": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "python": "3.14.6",
+      "cpu_count": 15,
+      "bng_cpp": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/build/cpp/bng_cpp",
+      "extension": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+      "load1_start": 9.02490234375,
+      "load1_end": 9.5830078125,
+      "reps": 5,
+      "weights": {
+        "netgen": 0.27,
+        "ssa_batch": 0.33,
+        "ode": 0.15,
+        "out_write": 0.1,
+        "py_import": 0.08,
+        "py_load": 0.07
+      },
+      "v1_weights_superseded": {
+        "netgen": 0.35,
+        "ssa_batch": 0.4,
+        "py_import": 0.1,
+        "py_load": 0.15
+      },
+      "ssa_base_seed": 12345,
+      "ssa_batch": {
+        "iso": [
+          "models/isomerization.bngl",
+          20.0,
+          200000
+        ],
+        "ge": [
+          "models/gene_expr_simple.bngl",
+          500.0,
+          800000
+        ]
+      },
+      "ode_models": [
+        [
+          "models/isomerization.bngl",
+          100.0,
+          1000
+        ],
+        [
+          "models/gene_expr_simple.bngl",
+          1000.0,
+          1000
+        ],
+        [
+          "bench/fixtures/ode_many_functions.bngl",
+          100.0,
+          5000
+        ]
+      ],
+      "note": "shared machine; quote load1_start with these timings; compare min and stdev, not single runs; ~11% cross-session drift is the resolution floor"
+    },
+    "components": {
+      "netgen": {
+        "reps": [
+          0.5155789580021519,
+          0.5177758329955395,
+          0.48509729199577123,
+          0.4819641250069253,
+          0.47955024999100715
+        ],
+        "min": 0.47955024999100715,
+        "median": 0.48509729199577123,
+        "mean": 0.49599329159827904,
+        "stdev": 0.01899994327683271
+      },
+      "ssa_batch": {
+        "reps": [
+          0.40186033298959956,
+          0.341812041006051,
+          0.31684479195973836,
+          0.31732195799122564,
+          0.33973370902822353
+        ],
+        "min": 0.31684479195973836,
+        "median": 0.33973370902822353,
+        "mean": 0.3435145665949676,
+        "stdev": 0.03470861405350486
+      },
+      "ode": {
+        "reps": [
+          0.07808666600612924,
+          0.07183175097452477,
+          0.06300000098417513,
+          0.05878020799718797,
+          0.05953654303448275
+        ],
+        "min": 0.05878020799718797,
+        "median": 0.06300000098417513,
+        "mean": 0.06624703379929997,
+        "stdev": 0.008406743612816438
+      },
+      "out_write": {
+        "reps": [
+          0.05480870898463763,
+          0.04798199998913333,
+          0.041674541018437594,
+          0.0430312920070719,
+          0.04042387500521727
+        ],
+        "min": 0.04042387500521727,
+        "median": 0.0430312920070719,
+        "mean": 0.04558408340089955,
+        "stdev": 0.005900693547198893
+      },
+      "py_import": {
+        "reps": [
+          0.14806308297556825,
+          0.1062709589896258,
+          0.10476575000211596,
+          0.10884691699175164,
+          0.11053604100015946
+        ],
+        "min": 0.10476575000211596,
+        "median": 0.10884691699175164,
+        "mean": 0.11569654999184423,
+        "stdev": 0.01823091424498684
+      },
+      "py_load": {
+        "reps": [
+          0.006036833015969023,
+          0.005099667003378272,
+          0.005053999979281798,
+          0.004753874993184581,
+          0.004565083014313132
+        ],
+        "min": 0.004565083014313132,
+        "median": 0.005053999979281798,
+        "mean": 0.005101891601225361,
+        "stdev": 0.0005669420216710349
+      }
+    },
+    "composite": {
+      "reps": [
+        0.30128172429569533,
+        0.27702906449529113,
+        0.25788754443376094,
+        0.25700724489812277,
+        0.26372599952359455
+      ],
+      "min": 0.25700724489812277,
+      "median": 0.26372599952359455,
+      "mean": 0.27138631552929293,
+      "stdev": 0.018528565890379052
+    },
+    "guards": {
+      "netgen_sha": "8eeb6a5f22e7e669b9761c410f11ecb33cd70efe328bd671f217ed02559ee47a",
+      "ssa_events": "{'iso': 26213145, 'ge': 6996038}",
+      "ode_digest": "{'models/isomerization.bngl': [16.666666666741378, 3.333333333258617], 'models/gene_expr_simple.bngl': [0.04966310167937632, 16.34128538482426], 'bench/fixtures/ode_many_functions.bngl': [22.564764708779347]}",
+      "out_write_hashes": "{'.cdat': 'ce4bdcf166568cfaa57834ea97c583c7d3453adcb85d1248a291ce3dcac26dff', '.gdat': 'e60440ee58b5a91efbfc24bf3838dd25aa3b58bccd6c673f7d83c595b986a35a'}",
+      "py_load_counts": "(48, 5, 6, 15, 23, 0, 0, 6)"
+    }
+  },
+  "gpu": {
+    "returncode": 0,
+    "backend_line": "metal",
+    "results": [
+      {
+        "model_id": "isomerization",
+        "model_name": "Isomerization",
+        "path": "models/isomerization.bngl",
+        "num_species": 2,
+        "num_reactions": 2,
+        "t_end": 20.0,
+        "n_steps": 10,
+        "runs": [
+          {
+            "batch_size": 100,
+            "cpu_sw": {
+              "model_prep_ms": 0.486,
+              "sim_time_ms": 0.565125,
+              "total_wall_ms": 1.052167,
+              "total_events": 13212,
+              "traj_per_sec_sim": 176952.00176952002,
+              "traj_per_sec_tot": 95041.94676320393,
+              "events_per_sec_sim": 23378898.473788984,
+              "events_per_sec_tot": 12556942.006354503,
+              "memory_bytes": 2560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 0.178834,
+              "sim_time_ms": 0.239666,
+              "total_wall_ms": 0.419083,
+              "total_events": 13127,
+              "traj_per_sec_sim": 417247.3358757605,
+              "traj_per_sec_tot": 238616.21683532855,
+              "events_per_sec_sim": 54772057.78041108,
+              "events_per_sec_tot": 31323150.783973582,
+              "memory_bytes": 2560
+            },
+            "gpu": {
+              "model_prep_ms": 3.23375,
+              "h2d_transfer_ms": 0.006375,
+              "sim_time_ms": 4.24075,
+              "d2h_transfer_ms": 0.013875,
+              "total_wall_ms": 4.261584,
+              "total_events": 13356,
+              "traj_per_sec_sim": 23580.734539880916,
+              "traj_per_sec_tot": 23465.453221149695,
+              "events_per_sec_sim": 3149442.905146495,
+              "events_per_sec_tot": 3134045.9322167533,
+              "memory_bytes": 14576
+            },
+            "speedup_vs_cpu_sw_sim": 0.13326062606850203,
+            "speedup_vs_cpu_mc_sim": 0.056515003242350995,
+            "speedup_vs_cpu_sw_tot": 0.24689575519337412,
+            "speedup_vs_cpu_mc_tot": 0.09833972532279077
+          },
+          {
+            "batch_size": 1000,
+            "cpu_sw": {
+              "model_prep_ms": 0.1885,
+              "sim_time_ms": 5.395292,
+              "total_wall_ms": 5.585584,
+              "total_events": 130817,
+              "traj_per_sec_sim": 185346.78011866641,
+              "traj_per_sec_tot": 179032.3088865909,
+              "events_per_sec_sim": 24246509.734783582,
+              "events_per_sec_tot": 23420469.55161716,
+              "memory_bytes": 20560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 0.147667,
+              "sim_time_ms": 0.9115,
+              "total_wall_ms": 1.060917,
+              "total_events": 131201,
+              "traj_per_sec_sim": 1097092.7043335163,
+              "traj_per_sec_tot": 942580.8050959687,
+              "events_per_sec_sim": 143939659.90126166,
+              "events_per_sec_tot": 123667544.20939618,
+              "memory_bytes": 20560
+            },
+            "gpu": {
+              "model_prep_ms": 0.332625,
+              "h2d_transfer_ms": 0.023959,
+              "sim_time_ms": 1.85075,
+              "d2h_transfer_ms": 0.020166,
+              "total_wall_ms": 1.895375,
+              "total_events": 131917,
+              "traj_per_sec_sim": 540321.491287316,
+              "traj_per_sec_tot": 527600.0791400119,
+              "events_per_sec_sim": 71277590.16614886,
+              "events_per_sec_tot": 69599419.63991295,
+              "memory_bytes": 144176
+            },
+            "speedup_vs_cpu_sw_sim": 2.915192219370526,
+            "speedup_vs_cpu_mc_sim": 0.4925030393083885,
+            "speedup_vs_cpu_sw_tot": 2.946954560443184,
+            "speedup_vs_cpu_mc_tot": 0.559739893160984
+          },
+          {
+            "batch_size": 10000,
+            "cpu_sw": {
+              "model_prep_ms": 0.149333,
+              "sim_time_ms": 52.294417,
+              "total_wall_ms": 52.456917,
+              "total_events": 1307544,
+              "traj_per_sec_sim": 191225.00208769896,
+              "traj_per_sec_tot": 190632.62905824222,
+              "events_per_sec_sim": 25003510.412975825,
+              "events_per_sec_tot": 24926055.032933027,
+              "memory_bytes": 200560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 0.149375,
+              "sim_time_ms": 9.303667,
+              "total_wall_ms": 9.471417,
+              "total_events": 1310047,
+              "traj_per_sec_sim": 1074845.0046632148,
+              "traj_per_sec_tot": 1055808.2280613342,
+              "events_per_sec_sim": 140809747.38240308,
+              "events_per_sec_tot": 138315840.1747067,
+              "memory_bytes": 200560
+            },
+            "gpu": {
+              "model_prep_ms": 0.334708,
+              "h2d_transfer_ms": 0.031667,
+              "sim_time_ms": 2.086625,
+              "d2h_transfer_ms": 0.38175,
+              "total_wall_ms": 2.500708,
+              "total_events": 1310939,
+              "traj_per_sec_sim": 4792427.963817168,
+              "traj_per_sec_tot": 3998867.5207181326,
+              "events_per_sec_sim": 628258072.2458514,
+              "events_per_sec_tot": 524227138.8742708,
+              "memory_bytes": 1440176
+            },
+            "speedup_vs_cpu_sw_sim": 25.061722638231593,
+            "speedup_vs_cpu_mc_sim": 4.458715389684299,
+            "speedup_vs_cpu_sw_tot": 20.976826162830687,
+            "speedup_vs_cpu_mc_tot": 3.787494181647758
+          }
+        ]
+      },
+      {
+        "model_id": "gene_expr_simple",
+        "model_name": "Gene Expression",
+        "path": "models/gene_expr_simple.bngl",
+        "num_species": 2,
+        "num_reactions": 4,
+        "t_end": 500.0,
+        "n_steps": 10,
+        "runs": [
+          {
+            "batch_size": 100,
+            "cpu_sw": {
+              "model_prep_ms": 0.166667,
+              "sim_time_ms": 0.186083,
+              "total_wall_ms": 0.353542,
+              "total_events": 882,
+              "traj_per_sec_sim": 537394.6034833918,
+              "traj_per_sec_tot": 282851.8252428283,
+              "events_per_sec_sim": 4739820.402723515,
+              "events_per_sec_tot": 2494753.0986417453,
+              "memory_bytes": 2160
+            },
+            "cpu_mc": {
+              "model_prep_ms": 0.119875,
+              "sim_time_ms": 0.186667,
+              "total_wall_ms": 0.306792,
+              "total_events": 662,
+              "traj_per_sec_sim": 535713.3290833409,
+              "traj_per_sec_tot": 325953.7406451276,
+              "events_per_sec_sim": 3546422.2385317166,
+              "events_per_sec_tot": 2157813.763070745,
+              "memory_bytes": 2160
+            },
+            "gpu": {
+              "model_prep_ms": 0.274625,
+              "h2d_transfer_ms": 0.008625,
+              "sim_time_ms": 1.712833,
+              "d2h_transfer_ms": 0.010667,
+              "total_wall_ms": 1.732833,
+              "total_events": 814,
+              "traj_per_sec_sim": 58382.80789779272,
+              "traj_per_sec_tot": 57708.96560718777,
+              "events_per_sec_sim": 475236.05628803273,
+              "events_per_sec_tot": 469750.9800425084,
+              "memory_bytes": 10204
+            },
+            "speedup_vs_cpu_sw_sim": 0.10864048042044963,
+            "speedup_vs_cpu_mc_sim": 0.10898143601857274,
+            "speedup_vs_cpu_sw_tot": 0.20402543118696378,
+            "speedup_vs_cpu_mc_tot": 0.1770464897656035
+          },
+          {
+            "batch_size": 1000,
+            "cpu_sw": {
+              "model_prep_ms": 0.209709,
+              "sim_time_ms": 1.940666,
+              "total_wall_ms": 2.152541,
+              "total_events": 8591,
+              "traj_per_sec_sim": 515287.020023023,
+              "traj_per_sec_tot": 464567.2254326398,
+              "events_per_sec_sim": 4426830.789017791,
+              "events_per_sec_tot": 3991097.033691809,
+              "memory_bytes": 16560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 0.147542,
+              "sim_time_ms": 0.43875,
+              "total_wall_ms": 0.588792,
+              "total_events": 9529,
+              "traj_per_sec_sim": 2279202.2792022796,
+              "traj_per_sec_tot": 1698392.6412043641,
+              "events_per_sec_sim": 21718518.518518522,
+              "events_per_sec_tot": 16183983.478036387,
+              "memory_bytes": 16560
+            },
+            "gpu": {
+              "model_prep_ms": 0.492583,
+              "h2d_transfer_ms": 0.016291,
+              "sim_time_ms": 2.423167,
+              "d2h_transfer_ms": 0.035958,
+              "total_wall_ms": 2.476,
+              "total_events": 7917,
+              "traj_per_sec_sim": 412683.0713689977,
+              "traj_per_sec_tot": 403877.2213247173,
+              "events_per_sec_sim": 3267211.8760283547,
+              "events_per_sec_tot": 3197495.9612277867,
+              "memory_bytes": 100204
+            },
+            "speedup_vs_cpu_sw_sim": 0.8008800053813873,
+            "speedup_vs_cpu_mc_sim": 0.18106469756314772,
+            "speedup_vs_cpu_sw_tot": 0.8693622778675282,
+            "speedup_vs_cpu_mc_tot": 0.23779967689822293
+          },
+          {
+            "batch_size": 10000,
+            "cpu_sw": {
+              "model_prep_ms": 0.212875,
+              "sim_time_ms": 18.551709,
+              "total_wall_ms": 18.767958,
+              "total_events": 87561,
+              "traj_per_sec_sim": 539033.8970927153,
+              "traj_per_sec_tot": 532823.0167608005,
+              "events_per_sec_sim": 4719834.706333525,
+              "events_per_sec_tot": 4665451.617059245,
+              "memory_bytes": 160560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 0.130958,
+              "sim_time_ms": 2.74425,
+              "total_wall_ms": 2.884041,
+              "total_events": 90974,
+              "traj_per_sec_sim": 3643982.8732804954,
+              "traj_per_sec_tot": 3467357.086809792,
+              "events_per_sec_sim": 33150769.791381977,
+              "events_per_sec_tot": 31543934.361543406,
+              "memory_bytes": 160560
+            },
+            "gpu": {
+              "model_prep_ms": 0.310875,
+              "h2d_transfer_ms": 0.034708,
+              "sim_time_ms": 3.29375,
+              "d2h_transfer_ms": 0.3205,
+              "total_wall_ms": 3.649916,
+              "total_events": 86498,
+              "traj_per_sec_sim": 3036053.130929791,
+              "traj_per_sec_tot": 2739789.080077459,
+              "events_per_sec_sim": 26261252.371916506,
+              "events_per_sec_tot": 23698627.584854007,
+              "memory_bytes": 1000204
+            },
+            "speedup_vs_cpu_sw_sim": 5.632397419354838,
+            "speedup_vs_cpu_mc_sim": 0.8331688804554079,
+            "speedup_vs_cpu_sw_tot": 5.142024638375239,
+            "speedup_vs_cpu_mc_tot": 0.7901664038295675
+          }
+        ]
+      },
+      {
+        "model_id": "toy_jim",
+        "model_name": "Toy-Jim Signaling",
+        "path": "models/toy-jim.bngl",
+        "num_species": 25,
+        "num_reactions": 101,
+        "t_end": 50.0,
+        "n_steps": 10,
+        "runs": [
+          {
+            "batch_size": 100,
+            "cpu_sw": {
+              "model_prep_ms": 2.625667,
+              "sim_time_ms": 0.37875,
+              "total_wall_ms": 3.00525,
+              "total_events": 1013,
+              "traj_per_sec_sim": 264026.4026402641,
+              "traj_per_sec_tot": 33275.10190499958,
+              "events_per_sec_sim": 2674587.458745875,
+              "events_per_sec_tot": 337076.78229764575,
+              "memory_bytes": 14160
+            },
+            "cpu_mc": {
+              "model_prep_ms": 2.482666,
+              "sim_time_ms": 0.194416,
+              "total_wall_ms": 2.677541,
+              "total_events": 986,
+              "traj_per_sec_sim": 514360.95794584806,
+              "traj_per_sec_tot": 37347.70074482519,
+              "events_per_sec_sim": 5071599.045346062,
+              "events_per_sec_tot": 368248.3293439764,
+              "memory_bytes": 14160
+            },
+            "gpu": {
+              "model_prep_ms": 0.280708,
+              "h2d_transfer_ms": 0.020875,
+              "sim_time_ms": 4.650417,
+              "d2h_transfer_ms": 0.021375,
+              "total_wall_ms": 4.693417,
+              "total_events": 1012,
+              "traj_per_sec_sim": 21503.447970364807,
+              "traj_per_sec_tot": 21306.438358236654,
+              "events_per_sec_sim": 217614.89346009184,
+              "events_per_sec_tot": 215621.15618535492,
+              "memory_bytes": 55060
+            },
+            "speedup_vs_cpu_sw_sim": 0.0814443091877567,
+            "speedup_vs_cpu_mc_sim": 0.04180614340606444,
+            "speedup_vs_cpu_sw_tot": 0.6403117387609071,
+            "speedup_vs_cpu_mc_tot": 0.5704886226815133
+          },
+          {
+            "batch_size": 1000,
+            "cpu_sw": {
+              "model_prep_ms": 2.878583,
+              "sim_time_ms": 4.084584,
+              "total_wall_ms": 6.977542,
+              "total_events": 9965,
+              "traj_per_sec_sim": 244822.97340439074,
+              "traj_per_sec_tot": 143316.94456299942,
+              "events_per_sec_sim": 2439660.9299747534,
+              "events_per_sec_tot": 1428153.352570289,
+              "memory_bytes": 136560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 2.80475,
+              "sim_time_ms": 0.67325,
+              "total_wall_ms": 3.492375,
+              "total_events": 9847,
+              "traj_per_sec_sim": 1485332.3431117712,
+              "traj_per_sec_tot": 286338.09370414115,
+              "events_per_sec_sim": 14626067.582621612,
+              "events_per_sec_tot": 2819571.2087046783,
+              "memory_bytes": 136560
+            },
+            "gpu": {
+              "model_prep_ms": 0.331708,
+              "h2d_transfer_ms": 0.0225,
+              "sim_time_ms": 5.299916,
+              "d2h_transfer_ms": 0.109167,
+              "total_wall_ms": 5.432625,
+              "total_events": 10148,
+              "traj_per_sec_sim": 188682.2357184529,
+              "traj_per_sec_tot": 184073.0770115736,
+              "events_per_sec_sim": 1914747.32807086,
+              "events_per_sec_tot": 1867973.5855134488,
+              "memory_bytes": 505060
+            },
+            "speedup_vs_cpu_sw_sim": 0.7706884410998214,
+            "speedup_vs_cpu_mc_sim": 0.12703031519744842,
+            "speedup_vs_cpu_sw_tot": 1.2843776259174893,
+            "speedup_vs_cpu_mc_tot": 0.6428522123282944
+          },
+          {
+            "batch_size": 10000,
+            "cpu_sw": {
+              "model_prep_ms": 2.92175,
+              "sim_time_ms": 37.827375,
+              "total_wall_ms": 40.766166,
+              "total_events": 99529,
+              "traj_per_sec_sim": 264358.8142185388,
+              "traj_per_sec_tot": 245301.4590579845,
+              "events_per_sec_sim": 2631136.842035695,
+              "events_per_sec_tot": 2441460.891858214,
+              "memory_bytes": 1360560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 2.699792,
+              "sim_time_ms": 5.794541,
+              "total_wall_ms": 8.597583,
+              "total_events": 99653,
+              "traj_per_sec_sim": 1725762.2303474946,
+              "traj_per_sec_tot": 1163117.587815087,
+              "events_per_sec_sim": 17197738.354081888,
+              "events_per_sec_tot": 11590815.697853686,
+              "memory_bytes": 1360560
+            },
+            "gpu": {
+              "model_prep_ms": 0.383625,
+              "h2d_transfer_ms": 0.032125,
+              "sim_time_ms": 5.965792,
+              "d2h_transfer_ms": 0.994042,
+              "total_wall_ms": 6.992792,
+              "total_events": 100369,
+              "traj_per_sec_sim": 1676223.3748679135,
+              "traj_per_sec_tot": 1430043.9652716685,
+              "events_per_sec_sim": 16824086.391211763,
+              "events_per_sec_tot": 14353208.275035208,
+              "memory_bytes": 5005060
+            },
+            "speedup_vs_cpu_sw_sim": 6.3407130184894145,
+            "speedup_vs_cpu_mc_sim": 0.9712945070830494,
+            "speedup_vs_cpu_sw_tot": 5.829740967556306,
+            "speedup_vs_cpu_mc_tot": 1.2294921685072286
+          }
+        ]
+      },
+      {
+        "model_id": "egfr_net",
+        "model_name": "EGFR Net",
+        "path": "models/performance_test_models/egfr_net.bngl",
+        "num_species": 356,
+        "num_reactions": 3749,
+        "t_end": 0.02,
+        "n_steps": 10,
+        "runs": [
+          {
+            "batch_size": 100,
+            "cpu_sw": {
+              "model_prep_ms": 89.993208,
+              "sim_time_ms": 31.403792,
+              "total_wall_ms": 121.40775,
+              "total_events": 7081,
+              "traj_per_sec_sim": 3184.3288224555813,
+              "traj_per_sec_tot": 823.6706470550686,
+              "events_per_sec_sim": 225482.3239180797,
+              "events_per_sec_tot": 58324.11851796941,
+              "memory_bytes": 148160
+            },
+            "cpu_mc": {
+              "model_prep_ms": 87.387125,
+              "sim_time_ms": 4.864,
+              "total_wall_ms": 92.255958,
+              "total_events": 6946,
+              "traj_per_sec_sim": 20559.21052631579,
+              "traj_per_sec_tot": 1083.9408333931126,
+              "events_per_sec_sim": 1428042.7631578946,
+              "events_per_sec_tot": 75290.5302874856,
+              "memory_bytes": 148160
+            },
+            "gpu": {
+              "model_prep_ms": 0.393333,
+              "h2d_transfer_ms": 0.023375,
+              "sim_time_ms": 82.952917,
+              "d2h_transfer_ms": 0.03825,
+              "total_wall_ms": 83.015583,
+              "total_events": 7047,
+              "traj_per_sec_sim": 1205.5031169066665,
+              "traj_per_sec_tot": 1204.5931183787507,
+              "events_per_sec_sim": 84951.80464841278,
+              "events_per_sec_tot": 84887.67705215055,
+              "memory_bytes": 368688
+            },
+            "speedup_vs_cpu_sw_sim": 0.37857369138688635,
+            "speedup_vs_cpu_mc_sim": 0.058635671606340256,
+            "speedup_vs_cpu_sw_tot": 1.4624694016784774,
+            "speedup_vs_cpu_mc_tot": 1.1113089213623906
+          },
+          {
+            "batch_size": 1000,
+            "cpu_sw": {
+              "model_prep_ms": 88.617625,
+              "sim_time_ms": 285.734958,
+              "total_wall_ms": 374.455375,
+              "total_events": 70412,
+              "traj_per_sec_sim": 3499.746782821023,
+              "traj_per_sec_tot": 2670.5451884620434,
+              "events_per_sec_sim": 246424.17047199386,
+              "events_per_sec_tot": 188038.42780998937,
+              "memory_bytes": 1476560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 91.211375,
+              "sim_time_ms": 37.885709,
+              "total_wall_ms": 129.243334,
+              "total_events": 70151,
+              "traj_per_sec_sim": 26395.17713658203,
+              "traj_per_sec_tot": 7737.342956504046,
+              "events_per_sec_sim": 1851648.071308366,
+              "events_per_sec_tot": 542782.3457417153,
+              "memory_bytes": 1476560
+            },
+            "gpu": {
+              "model_prep_ms": 4.534792,
+              "h2d_transfer_ms": 0.01825,
+              "sim_time_ms": 83.858459,
+              "d2h_transfer_ms": 0.401875,
+              "total_wall_ms": 84.279458,
+              "total_events": 70828,
+              "traj_per_sec_sim": 11924.855428120854,
+              "traj_per_sec_tot": 11865.287505764452,
+              "events_per_sec_sim": 844613.6602629438,
+              "events_per_sec_tot": 840394.5834582847,
+              "memory_bytes": 2168688
+            },
+            "speedup_vs_cpu_sw_sim": 3.407348064910184,
+            "speedup_vs_cpu_mc_sim": 0.45178160261685707,
+            "speedup_vs_cpu_sw_tot": 4.4430206824538425,
+            "speedup_vs_cpu_mc_tot": 1.533509316113542
+          },
+          {
+            "batch_size": 10000,
+            "cpu_sw": {
+              "model_prep_ms": 86.606417,
+              "sim_time_ms": 2809.681583,
+              "total_wall_ms": 2897.458416,
+              "total_events": 703808,
+              "traj_per_sec_sim": 3559.12216548134,
+              "traj_per_sec_tot": 3451.3006104864835,
+              "events_per_sec_sim": 250493.8653043091,
+              "events_per_sec_tot": 242905.2980065271,
+              "memory_bytes": 14760560
+            },
+            "cpu_mc": {
+              "model_prep_ms": 87.632584,
+              "sim_time_ms": 347.585333,
+              "total_wall_ms": 435.34675,
+              "total_events": 704429,
+              "traj_per_sec_sim": 28769.913602769884,
+              "traj_per_sec_tot": 22970.195596958056,
+              "events_per_sec_sim": 2026636.1469285588,
+              "events_per_sec_tot": 1618087.1914169567,
+              "memory_bytes": 14760560
+            },
+            "gpu": {
+              "model_prep_ms": 0.458916,
+              "h2d_transfer_ms": 0.029791,
+              "sim_time_ms": 120.503709,
+              "d2h_transfer_ms": 2.262959,
+              "total_wall_ms": 122.797625,
+              "total_events": 704937,
+              "traj_per_sec_sim": 82984.99758210762,
+              "traj_per_sec_tot": 81434.79973655843,
+              "events_per_sec_sim": 5849919.5240538195,
+              "events_per_sec_tot": 5740640.342189029,
+              "memory_bytes": 20168688
+            },
+            "speedup_vs_cpu_sw_sim": 23.31614193717473,
+            "speedup_vs_cpu_mc_sim": 2.884436801858107,
+            "speedup_vs_cpu_sw_tot": 23.59539458519658,
+            "speedup_vs_cpu_mc_tot": 3.5452375402211564
+          }
+        ]
+      }
+    ]
+  },
+  "profile": {
+    "import": {
+      "wall": 0.1450542079983279,
+      "top": [
+        {
+          "where": "<method 'poll' of 'select.poll' objects>",
+          "func": "<method 'poll' of 'select.poll' objects>",
+          "calls": 4,
+          "tottime": 0.025689917000000003,
+          "cumtime": 0.025689917000000003
+        },
+        {
+          "where": "<built-in method _imp.create_dynamic>",
+          "func": "<built-in method _imp.create_dynamic>",
+          "calls": 24,
+          "tottime": 0.021933417,
+          "cumtime": 0.021933417
+        },
+        {
+          "where": "<built-in method marshal.loads>",
+          "func": "<built-in method marshal.loads>",
+          "calls": 187,
+          "tottime": 0.008613126,
+          "cumtime": 0.008613126
+        },
+        {
+          "where": "<built-in method _io.open_code>",
+          "func": "<built-in method _io.open_code>",
+          "calls": 187,
+          "tottime": 0.004626084,
+          "cumtime": 0.004626084
+        },
+        {
+          "where": "<built-in method posix.read>",
+          "func": "<built-in method posix.read>",
+          "calls": 10,
+          "tottime": 0.0032308740000000003,
+          "cumtime": 0.0032308740000000003
+        },
+        {
+          "where": "<built-in method builtins.exec>",
+          "func": "<built-in method builtins.exec>",
+          "calls": 198,
+          "tottime": 0.0032202090000000004,
+          "cumtime": 0.144758
+        },
+        {
+          "where": "<built-in method builtins.__build_class__>",
+          "func": "<built-in method builtins.__build_class__>",
+          "calls": 491,
+          "tottime": 0.0031414900000000003,
+          "cumtime": 0.010830550000000001
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/inspect.py:790",
+          "func": "cleandoc",
+          "calls": 372,
+          "tottime": 0.003108462,
+          "cumtime": 0.005737473000000001
+        },
+        {
+          "where": "<built-in method posix.stat>",
+          "func": "<built-in method posix.stat>",
+          "calls": 1076,
+          "tottime": 0.0029150020000000003,
+          "cumtime": 0.0029150020000000003
+        },
+        {
+          "where": "<built-in method _posixsubprocess.fork_exec>",
+          "func": "<built-in method _posixsubprocess.fork_exec>",
+          "calls": 4,
+          "tottime": 0.002896708,
+          "cumtime": 0.002896708
+        },
+        {
+          "where": "<built-in method _imp.exec_dynamic>",
+          "func": "<built-in method _imp.exec_dynamic>",
+          "calls": 24,
+          "tottime": 0.002855708,
+          "cumtime": 0.004358917
+        },
+        {
+          "where": "<method 'read' of '_io.BufferedReader' objects>",
+          "func": "<method 'read' of '_io.BufferedReader' objects>",
+          "calls": 189,
+          "tottime": 0.002368123,
+          "cumtime": 0.002368123
+        },
+        {
+          "where": "<frozen importlib._bootstrap_external>:1357",
+          "func": "find_spec",
+          "calls": 543,
+          "tottime": 0.0017150610000000001,
+          "cumtime": 0.008023755
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/site-packages/cement/core/template.py:98",
+          "func": "TemplateHandler",
+          "calls": 1,
+          "tottime": 0.0017085420000000002,
+          "cumtime": 0.0017150000000000002
+        },
+        {
+          "where": "<frozen importlib._bootstrap>:483",
+          "func": "_call_with_frames_removed",
+          "calls": 648,
+          "tottime": 0.001445333,
+          "cumtime": 0.14476050000000001
+        },
+        {
+          "where": "<built-in method posix.getcwd>",
+          "func": "<built-in method posix.getcwd>",
+          "calls": 84,
+          "tottime": 0.0013464990000000001,
+          "cumtime": 0.0013464990000000001
+        },
+        {
+          "where": "<frozen importlib._bootstrap_external>:131",
+          "func": "_path_join",
+          "calls": 2832,
+          "tottime": 0.001220713,
+          "cumtime": 0.0020530170000000003
+        },
+        {
+          "where": "<built-in method builtins.len>",
+          "func": "<built-in method builtins.len>",
+          "calls": 21168,
+          "tottime": 0.001122757,
+          "cumtime": 0.0011474990000000002
+        },
+        {
+          "where": "<frozen importlib._bootstrap>:304",
+          "func": "acquire",
+          "calls": 654,
+          "tottime": 0.001120579,
+          "cumtime": 0.003534451
+        },
+        {
+          "where": "<method 'read' of '_io.TextIOWrapper' objects>",
+          "func": "<method 'read' of '_io.TextIOWrapper' objects>",
+          "calls": 4,
+          "tottime": 0.000947125,
+          "cumtime": 0.0009645420000000001
+        }
+      ],
+      "case_wall_s": 0.1915,
+      "note": "cProfile: Python frames only; C++ time sits in the pybind11 call named by where/func"
+    },
+    "load": {
+      "wall": 0.005356583016691729,
+      "top": [
+        {
+          "where": "<built-in method _bionetgen_cpp.parse_file>",
+          "func": "<built-in method _bionetgen_cpp.parse_file>",
+          "calls": 1,
+          "tottime": 0.005080042,
+          "cumtime": 0.005080042
+        },
+        {
+          "where": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/python/bionetgen/model.py:51",
+          "func": "parameters",
+          "calls": 1,
+          "tottime": 5.7875000000000004e-05,
+          "cumtime": 5.7875000000000004e-05
+        },
+        {
+          "where": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/python/bionetgen/model.py:636",
+          "func": "load",
+          "calls": 1,
+          "tottime": 3.2291e-05,
+          "cumtime": 0.005216417
+        },
+        {
+          "where": "<built-in method posix.getcwd>",
+          "func": "<built-in method posix.getcwd>",
+          "calls": 1,
+          "tottime": 1.7625e-05,
+          "cumtime": 1.7625e-05
+        },
+        {
+          "where": "<built-in method builtins.getattr>",
+          "func": "<built-in method builtins.getattr>",
+          "calls": 8,
+          "tottime": 1.1123e-05,
+          "cumtime": 8.716600000000001e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/pathlib/__init__.py:251",
+          "func": "__str__",
+          "calls": 2,
+          "tottime": 1.0583e-05,
+          "cumtime": 3.4167e-05
+        },
+        {
+          "where": "<method 'disable' of '_lsprof.Profiler' objects>",
+          "func": "<method 'disable' of '_lsprof.Profiler' objects>",
+          "calls": 1,
+          "tottime": 9.375000000000001e-06,
+          "cumtime": 9.375000000000001e-06
+        },
+        {
+          "where": "<frozen posixpath>:388",
+          "func": "realpath",
+          "calls": 1,
+          "tottime": 9.292e-06,
+          "cumtime": 6.641600000000001e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/pathlib/__init__.py:932",
+          "func": "resolve",
+          "calls": 1,
+          "tottime": 8.543000000000001e-06,
+          "cumtime": 8.1209e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/pathlib/__init__.py:341",
+          "func": "drive",
+          "calls": 2,
+          "tottime": 7.626e-06,
+          "cumtime": 1.9042e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/pathlib/__init__.py:281",
+          "func": "_parse_path",
+          "calls": 2,
+          "tottime": 7.585e-06,
+          "cumtime": 9.75e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/pathlib/__init__.py:135",
+          "func": "__init__",
+          "calls": 2,
+          "tottime": 7.459e-06,
+          "cumtime": 8.958000000000001e-06
+        },
+        {
+          "where": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/python/bionetgen/model.py:63",
+          "func": "observables",
+          "calls": 1,
+          "tottime": 6.958e-06,
+          "cumtime": 6.958e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/pathlib/__init__.py:632",
+          "func": "__new__",
+          "calls": 2,
+          "tottime": 6.916e-06,
+          "cumtime": 7.583e-06
+        },
+        {
+          "where": "<built-in method posix.lstat>",
+          "func": "<built-in method posix.lstat>",
+          "calls": 2,
+          "tottime": 5.874e-06,
+          "cumtime": 5.874e-06
+        },
+        {
+          "where": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/python/bionetgen/model.py:40",
+          "func": "__init__",
+          "calls": 1,
+          "tottime": 3.5000000000000004e-06,
+          "cumtime": 3.5000000000000004e-06
+        },
+        {
+          "where": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/python/bionetgen/model.py:67",
+          "func": "reaction_rules",
+          "calls": 1,
+          "tottime": 3.458e-06,
+          "cumtime": 3.458e-06
+        },
+        {
+          "where": "<built-in method posix.fspath>",
+          "func": "<built-in method posix.fspath>",
+          "calls": 4,
+          "tottime": 3.041e-06,
+          "cumtime": 3.2708e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/pathlib/__init__.py:190",
+          "func": "__fspath__",
+          "calls": 1,
+          "tottime": 3e-06,
+          "cumtime": 2.975e-05
+        },
+        {
+          "where": "/Users/akutuva/Documents/BioNetGen/BNG3-swarm2-base/python/bionetgen/model.py:55",
+          "func": "molecule_types",
+          "calls": 1,
+          "tottime": 2.7090000000000002e-06,
+          "cumtime": 2.7090000000000002e-06
+        }
+      ],
+      "case_wall_s": 0.1523,
+      "note": "cProfile: Python frames only; C++ time sits in the pybind11 call named by where/func"
+    },
+    "ode": {
+      "wall": 0.03563441598089412,
+      "top": [
+        {
+          "where": "<built-in method _bionetgen_cpp.simulate_ode>",
+          "func": "<built-in method _bionetgen_cpp.simulate_ode>",
+          "calls": 1,
+          "tottime": 0.035286583,
+          "cumtime": 0.035590667
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:512",
+          "func": "_parse",
+          "calls": 2,
+          "tottime": 3.9123000000000005e-05,
+          "cumtime": 9.3875e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:452",
+          "func": "_parse_sub",
+          "calls": 2,
+          "tottime": 3.0167e-05,
+          "cumtime": 0.00012612500000000002
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/__init__.py:330",
+          "func": "_compile",
+          "calls": 2,
+          "tottime": 2.5249e-05,
+          "cumtime": 0.000272541
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:39",
+          "func": "_compile",
+          "calls": 5,
+          "tottime": 1.9243000000000002e-05,
+          "cumtime": 3.7250000000000004e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/site-packages/numpy/lib/_version.py:53",
+          "func": "__init__",
+          "calls": 1,
+          "tottime": 1.821e-05,
+          "cumtime": 0.00030408400000000004
+        },
+        {
+          "where": "<built-in method builtins.isinstance>",
+          "func": "<built-in method builtins.isinstance>",
+          "calls": 52,
+          "tottime": 1.6497e-05,
+          "cumtime": 1.6497e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:372",
+          "func": "_escape",
+          "calls": 5,
+          "tottime": 1.3332e-05,
+          "cumtime": 1.5125000000000002e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:963",
+          "func": "parse",
+          "calls": 2,
+          "tottime": 1.1166000000000001e-05,
+          "cumtime": 0.00014366700000000002
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:525",
+          "func": "_compile_info",
+          "calls": 2,
+          "tottime": 1.1000000000000001e-05,
+          "cumtime": 2.1125000000000002e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:590",
+          "func": "_code",
+          "calls": 2,
+          "tottime": 1.0625e-05,
+          "cumtime": 6.925e-05
+        },
+        {
+          "where": "<method 'disable' of '_lsprof.Profiler' objects>",
+          "func": "<method 'disable' of '_lsprof.Profiler' objects>",
+          "calls": 1,
+          "tottime": 1.0583e-05,
+          "cumtime": 1.0583e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:757",
+          "func": "compile",
+          "calls": 2,
+          "tottime": 1.0499e-05,
+          "cumtime": 0.00022600000000000002
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:240",
+          "func": "__next",
+          "calls": 14,
+          "tottime": 1.004e-05,
+          "cumtime": 1.004e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:168",
+          "func": "__getitem__",
+          "calls": 30,
+          "tottime": 7.633000000000001e-06,
+          "cumtime": 2.0837e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/enum.py:1595",
+          "func": "__and__",
+          "calls": 2,
+          "tottime": 6.916e-06,
+          "cumtime": 1.6708e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:248",
+          "func": "_optimize_charset",
+          "calls": 3,
+          "tottime": 6.501e-06,
+          "cumtime": 7.833000000000001e-06
+        },
+        {
+          "where": "<method 'append' of 'list' objects>",
+          "func": "<method 'append' of 'list' objects>",
+          "calls": 67,
+          "tottime": 5.9650000000000005e-06,
+          "cumtime": 5.9650000000000005e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:178",
+          "func": "getwidth",
+          "calls": 5,
+          "tottime": 5.916000000000001e-06,
+          "cumtime": 6.708000000000001e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/enum.py:677",
+          "func": "__call__",
+          "calls": 2,
+          "tottime": 5.417e-06,
+          "cumtime": 5.959e-06
+        }
+      ],
+      "case_wall_s": 0.181,
+      "note": "cProfile: Python frames only; C++ time sits in the pybind11 call named by where/func"
+    },
+    "ssa": {
+      "wall": 0.03779237502021715,
+      "top": [
+        {
+          "where": "<built-in method _bionetgen_cpp.simulate_batch_ssa_cpu>",
+          "func": "<built-in method _bionetgen_cpp.simulate_batch_ssa_cpu>",
+          "calls": 1,
+          "tottime": 0.037434207000000004,
+          "cumtime": 0.037759041
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:512",
+          "func": "_parse",
+          "calls": 2,
+          "tottime": 3.9961000000000006e-05,
+          "cumtime": 8.3708e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/site-packages/numpy/lib/_version.py:53",
+          "func": "__init__",
+          "calls": 1,
+          "tottime": 3.1e-05,
+          "cumtime": 0.00032483400000000003
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/__init__.py:330",
+          "func": "_compile",
+          "calls": 2,
+          "tottime": 2.7788000000000002e-05,
+          "cumtime": 0.000264083
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:452",
+          "func": "_parse_sub",
+          "calls": 2,
+          "tottime": 2.4042e-05,
+          "cumtime": 0.00011070900000000001
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:39",
+          "func": "_compile",
+          "calls": 5,
+          "tottime": 1.8667000000000003e-05,
+          "cumtime": 3.5208e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:757",
+          "func": "compile",
+          "calls": 2,
+          "tottime": 1.2503e-05,
+          "cumtime": 0.00021175000000000002
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:963",
+          "func": "parse",
+          "calls": 2,
+          "tottime": 1.2125e-05,
+          "cumtime": 0.000128875
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:590",
+          "func": "_code",
+          "calls": 2,
+          "tottime": 1.1000000000000001e-05,
+          "cumtime": 6.6791e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:372",
+          "func": "_escape",
+          "calls": 5,
+          "tottime": 1.0583e-05,
+          "cumtime": 1.2833e-05
+        },
+        {
+          "where": "<method 'match' of 're.Pattern' objects>",
+          "func": "<method 'match' of 're.Pattern' objects>",
+          "calls": 1,
+          "tottime": 1.0209e-05,
+          "cumtime": 1.0209e-05
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_compiler.py:525",
+          "func": "_compile_info",
+          "calls": 2,
+          "tottime": 9.915e-06,
+          "cumtime": 2.0458e-05
+        },
+        {
+          "where": "<method 'search' of 're.Pattern' objects>",
+          "func": "<method 'search' of 're.Pattern' objects>",
+          "calls": 1,
+          "tottime": 9.167e-06,
+          "cumtime": 9.167e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/enum.py:1595",
+          "func": "__and__",
+          "calls": 2,
+          "tottime": 9.001e-06,
+          "cumtime": 1.8750000000000002e-05
+        },
+        {
+          "where": "<method 'disable' of '_lsprof.Profiler' objects>",
+          "func": "<method 'disable' of '_lsprof.Profiler' objects>",
+          "calls": 1,
+          "tottime": 8.375e-06,
+          "cumtime": 8.375e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:168",
+          "func": "__getitem__",
+          "calls": 30,
+          "tottime": 8.078000000000001e-06,
+          "cumtime": 1.0999000000000001e-05
+        },
+        {
+          "where": "<built-in method builtins.isinstance>",
+          "func": "<built-in method builtins.isinstance>",
+          "calls": 52,
+          "tottime": 7.172e-06,
+          "cumtime": 7.172e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/_parser.py:164",
+          "func": "__len__",
+          "calls": 11,
+          "tottime": 6.584000000000001e-06,
+          "cumtime": 7.5e-06
+        },
+        {
+          "where": "/opt/anaconda3/lib/python3.14/re/__init__.py:164",
+          "func": "match",
+          "calls": 1,
+          "tottime": 6.542e-06,
+          "cumtime": 0.00024270900000000002
+        },
+        {
+          "where": "<method 'append' of 'list' objects>",
+          "func": "<method 'append' of 'list' objects>",
+          "calls": 67,
+          "tottime": 5.706e-06,
+          "cumtime": 5.706e-06
+        }
+      ],
+      "events": 6549574,
+      "case_wall_s": 0.1848,
+      "note": "cProfile: Python frames only; C++ time sits in the pybind11 call named by where/func"
+    }
+  }
+}

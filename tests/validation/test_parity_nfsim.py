@@ -167,7 +167,13 @@ if direct is not None:
         xml_data, xml_cols = trajectory(xml)
         direct_data, direct_cols = trajectory(direct)
         diff = compare.compare_trajectories(
-            xml_data, xml_cols, direct_data, direct_cols, rtol=0.0, atol=0.0
+            xml_data,
+            xml_cols,
+            direct_data,
+            direct_cols,
+            rtol=0.0,
+            atol=0.0,
+            columns=compare.COLUMNS_EXACT,
         )
         record["xml_construction_path"] = xml_path
         record["max_rel_err"] = float(diff.max_rel_err)
@@ -297,6 +303,7 @@ def test_nf_vs_native(model_name, api, work_dir):
         test,
         min_ref_runs=n_runs,
         min_test_runs=n_runs,
+        columns=compare.COLUMNS_EXACT,
     )
     assert diff.ok, f"NF vs native mismatch [{model_name}]: {diff.summary()}"
 
@@ -345,6 +352,7 @@ def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(api, work_dir):
         direct.columns,
         rtol=0.0,
         atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert (
         diff.ok or diff.max_rel_err == 0.0
@@ -383,6 +391,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
         direct_traj.columns,
         rtol=0.0,
         atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert (
         diff.ok or diff.max_rel_err == 0.0
@@ -493,7 +502,13 @@ def test_nf_seed_site_state_is_resolved_by_name(block_order, api, work_dir,
     xml_data, xml_columns = _result_to_trajectory(xml_result)
     direct_data, direct_columns = _result_to_trajectory(direct_result)
     diff = compare.compare_trajectories(
-        xml_data, xml_columns, direct_data, direct_columns, rtol=0.0, atol=0.0
+        xml_data,
+        xml_columns,
+        direct_data,
+        direct_columns,
+        rtol=0.0,
+        atol=0.0,
+        columns=compare.COLUMNS_EXACT,
     )
     assert (
         diff.ok or diff.max_rel_err == 0.0

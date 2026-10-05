@@ -1,7 +1,7 @@
 import re, pyparsing, sympy, json
 from bionetgen.atomizer.utils.util import logMess
 from bionetgen.atomizer.writer.bnglWriter import rindex
-
+from functools import lru_cache
 from sympy.printing.str import StrPrinter
 
 prnter = StrPrinter({"full_prec": False})
@@ -258,7 +258,7 @@ class Function:
         self.time_flag = False
         self.adjusted_def = None
         self.volume_adjusted = False
-
+        self._simplify_cache = {}
     def replaceLoc(self, func_def, pdict):
         if self.compartmentList is not None:
             if len(self.compartmentList) > 0:
@@ -572,14 +572,17 @@ class Function:
         # change references to local parameters
         # for parameter in parameterDict:
         #     finalString = re.sub(r'(\W|^)({0})(\W|$)'.format(parameter),r'\g<1>{0}\g<3>'.format(parameterDict[parameter]),finalString)
-        # doing simplification
+        # doing simplification (with per-instance cache)
         try:
-            sdef = sympy.sympify(fdef, locals=self.all_syms)
-            fdef = prnter.doprint(sdef.nsimplify().evalf().simplify())
-            fdef = fdef.replace("**", "^")
+            if fdef in self._simplify_cache:
+                fdef = self._simplify_cache[fdef]
+            else:
+                sdef = sympy.sympify(fdef, locals=self.all_syms)
+                simplified = prnter.doprint(sdef.nsimplify().evalf().simplify()).replace("**", "^")
+                self._simplify_cache[fdef] = simplified
+                fdef = simplified
         except:
             pass
-        return fdef
 
     def extendFunction(self, function, subfunctionName, subfunction):
         def constructFromList(argList, optionList, subfunctionParam, subfunctionBody):

@@ -265,7 +265,7 @@ every one. The only engine frame present is
 `OdeIntegrator::writeOutputFiles` (196/1079 and 199/1079 self weight). The
 per-step rate path — `rxn.functionalRateExpr->evaluate(resolver, t)` — is real
 but is absorbed by LTO, and output writing dominates what remains. On current
-`main` that call is at `cpp/engine/OdeIntegrator.cpp:1380`
+`main` that call is at `cpp/engine/OdeIntegrator.cpp:1405`
 (`git show origin/main:cpp/engine/OdeIntegrator.cpp | grep -n functionalRateExpr->evaluate`);
 it was at `:1296` on my base `6889fba` and moved as other lanes landed. Cite
 the call, not the line, when the base differs — `swarmMemory` published

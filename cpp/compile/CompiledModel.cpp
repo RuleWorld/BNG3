@@ -51,12 +51,6 @@ PopulationMapKind populationMapKind(const std::string& name) {
     return PopulationMapKind::Unknown;
 }
 
-struct ObservablePatternText {
-    std::string pattern;
-    std::string relation;
-    int quantity = 0;
-};
-
 std::vector<units::UnitDefinition> authoredUnitDefinitions(const ast::Model& model) {
     std::vector<units::UnitDefinition> result;
     for (const auto& definition : model.getUnitSystem().definitions()) {
@@ -73,9 +67,9 @@ std::optional<units::Unit> defaultUnit(const ast::Model& model,
     return parsed ? parsed.unit : std::nullopt;
 }
 
-std::optional<ObservablePatternText> splitObservablePattern(
+std::optional<ObservablePatternSource> splitObservablePatternImpl(
     const std::string& source, std::string& error) {
-    ObservablePatternText result;
+    ObservablePatternSource result;
     result.pattern = source;
     int depth = 0;
     std::size_t relationPos = std::string::npos;
@@ -87,7 +81,7 @@ std::optional<ObservablePatternText> splitObservablePattern(
         if (depth != 0) continue;
         if (i + 1 < source.size()) {
             const auto two = source.substr(i, 2);
-            if (two == "==" || two == ">=" || two == "<=") {
+            if (two == "==" || two == "!=" || two == ">=" || two == "<=") {
                 relationPos = i; relation = two; break;
             }
         }
@@ -126,6 +120,24 @@ std::optional<ObservablePatternText> splitObservablePattern(
 }
 
 } // namespace
+
+std::optional<ObservablePatternSource> splitObservablePattern(
+    const std::string& source, std::string& error) {
+    return splitObservablePatternImpl(source, error);
+}
+
+bool observablePatternCountMatches(std::size_t count, const std::string& relation,
+                                  int quantity) {
+    const auto value = static_cast<long long>(count);
+    if (relation.empty()) return count > 0;
+    if (relation == "==") return value == quantity;
+    if (relation == "!=") return value != quantity;
+    if (relation == "<") return value < quantity;
+    if (relation == "<=") return value <= quantity;
+    if (relation == ">") return value > quantity;
+    if (relation == ">=") return value >= quantity;
+    throw std::runtime_error("unsupported observable relation: " + relation);
+}
 
 std::optional<StateId> CompiledComponentType::resolveState(const std::string& name) const {
     const auto found = std::find(stateNames.begin(), stateNames.end(), name);

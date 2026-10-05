@@ -342,5 +342,8 @@ public:
   virtual void enterLiteral(BNGParser::LiteralContext *ctx) = 0;
   virtual void exitLiteral(BNGParser::LiteralContext *ctx) = 0;
 
+  virtual void enterObservable_name(BNGParser::Observable_nameContext *ctx) = 0;
+  virtual void exitObservable_name(BNGParser::Observable_nameContext *ctx) = 0;
+
 
 };

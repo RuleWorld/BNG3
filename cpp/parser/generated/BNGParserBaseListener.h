@@ -344,6 +344,9 @@ public:
   virtual void enterLiteral(BNGParser::LiteralContext * /*ctx*/) override { }
   virtual void exitLiteral(BNGParser::LiteralContext * /*ctx*/) override { }
 
+  virtual void enterObservable_name(BNGParser::Observable_nameContext * /*ctx*/) override { }
+  virtual void exitObservable_name(BNGParser::Observable_nameContext * /*ctx*/) override { }
+
 
   virtual void enterEveryRule(antlr4::ParserRuleContext * /*ctx*/) override { }
   virtual void exitEveryRule(antlr4::ParserRuleContext * /*ctx*/) override { }

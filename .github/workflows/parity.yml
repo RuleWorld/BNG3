@@ -36,7 +36,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install CI contract dependencies
-        run: python -m pip install pytest numpy
+        run: python -m pip install pytest numpy pyyaml
 
       - name: Validate locked sources
         run: python scripts/ci/checkout_oracle.py --validate-only
@@ -103,6 +103,8 @@ jobs:
     name: BNG3 vs independent NFsim
     needs: oracle-lock
     runs-on: ubuntu-22.04
+    env:
+      BNG3_PYTHON_TEST_MODE: installed
     steps:
       - uses: actions/checkout@v4
 
@@ -133,51 +135,61 @@ jobs:
             -DNFSIM_BUILD_LIBRARY=OFF
           cmake --build "$RUNNER_TEMP/oracle-nfsim/build" --target NFsim --parallel 2
 
-      - name: Build BNG3 Python API and CLI
+      - name: Install BNG3 Python API as a regular package
         run: |
           python -m pip install scikit-build-core pybind11
-          python -m pip install -e ".[full,dev]"
+          python -m pip install ".[full,dev]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
+
+      - name: Report installed BNG3 package and native identities
+        run: |
+          python scripts/ci/check_python_package_identity.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify spawned API worker identity
+        run: |
+          pytest -c tests/validation/pytest.ini \
+            tests/validation/test_worker_package_identity.py -q
 
       - name: Run direct/XML NFsim construction checks
         shell: bash
         run: |
           set -euo pipefail
           NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
-            PYTHONPATH="python:build/cpp" \
             pytest -c tests/validation/pytest.ini \
               tests/validation/test_parity_nfsim.py \
               -m "nf and not slow" \
-              --bng-cpp build/cpp/bng_cpp -q
+              -q
 
       - name: Run NFsim seed-state parity contracts
         shell: bash
         run: |
           set -euo pipefail
           NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
-            PYTHONPATH="python:build/cpp" \
             pytest -c tests/validation/pytest.ini \
               tests/validation/test_parity_nfsim_seed.py \
-              --bng-cpp build/cpp/bng_cpp -q
+              -q
 
       - name: Run fixed-seed native NFsim parity
         shell: bash
         run: |
           set -euo pipefail
           NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
-            PYTHONPATH="python:build/cpp" \
             BNG_ENSEMBLE_WORKERS=2 \
             pytest -c tests/validation/pytest.ini \
               tests/validation/test_parity_nfsim.py \
               -k "test_nf_vs_native and simple_system" \
-              --bng-cpp build/cpp/bng_cpp -q
+              -q
           NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
-            PYTHONPATH="python:build/cpp" \
             pytest -c tests/validation/pytest.ini \
               tests/validation/test_parity_nfsim.py \
               -k "test_nf_fixed_seed_direct_matches_native_at_final_endpoint" \
-              --bng-cpp build/cpp/bng_cpp -q
+              -q
           NFSIM_DIGEST=$(sha256sum "$RUNNER_TEMP/oracle-nfsim/build/NFsim" | cut -d ' ' -f 1)
           {
             echo "### Native NFsim parity"
@@ -241,6 +253,8 @@ jobs:
     name: PyBioNetGen API compatibility
     needs: oracle-lock
     runs-on: ubuntu-22.04
+    env:
+      BNG3_PYTHON_TEST_MODE: installed
     steps:
       - uses: actions/checkout@v4
 
@@ -253,7 +267,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
           python -m pip install scikit-build-core pybind11 pytest numpy
-          python -m pip install -e ".[full,dev]"
+          python -m pip install ".[full,dev]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
 
@@ -273,3 +287,5 @@ jobs:
         env:
           MPLBACKEND: Agg
           SYMPY_USE_GMPY: "0"
+          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

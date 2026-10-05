@@ -1253,7 +1253,7 @@ ast::Expression buildObservableRef(BNGParser::Observable_refContext* ctx) {
             args.push_back(buildExpression(expr));
         }
     }
-    const auto name = ctx->STRING()->getText();
+    const auto name = ctx->observable_name()->getText();
     // floor/ceil are valid BNGL expressions but are not lexer keywords in
     // the legacy grammar. Treat their STRING(...) spelling as a built-in
     // function instead of an unresolved observable reference.
@@ -1778,7 +1778,7 @@ std::any BNGAstVisitor::visitEnergy_pattern_def(BNGParser::Energy_pattern_defCon
 }
 
 std::any BNGAstVisitor::visitObservable_def(BNGParser::Observable_defContext* ctx) {
-    if (ctx->observable_pattern_list() == nullptr || ctx->STRING().empty()) {
+    if (ctx->observable_pattern_list() == nullptr || ctx->observable_name() == nullptr) {
         return {};
     }
 
@@ -1787,7 +1787,7 @@ std::any BNGAstVisitor::visitObservable_def(BNGParser::Observable_defContext* ct
         patterns.push_back(pattern->getText());
     }
 
-    const auto names = ctx->STRING();
+    const std::string name = ctx->observable_name()->getText();
     const std::string type = ctx->observable_type() != nullptr ? ctx->observable_type()->getText() : "Molecules";
     if (toLower(type) == "concentration") {
         // BNG2 refuses this type ("Observable type is not valid") and so must
@@ -1807,7 +1807,7 @@ std::any BNGAstVisitor::visitObservable_def(BNGParser::Observable_defContext* ct
             "under method=>\"ssa\" 'Molecules' is already a molecule count.");
     }
 
-    currentModel_->addObservable(ast::Observable(names.back()->getText(), type, std::move(patterns)));
+    currentModel_->addObservable(ast::Observable(name, type, std::move(patterns)));
     return {};
 }
 

@@ -1,0 +1,11 @@
+PASS  antigen_binding
+species:   ref=3 test=3
+reactions: ref=2 test=2 (delta=+0)
+
+============================================================
+CROSS-VALIDATION SUMMARY
+  Total models: 1
+  PASS:  1
+  FAIL:  0
+  ERROR: 0
+============================================================

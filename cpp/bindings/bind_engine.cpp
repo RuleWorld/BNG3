@@ -257,6 +257,41 @@ void bind_engine(py::module_& m) {
     }, py::arg("model"), py::arg("max_iter") = 100,
        "Generate the reaction network from a model");
 
+    // Private validation hook: parity tests need the engine's instantaneous
+    // derivative at arbitrary documented states, without inferring it from a
+    // short integration step. Keep this out of the supported Python API.
+    m.def("_validation_ode_rhs", [](Model& model,
+                                    GeneratedNetwork& network,
+                                    double time,
+                                    const std::vector<double>& state) {
+        if (state.size() != network.species.size()) {
+            throw std::invalid_argument(
+                "RHS state length must match generated network species count");
+        }
+        std::vector<double> derivative(state.size(), 0.0);
+        py::gil_scoped_release release;
+        OdeIntegrator integrator(model, network);
+        integrator.derivs(time, state.data(), derivative.data());
+        return derivative;
+    }, py::arg("model"), py::arg("network"), py::arg("time"), py::arg("state"),
+       "Internal parity-validation hook for instantaneous ODE derivatives");
+
+    // Private validation hook: return the engine's compiled per-reaction
+    // coefficients before mass-action species factors are applied.
+    m.def("_validation_ode_rate_coefficients", [](Model& model,
+                                                  GeneratedNetwork& network,
+                                                  double time,
+                                                  const std::vector<double>& state) {
+        if (state.size() != network.species.size()) {
+            throw std::invalid_argument(
+                "rate state length must match generated network species count");
+        }
+        py::gil_scoped_release release;
+        OdeIntegrator integrator(model, network);
+        return integrator.evaluateRateCoefficients(time, state.data());
+    }, py::arg("model"), py::arg("network"), py::arg("time"), py::arg("state"),
+       "Internal parity-validation hook for compiled per-reaction rate coefficients");
+
     m.def("simulate_ode", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, double t_start,
                              double rtol, double atol, const std::string& method,

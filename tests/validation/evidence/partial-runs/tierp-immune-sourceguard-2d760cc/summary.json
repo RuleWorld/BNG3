@@ -1,0 +1,105 @@
+{
+  "schema": "bng3-supplemental-network-run/v1",
+  "run_id": "tierp-immune-20261003-sourceguard-2d760cc",
+  "status": "completed_with_one_fail_and_one_oracle_error",
+  "created_at_utc": "2026-10-03T16:41:00Z",
+  "tested_code_head": "2d760ccf748fe95f4e5ff8c97d4d0df0e5a03d69",
+  "selection_scope": "Six on-disk immune models outside the frozen 100-model Tier-P selection; run separately one model per invocation.",
+  "command_template": "BNG3_SOURCE_REVISION=2d760ccf748fe95f4e5ff8c97d4d0df0e5a03d69 python /private/tmp/bng3_parity_lock_exec.py .venv/bin/python scripts/cross_validate.py --bng-cpp build/cpp/bng_cpp --bng-perl /private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl --models-dir models/immune --timeout 300 --model MODEL --verbose --summary-file /private/tmp/bng3-immune-2d760cc-MODEL.md",
+  "timeout_seconds": 300,
+  "tolerances_changed": false,
+  "oracle_identity": {
+    "bng2_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "bng2_script_sha256": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4",
+    "bng3_cli_sha256": "4a5414a1d36488b3024839a0d71d0d7687eda7fbc8c58340cc45cdc16dbc7816",
+    "cross_validate_sha256": "04ce7dac10314f21c87e746cfbca464e99c4bb5081aa37fc06f10887645e8a9a"
+  },
+  "result": {
+    "total": 6,
+    "pass": 4,
+    "fail": 1,
+    "error": 1,
+    "models_by_outcome": {
+      "pass": [
+        "antigen_binding",
+        "clonal_expansion",
+        "cytotoxic_killing",
+        "threshold_observable"
+      ],
+      "fail": [
+        "threshold_observable_species"
+      ],
+      "error": [
+        "exhaustion_switch"
+      ]
+    }
+  },
+  "models": [
+    {
+      "model": "antigen_binding",
+      "source_path": "models/immune/antigen_binding.bngl",
+      "source_sha256": "035113fc870c5ff2ec59e00448da34e84c4cb95a60ef5defbe5a0e484a087fed",
+      "outcome": "pass",
+      "detail": "PASS  antigen_binding",
+      "log": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/antigen_binding.log",
+      "log_sha256": "74eb7304ebe4f95b34d5e0d392eac11b8ee514f90d5b8b35ff36d7edde25dc9d",
+      "summary": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/antigen_binding.md",
+      "summary_sha256": "ba27e6a271d407df24881dc286d71c9301e7e797a6810f9ff981efbd9f3ae3ba"
+    },
+    {
+      "model": "clonal_expansion",
+      "source_path": "models/immune/clonal_expansion.bngl",
+      "source_sha256": "86f1135fd96c1fdea85f122551ab2787b63c64aa8c933f6c35ec95ca839d930f",
+      "outcome": "pass",
+      "detail": "PASS  clonal_expansion",
+      "log": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/clonal_expansion.log",
+      "log_sha256": "75101d4899a90f36741037c7ad10a416a3334cfbe667011f56db054c7c0cf9e4",
+      "summary": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/clonal_expansion.md",
+      "summary_sha256": "ba27e6a271d407df24881dc286d71c9301e7e797a6810f9ff981efbd9f3ae3ba"
+    },
+    {
+      "model": "cytotoxic_killing",
+      "source_path": "models/immune/cytotoxic_killing.bngl",
+      "source_sha256": "ba488893948a7b4af4e6e539262209a5a2451e464de832ec931e5e7857fb4ae0",
+      "outcome": "pass",
+      "detail": "PASS  cytotoxic_killing",
+      "log": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/cytotoxic_killing.log",
+      "log_sha256": "b68fad7752119bc35899900d07e97a0706a61fb3af1edce4c02240a8d9fa8ddb",
+      "summary": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/cytotoxic_killing.md",
+      "summary_sha256": "ba27e6a271d407df24881dc286d71c9301e7e797a6810f9ff981efbd9f3ae3ba"
+    },
+    {
+      "model": "exhaustion_switch",
+      "source_path": "models/immune/exhaustion_switch.bngl",
+      "source_sha256": "374cc22529dfb9eb1f546574a2141478237488ecda28055e897d605be865a23f",
+      "outcome": "error",
+      "detail": "ERROR exhaustion_switch (Perl ABORT: Parameter 'Hill' is referenced but not defined)",
+      "log": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/exhaustion_switch.log",
+      "log_sha256": "4576d3cff24584f31107be8a7557ea9b5b13d439b1497d298a082229b4ddf77c",
+      "summary": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/exhaustion_switch.md",
+      "summary_sha256": "41e7071d9085d8956a2dca8bc1b388e0ed6b220b06e5742a15597d00e66aad42"
+    },
+    {
+      "model": "threshold_observable",
+      "source_path": "models/immune/threshold_observable.bngl",
+      "source_sha256": "dee5e526b290b0560d546749cf5de4b2fc664cc6dbbaa1eca45a4e4a6a8c9fae",
+      "outcome": "pass",
+      "detail": "PASS  threshold_observable",
+      "log": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/threshold_observable.log",
+      "log_sha256": "7b3f8b1fe1d188fc224f14cc8f652516c251e2cb16c69b94ab09e8753e526a97",
+      "summary": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/threshold_observable.md",
+      "summary_sha256": "ba27e6a271d407df24881dc286d71c9301e7e797a6810f9ff981efbd9f3ae3ba"
+    },
+    {
+      "model": "threshold_observable_species",
+      "source_path": "models/immune/threshold_observable_species.bngl",
+      "source_sha256": "7f014f91bc630a79726932041f0c3d3a4f8a84d0c5d59b4016dedad9c4090b1b",
+      "outcome": "fail",
+      "detail": "FAIL  threshold_observable_species",
+      "log": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/threshold_observable_species.log",
+      "log_sha256": "fa6db2c7a8e8fbeccf755e2cc76535429b139a163d6558c72fea5de330410b95",
+      "summary": "tests/validation/evidence/partial-runs/tierp-immune-sourceguard-2d760cc/threshold_observable_species.md",
+      "summary_sha256": "20f636374a351e8db59822d3f1a5fe13719ac40e626b49e0b7b8d18e6c60ca92"
+    }
+  ]
+}

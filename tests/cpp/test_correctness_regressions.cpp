@@ -8,11 +8,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numeric>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "engine/BatchSsa.hpp"
@@ -213,17 +215,6 @@ double batchStdDev(unsigned int seed) {
     return result.batchObsStdDevs.back().front();
 }
 
-template <typename Fn>
-double sampleStdDev(Fn&& run) {
-    std::vector<double> values;
-    for (int k = 0; k < 12; ++k) values.push_back(run(k));
-    const double mean = std::accumulate(values.begin(), values.end(), 0.0) /
-                        static_cast<double>(values.size());
-    double sum = 0.0;
-    for (double v : values) sum += (v - mean) * (v - mean);
-    return std::sqrt(sum / static_cast<double>(values.size() - 1));
-}
-
 } // namespace
 
 TEST_CASE("adjacent batch base seeds do not produce identical batches",
@@ -236,22 +227,43 @@ TEST_CASE("adjacent batch base seeds do not produce identical batches",
     REQUIRE((a != b || b != c));
 }
 
-TEST_CASE("near-adjacent base seeds decorrelate as well as far-apart ones",
+TEST_CASE("adjacent batch base seeds do not reuse trajectory RNG keys",
           "[correctness][batch-ssa]") {
-    // Stratify the 12 base seeds across disjoint 2000-trajectory seed windows,
-    // so under `base + traj` they share no trajectories at all and the measured
-    // spread collapses; under a decorrelating derivation they are independent.
-    const double nearSpread = sampleStdDev([](int k) {
-        return batchMean(static_cast<unsigned int>(5000 + 7000 * k));
-    });
-    const double farSpread = sampleStdDev([](int k) {
-        return batchMean(static_cast<unsigned int>(4000 + 4000 * k));
-    });
+    constexpr uint64_t baseSeed = 5000;
+    constexpr std::size_t batchSize = 512;
 
-    INFO("near-adjacent spread " << nearSpread << ", far-apart spread " << farSpread);
-    // Under the old derivation the near spread was ~0.05x the far one; the
-    // ratio must now be within sampling noise of 1.
-    REQUIRE(nearSpread > 0.25 * farSpread);
+    // The simulation consumes the low 32 bits and maps zero to one. Under the
+    // old `base + trajectory` derivation, adjacent bases share 511 of these
+    // 512 keys. Check key reuse directly instead of inferring it from the
+    // noisy difference between two small samples of batch means.
+    std::unordered_set<uint32_t> firstBatch;
+    std::unordered_set<uint32_t> secondBatch;
+    for (std::size_t trajectory = 0; trajectory < batchSize; ++trajectory) {
+        firstBatch.insert(engine::batchTrajectoryEngineSeed(baseSeed, trajectory));
+        secondBatch.insert(engine::batchTrajectoryEngineSeed(baseSeed + 1, trajectory));
+    }
+
+    std::size_t sharedSeeds = 0;
+    for (const auto seed : firstBatch) {
+        if (secondBatch.count(seed) != 0) ++sharedSeeds;
+    }
+
+    INFO("shared trajectory RNG keys " << sharedSeeds << " / " << batchSize);
+    REQUIRE(firstBatch.size() == batchSize);
+    REQUIRE(secondBatch.size() == batchSize);
+    REQUIRE(sharedSeeds == 0);
+}
+
+TEST_CASE("batch trajectory RNG keys preserve the 32-bit nonzero seed contract",
+          "[correctness][batch-ssa]") {
+    REQUIRE(engine::batchEngineSeed(0ULL) == 1u);
+    REQUIRE(engine::batchEngineSeed(0x0000000100000000ULL) == 1u);
+    REQUIRE(engine::batchEngineSeed(0x12345678ABCDEF01ULL) == 0xABCDEF01u);
+
+    const engine::BatchSsaOptions defaults;
+    REQUIRE(defaults.baseSeed == 42u);
+    REQUIRE(engine::batchTrajectoryEngineSeed(defaults.baseSeed, 0) == 0x2FEB6E95u);
+    REQUIRE(engine::batchTrajectoryEngineSeed(0, 0) == 0x7B1DCDAFu);
 }
 
 TEST_CASE("per-batch std dev still matches the analytic value", "[correctness][batch-ssa]") {
