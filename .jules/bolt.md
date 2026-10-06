@@ -1,0 +1,3 @@
+## 2024-05-24 - Deepcopy Bottleneck in Atomizer
+**Learning:** The Python codebase in `python/bionetgen/atomizer` suffers from massive O(N) performance penalties due to recursive `copy.deepcopy()` calls on `collections.Counter`, primitive lists, and custom `Species` objects. In benchmarking, deepcopy takes up to 10-15x longer than using explicit `.copy()`, `list()`, or dict comprehensions for these simple or custom-handled data structures.
+**Action:** Always replace `copy.deepcopy()` with `.copy()` for dictionaries, Counters, and custom objects that implement their own copy methods (like `Species.copy()`), and use explicit list comprehension or `list()` for list of strings/primitives to avoid the heavy CPython deepcopy overhead.
