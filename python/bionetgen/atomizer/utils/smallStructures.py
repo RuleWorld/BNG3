@@ -118,6 +118,9 @@ class Species:
     def copy(self):
         species = Species()
         species.identifier = randint(0, 1000000)
+        species.bondNumbers = list(self.bondNumbers)
+        species.bonds = list(self.bonds)
+        species.idx = self.idx
         for molecule in self.molecules:
             species.molecules.append(molecule.copy())
         return species
@@ -489,6 +492,8 @@ class Molecule:
 
     def copy(self):
         molecule = Molecule(self.name, self.idx)
+        molecule.compartment = self.compartment
+        molecule.uniqueIdentifier = getattr(self, "uniqueIdentifier", 0)
         for element in self.components:
             molecule.components.append(element.copy())
         return molecule
