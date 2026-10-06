@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "why": "The strict provenance gate (scripts/validate_provenance.py --require-approved) fails at every head to date. It was wired into no CI job, so it read as a passing gate to anyone who saw it in the tree. This ledger records the exact failure set so CI can enforce it: the gate now runs on every push, and the build fails if the failure set grows, shrinks, or changes shape. It cannot pass until a maintainer records the decisions listed in `blocked_on`.",
+  "how_this_is_enforced": "scripts/check_provenance_ratchet.py runs the strict gate, compares its error set to `errors` below, and fails on any difference in either direction. A growing list is new unrecorded provenance debt; a shrinking list means someone made a real decision and this ledger must be updated in the same change.",
+  "not_a_waiver": "Recording a blocker here does not assert its claim is true. Most entries are unapproved status transitions; the SBML Test Suite entry is an observed corpus pin whose role and acceptance still require a maintainer decision. The repository is honest about being unapproved; this ledger makes that state machine-checked instead of invisible.",
+  "invariants_that_must_hold": [
+    "The set below is the COMPLETE strict error set, not a subset. A new source, oracle, or dependency added to upstreams.lock.yml while unapproved MUST appear here or CI fails.",
+    "No entry may be deleted to make the gate green. Each requires a recorded human decision (see blocked_on), which is a provenance change to upstreams.lock.yml, not an edit to this file."
+  ],
+  "errors": [
+    "strict gate requires an approved baseline",
+    "strict gate requires sources.bng3.status=accepted",
+    "strict gate requires sources.bionetgen.status=accepted",
+    "strict gate requires sources.nfsim.status=accepted",
+    "strict gate requires sources.nfsim-rasi.status=accepted",
+    "strict gate requires sources.bngsim.status=accepted",
+    "strict gate requires sources.pybionetgen.status=accepted",
+    "strict gate requires sources.bngplayground.status=accepted",
+    "strict gate requires sources.sbml-test-suite.status=accepted",
+    "strict gate requires sources.rulehub.status=accepted",
+    "strict gate requires oracles.bng2.status=locked",
+    "strict gate requires oracles.nfsim.status=locked",
+    "strict gate requires compiler_images.status=locked",
+    "strict gate requires python_lock.status=locked"
+  ],
+  "blocked_on": [
+    {
+      "error": "strict gate requires an approved baseline",
+      "field": "provenance/upstreams.lock.yml baseline.status",
+      "current": "pending-maintainer-approval",
+      "blocked_on": "A maintainer must record the import cutoffs, oracle recipes, immutable build images, and ledger owners. provenance/README.md line 34 states this explicitly: 'Do not change the status to `approved` until those decisions are recorded.' Not an agent's call.",
+      "resolvable_by": "maintainer decision"
+    },
+    {
+      "error": "strict gate requires sources.bng3.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.bng3.status",
+      "current": "observed",
+      "blocked_on": "Dependent on the baseline approval above. The source row was refreshed from the live main head on 2026-10-03 to c345f3aa635aac0048681b79c6a4ff1e75a298f7; status remains observed until a maintainer approves the baseline.",
+      "resolvable_by": "maintainer decision + revision refresh"
+    },
+    {
+      "error": "strict gate requires sources.bionetgen.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.bionetgen.status",
+      "current": "observed",
+      "blocked_on": "Dependent on the baseline approval above. Remote-head evidence recorded 2026-09-23.",
+      "resolvable_by": "maintainer decision"
+    },
+    {
+      "error": "strict gate requires sources.nfsim.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.nfsim.status",
+      "current": "observed",
+      "blocked_on": "Dependent on the baseline approval above. Remote-head evidence recorded 2026-09-23.",
+      "resolvable_by": "maintainer decision"
+    },
+    {
+      "error": "strict gate requires sources.nfsim-rasi.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.nfsim-rasi.status",
+      "current": "observed",
+      "blocked_on": "Dependent on the baseline approval above. A local fork branch (perf/rasi-translation-optimization), so its fate is a maintainer call about whether it is an upstream at all.",
+      "resolvable_by": "maintainer decision"
+    },
+    {
+      "error": "strict gate requires sources.bngsim.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.bngsim.status",
+      "current": "observed",
+      "blocked_on": "Dependent on the baseline approval above. Named as the intended backend by ADR 0003, but that decision is recorded in a design doc, not here.",
+      "resolvable_by": "maintainer decision"
+    },
+    {
+      "error": "strict gate requires sources.pybionetgen.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.pybionetgen.status",
+      "current": "observed",
+      "blocked_on": "Dependent on the baseline approval above. Remote-head evidence recorded 2026-09-23.",
+      "resolvable_by": "maintainer decision"
+    },
+    {
+      "error": "strict gate requires sources.bngplayground.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.bngplayground.status",
+      "current": "observed",
+      "blocked_on": "Dependent on the baseline approval above. Evidence is a local checkout of a feature branch, not an upstream release.",
+      "resolvable_by": "maintainer decision"
+    },
+    {
+      "error": "strict gate requires sources.sbml-test-suite.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.sbml-test-suite.status",
+      "current": "observed",
+      "blocked_on": "This is the official validation corpus, not a semantic oracle. Its source revision is pinned, but maintainer approval of the corpus role and acceptance policy is pending. The latest complete report at SBML lane source 4189780e has official conformance false: 1,093 passed, 695 unsupported, 135 failed, and 0 timed out.",
+      "resolvable_by": "maintainer decision after reviewing corpus role and conformance results"
+    },
+    {
+      "error": "strict gate requires sources.rulehub.status=accepted",
+      "field": "provenance/upstreams.lock.yml sources.rulehub.status",
+      "current": "observed",
+      "blocked_on": "NOT reachable by approval alone. validate_provenance.py rejects `accepted` when evidence.kind is `planning-snapshot`, and this source is exactly that (checked_at 2026-08-28, the oldest evidence in the file). It needs a real re-check against the remote first. Verified: flipping baseline and all sources to accepted still fails on this line.",
+      "resolvable_by": "re-verify against remote, then maintainer decision"
+    },
+    {
+      "error": "strict gate requires oracles.bng2.status=locked",
+      "field": "provenance/upstreams.lock.yml oracles.bng2",
+      "current": "pending; build_recipe and sha256 artifact_digest recorded from a local build at the locked source revision",
+      "blocked_on": "A BNG2 Network3 executable was built from the locked source revision; its command and sha256 digest are recorded. The status remains pending until a maintainer approves the oracle recipe and artifact identity for acceptance.",
+      "resolvable_by": "build the oracle, record the digest"
+    },
+    {
+      "error": "strict gate requires oracles.nfsim.status=locked",
+      "field": "provenance/upstreams.lock.yml oracles.nfsim",
+      "current": "pending; build_recipe and sha256 artifact_digest recorded from a local build at the locked source revision",
+      "blocked_on": "An NFsim executable was built from the locked source revision; its command and sha256 digest are recorded. The status remains pending until a maintainer approves the oracle recipe and artifact identity for acceptance.",
+      "resolvable_by": "build the oracle, record the digest"
+    },
+    {
+      "error": "strict gate requires compiler_images.status=locked",
+      "field": "provenance/upstreams.lock.yml dependencies.compiler_images",
+      "current": "pending, images list absent",
+      "blocked_on": "Requires pinning the CI compiler images to immutable @sha256 digests. Note the lint job currently runs no container at all, so there is no image to pin until that changes.",
+      "resolvable_by": "pin images used by CI"
+    },
+    {
+      "error": "strict gate requires python_lock.status=locked",
+      "field": "provenance/upstreams.lock.yml dependencies.python_lock",
+      "current": "pending, path=null, digest=null",
+      "blocked_on": "Requires committing a Python lock file and recording its sha256. The lint job installs unpinned (`pip install black ruff pytest numpy`), so no lock file governs it today.",
+      "resolvable_by": "commit a lock file, record its digest"
+    }
+  ]
+}

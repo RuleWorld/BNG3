@@ -1,0 +1,550 @@
+[
+  {
+    "model_id": "isomerization",
+    "model_name": "Isomerization",
+    "path": "models/isomerization.bngl",
+    "num_species": 2,
+    "num_reactions": 2,
+    "t_end": 20.0,
+    "n_steps": 10,
+    "runs": [
+      {
+        "batch_size": 100,
+        "cpu_sw": {
+          "model_prep_ms": 0.353583,
+          "sim_time_ms": 0.696208,
+          "total_wall_ms": 1.051042,
+          "total_events": 13212,
+          "traj_per_sec_sim": 143635.23544687795,
+          "traj_per_sec_tot": 95143.67646583104,
+          "events_per_sec_sim": 18977087.307241514,
+          "events_per_sec_tot": 12570382.534665598,
+          "memory_bytes": 2560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 0.321208,
+          "sim_time_ms": 0.6865,
+          "total_wall_ms": 1.008417,
+          "total_events": 13127,
+          "traj_per_sec_sim": 145666.4238892935,
+          "traj_per_sec_tot": 99165.32545563989,
+          "events_per_sec_sim": 19121631.46394756,
+          "events_per_sec_tot": 13017432.272561848,
+          "memory_bytes": 2560
+        },
+        "gpu": {
+          "model_prep_ms": 6.288083,
+          "h2d_transfer_ms": 0.010291,
+          "sim_time_ms": 4.141167,
+          "d2h_transfer_ms": 0.009916,
+          "total_wall_ms": 4.162208,
+          "total_events": 13356,
+          "traj_per_sec_sim": 24147.7824970594,
+          "traj_per_sec_tot": 24025.709431148083,
+          "events_per_sec_sim": 3225177.8303072536,
+          "events_per_sec_tot": 3208873.751624138,
+          "memory_bytes": 14576
+        },
+        "speedup_vs_cpu_sw_sim": 0.16811879356712733,
+        "speedup_vs_cpu_mc_sim": 0.1657745268423128,
+        "speedup_vs_cpu_sw_tot": 0.2525202969193275,
+        "speedup_vs_cpu_mc_tot": 0.24227933827430057
+      },
+      {
+        "batch_size": 1000,
+        "cpu_sw": {
+          "model_prep_ms": 0.208542,
+          "sim_time_ms": 6.2865,
+          "total_wall_ms": 6.497167,
+          "total_events": 130817,
+          "traj_per_sec_sim": 159071.0252127575,
+          "traj_per_sec_tot": 153913.23633823788,
+          "events_per_sec_sim": 20809194.305257294,
+          "events_per_sec_tot": 20134467.838059265,
+          "memory_bytes": 20560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 0.226042,
+          "sim_time_ms": 3.060042,
+          "total_wall_ms": 3.289291,
+          "total_events": 131201,
+          "traj_per_sec_sim": 326792.9002281668,
+          "traj_per_sec_tot": 304016.88388166326,
+          "events_per_sec_sim": 42875555.30283571,
+          "events_per_sec_tot": 39887319.1821581,
+          "memory_bytes": 20560
+        },
+        "gpu": {
+          "model_prep_ms": 0.447792,
+          "h2d_transfer_ms": 0.019333,
+          "sim_time_ms": 1.927791,
+          "d2h_transfer_ms": 0.036167,
+          "total_wall_ms": 1.983917,
+          "total_events": 131917,
+          "traj_per_sec_sim": 518728.4306234441,
+          "traj_per_sec_tot": 504053.34497360524,
+          "events_per_sec_sim": 68429098.38255288,
+          "events_per_sec_tot": 66493205.10888308,
+          "memory_bytes": 144176
+        },
+        "speedup_vs_cpu_sw_sim": 3.260986279114282,
+        "speedup_vs_cpu_mc_sim": 1.5873307843018254,
+        "speedup_vs_cpu_sw_tot": 3.2749187592021243,
+        "speedup_vs_cpu_mc_tot": 1.657978131141575
+      },
+      {
+        "batch_size": 10000,
+        "cpu_sw": {
+          "model_prep_ms": 0.179916,
+          "sim_time_ms": 65.539583,
+          "total_wall_ms": 65.744125,
+          "total_events": 1307544,
+          "traj_per_sec_sim": 152579.5487591064,
+          "traj_per_sec_tot": 152104.84587025837,
+          "events_per_sec_sim": 19950447.3502677,
+          "events_per_sec_tot": 19888377.858858112,
+          "memory_bytes": 200560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 0.214,
+          "sim_time_ms": 11.110875,
+          "total_wall_ms": 11.348125,
+          "total_events": 1310047,
+          "traj_per_sec_sim": 900019.125406415,
+          "traj_per_sec_tot": 881202.8418791651,
+          "events_per_sec_sim": 117906735.51812977,
+          "events_per_sec_tot": 115441713.93952747,
+          "memory_bytes": 200560
+        },
+        "gpu": {
+          "model_prep_ms": 1.066792,
+          "h2d_transfer_ms": 0.030333,
+          "sim_time_ms": 2.094417,
+          "d2h_transfer_ms": 0.273791,
+          "total_wall_ms": 2.399375,
+          "total_events": 1310939,
+          "traj_per_sec_sim": 4774598.372721382,
+          "traj_per_sec_tot": 4167752.018754884,
+          "events_per_sec_sim": 625920721.6136997,
+          "events_per_sec_tot": 546366866.3714509,
+          "memory_bytes": 1440176
+        },
+        "speedup_vs_cpu_sw_sim": 31.292518634063796,
+        "speedup_vs_cpu_mc_sim": 5.3049965694510695,
+        "speedup_vs_cpu_sw_tot": 27.400520969002343,
+        "speedup_vs_cpu_mc_tot": 4.729617087783277
+      }
+    ]
+  },
+  {
+    "model_id": "gene_expr_simple",
+    "model_name": "Gene Expression",
+    "path": "models/gene_expr_simple.bngl",
+    "num_species": 2,
+    "num_reactions": 4,
+    "t_end": 500.0,
+    "n_steps": 10,
+    "runs": [
+      {
+        "batch_size": 100,
+        "cpu_sw": {
+          "model_prep_ms": 0.187125,
+          "sim_time_ms": 0.262917,
+          "total_wall_ms": 0.451334,
+          "total_events": 882,
+          "traj_per_sec_sim": 380348.17071547295,
+          "traj_per_sec_tot": 221565.40389157474,
+          "events_per_sec_sim": 3354670.8657104713,
+          "events_per_sec_tot": 1954206.8623236893,
+          "memory_bytes": 2160
+        },
+        "cpu_mc": {
+          "model_prep_ms": 0.158417,
+          "sim_time_ms": 0.314708,
+          "total_wall_ms": 0.4735,
+          "total_events": 662,
+          "traj_per_sec_sim": 317754.87118217524,
+          "traj_per_sec_tot": 211193.2418162619,
+          "events_per_sec_sim": 2103537.2472260003,
+          "events_per_sec_tot": 1398099.2608236538,
+          "memory_bytes": 2160
+        },
+        "gpu": {
+          "model_prep_ms": 0.573708,
+          "h2d_transfer_ms": 0.010041,
+          "sim_time_ms": 1.7975,
+          "d2h_transfer_ms": 0.007875,
+          "total_wall_ms": 1.816041,
+          "total_events": 814,
+          "traj_per_sec_sim": 55632.823365785815,
+          "traj_per_sec_tot": 55064.836091255645,
+          "events_per_sec_sim": 452851.1821974965,
+          "events_per_sec_tot": 448227.765782821,
+          "memory_bytes": 10204
+        },
+        "speedup_vs_cpu_sw_sim": 0.14626815020862308,
+        "speedup_vs_cpu_mc_sim": 0.1750809457579972,
+        "speedup_vs_cpu_sw_tot": 0.2485263273241078,
+        "speedup_vs_cpu_mc_tot": 0.2607319988920955
+      },
+      {
+        "batch_size": 1000,
+        "cpu_sw": {
+          "model_prep_ms": 0.28425,
+          "sim_time_ms": 1.995125,
+          "total_wall_ms": 2.283,
+          "total_events": 8591,
+          "traj_per_sec_sim": 501221.72796190716,
+          "traj_per_sec_tot": 438020.14892685064,
+          "events_per_sec_sim": 4305995.864920745,
+          "events_per_sec_tot": 3763031.099430574,
+          "memory_bytes": 16560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 0.172291,
+          "sim_time_ms": 0.809167,
+          "total_wall_ms": 0.982125,
+          "total_events": 9529,
+          "traj_per_sec_sim": 1235838.831786269,
+          "traj_per_sec_tot": 1018200.3309151076,
+          "events_per_sec_sim": 11776308.22809136,
+          "events_per_sec_tot": 9702430.95329006,
+          "memory_bytes": 16560
+        },
+        "gpu": {
+          "model_prep_ms": 0.531209,
+          "h2d_transfer_ms": 0.027042,
+          "sim_time_ms": 2.4965,
+          "d2h_transfer_ms": 0.026084,
+          "total_wall_ms": 2.550417,
+          "total_events": 7917,
+          "traj_per_sec_sim": 400560.7850991388,
+          "traj_per_sec_tot": 392092.74404930644,
+          "events_per_sec_sim": 3171239.7356298817,
+          "events_per_sec_tot": 3104198.254638359,
+          "memory_bytes": 100204
+        },
+        "speedup_vs_cpu_sw_sim": 0.7991688363709193,
+        "speedup_vs_cpu_mc_sim": 0.3241205687963148,
+        "speedup_vs_cpu_sw_tot": 0.8951477346645667,
+        "speedup_vs_cpu_mc_tot": 0.38508408624942514
+      },
+      {
+        "batch_size": 10000,
+        "cpu_sw": {
+          "model_prep_ms": 0.217084,
+          "sim_time_ms": 23.096791,
+          "total_wall_ms": 23.321167,
+          "total_events": 87561,
+          "traj_per_sec_sim": 432960.57880941126,
+          "traj_per_sec_tot": 428795.00841445883,
+          "events_per_sec_sim": 3791046.124113086,
+          "events_per_sec_tot": 3754571.9731778433,
+          "memory_bytes": 160560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 0.229167,
+          "sim_time_ms": 4.681875,
+          "total_wall_ms": 4.929292,
+          "total_events": 90974,
+          "traj_per_sec_sim": 2135896.4090241627,
+          "traj_per_sec_tot": 2028688.9070479088,
+          "events_per_sec_sim": 19431103.991456416,
+          "events_per_sec_tot": 18455794.462977644,
+          "memory_bytes": 160560
+        },
+        "gpu": {
+          "model_prep_ms": 0.340375,
+          "h2d_transfer_ms": 0.02725,
+          "sim_time_ms": 3.331,
+          "d2h_transfer_ms": 0.157125,
+          "total_wall_ms": 3.515959,
+          "total_events": 86498,
+          "traj_per_sec_sim": 3002101.471029721,
+          "traj_per_sec_tot": 2844174.2352513215,
+          "events_per_sec_sim": 25967577.30411288,
+          "events_per_sec_tot": 24601538.30007688,
+          "memory_bytes": 1000204
+        },
+        "speedup_vs_cpu_sw_sim": 6.933891023716601,
+        "speedup_vs_cpu_mc_sim": 1.4055463824677275,
+        "speedup_vs_cpu_sw_tot": 6.632946231739335,
+        "speedup_vs_cpu_mc_tot": 1.4019765304430456
+      }
+    ]
+  },
+  {
+    "model_id": "toy_jim",
+    "model_name": "Toy-Jim Signaling",
+    "path": "models/toy-jim.bngl",
+    "num_species": 25,
+    "num_reactions": 101,
+    "t_end": 50.0,
+    "n_steps": 10,
+    "runs": [
+      {
+        "batch_size": 100,
+        "cpu_sw": {
+          "model_prep_ms": 3.818583,
+          "sim_time_ms": 0.443042,
+          "total_wall_ms": 4.265292,
+          "total_events": 1013,
+          "traj_per_sec_sim": 225712.2349574081,
+          "traj_per_sec_tot": 23445.053703240017,
+          "events_per_sec_sim": 2286464.9401185443,
+          "events_per_sec_tot": 237498.39401382135,
+          "memory_bytes": 14160
+        },
+        "cpu_mc": {
+          "model_prep_ms": 4.19075,
+          "sim_time_ms": 0.548958,
+          "total_wall_ms": 4.741041,
+          "total_events": 986,
+          "traj_per_sec_sim": 182163.29846727801,
+          "traj_per_sec_tot": 21092.414092179337,
+          "events_per_sec_sim": 1796130.122887361,
+          "events_per_sec_tot": 207971.20294888824,
+          "memory_bytes": 14160
+        },
+        "gpu": {
+          "model_prep_ms": 0.340708,
+          "h2d_transfer_ms": 0.022958,
+          "sim_time_ms": 8.917834,
+          "d2h_transfer_ms": 0.023375,
+          "total_wall_ms": 8.964833,
+          "total_events": 1012,
+          "traj_per_sec_sim": 11213.485247650944,
+          "traj_per_sec_tot": 11154.697471776662,
+          "events_per_sec_sim": 113480.47070622756,
+          "events_per_sec_tot": 112885.53841437983,
+          "memory_bytes": 55060
+        },
+        "speedup_vs_cpu_sw_sim": 0.0496804493108977,
+        "speedup_vs_cpu_mc_sim": 0.06155732434579966,
+        "speedup_vs_cpu_sw_tot": 0.4757804188878922,
+        "speedup_vs_cpu_mc_tot": 0.528848780562895
+      },
+      {
+        "batch_size": 1000,
+        "cpu_sw": {
+          "model_prep_ms": 3.46,
+          "sim_time_ms": 4.967209,
+          "total_wall_ms": 8.454084,
+          "total_events": 9965,
+          "traj_per_sec_sim": 201320.29878348182,
+          "traj_per_sec_tot": 118286.02602008685,
+          "events_per_sec_sim": 2006156.7773773964,
+          "events_per_sec_tot": 1178720.2492901655,
+          "memory_bytes": 136560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 3.184458,
+          "sim_time_ms": 1.60075,
+          "total_wall_ms": 4.798833,
+          "total_events": 9847,
+          "traj_per_sec_sim": 624707.1685147587,
+          "traj_per_sec_tot": 208383.9966925292,
+          "events_per_sec_sim": 6151491.488364829,
+          "events_per_sec_tot": 2051957.2154313351,
+          "memory_bytes": 136560
+        },
+        "gpu": {
+          "model_prep_ms": 9.336708,
+          "h2d_transfer_ms": 0.026792,
+          "sim_time_ms": 5.567084,
+          "d2h_transfer_ms": 0.08725,
+          "total_wall_ms": 5.68425,
+          "total_events": 10148,
+          "traj_per_sec_sim": 179627.25189704337,
+          "traj_per_sec_tot": 175924.70422659104,
+          "events_per_sec_sim": 1822857.3522511963,
+          "events_per_sec_tot": 1785283.898491446,
+          "memory_bytes": 505060
+        },
+        "speedup_vs_cpu_sw_sim": 0.8922461022682611,
+        "speedup_vs_cpu_mc_sim": 0.28753832347419217,
+        "speedup_vs_cpu_sw_tot": 1.4872822272067556,
+        "speedup_vs_cpu_mc_tot": 0.8442332761578045
+      },
+      {
+        "batch_size": 10000,
+        "cpu_sw": {
+          "model_prep_ms": 3.228291,
+          "sim_time_ms": 46.252,
+          "total_wall_ms": 49.59525,
+          "total_events": 99529,
+          "traj_per_sec_sim": 216206.86673008735,
+          "traj_per_sec_tot": 201632.2127623109,
+          "events_per_sec_sim": 2151885.3238778864,
+          "events_per_sec_tot": 2006825.2504020042,
+          "memory_bytes": 1360560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 3.564375,
+          "sim_time_ms": 9.184584,
+          "total_wall_ms": 12.88325,
+          "total_events": 99653,
+          "traj_per_sec_sim": 1088780.9398879688,
+          "traj_per_sec_tot": 776201.657190538,
+          "events_per_sec_sim": 10850028.700265577,
+          "events_per_sec_tot": 7735082.374400869,
+          "memory_bytes": 1360560
+        },
+        "gpu": {
+          "model_prep_ms": 0.679208,
+          "h2d_transfer_ms": 0.029875,
+          "sim_time_ms": 5.805584,
+          "d2h_transfer_ms": 0.89375,
+          "total_wall_ms": 6.729834,
+          "total_events": 100369,
+          "traj_per_sec_sim": 1722479.59895163,
+          "traj_per_sec_tot": 1485920.752280071,
+          "events_per_sec_sim": 17288355.486717615,
+          "events_per_sec_tot": 14914037.998559844,
+          "memory_bytes": 5005060
+        },
+        "speedup_vs_cpu_sw_sim": 7.96681264107108,
+        "speedup_vs_cpu_mc_sim": 1.5820258564857557,
+        "speedup_vs_cpu_sw_tot": 7.369461118951819,
+        "speedup_vs_cpu_mc_tot": 1.9143488531812225
+      }
+    ]
+  },
+  {
+    "model_id": "egfr_net",
+    "model_name": "EGFR Net",
+    "path": "models/performance_test_models/egfr_net.bngl",
+    "num_species": 356,
+    "num_reactions": 3749,
+    "t_end": 0.02,
+    "n_steps": 10,
+    "runs": [
+      {
+        "batch_size": 100,
+        "cpu_sw": {
+          "model_prep_ms": 669.328625,
+          "sim_time_ms": 275.340958,
+          "total_wall_ms": 944.692375,
+          "total_events": 7081,
+          "traj_per_sec_sim": 363.18606837999016,
+          "traj_per_sec_tot": 105.85456456129437,
+          "events_per_sec_sim": 25717.2055019871,
+          "events_per_sec_tot": 7495.5617165852545,
+          "memory_bytes": 148160
+        },
+        "cpu_mc": {
+          "model_prep_ms": 582.017959,
+          "sim_time_ms": 10.688542,
+          "total_wall_ms": 592.72075,
+          "total_events": 6946,
+          "traj_per_sec_sim": 9355.812981789284,
+          "traj_per_sec_tot": 168.71351306665073,
+          "events_per_sec_sim": 649854.7697150836,
+          "events_per_sec_tot": 11718.84061760956,
+          "memory_bytes": 148160
+        },
+        "gpu": {
+          "model_prep_ms": 0.459875,
+          "h2d_transfer_ms": 0.021125,
+          "sim_time_ms": 83.603417,
+          "d2h_transfer_ms": 0.042917,
+          "total_wall_ms": 83.668292,
+          "total_events": 7047,
+          "traj_per_sec_sim": 1196.1233594076664,
+          "traj_per_sec_tot": 1195.1959052779519,
+          "events_per_sec_sim": 84290.81313745824,
+          "events_per_sec_tot": 84225.45544493727,
+          "memory_bytes": 368688
+        },
+        "speedup_vs_cpu_sw_sim": 3.293417516654852,
+        "speedup_vs_cpu_mc_sim": 0.12784814764209937,
+        "speedup_vs_cpu_sw_tot": 11.290924583473032,
+        "speedup_vs_cpu_mc_tot": 7.084174133732764
+      },
+      {
+        "batch_size": 1000,
+        "cpu_sw": {
+          "model_prep_ms": 147.478292,
+          "sim_time_ms": 1182.044291,
+          "total_wall_ms": 1329.645,
+          "total_events": 70412,
+          "traj_per_sec_sim": 845.9919882985163,
+          "traj_per_sec_tot": 752.0804425241324,
+          "events_per_sec_sim": 59567.98788007513,
+          "events_per_sec_tot": 52955.48811900921,
+          "memory_bytes": 1476560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 328.709917,
+          "sim_time_ms": 73.688333,
+          "total_wall_ms": 402.519042,
+          "total_events": 70151,
+          "traj_per_sec_sim": 13570.669321560037,
+          "traj_per_sec_tot": 2484.354516574647,
+          "events_per_sec_sim": 951996.0235767581,
+          "events_per_sec_tot": 174279.95369222807,
+          "memory_bytes": 1476560
+        },
+        "gpu": {
+          "model_prep_ms": 1.476875,
+          "h2d_transfer_ms": 0.023625,
+          "sim_time_ms": 85.800458,
+          "d2h_transfer_ms": 0.334333,
+          "total_wall_ms": 86.159208,
+          "total_events": 70828,
+          "traj_per_sec_sim": 11654.949440945873,
+          "traj_per_sec_tot": 11606.42052327129,
+          "events_per_sec_sim": 825496.7590033143,
+          "events_per_sec_tot": 822059.552822259,
+          "memory_bytes": 2168688
+        },
+        "speedup_vs_cpu_sw_sim": 13.776666448563711,
+        "speedup_vs_cpu_mc_sim": 0.8588337955025834,
+        "speedup_vs_cpu_sw_tot": 15.432419016665055,
+        "speedup_vs_cpu_mc_tot": 4.671805270076298
+      },
+      {
+        "batch_size": 10000,
+        "cpu_sw": {
+          "model_prep_ms": 109.647125,
+          "sim_time_ms": 4926.7005,
+          "total_wall_ms": 5038.069417,
+          "total_events": 703808,
+          "traj_per_sec_sim": 2029.756020281728,
+          "traj_per_sec_tot": 1984.887299539168,
+          "events_per_sec_sim": 142855.85251224425,
+          "events_per_sec_tot": 139697.95605140628,
+          "memory_bytes": 14760560
+        },
+        "cpu_mc": {
+          "model_prep_ms": 110.040709,
+          "sim_time_ms": 448.2965,
+          "total_wall_ms": 558.509666,
+          "total_events": 704429,
+          "traj_per_sec_sim": 22306.665343137858,
+          "traj_per_sec_tot": 17904.79307478986,
+          "events_per_sec_sim": 1571346.1961001258,
+          "events_per_sec_tot": 1261265.5480881147,
+          "memory_bytes": 14760560
+        },
+        "gpu": {
+          "model_prep_ms": 0.412917,
+          "h2d_transfer_ms": 0.025292,
+          "sim_time_ms": 120.793167,
+          "d2h_transfer_ms": 2.3565,
+          "total_wall_ms": 123.176,
+          "total_events": 704937,
+          "traj_per_sec_sim": 82786.139715999,
+          "traj_per_sec_tot": 81184.64635968045,
+          "events_per_sec_sim": 5835901.297297719,
+          "events_per_sec_tot": 5723006.1050854055,
+          "memory_bytes": 20168688
+        },
+        "speedup_vs_cpu_sw_sim": 40.78625159318821,
+        "speedup_vs_cpu_mc_sim": 3.711273668319335,
+        "speedup_vs_cpu_sw_tot": 40.90138839546665,
+        "speedup_vs_cpu_mc_tot": 4.534240972267325
+      }
+    ]
+  }
+]

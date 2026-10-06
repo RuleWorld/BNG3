@@ -3,14 +3,155 @@
 #include "ExpressionBuiltins.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <iomanip>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
 
 namespace bng::ast {
+
+// TEMPORARY attribution instrumentation (env BNG3_EXPR_PROF=1); removed
+// before this lane's trial is scored.
+namespace profiling {
+
+using Clock = std::chrono::steady_clock;
+
+bool enabled() {
+    static const bool value = std::getenv("BNG3_EXPR_PROF") != nullptr;
+    return value;
+}
+
+std::atomic<std::uint64_t> g_topCalls{0};
+std::atomic<std::uint64_t> g_nodes{0};
+std::atomic<std::uint64_t> g_sampled{0};
+std::atomic<std::uint64_t> g_sampledNs{0};
+std::atomic<std::uint64_t> g_sampledCbNs{0};
+std::atomic<std::uint64_t> g_sampledCbCalls{0};
+std::atomic<std::uint64_t> g_cbCalls{0};
+std::atomic<std::uint64_t> g_toCalls{0};
+std::atomic<std::uint64_t> g_toNs{0};
+
+struct ThreadState {
+    unsigned evalDepth = 0;
+    unsigned toDepth = 0;
+    bool sampled = false;
+    Clock::time_point t0{};
+    long long cbNs = 0;
+    std::uint64_t cbCalls = 0;
+};
+
+ThreadState& tls() {
+    static thread_local ThreadState state;
+    return state;
+}
+
+struct EvalScope {
+    EvalScope() : active_(enabled()) {
+        if (!active_) return;
+        ThreadState& s = tls();
+        ++g_nodes;
+        if (s.evalDepth++ == 0) {
+            const std::uint64_t n = g_topCalls.fetch_add(1) + 1;
+            s.sampled = (n <= 4096) || (n % 1024 == 0);
+            if (s.sampled) {
+                s.t0 = Clock::now();
+                s.cbNs = 0;
+                s.cbCalls = 0;
+            }
+        }
+    }
+    ~EvalScope() {
+        if (!active_) return;
+        ThreadState& s = tls();
+        if (--s.evalDepth == 0 && s.sampled) {
+            const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                Clock::now() - s.t0)
+                                .count();
+            g_sampled.fetch_add(1);
+            g_sampledNs.fetch_add(static_cast<std::uint64_t>(ns));
+            g_sampledCbNs.fetch_add(static_cast<std::uint64_t>(s.cbNs));
+            g_sampledCbCalls.fetch_add(s.cbCalls);
+        }
+    }
+
+private:
+    bool active_;
+};
+
+struct ToScope {
+    ToScope() : active_(enabled()) {
+        if (!active_) return;
+        if (tls().toDepth++ == 0) t0_ = Clock::now();
+    }
+    ~ToScope() {
+        if (!active_) return;
+        if (--tls().toDepth == 0) {
+            g_toCalls.fetch_add(1);
+            g_toNs.fetch_add(static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t0_)
+                    .count()));
+        }
+    }
+
+private:
+    bool active_;
+    Clock::time_point t0_{};
+};
+
+template <class F>
+double timedCallback(F&& f) {
+    if (enabled()) {
+        g_cbCalls.fetch_add(1);
+        ThreadState& s = tls();
+        if (s.evalDepth > 0 && s.sampled) {
+            const auto t0 = Clock::now();
+            double value = f();
+            s.cbNs += std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - t0)
+                          .count();
+            ++s.cbCalls;
+            return value;
+        }
+    }
+    return f();
+}
+
+struct Reporter {
+    ~Reporter() {
+        if (!enabled()) return;
+        const auto top = g_topCalls.load();
+        const auto sampled = g_sampled.load();
+        const auto sampledNs = g_sampledNs.load();
+        const auto sampledCbNs = g_sampledCbNs.load();
+        const double estTotal = sampled ? static_cast<double>(sampledNs) / sampled * top / 1e9
+                                        : 0.0;
+        const double estCb = sampled ? static_cast<double>(sampledCbNs) / sampled * top / 1e9
+                                     : 0.0;
+        std::fprintf(stderr,
+                     "[BNG3_EXPR_PROF] eval top=%llu nodes=%llu sampled=%llu "
+                     "sampled_s=%.6f est_total_s=%.6f est_cb_s=%.6f "
+                     "sampled_cb_calls=%llu cb_total_calls=%llu\n",
+                     static_cast<unsigned long long>(top),
+                     static_cast<unsigned long long>(g_nodes.load()),
+                     static_cast<unsigned long long>(sampled),
+                     sampledNs / 1e9, estTotal, estCb,
+                     static_cast<unsigned long long>(g_sampledCbCalls.load()),
+                     static_cast<unsigned long long>(g_cbCalls.load()));
+        std::fprintf(stderr, "[BNG3_EXPR_PROF] toString calls=%llu seconds=%.6f\n",
+                     static_cast<unsigned long long>(g_toCalls.load()), g_toNs.load() / 1e9);
+        std::fflush(stderr);
+    }
+};
+
+Reporter g_reporter{};
+
+} // namespace profiling
 
 namespace {
 

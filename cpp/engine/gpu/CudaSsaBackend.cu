@@ -1,17 +1,41 @@
 // NVIDIA CUDA backend for the batched direct-SSA kernel.
 //
-// One CUDA thread runs one trajectory. The kernel is a statement-for-statement
-// port of the Metal Shading Language reference kernel
+// One CUDA thread runs one trajectory. The kernel implements the same algorithm
+// as the Metal Shading Language reference kernel
 // (engine/gpu/MetalSsaBackend.mm): same PCG32 seeding and draw order, same
-// two-pass propensity accumulation, same output-time recording, so both
-// backends produce identical trajectories for a given seed.
+// two-pass propensity accumulation, same output-time recording.
 //
-// Differences from the Metal kernel, all performance-only:
+// The two backends are NOT bit-identical. The same claim appears in
+// MetalSsaBackend.mm and in docs/GPU_BATCH_SSA_EVALUATION.md, and nothing in
+// this repository has ever compared the two backends. Seeding and draw order
+// are integer-only and no compiler reassociates them, so trajectories provably
+// agree up to the first floating-point divergence. After that they may differ,
+// because:
+//   * nvcc and the Metal compiler contract floating-point multiply-adds
+//     independently. The propensity chain (prop *= eff), the prefix sum
+//     (cum += ...) and observable accumulation (sum += ...) are all mul-add
+//     shaped, and `cum` is order-sensitive, so one differing contraction can
+//     change which reaction is selected and diverge the trajectory from there.
+//   * -logf() lowers to nvcc's libdevice implementation while MSL's log() is a
+//     different library with its own last-ulp behaviour.
+// Everything here is float32, as it is in the Metal kernel, so results are
+// never bit-identical to the float64 CPU pool either.
+//
+// Differences from the Metal kernel:
 //   * the working population lives in the per-trajectory device slice rather
 //     than in a 64-entry register array, because CUDA cannot keep a
 //     dynamically indexed local array in registers;
 //   * buffers are allocated with cudaMalloc/cudaMemcpy instead of
-//     MTLResourceStorageModeShared, so device memory is not host-mapped.
+//     MTLResourceStorageModeShared, so device memory is not host-mapped;
+//   * buffer index arithmetic is widened to size_t. The Metal shader computes
+//     the same indices entirely in uint. The results agree until
+//     batchSize * numOutputPoints * numObservables reaches 2^32 — about a
+//     16 GiB observable buffer, past which Metal wraps and this does not.
+//     Neither backend validates that product.
+//   * resource lifetime: Metal uploads the static network arrays once in its
+//     constructor and reuses them, whereas this backend allocates and uploads
+//     all sixteen buffers inside every simulate() call. modelPrepTimeMs and
+//     totalWallTimeMs are therefore NOT comparable between the two backends.
 //
 // When no device is visible the backend reports itself unavailable and the
 // caller falls back to the CPU pool; it never approximates a result.
@@ -112,7 +136,7 @@ struct __align__(8) Pcg32 {
     unsigned long long state;
     unsigned long long inc;
 
-    void init(unsigned long long initstate, unsigned long long initseq) {
+    __host__ __device__ void init(unsigned long long initstate, unsigned long long initseq) {
         state = 0ULL;
         inc = (initseq << 1ULL) | 1ULL;
         step();
@@ -120,11 +144,11 @@ struct __align__(8) Pcg32 {
         step();
     }
 
-    void step() {
+    __host__ __device__ void step() {
         state = state * 6364136223846793005ULL + inc;
     }
 
-    unsigned int next_u32() {
+    __host__ __device__ unsigned int next_u32() {
         const unsigned long long oldstate = state;
         step();
         const unsigned long long xorshifted = ((oldstate >> 18u) ^ oldstate) >> 27u;
@@ -133,7 +157,7 @@ struct __align__(8) Pcg32 {
                (static_cast<unsigned int>(xorshifted) << ((0u - rot) & 31u));
     }
 
-    float next_float01() {
+    __host__ __device__ float next_float01() {
         const unsigned int v = next_u32();
         return (static_cast<float>(v >> 8) + 1.0f) / 16777218.0f;
     }

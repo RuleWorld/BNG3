@@ -34,7 +34,8 @@ def test_committed_selection_is_current_and_valid():
     assert generated.returncode == 0, generated.stderr
     validated = _run(VALIDATOR)
     assert validated.returncode == 0, validated.stderr
-    assert "100 model(s)" in validated.stdout
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    assert f"{len(manifest['records'])} model(s)" in validated.stdout
 
 
 def test_harness_tiers_are_read_from_manifest():

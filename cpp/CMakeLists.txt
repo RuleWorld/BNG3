@@ -222,6 +222,11 @@ if(NOT BNG3_ENABLE_CUDA STREQUAL "OFF")
                 "CUDA architectures for the batch-SSA kernel")
         endif()
         enable_language(CUDA)
+        # The .cu translation unit calls the CUDA runtime API (cudaMalloc /
+        # cudaFree / cudaMemcpy). Without an explicit link the final binaries
+        # fail with undefined references once the backend really compiles.
+        find_package(CUDAToolkit REQUIRED)
+        target_link_libraries(bng_engine PUBLIC CUDA::cudart)
         set_target_properties(bng_engine PROPERTIES CUDA_ARCHITECTURES
             "${CMAKE_CUDA_ARCHITECTURES}")
         list(APPEND BNG3_GPU_BACKEND_SOURCES engine/gpu/CudaSsaBackend.cu)

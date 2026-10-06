@@ -217,9 +217,17 @@ UllmannSGIso::next_node ( size_t d, List <Map> & maps )
     //if ( d == 4 ) print_M();
     
     while (  find_next_match( col_iter, possible_matches->end() )  )
-    {           
+    {
         // get match node_b first (before we screw with possible_matches set)
         Node *node_b = *col_iter;
+
+        // Where node_b sits in this row. copy_M restores the row to exactly the
+        // contents it had on entry to this level, so the slot is still valid
+        // after the restore and the iterator can be recovered by offset rather
+        // than by searching the restored row for node_b again.
+        size_t  node_b_index = col_iter - possible_matches->begin();
+        // true when this was the last candidate, i.e. the loop is about to exit
+        bool  last_candidate = ( node_b_index + 1 == possible_matches->size() );
     
         // delete possible matches, except for col_node
         //  NOTE: this will be restored later when we call copy_M
@@ -257,17 +265,15 @@ UllmannSGIso::next_node ( size_t d, List <Map> & maps )
             targets.pop_back();
             targets_mask[node_b->get_index()] = false;
         }
-
-        // advance column iterator        
-        // retrieve a pristine copy of M from storage
-        //refresh_M ( );
+        // Advance to the next candidate. Restoring M is only worth doing when
+        // there is another candidate to try: on the last one the caller
+        // overwrites M wholesale from its own snapshot before reading it again,
+        // so that restore is dead work.
+        if ( last_candidate )  break;
         copy_M( M_vec[d], M );
-        
-        // restore col_iter! NOTE that we don't need to restore possible matches since this
-        //  happens as a side-effect of copy_M
-        //col_iter = possible_matches->find( node_b );
-        col_iter = std::find( possible_matches->begin(), possible_matches->end(), node_b );
-        ++col_iter;
+
+        col_iter = possible_matches->begin() + node_b_index + 1;
+
     }
     
     //debug
@@ -313,6 +319,16 @@ UllmannSGIso::build_M0 ( )
     Node         *node_a, *node_b;
     size_t       in_deg_a, out_deg_a;
     col_iter_t   col_iter;
+
+    // Every candidate test opens with a NodeType comparison, and that
+    // comparison walks the type-name strings. Within one row the same target
+    // NodeType comes up again and again, and comparing a given NodeType object
+    // against this row's Node always yields the same verdict, so record the
+    // verdict the first time an object is seen and reuse it after that. The
+    // row is still filled in Gb iteration order, so the candidate lists this
+    // produces are identical to the uncached ones - only the repeated string
+    // comparisons go away.
+    std::vector < std::pair < const NodeType *, bool> >  type_verdict;
     
     // loop over nodes in G_alpha
     for ( node_iter_a = Ga.begin(); node_iter_a != Ga.end(); ++node_iter_a )
@@ -333,12 +349,33 @@ UllmannSGIso::build_M0 ( )
         }
            
         // loop over nodes in G_beta
+        type_verdict.clear();
         for ( node_iter_b = Gb.begin(); node_iter_b != Gb.end(); ++node_iter_b )
         {
-            node_b = *node_iter_b;      
-            // check degree 
-            if (  (in_deg_a <= node_b->in_degree())  &&  (out_deg_a <= node_b->out_degree())  &&  (*node_a == *node_b)  )
-                // add node_b as a possible match to node_a 
+            node_b = *node_iter_b;
+            // check degree - cheapest of the three tests, so it goes first
+            if (  !(in_deg_a <= node_b->in_degree())  ||  !(out_deg_a <= node_b->out_degree())  )
+                continue;
+
+            // see if the types match, reusing this row's earlier verdict for
+            //  this same type object where we have one
+            const NodeType * type_b = &node_b->get_type();
+            bool type_equal = false;
+            bool type_seen = false;
+            for ( std::vector < std::pair < const NodeType *, bool> >::iterator
+                    v = type_verdict.begin(); v != type_verdict.end(); ++v )
+            {
+                if ( v->first == type_b )  { type_equal = v->second;  type_seen = true;  break; }
+            }
+            if ( !type_seen )
+            {
+                type_equal = ( node_a->get_type() == *type_b );
+                type_verdict.push_back ( std::make_pair ( type_b, type_equal ) );
+            }
+            if ( !type_equal )  continue;
+
+            if (  *node_a == *node_b  )
+                // add node_b as a possible match to node_a
                 possible_match_nodes->push_back(node_b);
         }
     }

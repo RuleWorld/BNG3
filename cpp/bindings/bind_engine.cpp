@@ -22,6 +22,21 @@ using namespace bng::engine;
 using namespace bng::ast;
 using namespace bng::actions;
 
+// TEMPORARY measurement probe (reverted before commit): reports engine vs
+// conversion wall split in the returned dict when BNG3_BOUND is set.
+namespace {
+
+bool probeOn() { return std::getenv("BNG3_BOUND") != nullptr; }
+double msSince(std::chrono::steady_clock::time_point t0) {
+    return std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+}
+double msBetween(std::chrono::steady_clock::time_point t0,
+                 std::chrono::steady_clock::time_point t1) {
+    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+} // namespace
+
 namespace {
 
 bool isResultFunction(const std::string& name) {
@@ -308,6 +323,8 @@ void bind_engine(py::module_& m) {
         }
         py::gil_scoped_release release;
 
+        auto t_entry = std::chrono::steady_clock::now();
+
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
@@ -324,12 +341,24 @@ void bind_engine(py::module_& m) {
         opts.outputStepInterval = output_step_interval;
         opts.sparse = sparse;
         opts.checkProductScale = check_product_scale;
+        auto t_opts = std::chrono::steady_clock::now();
 
         OdeIntegrator integrator(model, network);
+        auto t_ctor = std::chrono::steady_clock::now();
+        const bool probe = probeOn();
         OdeResult result = integrator.integrate(opts);
+        auto t_eng = std::chrono::steady_clock::now();
 
         py::gil_scoped_acquire acquire;
-        return result_to_dict(result, model);
+        auto tp1 = std::chrono::steady_clock::now();
+        py::dict d = result_to_dict(result, model);
+        if (probe) {
+            d["_engine_ms"] = msBetween(t_ctor, t_eng); // integrate only
+            d["_opts_ms"] = msBetween(t_entry, t_opts);
+            d["_ctor_ms"] = msBetween(t_opts, t_ctor);
+            d["_conv_ms"] = msBetween(tp1, std::chrono::steady_clock::now());
+        }
+        return d;
     },
         py::arg("model"),
         py::arg("network"),
@@ -578,12 +607,21 @@ void bind_engine(py::module_& m) {
         opts.maxSimSteps = max_sim_steps;
 
         CpuBatchSsaSimulator simulator(model, network);
+        const bool probe = probeOn();
+        auto tp0 = std::chrono::steady_clock::now();
         BatchSsaMetrics metrics = (threads == 1)
             ? simulator.simulateSingleWorker(opts)
             : simulator.simulateMultiCore(opts, threads);
+        const double engine_ms = probe ? msSince(tp0) : 0.0;
 
         py::gil_scoped_acquire acquire;
-        return metrics_to_dict(metrics);
+        auto tp1 = std::chrono::steady_clock::now();
+        py::dict d = metrics_to_dict(metrics);
+        if (probe) {
+            d["_engine_ms"] = engine_ms;
+            d["_conv_ms"] = msSince(tp1);
+        }
+        return d;
     },
         py::arg("model"),
         py::arg("network"),

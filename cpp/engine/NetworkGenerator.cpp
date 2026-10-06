@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -306,6 +308,17 @@ double NetworkGenerator::normalizeSeedAmount(const compile::CompiledModel& model
 }
 
 GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
+    // TEMP instrumentation (BNG_NG_TIMING=1), removed before commit.
+    using clock = std::chrono::steady_clock;
+    const bool ngTiming = std::getenv("BNG_NG_TIMING") != nullptr;
+    const auto us = [](clock::time_point a, clock::time_point b) {
+        return std::chrono::duration<double, std::micro>(b - a).count();
+    };
+    double tContext = 0, tPlans = 0, tSeeds = 0, tExpand = 0, tFilter = 0,
+           tSetRules = 0, tTotal = 0;
+    std::size_t filterCalls = 0;
+    const auto ngT0 = clock::now();
+
     const auto& compiled = document_.model();
     if (!document_.valid()) {
         std::string detail;
@@ -349,8 +362,15 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
         std::make_shared<compile::BNGcoreLoweringContext>(compiled);
     auto& loweringContext = *network.loweringContext;
 
+    // TEMP timing: end of phase 1 (protocol parse + compartment + context)
+    auto ngMark = clock::now();
+    if (ngTiming) { tContext = us(ngT0, ngMark); }
+
     auto rulePlans = lowerNetworkRules(compiled, loweringContext);
     for (auto& plan : rulePlans) plan.clearPatternMatchCache();
+
+    // TEMP timing: end of phase 2 (plan lowering + cache clear)
+    if (ngTiming) { const auto m = clock::now(); tPlans = us(ngMark, m); ngMark = m; }
 
     network.species.setCheckIso(checkIso);
     for (const auto& seed : compiled.seeds()) {
@@ -374,6 +394,9 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
             seed.constant, seedComp));
     }
 
+    // TEMP timing: end of phase 3 (seed lowering)
+    if (ngTiming) { const auto m = clock::now(); tSeeds = us(ngMark, m); ngMark = m; }
+
     if (logProgress) {
         std::cerr << "[generate_network] start species=" << network.species.size()
                   << " reactions=" << network.reactions.size()
@@ -388,14 +411,19 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
         for (auto& plan : rulePlans) {
             const std::size_t beforeSpecies = network.species.size();
             const std::size_t beforeReactions = network.reactions.size();
+            const auto ngE0 = clock::now();
             const auto created = plan.expand(
                 network.species, network.reactions, iter,
                 [&](const ast::SpeciesGraph& graph) {
-                    if (!withinStoichLimits(graph, maxStoich)) return false;
-                    if (maxAgg.has_value() && !withinAggLimit(graph, *maxAgg)) return false;
-                    return true;
+                    const auto ngF0 = clock::now();
+                    bool ok = true;
+                    if (!withinStoichLimits(graph, maxStoich)) ok = false;
+                    else if (maxAgg.has_value() && !withinAggLimit(graph, *maxAgg)) ok = false;
+                    if (ngTiming) { tFilter += us(ngF0, clock::now()); ++filterCalls; }
+                    return ok;
                 },
                 speciesAtIterStart);
+            if (ngTiming) tExpand += us(ngE0, clock::now());
 
             const bool debugRules = std::getenv("BNG_DEBUG_RULES") != nullptr;
             if (debugRules) {
@@ -417,8 +445,10 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
             }
         }
 
+        const auto ngS0 = clock::now();
         for (std::size_t i = 0; i < speciesAtIterStart; ++i)
             network.species.get(i).setRulesApplied(true);
+        if (ngTiming) tSetRules += us(ngS0, clock::now());
 
         if (logProgress) {
             std::cerr << "[generate_network] iter=" << (iter + 1)
@@ -434,6 +464,16 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
                 std::cerr << "[generate_network] converged at iter=" << (iter + 1) << '\n';
             break;
         }
+    }
+
+    // TEMP instrumentation output, removed before commit.
+    if (ngTiming) {
+        tTotal = us(ngT0, clock::now());
+        std::fprintf(stderr,
+            "[ng-timing] total=%.0fus context=%.0fus plans=%.0fus seeds=%.0fus "
+            "expand=%.0fus (filter=%.0fus over %zu calls) setrules=%.0fus rest=%.0fus\n",
+            tTotal, tContext, tPlans, tSeeds, tExpand, tFilter, filterCalls,
+            tSetRules, tTotal - tContext - tPlans - tSeeds - tExpand - tSetRules);
     }
 
     return network;

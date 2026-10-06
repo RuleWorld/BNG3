@@ -2,8 +2,19 @@
 //
 // One compute thread runs one trajectory. The MSL kernel below is the
 // reference implementation of the algorithm: the CUDA backend ports it
-// statement for statement, including the PCG32 seeding and draw order, so both
-// accelerators produce identical trajectories for a given seed.
+// statement for statement, including the PCG32 seeding and draw order.
+//
+// The two accelerators do NOT produce identical trajectories for a given seed,
+// and that is a property of floating point rather than of either port. Both
+// toolchains contract fused multiply-adds independently, and reaction
+// selection accumulates `cum += propensity(r)` in reaction order, so a single
+// differing contraction changes which reaction fires and the trajectories
+// diverge from that point on. `logf` may also lower to a different library
+// than the shading-language `log`.
+//
+// What IS shared is the seeded state and the draw ORDER. Cross-backend
+// agreement is therefore a statistical question, validated against a
+// closed-form reference -- never a bit-identity comparison.
 
 #include "engine/gpu/GpuSsaBackend.hpp"
 
