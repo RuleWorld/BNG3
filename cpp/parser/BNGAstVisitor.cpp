@@ -6,7 +6,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <limits>
@@ -2060,13 +2063,46 @@ BNGSyntaxError::BNGSyntaxError(std::size_t errorCount, std::string sourceName)
       errorCount_(errorCount),
       sourceName_(std::move(sourceName)) {}
 
+// SCRATCH INSTRUMENTATION (parse-hot lane): stage timing, enabled only when
+// BNG3_PARSE_TIMING=1; removed from the final diff.
+namespace {
+struct StageTimer {
+    bool on;
+    std::chrono::steady_clock::time_point t0;
+    explicit StageTimer(bool enabled)
+        : on(enabled), t0(std::chrono::steady_clock::now()) {}
+    double lap(const char* name) {
+        if (!on) return 0.0;
+        const auto now = std::chrono::steady_clock::now();
+        const double ms =
+            std::chrono::duration<double, std::milli>(now - t0).count();
+        t0 = now;
+        std::fprintf(stderr, "BNG3_PARSE_TIMING %s %.3f ms\n", name, ms);
+        return ms;
+    }
+};
+bool timingEnabled() {
+    static const bool on = [] {
+        const char* v = std::getenv("BNG3_PARSE_TIMING");
+        return v != nullptr && v[0] == '1';
+    }();
+    return on;
+}
+} // namespace
+
 std::unique_ptr<ast::Model> parseModelSource(const std::string& sourceText,
                                              const std::string& sourceName) {
-    antlr4::ANTLRInputStream input(normalizeBNGLSource(sourceText));
+    StageTimer timer(timingEnabled());
+    const std::string normalized = normalizeBNGLSource(sourceText);
+    timer.lap("normalize");
+    antlr4::ANTLRInputStream input(normalized);
     BNGLexer lexer(&input);
     antlr4::CommonTokenStream tokens(&lexer);
+    if (timingEnabled()) tokens.fill();
+    timer.lap("antlr_lex_only");
     BNGParser parser(&tokens);
     auto* tree = parser.prog();
+    timer.lap("antlr_parse_only");
     if (parser.getNumberOfSyntaxErrors() != 0) {
         throw BNGSyntaxError(
             static_cast<std::size_t>(parser.getNumberOfSyntaxErrors()), sourceName);
@@ -2074,13 +2110,16 @@ std::unique_ptr<ast::Model> parseModelSource(const std::string& sourceText,
 
     BNGAstVisitor visitor;
     visitor.visit(tree);
+    timer.lap("visitor");
     // Post-visit lowering of the synthetic `begin barrier patterns` /
     // `driven_by()` metadata. Omitting it here is not a simplification: the
     // barrier stays in the rule list and the driving work never reaches the
     // model, with no diagnostic.
     visitor.finalizeThermodynamicMetadata();
     auto model = visitor.takeModel();
+    timer.lap("finalize");
     captureParameterComments(sourceText, *model);
+    timer.lap("param_comments");
     return model;
 }
 
