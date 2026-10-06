@@ -20,7 +20,6 @@ Metrics:
 
 import sys
 import json
-import time
 import platform
 
 sys.path.insert(0, "build/cpp")
