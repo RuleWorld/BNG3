@@ -101,11 +101,13 @@ def balanceTranslator(reactant, product, translator):
     newTranslator = {}
     for species in reactant:
         if species[0] in translator:
-            newTranslator[species[0]] = deepcopy(translator[species[0]])
+            # ⚡ Bolt: Use .copy() instead of deepcopy for Species to avoid general deepcopy overhead
+            newTranslator[species[0]] = translator[species[0]].copy()
             rMolecules.extend(newTranslator[species[0]].molecules)
     for species in product:
         if species[0] in translator:
-            newTranslator[species[0]] = deepcopy(translator[species[0]])
+            # ⚡ Bolt: Use .copy() instead of deepcopy for Species to avoid general deepcopy overhead
+            newTranslator[species[0]] = translator[species[0]].copy()
             pMolecules.extend(newTranslator[species[0]].molecules)
 
     for rMolecule in rMolecules:
