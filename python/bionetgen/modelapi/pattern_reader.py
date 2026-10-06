@@ -47,11 +47,17 @@ class BNGPatternReader:
         using the defined parsers
     """
 
+    _shared_parsers = None
+
     def __init__(self, pattern_str) -> None:
         self.logger = BNGLogger()
         self.pattern_str = pattern_str
-        self.parsers = BNGParsers()
-        self.define_parsers()
+        if BNGPatternReader._shared_parsers is None:
+            self.parsers = BNGParsers()
+            self.define_parsers()
+            BNGPatternReader._shared_parsers = self.parsers
+        else:
+            self.parsers = BNGPatternReader._shared_parsers
         self.pattern = self.make_pattern(self.pattern_str)
 
     def define_parsers(self):
@@ -67,10 +73,12 @@ class BNGPatternReader:
         self.parsers.base_name = pp.Word(pp.alphas, pp.alphanums + "_")
         # components have optional states and bonds
         self.parsers.state = pp.Combine(
-            pp.Word("~") + (self.parsers.base_name ^ pp.Word(pp.nums))
-        ) ^ pp.Word("~?")
+            pp.Literal("~") + (self.parsers.base_name | pp.Word(pp.nums))
+        ) | pp.Literal("~?")
         self.parsers.bond = pp.Combine(
-            (pp.Word("!") + pp.Word(pp.nums)) ^ (pp.Word("!?")) ^ (pp.Word("!+"))
+            (pp.Literal("!") + pp.Word(pp.nums))
+            | (pp.Literal("!?"))
+            | (pp.Literal("!+"))
         )
         self.parsers.component = (
             self.parsers.base_name
@@ -79,11 +87,11 @@ class BNGPatternReader:
         )
         component_parser = pp.Combine(self.parsers.component)
         # components are separated by commas
-        component_separator = pp.Word(",")
-        self.parsers.components_parser = pp.delimited_list(
+        component_separator = pp.Literal(",")
+        self.parsers.components_parser = pp.DelimitedList(
             component_parser, delim=component_separator
         )
-        self.parsers.combined_components_parser = pp.delimited_list(
+        self.parsers.combined_components_parser = pp.DelimitedList(
             component_parser, delim=component_separator, combine=True
         )
 
@@ -93,31 +101,38 @@ class BNGPatternReader:
         """
         # molecules can have tags
         self.parsers.tag = pp.Combine(
-            pp.Word("%") + (self.parsers.base_name ^ pp.Word(pp.nums))
+            pp.Literal("%") + (self.parsers.base_name | pp.Word(pp.nums))
         )
         # and compartments
-        self.parsers.compartment = pp.Combine(pp.Word("@") + self.parsers.base_name)
+        self.parsers.compartment = pp.Combine(pp.Literal("@") + self.parsers.base_name)
         # combine tag and compartment
-        tag_comp = (
-            pp.Optional(self.parsers.tag) + pp.Optional(self.parsers.compartment)
-        ) ^ (pp.Optional(self.parsers.compartment) + pp.Optional(self.parsers.tag))
+        tag_comp = pp.Optional(
+            pp.MatchFirst(
+                [
+                    self.parsers.tag + self.parsers.compartment,
+                    self.parsers.compartment + self.parsers.tag,
+                    self.parsers.tag,
+                    self.parsers.compartment,
+                ]
+            )
+        )
         # full molecule
         self.parsers.molecule = (
             self.parsers.base_name
             + tag_comp
-            + pp.Word("(")
+            + pp.Literal("(")
             + pp.Optional(self.parsers.combined_components_parser)
-            + pp.Word(")")
+            + pp.Literal(")")
             + tag_comp
         )
         molecule_parser = pp.Combine(self.parsers.molecule)
         # molecules
         # components are separated by commas
-        molecule_separator = pp.Word(".")
-        self.parsers.molecules_parser = pp.delimited_list(
+        molecule_separator = pp.Literal(".")
+        self.parsers.molecules_parser = pp.DelimitedList(
             molecule_parser, delim=molecule_separator
         )
-        self.parsers.combined_molecules_parser = pp.delimited_list(
+        self.parsers.combined_molecules_parser = pp.DelimitedList(
             molecule_parser, delim=molecule_separator, combine=True
         )
 
@@ -126,38 +141,40 @@ class BNGPatternReader:
         Defines specific parsers for overall BNG patterns
         """
         # a pattern can start with a tag or a compartment
-        mods = pp.Word("$") ^ pp.Word("{MatchOnce}")
+        mods = pp.Literal("$") | pp.Literal("{MatchOnce}")
         # zero molecule is a simple 0
-        zeroMolecule = pp.Word("0")
+        zeroMolecule = pp.Literal("0")
         # quantifier
         quantifier = pp.Combine(
             (
-                pp.Word("<")
-                ^ pp.Word("<=")
-                ^ pp.Word("==")
-                ^ pp.Word(">=")
-                ^ pp.Word(">")
+                pp.Literal("<=")
+                | pp.Literal("==")
+                | pp.Literal(">=")
+                | pp.Literal("<")
+                | pp.Literal(">")
             )
             + pp.Word(pp.nums)
         )
         # combine tag and compartment
-        tag = self.parsers.tag + (pp.Word(":") ^ pp.Word("::"))
-        comp = self.parsers.compartment + (pp.Word(":") ^ pp.Word("::"))
-        tag_comp_1 = (
-            self.parsers.tag + self.parsers.compartment + (pp.Word(":") ^ pp.Word("::"))
+        colon = pp.Literal("::") | pp.Literal(":")
+
+        tag_comp_pattern = pp.MatchFirst(
+            [
+                self.parsers.tag + self.parsers.compartment + colon,
+                self.parsers.compartment + self.parsers.tag + colon,
+                self.parsers.tag + colon,
+                self.parsers.compartment + colon,
+            ]
         )
-        tag_comp_2 = (
-            self.parsers.compartment + self.parsers.tag + (pp.Word(":") ^ pp.Word("::"))
-        )
-        tag_comp = tag ^ comp ^ tag_comp_1 ^ tag_comp_2
+
         pattern = (
-            pp.Optional(tag_comp)
+            pp.Optional(tag_comp_pattern)
             + pp.Optional(mods)
             + self.parsers.combined_molecules_parser
             + pp.Optional(quantifier)
         )
         # full pattern
-        self.parsers.pattern = pattern ^ zeroMolecule
+        self.parsers.pattern = pattern | zeroMolecule
 
     def make_pattern(self, pattern_str):
         """
