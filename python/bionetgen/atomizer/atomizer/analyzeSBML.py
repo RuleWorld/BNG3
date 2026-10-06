@@ -5,7 +5,6 @@ Created on Thu Mar 22 13:11:38 2012
 @author: proto
 """
 
-import enum
 from pyparsing import Word, Suppress, Optional, alphanums, Group, ZeroOrMore
 import numpy as np
 import json
@@ -19,7 +18,6 @@ import difflib
 from bionetgen.atomizer.utils.util import logMess
 from collections import defaultdict
 import itertools
-import math
 from collections import Counter
 import re
 import os
@@ -1520,8 +1518,8 @@ class SBMLAnalyzer:
         """
         flag = True
         if len(ruleList[1]) == 1 and ruleList[1] != "0":
-            differences = deepcopy(differenceParameter)
-            tmpRuleList = deepcopy(ruleList)
+            differences = copy.deepcopy(differenceParameter)
+            tmpRuleList = copy.deepcopy(ruleList)
 
             while flag:
                 flag = False
@@ -1872,7 +1870,7 @@ class SBMLAnalyzer:
         reactantFlat = Counter([y for x in reactantList for y in x])
         productFlat = Counter([y for x in productList for y in x])
         intersection = reactantFlat & productFlat
-        intersection2 = deepcopy(intersection)
+        intersection2 = copy.deepcopy(intersection)
         newReactant = []
         newProduct = []
         for chemical in reactantList:
@@ -2423,13 +2421,13 @@ class SBMLAnalyzer:
 
                 tmp2.addComponent(tmp3)
             stmp = st.Species()
-            stmp.addMolecule(deepcopy(tmp2))
+            stmp.addMolecule(tmp2.copy())
             stmp.reset()
             # in case one definition overlaps another
             if molecule[0] in dictionary:
-                dictionary[molecule[0]].extend(deepcopy(stmp))
+                dictionary[molecule[0]].extend(stmp.copy())
             else:
-                dictionary[molecule[0]] = deepcopy(stmp)
+                dictionary[molecule[0]] = stmp.copy()
             labelDictionary[molecule[0]] = [(molecule[0],)]
             label.append(molecule[0])
 
@@ -2438,9 +2436,9 @@ class SBMLAnalyzer:
             #        component.setActiveState(molecule[2][1])
             tmp.addMolecule(tmp2)
         if patternName in dictionary:
-            dictionary[patternName].extend(deepcopy(tmp))
+            dictionary[patternName].extend(tmp.copy())
         else:
-            dictionary[patternName] = deepcopy(tmp)
+            dictionary[patternName] = tmp.copy()
         labelDictionary[patternName] = [tuple(label)]
 
     def getUserDefinedComplexes(self):

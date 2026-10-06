@@ -468,7 +468,7 @@ class SCTSolver:
                 #if its not supposed to be a basic element
                 tmp = [x for x in namingEquivalence[1] if x not in namingEquivalence[2]]
                 tmp.extend([x for x in namingEquivalence[2] if x not in namingEquivalence[1]])
-                tmp2 = deepcopy(tmp)
+                tmp2 = tmp[:]
                 tmp2.reverse()
                 ##TODO: map back for the elements in namingEquivalence[2]
                 if tmp not in self.database.dependencyGraph[namingEquivalence[3][0]] \
@@ -991,7 +991,7 @@ class SCTSolver:
                 # way to make an educated guess. Politely refusing to translate
                 # {0}={1}.'.format(reactant, candidates))
                 return None, None, None
-            originalTmpCandidates = deepcopy(tmpCandidates)
+            originalTmpCandidates = copy.deepcopy(tmpCandidates)
             # if we have more than one modified element for a single reactant
             # we can try to  choose the one that is most similar to the original
             # reactant
@@ -1590,9 +1590,9 @@ class SCTSolver:
             )
             return [tmpCandidates[0]], unevenElements, originalCandidateName
 
-        prunnedDependencyGraph = deepcopy(dependencyGraph)
+        prunnedDependencyGraph = copy.deepcopy(dependencyGraph)
 
-        tempMergedDependencyGraph = deepcopy(prunnedDependencyGraph)
+        tempMergedDependencyGraph = copy.deepcopy(prunnedDependencyGraph)
         for element in self.database.alternativeDependencyGraph:
             if element in tempMergedDependencyGraph:
                 tempMergedDependencyGraph[element].extend(
@@ -1716,7 +1716,7 @@ class SCTSolver:
         if len(graph) == 0:
             return marshal.dumps(hashable_tuples)
         # So we don't modify original graph
-        tmpGraph = deepcopy(graph)
+        tmpGraph = copy.deepcopy(graph)
         # This turns the graph into a traditional graph implementation
         # where there are no edges that go to nodes that do not exist in the
         # graph, I'm making sure every node exists in the graph itself
