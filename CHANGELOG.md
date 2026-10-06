@@ -2,6 +2,68 @@
 
 ## [Unreleased] - 2026-09-15
 
+
+### Added
+
+- Added a GPU stochastic-simulation benchmark harness at
+  `benchmarks/gpu/` (`run_gpu_bench.py`, `selftest.py`, and the `gpu` package),
+  stdlib-only, intended as the common instrument for every accelerator lane.
+  It exists because GPU results in this project were previously unreadable: a
+  reported speedup carried no measured noise floor, so a real effect and a
+  contended host were indistinguishable on the page.
+
+  What it guarantees:
+
+  - **The A/A null is on by default.** Every run measures the instrument
+    against itself — the same arm in the same session under the same
+    order-alternation discipline — and prints the resulting band *before*
+    reporting any effect. An effect inside the band is reported as
+    indistinguishable, never as a win. `--no-null` suppresses it and the report
+    then says so on its face.
+  - **CPU time decides; wall clock never does alone.** Host CPU time is
+    contention-immune; wall clock on a shared host is not. Both are recorded,
+    and the divergence between them is itself checked, because the two can
+    disagree in *direction* for an accelerator that offloads work: a device
+    consumes little host CPU while still consuming elapsed time. When they
+    disagree, no single speedup number is licensed and both costs must be
+    reported separately.
+  - **Raw per-round paired deltas with alternating arm order**, and a median
+    aggregate. No min-of-K anywhere: that estimator was measured reaching
+    +10.5% on identical code.
+  - **Accelerator arms carry their own evidence.** An arm refuses to measure
+    unless the engine reports a usable device, unless requesting an unusable
+    backend demonstrably raises (a `TypeError` from the argument list does not
+    count as evidence), and unless the backend the engine reports matches the
+    one requested. A silent substitution of a host run wearing a device label
+    is structurally excluded; `--verify-no-fallback` exits non-zero if it is
+    not.
+  - **Equivalence is statistical, and is labelled as such.** Device and host
+    trajectories use different random streams and, on hardware without a
+    double-precision path, different arithmetic, so bit-identity is not a
+    target that could be met. Three independent distributional tests run (a
+    per-observable mean z-test with a Bonferroni threshold scaled by the number
+    of cells, two-sample Kolmogorov-Smirnov, and a moment comparison), and the
+    report states how much agreement the sample size can actually resolve.
+  - **Controllable model shapes.** `benchmarks/gpu/models.py` generates
+    synthetic networks of an exact reaction count and calibrates their event
+    density by running a probe batch and reporting the density *achieved*
+    rather than the one requested, so an accelerator can be measured at a
+    chosen point on the (reactions x events) plane instead of against the two
+    tiny shipped fixtures.
+  - **Import provenance is checked.** An editable install can place a
+    meta-path finder that redirects project imports to a different checkout
+    while producing entirely plausible numbers; the loader neutralises such
+    finders before importing and reports which ones it removed alongside the
+    resolved module path.
+
+  `benchmarks/gpu/selftest.py` verifies the harness itself (64 checks): that
+  the null band catches a planted null, detects a planted effect, and refuses
+  to call a real-but-in-the-noise effect a result; that a time ratio is never
+  labelled with an inverted direction; that the device and precision guards
+  reject what they are supposed to reject.
+
+  No production source and no runtime dependency was changed.
+
 ### In progress
 
 - Added an experimental nonequilibrium energy layer: `begin barrier patterns`
