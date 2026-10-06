@@ -49,6 +49,9 @@ from .types import (
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
 _MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
 _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
+_CONSTANT_BODY_SEARCH_PATTERN = re.compile(r"_c_|_amt|\btime\s*\(")
+_CONSTANT_BODY_FUNC_CALL_PATTERN = re.compile(r"\b([A-Za-z_]\w*)\s*\(\s*\)")
+_CONSTANT_BODY_VAR_REF_PATTERN = re.compile(r"\b([A-Za-z_]\w*)\b(?!\s*\()")
 
 # Function identifiers and formal arguments have a narrower reserved-word
 # contract than general SBML/BNGL names.  Keep this aligned with the
@@ -3289,27 +3292,32 @@ def _inline_constant_function_calls(
     parameter_names = set(parameter_names)
     constant_values: Dict[str, str] = {}
 
+    # ⚡ Bolt: Cache compiled regexes for inline_known to avoid repeated compilation overhead in loop
+    _inline_regex_cache: Dict[str, re.Pattern] = {}
+
     def inline_known(body: str) -> str:
         result = body
+        if not constant_values:
+            return result
         for _ in range(8):
             changed = False
             for name, value in constant_values.items():
-                result, count = re.subn(
-                    rf"\b{re.escape(name)}\(\)", f"({value})", result
-                )
+                if name not in _inline_regex_cache:
+                    _inline_regex_cache[name] = re.compile(rf"\b{re.escape(name)}\(\)")
+                result, count = _inline_regex_cache[name].subn(f"({value})", result)
                 changed = changed or count > 0
             if not changed:
                 break
         return result
 
     def constant_body(body: str) -> Optional[str]:
-        if re.search(r"_c_|_amt|\btime\s*\(", body):
+        if _CONSTANT_BODY_SEARCH_PATTERN.search(body):
             return None
         result = inline_known(body)
-        for match in re.finditer(r"\b([A-Za-z_]\w*)\s*\(\s*\)", result):
+        for match in _CONSTANT_BODY_FUNC_CALL_PATTERN.finditer(result):
             if match.group(1) not in math_names:
                 return None
-        for match in re.finditer(r"\b([A-Za-z_]\w*)\b(?!\s*\()", result):
+        for match in _CONSTANT_BODY_VAR_REF_PATTERN.finditer(result):
             name = match.group(1)
             if name not in math_names and name not in parameter_names:
                 return None
