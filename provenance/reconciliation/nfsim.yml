@@ -11,9 +11,14 @@
       "capability": "Repair NFsim absolute-start-time, time-function, observable propensity refresh, and unsupported-rate/flag regressions",
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/; tests/python/test_cpp_backend.py",
-      "tests": [],
+      "tests": [
+        "tests/python/test_cpp_backend.py::TestSimulation::test_nf_simulation_honors_absolute_start_time",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unsupported_continue",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unhandled_controls",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_separates_complex_bookkeeping_from_ring_blocking"
+      ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "BNG3 already carries corresponding native NFsim behavior: absolute start times and generic time dependencies, observable-dependent propensity refresh, explicit TotalRate rejection for unsupported rate families, and distinct complex tracking versus binding-guard flags."
+      "rationale": "The listed tests directly cover absolute start time plus time(), unsupported controls, and the distinct complex-bookkeeping/binding-guard flags. No dedicated regression for observable-dependent propensity refresh is mapped yet; this partial set does not establish that behavior. Maintainer review remains pending."
     },
     {
       "source_revision": "74e78d75b35fc7249ceabca497e39d3d81389d66",

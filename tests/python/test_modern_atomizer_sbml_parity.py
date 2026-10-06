@@ -4821,7 +4821,14 @@ def test_quadratic_delayed_event_group_supports_species_difference_trigger(tmp_p
     assert result.success, result.error
     assert "Events NOT simulated" not in result.bngl
     model_path = tmp_path / "quadratic_species_difference_multi_delay.bngl"
-    model_path.write_text(result.bngl, encoding="utf-8")
+    # Action defaults match BNG2 at 1e-8 absolute tolerance. This small-state
+    # RoadRunner comparison needs its own strict solver settings to measure
+    # event semantics rather than the chosen action default.
+    strict_bngl = result.bngl.replace(
+        'method=>"ode"', 'method=>"ode", rtol=>1e-9, atol=>1e-12'
+    )
+    assert strict_bngl != result.bngl
+    model_path.write_text(strict_bngl, encoding="utf-8")
     load(model_path).execute()
     lines = model_path.with_suffix(".gdat").read_text().splitlines()
     columns = lines[0].lstrip("# ").split()
