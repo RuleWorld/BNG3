@@ -1,0 +1,4 @@
+
+## 2024-05-18 - Replacing deepcopy with custom copy() requires checking class methods
+**Learning:** Python's `copy.deepcopy()` is incredibly slow, especially inside loops doing dictionary processing. However, blindly replacing `deepcopy()` with `.copy()` on custom classes (like `Molecule` or `Species` objects) can introduce bugs if their internal `.copy()` implementation performs shallow copies of mutable fields (like `.molecules`), leaking references across instances. `ruff check --fix` can also remove `unused` imports required inside compatibility `try-except` blocks.
+**Action:** When replacing deepcopy with a faster alternative on standard dictionary collections, prefer dictionary comprehensions coupled with instance level `.copy()` on standard library types (like `Counter`), e.g. `{k: v.copy() for k, v in counter_dict.items()}`. Always meticulously check the `diff` produced by `ruff check --fix`.
