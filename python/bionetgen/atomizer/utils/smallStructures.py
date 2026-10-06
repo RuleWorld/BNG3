@@ -488,7 +488,12 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        molecule = shallow_copy(self)
+        molecule = Molecule.__new__(Molecule)
+        molecule.name = self.name
+        molecule.idx = self.idx
+        molecule.compartment = self.compartment
+        molecule.uniqueIdentifier = self.uniqueIdentifier
+        molecule.trueName = getattr(self, "trueName", "")
         molecule.components = [element.copy() for element in self.components]
         return molecule
 

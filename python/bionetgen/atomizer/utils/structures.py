@@ -262,7 +262,11 @@ class Molecule:
         self.hash = hashlib.sha1(a).digest()
 
     def copy(self):
-        molecule = shallow_copy(self)
+        molecule = Molecule.__new__(Molecule)
+        molecule.name = self.name
+        molecule.compartment = self.compartment
+        molecule.trueName = self.trueName
+        molecule.hash = getattr(self, "hash", None)
         molecule.components = [element.copy() for element in self.components]
         return molecule
 

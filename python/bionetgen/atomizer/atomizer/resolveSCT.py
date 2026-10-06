@@ -87,7 +87,9 @@ class SCTSolver:
 
         # let's store each step separately for analysis downstream
         self.database.scts = {}
-        self.database.scts["01_binding_sct"] = deepcopy(self.database.dependencyGraph)
+        self.database.scts["01_binding_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # lexical dependency graph contains lexically induced binding compositions. atomizer gives preference to binding obtained this way as opposed to stoichiometry
         # stronger bounds on stoichiometry based binding can be defined in
@@ -145,9 +147,9 @@ class SCTSolver:
                     self.database.dependencyGraph[molecule] = []
 
         # let's store each step separately for analysis downstream
-        self.database.scts["02_post_lexical_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["02_post_lexical_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # user defined transformations
         for key in userEquivalenceTranslator:
@@ -161,7 +163,9 @@ class SCTSolver:
                 )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["03_post_user_sct"] = deepcopy(self.database.dependencyGraph)
+        self.database.scts["03_post_user_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # self.database.eequivalence translator contains 1:1 equivalences
         # FIXME: do we need this update step or is it enough with the later one?
@@ -218,9 +222,9 @@ class SCTSolver:
                     ] = []
 
         # let's store each step separately for analysis downstream
-        self.database.scts["04_post_label_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["04_post_label_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # add species elements defined by the user into the naming convention
         # definition
@@ -344,9 +348,9 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["05_post_lex_catalysis_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["05_post_lex_catalysis_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # non lexical-analysis catalysis reactions
         if self.database.forceModificationFlag:
@@ -438,9 +442,9 @@ class SCTSolver:
                         self.database.dependencyGraph[mod] = [[base]]
 
         # let's store each step separately for analysis downstream
-        self.database.scts["06_post_nonlex_catalysis_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["06_post_nonlex_catalysis_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         """
         #complex catalysis reactions
@@ -449,7 +453,7 @@ class SCTSolver:
             #they are not true bindingReactions
             for namingEquivalence in indirectEquivalenceTranslator[key]:
                 removedElement = ''
-                tmp3 = deepcopy(namingEquivalence[1])
+                tmp3 = list(namingEquivalence[1])
                 if tmp3 in self.database.dependencyGraph[namingEquivalence[0][0]]:
                     removedElement = namingEquivalence[0][0]
                 elif tmp3 in self.database.dependencyGraph[namingEquivalence[0][1]]:
@@ -513,9 +517,9 @@ class SCTSolver:
                 ]
 
         # let's store each step separately for analysis downstream
-        self.database.scts["07_post_similarity_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["07_post_similarity_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # Now let's go for annotation analysis and last resort stuff on the remaining orphaned molecules
         orphanedSpecies = [
@@ -567,9 +571,9 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["08_post_annotation_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["08_post_annotation_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # can we now add information to the non orphaned species? maybe annotation tells me stuff that contradicts the reaction-network
         nonOrphanedSpecies = [x for x in strippedMolecules if x not in orphanedSpecies]
@@ -631,9 +635,9 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["09_post_tiebreaker_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["09_post_tiebreaker_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         orphanedSpecies = [
             x
@@ -667,9 +671,9 @@ class SCTSolver:
                     ),
                 )
         # let's store each step separately for analysis downstream
-        self.database.scts["10_post_greedy_lex_sct"] = deepcopy(
-            self.database.dependencyGraph
-        )
+        self.database.scts["10_post_greedy_lex_sct"] = {
+            k: list(v) for k, v in self.database.dependencyGraph.items()
+        }
 
         # for key in self.database.scts:
         #     print(key)
@@ -991,7 +995,7 @@ class SCTSolver:
                 # way to make an educated guess. Politely refusing to translate
                 # {0}={1}.'.format(reactant, candidates))
                 return None, None, None
-            originalTmpCandidates = deepcopy(tmpCandidates)
+            originalTmpCandidates = [list(c) for c in tmpCandidates]
             # if we have more than one modified element for a single reactant
             # we can try to  choose the one that is most similar to the original
             # reactant
@@ -1590,9 +1594,11 @@ class SCTSolver:
             )
             return [tmpCandidates[0]], unevenElements, originalCandidateName
 
-        prunnedDependencyGraph = deepcopy(dependencyGraph)
+        prunnedDependencyGraph = {k: list(v) for k, v in dependencyGraph.items()}
 
-        tempMergedDependencyGraph = deepcopy(prunnedDependencyGraph)
+        tempMergedDependencyGraph = {
+            k: list(v) for k, v in prunnedDependencyGraph.items()
+        }
         for element in self.database.alternativeDependencyGraph:
             if element in tempMergedDependencyGraph:
                 tempMergedDependencyGraph[element].extend(
@@ -1716,7 +1722,7 @@ class SCTSolver:
         if len(graph) == 0:
             return marshal.dumps(hashable_tuples)
         # So we don't modify original graph
-        tmpGraph = deepcopy(graph)
+        tmpGraph = {k: list(v) for k, v in graph.items()}
         # This turns the graph into a traditional graph implementation
         # where there are no edges that go to nodes that do not exist in the
         # graph, I'm making sure every node exists in the graph itself

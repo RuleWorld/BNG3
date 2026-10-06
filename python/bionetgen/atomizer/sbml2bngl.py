@@ -1470,8 +1470,8 @@ class SBML2BNGL:
         for example if there are 3 A(b)'s and one binds, we will have 2 A(b)'s
         in the product  
         """
-        rcomponentTemp = deepcopy(rcomponent)
-        pcomponentTemp = deepcopy(pcomponent)
+        rcomponentTemp = {k: Counter(v) for k, v in rcomponent.items()}
+        pcomponentTemp = {k: Counter(v) for k, v in pcomponent.items()}
 
         # calculate actual symmetry factors
         for key in rcomponent:
