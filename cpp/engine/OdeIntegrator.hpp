@@ -176,6 +176,9 @@ private:
     double computePropensity(const CompiledReaction& rxn,
                              const std::vector<double>& y,
                              double rateCoefficient) const;
+    double computePropensity(const CompiledReaction& rxn,
+                             const double* y,
+                             double rateCoefficient) const;
 };
 
 } // namespace bng::engine
