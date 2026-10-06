@@ -275,7 +275,12 @@ def ks_two_sample(
     b = sorted(float(x) for x in sample_b)
     na, nb = len(a), len(b)
     if na == 0 or nb == 0:
-        return {"statistic": float("nan"), "p_value": float("nan"), "n_a": na, "n_b": nb}
+        return {
+            "statistic": float("nan"),
+            "p_value": float("nan"),
+            "n_a": na,
+            "n_b": nb,
+        }
 
     i = j = 0
     fa = fb = 0.0
@@ -341,9 +346,7 @@ def moment_test(
         "mean_z": z,
         "passes": abs(z) <= 3.0,
         "shape_flag": (
-            None
-            if not (va > 0)
-            else abs(math.log(var_ratio)) > math.log(1.5)
+            None if not (va > 0) else abs(math.log(var_ratio)) > math.log(1.5)
         ),
     }
 
@@ -377,7 +380,9 @@ def compare_runs(
     means_b = result_b.get("observable_means")
     std_a = result_a.get("observable_stds")
     std_b = result_b.get("observable_stds")
-    names = list(result_b.get("observable_names") or result_a.get("observable_names") or [])
+    names = list(
+        result_b.get("observable_names") or result_a.get("observable_names") or []
+    )
     n_a = int(result_a.get("batch_size", 0))
     n_b = int(result_b.get("batch_size", 0))
 
@@ -466,7 +471,9 @@ def compare_runs(
     )
 
 
-def binomial_chi_square(observed: Sequence[int], n: int, p: float, bins: int = 10) -> dict[str, Any]:
+def binomial_chi_square(
+    observed: Sequence[int], n: int, p: float, bins: int = 10
+) -> dict[str, Any]:
     """Chi-square goodness-of-fit against a binomial, for analytic references.
 
     A closed-form reference is a genuinely independent check, but only when the
@@ -479,11 +486,14 @@ def binomial_chi_square(observed: Sequence[int], n: int, p: float, bins: int = 1
     """
     total = sum(observed)
     if total == 0 or n <= 0:
-        return {"statistic": float("nan"), "dof": 0, "valid": False,
-                "reason": "no observations"}
+        return {
+            "statistic": float("nan"),
+            "dof": 0,
+            "valid": False,
+            "reason": "no observations",
+        }
 
-    probs = [math.comb(n, k) * (p ** k) * ((1.0 - p) ** (n - k))
-             for k in range(n + 1)]
+    probs = [math.comb(n, k) * (p**k) * ((1.0 - p) ** (n - k)) for k in range(n + 1)]
     edges = [0] + [int(round(i * (n + 1) / bins)) for i in range(1, bins)]
     edges[-1] = n + 1
     chi = 0.0
@@ -491,8 +501,8 @@ def binomial_chi_square(observed: Sequence[int], n: int, p: float, bins: int = 1
     dof = 0
     detail = []
     for lo, hi in zip(edges[:-1], edges[1:]):
-        obs = sum(observed[lo:min(hi, n + 1)])
-        exp = total * sum(probs[lo:min(hi, n + 1)])
+        obs = sum(observed[lo : min(hi, n + 1)])
+        exp = total * sum(probs[lo : min(hi, n + 1)])
         detail.append({"bin": [lo, hi - 1], "observed": obs, "expected": exp})
         if exp < 5.0:
             sparse += 1

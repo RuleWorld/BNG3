@@ -59,9 +59,7 @@ sys.meta_path[:] = [
 
 def run_child(ext_dir: Path, reps: int, root: Path, timeout: float = 600.0) -> dict:
     """Run one measurement child against the extension in `ext_dir`."""
-    code = (
-        _BOOTSTRAP
-        + f"""
+    code = _BOOTSTRAP + f"""
 import hashlib, json, sys, time
 sys.path.insert(0, {str(ext_dir)!r})
 sys.path.insert(0, {str(root / "python")!r})
@@ -103,7 +101,6 @@ for rel in INPUTS:
 out["ext"] = cpp.__file__
 print(json.dumps(out))
 """
-    )
     proc = subprocess.run(
         [sys.executable, "-c", code, str(root), str(reps)],
         capture_output=True,

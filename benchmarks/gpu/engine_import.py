@@ -32,8 +32,10 @@ class ResolvedEngine:
     def describe(self) -> str:
         text = f"{self.module.__name__} from {self.path} (via {self.source})"
         if self.neutralised_finders:
-            text += (f" [neutralised import redirectors: "
-                     f"{', '.join(self.neutralised_finders)}]")
+            text += (
+                f" [neutralised import redirectors: "
+                f"{', '.join(self.neutralised_finders)}]"
+            )
         return text
 
 
@@ -60,6 +62,7 @@ def repo_root(start: str | None = None) -> str:
             return os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         here = parent
 
+
 #: Substrings identifying meta-path finders installed by editable/scikit-build
 #: packaging that resolve project imports to an installed checkout rather than
 #: to the tree on disk. Matched case-insensitively against the finder class name.
@@ -76,8 +79,11 @@ def editable_finders() -> list[str]:
     failure mode in this module precisely because nothing announces it, so the
     finders are detected, named, and reported beside the resolved module path.
     """
-    return [name for name in (type(f).__name__ for f in sys.meta_path)
-            if any(t in name.lower() for t in _REDIRECTOR_TOKENS)]
+    return [
+        name
+        for name in (type(f).__name__ for f in sys.meta_path)
+        if any(t in name.lower() for t in _REDIRECTOR_TOKENS)
+    ]
 
 
 def neutralise_editable_finders() -> list[str]:
@@ -91,12 +97,8 @@ def neutralise_editable_finders() -> list[str]:
     """
     removed = editable_finders()
     if removed:
-        sys.meta_path[:] = [
-            f for f in sys.meta_path
-            if type(f).__name__ not in removed
-        ]
+        sys.meta_path[:] = [f for f in sys.meta_path if type(f).__name__ not in removed]
     return removed
-
 
 
 def load_engine(explicit: str | None = None, refresh: bool = False) -> ResolvedEngine:
@@ -173,7 +175,8 @@ def load_engine(explicit: str | None = None, refresh: bool = False) -> ResolvedE
         ) from exc
 
     out = record(
-        module, getattr(module, "__file__", "bionetgen._bionetgen_cpp"),
+        module,
+        getattr(module, "__file__", "bionetgen._bionetgen_cpp"),
         "python package",
     )
     _cache = out
@@ -210,7 +213,9 @@ def backend_inventory(cpp: Any) -> list[dict[str, Any]]:
     return [dict(entry) for entry in cpp.gpu_backends()]
 
 
-def usable_backend(cpp: Any, requested: str = "auto") -> tuple[str, list[dict[str, Any]]]:
+def usable_backend(
+    cpp: Any, requested: str = "auto"
+) -> tuple[str, list[dict[str, Any]]]:
     """Resolve which backend a run would actually use, and report the inventory.
 
     Returns the backend name the engine would select plus the full inventory, so
@@ -232,8 +237,6 @@ def usable_backend(cpp: Any, requested: str = "auto") -> tuple[str, list[dict[st
         )
     name = str(cpp.default_gpu_backend())
     if name == "none":
-        details = "; ".join(
-            f"{e['name']}: {e['detail']}" for e in inventory
-        )
+        details = "; ".join(f"{e['name']}: {e['detail']}" for e in inventory)
         raise RuntimeError(f"no GPU backend is usable on this host ({details})")
     return name, inventory

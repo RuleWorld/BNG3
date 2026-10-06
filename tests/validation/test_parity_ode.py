@@ -95,9 +95,9 @@ def test_python_api_ode_parity(
         atol=1e-9,
         columns=compare.COLUMNS_EXACT,
     )
-    assert diff.ok, (
-        f"Python API ODE mismatch [{model_name}] (ref={ref_src}): {diff.summary()}"
-    )
+    assert (
+        diff.ok
+    ), f"Python API ODE mismatch [{model_name}] (ref={ref_src}): {diff.summary()}"
 
 
 @pytest.mark.expressions

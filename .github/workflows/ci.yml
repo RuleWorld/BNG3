@@ -39,10 +39,17 @@ jobs:
         run: pip install "black==26.10.0" "ruff==0.15.1" pytest numpy pyyaml
 
       - name: Check Python formatting (Black)
-        run: black --check --diff --target-version py312 python/ tests/python/ scripts/
+        # The whole repository, not a path allowlist: an ungated file is a
+        # file whose formatting nobody notices until it is already wrong.
+        # Black respects .gitignore, so build/ and other local artefacts
+        # stay out without an explicit exclude.
+        run: black --check --diff --target-version py312 .
 
       - name: Run ruff linter
-        run: ruff check python/ tests/python/ scripts/
+        # bench/ and benchmarks/ are excluded on purpose: they carry F401/F841
+        # findings that need a human judgement about dead benchmark locals
+        # rather than a mechanical fix. Everything else is gated.
+        run: ruff check python/ tests/ scripts/ formal/
 
       - name: Validate integration provenance structure
         run: python scripts/validate_provenance.py

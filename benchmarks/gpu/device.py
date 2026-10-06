@@ -216,7 +216,9 @@ def jax_device_claim(result_device_hint: str | None = None) -> GpuExecutionClaim
 def torch_device_claim(result_device_hint: str | None = None) -> GpuExecutionClaim:
     """Enumerate the torch device backend and report the result's device."""
     torch = importlib.import_module("torch")
-    mps_ok = bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_available()
+    mps_ok = (
+        bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_available()
+    )
     built = bool(getattr(torch.backends, "mps", None)) and torch.backends.mps.is_built()
     devices = ["mps"] if mps_ok else []
     notes = f"mps.is_available={mps_ok} mps.is_built={built}"
@@ -231,7 +233,9 @@ def torch_device_claim(result_device_hint: str | None = None) -> GpuExecutionCla
     )
 
 
-def claim_for_framework(name: str, result_device_hint: str | None = None) -> GpuExecutionClaim:
+def claim_for_framework(
+    name: str, result_device_hint: str | None = None
+) -> GpuExecutionClaim:
     """Dispatch to the claim builder for `jax`, `torch`, or an engine backend."""
     if name in ("jax", "jax-mps"):
         return jax_device_claim(result_device_hint)

@@ -143,12 +143,12 @@ def test_ssc_rxn_is_a_full_program(model_name, written_exports):
     for section in ("// Parameters", "// Species", "// Reactions"):
         assert section in rxn, f"SSC .rxn missing {section} section [{model_name}]"
     # A species declaration and a reaction rule, not just the three headings.
-    assert re.search(r"^new \w+\(", rxn, re.M), (
-        f"SSC .rxn declares no species [{model_name}]"
-    )
-    assert re.search(r"^[^/\s]\S*\s*->.*;\s*$", rxn, re.M), (
-        f"SSC .rxn declares no reaction rule [{model_name}]"
-    )
+    assert re.search(
+        r"^new \w+\(", rxn, re.M
+    ), f"SSC .rxn declares no species [{model_name}]"
+    assert re.search(
+        r"^[^/\s]\S*\s*->.*;\s*$", rxn, re.M
+    ), f"SSC .rxn declares no reaction rule [{model_name}]"
 
 
 @pytest.mark.export
@@ -161,9 +161,9 @@ def test_ssc_cfg_is_parameters_only(model_name, written_exports):
             f"SSC .cfg carries the {forbidden} section of a full program "
             f"[{model_name}] -- writeSSCcfg must not re-emit writeSSC's output"
         )
-    assert not re.search(r"^new \w+\(", cfg, re.M), (
-        f"SSC .cfg declares species [{model_name}]"
-    )
+    assert not re.search(
+        r"^new \w+\(", cfg, re.M
+    ), f"SSC .cfg declares species [{model_name}]"
     assert "->" not in cfg, f"SSC .cfg declares reaction rules [{model_name}]"
 
 
@@ -179,15 +179,15 @@ def test_ssc_cfg_and_rxn_are_different_artifacts(model_name, written_exports):
     rxn_params = {ln for ln in rxn.splitlines() if ln.startswith("const ")}
     cfg_params = {ln for ln in cfg.splitlines() if ln.startswith("const ")}
     assert cfg_params, f"SSC .cfg has no parameter block [{model_name}]"
-    assert cfg_params <= rxn_params, (
-        f"SSC .cfg parameters are not the .rxn parameter block [{model_name}]"
-    )
+    assert (
+        cfg_params <= rxn_params
+    ), f"SSC .cfg parameters are not the .rxn parameter block [{model_name}]"
     # The two blocks are *meant* to agree on parameters; what must not survive
     # into .cfg is everything after them, which the section assertions in
     # test_ssc_cfg_is_parameters_only cover.
-    assert len(cfg.splitlines()) < len(rxn.splitlines()), (
-        f"SSC .cfg is at least as large as the full program [{model_name}]"
-    )
+    assert len(cfg.splitlines()) < len(
+        rxn.splitlines()
+    ), f"SSC .cfg is at least as large as the full program [{model_name}]"
 
 
 # --------------------------------------------------------------------------- #
@@ -207,9 +207,9 @@ def test_mdl_written(model_name, written_exports):
     mdl = _artifact(written_exports[model_name], model_name, ".mdl")
     for marker in ("ITERATIONS", "DEFINE_MOLECULES", "DEFINE_REACTIONS"):
         assert marker in mdl, f"MDL missing {marker} [{model_name}]"
-    assert re.search(r"^\s*\w+ \{ DIFFUSION_CONSTANT_3D", mdl, re.M), (
-        f"MDL declares no molecule with a diffusion coefficient [{model_name}]"
-    )
+    assert re.search(
+        r"^\s*\w+ \{ DIFFUSION_CONSTANT_3D", mdl, re.M
+    ), f"MDL declares no molecule with a diffusion coefficient [{model_name}]"
     assert "INSTANTIATE" in mdl, f"MDL never instantiates the world [{model_name}]"
 
 
@@ -217,9 +217,9 @@ def test_mdl_written(model_name, written_exports):
 @pytest.mark.parametrize("model_name", EXPORT_MODELS)
 def test_matlab_mfile_written(model_name, written_exports):
     m = _artifact(written_exports[model_name], model_name, ".m")
-    assert "function [err, timepoints" in m, (
-        f"MATLAB .m is not the documented 4-output entry point [{model_name}]"
-    )
+    assert (
+        "function [err, timepoints" in m
+    ), f"MATLAB .m is not the documented 4-output entry point [{model_name}]"
     for helper in ("getDefaultParameters", "getInitialSpecies"):
         assert helper in m, f"MATLAB .m missing {helper}() [{model_name}]"
 

@@ -356,7 +356,13 @@ def judge(
         # it means the metric carries no information here, not that the
         # measurement failed.
         return Verdict(
-            metric, float("nan"), float("nan"), float("nan"), 0, 0, False,
+            metric,
+            float("nan"),
+            float("nan"),
+            float("nan"),
+            0,
+            0,
+            False,
             f"NOT MEASURED on {metric}: the arm produced no usable samples for "
             f"this clock (an in-process arm has no child CPU to account for)",
         )
@@ -365,8 +371,14 @@ def judge(
     n_null = len([r for r in null_ratios if r == r])
     if low != low:  # NaN band: no usable null samples
         return Verdict(
-            metric, effect, float("nan"), float("nan"), len(effect_ratios), n_null,
-            False, "NO NULL (no usable A/A samples): no claim is licensed",
+            metric,
+            effect,
+            float("nan"),
+            float("nan"),
+            len(effect_ratios),
+            n_null,
+            False,
+            "NO NULL (no usable A/A samples): no claim is licensed",
         )
     clears = effect < low or effect > high
     # `effect` is a TIME ratio B/A: below 1.0 means B consumed less time than A,
@@ -388,7 +400,9 @@ def judge(
             f"B SLOWER ({effect:.3f}x the time of A, above the band top "
             f"{high:.3f}x; equivalently A is {effect:.2f}x faster)"
         )
-    return Verdict(metric, effect, low, high, len(effect_ratios), n_null, clears, verdict)
+    return Verdict(
+        metric, effect, low, high, len(effect_ratios), n_null, clears, verdict
+    )
 
 
 @dataclass
@@ -552,14 +566,17 @@ class PairedTimer:
         for metric in metrics:
             eff = [d[metric] for d in effect_ratios if metric in d]
             nul = [d[metric] for d in null_ratios if metric in d]
-            verdicts[metric] = judge(metric, eff, nul,
-                                     self.cfg.min_band_halfwidth).as_dict()
+            verdicts[metric] = judge(
+                metric, eff, nul, self.cfg.min_band_halfwidth
+            ).as_dict()
             raw = [r for r in nul if r == r and r > 0.0]
             if raw:
-                measured_low = (_percentile(sorted(raw), 0.10) if len(raw) >= 5
-                                else min(raw))
-                measured_high = (_percentile(sorted(raw), 0.90) if len(raw) >= 5
-                                 else max(raw))
+                measured_low = (
+                    _percentile(sorted(raw), 0.10) if len(raw) >= 5 else min(raw)
+                )
+                measured_high = (
+                    _percentile(sorted(raw), 0.90) if len(raw) >= 5 else max(raw)
+                )
                 floor_binding[metric] = (
                     measured_low > 1.0 - self.cfg.min_band_halfwidth
                     or measured_high < 1.0 + self.cfg.min_band_halfwidth
@@ -569,8 +586,7 @@ class PairedTimer:
 
         primary = "wall_s"
         for candidate in ("child_cpu_s", "self_cpu_s"):
-            summary = summarise([d[candidate] for d in effect_ratios
-                                 if candidate in d])
+            summary = summarise([d[candidate] for d in effect_ratios if candidate in d])
             if summary.get("n"):
                 primary = candidate
 
@@ -590,12 +606,10 @@ class PairedTimer:
             "verdicts": verdicts,
             "clock_divergence": divergence,
             "effect_summary": {
-                m: summarise([d[m] for d in effect_ratios if m in d])
-                for m in metrics
+                m: summarise([d[m] for d in effect_ratios if m in d]) for m in metrics
             },
             "null_summary": {
-                m: summarise([d[m] for d in null_ratios if m in d])
-                for m in metrics
+                m: summarise([d[m] for d in null_ratios if m in d]) for m in metrics
             },
             "null_band_floor_applied": floor_binding,
             "null_band_floor_halfwidth": self.cfg.min_band_halfwidth,

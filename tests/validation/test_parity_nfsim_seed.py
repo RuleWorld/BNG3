@@ -295,9 +295,9 @@ def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
     direct = runner.run_api(
         model_name, method="nf", seed=SEED, t_end=T_END, n_steps=N_STEPS
     )
-    assert direct.construction_path == "direct", (
-        f"{model_name} did not run on the direct path: {direct.construction_path!r}"
-    )
+    assert (
+        direct.construction_path == "direct"
+    ), f"{model_name} did not run on the direct path: {direct.construction_path!r}"
 
     xml_path = oracle_nfsim.write_model_xml(
         model_name, work_dir / "native" / f"{model_name}.xml"
@@ -317,9 +317,9 @@ def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
         atol=0.0,
         columns=compare.COLUMNS_EXACT,
     )
-    assert diff.ok or diff.max_rel_err == 0.0, (
-        f"fixed-seed direct/native mismatch [{model_name}]: {diff.summary()}"
-    )
+    assert (
+        diff.ok or diff.max_rel_err == 0.0
+    ), f"fixed-seed direct/native mismatch [{model_name}]: {diff.summary()}"
 
 
 @pytest.mark.nf
@@ -340,9 +340,9 @@ def test_fixed_seed_is_deterministic_within_bng3(api, work_dir):
     report = _identity_report(
         (first.data, first.columns), (second.data, second.columns)
     )
-    assert report is None, (
-        f"the same seed produced two different trajectories: {report}"
-    )
+    assert (
+        report is None
+    ), f"the same seed produced two different trajectories: {report}"
 
 
 @pytest.mark.nf
@@ -364,9 +364,9 @@ def test_different_seeds_produce_different_trajectories_on_both_legs(api, work_d
         "simple_system", method="nf", seed=SEED + 1, t_end=T_END, n_steps=N_STEPS
     )
     report = _identity_report((base.data, base.columns), (other.data, other.columns))
-    assert report is not None, (
-        "seeds 7 and 8 produced identical trajectories; the seed is not consumed"
-    )
+    assert (
+        report is not None
+    ), "seeds 7 and 8 produced identical trajectories; the seed is not consumed"
 
     xml_path = oracle_nfsim.write_model_xml(
         "simple_system", work_dir / "native" / "simple_system.xml"
@@ -504,9 +504,9 @@ def test_an_family_seed_state_order_matches_native_nfsim(model_name, api, work_d
     direct = runner.run_api(
         model_name, method="nf", seed=7, t_end=SHORT_T_END, n_steps=SHORT_N_STEPS
     )
-    assert direct.construction_path == "direct", (
-        f"{model_name} did not run on the direct path: {direct.construction_path!r}"
-    )
+    assert (
+        direct.construction_path == "direct"
+    ), f"{model_name} did not run on the direct path: {direct.construction_path!r}"
 
     xml_path = oracle_nfsim.write_model_xml(
         model_name, work_dir / "native" / f"{model_name}.xml"

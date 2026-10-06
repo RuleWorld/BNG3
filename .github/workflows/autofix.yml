@@ -33,10 +33,12 @@ jobs:
         run: pip install "black==26.10.0" "ruff==0.15.1"
 
       - name: Apply Black locally
-        run: black --target-version py312 python/ tests/python/ scripts/
+        # Mirrors the ci.yml lint gate exactly: a patch producer that covers
+        # less than the gate would report "clean" for files CI then rejects.
+        run: black --target-version py312 .
 
       - name: Apply safe Ruff fixes locally
-        run: ruff check --fix-only python/ tests/python/ scripts/
+        run: ruff check --fix-only python/ tests/ scripts/ formal/
 
       - name: Create formatting patch
         id: patch
@@ -59,9 +61,9 @@ jobs:
         run: |
           if ! git diff --quiet; then
             echo "Formatting changes are required. Download the formatting-patch artifact or run:"
-            echo "  black --target-version py312 python/ tests/python/ scripts/"
-            echo "  ruff check --fix python/ tests/python/ scripts/"
+            echo "  black --target-version py312 ."
+            echo "  ruff check --fix python/ tests/ scripts/ formal/"
             exit 1
           fi
-          black --check --target-version py312 python/ tests/python/ scripts/
-          ruff check python/ tests/python/ scripts/
+          black --check --target-version py312 .
+          ruff check python/ tests/ scripts/ formal/

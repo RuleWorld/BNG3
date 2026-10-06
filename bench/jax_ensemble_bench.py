@@ -101,9 +101,11 @@ def _best_stats(samples: list[float]) -> dict:
     return {
         "best_s": min(samples),
         "mean_s": statistics.fmean(samples),
-        "cv": (statistics.pstdev(samples) / statistics.fmean(samples))
-        if len(samples) > 1 and statistics.fmean(samples) > 0
-        else 0.0,
+        "cv": (
+            (statistics.pstdev(samples) / statistics.fmean(samples))
+            if len(samples) > 1 and statistics.fmean(samples) > 0
+            else 0.0
+        ),
         "samples_s": samples,
     }
 

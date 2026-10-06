@@ -95,7 +95,9 @@ class HostSample:
 
 
 def sample() -> HostSample:
-    return HostSample(t=time.monotonic(), loadavg=loadavg(), runnable=runnable_threads())
+    return HostSample(
+        t=time.monotonic(), loadavg=loadavg(), runnable=runnable_threads()
+    )
 
 
 @dataclass
@@ -118,21 +120,33 @@ class ContentionTrace:
         runnables = [s.runnable for s in self.samples if s.runnable is not None]
         out: dict[str, Any] = {
             "n": len(self.samples),
-            "loadavg_1min": {"start": ones[0], "end": ones[-1],
-                             "min": min(ones), "max": max(ones),
-                             "drift": ones[-1] - ones[0]},
-            "loadavg_5min": {"start": fives[0], "end": fives[-1],
-                             "min": min(fives), "max": max(fives),
-                             "drift": fives[-1] - fives[0]},
-            "load_ratio_max_over_min": (max(ones) / min(ones)) if min(ones) > 0 else None,
+            "loadavg_1min": {
+                "start": ones[0],
+                "end": ones[-1],
+                "min": min(ones),
+                "max": max(ones),
+                "drift": ones[-1] - ones[0],
+            },
+            "loadavg_5min": {
+                "start": fives[0],
+                "end": fives[-1],
+                "min": min(fives),
+                "max": max(fives),
+                "drift": fives[-1] - fives[0],
+            },
+            "load_ratio_max_over_min": (
+                (max(ones) / min(ones)) if min(ones) > 0 else None
+            ),
             "lock_path": self.lock_path,
             "lock_held": self.lock_held,
             "lock_detail": self.lock_detail,
         }
         if runnables:
             out["runnable_threads"] = {
-                "start": runnables[0], "end": runnables[-1],
-                "min": min(runnables), "max": max(runnables),
+                "start": runnables[0],
+                "end": runnables[-1],
+                "min": min(runnables),
+                "max": max(runnables),
             }
         out["interpretation"] = _interpret(out)
         return out
@@ -143,7 +157,9 @@ def _interpret(summary: dict[str, Any]) -> str:
     one = summary.get("loadavg_1min", {})
     ratio = summary.get("load_ratio_max_over_min")
     bits: list[str] = []
-    if one.get("drift") is not None and one["drift"] > 0.25 * max(one.get("start", 1.0), 1.0):
+    if one.get("drift") is not None and one["drift"] > 0.25 * max(
+        one.get("start", 1.0), 1.0
+    ):
         bits.append(
             f"the 1-minute load average moved {one['drift']:+.1f} over the run "
             f"({one['start']:.1f} -> {one['end']:.1f}), which is large enough to "
@@ -182,8 +198,14 @@ class BenchmarkSlot:
     absent would be less useful, not more trustworthy.
     """
 
-    def __init__(self, agent: str, what: str, timeout: float = 0.0,
-                 worktree: str | None = None, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        agent: str,
+        what: str,
+        timeout: float = 0.0,
+        worktree: str | None = None,
+        enabled: bool = True,
+    ) -> None:
         self.agent = agent
         self.what = what
         self.timeout = timeout
@@ -202,13 +224,25 @@ class BenchmarkSlot:
         if shutil.which("python3") is None:
             self.detail = "no python3 to run the lock tool; run unserialised"
             return self
-        argv = [sys.executable, self.path, "acquire", "--agent", self.agent,
-                "--what", self.what, "--worktree", self.worktree]
+        argv = [
+            sys.executable,
+            self.path,
+            "acquire",
+            "--agent",
+            self.agent,
+            "--what",
+            self.what,
+            "--worktree",
+            self.worktree,
+        ]
         if self.timeout > 0:
             argv += ["--timeout", str(self.timeout)]
         try:
             proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
-                argv, capture_output=True, text=True, timeout=None if self.timeout <= 0 else self.timeout + 60
+                argv,
+                capture_output=True,
+                text=True,
+                timeout=None if self.timeout <= 0 else self.timeout + 60,
             )
         except Exception as exc:  # noqa: BLE001 - lock failure must not kill the run
             self.detail = f"lock tool failed: {type(exc).__name__}: {exc}"
@@ -254,8 +288,10 @@ def contention_caveat(summary: dict[str, Any]) -> str | None:
 
 def write_trace(trace: ContentionTrace, path: str) -> None:
     """Persist the contention trace alongside the measurement JSON."""
-    payload = {"summary": trace.summary(),
-               "samples": [s.as_dict() for s in trace.samples]}
+    payload = {
+        "summary": trace.summary(),
+        "samples": [s.as_dict() for s in trace.samples],
+    }
     tmp = f"{path}.contention.tmp"
     with open(tmp, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, default=str)

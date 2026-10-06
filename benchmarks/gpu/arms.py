@@ -83,7 +83,9 @@ class BatchConfig:
 class CpuPoolArm:
     """The host batch-SSA pool: single worker or the whole machine."""
 
-    def __init__(self, cfg: BatchConfig, threads: int = 0, cpp: Any | None = None) -> None:
+    def __init__(
+        self, cfg: BatchConfig, threads: int = 0, cpp: Any | None = None
+    ) -> None:
         self.cfg = cfg
         self.threads = threads
         self._cpp = cpp
@@ -122,12 +124,17 @@ class CpuPoolArm:
         )
         wall = time.perf_counter() - t0
         cpu = _self_cpu() - cpu0
-        sample = TimingSample(wall_s=wall, child_cpu_s=cpu, self_cpu_s=cpu, label=self.label)
+        sample = TimingSample(
+            wall_s=wall, child_cpu_s=cpu, self_cpu_s=cpu, label=self.label
+        )
         # Read the dtype off a returned array, never off an input: an input can
         # declare a precision the computation did not use.
         host_dtype = describe_dtype(out.get("time"))
-        prec = PrecisionClaim(host_dtype=host_dtype, device_dtype=None,
-                              notes="host pool arithmetic dtype as reported by the engine")
+        prec = PrecisionClaim(
+            host_dtype=host_dtype,
+            device_dtype=None,
+            notes="host pool arithmetic dtype as reported by the engine",
+        )
         return ArmResult(sample=sample, payload=out, device_claim=None, precision=prec)
 
 
@@ -154,15 +161,20 @@ class AcceleratorArm:
         self.cfg = cfg
         self.backend = resolve_backend_name(self._cpp, backend)
         self.resolved_backend, self.inventory = engine_import.usable_backend(
-            self._cpp, self.backend)
+            self._cpp, self.backend
+        )
         self.label = f"gpu:{self.resolved_backend}"
-        self.device_claim = device_mod.engine_backend_claim(self._cpp, self.resolved_backend)
+        self.device_claim = device_mod.engine_backend_claim(
+            self._cpp, self.resolved_backend
+        )
         # The fail-closed probe needs a model and a network, so it cannot run
         # here. It runs in `prepare`, where both exist. Until then the arm
         # records "untested" rather than assuming it passed: an unverified guard
         # must never be reported as a passing one.
         self.fail_closed_probe = (
-            False, "not yet probed: no model was available at construction")
+            False,
+            "not yet probed: no model was available at construction",
+        )
 
     def prepare(self, model: Any, network: Any) -> None:
         """Probe fail-closed behaviour and flatten the network, both untimed.
@@ -179,7 +191,8 @@ class AcceleratorArm:
         the very ratio under test.
         """
         self.fail_closed_probe = device_mod.engine_fails_closed(
-            self._cpp, model, network, "none")
+            self._cpp, model, network, "none"
+        )
         if not self.fail_closed_probe[0]:
             raise device_mod.DeviceAssertionError(
                 "this build does not demonstrably fail closed: requesting an "
@@ -189,8 +202,12 @@ class AcceleratorArm:
                 f"refuses to measure."
             )
         self._cpp.simulate_batch_ssa_gpu(
-            model, network, batch_size=1, t_end=self.cfg.t_end,
-            n_steps=self.cfg.n_steps, base_seed=self.cfg.base_seed,
+            model,
+            network,
+            batch_size=1,
+            t_end=self.cfg.t_end,
+            n_steps=self.cfg.n_steps,
+            base_seed=self.cfg.base_seed,
             backend=self.resolved_backend,
         )
 
@@ -211,7 +228,9 @@ class AcceleratorArm:
         )
         wall = time.perf_counter() - t0
         cpu = _self_cpu() - cpu0
-        sample = TimingSample(wall_s=wall, child_cpu_s=cpu, self_cpu_s=cpu, label=self.label)
+        sample = TimingSample(
+            wall_s=wall, child_cpu_s=cpu, self_cpu_s=cpu, label=self.label
+        )
 
         reported = str(out.get("backend", ""))
         if reported != self.resolved_backend:
@@ -239,7 +258,9 @@ class AcceleratorArm:
         notes = [f"fail-closed probe: {self.fail_closed_probe[1]}"]
         if out.get("total_events") is not None:
             notes.append(f"total_events={out['total_events']}")
-        return ArmResult(sample=sample, payload=out, device_claim=claim, precision=prec, notes=notes)
+        return ArmResult(
+            sample=sample, payload=out, device_claim=claim, precision=prec, notes=notes
+        )
 
     def _fingerprint_differs(self, out: dict[str, Any]) -> bool | None:
         """Whether this run's output differs from an identical host run.
@@ -331,7 +352,10 @@ def capability_report(cpp: Any) -> dict[str, Any]:
             ),
         },
     }
-    for name, probe in (("jax", device_mod.jax_device_claim), ("torch", device_mod.torch_device_claim)):
+    for name, probe in (
+        ("jax", device_mod.jax_device_claim),
+        ("torch", device_mod.torch_device_claim),
+    ):
         try:
             report[name] = probe().as_dict()
         except Exception as exc:  # noqa: BLE001 - absence is the finding
@@ -386,12 +410,17 @@ def assert_no_silent_fallback(
     entry = inventory.get(backend)
     compiled = bool(entry and entry["compiled"])
     available = bool(entry and entry["available"])
-    detail = entry["detail"] if entry else (
-        f"{backend!r} is not a compiled backend name; known: "
-        f"{sorted(inventory)}"
+    detail = (
+        entry["detail"]
+        if entry
+        else (
+            f"{backend!r} is not a compiled backend name; known: "
+            f"{sorted(inventory)}"
+        )
     )
     fails_closed, probe_note = device_mod.engine_fails_closed(
-        cpp, model, network, "none")
+        cpp, model, network, "none"
+    )
     resolved = str(cpp.default_gpu_backend())
     ok = compiled and available and fails_closed and resolved != "none"
     return {
@@ -404,8 +433,7 @@ def assert_no_silent_fallback(
         "auto_resolves_to": resolved,
         "no_silent_fallback": ok,
         "verdict": (
-            "an accelerator result from this binary can be attributed to a "
-            "device"
+            "an accelerator result from this binary can be attributed to a " "device"
             if ok
             else "NOT SUBSTANTIATED: this binary cannot demonstrate that an "
             "accelerator result came from a device"

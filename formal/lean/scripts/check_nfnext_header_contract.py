@@ -117,7 +117,8 @@ def enum_members(path: Path, enum_name: str) -> list[str] | None:
 # not make.
 # ---------------------------------------------------------------------------
 ORDERED_ENUMS = {
-    NF / "transformation.hpp": {
+    NF
+    / "transformation.hpp": {
         "TransformationOpKind": [
             "SetState",
             "AddBond",
@@ -129,7 +130,8 @@ ORDERED_ENUMS = {
             "DestroyComplex",
         ],
     },
-    NF / "nfir.hpp": {
+    NF
+    / "nfir.hpp": {
         "MolecularityKind": ["SameComplex", "DifferentComplex"],
         "SiteConstraintKind": ["State", "StateSet", "Free", "Bound"],
     },
@@ -171,7 +173,8 @@ for path, enums in ORDERED_ENUMS.items():
 # data member still exists. Required field declarations are pinned separately.
 # ---------------------------------------------------------------------------
 FIELD_TOKENS = {
-    NF / "transformation.hpp": [
+    NF
+    / "transformation.hpp": [
         "AddBondExistingToCreated",
         "AddBondCreated",
         "DestroyComplex",
@@ -179,7 +182,8 @@ FIELD_TOKENS = {
         "addBondExistingToCreated",
         "addBondCreated",
     ],
-    NF / "nfir.hpp": [
+    NF
+    / "nfir.hpp": [
         "StateSet",
         "MolecularityConstraint",
         # Field NAMES, not just method names.  `connected_to` is a PatternIR
@@ -214,7 +218,8 @@ for path, tokens in FIELD_TOKENS.items():
 # Pin their declaration shapes separately; this catches removal or movement to
 # a comment while allowing harmless whitespace changes.
 FIELD_DECLARATIONS = {
-    NF / "nfir.hpp": {
+    NF
+    / "nfir.hpp": {
         "connected_to": (
             r"^\s*std::vector\s*<\s*std::pair\s*<\s*std::size_t\s*,"
             r"\s*std::size_t\s*>\s*>\s+connected_to\s*;\s*$"
@@ -301,7 +306,11 @@ else:
 # ---------------------------------------------------------------------------
 bridge_rule = "A(x~u) + B(y) -> A(x~p!1).B(y!1)"
 bridge_files = {
-    ROOT / "formal" / "lean" / "BNG" / "Examples.lean": [
+    ROOT
+    / "formal"
+    / "lean"
+    / "BNG"
+    / "Examples.lean": [
         bridge_rule,
         "nfnextBridgeContract_holds",
     ],

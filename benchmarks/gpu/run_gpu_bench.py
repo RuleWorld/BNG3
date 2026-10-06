@@ -100,54 +100,122 @@ def build_parser() -> argparse.ArgumentParser:
         description="Trustworthy A/B benchmarking for GPU stochastic simulation.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument("--arms", default="cpu:0,gpu",
-                    help="comma-separated arms: cpu, cpu:N, gpu, metal, cuda")
-    ap.add_argument("--model", default=None,
-                    help="path to a .bngl model (default: the two shipped fixtures)")
+    ap.add_argument(
+        "--arms",
+        default="cpu:0,gpu",
+        help="comma-separated arms: cpu, cpu:N, gpu, metal, cuda",
+    )
+    ap.add_argument(
+        "--model",
+        default=None,
+        help="path to a .bngl model (default: the two shipped fixtures)",
+    )
     ap.add_argument("--batch", type=int, default=2000, help="trajectories per arm")
-    ap.add_argument("--t-end", type=float, default=None,
-                    help="simulation horizon (default: the model's benchmark value)")
+    ap.add_argument(
+        "--t-end",
+        type=float,
+        default=None,
+        help="simulation horizon (default: the model's benchmark value)",
+    )
     ap.add_argument("--n-steps", type=int, default=10, help="output grid points")
-    ap.add_argument("--seed", type=int, default=12345,
-                    help="base seed; identical for both arms by construction")
-    ap.add_argument("--rounds", type=int, default=7,
-                    help="paired A/B rounds (odd is better: alternation balances)")
-    ap.add_argument("--warmups", type=int, default=2,
-                    help="untimed warmup invocations per arm")
-    ap.add_argument("--no-null", action="store_true",
-                    help="DISABLE the A/A null (the report will say so)")
-    ap.add_argument("--null-rounds", type=int, default=0,
-                    help="A/A rounds (default: same as --rounds)")
-    ap.add_argument("--self-test", action="store_true",
-                    help="run arm A against itself; prints only the null band")
-    ap.add_argument("--synthetic", action="store_true",
-                    help="generate a synthetic network instead of reading a model")
-    ap.add_argument("--reactions", type=int, default=64,
-                    help="synthetic network reaction count")
-    ap.add_argument("--species", type=int, default=16,
-                    help="synthetic network species count")
-    ap.add_argument("--event-density", type=float, default=200.0,
-                    help="target SSA events per trajectory for a synthetic network")
-    ap.add_argument("--sweep", action="store_true",
-                    help="sweep a ladder of synthetic reaction counts")
-    ap.add_argument("--sweep-reactions", default="2,4,16,64,256,1024",
-                    help="reaction counts for --sweep")
-    ap.add_argument("--equivalence", action="store_true",
-                    help="also run the statistical equivalence comparison")
-    ap.add_argument("--alpha", type=float, default=0.001,
-                    help="family-wise error rate for the equivalence tests")
-    ap.add_argument("--verify-no-fallback", action="store_true",
-                    help="probe for silent fallback and exit")
-    ap.add_argument("--agent", default="gpuharness",
-                    help="agent name, for the host-wide benchmark lock")
-    ap.add_argument("--no-lock", action="store_true",
-                    help="do not take the host-wide benchmark lock")
-    ap.add_argument("--json", dest="json_out", default=None,
-                    help="write the full report to this path")
-    ap.add_argument("--engine-dir", default=None,
-                    help="directory holding _bionetgen_cpp (or BIONETGEN_CPP_DIR)")
-    ap.add_argument("--model-dir", default=None,
-                    help="directory for generated .bngl files")
+    ap.add_argument(
+        "--seed",
+        type=int,
+        default=12345,
+        help="base seed; identical for both arms by construction",
+    )
+    ap.add_argument(
+        "--rounds",
+        type=int,
+        default=7,
+        help="paired A/B rounds (odd is better: alternation balances)",
+    )
+    ap.add_argument(
+        "--warmups", type=int, default=2, help="untimed warmup invocations per arm"
+    )
+    ap.add_argument(
+        "--no-null",
+        action="store_true",
+        help="DISABLE the A/A null (the report will say so)",
+    )
+    ap.add_argument(
+        "--null-rounds",
+        type=int,
+        default=0,
+        help="A/A rounds (default: same as --rounds)",
+    )
+    ap.add_argument(
+        "--self-test",
+        action="store_true",
+        help="run arm A against itself; prints only the null band",
+    )
+    ap.add_argument(
+        "--synthetic",
+        action="store_true",
+        help="generate a synthetic network instead of reading a model",
+    )
+    ap.add_argument(
+        "--reactions", type=int, default=64, help="synthetic network reaction count"
+    )
+    ap.add_argument(
+        "--species", type=int, default=16, help="synthetic network species count"
+    )
+    ap.add_argument(
+        "--event-density",
+        type=float,
+        default=200.0,
+        help="target SSA events per trajectory for a synthetic network",
+    )
+    ap.add_argument(
+        "--sweep",
+        action="store_true",
+        help="sweep a ladder of synthetic reaction counts",
+    )
+    ap.add_argument(
+        "--sweep-reactions",
+        default="2,4,16,64,256,1024",
+        help="reaction counts for --sweep",
+    )
+    ap.add_argument(
+        "--equivalence",
+        action="store_true",
+        help="also run the statistical equivalence comparison",
+    )
+    ap.add_argument(
+        "--alpha",
+        type=float,
+        default=0.001,
+        help="family-wise error rate for the equivalence tests",
+    )
+    ap.add_argument(
+        "--verify-no-fallback",
+        action="store_true",
+        help="probe for silent fallback and exit",
+    )
+    ap.add_argument(
+        "--agent",
+        default="gpuharness",
+        help="agent name, for the host-wide benchmark lock",
+    )
+    ap.add_argument(
+        "--no-lock",
+        action="store_true",
+        help="do not take the host-wide benchmark lock",
+    )
+    ap.add_argument(
+        "--json",
+        dest="json_out",
+        default=None,
+        help="write the full report to this path",
+    )
+    ap.add_argument(
+        "--engine-dir",
+        default=None,
+        help="directory holding _bionetgen_cpp (or BIONETGEN_CPP_DIR)",
+    )
+    ap.add_argument(
+        "--model-dir", default=None, help="directory for generated .bngl files"
+    )
     return ap
 
 
@@ -183,22 +251,27 @@ def _wrap(text: str, width: int) -> list[str]:
         lines.append(current)
     return lines
 
+
 def print_capabilities(cpp: Any) -> dict[str, Any]:
     """Print and return what this host can do on an accelerator."""
     report = capability_report(cpp)
     _heading("HOST AND DEVICE CAPABILITY")
     _p(f"engine       : {report['engine_source']}")
     for entry in report["engine_backends"]:
-        _p(f"backend      : {entry['name']:<6} compiled={entry['compiled']!s:<5} "
-           f"available={entry['available']!s:<5} {entry['detail']}")
+        _p(
+            f"backend      : {entry['name']:<6} compiled={entry['compiled']!s:<5} "
+            f"available={entry['available']!s:<5} {entry['detail']}"
+        )
     _p(f"default      : {report['default_backend']}")
     for name in ("jax", "torch"):
         info = report.get(name, {})
         if info.get("error"):
             _p(f"{name:<13}: unavailable ({info['error']})")
         else:
-            _p(f"{name:<13}: devices={info.get('devices')} "
-               f"backend={info.get('backend_reported')}")
+            _p(
+                f"{name:<13}: devices={info.get('devices')} "
+                f"backend={info.get('backend_reported')}"
+            )
     _p()
     _p("Device limits that constrain every number in this report:")
     for key, text in report["known_device_limits"].items():
@@ -206,8 +279,9 @@ def print_capabilities(cpp: Any) -> dict[str, Any]:
     return report
 
 
-def verify_no_fallback(cpp: Any, backend: str,
-                       model: Any = None, network: Any = None) -> int:
+def verify_no_fallback(
+    cpp: Any, backend: str, model: Any = None, network: Any = None
+) -> int:
     """Probe for silent fallback and print a verdict. Exit 2 if unsubstantiated.
 
     The model and network are required for the probe to mean anything: the
@@ -234,7 +308,9 @@ def verify_no_fallback(cpp: Any, backend: str,
     return 2
 
 
-def prepare_model(args: argparse.Namespace, cpp: Any) -> tuple[Any, Any, dict[str, Any]]:
+def prepare_model(
+    args: argparse.Namespace, cpp: Any
+) -> tuple[Any, Any, dict[str, Any]]:
     """Resolve the model to measure, returning (model, network, description)."""
     if args.model:
         path = args.model
@@ -243,32 +319,48 @@ def prepare_model(args: argparse.Namespace, cpp: Any) -> tuple[Any, Any, dict[st
         model = cpp.parse_file(path)
         network = cpp.generate_network(model)
         t_end = args.t_end if args.t_end is not None else 10.0
-        info = {"source": "file", "path": path, "t_end": t_end,
-                "S": network.num_species, "R": network.num_reactions,
-                "event_density_target": None}
+        info = {
+            "source": "file",
+            "path": path,
+            "t_end": t_end,
+            "S": network.num_species,
+            "R": network.num_reactions,
+            "event_density_target": None,
+        }
         return model, network, info
 
     if args.synthetic or args.sweep:
-        spec = shape_models(args.reactions, args.event_density,
-                            species=args.species,
-                            t_end=args.t_end if args.t_end is not None else 1.0)
+        spec = shape_models(
+            args.reactions,
+            args.event_density,
+            species=args.species,
+            t_end=args.t_end if args.t_end is not None else 1.0,
+        )
         calib = calibrate_event_density(spec, directory=args.model_dir)
         model = cpp.parse_file(calib.path)
         network = cpp.generate_network(model)
-        info = {"source": "synthetic", "path": calib.path,
-                "t_end": calib.spec.t_end,
-                "S": network.num_species, "R": network.num_reactions,
-                "calibration": calib.as_dict()}
+        info = {
+            "source": "synthetic",
+            "path": calib.path,
+            "t_end": calib.spec.t_end,
+            "S": network.num_species,
+            "R": network.num_reactions,
+            "calibration": calib.as_dict(),
+        }
         return model, network, info
 
     name, rel, default_t = FIXTURES[0]
     path = os.path.join(repo_root(), rel)
     model = cpp.parse_file(path)
     network = cpp.generate_network(model)
-    info = {"source": "fixture", "path": path,
-            "t_end": args.t_end if args.t_end is not None else default_t,
-            "S": network.num_species, "R": network.num_reactions,
-            "event_density_target": None}
+    info = {
+        "source": "fixture",
+        "path": path,
+        "t_end": args.t_end if args.t_end is not None else default_t,
+        "S": network.num_species,
+        "R": network.num_reactions,
+        "event_density_target": None,
+    }
     return model, network, info
 
 
@@ -323,16 +415,20 @@ def print_effect(report: dict[str, Any]) -> None:
     _heading("RAW PER-ROUND PAIRED DELTAS (no min-of-K anywhere)")
     _p(f"deciding clock: {metric}; {other} shown alongside for divergence only")
     _p()
-    _p(f"{'rnd':>3} {'order':>6} | {f'A {metric}':>14} {f'B {metric}':>14} {'B/A':>8}"
-       f" | {f'A {other}':>12} {f'B {other}':>12} {'B/A':>8}")
+    _p(
+        f"{'rnd':>3} {'order':>6} | {f'A {metric}':>14} {f'B {metric}':>14} {'B/A':>8}"
+        f" | {f'A {other}':>12} {f'B {other}':>12} {'B/A':>8}"
+    )
 
     def row(rnd: dict[str, Any]) -> str:
         ratios = rnd["ratios"]
         m = ratios.get(metric, float("nan"))
         o = ratios.get(other, float("nan"))
-        return (f"{rnd['index']:>3} {rnd['order']:>6} | "
-                f"{rnd['a'][metric]:>14.6f} {rnd['b'][metric]:>14.6f} {m:>8.4f}"
-                f" | {rnd['a'][other]:>12.4f} {rnd['b'][other]:>12.4f} {o:>8.4f}")
+        return (
+            f"{rnd['index']:>3} {rnd['order']:>6} | "
+            f"{rnd['a'][metric]:>14.6f} {rnd['b'][metric]:>14.6f} {m:>8.4f}"
+            f" | {rnd['a'][other]:>12.4f} {rnd['b'][other]:>12.4f} {o:>8.4f}"
+        )
 
     for rnd in report["rounds"]:
         _p(row(rnd))
@@ -351,8 +447,10 @@ def print_effect(report: dict[str, Any]) -> None:
     _p(f"arms: {report['arm_a']} (A) vs {report['arm_b']} (B)")
     _p(f"deciding clock: {metric}")
     _p(f"  effect B/A          : {primary['effect_ratio_b_over_a']:.4f}")
-    _p(f"  A/A null band       : [{primary['null_band'][0]:.4f}, "
-       f"{primary['null_band'][1]:.4f}]")
+    _p(
+        f"  A/A null band       : [{primary['null_band'][0]:.4f}, "
+        f"{primary['null_band'][1]:.4f}]"
+    )
     _p(f"  rounds / null rounds: {primary['n_rounds']} / {primary['n_null_rounds']}")
     _p(f"  clears the band     : {primary['clears_null']}")
     _p(f"  verdict             : {primary['verdict']}")
@@ -362,20 +460,26 @@ def print_effect(report: dict[str, Any]) -> None:
         if name == metric:
             continue
         band = verdict["null_band"]
-        band_txt = ("none" if band[0] != band[0] else f"[{band[0]:.4f}, {band[1]:.4f}]")
-        _p(f"  {name:<12} effect={verdict['effect_ratio_b_over_a']:.4f} "
-           f"band={band_txt} clears={verdict['clears_null']}")
+        band_txt = "none" if band[0] != band[0] else f"[{band[0]:.4f}, {band[1]:.4f}]"
+        _p(
+            f"  {name:<12} effect={verdict['effect_ratio_b_over_a']:.4f} "
+            f"band={band_txt} clears={verdict['clears_null']}"
+        )
 
     divergence = report.get("clock_divergence")
     if divergence:
         _p()
         _heading("CROSS-CLOCK CHECK (does the other clock agree?)")
-        _p(f"host-resource clock ({metric}): {divergence['cpu_direction']:<12} "
-           f"effect={divergence['cpu_effect']:.4f} "
-           f"clears_null={divergence['cpu_clears_null']}")
-        _p(f"elapsed-time clock (wall)  : {divergence['wall_direction']:<12} "
-           f"effect={divergence['wall_effect']:.4f} "
-           f"clears_null={divergence['wall_clears_null']}")
+        _p(
+            f"host-resource clock ({metric}): {divergence['cpu_direction']:<12} "
+            f"effect={divergence['cpu_effect']:.4f} "
+            f"clears_null={divergence['cpu_clears_null']}"
+        )
+        _p(
+            f"elapsed-time clock (wall)  : {divergence['wall_direction']:<12} "
+            f"effect={divergence['wall_effect']:.4f} "
+            f"clears_null={divergence['wall_clears_null']}"
+        )
         _p()
         for line in _wrap(divergence["verdict"], 74):
             _p(f"  {line}")
@@ -416,9 +520,11 @@ def run_one(
     _p(f"seed           : {cfg.base_seed} (identical for every arm)")
     if info.get("calibration"):
         cal = info["calibration"]
-        _p(f"calibration    : target {cal['target_density']:.1f} ev/traj -> "
-           f"achieved {cal['achieved_density']:.1f} ev/traj "
-           f"({cal['iterations']} probe rounds, converged={cal['converged']})")
+        _p(
+            f"calibration    : target {cal['target_density']:.1f} ev/traj -> "
+            f"achieved {cal['achieved_density']:.1f} ev/traj "
+            f"({cal['iterations']} probe rounds, converged={cal['converged']})"
+        )
         if not cal["converged"]:
             _p("                 (density is MEASURED, not assumed; a target the")
             _p("                  network cannot reach is reported, not hidden)")
@@ -444,12 +550,13 @@ def run_one(
         # Arm A against itself. Nothing else is measured; the point is the band.
         arm = arm_list[0]
         timer = PairedTimer(
-            runner=lambda _label: (
-                arm.run(model, network).sample, None
+            runner=lambda _label: (arm.run(model, network).sample, None),
+            config=MeasurementConfig(
+                rounds=args.rounds,
+                warmups=args.warmups,
+                null=True,
+                null_rounds=args.null_rounds or args.rounds,
             ),
-            config=MeasurementConfig(rounds=args.rounds, warmups=args.warmups,
-                                     null=True,
-                                     null_rounds=args.null_rounds or args.rounds),
         )
         _p()
         _p("SELF-TEST: arm A measured against itself. No effect is reported;")
@@ -493,8 +600,10 @@ def run_one(
         ),
     )
     _p()
-    _p(f"measuring {arm_a.label} against {arm_b.label}, {args.rounds} paired rounds,"
-       f" order alternating.")
+    _p(
+        f"measuring {arm_a.label} against {arm_b.label}, {args.rounds} paired rounds,"
+        f" order alternating."
+    )
     report = timer.run(arm_a.label, arm_b.label)
 
     # Collect the assertions and precision facts from the last invocation of
@@ -518,8 +627,9 @@ def run_one(
         a_payload = last.get(arm_a.label)
         b_payload = last.get(arm_b.label)
         if a_payload and b_payload:
-            equivalence = compare_runs(a_payload.payload, b_payload.payload,
-                                       alpha=args.alpha).as_dict()
+            equivalence = compare_runs(
+                a_payload.payload, b_payload.payload, alpha=args.alpha
+            ).as_dict()
             equivalence["device_precision"] = single_precision_device_note()
 
     result_a = last.get(arm_a.label)
@@ -529,24 +639,30 @@ def run_one(
         "host": finish_host_facts(host_facts()),
         "capabilities": capabilities,
         "model": info,
-        "config": {**cfg.as_dict(), "arms": arm_notes,
-                   "rounds": args.rounds, "warmups": args.warmups,
-                   "null_enabled": not args.no_null},
+        "config": {
+            **cfg.as_dict(),
+            "arms": arm_notes,
+            "rounds": args.rounds,
+            "warmups": args.warmups,
+            "null_enabled": not args.no_null,
+        },
         "measurement": report,
         "device_assertions": device_reports,
         "equivalence": equivalence,
         "total_events": {
-            arm_a.label: getattr(result_a, "payload", {}) and
-            result_a.payload.get("total_events"),
-            arm_b.label: getattr(result_b, "payload", {}) and
-            result_b.payload.get("total_events"),
+            arm_a.label: getattr(result_a, "payload", {})
+            and result_a.payload.get("total_events"),
+            arm_b.label: getattr(result_b, "payload", {})
+            and result_b.payload.get("total_events"),
         },
     }
     if result_a and result_a.payload and result_a.payload.get("total_events"):
         events = result_a.payload["total_events"]
         payload["events_per_trajectory"] = events / float(cfg.batch_size)
-        _p(f"measured density: {payload['events_per_trajectory']:.1f} SSA events "
-           f"per trajectory ({events} events over {cfg.batch_size} trajectories)")
+        _p(
+            f"measured density: {payload['events_per_trajectory']:.1f} SSA events "
+            f"per trajectory ({events} events over {cfg.batch_size} trajectories)"
+        )
     if result_a and result_a.precision is not None:
         payload["host_precision"] = result_a.precision.comparability()
         if result_b and result_b.precision is not None:
@@ -562,25 +678,33 @@ def run_one(
     if args.equivalence and equivalence is not None:
         _heading("STATISTICAL EQUIVALENCE")
         _p(f"claim                    : {equivalence['claim']}")
-        _p(f"trajectories per side    : {equivalence['n_trajectories_a']} / "
-           f"{equivalence['n_trajectories_b']}")
+        _p(
+            f"trajectories per side    : {equivalence['n_trajectories_a']} / "
+            f"{equivalence['n_trajectories_b']}"
+        )
         _p(f"test power               : {equivalence['test_power_label']}")
         _p(f"detectable difference    : {equivalence['detectable_effect_size']}")
         _p(f"max |z| across cells     : {equivalence['max_abs_z']:.4f}")
         _p(f"threshold (Bonferroni)   : {equivalence['z_threshold']:.4f}")
-        _p(f"cells passing            : {equivalence['z_passes']} / "
-           f"{equivalence['z_cells']}")
+        _p(
+            f"cells passing            : {equivalence['z_passes']} / "
+            f"{equivalence['z_cells']}"
+        )
         for note in equivalence["notes"]:
             _p(f"  - {note}")
         for ks in equivalence["ks_results"]:
-            _p(f"  KS {ks['observable']:<16} D={ks['statistic']:.5f} "
-               f"p={ks['p_value']:.4g} passes={ks['passes']}")
+            _p(
+                f"  KS {ks['observable']:<16} D={ks['statistic']:.5f} "
+                f"p={ks['p_value']:.4g} passes={ks['passes']}"
+            )
         for mom in equivalence["moment_results"]:
             if mom.get("testable"):
-                _p(f"  moment {mom['observable']:<13} "
-                   f"mean_rel_err={mom['mean_rel_error']:.5f} "
-                   f"var_ratio={mom['variance_ratio']:.4f} "
-                   f"passes={mom['passes']}")
+                _p(
+                    f"  moment {mom['observable']:<13} "
+                    f"mean_rel_err={mom['mean_rel_error']:.5f} "
+                    f"var_ratio={mom['variance_ratio']:.4f} "
+                    f"passes={mom['passes']}"
+                )
         _p()
         _p("This is distributional agreement at the power stated above. It is not")
         _p("a demonstration that the two arms are the same computation: they use")
@@ -597,8 +721,12 @@ def run_one(
     return payload, status
 
 
-def run_sweep(args: argparse.Namespace, cpp: Any, trace: ContentionTrace,
-              capabilities: dict[str, Any]) -> tuple[dict[str, Any], int]:
+def run_sweep(
+    args: argparse.Namespace,
+    cpp: Any,
+    trace: ContentionTrace,
+    capabilities: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
     """Sweep a ladder of synthetic reaction counts and report the crossover."""
     counts = [int(x) for x in args.sweep_reactions.split(",") if x.strip()]
     _heading("SYNTHETIC LADDER: reactions vs measured effect")
@@ -606,19 +734,30 @@ def run_sweep(args: argparse.Namespace, cpp: Any, trace: ContentionTrace,
     _p("the same pair of arms. The crossover, if there is one, appears as the")
     _p("first rung whose effect clears its own null band.")
     _p()
-    _p(f"{'R':>6} {'ev/traj':>8} {'B/A cpu':>9} {'null band':>18} {'clears':>7}  verdict")
+    _p(
+        f"{'R':>6} {'ev/traj':>8} {'B/A cpu':>9} {'null band':>18} {'clears':>7}  verdict"
+    )
     rungs: list[dict[str, Any]] = []
     status = 0
     for r in counts:
-        spec = shape_models(r, args.event_density, species=args.species,
-                            t_end=args.t_end if args.t_end is not None else 1.0)
+        spec = shape_models(
+            r,
+            args.event_density,
+            species=args.species,
+            t_end=args.t_end if args.t_end is not None else 1.0,
+        )
         calib = calibrate_event_density(spec, directory=args.model_dir)
         sub = argparse.Namespace(**vars(args))
         sub.synthetic = True
         sub.reactions = r
-        info = {"source": "synthetic", "path": calib.path,
-                "t_end": calib.spec.t_end, "S": 0, "R": r,
-                "calibration": calib.as_dict()}
+        info = {
+            "source": "synthetic",
+            "path": calib.path,
+            "t_end": calib.spec.t_end,
+            "S": 0,
+            "R": r,
+            "calibration": calib.as_dict(),
+        }
         model = cpp.parse_file(calib.path)
         network = cpp.generate_network(model)
         info["S"] = network.num_species
@@ -632,12 +771,21 @@ def run_sweep(args: argparse.Namespace, cpp: Any, trace: ContentionTrace,
         eff = verdict["effect_ratio_b_over_a"]
         clr = verdict["clears_null"]
         dens = payload.get("events_per_trajectory")
-        rungs.append({"R": r, "events_per_trajectory": dens, "effect": eff,
-                     "band": band, "clears": clr,
-                     "achieved_density": calib.achieved_density})
-        _p(f"{r:>6} {(dens or 0):>8.1f} {eff:>9.4f} "
-           f"{f'[{band[0]:.3f}, {band[1]:.3f}]':>18} {str(clr):>7}  "
-           f"{verdict['verdict']}")
+        rungs.append(
+            {
+                "R": r,
+                "events_per_trajectory": dens,
+                "effect": eff,
+                "band": band,
+                "clears": clr,
+                "achieved_density": calib.achieved_density,
+            }
+        )
+        _p(
+            f"{r:>6} {(dens or 0):>8.1f} {eff:>9.4f} "
+            f"{f'[{band[0]:.3f}, {band[1]:.3f}]':>18} {str(clr):>7}  "
+            f"{verdict['verdict']}"
+        )
         trace.mark()
     return {"sweep": rungs}, status
 
@@ -695,9 +843,11 @@ def main(argv: list[str] | None = None) -> int:
 
     # The host-wide lock is taken for the whole measurement, not per round:
     # a lock released between rounds would serialise nothing.
-    with BenchmarkSlot(agent=args.agent,
-                       what=f"gpu bench {args.arms} batch={args.batch}",
-                       enabled=not args.no_lock) as slot:
+    with BenchmarkSlot(
+        agent=args.agent,
+        what=f"gpu bench {args.arms} batch={args.batch}",
+        enabled=not args.no_lock,
+    ) as slot:
         trace.lock_path = slot.path
         trace.lock_held = bool(slot.token)
         trace.lock_detail = slot.detail
@@ -713,8 +863,9 @@ def main(argv: list[str] | None = None) -> int:
                 _p(f"could not prepare the model: {type(exc).__name__}: {exc}")
                 return 2
             try:
-                payload, status = run_one(args, cpp, model, network, info,
-                                          trace, capabilities)
+                payload, status = run_one(
+                    args, cpp, model, network, info, trace, capabilities
+                )
             except DeviceAssertionError as exc:
                 _p(f"device assertion failed: {exc}")
                 return 2
@@ -725,21 +876,28 @@ def main(argv: list[str] | None = None) -> int:
         if caveat:
             payload["contention_caveat"] = caveat
         payload["host"] = finish_host_facts(host_facts())
-        payload["benchmark_lock"] = {"held": trace.lock_held, "detail": trace.lock_detail}
+        payload["benchmark_lock"] = {
+            "held": trace.lock_held,
+            "detail": trace.lock_detail,
+        }
 
         _heading("OUTCOME")
         if args.sweep:
             for rung in payload.get("sweep", []):
-                _p(f"R={rung['R']:<6} effect={rung['effect']:.4f} "
-                   f"band=[{rung['band'][0]:.3f}, {rung['band'][1]:.3f}] "
-                   f"clears={rung['clears']}")
+                _p(
+                    f"R={rung['R']:<6} effect={rung['effect']:.4f} "
+                    f"band=[{rung['band'][0]:.3f}, {rung['band'][1]:.3f}] "
+                    f"clears={rung['clears']}"
+                )
         elif "self_test" in payload:
             st_rep = payload["self_test"]
             clock = primary_metric(st_rep)
             st = st_rep["null_summary"].get(clock, {})
-            _p(f"self-test noise floor on {clock}: "
-               f"{st.get('p10', float('nan')):.4f} - "
-               f"{st.get('p90', float('nan')):.4f}")
+            _p(
+                f"self-test noise floor on {clock}: "
+                f"{st.get('p10', float('nan')):.4f} - "
+                f"{st.get('p90', float('nan')):.4f}"
+            )
         else:
             _p(f"{payload.get('outcome', 'no outcome recorded')}")
             _p()

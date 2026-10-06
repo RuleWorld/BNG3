@@ -544,7 +544,9 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
         # warning. That is what broke the x86_64 macOS wheel lane; a target
         # below the floor must not come back.
         below_floor = [t for t in targets if float(t) < 10.15]
-        assert not below_floor, f"{job_name} below the <filesystem> floor: {sorted(below_floor)}"
+        assert (
+            not below_floor
+        ), f"{job_name} below the <filesystem> floor: {sorted(below_floor)}"
         assert "11.0" in targets, f"{job_name} must retain its 11.0 target: {targets}"
         assert "CIBW_TEST_REQUIRES: pytest numpy click" in job
         assert "cp314-*" in job
@@ -612,9 +614,9 @@ def _assert_exact_head_concurrency(path: Path, label: str) -> None:
     assert "${{ github.event.pull_request.head.sha || github.sha }}" in str(
         concurrency.get("group")
     ), f"{label} concurrency group must key on the PR head"
-    assert concurrency.get("cancel-in-progress") is False, (
-        f"{label} must not cancel an in-flight exact-head run"
-    )
+    assert (
+        concurrency.get("cancel-in-progress") is False
+    ), f"{label} must not cancel an in-flight exact-head run"
 
 
 def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
@@ -806,9 +808,9 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
         if re.search(r"(?:pip|python\s+-m\s+pip)\s+install", line)
     ]
     assert install_lines, "python-test must install package/test dependencies"
-    assert any(re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines), (
-        "python-test no-deps wheel path must install declared click dependency"
-    )
+    assert any(
+        re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
+    ), "python-test no-deps wheel path must install declared click dependency"
 
 
 def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
