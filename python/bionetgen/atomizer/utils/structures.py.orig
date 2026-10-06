@@ -169,6 +169,8 @@ class Species:
 
     def updateBonds(self, bondNumbers):
 
+        correspondence = {}
+        intersection = [int(x) for x in newBondNumbers if x in self.getBondNumbers()]
         newBase = max(bondNumbers) + 1
         for element in self.molecules:
             for component in element.components:
@@ -183,7 +185,7 @@ class Species:
                             correspondence[component.bonds[index]] = max(intersection) + 1
                             component.bonds[index] = max(intersection) + 1
                 """
-                #
+                # intersection = [int(x) for x in newBondNumbers if x in self.getBondNumbers()]
 
     def deleteBond(self, moleculePair):
         for molecule in self.molecules:
@@ -241,6 +243,8 @@ class Species:
 
     def toString(self):
         return self.__str__()
+
+
 
 
 class Molecule:
