@@ -1,0 +1,3 @@
+## 2024-05-24 - Dynamic Regex Compilation in Tight Loops
+**Learning:** In `atomizer/modern/writer.py`, functions like `_replace_nested_function` and `extend_function` repeatedly compile regular expressions dynamically (e.g., matching function names or formal parameters) inside tight loops `re.compile(rf"\b{re.escape(function)}\s*\(")` or `re.sub(...)`. This creates an O(N) performance bottleneck.
+**Action:** Use a module-level dictionary cache (e.g., `_CALL_PATTERN_CACHE` and `_WORD_PATTERN_CACHE`) to store precompiled regex patterns keyed by their dynamic values to avoid redundant compilations in hot loops.

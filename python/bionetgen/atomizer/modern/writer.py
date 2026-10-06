@@ -778,9 +778,28 @@ def _split_arguments(inner: str) -> List[str]:
     return arguments
 
 
+_CALL_PATTERN_CACHE: Dict[str, "re.Pattern[str]"] = {}
+
+
+def _get_call_pattern(function: str) -> "re.Pattern[str]":
+    if function not in _CALL_PATTERN_CACHE:
+        _CALL_PATTERN_CACHE[function] = re.compile(rf"\b{re.escape(function)}\s*\(")
+    return _CALL_PATTERN_CACHE[function]
+
+
+_WORD_PATTERN_CACHE: Dict[str, "re.Pattern[str]"] = {}
+
+
+def _get_word_pattern(word: str) -> "re.Pattern[str]":
+    if word not in _WORD_PATTERN_CACHE:
+        _WORD_PATTERN_CACHE[word] = re.compile(rf"\b{re.escape(word)}\b")
+    return _WORD_PATTERN_CACHE[word]
+
+
 def _replace_nested_function(expression: str, function: str, replacer) -> str:
     result = expression
-    pattern = re.compile(rf"\b{re.escape(function)}\s*\(")
+    # ⚡ Bolt: Use precompiled regex cache to avoid O(N) regex compilation overhead in tight loops
+    pattern = _get_call_pattern(function)
     search_index = 0
     guard = 0
     while guard < 10000:
@@ -854,9 +873,9 @@ def extend_function(
                     return f"{call_name}({', '.join(args)})"
                 expanded = body
                 for formal, actual in zip(arguments, args):
-                    expanded = re.sub(
-                        rf"\b{re.escape(formal)}\b", f"({actual})", expanded
-                    )
+                    # ⚡ Bolt: Use precompiled regex cache to avoid overhead
+                    pattern = _get_word_pattern(formal)
+                    expanded = pattern.sub(f"({actual})", expanded)
                 return f"({expanded})"
 
             function_names = [name]
@@ -894,7 +913,8 @@ def _expand_function_call(
     """Expand every call of one SBML function with parenthesis-aware parsing."""
 
     result = expression
-    call_pattern = re.compile(rf"\b{re.escape(function_name)}\s*\(")
+    # ⚡ Bolt: Use precompiled regex cache to avoid O(N) regex compilation overhead in tight loops
+    call_pattern = _get_call_pattern(function_name)
     guard = 0
     while guard < 10000:
         match = call_pattern.search(result)
