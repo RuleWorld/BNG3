@@ -89,12 +89,12 @@ test image resolved NumPy 2.5.3 from source and stopped at GCC 10.2.1, below
 NumPy's GCC 10.3 minimum.
 
 The CI and release workflows now pin cibuildwheel 4.2.1, build native macOS
-architectures with deployment targets 10.13 on macos-13 and 11.0 on macos-14,
-and use `manylinux_2_28` for current binary NumPy compatibility. This changes
-the Linux wheel compatibility floor to glibc 2.28 and is recorded here as a
-packaging decision, not a semantic convergence claim. CI exposes a manual
-wheel-matrix dispatch so an exact branch head can be validated before release
-qualification. Follow-up PR CI run
+architectures with deployment target 11.0 on macos-15-intel (x86_64) and
+macos-14 (arm64), and use `manylinux_2_28` for current binary NumPy
+compatibility. This changes the Linux wheel compatibility floor to glibc 2.28
+and is recorded here as a packaging decision, not a semantic convergence
+claim. CI exposes a manual wheel-matrix dispatch so an exact branch head can
+be validated before release qualification. Follow-up PR CI run
 [`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944)
 passed its no-exclusion corpus and integration gates at `9efa0e9`; auxiliary
 wheel run `34971595435` was canceled before wheel jobs started so the wheel

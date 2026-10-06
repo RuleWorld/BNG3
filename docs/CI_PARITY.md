@@ -98,12 +98,13 @@ requires GCC 10.3 or newer when built from source and has no suitable
 manylinux2014 binary for that target.
 
 Both the CI and release wheel workflows now pin cibuildwheel 4.2.1, build
-native macOS architectures with deployment targets 10.13 on macos-13 and 11.0
-on macos-14, and use `manylinux_2_28` for the Linux wheel image. The Linux
-compatibility floor is consequently glibc 2.28 for these wheels. CI also has a
-manual-dispatch route for running the complete wheel matrix on an exact branch
-head. The follow-up PR head `9efa0e9` passed hosted CI run
-[`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944),
+native macOS architectures with deployment target 11.0 on macos-15-intel
+(x86_64) and macos-14 (arm64), and use `manylinux_2_28` for the Linux wheel
+image. The Linux compatibility floor is consequently glibc 2.28 for these
+wheels. CI also has a manual-dispatch route for running the complete wheel
+matrix on an exact branch head. The follow-up PR head `9efa0e9` passed hosted
+CI run [`34971571944`](https://github.com/RuleWorld/BNG3/actions/runs/34971571944),
+including all no-exclusion corpus jobs.
 including all no-exclusion corpus jobs. Its auxiliary wheel run
 `34971595435` was canceled before wheel jobs started at the user's request.
 The first post-merge main-push run must provide terminal-success results for

@@ -755,10 +755,13 @@ jobs:
             macos_arch: x86_64
             macos_deployment_target: "11.0"
           # macos-13 is retired; macos-15-intel is the supported x86_64 label
-          # for public GitHub-hosted runners.
+          # for public GitHub-hosted runners. Its deployment target is 11.0,
+          # not 10.13: libc++ annotates all of <filesystem> with
+          # availability(macos, introduced = 10.15), so anything below that
+          # turns std::filesystem::path into a hard compile error.
           - os: macos-15-intel
             macos_arch: x86_64
-            macos_deployment_target: "10.13"
+            macos_deployment_target: "11.0"
           - os: macos-14
             macos_arch: arm64
             macos_deployment_target: "11.0"

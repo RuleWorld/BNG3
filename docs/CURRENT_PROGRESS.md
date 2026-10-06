@@ -1583,8 +1583,8 @@ binary was available for that target.
 
 The follow-up repairs both `.github/workflows/ci.yml` and
 `.github/workflows/release.yml`: cibuildwheel is pinned to 4.2.1, macOS
-builders use their native runner architecture with deployment targets 10.13
-(macos-13/x86_64) and 11.0 (macos-14/arm64), and Linux wheels use
+builders use their native runner architecture with deployment target 11.0
+(macos-15-intel/x86_64 and macos-14/arm64), and Linux wheels use
 `manylinux_2_28` so current NumPy test dependencies resolve to binary wheels.
 The CI workflow also exposes a manual-dispatch path for the wheel matrix so
 this repair can be validated on the exact follow-up head before release

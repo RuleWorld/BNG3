@@ -538,7 +538,13 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
             "DCMAKE_OSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
         )
         targets = job_matrix_values(workflow_path, job_name, "macos_deployment_target")
-        assert "10.13" in targets, f"{job_name} must retain its 10.13 target: {targets}"
+        # libc++ annotates every <filesystem> entry point with
+        # availability(macos, introduced = 10.15), so a lower target turns
+        # std::filesystem::path into a hard compile error rather than a
+        # warning. That is what broke the x86_64 macOS wheel lane; a target
+        # below the floor must not come back.
+        below_floor = [t for t in targets if float(t) < 10.15]
+        assert not below_floor, f"{job_name} below the <filesystem> floor: {sorted(below_floor)}"
         assert "11.0" in targets, f"{job_name} must retain its 11.0 target: {targets}"
         assert "CIBW_TEST_REQUIRES: pytest numpy click" in job
         assert "cp314-*" in job

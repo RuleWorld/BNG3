@@ -25,8 +25,10 @@
 // `availability(macos, introduced = 10.15)`, so building against an older
 // deployment target turns `std::filesystem::exists`, `::rename`, `::remove`
 // and `path` into hard compile errors even though the compiler understands the
-// header. The binary distribution targets macOS 10.13 (x86_64) and 11.0
-// (arm64), so this file must build without it on those targets.
+// header. The binary distribution targets macOS 11.0 on both architectures,
+// so this file never selects the fallback on a released build; it is kept so
+// that a tree-wide build below 10.15 has one fewer hard error and so the
+// branch stays exercised by the equivalence check described below.
 //
 // __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ is the predefined macro libc++
 // reads when it decides which features a target has, so keying the selection
