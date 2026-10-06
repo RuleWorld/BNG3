@@ -2397,7 +2397,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 writeCurrentNetwork(writerOptions);
                 continue;
             }
-            network = generator.generate(sourcePath);
+            // An empty source path stops generate() from writing <stem>.net on
+            // its own: writeCurrentNetwork below already overwrites that same
+            // path with the options-aware pass (honouring
+            // writerOptions.evaluateExpressions).  Passing sourcePath here ran
+            // the network through NetWriter twice.
+            network = generator.generate({});
             writeCurrentNetwork(writerOptions);  // Triggers NetWriter::buildDerivedRateParams
             continue;
         }
