@@ -5,7 +5,6 @@ Created on Thu Mar 22 13:11:38 2012
 @author: proto
 """
 
-import enum
 from pyparsing import Word, Suppress, Optional, alphanums, Group, ZeroOrMore
 import numpy as np
 import json
@@ -19,7 +18,6 @@ import difflib
 from bionetgen.atomizer.utils.util import logMess
 from collections import defaultdict
 import itertools
-import math
 from collections import Counter
 import re
 import os
@@ -41,7 +39,14 @@ def sequenceMatcher(a, b):
     """
     compares two strings ignoring underscores
     """
-    return difflib.SequenceMatcher(lambda x: x == "_", a, b).ratio()
+    # ⚡ Bolt: Replace lambda isjunk with string replacement and early returns for performance
+    a_clean = a.replace("_", "")
+    b_clean = b.replace("_", "")
+    if a_clean == b_clean:
+        return 1.0
+    if not a_clean or not b_clean:
+        return 0.0
+    return difflib.SequenceMatcher(None, a_clean, b_clean).ratio()
 
 
 name = Word(alphanums + "_-") + ":"
@@ -1155,7 +1160,7 @@ class SBMLAnalyzer:
                     return None, closeMatch
                     # print('****',reactant[idx],closeMatch,difflib.get_close_matches(reactant[idx],strippedMolecules))
             else:
-                mcloseMatch = get_close_matches(reactant, strippedMolecules)
+                get_close_matches(reactant, strippedMolecules)
                 # for close in mcloseMatch:
                 #    if close in [x for x in reaction[0]]:
                 #        return None,[close]
@@ -1411,7 +1416,6 @@ class SBMLAnalyzer:
                         idx = -1
                         break
                     else:
-                        flag = False
                         if pp not in [[], None]:
                             # if reactant[idx] == pp[0]:
                             treactant, tproduct = self.growString(
@@ -1498,19 +1502,20 @@ class SBMLAnalyzer:
                             equivalenceDict[difference] = symbol
                         else:
                             symbol = equivalenceDict[difference]
-                        tmp = re.sub(
-                            r"{0}(_|$)".format(difference), r"{0}\1".format(symbol), tmp
-                        )
+                        # ⚡ Bolt: Replace re.sub with string operations for performance
+                        if tmp.endswith(difference):
+                            tmp = tmp[: -len(difference)] + symbol
+                        tmp = tmp.replace(difference + "_", symbol + "_")
                     elif difference.endswith("_"):
                         if difference not in equivalenceDict:
                             symbol = symbolList.pop()
                             equivalenceDict[difference] = symbol
                         else:
                             symbol = equivalenceDict[difference]
-
-                        tmp = re.sub(
-                            r"(_|^){0}".format(difference), r"{0}\1".format(symbol), tmp
-                        )
+                        # ⚡ Bolt: Replace re.sub with string operations for performance
+                        if tmp.startswith(difference):
+                            tmp = symbol + tmp[len(difference) :]
+                        tmp = tmp.replace("_" + difference, "_" + symbol)
             return tmp, symbolList, equivalenceDict
 
         """
@@ -1982,7 +1987,7 @@ class SBMLAnalyzer:
             for sublist in validCandidatesProducts
         ]
 
-        tmpReactant = [
+        [
             [
                 list(
                     filter(
@@ -1994,7 +1999,7 @@ class SBMLAnalyzer:
             ]
             for reactant in validCandidatesReactants
         ]
-        tmpProduct = [
+        [
             [
                 list(
                     filter(
@@ -2033,9 +2038,10 @@ class SBMLAnalyzer:
             for i in range(1, threshold):
                 combinations = itertools.permutations(filtered_mods, i)
 
-                validKeys = list(
-                    filter(lambda x: ("".join(x)).upper() == fuzzy_upper, combinations)
-                )
+                # ⚡ Bolt: Replace lambda and filter with list comprehension for performance
+                validKeys = [
+                    c for c in combinations if "".join(c).upper() == fuzzy_upper
+                ]
 
                 if validKeys:
                     return validKeys
@@ -2203,14 +2209,12 @@ class SBMLAnalyzer:
         ]
 
         for idx, reaction in enumerate(rawReactions):
-            flagstar = False
             if (
                 len(reaction[0]) == 1
                 and len(reaction[1]) == 1
                 and len(reaction[0][0]) > len(reaction[1][0])
             ):
                 # unmodification/relaxatopn
-                flagstar = True
                 reaction = [reaction[1], reaction[0]]
 
             # should we reuse information obtained from other methods?
@@ -2372,7 +2376,7 @@ class SBMLAnalyzer:
         some kind of modification goes on aided through annotation information
         """
         rawReactions = [parseReactions(x) for x in reactions]
-        equivalenceTranslator = self.processAnnotations(molecules, annotations)
+        self.processAnnotations(molecules, annotations)
         for reactionIndex in range(0, len(rawReactions)):
             for reactantIndex in range(0, len(rawReactions[reactionIndex])):
                 tmp = []
