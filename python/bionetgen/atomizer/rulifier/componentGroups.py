@@ -581,7 +581,11 @@ def getContextRequirements(
     # print('++++')
 
     # print(reactionCenterStateDictionary['Ras%0'][('Ras_GTPmod',0,'Ras_GTP')]['Ras_GDPmod'])
-    backupstatedictionary = deepcopy(reactionCenterStateDictionary)
+    import pickle
+
+    backupstatedictionary = pickle.loads(
+        pickle.dumps(reactionCenterStateDictionary, -1)
+    )
     # print(reactionCenterStateDictionary['EGFR%1'][('_Pmod',0,'_P')])
     # print(reactionCenterStateDictionary['EGFR%0'][('_Pmod',0,'_P')])
     # return

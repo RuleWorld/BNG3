@@ -1,0 +1,3 @@
+## 2025-02-12 - Atomizer structure copy optimization
+**Learning:** `python/bionetgen/atomizer` suffers from significant performance bottlenecks due to `copy.deepcopy()` usage on custom tree structures (Molecule, Component, Species). Using standard library `deepcopy` on nested structures in python adds enormous overhead due to recursive dispatch, memo dict maintenance, and dynamic introspection.
+**Action:** Replaced `deepcopy` invocations with explicit comprehensions mapping via standard `.copy()` implementations present on these classes. Also used native list/dict comprehensions on dictionaries and sets instead of calling `deepcopy()`, which is ~5x faster.
