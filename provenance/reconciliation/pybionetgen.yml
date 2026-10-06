@@ -13,7 +13,7 @@
       "bng3_reference": "pyproject.toml; python/bionetgen/main.py",
       "tests": [],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "BNG3 imports packaging.version in its public Python CLI and now declares packaging explicitly in project dependencies. The upstream package version/changelog remain PyBioNetGen-specific."
+      "rationale": "The runtime dependency is present in pyproject.toml and imported by python/bionetgen/main.py. No focused test currently asserts that the built package declares and installs packaging, so that contract remains unverified here. Maintainer review remains pending."
     },
     {
       "source_revision": "28bf351a9bbfc197e19487c26dedda683716bb64",

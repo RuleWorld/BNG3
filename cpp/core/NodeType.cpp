@@ -41,10 +41,13 @@ NodeType::NodeType  ( const std::string & _type_name, const NodeType & _parent_t
 std::string
 NodeType::get_label ( ) const
 {
-    std::stringstream s;
-    s << type_name;
-    return s.str();   
-}    
+    // The label is exactly the type name.  Building it through a
+    // std::stringstream costs a stringbuf allocation and the iostream
+    // format/teardown machinery per call, for a value that is already
+    // available as a std::string; this runs once per node per candidate
+    // during network expansion.  Returning type_name copies the same bytes.
+    return type_name;
+}
 
 
 // nodetype equal operator
@@ -148,13 +151,13 @@ NodeType::add_edges_out ( NodeType & node_type, NodeFunction & nodefcn )
 std::string
 NodeType::get_BNG2_string ( bool instance ) const
 {
-    std::stringstream s;
     // For both instance and non-instance (pattern) modes, the BNG2 string
     // representation of a base NodeType is simply the type name label.
     // No additional distinction is needed at this level; subclasses
     // (EntityType, BondType) override for type-specific formatting.
-    s << get_label();
-    return s.str();
+    // get_label() already yields those exact bytes; routing them through a
+    // std::stringstream only bought an allocation and the iostream teardown.
+    return get_label();
 }
 
 
@@ -179,14 +182,12 @@ EntityType::EntityType ( const std::string & type_name,
 std::string
 EntityType::get_BNG2_string ( bool instance ) const
 {
-    std::stringstream s;
     // For both instance and non-instance (pattern) modes, the BNG2 string
     // representation of an EntityType is the type name label. In BNG2 syntax,
     // entity types (molecules, components) are written the same way regardless
     // of whether they appear in a pattern or a fully-specified species.
-    s << get_label();
-    return s.str();
-} 
+    return get_label();
+}
 
 
 
@@ -209,9 +210,10 @@ BondType::BondType ( BondNodeFunction & typing_fcn )
 std::string
 BondType::get_BNG2_string ( bool instance ) const
 {
-    std::stringstream s;
-    return s.str();
-} 
+    // A bond node contributes no type text of its own; the bond decoration is
+    // emitted by Node::get_BNG2_string.
+    return std::string();
+}
 
 
 // bond typing function

@@ -1,0 +1,339 @@
+{
+  "bng3_build": {
+    "cli": "/private/tmp/bng3-20261002-parity/build/cpp/bng_cpp",
+    "cli_sha256": "f53ddfb4cef0e874553bc4e0d183026f7e743a2ff941f7d4e3992304ef41b102",
+    "configure": "Release; BUILD_PYTHON_BINDINGS=ON; BUILD_CLI=ON; BUILD_NFSIM_CLI=OFF; BUILD_TESTS=OFF; NFSIM_ENABLE_LTO=OFF; parallel=2",
+    "import_verified": true,
+    "last_build_command": "cmake --build build -j2",
+    "last_build_result": "exit 0; dependency deprecation and duplicate-library linker warnings only",
+    "numpy": "2.5.3",
+    "package_source": "/private/tmp/bng3-20261002-parity/python/bionetgen/__init__.py",
+    "pytest": "9.1.1",
+    "python": "3.14.7",
+    "python_extension": "/private/tmp/bng3-20261002-parity/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+    "python_extension_sha256": "da3c21bc615d86d5c959b87e9cea701e0764b947fe9749881243e1e1a69144f7"
+  },
+  "development_red_checks": [
+    {
+      "command": ".venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_rhs.py -k rate_evaluator -q",
+      "result": "1 failed, 3 deselected; expected missing evaluate_rate_coefficients API before implementation"
+    },
+    {
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_rhs.py -k localfunc --bng-cpp build/cpp/bng_cpp -q",
+      "result": "1 failed, 5 deselected; expected missing _validation_ode_rate_coefficients binding before implementation"
+    }
+  ],
+  "frozen_input": {
+    "action_line": "simulate_ode({t_start=>0,t_end=>40,n_steps=>100})",
+    "model": "Motivating_example",
+    "path": "/private/tmp/bng3-20261002-parity/models/Motivating_example.bngl",
+    "sha256": "4f9fd1ae1fad36210050a9717a7d22da1a17b198d1e7d934b22f18e6c5257c06"
+  },
+  "generated_at_utc": "2026-10-03T09:03:58Z",
+  "identity_audit": {
+    "bngcore_boundary": "PatternGraph::get_label builds BNGcore graph labels.",
+    "comparator_boundary": "tests/validation/compare.py uses its own structural species graph isomorphism.",
+    "nfsim_boundary": "Complex::generateCanonicalLabel constructs NFsim complex labels.",
+    "residual": "The tests do not establish that raw BNGcore and NFsim label strings are interchangeable or that labels form a single cross-domain cache/serialization contract. Identity and caching remain domain-specific.",
+    "shared_library": "One compiled cpp/nauty target is linked by bng_core and nfsim_core.",
+    "verified_properties": [
+      "molecule/site order independence",
+      "bond-number independence",
+      "state distinction",
+      "connectivity distinction",
+      "symmetric blbr serialization equivalence"
+    ]
+  },
+  "native_test_discovery": {
+    "available_source_tests_not_built": [
+      "tests/cpp/test_ode_function_index.cpp",
+      "tests/cpp/test_ode_options.cpp"
+    ],
+    "command": "ctest --test-dir build -N",
+    "reason": "The current Release build was configured with BUILD_TESTS=OFF.",
+    "result": "Total Tests: 0"
+  },
+  "objective": "Independent network, expression-value/RHS, deterministic trajectory, and stochastic/NFsim parity gates over frozen tiers, with classified results and oracle identity.",
+  "oracle_identity": {
+    "bng2": {
+      "action_source": "/private/tmp/bng3-20261002-oracles/bionetgen/bng2/Perl2/BNGAction.pm",
+      "action_source_contract": "Perl2/BNGAction.pm lines 253-254 default atol=1e-8 and rtol=1e-8.",
+      "action_source_sha256": "8221eb57929f3c3ed58ae34ef896a34b5e48035d2a0cccd905e9c4601efbeeb4",
+      "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+      "run_network_helper": "/private/tmp/bng3-20261002-oracles/bionetgen/bng2/bin/run_network",
+      "run_network_helper_sha256": "73761b79bfe9e3ae52932ea700a4ee7172f3089a703404590c27ef1678b5c931",
+      "script": "/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl",
+      "script_sha256": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4"
+    },
+    "native_nfsim": {
+      "binary": "/private/tmp/bng3-20261002-oracles/nfsim/build/NFsim",
+      "binary_sha256": "7621bb850efc6cf203ec2c42004c2cffcc0115af7e3ce03d62aabab100bf31a1",
+      "revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa"
+    }
+  },
+  "resolved_findings": [
+    {
+      "classification": "resolved production behavior mismatch; fix committed on the parity branch and pending integration reconciliation",
+      "evidence": {
+        "fixed_comparison_threshold": {
+          "atol": 1e-09,
+          "rtol": 1e-06
+        },
+        "input_sha256": "4f9fd1ae1fad36210050a9717a7d22da1a17b198d1e7d934b22f18e6c5257c06",
+        "manual_fixture_edit": "Used only as diagnosis; acceptance was rerun against the original frozen file unchanged.",
+        "oracle_cause": "Pinned BNG2 Perl action defaults both CVODE tolerances to 1e-8 at BNGAction.pm:253-254; BNG3 action path inherited OdeOptions atol=1e-12.",
+        "pre_fix_column": "Tot_P2",
+        "pre_fix_max_relative_error": 0.0001196
+      },
+      "finding": "Original frozen Motivating_example BNG2 action parity mismatch before ActionDispatch change",
+      "post_fix": "The unchanged original Motivating_example action passes in the 63-test non-slow BNG2/deterministic suite. Separate regression cases pass with explicit rtol=1e-12/atol=1e-12 and confirm Python API defaults remain rtol=1e-8/atol=1e-12."
+    },
+    {
+      "cause": "The child process replaced PYTHONPATH with source-only paths; runner.api_available() was false without build/cpp and true when build/cpp was included.",
+      "classification": "resolved validation-harness issue",
+      "finding": "Nested strict-mode oracle self-test omitted local build/cpp from PYTHONPATH",
+      "fix": "Committed d04b6c8 to include build/cpp when present.",
+      "post_fix": "The strict-mode regression and full 15-test seed module pass."
+    },
+    {
+      "classification": "resolved comparison-harness precision issue",
+      "finding": "Explicit action/API comparison initially used bitwise equality across serialized .gdat and in-memory arrays",
+      "observed_difference": "max relative gap 4.916e-13 due to serialization path",
+      "resolution": "Use rtol=1e-10 and atol=1e-12 for same-engine action/API equivalence; BNG2 scientific parity remains at its fixed 1e-6/1e-9 threshold."
+    }
+  ],
+  "schema": "bng3-parity-evidence/v1",
+  "source": {
+    "base_head": "c345f3aa635aac0048681b79c6a4ff1e75a298f7",
+    "branch": "codex/bng3-20261002-parity",
+    "head": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
+    "integration_note": "Core/integration ownership is resolved. Commits are ready for integration reconciliation; this lane did not merge, push, or create a PR.",
+    "owner_review_pending_files": [],
+    "source_commit_subject": "test(validation): compare compiled rate expression values",
+    "source_files_committed_at_tested_head": true,
+    "tracked_diff_sha256": "6564b900cf6400f2fc10b8008b7819c60797a234d21e2661e49528c30aae5497",
+    "working_source_file_sha256": {
+      "cpp/actions/ActionDispatch.cpp": "d5c8874b907eee557d1568fdbd77f0161871298a5fe8bcc4fac4401b8cf61aa4",
+      "cpp/bindings/bind_engine.cpp": "fde7e983fcda5e9faa63dd2d5ab4944d5c7d330cf5f274fefe143f0752e18aa3",
+      "cpp/engine/OdeIntegrator.cpp": "39302d0d72704a60a4a84541c6b3d9e075ded1adaeaa127a5074cab3a06f0342",
+      "cpp/engine/OdeIntegrator.hpp": "0c4b0f555e0091a8659d3d23c9b268f4d4197b4b5029746ebb8b4ec1189a6af1",
+      "tests/validation/README.md": "61c2c6197fdb8f0563130374bffbe6ebe25c30d23775b5c7a64a8c0f8ca56a02",
+      "tests/validation/ci-expression-wiring.proposal.patch": "18e23bdaec9a7c8458d8b317cf294a6d05e709b51dcc56092476b797c08f5c2b",
+      "tests/validation/compare.py": "336364ea090a69a735675dd53c8ea91ba43803706c07ca060f5d2267e4fbd589",
+      "tests/validation/oracle_perl.py": "9337ab576a5366ffdc6a0be7350ed24e65a957259ef014e76793e7e9a577a8e1",
+      "tests/validation/rhs.py": "a5f78f73a807859ae046b27233e236281844035a9f5769c5bd85d09c0eb9935e",
+      "tests/validation/test_compare_trajectories.py": "9758703c395cd464897675393081ff7b04cc3659bb6c0e8f3040ed2d0e49c6ed",
+      "tests/validation/test_oracle_perl.py": "1a56bf4ad2b19acc5116c06952509b194f3a8cf8ee4e822e02d5744d79970787",
+      "tests/validation/test_parity_expressions.py": "18e6e6efb0898fecf0be404eec0302d3c72ba7fe776f80bd81f4f327d37e2aec",
+      "tests/validation/test_parity_nfsim.py": "fce08c1f3d0f4dbab440b64cf8fa7ff2aef3688e75caef7e9d02e15e95b0a890",
+      "tests/validation/test_parity_nfsim_seed.py": "50ac0894b69ac98681a91324d4f4c78f9c7e3080ff19bd2ec655e2b25683997c",
+      "tests/validation/test_parity_ode.py": "c94f3fb5d6381861b4773f47e7998910ad204fa184663ba52b14a128eccb9203",
+      "tests/validation/test_parity_rhs.py": "ea1f2ebd491fce7da61562b041898d0f713edd629de4773d4d8fc93ec415e345",
+      "tests/validation/test_parity_stochastic.py": "cc2b4bfccf1707cf1360d967c48f266f46bf84efa2f3aca86ca4bbb35f55170b",
+      "tests/validation/test_rhs.py": "45ff924c17483768389f8490d171c4b5cdf6732ce303af0de8d2ca3608c51b7b"
+    },
+    "working_source_signature_sha256": "dbe6c1366b988248590a8c7f7a26ef87ea594d8f6b24a48776d90c8612a4ee40"
+  },
+  "tooling_observations": [
+    "Black format check was unavailable because black is not installed in the local virtual environment."
+  ],
+  "unverified_or_unavailable": [
+    {
+      "gate": "BNG2 SSA 200-member distributional parity",
+      "reason": "oracle_perl.ensemble('gene_expr', min_runs=200) reports 'no committed ensemble directory'; no .ens artifacts exist in this checkout. A single BNG2 .gdat was not substituted.",
+      "status": "unavailable"
+    },
+    {
+      "gate": "Full Tier-P direct NFsim path sweep",
+      "reason": "Only the frozen tier-NF direct/XML/seed and native 200-run cases were exercised; the broader Tier-P sweep was not run.",
+      "status": "not_run"
+    },
+    {
+      "gate": "Full-corpus independent BNG2 network parity and full CTest suite",
+      "reason": "Only selected expression/network/trajectory fixtures were run. The build uses BUILD_TESTS=OFF, and ctest --test-dir build -N reports Total Tests: 0; the full CTest suite was not built or run.",
+      "status": "not_run"
+    },
+    {
+      "gate": "Hosted CI",
+      "reason": "No PR was created and the workflow proposal was not applied; hosted checks were not queried.",
+      "status": "not_run"
+    }
+  ],
+  "verified_gates": [
+    {
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_compare_net.py tests/validation/test_compare_trajectories.py tests/validation/test_stochastic_comparator.py tests/validation/test_parity_stochastic.py tests/validation/test_oracle_perl.py tests/validation/test_rhs.py tests/validation/test_parity_rhs.py tests/validation/test_parity_expressions.py tests/validation/test_parity_ode.py -m 'not slow' --bng-cpp build/cpp/bng_cpp -q",
+      "coverage": {
+        "BNG2_action_ODE_models": [
+          "Motivating_example",
+          "CaOscillate_Func",
+          "Repressilator",
+          "egfr_net",
+          "michment"
+        ],
+        "Motivating_example_threshold": {
+          "atol": 1e-09,
+          "observable_policy": "intersect",
+          "rtol": 1e-06
+        },
+        "Python_API_ODE_models": [
+          "localfunc",
+          "CaOscillate_Func",
+          "michment"
+        ],
+        "Python_API_observable_policy": "exact",
+        "RHS_evaluator_units": "4 passed",
+        "RHS_samples": "3 positive states at each of t=0, 0.375, and 2.5; 15 model-state/time derivative evaluations; per-reaction coefficient comparison covers 3,003 values; rtol=1e-9, atol=1e-12",
+        "comparator_contracts": "33 passed",
+        "expression_value_gate": {
+          "atol": 1e-12,
+          "coefficient_semantics": "Per-reaction rate coefficient before mass-action species factors; reaction formulas and species identity are structurally paired.",
+          "coefficient_values_compared": 3003,
+          "comparison": "pinned BNG2 .net rate expressions vs OdeIntegrator compiled coefficients exposed by a private validation hook",
+          "finite_checks": "Reference and compiled coefficient arrays are nonempty, count-matched, and finite at every vector.",
+          "model_state_time_vectors": 15,
+          "reaction_counts_and_values": {
+            "CaOscillate_Func": {
+              "coefficient_values": 24,
+              "reactions": 8,
+              "species": 4
+            },
+            "isingspin_energy": {
+              "coefficient_values": 1440,
+              "reactions": 480,
+              "species": 64
+            },
+            "isingspin_localfcn": {
+              "coefficient_values": 1488,
+              "reactions": 496,
+              "species": 64
+            },
+            "localfunc": {
+              "coefficient_values": 33,
+              "reactions": 11,
+              "species": 7
+            },
+            "michment": {
+              "coefficient_values": 18,
+              "reactions": 6,
+              "species": 5
+            }
+          },
+          "reaction_instances_per_vector": 1001,
+          "rtol": 1e-09,
+          "standalone_symbol_boundary": "Individual intermediate parameter, function, and group symbol values are not exported as standalone outputs; their effect on each selected rate coefficient and derivative is checked.",
+          "times": [
+            0.0,
+            0.375,
+            2.5
+          ],
+          "vectors_per_model": 3
+        },
+        "frozen_expression_models": [
+          "CaOscillate_Func",
+          "isingspin_energy",
+          "isingspin_localfcn",
+          "localfunc",
+          "michment"
+        ],
+        "function_network_models": [
+          "localfunc",
+          "CaOscillate_Func",
+          "michment"
+        ],
+        "oracle_artifact_selection": "4 passed"
+      },
+      "gate": "comparator, BNG2 expression-network/value, direct RHS, deterministic ODE/API, and SSA determinism suite",
+      "result": "63 passed, 3 deselected in 23.64s",
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    },
+    {
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_stochastic.py -m 'not slow' -q",
+      "gate": "stochastic SSA fixed-seed determinism",
+      "models": [
+        "gene_expr",
+        "michment",
+        "simple_system"
+      ],
+      "result": "3 passed, 3 deselected in 0.04s",
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    },
+    {
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 NFSIM_BIN=/private/tmp/bng3-20261002-oracles/nfsim/build/NFsim .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_nfsim.py -m 'nf and not slow' --bng-cpp build/cpp/bng_cpp -q",
+      "gate": "NFsim non-slow CI parity module",
+      "result": "6 passed, 6 deselected in 0.71s",
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    },
+    {
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 NFSIM_BIN=/private/tmp/bng3-20261002-oracles/nfsim/build/NFsim .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_nfsim_seed.py --bng-cpp build/cpp/bng_cpp -q",
+      "gate": "NFsim seed and strict-oracle contract module",
+      "result": "15 passed in 2.74s",
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    },
+    {
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 NFSIM_BIN=/private/tmp/bng3-20261002-oracles/nfsim/build/NFsim .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_nfsim.py -q -k test_nf_vs_native --bng-cpp build/cpp/bng_cpp",
+      "gate": "native NFsim 200-member distributional comparison",
+      "models": [
+        "localfunc",
+        "motor",
+        "simple_system",
+        "tlbr"
+      ],
+      "observable_policy": "exact",
+      "result": "4 passed, 8 deselected in 41.30s",
+      "runs_per_model_per_implementation": 200,
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
+      "trajectory": {
+        "n_steps": 50,
+        "t_end": 50.0
+      }
+    },
+    {
+      "command": ".venv/bin/python -m pytest tests/python/test_single_nauty_contract.py -q",
+      "gate": "shared nauty identity/build contract",
+      "result": "10 passed in 0.02s",
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    },
+    {
+      "checks": [
+        "cmake --build build -j2",
+        "git diff --check",
+        ".venv/bin/python -m py_compile tests/validation/rhs.py tests/validation/test_rhs.py tests/validation/test_parity_rhs.py",
+        "git apply --check tests/validation/ci-expression-wiring.proposal.patch (after f64962a committed)"
+      ],
+      "gate": "build and source/workflow-proposal hygiene",
+      "result": "all exit 0; CMake emitted dependency deprecation and duplicate-library warnings only",
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    },
+    {
+      "command": "PYTHONPATH=python:build/cpp BNG_CPP=build/cpp/bng_cpp BNG3_CI_STRICT_ORACLES=1 PERL=perl BNG2_PERL=/private/tmp/bng3-20261002-oracles/bionetgen/bng2/BNG2.pl BNGPATH=/private/tmp/bng3-20261002-oracles/bionetgen/bng2 .venv/bin/python -m pytest -c tests/validation/pytest.ini tests/validation/test_parity_ode.py --bng-cpp build/cpp/bng_cpp -q",
+      "gate": "native BNG2 ODE trajectory regression on committed OdeIntegrator source",
+      "models": [
+        "Motivating_example",
+        "CaOscillate_Func",
+        "Repressilator",
+        "egfr_net",
+        "michment",
+        "localfunc"
+      ],
+      "result": "10 passed in 5.12s",
+      "status": "passed",
+      "tested_source_head": "f64962a7e569f426b5f7e2077066bf49ea3442d2"
+    }
+  ],
+  "workflow_proposal": {
+    "applied": false,
+    "applies_cleanly": true,
+    "checked_after_test_commit": "f64962a7e569f426b5f7e2077066bf49ea3442d2",
+    "path": "tests/validation/ci-expression-wiring.proposal.patch",
+    "referenced_test_files_committed_before_check": true,
+    "scope": "New deterministic expression/RHS/ODE job plus comparator and SSA determinism modules; excludes slow 200-member ensemble checks from this job. The existing NFsim job remains the owner for native NFsim gates.",
+    "workflow_modified": false
+  }
+}
