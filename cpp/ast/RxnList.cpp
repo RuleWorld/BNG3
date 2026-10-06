@@ -44,6 +44,17 @@ std::string reactionSignature(const Rxn& reaction) {
 } // namespace
 
 bool RxnList::add(Rxn reaction) {
+    // BNG2 (Perl2/RxnList.pm::add) drops null reactions whose reactant and
+    // product multisets are identical (e.g. a wildcard-state rule matching
+    // a species already in the target state, as in Hawse_full). Skip before
+    // dedup so generated and loaded networks match Perl on both paths.
+    // Zero-effect rules (0 -> 0, from SBML import of empty reactions) are
+    // exempt: BNG3 deliberately preserves them as rate-carrying no-ops.
+    auto sortedReactants = reaction.getReactants();
+    auto sortedProducts = reaction.getProducts();
+    std::sort(sortedReactants.begin(), sortedReactants.end());
+    std::sort(sortedProducts.begin(), sortedProducts.end());
+    if (!sortedReactants.empty() && sortedReactants == sortedProducts) return false;
     const auto signature = reactionSignature(reaction);
     const auto existing = indexBySignature_.find(signature);
     if (existing != indexBySignature_.end()) {

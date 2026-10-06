@@ -1666,13 +1666,12 @@ std::any BNGAstVisitor::visitParameter_def(BNGParser::Parameter_defContext* ctx)
 }
 
 std::any BNGAstVisitor::visitFunction_def(BNGParser::Function_defContext* ctx) {
-    if (ctx->expression() == nullptr || ctx->STRING().empty()) {
+    if (ctx->expression() == nullptr || ctx->function_name() == nullptr) {
         return {};
     }
 
-    const auto strings = ctx->STRING();
     currentModel_->addFunction(ast::Function(
-        strings.front()->getText(),
+        ctx->function_name()->getText(),
         collectParamNames(ctx->param_list()),
         buildExpression(ctx->expression())));
     return {};

@@ -3,7 +3,6 @@
 
 #pragma once
 
-
 #include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParserListener.h"
@@ -82,6 +81,9 @@ public:
 
   virtual void enterSeed_species_def(BNGParser::Seed_species_defContext * /*ctx*/) override { }
   virtual void exitSeed_species_def(BNGParser::Seed_species_defContext * /*ctx*/) override { }
+
+  virtual void enterSeed_amount_annotation(BNGParser::Seed_amount_annotationContext * /*ctx*/) override { }
+  virtual void exitSeed_amount_annotation(BNGParser::Seed_amount_annotationContext * /*ctx*/) override { }
 
   virtual void enterSpecies_def(BNGParser::Species_defContext * /*ctx*/) override { }
   virtual void exitSpecies_def(BNGParser::Species_defContext * /*ctx*/) override { }
@@ -196,6 +198,9 @@ public:
 
   virtual void enterFunction_def(BNGParser::Function_defContext * /*ctx*/) override { }
   virtual void exitFunction_def(BNGParser::Function_defContext * /*ctx*/) override { }
+
+  virtual void enterFunction_name(BNGParser::Function_nameContext * /*ctx*/) override { }
+  virtual void exitFunction_name(BNGParser::Function_nameContext * /*ctx*/) override { }
 
   virtual void enterParam_list(BNGParser::Param_listContext * /*ctx*/) override { }
   virtual void exitParam_list(BNGParser::Param_listContext * /*ctx*/) override { }
@@ -354,3 +359,4 @@ public:
   virtual void visitErrorNode(antlr4::tree::ErrorNode * /*node*/) override { }
 
 };
+

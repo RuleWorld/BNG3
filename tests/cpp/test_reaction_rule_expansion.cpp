@@ -104,6 +104,66 @@ end actions
     REQUIRE(network.reactions.size() == 1);
 }
 
+TEST_CASE("Rule expansion: plain deletion splitting a complex yields no reaction", "[ReactionRule]") {
+    // BNG2 build_reaction returns undef when a molecule deletion without the
+    // DeleteMolecules modifier would leave more fragments than product
+    // patterns. ComplexDegradation Rule04 (A(b!1).B(a!1) -> A(b)) fires on the
+    // dimer but must not fire on the trimer, where deleting B would orphan C.
+    auto model = parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(b)
+    B(a,c)
+    C(b)
+end molecule types
+begin seed species
+    A(b!1).B(a!1,c) 1
+    A(b!1).B(a!1,c!2).C(b!2) 1
+end seed species
+begin reaction rules
+    Rule04: A(b!1).B(a!1) -> A(b) k
+end reaction rules
+begin actions
+    generate_network({overwrite=>1})
+end actions
+)");
+
+    engine::NetworkGenerator gen(*model);
+    auto network = gen.generate(std::filesystem::path("test.bngl"));
+
+    REQUIRE(network.reactions.size() == 1);
+}
+
+TEST_CASE("Rule expansion: null self-loop reactions are pruned like BNG2", "[ReactionRule]") {
+    // BNG2 RxnList.pm drops reactions whose reactant and product multisets
+    // are identical (Hawse_full: 88 reactions, not 176). A wildcard rule
+    // matching a species already in the target state yields no reaction.
+    auto model = parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s~U~P)
+end molecule types
+begin seed species
+    A(s~U) 1
+end seed species
+begin reaction rules
+    R: A(s) -> A(s~U) k
+end reaction rules
+begin actions
+    generate_network({overwrite=>1})
+end actions
+)");
+
+    engine::NetworkGenerator gen(*model);
+    auto network = gen.generate(std::filesystem::path("test.bngl"));
+
+    REQUIRE(network.reactions.size() == 0);
+}
+
 TEST_CASE("Rule expansion: multi-type reactant pattern requires every molecule type", "[ReactionRule]") {
     auto model = parseModel(R"(
 begin molecule types

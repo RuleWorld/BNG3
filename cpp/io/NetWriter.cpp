@@ -1206,12 +1206,33 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     break;
                 }
             }
-            if (isModelFunction && hasLocalArgs && (rule.hasScopePrefix() || !model.getEnergyPatterns().empty())) {
+            // A molecule-tag scope (%x on a reactant molecule, as in
+            // ft_local_functions) carries per-reaction local contexts exactly
+            // like a scope prefix when the network reactions bear |local:
+            // fingerprints. Detect that directly so tag-scoped local
+            // functions get per-reaction instantiation (and reverse-direction
+            // derivation) instead of the single symbolic fallback below.
+            bool ruleReactionsHaveLocalContext = false;
+            {
+                const std::string reverseRuleName = "_reverse__" + ruleName;
+                for (const auto& rxn : network.reactions.all()) {
+                    const auto& origin = rxn.getOriginRuleName();
+                    if (origin != ruleName && origin != reverseRuleName) continue;
+                    if (rxn.getRateLaw().find("|local:") != std::string::npos) {
+                        ruleReactionsHaveLocalContext = true;
+                        break;
+                    }
+                }
+            }
+            if (isModelFunction && hasLocalArgs && (rule.hasScopePrefix() || !model.getEnergyPatterns().empty() || ruleReactionsHaveLocalContext)) {
                 // Per-species numeric evaluation for:
                 // 1. Scope prefix (%x::) models like localfunc
                 // 2. Models with energy patterns (like isingspin_localfcn) where
                 //    local functions reference per-species observables
+                // 3. Molecule-tag (%x) scopes with local fingerprints (ft_local_functions)
                 // Perl creates per-species derived parameters: rateLaw{N}_{M} or Rule1_local{M}
+                const bool moleculeTagLocal =
+                    !rule.hasScopePrefix() && model.getEnergyPatterns().empty();
 
                 // Extract rule index (1-based)
                 int ruleIndex = 0;
@@ -1219,9 +1240,13 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     ++ruleIndex;
                     if (r.getRuleName() == ruleName) break;
                 }
+                // Molecule-tag scopes use Perl's __R{N}_local convention (the
+                // same name the symbolic fallback below uses for seq 1), so
+                // the first context keeps its parameter name.
                 std::string baseParamName = rule.hasScopePrefix()
                     ? "rateLaw" + std::to_string(ruleIndex)
-                    : ruleName + "_local";
+                    : (moleculeTagLocal ? "__R" + std::to_string(ruleIndex) + "_local"
+                                        : ruleName + "_local");
 
                 // Get function body and formal args
                 const auto& formalArgs = matchedFunc->getArgs();
@@ -1387,7 +1412,11 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                             }
                         }
                         DerivedRateInfo revInfo;
-                        std::string revBaseParam = reverseRuleName.substr(std::string("_reverse__").size()) + "r_local";
+                        // Molecule-tag scopes use Perl's __reverse__R{N}_local
+                        // convention; other paths keep their existing names.
+                        std::string revBaseParam = moleculeTagLocal
+                            ? "__reverse__R" + std::to_string(ruleIndex) + "_local"
+                            : reverseRuleName.substr(std::string("_reverse__").size()) + "r_local";
                         revInfo.paramName = revBaseParam;
                         revInfo.isLocalFunction = true;
                         bool revHasLocalSuffix = false;
@@ -2061,21 +2090,24 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     for (const auto& reaction : network.reactions.all()) {
         const bool totalRate =
             hasTotalRateModifier(model, reaction.getOriginRuleName());
-        // Perl BNG2 sorts reactant/product indices for elementary rate laws (simple
-        // parameter names), but preserves original order for MM/Sat/Hill/Function rates.
+        // Perl BNG2 (Rxn.pm::stringID) sorts reactant/product indices for
+        // Ele and Function rate laws, but preserves match order for the
+        // saturating builtins (MM/Sat/Hill/Arrhenius).
         const bool isElementary = [&]() {
             const auto derivedFound = derivedRateParams.find(reaction.getOriginRuleName());
             if (derivedFound != derivedRateParams.end()) {
-                // Derived rate params that are ConstantExpressions (not functions)
-                // are treated as "Ele" type in Perl — sort reactants/products
-                return !derivedFound->second.asFunction;
+                // Derived _rateLaw() functions are Perl "Function" type and
+                // sort like Ele; only the saturating builtins keep order,
+                // and those never take the derived-function path.
+                return true;
             }
             const auto& rateExpr = reaction.getRateExpression();
             if (rateExpr.has_value()) {
                 const auto kind = rateExpr->kind();
-                if (kind == ast::ExpressionKind::Function ||
-                    kind == ast::ExpressionKind::ObservableRef)
-                    return false;
+                if (kind == ast::ExpressionKind::Function) {
+                    return builtinRateLawFunctions.count(rateExpr->name()) == 0;
+                }
+                if (kind == ast::ExpressionKind::ObservableRef) return false;
             }
             // Check if rate law string is a simple identifier (no operators)
             const auto& rl = reaction.getRateLaw();
@@ -2167,9 +2199,13 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 out << " unit_conversion=" << *unitExpr;
             }
         } else if (derivedFound != derivedRateParams.end() && derivedFound->second.isLocalFunction) {
-            // Per-species local function rate: look up by reactant species
+            // Per-reaction local function rate when local contexts differ
+            // (perReactionRates keyed by reaction index), else per-species.
             std::string rateParamName = derivedFound->second.paramName + "_1"; // fallback
-            if (!reactants.empty()) {
+            const auto rxnIt = derivedFound->second.perReactionRates.find(rxnIdx);
+            if (rxnIt != derivedFound->second.perReactionRates.end()) {
+                rateParamName = rxnIt->second.first;
+            } else if (!reactants.empty()) {
                 const auto specIt = derivedFound->second.perSpeciesRates.find(reactants[0]);
                 if (specIt != derivedFound->second.perSpeciesRates.end()) {
                     rateParamName = specIt->second.first;

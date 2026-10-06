@@ -442,3 +442,14 @@ target_include_directories(test_node_label_parity PRIVATE
 target_link_libraries(test_node_label_parity PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_core)
 catch_discover_tests(test_node_label_parity)
+
+# test_xml_writer — BNG2-parity regressions for XmlWriter reaction-rule
+# deletion, observable quantifiers, bond-swap operation order, and
+# zero-order synthesis bonds (report slice: XmlWriter).
+add_executable(test_xml_writer test_xml_writer.cpp)
+target_include_directories(test_xml_writer PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+)
+target_link_libraries(test_xml_writer PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast bng_parser bng_compile)
+catch_discover_tests(test_xml_writer)
