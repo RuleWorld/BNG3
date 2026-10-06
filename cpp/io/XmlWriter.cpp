@@ -1801,6 +1801,22 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         xml << "        </Map>\n";
 
         xml << "        <ListOfOperations>\n";
+
+        // BNG2 (RxnRule.pm, the MolDel construction) deletes whole species
+        // matching a reactant pattern only when every molecule of that pattern
+        // is deleted and the rule lacks DeleteMolecules.  Otherwise each deleted
+        // molecule gets its own Delete, carrying the rule's DeleteMolecules flag.
+        std::vector<std::size_t> deletedPerPattern(rule.getReactants().size(), 0);
+        for (const auto& operation : rule.getOperations()) {
+            if (operation.type == ast::ReactionRule::TransformOp::Type::DeleteMolecule &&
+                operation.patternIndex < deletedPerPattern.size()) {
+                ++deletedPerPattern[operation.patternIndex];
+            }
+        }
+        std::vector<bool> wholePatternWritten(rule.getReactants().size(), false);
+        const bool deleteMoleculesKeyword =
+            hasModifier(rule.getModifiers(), "DeleteMolecules");
+
         for (const auto& operation : rule.getOperations()) {
             using Type = ast::ReactionRule::TransformOp::Type;
             switch (operation.type) {
@@ -1826,21 +1842,35 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                     << moleculeId(rrId, true, {operation.patternIndex, operation.moleculeIndex, 0})
                     << "\"/>\n";
                 break;
-            case Type::DeleteMolecule:
-                if (hasModifier(rule.getModifiers(), "DeleteMolecules")) {
+            case Type::DeleteMolecule: {
+                const std::size_t patternMolecules =
+                    parsePattern(rule.getReactants().at(operation.patternIndex)).molecules.size();
+                const bool wholePattern =
+                    !deleteMoleculesKeyword &&
+                    deletedPerPattern[operation.patternIndex] >= patternMolecules;
+                if (!wholePattern) {
+                    // Some molecules of the pattern survive (or DeleteMolecules
+                    // is set): delete this molecule only.  Without the keyword
+                    // BNG2 keeps the rule's product-count check, so a deletion
+                    // that would split the complex is not applied.  NFsim's XML
+                    // reader refuses this form and asks for DeleteMolecules;
+                    // that is NFsim's limitation, and writing the whole-pattern
+                    // form instead would change the model's reactions.
                     xml << "          <Delete id=\""
                         << moleculeId(rrId, false,
                                       {operation.patternIndex, operation.moleculeIndex, 0})
-                        << "\" DeleteMolecules=\"1\"/>\n";
-                } else {
-                    // NFsim rejects a single-molecule Delete without the
-                    // DeleteMolecules modifier.  BNG2 represents this case as
-                    // removal of the complete reactant pattern.
+                        << "\" DeleteMolecules=\"" << (deleteMoleculesKeyword ? "1" : "0")
+                        << "\"/>\n";
+                } else if (!wholePatternWritten[operation.patternIndex]) {
+                    // Every molecule of the pattern goes: delete the whole
+                    // species matching it, once per pattern.
+                    wholePatternWritten[operation.patternIndex] = true;
                     xml << "          <Delete id=\"" << rrId << "_RP"
                         << (operation.patternIndex + 1)
                         << "\" DeleteMolecules=\"0\"/>\n";
                 }
                 break;
+            }
             }
         }
 
@@ -1859,10 +1889,22 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         // Pure degradation has no product graph and therefore no TransformOp
         // from ReactionRule::initialize().  Preserve its species-removal
         // operation for the XML compatibility loader.
+        // As above, every molecule goes: with DeleteMolecules BNG2 deletes the
+        // molecules one by one (flag 1), otherwise the whole species.
         if (rule.getProducts().empty() && rule.getOperations().empty()) {
             for (std::size_t index = 0; index < rule.getReactants().size(); ++index) {
-                xml << "          <Delete id=\"" << rrId << "_RP" << (index + 1)
-                    << "\" DeleteMolecules=\"0\"/>\n";
+                if (deleteMoleculesKeyword) {
+                    const std::size_t patternMolecules =
+                        parsePattern(rule.getReactants()[index]).molecules.size();
+                    for (std::size_t molecule = 0; molecule < patternMolecules; ++molecule) {
+                        xml << "          <Delete id=\""
+                            << moleculeId(rrId, false, {index, molecule, 0})
+                            << "\" DeleteMolecules=\"1\"/>\n";
+                    }
+                } else {
+                    xml << "          <Delete id=\"" << rrId << "_RP" << (index + 1)
+                        << "\" DeleteMolecules=\"0\"/>\n";
+                }
             }
         }
 
