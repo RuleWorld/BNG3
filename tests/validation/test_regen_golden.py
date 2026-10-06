@@ -12,9 +12,7 @@ end model
 simulate_ssa({t_end=>999,n_steps=>1})
 """
 
-    generated = ensemble_model_source(
-        original, seeds=range(1, 3), t_end=10, n_steps=50
-    )
+    generated = ensemble_model_source(original, seeds=range(1, 3), t_end=10, n_steps=50)
 
     assert generated.startswith("begin model\n")
     assert "k 1" in generated
@@ -35,9 +33,7 @@ end reaction rules
 simulate_ode({t_end=>1})
 """
 
-    generated = ensemble_model_source(
-        original, seeds=range(1, 2), t_end=10, n_steps=50
-    )
+    generated = ensemble_model_source(original, seeds=range(1, 2), t_end=10, n_steps=50)
 
     assert "A() -> B() k" in generated
     assert "simulate_ode" not in generated

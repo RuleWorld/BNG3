@@ -2588,8 +2588,7 @@ def test_quadratic_event_ignores_rules_outside_trigger_component():
     trigger_rule_xml = (
         xml.replace(
             "</listOfParameters>",
-            '<parameter id="k4" value="0.000014" constant="false"/>'
-            "</listOfParameters>",
+            '<parameter id="k4" value="0.000014" constant="false"/></listOfParameters>',
         )
         .replace(
             "</listOfRules>",
