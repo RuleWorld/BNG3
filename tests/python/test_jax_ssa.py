@@ -1,13 +1,41 @@
-"""Tests for JAX batch-SSA backend."""
+"""Tests for the unavailable JAX SSA API and native network flattening."""
+
+import subprocess
+import sys
 
 import pytest
 
-# Skip if JAX not available
-jax = pytest.importorskip("jax")
-jaxlib = pytest.importorskip("jaxlib")
-pytest.importorskip("bionetgen")
-
 from bionetgen import _bionetgen_cpp as cpp
+from bionetgen import jax_ssa
+
+
+def test_jax_ssa_unavailable_before_model_processing():
+    """An unavailable backend must reject before requiring a valid network."""
+    with pytest.raises(NotImplementedError, match="JAX SSA simulation is unavailable"):
+        jax_ssa.simulate(None, None, batch_size=1, t_end=1.0, base_seed=42)
+
+
+def test_jax_ssa_unavailable_without_optional_dependencies():
+    """Missing JAX must still produce the public unavailable disposition."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import sys; sys.modules['jax'] = None; sys.modules['jaxlib'] = None; "
+            "from bionetgen import jax_ssa\n"
+            "try:\n"
+            "    jax_ssa.simulate(None, None, 1, 1.0, 42)\n"
+            "except NotImplementedError as exc:\n"
+            "    assert 'JAX SSA simulation is unavailable' in str(exc)\n"
+            "else:\n"
+            "    raise AssertionError('unavailable SSA returned a result')\n",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_jax_ssa_flatten_exists():
@@ -53,18 +81,16 @@ def test_jax_ssa_flatten_output():
 
 
 def test_jax_ssa_import_safety():
-    """Ensure import bionetgen doesn't eagerly import jax."""
-    import sys
-
-    # Remove jax from modules if present
-    for mod in list(sys.modules.keys()):
-        if "jax" in mod:
-            del sys.modules[mod]
-
-    # Fresh import should not pull in jax
-    import bionetgen
-
-    assert "jax" not in sys.modules
+    """Package import in a fresh interpreter must not eagerly load JAX."""
+    subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            "import sys; import bionetgen; assert 'jax' not in sys.modules",
+        ],
+        check=True,
+    )
 
 
 if __name__ == "__main__":
