@@ -5,6 +5,12 @@ BNG3's **current** transitional C++ compile layer.  These are not reasons to
 weaken the formalization.  They are the concrete tasks required before one can
 honestly prove that production C++ lowering preserves the semantic model.
 
+Reviewed 2026-10-07 at [main `e1836c32`](https://github.com/RuleWorld/BNG3/tree/e1836c3274e685996d5e86883761e00e98257e09).
+The remaining work is tracked in issues [#138–#143](https://github.com/RuleWorld/BNG3/issues/138)
+and [#147–#148](https://github.com/RuleWorld/BNG3/issues/147); those issues own scope
+and acceptance. Existing typed declarations and endpoints are foundations,
+not missing implementations or proof of complete backend refinement.
+
 ## ELI15 summary
 
 The Lean side now describes the model using stable IDs and explicit graph
@@ -27,17 +33,25 @@ The formal `CompiledModel` owns parameters, molecule/component/state
 declarations, compartments, seeds, observables, functions, energy factors,
 population maps, and rules.
 
-Current C++ `cpp/compile/CompiledModel.hpp` is still missing several of those
-resolved declaration families.  Until they are owned by the compiled model, a
-backend cannot be constructed solely from the canonical semantic object.
+The C++ [CompiledModel](../../cpp/compile/CompiledModel.hpp) now owns those
+declaration families, including resolved expressions, typed patterns, energy
+factors and population metadata. The remaining gap is consumer migration:
+[LegacyNetworkRuleKernel](../../cpp/engine/LegacyNetworkRuleKernel.cpp) still
+constructs an AST execution rule. The 43-file
+[compatibility allowlist](../../provenance/architecture/ast_compat_allowlist.txt)
+records remaining dependencies; declaration storage alone does not remove them.
 
-**Required migration:** complete `bng::compile::CompiledModel` before treating it
-as the production proof boundary.
+**Required migration:** move remaining consumers to the resolved model and
+retire each compatibility path after parity (#138–#139).
 
 ## 2. `Pattern` still carries executable meaning in strings
 
-Current `PatternDescriptor.hpp` retains molecule/component/state/compartment
-names and textual bond/state constraints.  The formal model instead uses:
+The current [PatternDescriptor.hpp](../../cpp/compile/PatternDescriptor.hpp)
+defines `Pattern` with typed occurrence IDs, optional resolved semantic IDs,
+explicit bond kinds/groups and `PatternStateConstraint`. `PatternDescriptor`
+is a compatibility alias; [Pattern.hpp](../../cpp/compile/Pattern.hpp) includes
+that definition. Human-readable names remain for diagnostics and round trips.
+The formal model uses:
 
 - `MoleculeTypeId`
 - `ComponentTypeId`
@@ -46,20 +60,24 @@ names and textual bond/state constraints.  The formal model instead uses:
 - explicit state/bond constraint variants
 - explicit graph bonds
 
-**Required migration:** implement the proposed typed Pattern V2 and keep source
-text only as provenance/diagnostics.
+**Required migration:** make remaining consumers use the resolved constraints
+and IDs instead of compatibility spellings (#138), rather than adding another
+typed pattern representation.
 
-## 3. `CompiledRule` still leaks AST component references
+## 3. Typed rule directions exist; execution migration remains
 
-Current `CompiledRule::MutationSignature` uses
-`ast::ReactionRule::ComponentRef` for mutation endpoints.  That means the
-compile layer has not fully severed rule execution from parser representation.
+[CompiledRule.hpp](../../cpp/compile/CompiledRule.hpp) now uses `PatternSiteRef`
+and `PatternMoleculeRef` in `MutationSignature`, with a resolved `StateId` when
+available. `CompiledRuleDirection` carries separately compiled forward/reverse
+patterns, rates, mutations, filters and local scopes. AST component references
+are no longer the mutation endpoint contract.
 
 The formal layer instead stores typed reactant/product endpoints plus explicit
 molecule/component correspondence and an already-derived mutation program.
 
-**Required migration:** replace AST component references with compile-layer
-endpoint IDs and compile forward/reverse rule meaning once.
+**Required migration:** eliminate the remaining AST reconstruction in execution
+and qualify the typed directions, including incomplete transformation programs
+that still require a declared compatibility route (#139).
 
 ## 4. Rate-law classification is ahead of rate-law semantics
 
@@ -122,30 +140,32 @@ and test it at the boundary.
 
 The formal project can already compare a semantic rule with an independent
 NFnext-like interpreter, and the C++ conformance harness checks the real
-GenericMatcher/Transformation implementation.  What does not yet exist is the
-single production function:
+GenericMatcher/Transformation implementation. The production function now
+exists in [from_bng.cpp](../../cpp/nfnext/src/from_bng.cpp):
 
 ```text
-CompiledModel / CompiledRule
+CompiledModel
              ->
         nfnext::ModelIR
 ```
 
 whose entire input is the source-string-free compiled semantic object.
 
-Until that exists, a theorem claiming complete BNG3 -> NFnext refinement would
-be dishonest.
+`nfnext::lowerFromBioNetGen(const bng::compile::CompiledModel&)` consumes the
+compiled object and rejects unsupported constructs. Its restricted supported
+surface and concrete production fixtures do not establish general lowering
+correspondence or a complete execution boundary. Those remain #147–#148 and
+[#166](https://github.com/RuleWorld/BNG3/issues/166).
 
 ## Recommended C++ order
 
 ```text
-1. Complete CompiledModel declarations.
-2. Replace Pattern strings with typed semantic IDs/constraints.
-3. Remove AST refs from CompiledRule mutations/correspondence.
-4. Compile reversible directions completely once.
-5. Add CompiledModel -> NFnext lowering with an explicit packing context.
-6. Feed lowering fixtures to this formal/reference harness.
-7. Only then promote lowering/refinement obligations to CI gates.
+1. Migrate execution consumers to existing compiled declarations and typed patterns.
+2. Retire AST rule reconstruction after independent parity.
+3. Qualify rate-law and local-function semantics across backends.
+4. Extend the existing fail-closed NFnext lowering for approved capabilities.
+5. Qualify initial state, observables, protocol and output semantics.
+6. Establish production/reference correspondence beyond concrete fixtures.
 ```
 
 This is intentionally the same architectural direction as the original BNG3
