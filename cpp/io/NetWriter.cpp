@@ -1094,7 +1094,9 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
     };
 
     // Process rules in BNGL order to match Perl output
+    std::size_t sourceRuleIndex = 0;
     for (const auto& rule : model.getReactionRules()) {
+        ++sourceRuleIndex;
         const std::string ruleName = rule.getRuleName();
 
         // Skip if already processed
@@ -1110,13 +1112,42 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         const auto& rateExprObj = rule.getRates()[0];
         const std::string rateExpr = rateExprObj.toString();
 
+    const auto hasLocalRateContext = [&](const std::string &directionName) {
+      return std::any_of(
+          network.reactions.all().begin(), network.reactions.all().end(),
+          [&](const auto &reaction) {
+            return reaction.getOriginRuleName() == directionName &&
+                   reaction.getRateLaw().find("|local:") != std::string::npos;
+          });
+    };
+    const auto hasScopedFunctionContext = [&](const std::string &directionName,
+                                              const ast::Expression &expression) {
+      if ((expression.kind() != ast::ExpressionKind::Function &&
+           expression.kind() != ast::ExpressionKind::ObservableRef) ||
+          expression.args().size() != 1 ||
+          expression.args().front().kind() != ast::ExpressionKind::Identifier)
+        return false;
+      const bool isModelFunction = std::any_of(
+          model.getFunctions().begin(), model.getFunctions().end(),
+          [&](const auto &function) { return function.getName() == expression.name(); });
+      return isModelFunction && hasLocalRateContext(directionName);
+    };
     std::unordered_set<std::string> functionScan;
-    if (containsFunctionProduct(rateExprObj, model, functionScan)) {
+    const std::string reverseRuleName = "_reverse__" + ruleName;
+    const bool hasForwardScopedFunction = hasScopedFunctionContext(ruleName, rateExprObj);
+    const bool hasReverseScopedFunction = rule.getRates().size() > 1 &&
+        hasScopedFunctionContext(reverseRuleName, rule.getRates()[1]);
+    if (containsFunctionProduct(rateExprObj, model, functionScan) ||
+        hasForwardScopedFunction || hasReverseScopedFunction) {
       const auto buildPerReactionRateInfo =
           [&](const std::string &directionName,
               const ast::Expression &expression) {
             DerivedRateInfo info;
             info.paramName = directionName + "_local";
+            if (hasScopedFunctionContext(directionName, expression)) {
+              info.paramName = (directionName == ruleName ? "__R" : "__reverse__R") +
+                  std::to_string(sourceRuleIndex) + "_local";
+            }
             info.expression = "0";
             info.exprTree = ast::Expression::number(0.0);
             info.isPerReactionLocalFunction = true;
@@ -1143,7 +1174,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                   const auto equalPos = token.find('=');
                   const auto scopePos = token.find("::");
                   if (equalPos == std::string::npos ||
-                      scopePos == std::string::npos || scopePos > equalPos) {
+                      (scopePos != std::string::npos && scopePos > equalPos)) {
                     throw std::runtime_error(
                         "malformed local-rate fingerprint in rule '" +
                         directionName + "'");
@@ -1156,7 +1187,18 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                         "non-numeric local-rate fingerprint in rule '" +
                         directionName + "'");
                   }
-                  localCounts[token.substr(0, equalPos)] = count;
+                  std::string countName = token.substr(0, equalPos);
+                  if (scopePos == std::string::npos) {
+                    // The compiled fingerprint omits the scope for a simple
+                    // one-scope function; bind it to the actual call argument.
+                    if (!hasScopedFunctionContext(directionName, expression)) {
+                      throw std::runtime_error(
+                          "missing scope in local-rate fingerprint in rule '" +
+                          directionName + "'");
+                    }
+                    countName = expression.args().front().name() + "::" + countName;
+                  }
+                  localCounts[countName] = count;
                 }
               }
 
@@ -1170,18 +1212,22 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             return info;
           };
 
-      derived[ruleName] = buildPerReactionRateInfo(ruleName, rateExprObj);
+      functionScan.clear();
+      if (hasForwardScopedFunction ||
+          containsFunctionProduct(rateExprObj, model, functionScan)) {
+        derived[ruleName] = buildPerReactionRateInfo(ruleName, rateExprObj);
+      }
       if (rule.isBidirectional()) {
-        const std::string reverseRuleName = "_reverse__" + ruleName;
         const auto &reverseRate =
             rule.getRates().size() > 1 ? rule.getRates()[1] : rateExprObj;
         functionScan.clear();
-        if (containsFunctionProduct(reverseRate, model, functionScan)) {
+        if (hasReverseScopedFunction ||
+            containsFunctionProduct(reverseRate, model, functionScan)) {
           derived[reverseRuleName] =
               buildPerReactionRateInfo(reverseRuleName, reverseRate);
         }
       }
-      continue;
+      if (derived.find(ruleName) != derived.end()) continue;
     }
 
     // Skip built-in BNG rate law functions (Sat, MM, Hill, etc.)
@@ -1206,25 +1252,9 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     break;
                 }
             }
-            // A molecule-tag scope (%x on a reactant molecule, as in
-            // ft_local_functions) carries per-reaction local contexts exactly
-            // like a scope prefix when the network reactions bear |local:
-            // fingerprints. Detect that directly so tag-scoped local
-            // functions get per-reaction instantiation (and reverse-direction
-            // derivation) instead of the single symbolic fallback below.
-            bool ruleReactionsHaveLocalContext = false;
-            {
-                const std::string reverseRuleName = "_reverse__" + ruleName;
-                for (const auto& rxn : network.reactions.all()) {
-                    const auto& origin = rxn.getOriginRuleName();
-                    if (origin != ruleName && origin != reverseRuleName) continue;
-                    if (rxn.getRateLaw().find("|local:") != std::string::npos) {
-                        ruleReactionsHaveLocalContext = true;
-                        break;
-                    }
-                }
-            }
-            if (isModelFunction && hasLocalArgs && (rule.hasScopePrefix() || !model.getEnergyPatterns().empty() || ruleReactionsHaveLocalContext)) {
+            if (isModelFunction && hasLocalArgs && (rule.hasScopePrefix() ||
+                !model.getEnergyPatterns().empty() || hasLocalRateContext(ruleName) ||
+                hasLocalRateContext(reverseRuleName))) {
                 // Per-species numeric evaluation for:
                 // 1. Scope prefix (%x::) models like localfunc
                 // 2. Models with energy patterns (like isingspin_localfcn) where

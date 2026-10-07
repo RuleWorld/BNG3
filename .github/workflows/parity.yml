@@ -45,7 +45,7 @@ jobs:
         run: python scripts/validate_provenance.py
 
       - name: Run CI contract tests
-        run: python -m pytest tests/test_ci_contract.py -q
+        run: python -m pytest tests/test_ci_contract.py tests/validation/test_compare_net.py -q
 
   bng2-parity:
     name: BNG3 vs independent BNG2 networks
@@ -62,7 +62,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build perl
-          python -m pip install numpy
+          python -m pip install numpy pytest
 
       - name: Checkout locked BioNetGen oracle
         run: |
@@ -80,6 +80,11 @@ jobs:
             -DBUILD_NFSIM_CLI=OFF \
             -DBUILD_TESTS=OFF
           cmake --build build --parallel 2
+
+      - name: Check constant and dynamic assignment-rate contracts
+        run: python -m pytest tests/validation/test_assignment_rate_parity.py --bng-cpp build/cpp/bng_cpp -q
+        env:
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
 
       - name: Compare graph-aware networks against BNG2
         shell: bash
