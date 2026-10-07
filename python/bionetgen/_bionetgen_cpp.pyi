@@ -277,6 +277,15 @@ def generate_network(model: Model, max_iter: int = 100) -> GeneratedNetwork:
     """
     ...
 
+def jax_ode_flatten(model: Model, network: GeneratedNetwork) -> Dict[str, object]:
+    """Export native compiled ODE data for the optional JAX ODE backend.
+
+    The result contains the initial state, fixed-species flags, compiled rate
+    coefficients, reaction participants, and flags for TotalRate and
+    unsupported functional or time-dependent rates.
+    """
+    ...
+
 def simulate_ode(
     model: Model,
     network: GeneratedNetwork,

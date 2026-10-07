@@ -1,73 +1,118 @@
-"""Tests for JAX ODE rate law JIT compilation."""
+"""Numerical contracts for the optional JAX ODE backend."""
 
+from pathlib import Path
+
+import numpy as np
 import pytest
 
-# Skip if JAX not available
 jax = pytest.importorskip("jax")
-jaxlib = pytest.importorskip("jaxlib")
-pytest.importorskip("bionetgen")
+pytest.importorskip("jaxlib")
 
 from bionetgen import _bionetgen_cpp as cpp
+from bionetgen import jax_ode
+from bionetgen.model import BioNetGenModel
 
 
-def test_jax_ode_import():
-    """Test that the jax_ode module can be imported."""
-    import bionetgen.jax_ode as jax_ode
+def _model(rule, seeds="A() 20\nB() 0", extra=""):
+    return cpp.parse_string(f"""begin model
+begin parameters
+k 0.2
+end parameters
+begin molecule types
+A()
+B()
+end molecule types
+begin seed species
+{seeds}
+end seed species
+{extra}
+begin reaction rules
+{rule}
+end reaction rules
+end model
+""")
 
-    assert hasattr(jax_ode, "compile_rhs")
-    assert hasattr(jax_ode, "simulate_jax_ode")
 
-
-def test_jax_ode_compile_rhs():
-    """Test compiling RHS for a simple mass-action model."""
-    import bionetgen.jax_ode as jax_ode
-    import jax.numpy as jnp
-
-    model = cpp.parse_file("models/isomerization.bngl")
+@pytest.mark.parametrize(
+    "rule,seeds,state,expected",
+    [
+        ("A() -> B() k", "A() 20\nB() 0", [20.0, 0.0], [-4.0, 4.0]),
+        # The compiled coefficient includes the identical-reactant factor 1/2.
+        ("A() + A() -> B() k", "A() 20\nB() 0", [20.0, 0.0], [-80.0, 40.0]),
+        ("A() -> B() k TotalRate", "A() 20\nB() 0", [20.0, 0.0], [-0.2, 0.2]),
+        ("A() -> B() k", "$A() 20\nB() 0", [20.0, 0.0], [0.0, 4.0]),
+        ("0 -> A() k", "A() 0\nB() 0", [0.0, 0.0], [0.2, 0.0]),
+        ("A() -> 0 k", "A() 20\nB() 0", [-2.0, 0.0], [0.4, 0.0]),
+    ],
+)
+def test_rhs_matches_analytic_and_native(rule, seeds, state, expected):
+    model = _model(rule, seeds)
+    network = cpp.generate_network(model)
     rhs = jax_ode.compile_rhs(model)
-
-    # Test the RHS function
-    y = jnp.array([20.0, 0.0], dtype=jnp.float32)
-    dydt = rhs(0.0, y)
-
-    # isomerization: A <-> B, k1=0.2, k2=1.0
-    # dA/dt = -k1*A + k2*B = -0.2*20 + 1.0*0 = -4.0
-    # dB/dt = k1*A - k2*B = 0.2*20 - 1.0*0 = 4.0
-    expected_dA = -4.0
-    expected_dB = 4.0
-
-    assert jnp.allclose(dydt[0], expected_dA, atol=1e-5)
-    assert jnp.allclose(dydt[1], expected_dB, atol=1e-5)
+    actual = np.asarray(rhs(0.0, jax.numpy.asarray(state)))
+    np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-6)
+    native = cpp._validation_ode_rhs(model, network, 0.0, state)
+    np.testing.assert_allclose(actual, native, rtol=1e-6, atol=1e-6)
 
 
-def test_jax_ode_simulate():
-    """Test full JAX ODE simulation."""
-    pytest.importorskip("jax.experimental.ode")
-
-    import bionetgen.jax_ode as jax_ode
-    import numpy as np
-
-    model = cpp.parse_file("models/isomerization.bngl")
+def test_generated_species_and_trajectory_match_analytic_and_native():
+    path = Path(__file__).resolve().parents[2] / "models" / "isomerization.bngl"
+    model = cpp.parse_file(str(path))
+    network = cpp.generate_network(model)
+    assert network.num_species == 2  # one seed species; the other is generated
     result = jax_ode.simulate_jax_ode(model, t_end=10.0, n_steps=100)
-
-    assert "time" in result
-    assert "concentrations" in result
-    assert result["time"].shape[0] == 101  # 100 steps + 1
-    assert result["concentrations"].shape[1] == 2  # 2 species
-
-    # Check conservation: A + B should be constant
-    total = result["concentrations"][:, 0] + result["concentrations"][:, 1]
-    assert np.allclose(total, 20.0, atol=1e-4)
-
-
-def test_jax_ode_functional_unsupported():
-    """Test that functional rate laws raise NotImplementedError."""
-    import bionetgen.jax_ode as jax_ode
-
-    # Create a model with functional rate (if available)
-    # For now, just test that the error is raised appropriately
-    pass
+    time = result["time"]
+    concentrations = result["concentrations"]
+    assert time.shape == (101,)
+    assert concentrations.shape == (101, 2)
+    b = (20.0 / 6.0) * (1.0 - np.exp(-1.2 * time))
+    np.testing.assert_allclose(concentrations[:, 0], 20.0 - b, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(concentrations[:, 1], b, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(concentrations.sum(axis=1), 20.0, atol=1e-4)
+    native = cpp.simulate_ode(model, network, t_end=10.0, n_steps=100)
+    np.testing.assert_allclose(time, native["time"], rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(
+        concentrations, native["concentrations"], rtol=1e-5, atol=1e-5
+    )
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+def test_public_model_wrapper():
+    model = BioNetGenModel(_model("A() -> B() k"))
+    rhs = jax_ode.compile_rhs(model)
+    np.testing.assert_allclose(rhs(0.0, jax.numpy.array([20.0, 0.0])), [-4.0, 4.0])
+
+
+@pytest.mark.parametrize(
+    "rule,extra",
+    [
+        (
+            "A() -> B() f()",
+            "begin observables\nMolecules count A()\nend observables\nbegin functions\nf() k*count\nend functions",
+        ),
+        ("A() -> B() k*time", ""),
+    ],
+)
+def test_jax_ode_functional_unsupported(rule, extra):
+    model = _model(rule, extra=extra)
+    with pytest.raises(NotImplementedError, match="functional|time-dependent"):
+        jax_ode.compile_rhs(model)
+    with pytest.raises(NotImplementedError, match="functional|time-dependent"):
+        jax_ode.simulate_jax_ode(model, t_end=1.0)
+
+
+def test_solver_method_is_not_silently_ignored():
+    with pytest.raises(ValueError, match="method"):
+        jax_ode.simulate_jax_ode(_model("A() -> B() k"), t_end=1.0, method="cvode")
+
+
+@pytest.mark.parametrize(
+    "t_end,n_steps", [(0.0, 1), (-1.0, 1), (float("nan"), 1), (1.0, 0)]
+)
+def test_invalid_time_grid_rejected(t_end, n_steps):
+    with pytest.raises(ValueError):
+        jax_ode.simulate_jax_ode(_model("A() -> B() k"), t_end=t_end, n_steps=n_steps)
+
+
+def test_noninteger_step_count_rejected():
+    with pytest.raises(TypeError, match="n_steps"):
+        jax_ode.simulate_jax_ode(_model("A() -> B() k"), t_end=1.0, n_steps=1.5)
