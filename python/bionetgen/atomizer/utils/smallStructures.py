@@ -6,7 +6,6 @@ Created on Wed May 30 11:44:17 2012
 """
 
 from collections import Counter
-from copy import copy as shallow_copy
 import re
 from random import randint
 from pyparsing import Word, Suppress, Optional, alphanums, Group, ZeroOrMore
@@ -488,7 +487,9 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        molecule = shallow_copy(self)
+        # ⚡ Bolt: Use __new__ and __dict__.update to bypass expensive __init__ and shallow_copy overhead
+        molecule = Molecule.__new__(Molecule)
+        molecule.__dict__.update(self.__dict__)
         molecule.components = [element.copy() for element in self.components]
         return molecule
 
@@ -670,10 +671,11 @@ class Component:
         self.activeState = ""
 
     def copy(self):
-        component = Component(self.name, self.idx)
-        component.bonds = list(self.bonds)
+        # ⚡ Bolt: Use explicit list() and __new__ to bypass expensive __init__ overhead
+        component = Component.__new__(Component)
+        component.__dict__.update(self.__dict__)
         component.states = list(self.states)
-        component.activeState = self.activeState
+        component.bonds = list(self.bonds)
         return component
 
     def addState(self, state, update=True):

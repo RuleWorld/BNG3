@@ -5,7 +5,6 @@ Created on Wed May 30 11:44:17 2012
 @author: proto
 """
 
-from copy import copy as shallow_copy
 import difflib
 import hashlib
 import numpy
@@ -262,7 +261,9 @@ class Molecule:
         self.hash = hashlib.sha1(a).digest()
 
     def copy(self):
-        molecule = shallow_copy(self)
+        # ⚡ Bolt: Use __new__ and __dict__.update to bypass expensive __init__ and shallow_copy overhead
+        molecule = Molecule.__new__(Molecule)
+        molecule.__dict__.update(self.__dict__)
         molecule.components = [element.copy() for element in self.components]
         return molecule
 
@@ -449,11 +450,11 @@ class Component:
         ['first', 'second']
         """
         # ⚡ Bolt: Use explicit list() instead of deepcopy for primitive lists to avoid O(N) deepcopy overhead
-        component = Component(self.name)
-        component.bonds = list(self.bonds)
+        # ⚡ Bolt: Use __new__ and __dict__.update to bypass expensive __init__ overhead
+        component = Component.__new__(Component)
+        component.__dict__.update(self.__dict__)
         component.states = list(self.states)
-        # ⚡ Bolt: Direct assignment since activeState is a string (immutable), avoiding deepcopy overhead
-        component.activeState = self.activeState
+        component.bonds = list(self.bonds)
         return component
 
     def addState(self, state, update=True):
