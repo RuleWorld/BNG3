@@ -295,7 +295,7 @@ begin reaction rules
     r12: A(s~1) -> A(s~2) 1
 end reaction rules
 begin actions
-    generate_network({max_iter=>iters})
+    generate_network({max_iter=>(1/0)**0})
 end actions
 """,
             encoding="utf-8",

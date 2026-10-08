@@ -81,6 +81,7 @@ TEST_CASE("generate_network max_iter is compiled as a qualified typed option") {
     CHECK(compiledValue("2**3") == 8);
 
     for (const auto& expression : {"0", "-1", "0.5", "2^3", "2**3**2",
+                                   "(1/0)**0", "(1e308*1e308)**0",
                                    "-2**2", "(-2)**2", "iters", "exp(2)", "e",
                                    "9223372036854775808", "1e309"}) {
         INFO("max_iter expression: " << expression);

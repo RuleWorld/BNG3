@@ -69,18 +69,32 @@ double evaluateStaticExpression(const ast::Expression& expression) {
     });
 }
 
+bool evaluateFiniteStaticExpression(const ast::Expression& expression, double& value) {
+    try {
+        value = evaluateStaticExpression(expression);
+        return std::isfinite(value);
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 bool supportsStaticActionArithmetic(const ast::Expression& expression,
                                     std::size_t& powerOperators) {
     using ast::ExpressionKind;
     switch (expression.kind()) {
     case ExpressionKind::Number:
         return std::isfinite(expression.numberValue());
-    case ExpressionKind::Unary:
+    case ExpressionKind::Unary: {
         if ((expression.name() != "+" && expression.name() != "-") ||
             expression.args().size() != 1) {
             return false;
         }
-        return supportsStaticActionArithmetic(expression.args().front(), powerOperators);
+        if (!supportsStaticActionArithmetic(expression.args().front(), powerOperators)) {
+            return false;
+        }
+        double value = 0.0;
+        return evaluateFiniteStaticExpression(expression, value);
+    }
     case ExpressionKind::Binary: {
         const auto& op = expression.name();
         if (op != "+" && op != "-" && op != "*" && op != "/" && op != "**") {
@@ -94,15 +108,23 @@ bool supportsStaticActionArithmetic(const ast::Expression& expression,
             !supportsStaticActionArithmetic(expression.args()[1], powerOperators)) {
             return false;
         }
+        double rhs = 0.0;
+        if (op == "/" &&
+            (!evaluateFiniteStaticExpression(expression.args()[1], rhs) || rhs == 0.0)) {
+            return false;
+        }
         if (op == "**") {
             // Safe Perl exponentiation is right-associative, while the current
             // BNGL expression builder is left-associative. A single exponent
             // with a non-negative base has the same value in both evaluators.
-            if (++powerOperators > 1 || evaluateStaticExpression(expression.args()[0]) < 0.0) {
+            double base = 0.0;
+            if (++powerOperators > 1 ||
+                !evaluateFiniteStaticExpression(expression.args()[0], base) || base < 0.0) {
                 return false;
             }
         }
-        return true;
+        double value = 0.0;
+        return evaluateFiniteStaticExpression(expression, value);
     }
     case ExpressionKind::Identifier:
     case ExpressionKind::Function:
