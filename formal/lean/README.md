@@ -647,7 +647,7 @@ named declaration audit and its measured dependencies are listed in
 
 # Current scope and next proof steps
 
-`BNG.MatcherCorrectness.referenceMatcher_correct` proves the reference
+`BNG.referenceMatcher_correct` proves the reference
 enumerator's soundness and completeness against the proposition-level
 `EmbeddingSpec`. Completeness compares the lookup assignment for each pattern
 node, so association-list order does not change a mapping. The independent
