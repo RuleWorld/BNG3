@@ -88,20 +88,13 @@ class BNGPatternReader:
         component_parser = pp.Combine(self.parsers.component)
         # components are separated by commas
         component_separator = pp.Word(",")
-        if hasattr(pp, "DelimitedList"):
-            self.parsers.components_parser = pp.DelimitedList(
-                component_parser, delim=component_separator
-            )
-            self.parsers.combined_components_parser = pp.DelimitedList(
-                component_parser, delim=component_separator, combine=True
-            )
-        else:
-            self.parsers.components_parser = pp.delimited_list(
-                component_parser, delim=component_separator
-            )
-            self.parsers.combined_components_parser = pp.delimited_list(
-                component_parser, delim=component_separator, combine=True
-            )
+        delimited_list = getattr(pp, "DelimitedList", None) or pp.delimited_list
+        self.parsers.components_parser = delimited_list(
+            component_parser, delim=component_separator
+        )
+        self.parsers.combined_components_parser = delimited_list(
+            component_parser, delim=component_separator, combine=True
+        )
 
     def define_molecule_parser(self):
         """
@@ -137,10 +130,11 @@ class BNGPatternReader:
         # molecules
         # components are separated by commas
         molecule_separator = pp.Literal(".")
-        self.parsers.molecules_parser = pp.DelimitedList(
+        delimited_list = getattr(pp, "DelimitedList", None) or pp.delimited_list
+        self.parsers.molecules_parser = delimited_list(
             molecule_parser, delim=molecule_separator
         )
-        self.parsers.combined_molecules_parser = pp.DelimitedList(
+        self.parsers.combined_molecules_parser = delimited_list(
             molecule_parser, delim=molecule_separator, combine=True
         )
 
