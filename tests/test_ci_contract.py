@@ -689,8 +689,7 @@ def test_formal_harness_mutation_selftest_is_scheduled_and_bounded():
     ]
     assert len(steps) == 1
     assert steps[0]["if"] == (
-        "github.event_name == 'schedule' || "
-        "github.event_name == 'workflow_dispatch'"
+        "github.event_name == 'schedule' || " "github.event_name == 'workflow_dispatch'"
     )
     assert steps[0]["working-directory"] == "formal/lean"
     assert steps[0]["timeout-minutes"] == 20
