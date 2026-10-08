@@ -278,6 +278,40 @@ end model
 
         assert network.num_species == 16
 
+    def test_python_max_iter_override_bypasses_invalid_bngl_protocol_option(
+        self, tmp_path
+    ):
+        bngl = tmp_path / "python_max_iter_override.bngl"
+        bngl.write_text(
+            """
+begin molecule types
+    A(s~0~1~2)
+end molecule types
+begin seed species
+    A(s~0) 1
+end seed species
+begin reaction rules
+    r01: A(s~0) -> A(s~1) 1
+    r12: A(s~1) -> A(s~2) 1
+end reaction rules
+begin actions
+    generate_network({max_iter=>iters})
+end actions
+""",
+            encoding="utf-8",
+        )
+        model = _cpp.parse_file(str(bngl))
+
+        # The direct binding's numeric option (default 100, or the explicit
+        # value below) retains its existing contract independently of BNGL actions.
+        default_network = _cpp.generate_network(model)
+        assert default_network.num_species == 3
+        assert default_network.num_reactions == 2
+
+        network = _cpp.generate_network(model, max_iter=2)
+        assert network.num_species == 3
+        assert network.num_reactions == 2
+
     def test_model_function_forward_rate_keeps_complex_reverse_rate(self, tmp_path):
         """A model-function forward rate must not drop its reverse rate."""
         bngl = tmp_path / "reversible_function_rate.bngl"

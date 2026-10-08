@@ -1,4 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "parser/BNGAstVisitor.hpp"
@@ -8,6 +10,24 @@ using namespace bng;
 
 static std::unique_ptr<ast::Model> parseModel(const std::string& bngl) {
     return parser::parseModel(bngl);
+}
+
+static std::unique_ptr<ast::Model> modelWithMaxIter(const std::string& option) {
+    return parseModel(R"(
+begin molecule types
+    A(s~0~1~2)
+end molecule types
+begin seed species
+    A(s~0) 1
+end seed species
+begin reaction rules
+    r01: A(s~0) -> A(s~1) 1
+    r12: A(s~1) -> A(s~2) 1
+end reaction rules
+begin actions
+    generate_network({max_iter=>)" + option + R"(,overwrite=>1})
+end actions
+)");
 }
 
 TEST_CASE("Rule expansion: execution caches are independent", "[ReactionRule]") {
@@ -39,6 +59,91 @@ end reaction rules
 
     REQUIRE(first == 1);
     REQUIRE(independent == 1);
+}
+
+TEST_CASE("generate_network max_iter is compiled as a qualified typed option") {
+    const auto compiledValue = [](const std::string& expression) {
+        auto model = modelWithMaxIter(expression);
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto& action = generator.document().protocol().actions.front();
+        REQUIRE(action.generateNetworkOptions.has_value());
+        CHECK(action.arguments.at("max_iter") == expression);
+        CHECK_FALSE(action.generateNetworkOptions->maxIterationsDiagnostic.has_value());
+        REQUIRE(action.generateNetworkOptions->maxIterations.has_value());
+        return *action.generateNetworkOptions->maxIterations;
+    };
+
+    CHECK(compiledValue("1+1") == 2);
+    CHECK(compiledValue("2.5") == 2);
+    CHECK(compiledValue("(1+1)*2") == 4);
+    CHECK(compiledValue("1e2") == 100);
+    CHECK(compiledValue("2**3") == 8);
+
+    for (const auto& expression : {"0", "-1", "0.5", "2^3", "2**3**2",
+                                   "-2**2", "(-2)**2", "iters", "exp(2)", "e",
+                                   "9223372036854775808", "1e309"}) {
+        INFO("max_iter expression: " << expression);
+        auto model = modelWithMaxIter(expression);
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto& action = generator.document().protocol().actions.front();
+        REQUIRE(action.generateNetworkOptions.has_value());
+        CHECK_FALSE(action.generateNetworkOptions->maxIterations.has_value());
+        REQUIRE(action.generateNetworkOptions->maxIterationsDiagnostic.has_value());
+        CHECK(action.generateNetworkOptions->maxIterationsDiagnostic->message.find("max_iter") !=
+              std::string::npos);
+    }
+}
+
+TEST_CASE("BNGL network generation uses typed max_iter and explicit native overrides") {
+    auto defaultModel = parseModel(R"(
+begin molecule types
+    A(s~0~1~2)
+end molecule types
+begin seed species
+    A(s~0) 1
+end seed species
+begin reaction rules
+    r01: A(s~0) -> A(s~1) 1
+    r12: A(s~1) -> A(s~2) 1
+end reaction rules
+)");
+    REQUIRE(defaultModel != nullptr);
+    engine::NetworkGenerator defaultGenerator(*defaultModel);
+    const auto defaultNetwork = defaultGenerator.generate({});
+    REQUIRE(defaultNetwork.species.size() == 3);
+    REQUIRE(defaultNetwork.reactions.size() == 2);
+
+    auto twoPassModel = modelWithMaxIter("1+1");
+    REQUIRE(twoPassModel != nullptr);
+    engine::NetworkGenerator twoPassGenerator(*twoPassModel);
+    const auto twoPassNetwork = twoPassGenerator.generate({});
+    REQUIRE(twoPassNetwork.species.size() == 3);
+    REQUIRE(twoPassNetwork.reactions.size() == 2);
+
+    auto onePassModel = modelWithMaxIter("1");
+    REQUIRE(onePassModel != nullptr);
+    engine::NetworkGenerator onePassGenerator(*onePassModel);
+    const auto onePassNetwork = onePassGenerator.generate({});
+    REQUIRE(onePassNetwork.species.size() == 2);
+    REQUIRE(onePassNetwork.reactions.size() == 1);
+
+    auto invalidProtocolModel = modelWithMaxIter("iters");
+    REQUIRE(invalidProtocolModel != nullptr);
+    engine::NetworkGenerator invalidGenerator(*invalidProtocolModel);
+    try {
+        (void)invalidGenerator.generate({});
+        FAIL("invalid BNGL max_iter must fail before network generation");
+    } catch (const std::runtime_error& error) {
+        CHECK(std::string(error.what()).find("max_iter") != std::string::npos);
+    }
+
+    // This is the same native entry point used by the direct Python binding:
+    // an explicit numeric override must not decode the BNGL protocol value.
+    const auto overriddenNetwork = invalidGenerator.generateNative(2);
+    REQUIRE(overriddenNetwork.species.size() == 3);
+    REQUIRE(overriddenNetwork.reactions.size() == 2);
 }
 
 TEST_CASE("Rule expansion: pattern metadata survives reinitialization and move", "[ReactionRule]") {

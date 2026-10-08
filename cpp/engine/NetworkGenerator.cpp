@@ -22,18 +22,20 @@ namespace bng::engine {
 
 namespace {
 
-std::optional<std::size_t> parseMaxIter(const compile::SimulationProtocol& protocol) {
+std::size_t maxIterations(const compile::SimulationProtocol& protocol) {
     for (const auto& action : protocol.actions) {
-        if (action.name != "generate_network") {
+        if (!action.generateNetworkOptions.has_value()) {
             continue;
         }
-        const auto found = action.arguments.find("max_iter");
-        if (found == action.arguments.end()) {
-            continue;
+        const auto& options = *action.generateNetworkOptions;
+        if (options.maxIterationsDiagnostic.has_value()) {
+            throw std::runtime_error(options.maxIterationsDiagnostic->message);
         }
-        return static_cast<std::size_t>(std::stoul(found->second));
+        if (options.maxIterations.has_value()) {
+            return *options.maxIterations;
+        }
     }
-    return std::nullopt;
+    return 100;
 }
 
 std::map<std::string, std::size_t> parseMaxStoich(const compile::SimulationProtocol& protocol) {
@@ -480,7 +482,7 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
 }
 
 GeneratedNetwork NetworkGenerator::generate(const std::filesystem::path& sourcePath) {
-    auto network = generateNative(parseMaxIter(document_.protocol()).value_or(100));
+    auto network = generateNative(maxIterations(document_.protocol()));
     if (!sourcePath.empty()) {
         if (sourceModel_ == nullptr) {
             throw std::runtime_error(
