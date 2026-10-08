@@ -4,6 +4,8 @@
 #include <vector>
 #include "ast/Model.hpp"
 
+namespace bng::compile { class CompiledModel; }
+
 namespace bng::io {
 
 /**
@@ -44,11 +46,14 @@ private:
     static std::string escapeXml(const std::string& text);
     static std::string makeValidSBMLId(const std::string& text);
 
-    static std::string writeCompartments(const ast::Model& model);
+    static std::string writeCompartments(
+        const ast::Model& model, const compile::CompiledModel& compiled);
     static std::string writeSpeciesTypes(const ast::Model& model);
-    static std::string writeSeedSpecies(const ast::Model& model);
+    static std::string writeSeedSpecies(
+        const ast::Model& model, const compile::CompiledModel& compiled);
     static std::string writeReactionRules(const ast::Model& model);
-    static std::string writeParameters(const ast::Model& model);
+    static std::string writeParameters(
+        const ast::Model& model, const compile::CompiledModel& compiled);
 };
 
 } // namespace bng::io
