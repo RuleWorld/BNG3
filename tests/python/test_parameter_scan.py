@@ -1,4 +1,6 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from pathlib import Path
+import sys
 
 import numpy as np
 import pytest
@@ -6,6 +8,7 @@ import pytest
 pytest.importorskip("bionetgen._bionetgen_cpp")
 
 import bionetgen
+import bionetgen.scan as scan
 
 
 def _write_decay_model(path):
@@ -79,9 +82,7 @@ def test_seed_parameter_override_does_not_reuse_stale_network(tmp_path):
 
     model.set_parameter("X0", 250.0)
     assert model.get_parameter("X0").value == pytest.approx(250.0)
-    result = model.simulate(
-        method="ode", t_end=1.0, n_steps=2, sample_times=[0.0, 1.0]
-    )
+    result = model.simulate(method="ode", t_end=1.0, n_steps=2, sample_times=[0.0, 1.0])
 
     assert result.observables["Xtot"][0] == pytest.approx(250.0)
     assert model._network is not original_network
@@ -115,9 +116,7 @@ end model
 
     model.set_parameter("k", 0.3)
     assert model.get_parameter("k2").value == pytest.approx(0.6)
-    result = model.simulate(
-        method="ode", t_end=2.0, n_steps=2, sample_times=[0.0, 2.0]
-    )
+    result = model.simulate(method="ode", t_end=2.0, n_steps=2, sample_times=[0.0, 2.0])
     assert result.observables["Xtot"][1] == pytest.approx(
         100.0 * np.exp(-1.2), rel=1e-6
     )
@@ -133,15 +132,35 @@ def test_parallel_scan_workers_match_fresh_analytic_trajectories(tmp_path):
     options = dict(method="ode", t_end=5.0, n_steps=25)
 
     serial = model.parameter_scan(parameter="k", values=values, **options)
-    parallel = model.parameter_scan(
-        parameter="k", values=values, parallel=2, **options
-    )
+    expected_identity = scan._scan_runtime_identity()
+    wrong_native_identity = dict(expected_identity)
+    wrong_native_identity["native"] = expected_identity["native"] + ".other"
+    with pytest.raises(RuntimeError, match="already loaded a different BNG3 native"):
+        scan._initialize_scan_worker(wrong_native_identity)
+
+    source_python = str(Path(__file__).resolve().parents[2] / "python")
+    original_sys_path = sys.path[:]
+    # Simulate a second checkout shadowing the installed wheel in a spawned
+    # worker. The worker must rebind both Python modules and the native module
+    # to the exact files loaded by this parent process.
+    sys.path.insert(0, source_python)
+    try:
+        with ProcessPoolExecutor(
+            max_workers=1,
+            initializer=scan._initialize_scan_worker,
+            initargs=(expected_identity,),
+        ) as executor:
+            worker_identity = executor.submit(scan._scan_runtime_identity).result()
+        parallel = model.parameter_scan(
+            parameter="k", values=values, parallel=2, **options
+        )
+    finally:
+        sys.path[:] = original_sys_path
     expected = 100.0 * np.exp(-np.asarray(values) * options["t_end"])
 
+    assert worker_identity == expected_identity
     np.testing.assert_allclose(serial.final("Xtot"), expected, rtol=1e-6, atol=1e-8)
-    np.testing.assert_allclose(
-        parallel.final("Xtot"), expected, rtol=1e-6, atol=1e-8
-    )
+    np.testing.assert_allclose(parallel.final("Xtot"), expected, rtol=1e-6, atol=1e-8)
     np.testing.assert_allclose(
         parallel.final("Xtot"), serial.final("Xtot"), rtol=1e-12, atol=1e-12
     )
@@ -232,6 +251,7 @@ def test_parameter_scan_2d_shape_and_standalone(tmp_path):
         method="ode",
         t_end=10,
         n_steps=20,
+        parallel=2,
     )
 
     assert scan2d.final("Xtot").shape == (2, 3)
