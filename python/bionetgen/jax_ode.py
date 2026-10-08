@@ -42,9 +42,28 @@ def _extract_ode_data(model: Any) -> Dict[str, Any]:
     return cpp.jax_ode_flatten(native_model, network)
 
 
+def _as_jax_float(values: Any, name: str, dtype: Any) -> jax.Array:
+    """Reject overflow and subnormal inputs before casting native values."""
+    values = np.asarray(values, dtype=np.float64)
+    if not np.all(np.isfinite(values)):
+        raise ValueError(f"JAX ODE requires finite {name}")
+    dtype = np.dtype(dtype)
+    if np.issubdtype(dtype, np.floating):
+        limits = np.finfo(dtype)
+        magnitude = np.abs(values)
+        if np.any(magnitude > limits.max) or np.any(
+            (magnitude != 0) & (magnitude < limits.tiny)
+        ):
+            raise ValueError(f"{name} lie outside JAX {dtype} normal dtype range")
+    return jnp.asarray(values, dtype=dtype)
+
+
 def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
     """Build a JIT-compiled RHS from native ODE compiler output."""
-    initial_state = jnp.asarray(data["initial_state"])
+    initial_state_native = np.asarray(data["initial_state"], dtype=np.float64)
+    initial_state = _as_jax_float(
+        initial_state_native, "initial species amounts", jnp.asarray(0.0).dtype
+    )
     n_species = initial_state.shape[0]
     rate_constants = np.asarray(data["rate_constants"], dtype=np.float64)
     if not np.all(np.isfinite(rate_constants)):
@@ -92,7 +111,9 @@ def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
                 change_reactions.append(reaction_index)
                 change_stoichiometry.append(coefficient)
 
-    rate_constants_jax = jnp.asarray(rate_constants, dtype=initial_state.dtype)
+    rate_constants_jax = _as_jax_float(
+        rate_constants, "mass-action rate constants", initial_state.dtype
+    )
     reactants_jax = jnp.asarray(padded_reactants)
     reactant_mask_jax = jnp.asarray(reactant_mask)
     total_rate_jax = jnp.asarray(total_rate)
@@ -145,6 +166,8 @@ def compile_rhs(model: Any) -> Callable:
     The native engine provides evaluated coefficients, reaction participants,
     and fixed-species flags, so this function does not parse BNGL text itself.
     Functional and time-dependent rate laws are explicitly unsupported.
+    The configured JAX floating dtype is used (normally float32); coefficients
+    and initial amounts outside its normal finite range are rejected.
     """
     _check_jax()
     return _compile_rhs_from_data(_extract_ode_data(model))
@@ -157,6 +180,8 @@ def simulate_jax_ode(
 
     The returned ``time`` and ``concentrations`` arrays use the same keys and
     axis order as :func:`bionetgen._bionetgen_cpp.simulate_ode`.
+    This fixed-step solver has no adaptive error control. It uses the configured
+    JAX floating dtype and rejects inputs outside its normal finite range.
     """
     _check_jax()
     if method != "rk4":
@@ -180,8 +205,8 @@ def simulate_jax_ode(
     rhs = _compile_rhs_from_data(data)
     initial_state = jnp.asarray(data["initial_state"])
     time_points = np.linspace(0.0, final_time, n_steps + 1)
-    scan_times = jnp.asarray(time_points[:-1], dtype=initial_state.dtype)
-    step_size = jnp.asarray(final_time / n_steps, dtype=initial_state.dtype)
+    scan_times = _as_jax_float(time_points[:-1], "time points", initial_state.dtype)
+    step_size = _as_jax_float(final_time / n_steps, "time step", initial_state.dtype)
     half_step = step_size * 0.5
 
     def rk4_step(state, time):

@@ -13,10 +13,10 @@ from bionetgen import jax_ode
 from bionetgen.model import BioNetGenModel
 
 
-def _model(rule, seeds="A() 20\nB() 0", extra=""):
+def _model(rule, seeds="A() 20\nB() 0", extra="", rate="0.2"):
     return cpp.parse_string(f"""begin model
 begin parameters
-k 0.2
+k {rate}
 end parameters
 begin molecule types
 A()
@@ -31,6 +31,44 @@ begin reaction rules
 end reaction rules
 end model
 """)
+
+
+@pytest.mark.parametrize("seeds,state", [("A() 3", [3.0]), ("", [])])
+def test_no_reaction_network_has_zero_rhs_and_constant_trajectory(seeds, state):
+    model = _model("", seeds=seeds)
+    network = cpp.generate_network(model)
+    assert network.num_reactions == 0
+    assert network.num_species == len(state)
+
+    rhs = jax_ode.compile_rhs(model)
+    np.testing.assert_array_equal(
+        rhs(0.0, jax.numpy.asarray(state)), np.zeros(len(state))
+    )
+    result = jax_ode.simulate_jax_ode(model, t_end=1.0, n_steps=4)
+    np.testing.assert_array_equal(result["concentrations"], np.tile(state, (5, 1)))
+
+
+def test_rate_overflowing_jax_state_dtype_is_rejected():
+    model = _model("A() -> B() k", rate="1e50")
+    rhs = jax_ode.compile_rhs
+    if jax.config.read("jax_enable_x64"):
+        derivative = rhs(model)(0.0, jax.numpy.array([20.0, 0.0]))
+        assert np.isfinite(np.asarray(derivative)).all()
+    else:
+        with pytest.raises(ValueError, match="rate constants.*JAX.*dtype range"):
+            rhs(model)
+
+
+def test_rate_underflowing_jax_state_dtype_is_rejected():
+    model = _model("A() -> B() k", rate="1e-50")
+    if jax.config.read("jax_enable_x64"):
+        actual = np.asarray(
+            jax_ode.compile_rhs(model)(0.0, jax.numpy.array([20.0, 0.0]))
+        )
+        np.testing.assert_allclose(actual, [-2e-49, 2e-49], rtol=1e-12, atol=0)
+    else:
+        with pytest.raises(ValueError, match="rate constants.*JAX.*dtype range"):
+            jax_ode.compile_rhs(model)
 
 
 @pytest.mark.parametrize(
