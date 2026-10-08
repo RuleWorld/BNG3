@@ -1,6 +1,11 @@
 #include "NFutil.hh"
 #include <fstream>
 #include <iostream>
+#include <cstdlib>
+#include <cerrno>
+#include <climits>
+#include <cctype>
+#include <cmath>
 
 
 using namespace NFutil;
@@ -62,25 +67,68 @@ TimeSeries NFutil::loadTimeSeries(const std::string& filePath, const std::string
 	return ts;
 }
 
+bool NFutil::tryConvertToDouble(const std::string& s, double& value)
+{
+	/* Preserve the legacy stream parser's decimal-number grammar while avoiding
+	 * allocation and exceptions when a field is actually a parameter name. */
+	const char *begin = s.c_str();
+	const char *p = begin;
+	while (*p && std::isspace(static_cast<unsigned char>(*p))) ++p;
+	if (*p == '+' || *p == '-') ++p;
+
+	bool haveDigit = false;
+	while (*p >= '0' && *p <= '9') { haveDigit = true; ++p; }
+	if (*p == '.') {
+		++p;
+		while (*p >= '0' && *p <= '9') { haveDigit = true; ++p; }
+	}
+	if (!haveDigit) return false;
+	if (*p == 'e' || *p == 'E') {
+		++p;
+		if (*p == '+' || *p == '-') ++p;
+		const char *expBegin = p;
+		while (*p >= '0' && *p <= '9') ++p;
+		if (p == expBegin) return false;
+	}
+	if (*p != '\0') return false;
+
+	char *end = 0;
+	errno = 0;
+	double x = std::strtod(begin, &end);
+	if (end == begin || end == 0 || *end != '\0' || !std::isfinite(x)) return false;
+	value = x;
+	return true;
+}
+
 double NFutil::convertToDouble(const std::string& s)
 {
-	bool failIfLeftoverChars = true;
-	std::istringstream i(s);
-	double x;
-	char c;
-	if (!(i >> x) || (failIfLeftoverChars && i.get(c)))
+	double x = 0.0;
+	if (!NFutil::tryConvertToDouble(s, x))
 		throw std::runtime_error("error in NFutil::convertToDouble(\"" + s + "\")");
 	return x;
 }
+bool NFutil::tryConvertToInt(const std::string& s, int& value)
+{
+	const char *begin = s.c_str();
+	char *end = 0;
+	errno = 0;
+	long x = std::strtol(begin, &end, 10);
+	if (end == begin || end == 0 || *end != '\0' || errno == ERANGE ||
+			x < INT_MIN || x > INT_MAX)
+		return false;
+	value = static_cast<int>(x);
+	return true;
+}
 int NFutil::convertToInt(const std::string& s)
 {
-	bool failIfLeftoverChars = true;
-	std::istringstream i(s);
-	int x;
-	char c;
-	if (!(i >> x) || (failIfLeftoverChars && i.get(c)))
+	const char *begin = s.c_str();
+	char *end = 0;
+	errno = 0;
+	long x = std::strtol(begin, &end, 10);
+	if (end == begin || end == 0 || *end != '\0' || errno == ERANGE ||
+			x < INT_MIN || x > INT_MAX)
 		throw std::runtime_error("error in NFutil::convertToInt(\"" + s + "\")");
-	return x;
+	return static_cast<int>(x);
 }
 
 

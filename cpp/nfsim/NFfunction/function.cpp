@@ -466,3 +466,30 @@ void StateCounter::add(Molecule *m) {
 	//	cout<<"updating v`alue to: "<< value<<endl;
 	}
 }
+
+
+bool containsTimeExpression(const std::string &expression)
+{
+	std::size_t i = 0;
+	const std::size_t n = expression.size();
+	while (i < n) {
+		unsigned char c = static_cast<unsigned char>(expression[i]);
+		if (std::isalpha(c) || c == '_') {
+			std::size_t start = i;
+			while (i < n && (std::isalnum(static_cast<unsigned char>(expression[i])) ||
+					expression[i] == '_'))
+				++i;
+			const std::string token = expression.substr(start, i - start);
+			if (token == "time" || token == "t")
+				return true;
+		} else if (std::isdigit(c) || c == '.') {
+			/* Skip numeric literals, including exponents such as 1e-3. */
+			while (i < n && (std::isalnum(static_cast<unsigned char>(expression[i])) ||
+					expression[i] == '.'))
+				++i;
+		} else {
+			++i;
+		}
+	}
+	return false;
+}

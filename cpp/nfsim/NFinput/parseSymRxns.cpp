@@ -791,20 +791,18 @@ bool NFinput::generateRxnPermutations(vector<map<string,component> > &permutatio
 
 bool NFinput::lookup(component *&c, string id, map<string,component> &comps, map<string,component> &symMap) {
 	try {
-		if(symMap.find(id)!=symMap.end()) {
-			component symC = symMap.find(id)->second;
-			c = (&(comps.find(id)->second));
-			c->symPermutationName=symC.symPermutationName;
-		} else {
-			if(comps.find(id)!=comps.end()) {
-				c = (&(comps.find(id)->second));
-				c->symPermutationName = c->name;
-			} else {
-				cerr<<"It seems that I couldn't find the binding sites or states you are refering to."<<endl;
-				cerr<<"Could not find the component that matches the id: "<<id<<endl;
-				return false;
-			}
+		map<string,component>::iterator compIt = comps.find(id);
+		if (compIt == comps.end()) {
+			cerr<<"It seems that I couldn't find the binding sites or states you are refering to."<<endl;
+			cerr<<"Could not find the component that matches the id: "<<id<<endl;
+			return false;
 		}
+		c = &compIt->second;
+		map<string,component>::const_iterator symIt = symMap.find(id);
+		if (symIt != symMap.end())
+			c->symPermutationName = symIt->second.symPermutationName;
+		else
+			c->symPermutationName = c->name;
 	} catch (exception &e) {
 		cerr<<"There was some problem when looking up the location of a particular component."<<endl;
 		cerr<<"Could not find the component that matches the id: "<<id<<endl;

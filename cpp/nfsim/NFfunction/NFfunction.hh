@@ -14,6 +14,11 @@ double tfun_interpolate_value(
 	const std::string &method,
 	double x);
 
+// Conservative test used by the membership filter: true when an expression may
+// read simulation time (an identifier `time` or `t`, with or without a call).
+// A false positive only keeps a rate on the evaluated path.
+bool containsTimeExpression(const std::string &expression);
+
 namespace NFcore {
 
 	class System;
@@ -180,6 +185,10 @@ namespace NFcore {
 			int getNumOfVarRefs() const { return (int) n_varRefs; };
 			int getNumOfParams() const { return (int) n_params; };
 			string getParamName(int index) const { return paramNames[index]; }
+			bool isRuntimeInvariant() const {
+				return n_varRefs == 0 && !fileFunc && ctrType.empty() &&
+					!containsTimeExpression(funcExpression);
+			}
 			string getVarRefName(int varRefIndex) const {
 				return varRefNames[varRefIndex];
 			}
@@ -449,6 +458,7 @@ namespace NFcore {
 
 
 				string getName() const {return name;};
+				bool isMembershipOnlyRate() const;
 
 				void updateParameters(System *s);
 

@@ -17,6 +17,7 @@
 
 using namespace std;
 using namespace NFcore;
+namespace NFcore { bool shadowOn(); extern long long shadowEvent; }
 
 int System::NULL_EVENT_COUNTER = 0;
 
@@ -646,6 +647,54 @@ int System::getNumOfMolecules()
 }
 
 
+void System::beginMembershipMutationCapture()
+{
+	++membershipMutationGeneration;
+	if (membershipMutationGeneration == 0) ++membershipMutationGeneration;
+	membershipEventMutations.clear();
+	newMembershipMolecules.clear();
+	membershipMutationCaptureActive = true;
+}
+
+void System::endMembershipMutationCapture()
+{
+	membershipMutationCaptureActive = false;
+}
+
+void System::recordMembershipBondMutation(Molecule *m1, int c1,
+		Molecule *m2, int c2, bool added)
+{
+	if (!membershipMutationCaptureActive || m1 == 0 || m2 == 0) return;
+	MembershipEventMutation mutation;
+	mutation.kind = added ? MembershipEventMutation::BOND_ADD
+			: MembershipEventMutation::BOND_DEL;
+	mutation.type1 = m1->getMoleculeType();
+	mutation.component1 = c1;
+	mutation.type2 = m2->getMoleculeType();
+	mutation.component2 = c2;
+	membershipEventMutations.push_back(mutation);
+}
+
+void System::recordMembershipStateMutation(Molecule *m, int component,
+		int oldState, int newState)
+{
+	if (!membershipMutationCaptureActive || m == 0 || oldState == newState) return;
+	MembershipEventMutation mutation;
+	mutation.kind = MembershipEventMutation::STATE_CHANGE;
+	mutation.type1 = m->getMoleculeType();
+	mutation.component1 = component;
+	mutation.oldState = oldState;
+	mutation.newState = newState;
+	membershipEventMutations.push_back(mutation);
+}
+
+void System::recordNewMembershipMolecule(Molecule *m)
+{
+	if (!membershipMutationCaptureActive || m == 0) return;
+	newMembershipMolecules.insert(m);
+}
+
+
 Compartment * System::getCompartment(string id) const
 {
 	map<string, Compartment*>::const_iterator it = compartments.find(id);
@@ -699,7 +748,6 @@ void System::prepareForSimulation()
 		rxnIndexMap = 0;
 	}
 
-	this->selector = new DirectSelector(allReactions, this);
 
 	cout<<"preparing simulation..."<<endl;
 	//Note!!  : the order of preparing the system matters!  You have to prepare
@@ -736,6 +784,25 @@ void System::prepareForSimulation()
 		rxnIndexMap[r] = new int[allReactions.at(r)->getNumOfReactants()];
   		allReactions.at(r)->setRxnId(r);
   	}
+
+	/* Reaction selector choice.  DirectSelector is a linear prefix scan over
+	 * every reaction channel, so its per-event cost grows with the rule count;
+	 * on the indexed translation models that is the dominant per-event term.
+	 * LogClassSelector is composition-rejection: it scans only the active
+	 * log2 propensity classes (bounded by a constant) and then rejection-samples
+	 * within the chosen class, giving per-event cost independent of the number
+	 * of rules. */
+	/* NFSIM_FIXED_POINT=1 selects the 64-bit fixed-point direct method
+	 * (different random-number use, so trajectories differ from the default). */
+	const char *fixedPointEnv = getenv("NFSIM_FIXED_POINT");
+	const bool fixedPoint = fixedPointEnv != 0 && fixedPointEnv[0] != '\0' &&
+			fixedPointEnv[0] != '0';
+	if (getenv("NFSIM_LOGSEL") != 0)
+		this->selector = new LogClassSelector(allReactions, this);
+	else if (fixedPoint && FixedPointSelector::supports(allReactions))
+		this->selector = new FixedPointSelector(allReactions, this);
+	else
+		this->selector = new DirectSelector(allReactions, this);
 
   	// Infer connected reactions if asked to do so from command line
   	// Arvind Rasi Subramaniam
@@ -1267,7 +1334,8 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 			if(DEBUG && verbose && iteration < 5) {
 				cout << "Calling fire()..." << endl;
 			}
-			nextReaction->fire(randElement);
+if (NFcore::shadowOn()) { NFcore::shadowEvent++; cout << "@EVT " << NFcore::shadowEvent << " " << nextReaction->getRxnId() << " " << nextReaction->getName() << endl; }
+nextReaction->fire(randElement);
 			if(DEBUG && verbose && iteration < 5) {
 				cout << "Fire returned" << endl;
 			}
@@ -1356,7 +1424,8 @@ double System::stepTo(double stoppingTime)
 		current_time = pendingStepEventTime;
 		globalEventCounter++;
 
-		nextReaction->fire(randElement);
+if (NFcore::shadowOn()) { NFcore::shadowEvent++; cout << "@EVT " << NFcore::shadowEvent << " " << nextReaction->getRxnId() << " " << nextReaction->getName() << endl; }
+nextReaction->fire(randElement);
 		invalidateStepToCache();
 
 		// Replenish fixed species after reaction fires
@@ -1403,7 +1472,8 @@ void System::singleStep()
 	nextReaction->printDetails();;
 
 	//5: Fire Reaction! (takes care of updates to lists and observables)
-	nextReaction->fire(randElement);
+if (NFcore::shadowOn()) { NFcore::shadowEvent++; cout << "@EVT " << NFcore::shadowEvent << " " << nextReaction->getRxnId() << " " << nextReaction->getName() << endl; }
+nextReaction->fire(randElement);
 	cout<<"  -System time is now at time: "<<current_time<<endl;
 
 	// Replenish fixed species after reaction fires

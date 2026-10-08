@@ -445,14 +445,13 @@ const TiXmlElement* TiXmlNode::FirstChildElement() const
 
 const TiXmlElement* TiXmlNode::FirstChildElement( const char * _value ) const
 {
-	const TiXmlNode* node;
-
-	for (	node = FirstChild( _value );
-			node;
-			node = node->NextSibling( _value ) )
+	/* Fuse name and node-type filtering into one sibling walk.  The generic
+	 * FirstChild(value)/NextSibling(value) path compares Value() for text and
+	 * comment nodes too, then performs a virtual type check on the match. */
+	for (const TiXmlNode* node = FirstChild(); node; node = node->NextSibling())
 	{
-		if ( node->ToElement() )
-			return node->ToElement();
+		if ( node->type == TiXmlNode::ELEMENT && strcmp(node->Value(), _value) == 0 )
+			return static_cast<const TiXmlElement*>(node);
 	}
 	return 0;
 }
@@ -475,14 +474,10 @@ const TiXmlElement* TiXmlNode::NextSiblingElement() const
 
 const TiXmlElement* TiXmlNode::NextSiblingElement( const char * _value ) const
 {
-	const TiXmlNode* node;
-
-	for (	node = NextSibling( _value );
-			node;
-			node = node->NextSibling( _value ) )
+	for (const TiXmlNode* node = NextSibling(); node; node = node->NextSibling())
 	{
-		if ( node->ToElement() )
-			return node->ToElement();
+		if ( node->type == TiXmlNode::ELEMENT && strcmp(node->Value(), _value) == 0 )
+			return static_cast<const TiXmlElement*>(node);
 	}
 	return 0;
 }
@@ -490,12 +485,13 @@ const TiXmlElement* TiXmlNode::NextSiblingElement( const char * _value ) const
 
 const TiXmlDocument* TiXmlNode::GetDocument() const
 {
-	const TiXmlNode* node;
-
-	for( node = this; node; node = node->parent )
+	for (const TiXmlNode* node = this; node; node = node->parent)
 	{
-		if ( node->ToDocument() )
-			return node->ToDocument();
+		/* NodeType is already stored in the base object.  Avoid a virtual
+		 * ToDocument() dispatch at every ancestor (and a second dispatch on
+		 * success) when a single integer test proves the same dynamic type. */
+		if (node->type == TiXmlNode::DOCUMENT)
+			return static_cast<const TiXmlDocument*>(node);
 	}
 	return 0;
 }

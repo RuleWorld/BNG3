@@ -259,14 +259,17 @@ namespace NFcore
 			*/
 			bool getListOfProducts(MappingSet **mappingSets, list <Molecule *> &products,
 					int traversalLimit, vector <unsigned int> *componentSizes = 0,
-					bool *componentsTruncated = 0);
+					bool *componentsTruncated = 0,
+					list <Molecule *> *recycledNodes = 0);
 
 			/*!
 				This is a companion to getListOfProducts. This is called after applying transformations and
 				gathers all the newly added molecules.
 				@author JustinHogg
 			*/
-			bool getListOfAddedMolecules(MappingSet **mappingSets, list <Molecule *> &products, int traversalLimit);
+			bool getListOfAddedMolecules(MappingSet **mappingSets,
+					list <Molecule *> &products, int traversalLimit,
+					list <Molecule *> *recycledNodes = 0);
 
 			/*!
 				Called by reaction class to determine if the rate of a rule must be adjusted to

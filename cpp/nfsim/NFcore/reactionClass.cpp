@@ -8,6 +8,32 @@
 using namespace std;
 using namespace NFcore;
 
+namespace {
+
+bool productNodeReuseEnabled()
+{
+	static int enabled = -1;
+	if (enabled < 0) {
+		const char *value = getenv("NFSIM_PRODUCT_NODE_REUSE");
+		enabled = value == 0 || value[0] != '0' ? 1 : 0;
+	}
+	return enabled == 1;
+}
+
+inline void appendRecycledProductNode(list<Molecule *> &products,
+		Molecule *molecule, list<Molecule *> *recycledNodes)
+{
+	if (recycledNodes == 0 || recycledNodes->empty()) {
+		products.push_back(molecule);
+		return;
+	}
+	list<Molecule *>::iterator node = recycledNodes->begin();
+	*node = molecule;
+	products.splice(products.end(), *recycledNodes, node);
+}
+
+}
+
 
 
 ReactionClass::ReactionClass(string name, double baseRate, string baseRateParameterName, TransformationSet *transformationSet, System *s)
@@ -412,6 +438,21 @@ bool ReactionClass::isDirectProductMolecule(Molecule *molecule) const
 }
 
 
+void ReactionClass::recycleProductNodes()
+{
+	list<Molecule *> &recycledProductNodes = system->getRecycledProductNodes();
+	if (!productNodeReuseEnabled()) {
+		products.clear();
+		recycledProductNodes.clear();
+		return;
+	}
+	recycledProductNodes.splice(recycledProductNodes.end(), products);
+	const std::size_t retainedNodeLimit = 16;
+	while (recycledProductNodes.size() > retainedNodeLimit)
+		recycledProductNodes.pop_back();
+}
+
+
 void ReactionClass::printDetails() const {
 	cout<< name <<"  (id="<<this->rxnId<<", baseRate="<<baseRate<<",  a="<<a<<", fired="<<fireCounter<<" times )"<<endl;
 	// added by rasi to look at only nonzero mapping reactions
@@ -569,16 +610,18 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	// omitted dependency has been proven safe; all other reactions retain the
 	// complete bonded-neighborhood traversal.
 	bool directProductsPrepared = false;
+	list<Molecule *> *productNodePool = productNodeReuseEnabled()
+		? &system->getRecycledProductNodes() : 0;
 	if (this->canUseDirectProductList()) {
 		for (vector<Molecule *>::const_iterator it =
 				directProductMoleculeList.begin();
 			it != directProductMoleculeList.end(); ++it)
-			products.push_back(*it);
+			appendRecycledProductNode(products, *it, productNodePool);
 		directProductsPrepared = true;
 	} else {
 		this->transformationSet->getListOfProducts(
 				mappingSet, products, traversalLimit, &productComponentSizes,
-				&productComponentsTruncated);
+				&productComponentsTruncated, productNodePool);
 	}
 
 	// Loop through the products (excluding added molecules) and remove from observables
@@ -643,6 +686,11 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	// Through the MappingSet, transform all the molecules as neccessary
 	//  This will also create new molecules, as required.  As a side effect,
 	//  deleted molecules will be removed from observables.
+	// Capture every state/bond mutation performed by this transform.  The
+	// membership phase consumes the same event-level mutation set for every
+	// molecule reached by the existing product walk.
+	this->system->beginMembershipMutationCapture();
+
 	// AS2023 - if tracking is turned on, transform needs a string to build up
 	string logstr;
 	if (this->system->getReactionTrackingStatus()) {
@@ -653,7 +701,8 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	}
 
 	// Add newly created molecules to the list of products
-	this->transformationSet->getListOfAddedMolecules(mappingSet,products,traversalLimit);
+	this->transformationSet->getListOfAddedMolecules(
+			mappingSet, products, traversalLimit, productNodePool);
 
 	// if complex bookkeeping is on, find all product complexes
 	// (this is useful for updating Species Observables and TypeII functions, so keep the info handy).
@@ -760,6 +809,7 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	}
 	if (deferMembershipPropensityUpdates)
 		this->system->endDeferredMembershipPropensityUpdates();
+	this->system->endMembershipMutationCapture();
 	if (profileMembership)
 		system->recordProfileMembershipPhase(
 				profileElapsedSeconds(profileMembershipStart));
@@ -875,13 +925,13 @@ string ReactionClass::fire(double random_A_number, bool track) {
 			// close firing 
 			track_str += std::string(level,' ') + "}";
 			//Tidy up
-			products.clear();
+			recycleProductNodes();
 			productComplexes.clear();
 			return track_str;
 		}
 	}
 	//Tidy up
-	products.clear();
+	recycleProductNodes();
 	productComplexes.clear();
 	// AS2023 - returning empty, if we are here logging was off
 	return "";
@@ -889,8 +939,8 @@ string ReactionClass::fire(double random_A_number, bool track) {
 
 void ReactionClass::identifyConnectedReactions() {
 	ReactionClass * rxn;
-	vector <ReactionClass *> allReactions;
-	allReactions = system->getAllReactions();
+	/* Read the system's reaction list in place (this runs once per reaction). */
+	const vector <ReactionClass *> &allReactions = system->getAllReactionsRef();
 	for (unsigned int r=0; r < allReactions.size(); r++) {
 		rxn = allReactions.at(r);
 		if (this->isReactionConnected(rxn)) this->appendConnectedRxn(rxn);

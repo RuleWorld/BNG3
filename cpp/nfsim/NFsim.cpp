@@ -168,6 +168,7 @@
 
 
 #include "NFsim.hh"
+namespace NFcore { void memprofReport(); }
 #include "NFtest/agentcell/agentcell.hh"
 #include "NFtest/simple_system/simple_system.hh"
 #include "NFtest/tlbr/tlbr.hh"
@@ -573,10 +574,13 @@ System *initSystemFromFlags(map<string,string> argMap, bool verbose)
 			bool cb = false;
 			if(turnOnComplexBookkeeping || blockSameComplexBinding) cb=true;
 			int suggestedTraveralLimit = ReactionClass::NO_LIMIT;
+			/* The initial-state block of the reaction log is only needed with
+			 * -rxnlog; skip building it otherwise. */
 			System *s = NFinput::initializeFromXML(filename,cb,globalMoleculeLimit,verbose,
 													suggestedTraveralLimit,
 													evaluateComplexScopedLocalFunctions,
-													connectivityFlag);
+													connectivityFlag,
+													argMap.find("rxnlog") != argMap.end());
 
 
 			if(s!=NULL)
@@ -917,6 +921,9 @@ bool runFromArgs(System *s, map<string,string> argMap, bool verbose)
 			s->sim(sTime,oSteps);
 		}
 	}
+
+	/* NFSIM_MEMPROF=1 prints the membership-walk counters. */
+	NFcore::memprofReport();
 
 	if (s->isProfilingEnabled() && !s->writeProfile()) return false;
 
