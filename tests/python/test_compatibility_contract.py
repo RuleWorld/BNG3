@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import json
 import inspect
@@ -50,6 +51,21 @@ def test_legacy_public_symbols_are_available_from_package_root():
     assert bionetgen.SympyOdes is not None
     assert callable(bionetgen.export_sympy_odes)
     assert bionetgen.BNGResult is not None
+
+
+def test_public_sympy_ode_export_runs_from_package_root(tmp_path):
+    if importlib.util.find_spec("sympy") is None:
+        pytest.skip("SymPy is an optional integration")
+
+    model_path = _write_method_matrix_model(tmp_path / "sympy-model.bngl")
+    result = bionetgen.export_sympy_odes(
+        model_path, out_dir=str(tmp_path / "mex"), mex_suffix="compat"
+    )
+
+    assert isinstance(result, bionetgen.SympyOdes)
+    assert len(result.species) == 2
+    assert len(result.params) == 1
+    assert len(result.odes) == 2
 
 
 @pytest.mark.parametrize("method", SUPPORTED_METHODS)
@@ -368,7 +384,7 @@ def test_default_package_import_does_not_load_optional_integrations(tmp_path):
 import importlib.abc
 import sys
 
-blocked = {'cement', 'colorlog', 'pandas', 'matplotlib', 'sympy', 'libsbml', 'lxml', 'networkx'}
+blocked = {'cement', 'colorlog', 'pandas', 'matplotlib', 'sympy', 'libsbml', 'roadrunner', 'nbclient', 'nbformat', 'ipykernel', 'seaborn', 'lxml', 'networkx'}
 class BlockOptionalImports(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
         if fullname.split('.')[0] in blocked:
@@ -394,8 +410,7 @@ assert not (blocked & {name.split('.')[0] for name in sys.modules})
 
 
 def test_notebook_command_writes_a_valid_model_specific_notebook(tmp_path):
-    input_model = tmp_path / "notebook_model.bngl"
-    input_model.write_text("begin model\nend model\n")
+    input_model = _write_method_matrix_model(tmp_path / "notebook_model.bngl")
     output = tmp_path / "notebook_model.ipynb"
 
     result = subprocess.run(
@@ -419,10 +434,186 @@ def test_notebook_command_writes_a_valid_model_specific_notebook(tmp_path):
     assert result.returncode == 0, result.stderr
     notebook = json.loads(output.read_text(encoding="utf-8"))
     assert notebook["nbformat"] == 4
-    assert any(
-        str(input_model.resolve()) in "".join(cell.get("source", []))
+    code = "\n".join(
+        "".join(cell.get("source", []))
         for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
     )
+    assert str(input_model.resolve()) in code
+    assert "model = bionetgen.load(" in code
+    assert "result = model.simulate()" in code
+    assert "result.plot()" in code
+    assert "res = r[0]" not in code
+    assert all(
+        cell["outputs"] == [] and cell["execution_count"] is None
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+    )
+
+
+def test_default_notebook_uses_bng3_compatible_file_results(tmp_path):
+    output = tmp_path / "default.ipynb"
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    generated = subprocess.run(
+        [sys.executable, "-m", "bionetgen.cli", "notebook", "--output", str(output)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert generated.returncode == 0, generated.stderr
+    notebook = json.loads(output.read_text(encoding="utf-8"))
+    code = "\n".join(
+        "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+    )
+    assert 'r = bionetgen.run("simple_model.bngl", "test")' in code
+    assert "r.gdats[key]" in code
+    assert "r.results" not in code
+    assert "plt.plot(res['time'], res[name], label=name)" in code
+    assert "import seaborn" not in code
+    assert all(
+        cell["outputs"] == [] and cell["execution_count"] is None
+        for cell in notebook["cells"]
+        if cell["cell_type"] == "code"
+    )
+
+
+def test_generated_notebooks_execute_in_qualified_kernel(tmp_path, monkeypatch):
+    nbclient = pytest.importorskip("nbclient")
+    pytest.importorskip("ipykernel")
+    nbformat = pytest.importorskip("nbformat")
+
+    kernel_name = "bng3-qualified"
+    kernel_path = tmp_path / "jupyter" / "kernels" / kernel_name
+    kernel_path.mkdir(parents=True)
+    kernel_spec = {
+        "argv": [sys.executable, "-m", "ipykernel_launcher", "-f", "{connection_file}"],
+        "display_name": "BNG3 qualified test kernel",
+        "language": "python",
+    }
+    (kernel_path / "kernel.json").write_text(json.dumps(kernel_spec), encoding="utf-8")
+    monkeypatch.setenv("JUPYTER_PATH", str(tmp_path / "jupyter"))
+
+    installed_package = Path(bionetgen.__file__).resolve()
+    installed_extension = Path(bionetgen._bionetgen_cpp.__file__).resolve()
+    cases = ("model-specific", "default")
+    for case in cases:
+        case_dir = tmp_path / case
+        case_dir.mkdir()
+        output = case_dir / "generated.ipynb"
+        command = [
+            sys.executable,
+            "-m",
+            "bionetgen.cli",
+            "notebook",
+            "--output",
+            str(output),
+        ]
+        if case == "model-specific":
+            input_model = _write_method_matrix_model(case_dir / "notebook_model.bngl")
+            command.extend(["--input", str(input_model)])
+
+        env = os.environ.copy()
+        env.pop("PYTHONPATH", None)
+        generated = subprocess.run(
+            command,
+            cwd=case_dir,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert generated.returncode == 0, generated.stderr
+
+        notebook = nbformat.read(output, as_version=4)
+        notebook.metadata["kernelspec"] = {
+            "display_name": "BNG3 qualified test kernel",
+            "language": "python",
+            "name": kernel_name,
+        }
+        notebook.cells.append(
+            nbformat.v4.new_code_cell(
+                "import sys\n"
+                "from pathlib import Path\n"
+                "import bionetgen\n"
+                "import bionetgen._bionetgen_cpp as cpp\n"
+                f"assert Path(sys.executable).resolve() == Path({sys.executable!r}).resolve()\n"
+                f"assert Path(bionetgen.__file__).resolve() == Path({str(installed_package)!r})\n"
+                f"assert Path(cpp.__file__).resolve() == Path({str(installed_extension)!r})"
+            )
+        )
+        executed = nbclient.NotebookClient(
+            notebook,
+            timeout=120,
+            kernel_name=kernel_name,
+            resources={"metadata": {"path": str(case_dir)}},
+        ).execute()
+
+        assert any(
+            "image/png" in cell_output.data
+            for cell in executed.cells
+            for cell_output in cell.get("outputs", [])
+            if cell_output.output_type == "display_data"
+        ), case
+
+
+def test_legacy_roadrunner_adapter_reports_missing_optional_dependency():
+    if importlib.util.find_spec("roadrunner") is not None:
+        pytest.skip("the optional roadrunner dependency is installed")
+
+    with pytest.raises(ImportError, match="install the optional roadrunner dependency"):
+        bionetgen.sim_getter(model_str="<sbml/>", sim_type="libRR")
+
+
+@pytest.mark.parametrize("backend", ["modern", "legacy"])
+def test_sbml_backends_report_missing_optional_libsbml(tmp_path, backend):
+    source = tmp_path / "model.xml"
+    source.write_text("<sbml/>", encoding="utf-8")
+    code = f"""
+import importlib.abc
+import bionetgen
+import sys
+
+class BlockLibSBML(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] == 'libsbml':
+            raise ModuleNotFoundError("No module named 'libsbml'")
+
+sys.meta_path.insert(0, BlockLibSBML())
+try:
+    bionetgen.from_sbml({str(source)!r}, atomizer_backend={backend!r})
+except bionetgen.BioNetGenError as exc:
+    assert 'libsbml' in str(exc).lower(), str(exc)
+else:
+    raise AssertionError('SBML import unexpectedly succeeded without libsbml')
+"""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_compatibility_runner_rejects_simulator_backend_override(tmp_path):
+    model_path = _write_method_matrix_model(tmp_path / "bngsim-selector.bngl")
+    output = tmp_path / "bngsim-output"
+
+    with pytest.raises(NotImplementedError, match="only simulator='auto' is supported"):
+        bionetgen.run(model_path, out=output, simulator="bngsim")
+
+    assert not output.exists()
 
 
 @pytest.mark.parametrize("output_directory", [False, True])

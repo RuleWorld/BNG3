@@ -69,9 +69,23 @@ modify the action grid while preserving actions. Supplying `--method` with
 `--input` opts into a single modern simulation; solver-specific options are
 accepted there. The five modern methods
 (`ode`, `ssa`, `nf`, `pla`, and `psa`) are contract-tested through the Python
-API and positional-model CLI. The compatibility tests also exercise optional
-import isolation and notebook-file generation; they do not qualify execution
-of generated notebooks or third-party notebook integrations.
+API and positional-model CLI. The notebook command clears saved execution
+outputs from its templates. Its model-specific example uses
+`bionetgen.load(...).simulate()` and `SimResult.plot()`; the built-in example
+uses the file-runner result's `gdats` mapping. Install `bionetgen[notebook]`
+for an IPython kernel and Matplotlib before running either template in a
+Jupyter frontend. The frontend itself is not included in that extra.
+
+The maintained integration surface includes `from_sbml` and `sbml_to_bngl`,
+the optional SymPy ODE export, and the legacy
+`sim_getter(..., sim_type="libRR")` adapter. SBML import and SymPy ODE export
+require `python-libsbml` and `sympy`, respectively; both are included in
+`bionetgen[full]`. The RoadRunner adapter remains
+optional; when its `roadrunner` module is absent, it raises an `ImportError`
+that names the missing dependency. The file-runner rejects
+`simulator="bngsim"`; BNG3's `backend="bngsim"` belongs to its separate native
+finite-network API and does not reproduce PyBioNetGen's optional Python
+`bngsim` routing contract. BNG3 does not expose a PySB adapter.
 
 ## Before And After
 

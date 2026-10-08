@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -262,7 +263,12 @@ def notebook(input_path, output_path, open_notebook):
         content = content.replace(
             "INPUT_ARG", str(Path(input_path).resolve()).replace("\\", "/")
         )
-    output.write_text(content, encoding="utf-8")
+    notebook_data = json.loads(content)
+    for cell in notebook_data.get("cells", []):
+        if cell.get("cell_type") == "code":
+            cell["execution_count"] = None
+            cell["outputs"] = []
+    output.write_text(json.dumps(notebook_data, indent=1) + "\n", encoding="utf-8")
     click.echo(f"Notebook written to {output}")
     if open_notebook:
         click.echo("Open the notebook with Jupyter or your preferred notebook viewer.")
