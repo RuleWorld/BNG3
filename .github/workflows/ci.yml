@@ -518,7 +518,6 @@ jobs:
       BNG3_PYTHON_TEST_MODE: installed
       CMAKE_BUILD_PARALLEL_LEVEL: 2
       JAX_PLATFORMS: cpu
-      JAX_ENABLE_X64: "true"
     steps:
       - uses: actions/checkout@v4
 
@@ -542,10 +541,17 @@ jobs:
         run: |
           python -c 'import jax, jaxlib; print(jax.__version__, jaxlib.__version__, jax.devices()); assert jax.default_backend() == "cpu"'
 
-      - name: Test JAX ODE and explicit SSA unavailability
+      - name: Test JAX float32 ODE and explicit SSA unavailability
         # SSA is unavailable, even with JAX installed. Flattening is a native
         # data export and does not establish accelerator simulation support.
         run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py -q
+        env:
+          JAX_ENABLE_X64: "false"
+
+      - name: Test JAX float64 ODE
+        run: python -m pytest tests/python/test_jax_ode.py -q
+        env:
+          JAX_ENABLE_X64: "true"
 
   python-test:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
