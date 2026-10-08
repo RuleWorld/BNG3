@@ -6,8 +6,8 @@
 > test or a `TODO` ticket.
 
 **Last audited:** 2026-10-08
-**Capability source:** `cpp/engine/BngsimCapability.cpp` (always compiled)
-**Adapter source:** `cpp/engine/BngsimAdapter.cpp` (optional)
+**Capability source:** `cpp/engine/BngsimAdapter.cpp` (always compiled)
+**Network adapter:** `cpp/engine/BngsimAdapter.cpp` (`buildBngsimNetwork` is optional)
 **Pinned BNGsim:** `49dc939035f5a272da663f8c9586e3c9f0e1c041` (see `provenance/upstreams.lock.yml`)
 **Default backend:** `native` (auto-select prefers `bngsim` only when faithfully lowerable)
 
@@ -72,13 +72,13 @@ Notes:
 
 ## Capability and adapter boundary
 
-`cpp/engine/BngsimCapability.cpp` is always compiled and owns the semantic
+`cpp/engine/BngsimAdapter.cpp` is compiled in all builds and owns the semantic
 lowerability decision and its rejection messages. It checks the generated
 network and model without requiring BNGsim headers or a linked BNGsim library.
-`cpp/engine/BngsimAdapter.cpp` is optional and delegates its preflight to that
-same check; the observable matcher, TFUN counter validation, rate-reference
-normalization, and species-index checks are shared as well. Build availability
-and version remain separate fields in `BngsimCapabilities`.
+Only `buildBngsimNetwork` and its BNGsim `ModelBuilder` conversion are compiled
+when `BUILD_BNGSIM_ADAPTER` is enabled; the observable matcher, TFUN counter
+validation, rate-reference normalization, and species-index checks are shared.
+Build availability and version remain separate fields in `BngsimCapabilities`.
 
 This replaces the duplicated `collectSemanticBlockers` implementation in
 `FiniteBackend.cpp`. A supported model now has the same semantic check in builds
