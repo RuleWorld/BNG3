@@ -427,10 +427,14 @@ class BioNetGenModel:
                     raise RuntimeError(
                         f"BNGsim backend does not yet support method='{method}'; native fallback required"
                     )
-                # Preflight lowering check — this also reports availability so we
-                # get precise diagnostics for both semantic and build blockers.
+                # Solver availability and semantic lowerability are separate
+                # capabilities; check each boundary before dispatch.
                 if _cpp is None or not hasattr(_cpp, "check_bngsim_lowering"):
                     raise RuntimeError("BNGsim backend unavailable in this build")
+                if not hasattr(_cpp, "bngsim_available") or not _cpp.bngsim_available():
+                    raise RuntimeError(
+                        "BNGsim backend unavailable: build without BUILD_BNGSIM_ADAPTER"
+                    )
                 try:
                     chk = _cpp.check_bngsim_lowering(self._model, self._network)
                     if not chk.get("supported", False):

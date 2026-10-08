@@ -5,8 +5,9 @@
 > records the required fallback. It is test-backed: every row has a owning
 > test or a `TODO` ticket.
 
-**Last audited:** 2026-09-17
-**Adapter source:** `cpp/engine/BngsimAdapter.cpp`
+**Last audited:** 2026-10-08
+**Capability source:** `cpp/engine/BngsimCapability.cpp` (always compiled)
+**Adapter source:** `cpp/engine/BngsimAdapter.cpp` (optional)
 **Pinned BNGsim:** `49dc939035f5a272da663f8c9586e3c9f0e1c041` (see `provenance/upstreams.lock.yml`)
 **Default backend:** `native` (auto-select prefers `bngsim` only when faithfully lowerable)
 
@@ -32,7 +33,7 @@ Rejection is **fail-closed**: the adapter throws before solver construction with
 | Absolute-path TFUN `TFUN('/abs/path', time)` | supported | yes (`add_table_function_spec`) | `… maps absolute-file TFUN` |
 | Species ordering, parameter values, ICs (constant flag), reaction reactants/products, stoichiometry, statistical factor | supported | yes | `… maps … without .net serialization` (checks `species()[0].name`, `stat_factor`, `n_species` etc.) |
 | `time` / `t` counter mapping to BNGsim `time` | supported | yes | inline TFUN path |
-| Observables / parameters as TFUN counter | supported (via `tableCounterName`) | yes | - |
+| Observables / parameters as TFUN counter | supported (via `bngsimTableCounterName`) | yes | - |
 
 ## Rejected today (fallback required)
 
@@ -48,7 +49,7 @@ Rejection is **fail-closed**: the adapter throws before solver construction with
 | Local function arguments (`function foo(x) = …`) | `function arguments require a local-function bridge` | A/B | investigate — BNGsim functions are zero-arg rate laws today | Adapter gap if BNGsim gains args; otherwise needs per-reaction derived param lowering | yes | add (requires model with `f(x) = …`) |
 | Relative TFUN path (`TFUN('forcing.dat', time)` without provenance) | `relative table path requires source-directory provenance` | A | yes (absolute ok) | Propagate `source_path` / `LoweringContext` so relative paths resolve | yes until fixed | `… rejects relative TFUN provenance` |
 | Non-reference rate expression (`X() -> 0 k*X`, i.e. not a direct param or function) | `is not a direct parameter or function reference` | A | maybe — BNGsim has bounded `Functional` but arbitrary expression would need validation | Allow supported expression subset via function wrapping or expression lowering | yes until expanded | `… fails closed on non-reference rate expressions` |
-| Species index out of range | `species index out of range` | — | — | Invariant violation (network generation bug) | throw | checked in `checkedIndices` |
+| Species index out of range | `species index out of range` | — | — | Invariant violation (network generation bug) | throw | checked in `checkedBngsimIndices` |
 | Species index exceeds BNGsim `int` range | `species index exceeds BNGsim int range` | B | BNGsim uses `int` indices | Document limit; fallback for >2^31 species is academic | yes (throw) | — |
 | Observable with unsupported type (not `Molecules`/`Species`) | `unsupported observable type` | A/B | BNGsim only exposes those two | Add other types if BNGsim gains them | yes | — |
 | Observable pattern parse failure | `could not parse pattern` | A | — | Improve diagnostics; fail-closed is correct | throw | — |
@@ -69,49 +70,21 @@ Notes:
 - The `undefined`/`TODO` tests above are tracked under this document and must
   be added before the corresponding row can leave "rejected".
 
-## Enumerated rejection branches (grep provenance)
+## Capability and adapter boundary
 
-Every `BNGsim adapter rejected` string in `cpp/engine/BngsimAdapter.cpp`:
+`cpp/engine/BngsimCapability.cpp` is always compiled and owns the semantic
+lowerability decision and its rejection messages. It checks the generated
+network and model without requiring BNGsim headers or a linked BNGsim library.
+`cpp/engine/BngsimAdapter.cpp` is optional and delegates its preflight to that
+same check; the observable matcher, TFUN counter validation, rate-reference
+normalization, and species-index checks are shared as well. Build availability
+and version remain separate fields in `BngsimCapabilities`.
 
-```
-BNGsimAdapter.cpp:39  species index out of range
-BNGsimAdapter.cpp:43  species index exceeds BNGsim int range
-BNGsimAdapter.cpp:56  unsupported observable type
-BNGsimAdapter.cpp:116 could not parse pattern
-BNGsimAdapter.cpp:184 species index exceeds int range (observable)
-BNGsimAdapter.cpp:196 empty counter name
-BNGsimAdapter.cpp:206 counter must be time or a named parameter/observable
-BNGsimAdapter.cpp:219 malformed unary expression
-BNGsimAdapter.cpp:225 malformed binary expression
-BNGsimAdapter.cpp:243 malformed TFUN expression
-BNGsimAdapter.cpp:251 relative table path requires source-directory provenance
-BNGsimAdapter.cpp:269 unknown expression kind
-BNGsimAdapter.cpp:283 compartments require a volume-aware bridge
-BNGsimAdapter.cpp:287 energy patterns require an eBNGL rate bridge
-BNGsimAdapter.cpp:291 barrier patterns require an eBNGL rate bridge
-BNGsimAdapter.cpp:299 driven_by() reservoir work requires an eBNGL rate bridge
-BNGsimAdapter.cpp:305 population maps are not a generated-network feature
-BNGsimAdapter.cpp:309 simulation protocol requires a protocol bridge
-BNGsimAdapter.cpp:314 action execution requires a protocol bridge
-BNGsimAdapter.cpp:325 value is not finite (parameter)
-BNGsimAdapter.cpp:350 function arguments require a local-function bridge
-BNGsimAdapter.cpp:405 is not a direct parameter or function reference
-```
-
-Count: **22 rejection sites, resolving to 19 distinct message texts** + observable
-index checks. Two texts occur twice: the generic `BNGsim adapter rejected ` prefix
-and the `BNGsim adapter rejected observable '` prefix.
-
-Known gap: `cpp/engine/FiniteBackend.cpp` re-implements this list in
-`collectSemanticBlockers` so diagnostics survive a build without
-`BUILD_BNGSIM_ADAPTER`. That copy has drifted and does not mirror the observable
-type, observable parse failure, TFUN counter-name, TFUN counter-argument,
-non-finite parameter, species index range, malformed expression, and unknown
-expression-kind rejections. The `supported=false` outcome is unaffected (the
-adapter is still consulted when present), but in a default build the reported
-reason can be the wrong one. Fixing it properly means deleting the duplicate and
-always compiling the single lowering boundary, which needs `cpp/CMakeLists.txt`
-and a build with the adapter enabled.
+This replaces the duplicated `collectSemanticBlockers` implementation in
+`FiniteBackend.cpp`. A supported model now has the same semantic check in builds
+with and without `BUILD_BNGSIM_ADAPTER`; an unsupported model reports the same
+first blocker in the capability check and adapter preflight. The adapter remains
+responsible for constructing `bngsim::NetworkModel` only after that preflight.
 
 ## Migration phases (per ADR 0003)
 

@@ -209,15 +209,19 @@ BNG3 treats finite-network numerics as an external concern owned by **BNGsim**
 where semantics are supported. The boundary is narrow and explicit:
 
 - `cpp/engine/FiniteBackend.{hpp,cpp}` owns the `FiniteBackend` enum
-  (`native`/`bngsim`), `BngsimCapabilities` (`available`, `version`,
-  `supportsOde/Ssa/Psa`), and `BngsimLoweringCheck` (`supported`, `blockers`).
-  It never throws on capability queries and centralizes the
-  `resolveFiniteBackend()` decision.
+  (`native`/`bngsim`), build-level `BngsimCapabilities` (`available`,
+  `version`, `supportsOde/Ssa/Psa`), and the `resolveFiniteBackend()` decision.
+- `cpp/engine/BngsimCapability.{hpp,cpp}` is always compiled and owns
+  `BngsimLoweringCheck` (`supported`, `blockers`) plus the semantic checks and
+  helpers used to lower observables, TFUN counters, rate references, and
+  species indices. Its decision is independent of BNGsim build availability.
 - `cpp/engine/BngsimAdapter.{hpp,cpp}` is the sole lowering that translates a
   `GeneratedNetwork` into `bngsim::NetworkModel` in memory (no `.net`
-  serialization). It compiles BNGL `Molecules`/`Species` observables with the
-  same BNGcore/Ullmann semantics as the native path and lowers bounded
-  inline/absolute-path TFUN expressions to BNGsim table functions.
+  serialization). Its preflight and the build-independent capability query use
+  the same semantic implementation. It compiles BNGL `Molecules`/`Species`
+  observables with the same BNGcore/Ullmann semantics as the native path and
+  lowers bounded inline/absolute-path TFUN expressions to BNGsim table
+  functions.
 - `cpp/engine/BngsimBackend.{hpp,cpp}` owns simulation execution on the lowered
   model (`simulateOdeViaBngsim`, `simulateSsaViaBngsim`) and the single result-
   adaptation boundary `convertBngsimResult → OdeResult` (time, concentration
