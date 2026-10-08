@@ -118,6 +118,30 @@ def test_every_parity_job_step_is_executable():
                 )
 
 
+def test_parity_jobs_checkout_the_declared_source_commit():
+    """PR parity evidence must come from the PR source head, not its merge ref."""
+    parity_workflow = _parse_workflow()
+    exact_source = "${{ github.event.pull_request.head.sha || github.sha }}"
+
+    for job_name, job in parity_workflow["jobs"].items():
+        for index, step in enumerate(job.get("steps", [])):
+            if step.get("uses", "").startswith("actions/checkout@"):
+                ref = (step.get("with") or {}).get("ref")
+                assert ref == exact_source, (
+                    f"{PARITY_WORKFLOW.name}: job {job_name!r} checkout step "
+                    f"{index} uses {ref!r}; parity must test {exact_source!r}"
+                )
+
+    for job_name, step_name in (
+        ("bng2-parity", "Verify installed BNG3 package and native identity"),
+        ("nfsim-parity", "Report installed BNG3 package and native identities"),
+    ):
+        job = parity_workflow["jobs"][job_name]
+        step = next(item for item in job["steps"] if item.get("name") == step_name)
+        assert "--require-source-head" in step["run"]
+        assert (step.get("env") or {}).get("BNG3_SOURCE_REVISION") == exact_source
+
+
 def test_nfsim_parity_job_runs_every_parity_module():
     """Each parity module must appear in some step's command.
 

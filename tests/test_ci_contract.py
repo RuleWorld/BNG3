@@ -770,6 +770,34 @@ def test_numerical_expression_export_parity_uses_one_installed_native_build():
     )
 
 
+def test_package_identity_preflight_rejects_a_wrong_declared_source_head():
+    """The strict identity gate must fail before package inspection on mismatch."""
+    actual = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    wrong = "0" * 40 if actual != "0" * 40 else "1" * 40
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "scripts" / "ci" / "check_python_package_identity.py"),
+            "--source-revision",
+            wrong,
+            "--require-source-head",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "does not match checked-out Git HEAD" in result.stderr
+    assert wrong in result.stderr
+
+
 def test_issue182_frozen_ssa_ensemble_inputs_match_the_bng2_lock():
     """The scheduled statistical lane consumes the unchanged, hashed BNG2 fixtures."""
 

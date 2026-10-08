@@ -30,6 +30,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -61,6 +63,8 @@ jobs:
       BNG3_PYTHON_TEST_MODE: installed
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -114,6 +118,7 @@ jobs:
           test -x build/cpp/bng_cpp
           .venv/bin/python scripts/ci/check_python_package_identity.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
+            --require-source-head \
             | tee -a "$GITHUB_STEP_SUMMARY"
           echo "bng_cpp SHA-256: $(sha256sum build/cpp/bng_cpp | cut -d ' ' -f 1)" \
             | tee -a "$GITHUB_STEP_SUMMARY"
@@ -256,6 +261,8 @@ jobs:
       BNG3_PYTHON_TEST_MODE: installed
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -295,6 +302,7 @@ jobs:
         run: |
           python scripts/ci/check_python_package_identity.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
+            --require-source-head \
             | tee -a "$GITHUB_STEP_SUMMARY"
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -356,6 +364,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -406,6 +416,8 @@ jobs:
       BNG3_PYTHON_TEST_MODE: installed
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
