@@ -80,9 +80,12 @@ The maintained integration surface includes `from_sbml` and `sbml_to_bngl`,
 the optional SymPy ODE export, and the legacy
 `sim_getter(..., sim_type="libRR")` adapter. SBML import and SymPy ODE export
 require `python-libsbml` and `sympy`, respectively; both are included in
-`bionetgen[full]`. The RoadRunner adapter remains
-optional; when its `roadrunner` module is absent, it raises an `ImportError`
-that names the missing dependency. The file-runner rejects
+`bionetgen[full]`. The RoadRunner adapter remains optional. Install its
+separate PyPI dependency with `python -m pip install libroadrunner` (the
+import module is named `roadrunner`); when that module is absent, the adapter
+raises an `ImportError` that names the dependency. `sim_getter` accepts SBML
+through either `model_file` or `model_str`; `.simulate(...)` returns
+RoadRunner's time-course matrix. The file-runner rejects
 `simulator="bngsim"`; BNG3's `backend="bngsim"` belongs to its separate native
 finite-network API and does not reproduce PyBioNetGen's optional Python
 `bngsim` routing contract. BNG3 does not expose a PySB adapter.

@@ -562,12 +562,69 @@ def test_generated_notebooks_execute_in_qualified_kernel(tmp_path, monkeypatch):
         ), case
 
 
-def test_legacy_roadrunner_adapter_reports_missing_optional_dependency():
-    if importlib.util.find_spec("roadrunner") is not None:
-        pytest.skip("the optional roadrunner dependency is installed")
+@pytest.mark.parametrize("source", ["model_file", "model_str"])
+def test_legacy_roadrunner_adapter_runs_analytic_sbml(tmp_path, source):
+    if importlib.util.find_spec("roadrunner") is None:
+        pytest.skip("libRoadRunner is an optional integration")
 
+    sbml = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level2/version4" level="2" version="4">
+  <model id="first_order_decay">
+    <listOfCompartments>
+      <compartment id="cell" size="1" />
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="cell" initialConcentration="10"
+               boundaryCondition="false" hasOnlySubstanceUnits="false" />
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="0.2" />
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="decay" reversible="false">
+        <listOfReactants>
+          <speciesReference species="A" stoichiometry="1" />
+        </listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k</ci><ci>A</ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
+"""
+    model_path = tmp_path / "first_order_decay.xml"
+    model_path.write_text(sbml, encoding="utf-8")
+    if source == "model_file":
+        simulator = bionetgen.sim_getter(model_file=str(model_path), sim_type="libRR")
+    else:
+        simulator = bionetgen.sim_getter(model_str=sbml, sim_type="libRR")
+
+    result = simulator.simulate(0.0, 1.0, 11)
+
+    assert result.shape == (11, 2)
+    assert tuple(result.colnames) == ("time", "[A]")
+    assert np.allclose(result["time"], np.linspace(0.0, 1.0, 11))
+    assert np.allclose(
+        result["[A]"],
+        10.0 * np.exp(-0.2 * np.asarray(result["time"])),
+        rtol=1e-5,
+        atol=1e-8,
+    )
+
+
+@pytest.mark.parametrize("source", ["model_file", "model_str"])
+def test_legacy_roadrunner_adapter_reports_missing_optional_dependency(
+    monkeypatch, source
+):
+    monkeypatch.setitem(sys.modules, "roadrunner", None)
     with pytest.raises(ImportError, match="install the optional roadrunner dependency"):
-        bionetgen.sim_getter(model_str="<sbml/>", sim_type="libRR")
+        if source == "model_file":
+            bionetgen.sim_getter(model_file=str(MODEL), sim_type="libRR")
+        else:
+            bionetgen.sim_getter(model_str="<sbml/>", sim_type="libRR")
 
 
 @pytest.mark.parametrize("backend", ["modern", "legacy"])
