@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import pytest
 
@@ -67,6 +69,123 @@ def test_parameter_scan_log_and_linear_spacing(tmp_path):
         parameter="k", min=0.0, max=1.0, n_points=5, log_scale=False
     )
     assert np.allclose(lin_scan.parameter_values, np.linspace(0.0, 1.0, 5))
+
+
+def test_seed_parameter_override_does_not_reuse_stale_network(tmp_path):
+    model_path = tmp_path / "decay.bngl"
+    _write_decay_model(model_path)
+    model = bionetgen.load(str(model_path))
+    original_network = model.generate_network()
+
+    model.set_parameter("X0", 250.0)
+    assert model.get_parameter("X0").value == pytest.approx(250.0)
+    result = model.simulate(
+        method="ode", t_end=1.0, n_steps=2, sample_times=[0.0, 1.0]
+    )
+
+    assert result.observables["Xtot"][0] == pytest.approx(250.0)
+    assert model._network is not original_network
+
+
+def test_parameter_override_recomputes_dependent_parameter_values(tmp_path):
+    model_path = tmp_path / "dependent_decay.bngl"
+    model_path.write_text("""
+begin model
+begin parameters
+    k 0.1
+    k2 2*k
+    X0 100
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() X0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k2
+end reaction rules
+end model
+""")
+    model = bionetgen.load(str(model_path))
+    assert model.get_parameter("k2").value == pytest.approx(0.2)
+
+    model.set_parameter("k", 0.3)
+    assert model.get_parameter("k2").value == pytest.approx(0.6)
+    result = model.simulate(
+        method="ode", t_end=2.0, n_steps=2, sample_times=[0.0, 2.0]
+    )
+    assert result.observables["Xtot"][1] == pytest.approx(
+        100.0 * np.exp(-1.2), rel=1e-6
+    )
+
+
+def test_parallel_scan_workers_match_fresh_analytic_trajectories(tmp_path):
+    model_path = tmp_path / "decay.bngl"
+    _write_decay_model(model_path)
+    model = bionetgen.load(str(model_path))
+    original_network = model.generate_network()
+    original_k = model.get_parameter("k").value
+    values = [0.01, 0.1, 0.2]
+    options = dict(method="ode", t_end=5.0, n_steps=25)
+
+    serial = model.parameter_scan(parameter="k", values=values, **options)
+    parallel = model.parameter_scan(
+        parameter="k", values=values, parallel=2, **options
+    )
+    expected = 100.0 * np.exp(-np.asarray(values) * options["t_end"])
+
+    np.testing.assert_allclose(serial.final("Xtot"), expected, rtol=1e-6, atol=1e-8)
+    np.testing.assert_allclose(
+        parallel.final("Xtot"), expected, rtol=1e-6, atol=1e-8
+    )
+    np.testing.assert_allclose(
+        parallel.final("Xtot"), serial.final("Xtot"), rtol=1e-12, atol=1e-12
+    )
+    assert model.get_parameter("k").value == pytest.approx(original_k)
+    assert model._network is original_network
+
+
+def test_concurrent_ssa_runs_reuse_network_without_sharing_rng_state(tmp_path):
+    model_path = tmp_path / "ssa_decay.bngl"
+    model_path.write_text("""
+begin model
+begin parameters
+    k 0.5
+    X0 1000
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() X0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+""")
+    model = bionetgen.load(str(model_path))
+    network = model.generate_network()
+    kwargs = dict(method="ssa", t_end=4.0, n_steps=40)
+    seeds = [17, 29]
+    serial = [model.simulate(seed=seed, **kwargs) for seed in seeds]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        concurrent = list(
+            executor.map(lambda seed: model.simulate(seed=seed, **kwargs), seeds)
+        )
+
+    assert model._network is network
+    for expected, observed in zip(serial, concurrent):
+        np.testing.assert_array_equal(observed.concentrations, expected.concentrations)
+    assert not np.array_equal(serial[0].concentrations, serial[1].concentrations)
 
 
 def test_parameter_scan_forwards_advanced_simulation_controls(tmp_path):

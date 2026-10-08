@@ -23,11 +23,11 @@
 
 namespace bng::ast {
 
-// Global compartment dimension map for cross-compartment species assignment.
-// Populated by NetworkGenerator before rule expansion.
-static std::unordered_map<std::string, int> g_compartmentDimensions;
-// Global compartment parent map: child → parent (e.g., PM→EC, CP→PM)
-static std::unordered_map<std::string, std::string> g_compartmentParents;
+// Per-thread compartment dimensions for cross-compartment species assignment.
+// Installed by NetworkGenerator while expanding rules.
+static thread_local std::unordered_map<std::string, int> g_compartmentDimensions;
+// Per-thread compartment parents: child → parent (e.g., PM→EC, CP→PM).
+static thread_local std::unordered_map<std::string, std::string> g_compartmentParents;
 
 void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims) {
     g_compartmentDimensions = dims;
@@ -35,6 +35,25 @@ void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims) 
 
 void setCompartmentParents(const std::unordered_map<std::string, std::string>& parents) {
     g_compartmentParents = parents;
+}
+
+CompartmentContextScope::CompartmentContextScope(
+    const std::unordered_map<std::string, int>& dimensions,
+    const std::unordered_map<std::string, std::string>& parents) {
+    // Copy both incoming maps before changing the current context. The swaps
+    // below are non-throwing, so construction either installs the full new
+    // context or leaves the previous one untouched.
+    auto activeDimensions = dimensions;
+    auto activeParents = parents;
+    previousDimensions_.swap(g_compartmentDimensions);
+    previousParents_.swap(g_compartmentParents);
+    g_compartmentDimensions.swap(activeDimensions);
+    g_compartmentParents.swap(activeParents);
+}
+
+CompartmentContextScope::~CompartmentContextScope() {
+    g_compartmentDimensions.swap(previousDimensions_);
+    g_compartmentParents.swap(previousParents_);
 }
 
 // Get the "Outside" compartment for a given compartment.

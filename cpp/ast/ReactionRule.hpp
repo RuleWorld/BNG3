@@ -315,4 +315,23 @@ void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims);
 // Set compartment parent map for transport (endocytosis/exocytosis)
 void setCompartmentParents(const std::unordered_map<std::string, std::string>& parents);
 
+// Temporarily installs compartment metadata for one network-generation pass.
+// The metadata is thread-local and restored when the pass returns or throws.
+class CompartmentContextScope {
+public:
+    CompartmentContextScope(
+        const std::unordered_map<std::string, int>& dimensions,
+        const std::unordered_map<std::string, std::string>& parents);
+    ~CompartmentContextScope();
+
+    CompartmentContextScope(const CompartmentContextScope&) = delete;
+    CompartmentContextScope& operator=(const CompartmentContextScope&) = delete;
+    CompartmentContextScope(CompartmentContextScope&&) = delete;
+    CompartmentContextScope& operator=(CompartmentContextScope&&) = delete;
+
+private:
+    std::unordered_map<std::string, int> previousDimensions_;
+    std::unordered_map<std::string, std::string> previousParents_;
+};
+
 } // namespace bng::ast
