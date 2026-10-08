@@ -59,8 +59,6 @@ jobs:
     timeout-minutes: 120
     env:
       BNG3_PYTHON_TEST_MODE: installed
-      BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
-      BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
     steps:
       - uses: actions/checkout@v4
 
@@ -145,11 +143,16 @@ jobs:
             --summary-file "$GITHUB_STEP_SUMMARY" \
             --verbose
         env:
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Run required RHS, ODE, stochastic-determinism and export parity
         id: numerical_expression_export_parity
         shell: bash
+        env:
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
         run: |
           set -euo pipefail
           .venv/bin/python -m pytest -c tests/validation/pytest.ini \

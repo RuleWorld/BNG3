@@ -675,20 +675,30 @@ def test_nfsim_parity_uses_regular_installed_api_and_pinned_native_oracle():
 
 
 def test_numerical_expression_export_parity_uses_one_installed_native_build():
-    """Required parity modules share the pinned BNG2 and BNG3 build identities."""
+    """Parity steps share pinned BNG2 and BNG3 identities with valid contexts."""
 
     job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["bng2-parity"]
     job = _workflow_job_from(PARITY_WORKFLOW, "bng2-parity")
     steps = {step.get("id"): step for step in job_doc["steps"] if step.get("id")}
 
+    job_env = job_doc.get("env") or {}
+    compare_step = next(
+        step
+        for step in job_doc["steps"]
+        if step.get("name") == "Compare graph-aware networks against BNG2"
+    )
+    required = steps["numerical_expression_export_parity"]
+
     assert job_doc["timeout-minutes"] == 120
-    assert (job_doc.get("env") or {}).get("BNG3_PYTHON_TEST_MODE") == "installed"
-    assert (job_doc.get("env") or {}).get("BNG2_PERL") == (
-        "${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl"
-    )
-    assert (job_doc.get("env") or {}).get("BNGPATH") == (
-        "${{ runner.temp }}/oracle-bionetgen/bng2"
-    )
+    assert job_env.get("BNG3_PYTHON_TEST_MODE") == "installed"
+    assert "BNG2_PERL" not in job_env
+    assert "BNGPATH" not in job_env
+    for step in (compare_step, required):
+        step_env = step.get("env") or {}
+        assert step_env.get("BNG2_PERL") == (
+            "${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl"
+        )
+        assert step_env.get("BNGPATH") == "${{ runner.temp }}/oracle-bionetgen/bng2"
 
     assert "--name bionetgen" in job
     assert 'make -C "$network3" -f Makefile.cmake' in job
@@ -712,7 +722,6 @@ def test_numerical_expression_export_parity_uses_one_installed_native_build():
     assert "cmake --build build" not in job
     assert "PYTHONPATH=python:build/cpp" not in job
 
-    required = steps["numerical_expression_export_parity"]
     required_run = required["run"]
     for module in (
         "tests/validation/test_parity_rhs.py",

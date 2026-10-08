@@ -1,10 +1,10 @@
 """The parity workflow must actually run the parity modules.
 
 `tests/validation/test_parity_nfsim.py` and
-`tests/validation/test_parity_nfsim_seed.py` are the only parity modules any CI
-job runs, and `parity.yml` selects them by path. That selection is invisible to
-a Python suite: nothing fails when a module stops being collected, and the job
-reports green having tested less than it did.
+`tests/validation/test_parity_nfsim_seed.py` are selected by path in
+`parity.yml`. Their selection is invisible to a Python suite: nothing fails
+when a module stops being collected, and the job reports green having tested
+less than it did.
 
 This file checks the wiring itself. It exists because the wiring was wrong once
 already, and the failure was invisible by construction:
