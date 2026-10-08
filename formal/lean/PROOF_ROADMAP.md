@@ -98,19 +98,18 @@ for the current supported feature gate.
 
 This is the first substantive refinement theorem in the project.
 
-## Stage 4 — kernel validation: IMMEDIATE BLOCKER
+## Stage 4 — Lean kernel validation: IMPLEMENTED
 
-Before treating any theorem as trusted:
+The pinned Lean 4.33.1 workflow builds the `BNG/**` library, runs
+`tests/Smoke.lean` and `tests/Coverage.lean` explicitly, and audits named axiom
+dependencies. The package's default Lake target does not include either test
+file, so the explicit commands are required. A weekly/manual run also mutates
+scratch copies to verify that the harness gates reject representative defects.
 
-```bash
-lake build
-lake env lean tests/Smoke.lean
-```
-
-must succeed under the pinned Lean toolchain.
-
-The packaging environment currently lacks Lean, so this stage must happen in CI
-or on a developer machine.
+These checks validate Lean declarations and executable fixtures within their
+stated trust boundaries. They do not prove that production C++ implements the
+Lean reference semantics; see `VALIDATION.md` and `CXX_MAPPING.md` for the
+separate native-test evidence and remaining correspondence boundary.
 
 ## Stage 5 — connect Boolean checks to propositions
 
@@ -276,15 +275,14 @@ implementations:
 
 The highest-priority remaining work is now narrower:
 
-1. kernel-build every Lean file under the pinned toolchain;
-2. prove `Pattern.embeddingMatches = true <-> EmbeddingSpec`;
-3. connect the actual production C++ `CompiledModel -> NFnext` lowering to the
+1. prove `Pattern.embeddingMatches = true <-> EmbeddingSpec`;
+2. connect the actual production C++ `CompiledModel -> NFnext` lowering to the
    checked packing/lowering contract;
-4. prove/test a production species canonicalizer against the brute-force graph
+3. prove/test a production species canonicalizer against the brute-force graph
    isomorphism oracle;
-5. formalize exact special-rate/local-function/builtin conventions that are
+4. formalize exact special-rate/local-function/builtin conventions that are
    actually used by supported backends;
-6. extend stochastic refinement from channel multiplicity to complete
+5. extend stochastic refinement from channel multiplicity to complete
    propensities and event selection;
-7. add generated differential fixtures across BNG3 network generation, NFsim,
+6. add generated differential fixtures across BNG3 network generation, NFsim,
    and NFnext.

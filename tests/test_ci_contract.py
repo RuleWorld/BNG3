@@ -673,6 +673,30 @@ def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     assert "lake env lean tests/Smoke.lean" in formal
 
 
+def test_formal_harness_mutation_selftest_is_scheduled_and_bounded():
+    """Run the meta-gate periodically without slowing every PR check."""
+
+    workflow = parse_workflow(FORMAL_WORKFLOW)
+    # PyYAML's YAML 1.1 resolver exposes the unquoted `on` key as True.
+    triggers = workflow[True]
+    assert triggers["schedule"] == [{"cron": "23 6 * * 1"}]
+
+    job = workflow["jobs"]["lean-kernel"]
+    steps = [
+        step
+        for step in job["steps"]
+        if step.get("name") == "Harness mutation self-test"
+    ]
+    assert len(steps) == 1
+    assert steps[0]["if"] == (
+        "github.event_name == 'schedule' || "
+        "github.event_name == 'workflow_dispatch'"
+    )
+    assert steps[0]["working-directory"] == "formal/lean"
+    assert steps[0]["timeout-minutes"] == 20
+    assert steps[0]["run"] == "./scripts/check_harness_itself.sh"
+
+
 def test_release_workflow_requires_exact_main_sha_qualification():
     """A version tag cannot publish unless all required main push gates passed."""
 

@@ -2,8 +2,8 @@
 
 ## Pinned-toolchain results
 
-Refreshed in this checkout on 2026-10-03. The source pins
-leanprover/lean4:v4.33.1.
+The audit began from `main` at `e1836c3274e685996d5e86883761e00e98257e09` on
+2026-10-07, using the pinned Lean toolchain `leanprover/lean4:v4.33.1`.
 
 ~~~text
 lake build                         -> success, 36 jobs
@@ -14,8 +14,14 @@ scripts/check_axiom_dependencies.sh -> AXIOM AUDIT PASS
 scripts/check_nfnext_header_contract.py -> PASS
 scripts/run_nfnext_contract.sh     -> PASS, 18/18 checks
 scripts/check_harness_itself.sh    -> PASS, 32/32 mutation and malformed-input cases
-production NFnext CTest            -> PASS, 2/2 tests
+production NFnext CTest            -> PASS, 2/2 tests (last run 2026-10-03)
 ~~~
+
+The pinned Lean build, Smoke, Coverage, static/header checks, NFnext compiled
+contract, axiom audit, and harness self-test were rerun locally for this record.
+The production CTest result is retained from 2026-10-03 and was not rerun here.
+The formal workflow runs the harness self-test on weekly scheduled and manual
+runs, with a 20-minute step timeout; it does not run on every pull request.
 
 The production CTest run includes architecture_nfnext_reference and
 architecture_nfnext_bng_lowering_bridge. The bridge test parses a BNGL fixture,
@@ -28,6 +34,16 @@ Coverage.lean. The test checks that two embeddings into one connected dimer
 produce one channel event, while two matching molecules in separate complexes
 remain two events. Earlier failure banners in that file described a defect
 that is now fixed and have been removed.
+
+## Trust and evidence categories
+
+| Evidence category | What it establishes | Boundary |
+| --- | --- | --- |
+| General Lean theorem | A proposition is proved for the quantified Lean reference-model values in its statement. | Its explicit hypotheses and feature gates remain assumptions of the result; it is not a production C++ refinement theorem unless that correspondence is separately stated and proved. |
+| Kernel-reduced proof (`rfl` / `decide`) | Lean's kernel checks the proof term, subject to the dependencies shown by `#print axioms`. | The accepted standard axioms (`propext`, `Classical.choice`, `Quot.sound`) remain part of Lean's trust base. |
+| `native_decide` fixture | The compiled evaluator checks a concrete fixture and the assertion is run as an executable regression. | It depends on a per-declaration kernel-opaque axiom, so it is not kernel-reduced proof evidence. The allowlist and axiom audit make this use explicit. |
+| Native C++ test | A compiled implementation passed the assertions exercised by that test binary. | It is finite executable evidence, not a Lean proof or a general refinement result. |
+| Explicit theorem assumptions | The named hypotheses and predicates delimit the cases covered by a theorem, such as `supportedOperationalSubset` and match validity. | They are proof obligations at the theorem boundary, not evidence that unsupported cases satisfy the theorem. |
 
 ## Kernel and executable-check boundaries
 
