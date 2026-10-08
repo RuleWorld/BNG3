@@ -22,41 +22,103 @@ else:
     _MODERN_METHODS = frozenset({"ode", "ssa", "nf", "pla", "psa"})
     _RUN_OUT_MISSING = object()
 
-    def run(path, method="ode", t_end=100.0, n_steps=100, **kwargs):
+    class _OmittedRunArgument:
+        def __repr__(self):
+            return "<omitted>"
+
+    _RUN_ARGUMENT_MISSING = _OmittedRunArgument()
+
+    def run(
+        path,
+        *args,
+        method=_RUN_ARGUMENT_MISSING,
+        t_end=_RUN_ARGUMENT_MISSING,
+        n_steps=_RUN_ARGUMENT_MISSING,
+        **kwargs,
+    ):
         """Run a model through the modern or PyBioNetGen-compatible API.
 
-        The modern form is ``run(path, method="ode", ...)`` and returns a
-        :class:`SimResult`.  A path-like second positional argument, or the
-        legacy ``out=`` keyword, selects the PyBioNetGen file-runner contract
-        and returns a :class:`BNGResult`.
+        Modern calls return a :class:`SimResult`; the second positional
+        argument may be a supported simulation method, followed by positional
+        ``t_end`` and ``n_steps`` values. A non-method path-like second
+        positional argument, or the legacy ``out=`` keyword, selects the
+        PyBioNetGen file-runner contract and returns a :class:`BNGResult`.
+        Use ``out=`` when an output directory's name matches a method.
         """
         legacy_out = kwargs.pop("out", _RUN_OUT_MISSING)
         legacy_requested = legacy_out is not _RUN_OUT_MISSING
+        method_was_provided = method is not _RUN_ARGUMENT_MISSING
+        end_was_provided = t_end is not _RUN_ARGUMENT_MISSING
+        steps_were_provided = n_steps is not _RUN_ARGUMENT_MISSING
 
-        if isinstance(method, str):
+        if args:
+            second = args[0]
+            if isinstance(second, str) and second.lower() in _MODERN_METHODS:
+                if method_was_provided:
+                    raise TypeError("run() got multiple values for argument 'method'")
+                method = second
+                method_was_provided = True
+                remaining = args[1:]
+            elif isinstance(second, (str, _os.PathLike)):
+                if legacy_requested:
+                    raise TypeError("run() got multiple values for argument 'out'")
+                legacy_out = second
+                legacy_requested = True
+                remaining = args[1:]
+            else:
+                raise TypeError(
+                    "the second positional argument must be a simulation method "
+                    "or output path"
+                )
+
+            if len(remaining) > 2:
+                raise TypeError("run() accepts at most four positional arguments")
+            if remaining:
+                if end_was_provided:
+                    raise TypeError("run() got multiple values for argument 't_end'")
+                t_end = remaining[0]
+                end_was_provided = True
+            if len(remaining) > 1:
+                if steps_were_provided:
+                    raise TypeError("run() got multiple values for argument 'n_steps'")
+                n_steps = remaining[1]
+                steps_were_provided = True
+
+        if method is _RUN_ARGUMENT_MISSING or method is None:
+            method_name = "ode"
+            method_override = None
+        elif isinstance(method, str) and method.lower() in _MODERN_METHODS:
             method_name = method.lower()
+            method_override = method_name
         else:
-            method_name = None
+            raise ValueError(
+                f"unsupported simulation method {method!r}; use "
+                "ode, ssa, nf, pla, or psa"
+            )
 
-        if method_name not in _MODERN_METHODS:
-            legacy_requested = True
-            if legacy_out is _RUN_OUT_MISSING:
-                legacy_out = method
-            method = None
+        if t_end is _RUN_ARGUMENT_MISSING:
+            t_end = 100.0
+        if n_steps is _RUN_ARGUMENT_MISSING:
+            n_steps = 100
 
         if legacy_requested:
             from bionetgen.compat.runner import run as _compat_run
 
+            options = dict(kwargs)
+            options["method"] = method_override
+            if end_was_provided:
+                options["t_end"] = t_end
+            if steps_were_provided:
+                options["n_steps"] = n_steps
             return _compat_run(
                 path,
                 out=None if legacy_out is _RUN_OUT_MISSING else legacy_out,
-                method=None if method == "ode" else method,
-                t_end=t_end,
-                n_steps=n_steps,
-                **kwargs,
+                **options,
             )
 
-        return _modern_run(path, method=method, t_end=t_end, n_steps=n_steps, **kwargs)
+        return _modern_run(
+            path, method=method_name, t_end=t_end, n_steps=n_steps, **kwargs
+        )
 
 
 from bionetgen.result import SimResult

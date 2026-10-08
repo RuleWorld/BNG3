@@ -1,9 +1,12 @@
 """Tests for the Click CLI."""
 
 import os
+import numpy as np
 import pytest
 from click.testing import CliRunner
 from unittest.mock import patch
+
+from bionetgen import BNGResult
 
 try:
     from bionetgen.cli import main
@@ -52,6 +55,12 @@ def test_cli_legacy_run_flags_preserve_action_outputs(runner, tmp_path):
             os.path.join(os.path.dirname(__file__), "test.bngl"),
             "-o",
             str(output),
+            "--t-start",
+            "2",
+            "--t-end",
+            "3",
+            "--n-steps",
+            "4",
         ],
     )
 
@@ -59,6 +68,118 @@ def test_cli_legacy_run_flags_preserve_action_outputs(runner, tmp_path):
     assert {"test.net", "test.xml", "test.gdat", "test.cdat"}.issubset(
         {path.name for path in output.iterdir()}
     )
+    assert np.allclose(
+        BNGResult(path=str(output)).gdats["test"]["time"], np.linspace(2.0, 3.0, 5)
+    )
+
+
+def test_input_cli_rejects_unimplemented_solver_options_instead_of_dropping_them(
+    runner, tmp_path
+):
+    output = tmp_path / "input-results"
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            "--input",
+            os.path.join(os.path.dirname(__file__), "test.bngl"),
+            "--output",
+            str(output),
+            "--rtol",
+            "1e-6",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "rtol" in result.output
+    assert not output.exists()
+
+
+def test_input_cli_explicit_method_runs_one_modern_simulation(runner, tmp_path):
+    output = tmp_path / "single-method-results"
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            "--input",
+            os.path.join(os.path.dirname(__file__), "test.bngl"),
+            "--output",
+            str(output),
+            "--method",
+            "ssa",
+            "--t-start",
+            "2",
+            "--t-end",
+            "3",
+            "--n-steps",
+            "4",
+            "--seed",
+            "7",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (output / "test.gdat").is_file()
+    assert not (output / "test.net").exists()
+    assert not (output / "test.xml").exists()
+    data = BNGResult(path=str(output)).gdats["test"]
+    assert np.allclose(data["time"], np.linspace(2.0, 3.0, 5))
+
+
+@pytest.mark.parametrize("method", ["ode", "ssa", "nf", "pla", "psa"])
+def test_installed_cli_runs_each_supported_method(runner, tmp_path, method):
+    model = tmp_path / f"{method}.bngl"
+    model.write_text("""begin model
+begin parameters
+    k 0.2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules A_count A()
+    Molecules B_count B()
+end observables
+begin reaction rules
+    convert: A() -> B() k
+end reaction rules
+end model
+""")
+    output = tmp_path / f"{method}.tsv"
+
+    result = runner.invoke(
+        main,
+        [
+            "run",
+            str(model),
+            "--method",
+            method,
+            "--t-end",
+            "0.5",
+            "--n-steps",
+            "4",
+            "--seed",
+            "7",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (
+        output.read_text(encoding="utf-8")
+        .splitlines()[0]
+        .lstrip("# ")
+        .startswith("time\tA_count\tB_count")
+    )
+    data = np.loadtxt(output, comments="#", delimiter="\t")
+    assert data.shape == (5, 3)
+    assert np.allclose(data[:, 0], np.linspace(0.0, 0.5, 5))
+    assert np.isfinite(data).all()
 
 
 @pytest.mark.parametrize(

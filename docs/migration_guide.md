@@ -26,6 +26,53 @@ The in-process compatibility file runner has no execution deadline. A non-`None`
 before execution or output creation, including when method or time overrides
 are supplied. `timeout=None` retains the normal file-runner behavior.
 
+## Python and CLI Run Contracts
+
+`bionetgen.run()` supports two explicit call styles. With no output argument it
+uses the modern in-memory API and returns a `SimResult`; its default method is
+ODE with `t_end=100` and `n_steps=100`. The modern method and grid can also be
+positional: `bionetgen.run("model.bngl", "ssa", 20, 200)`. The dispatcher now
+uses `*args` plus keyword-only `method`, `t_end`, and `n_steps` so it can also
+preserve legacy positional output-directory calls. A path-like second
+positional argument, or a string that is not one of `ode`, `ssa`, `nf`, `pla`,
+or `psa`, selects the file runner and returns `BNGResult`; use `out=` when a
+directory's string name could be mistaken for a method. Invalid keyword
+methods raise `ValueError`, and duplicate positional/keyword values raise
+`TypeError`.
+
+```python
+# Modern single-simulation result, defaulting to ODE, 0..100, 100 steps.
+result = bionetgen.run("model.bngl")
+
+# Legacy action workflow and its .xml, .net, .gdat and .cdat outputs.
+files = bionetgen.run("model.bngl", out="results")
+```
+
+In the file runner, an explicit `method=` selects one modern simulation and
+writes one `.gdat` result. Time-only options preserve the model's declared
+actions, ordering, and non-simulation side effects. The same absolute
+`t_start`/`t_end` and step count are applied to each direct simulation action;
+`t_span=(start, end)` sets both times, and `n_points=N` means `N-1` steps plus
+both endpoints. A lone time or step option changes only that part of each
+action's existing grid. This is the BNG3 compatibility contract; it does not
+claim PyBioNetGen parity for time-grid forwarding. Combining a time override
+with an action's `sample_times` or truthy `continue` option raises
+`NotImplementedError` before the output directory is created. Solver-specific
+options such as `rtol`, `atol`, `seed`, `pla_config`, and `psa_poplevel` require
+an explicit modern `method=` override; action-preserving calls reject them
+rather than dropping them.
+
+The CLI keeps the same distinction. `bng3 run MODEL --method ssa ...` writes a
+tab-separated table for one selected simulation. `bng3 run --input MODEL`
+executes the model's actions into an output directory; explicit time options
+modify the action grid while preserving actions. Supplying `--method` with
+`--input` opts into a single modern simulation; solver-specific options are
+accepted there. The five modern methods
+(`ode`, `ssa`, `nf`, `pla`, and `psa`) are contract-tested through the Python
+API and positional-model CLI. The compatibility tests also exercise optional
+import isolation and notebook-file generation; they do not qualify execution
+of generated notebooks or third-party notebook integrations.
+
 ## Before And After
 
 ### Load A Model

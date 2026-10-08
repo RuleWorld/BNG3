@@ -14,6 +14,15 @@ Run a BNGL model simulation.
 bionetgen run MODEL [OPTIONS]
 ```
 
+The positional `MODEL` form selects one modern simulation. `--input/-i MODEL`
+selects the compatibility file runner, which executes declared model actions
+and uses `--output/-o` as an output directory. In that form, explicit
+`--t-start`, `--t-end`, and `--n-steps` values apply to each direct simulation
+action while preserving the action sequence. `--method` opts into one modern
+simulation and tabular-file output; solver-specific options require this
+explicit method selection. Without `--method`, the action path rejects
+solver-specific options it cannot apply instead of ignoring them.
+
 Options:
 
 - `-m, --method [ode|ssa|nf|pla|psa]` simulation method.

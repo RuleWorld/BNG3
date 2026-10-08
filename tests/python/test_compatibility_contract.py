@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import json
+import inspect
 from pathlib import Path
 import subprocess
 import sys
@@ -14,6 +16,31 @@ import bionetgen
 
 REPO = Path(__file__).resolve().parents[2]
 MODEL = Path(__file__).with_name("test.bngl")
+SUPPORTED_METHODS = ("ode", "ssa", "nf", "pla", "psa")
+
+
+def _write_method_matrix_model(path: Path) -> Path:
+    path.write_text("""begin model
+begin parameters
+    k 0.2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules A_count A()
+    Molecules B_count B()
+end observables
+begin reaction rules
+    convert: A() -> B() k
+end reaction rules
+end model
+""")
+    return path
 
 
 def test_legacy_public_symbols_are_available_from_package_root():
@@ -23,6 +50,72 @@ def test_legacy_public_symbols_are_available_from_package_root():
     assert bionetgen.SympyOdes is not None
     assert callable(bionetgen.export_sympy_odes)
     assert bionetgen.BNGResult is not None
+
+
+@pytest.mark.parametrize("method", SUPPORTED_METHODS)
+def test_installed_python_api_runs_each_supported_method(tmp_path, method):
+    model_path = _write_method_matrix_model(tmp_path / f"{method}.bngl")
+
+    result = bionetgen.run(
+        str(model_path),
+        method=method,
+        t_end=0.5,
+        n_steps=4,
+        seed=7,
+    )
+
+    assert result.time.shape == (5,)
+    assert np.allclose(result.time, np.linspace(0.0, 0.5, 5))
+    assert set(result.observables) == {"A_count", "B_count"}
+    assert all(values.shape == (5,) for values in result.observables.values())
+    assert all(np.isfinite(values).all() for values in result.observables.values())
+
+
+def test_package_root_defaults_to_modern_ode_grid(tmp_path):
+    model_path = _write_method_matrix_model(tmp_path / "default-run.bngl")
+
+    result = bionetgen.run(model_path)
+
+    assert isinstance(result, bionetgen.SimResult)
+    assert result.time.shape == (101,)
+    assert result.time[0] == 0.0
+    assert result.time[-1] == 100.0
+
+
+def test_package_root_signature_exposes_both_dispatch_forms():
+    parameters = inspect.signature(bionetgen.run).parameters
+
+    assert tuple(parameters) == (
+        "path",
+        "args",
+        "method",
+        "t_end",
+        "n_steps",
+        "kwargs",
+    )
+    assert parameters["args"].kind is inspect.Parameter.VAR_POSITIONAL
+    assert parameters["method"].kind is inspect.Parameter.KEYWORD_ONLY
+    assert parameters["kwargs"].kind is inspect.Parameter.VAR_KEYWORD
+
+
+def test_package_root_keeps_positional_modern_method_and_time_arguments(tmp_path):
+    model_path = _write_method_matrix_model(tmp_path / "positional.bngl")
+
+    result = bionetgen.run(str(model_path), "ssa", 0.5, 4)
+
+    assert isinstance(result, bionetgen.SimResult)
+    assert np.allclose(result.time, np.linspace(0.0, 0.5, 5))
+
+
+def test_package_root_keeps_string_positional_legacy_output_directory(tmp_path):
+    output = tmp_path / "legacy-string-output"
+
+    result = bionetgen.run(MODEL, str(output))
+
+    assert isinstance(result, bionetgen.BNGResult)
+    assert {"test.net", "test.xml", "test.gdat", "test.cdat"}.issubset(
+        {path.name for path in output.iterdir()}
+    )
 
 
 def test_legacy_run_accepts_output_directory_and_returns_file_result(tmp_path):
@@ -52,10 +145,284 @@ def test_legacy_run_supports_method_and_time_overrides(tmp_path):
 
     assert isinstance(result, bionetgen.BNGResult)
     assert result.process_return == 0
+    assert not (output / "test.xml").exists()
+    assert not (output / "test.net").exists()
+    assert (output / "test.gdat").is_file()
     data = result.gdats["test"]
     assert data.dtype.names[0] == "time"
     assert len(data) == 5
     assert np.allclose(data["time"], np.linspace(2.0, 3.0, 5))
+
+
+def _write_action_workflow_model(path: Path, *, fail_after_simulation=False) -> Path:
+    later_action = (
+        'setConcentration("missing()",1)'
+        if fail_after_simulation
+        else "resetConcentrations()"
+    )
+    path.write_text(f"""begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules A_count A()
+    Molecules B_count B()
+end observables
+begin reaction rules
+    convert: A() -> B() k
+end reaction rules
+end model
+writeXML()
+generate_network()
+simulate_ode({{t_end=>10,n_steps=>20,suffix=>"ode"}})
+{later_action}
+simulate_ssa({{t_end=>10,n_steps=>20,seed=>17,suffix=>"ssa"}})
+""")
+    return path
+
+
+def _capture_parsed_actions(monkeypatch):
+    parsed_models = []
+    parse_file = bionetgen._bionetgen_cpp.parse_file
+
+    def capture(path):
+        parsed = parse_file(path)
+        parsed_models.append(
+            (
+                parsed,
+                [(action.name, dict(action.arguments)) for action in parsed.actions],
+            )
+        )
+        return parsed
+
+    monkeypatch.setattr(bionetgen._bionetgen_cpp, "parse_file", capture)
+    return parsed_models
+
+
+def test_time_only_override_preserves_declared_simulation_actions(
+    tmp_path, monkeypatch
+):
+    model = _write_action_workflow_model(tmp_path / "declared.bngl")
+    parsed_models = _capture_parsed_actions(monkeypatch)
+    output = tmp_path / "declared-results"
+
+    result = bionetgen.run(model, out=output, t_span=(2.0, 3.0), n_points=5)
+
+    assert isinstance(result, bionetgen.BNGResult)
+    assert {
+        "declared.xml",
+        "declared.net",
+        "declared_ode.gdat",
+        "declared_ssa.gdat",
+    }.issubset({path.name for path in output.iterdir()})
+    for suffix in ("ode", "ssa"):
+        data = result.gdats[f"declared_{suffix}"]
+        assert np.allclose(data["time"], np.linspace(2.0, 3.0, 5))
+    assert np.allclose(
+        result.gdats["declared_ssa"]["A_count"],
+        np.rint(result.gdats["declared_ssa"]["A_count"]),
+    )
+    parsed, original_actions = parsed_models[0]
+    assert [(action.name, dict(action.arguments)) for action in parsed.actions] == (
+        original_actions
+    )
+
+
+def test_time_only_override_restores_actions_when_execution_raises(
+    tmp_path, monkeypatch
+):
+    model = _write_action_workflow_model(
+        tmp_path / "failing.bngl", fail_after_simulation=True
+    )
+    parsed_models = _capture_parsed_actions(monkeypatch)
+    output = tmp_path / "failing-results"
+
+    with pytest.raises(bionetgen.BNGError, match="species not found"):
+        bionetgen.run(model, out=output, t_span=(2.0, 3.0), n_points=5)
+
+    parsed, original_actions = parsed_models[0]
+    assert [(action.name, dict(action.arguments)) for action in parsed.actions] == (
+        original_actions
+    )
+
+
+@pytest.mark.parametrize(
+    "simulation_action",
+    [
+        "simulate_ode({t_end=>10,sample_times=>[1,2]})",
+        "simulate_ode({t_end=>10,n_steps=>20,continue=>1})",
+    ],
+)
+def test_time_only_override_rejects_unsupported_action_grids_before_output(
+    tmp_path, simulation_action
+):
+    model = tmp_path / "unsupported-grid.bngl"
+    _write_action_workflow_model(model)
+    model.write_text(
+        model.read_text().replace(
+            'simulate_ode({t_end=>10,n_steps=>20,suffix=>"ode"})',
+            simulation_action,
+        )
+    )
+    output = tmp_path / "unsupported-grid-results"
+
+    with pytest.raises(NotImplementedError, match="sample_times|continue"):
+        bionetgen.run(model, out=output, t_span=(2.0, 3.0), n_points=5)
+
+    assert not output.exists()
+
+
+def test_time_only_override_requires_a_direct_simulation_action(tmp_path):
+    model = tmp_path / "no-simulation.bngl"
+    model.write_text("""begin model
+end model
+writeXML()
+""")
+    output = tmp_path / "no-simulation-results"
+
+    with pytest.raises(NotImplementedError, match="direct simulation action"):
+        bionetgen.run(model, out=output, t_start=1.0)
+
+    assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({99: {"t_end": "1"}}, "outside the model action list"),
+        ({2: {"n_steps": "0"}}, "positive integer"),
+        ({2: {"t_start": "3", "t_end": "2"}}, "greater than or equal"),
+        ({2: {"unsupported": "1"}}, "unsupported action override key"),
+    ],
+)
+def test_native_action_override_validation_precedes_execution(
+    tmp_path, overrides, message
+):
+    cpp = bionetgen._bionetgen_cpp
+    model = cpp.parse_file(str(MODEL))
+    original = [(action.name, dict(action.arguments)) for action in model.actions]
+    output = tmp_path / "native-validation-results"
+    output.mkdir()
+    output_model = output / "validation.bngl"
+    output_model.write_text("begin model\nend model\n")
+
+    with pytest.raises(ValueError, match=message):
+        cpp.execute(model, str(output_model), action_overrides=overrides)
+
+    assert [(action.name, dict(action.arguments)) for action in model.actions] == (
+        original
+    )
+    assert {path.name for path in output.iterdir()} == {"validation.bngl"}
+
+
+@pytest.mark.parametrize("method", ["simulate_pla", "simulate_psa"])
+def test_time_start_override_is_applied_to_pla_and_psa_actions(tmp_path, method):
+    model = _write_method_matrix_model(tmp_path / f"{method}.bngl")
+    with model.open("a", encoding="utf-8") as handle:
+        handle.write(f"generate_network()\n{method}({{t_end=>3,n_steps=>4}})\n")
+    output = tmp_path / f"{method}-results"
+
+    result = bionetgen.run(model, out=output, t_start=2.0)
+
+    action_result = result.gdats[model.stem]
+    assert np.allclose(action_result["time"], np.linspace(2.0, 3.0, 5))
+
+
+def test_unknown_keyword_method_is_rejected_before_legacy_execution(
+    tmp_path, monkeypatch
+):
+    output = tmp_path / "must-not-be-created"
+
+    def unexpected_execution(*args, **kwargs):
+        pytest.fail("unknown keyword method reached the legacy action runner")
+
+    monkeypatch.setattr(bionetgen._bionetgen_cpp, "parse_file", unexpected_execution)
+
+    with pytest.raises((TypeError, ValueError), match="method|simulation"):
+        bionetgen.run(MODEL, method="odde", out=output)
+
+    assert not output.exists()
+
+
+def test_package_root_rejects_duplicate_dispatch_arguments(tmp_path):
+    model = _write_method_matrix_model(tmp_path / "duplicate.bngl")
+    output = tmp_path / "duplicate-output"
+
+    with pytest.raises(TypeError, match="method.*multiple|multiple.*method"):
+        bionetgen.run(str(model), "ssa", method="ode")
+    with pytest.raises(TypeError, match="t_end.*multiple|multiple.*t_end"):
+        bionetgen.run(str(model), "ssa", 0.5, t_end=1.0)
+    with pytest.raises(TypeError, match="out.*multiple|multiple.*out"):
+        bionetgen.run(MODEL, output, out=output)
+
+
+def test_default_package_import_does_not_load_optional_integrations(tmp_path):
+    code = """
+import importlib.abc
+import sys
+
+blocked = {'cement', 'colorlog', 'pandas', 'matplotlib', 'sympy', 'libsbml', 'lxml', 'networkx'}
+class BlockOptionalImports(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in blocked:
+            raise AssertionError(f'optional import attempted: {fullname}')
+
+sys.meta_path.insert(0, BlockOptionalImports())
+import bionetgen
+assert bionetgen.load is not None
+assert not (blocked & {name.split('.')[0] for name in sys.modules})
+"""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_notebook_command_writes_a_valid_model_specific_notebook(tmp_path):
+    input_model = tmp_path / "notebook_model.bngl"
+    input_model.write_text("begin model\nend model\n")
+    output = tmp_path / "notebook_model.ipynb"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "bionetgen.cli",
+            "notebook",
+            "--input",
+            str(input_model),
+            "--output",
+            str(output),
+        ],
+        cwd=tmp_path,
+        env={key: value for key, value in os.environ.items() if key != "PYTHONPATH"},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    notebook = json.loads(output.read_text(encoding="utf-8"))
+    assert notebook["nbformat"] == 4
+    assert any(
+        str(input_model.resolve()) in "".join(cell.get("source", []))
+        for cell in notebook["cells"]
+    )
 
 
 @pytest.mark.parametrize("output_directory", [False, True])

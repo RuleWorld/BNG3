@@ -28,25 +28,27 @@ def main():
 @click.option(
     "--method",
     "-m",
-    default="ode",
+    default=None,
     type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]),
     help="Simulation method.",
 )
 @click.option(
     "--t-start",
-    default=0.0,
+    default=None,
     type=float,
     help="Absolute simulation start time.",
 )
-@click.option("--t-end", "-t", default=100.0, type=float, help="End time.")
-@click.option("--n-steps", "-n", default=100, type=int, help="Number of output steps.")
-@click.option("--rtol", default=1e-8, type=float, help="Relative ODE tolerance.")
-@click.option("--atol", default=1e-12, type=float, help="Absolute ODE tolerance.")
-@click.option("--seed", default=0, type=int, help="Random seed for stochastic methods.")
-@click.option("--pla-config", default="", help="PLA configuration string.")
+@click.option("--t-end", "-t", default=None, type=float, help="End time.")
+@click.option("--n-steps", "-n", default=None, type=int, help="Number of output steps.")
+@click.option("--rtol", default=None, type=float, help="Relative ODE tolerance.")
+@click.option("--atol", default=None, type=float, help="Absolute ODE tolerance.")
+@click.option(
+    "--seed", default=None, type=int, help="Random seed for stochastic methods."
+)
+@click.option("--pla-config", default=None, help="PLA configuration string.")
 @click.option(
     "--psa-poplevel",
-    default=100.0,
+    default=None,
     type=float,
     help="Population threshold for PSA.",
 )
@@ -80,6 +82,15 @@ def run(
                 input_path,
                 out=output or ".",
                 suppress=not verbose,
+                method=method,
+                t_start=t_start,
+                t_end=t_end,
+                n_steps=n_steps,
+                rtol=rtol,
+                atol=atol,
+                seed=seed,
+                pla_config=pla_config,
+                psa_poplevel=psa_poplevel,
             )
         except Exception as exc:
             raise click.ClickException(str(exc)) from exc
@@ -94,15 +105,15 @@ def run(
     path = str(Path(model).resolve())
     try:
         result = load(path).simulate(
-            method=method,
-            t_start=t_start,
-            t_end=t_end,
-            n_steps=n_steps,
-            rtol=rtol,
-            atol=atol,
-            seed=seed,
-            pla_config=pla_config,
-            psa_poplevel=psa_poplevel,
+            method=method or "ode",
+            t_start=0.0 if t_start is None else t_start,
+            t_end=100.0 if t_end is None else t_end,
+            n_steps=100 if n_steps is None else n_steps,
+            rtol=1e-8 if rtol is None else rtol,
+            atol=1e-12 if atol is None else atol,
+            seed=0 if seed is None else seed,
+            pla_config="" if pla_config is None else pla_config,
+            psa_poplevel=100.0 if psa_poplevel is None else psa_poplevel,
             verbose=verbose,
         )
     except (TypeError, ValueError) as exc:
