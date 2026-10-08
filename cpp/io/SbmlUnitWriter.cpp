@@ -160,7 +160,76 @@ const units::Unit* resolvedUnit(const compile::CompiledModel& model,
 
 bool sameUnitSemantics(const units::Unit& lhs, const units::Unit& rhs) {
     const auto conversion = units::conversionFactor(lhs, rhs);
-    return conversion && std::abs(*conversion.factor - 1.0) <= 1e-12;
+    return conversion && *conversion.factor == 1.0;
+}
+
+bool validLevel2Default(const std::string& role, const units::Unit& unit) {
+    if (!(unit.factor > 0.0) || !std::isfinite(unit.factor)) return false;
+    if (unit.baseExponents.empty()) return unit.isDimensionless();
+    if (unit.baseExponents.size() != 1) return false;
+
+    const auto [base, exponent] = *unit.baseExponents.begin();
+    if (role == "timeUnits")
+        return base == units::BaseUnit::Second && exponent == 1;
+    if (role == "substanceUnits")
+        return (base == units::BaseUnit::Mole || base == units::BaseUnit::Item) &&
+               exponent == 1;
+    if (role == "volumeUnits")
+        return (base == units::BaseUnit::Litre && exponent == 1) ||
+               (base == units::BaseUnit::Metre && exponent == 3);
+    if (role == "areaUnits")
+        return base == units::BaseUnit::Metre && exponent == 2;
+    if (role == "lengthUnits")
+        return base == units::BaseUnit::Metre && exponent == 1;
+    return false;
+}
+
+std::string level2DefaultDescription(const std::string& role) {
+    if (role == "timeUnits")
+        return "time dimension based on second or dimensionless units";
+    if (role == "substanceUnits")
+        return "substance dimension based on mole, item, or dimensionless units";
+    if (role == "volumeUnits")
+        return "volume dimension based on litre, cubic metre, or dimensionless units";
+    if (role == "areaUnits")
+        return "area dimension based on square metre or dimensionless units";
+    if (role == "lengthUnits")
+        return "length dimension based on metre or dimensionless units";
+    return "a unit permitted for this Level 2 model default";
+}
+
+std::string level2ReservedUnitDefinition(
+    const std::string& id, const units::Unit& unit) {
+    units::BaseUnit base = units::BaseUnit::Dimensionless;
+    int exponent = 1;
+    if (!unit.baseExponents.empty()) {
+        base = unit.baseExponents.begin()->first;
+        exponent = unit.baseExponents.begin()->second;
+    }
+
+    const double baseFactorValue =
+        std::pow(baseFactor(base), static_cast<double>(exponent));
+    const double relativeFactor = unit.factor / baseFactorValue;
+    if (!(relativeFactor > 0.0) || !std::isfinite(relativeFactor)) {
+        throw std::invalid_argument(
+            "SBML Level 2 cannot represent reserved UnitDefinition id '" + id +
+            "' with a non-positive or non-finite unit factor");
+    }
+
+    int scale = 0;
+    const bool useScale = isPowerOfTen(relativeFactor, scale);
+    const double multiplier = useScale ? 1.0 : relativeFactor;
+
+    std::ostringstream xml;
+    xml << "      <unitDefinition id=\"" << escapeXml(id) << "\">\n"
+        << "        <listOfUnits>\n"
+        << std::setprecision(17)
+        << "          <unit kind=\"" << sbmlKind(base) << "\" exponent=\""
+        << exponent << "\" multiplier=\"" << multiplier << "\" scale=\""
+        << (useScale ? scale : 0) << "\"/>\n"
+        << "        </listOfUnits>\n"
+        << "      </unitDefinition>\n";
+    return xml.str();
 }
 
 void mapLevel2Defaults(std::map<std::string, units::Unit>& definitions,
@@ -171,16 +240,35 @@ void mapLevel2Defaults(std::map<std::string, units::Unit>& definitions,
              {"volumeUnits", "volume"}, {"areaUnits", "area"},
              {"lengthUnits", "length"}}) {
         const auto authored = defaults.find(role);
-        if (authored == defaults.end()) continue;
-        const auto* unit = resolvedUnit(model, authored->second);
-        if (unit == nullptr) {
+        const units::Unit* defaultUnit = nullptr;
+        if (authored != defaults.end()) {
+            defaultUnit = resolvedUnit(model, authored->second);
+        }
+        if (authored != defaults.end() && defaultUnit == nullptr) {
             throw std::invalid_argument(
                 "SBML Level 2 cannot resolve model default " + role + "='" +
                 authored->second + "'");
         }
+        if (defaultUnit != nullptr && !validLevel2Default(role, *defaultUnit)) {
+            throw std::invalid_argument(
+                "SBML Level 2 model default " + role + "='" + authored->second +
+                "' must have " + level2DefaultDescription(role));
+        }
+        for (const auto& definition : model.metadata().unitDefinitions) {
+            if (definition.id == id &&
+                (defaultUnit == nullptr ||
+                 !sameUnitSemantics(definition.unit, *defaultUnit))) {
+                throw std::invalid_argument(
+                    "SBML Level 2 authored unit definition '" + definition.id +
+                    "' conflicts with reserved UnitDefinition id '" + id +
+                    "'; it must match an explicit " + role + " default");
+            }
+        }
+        if (defaultUnit == nullptr) continue;
+
         // In Level 2, these reserved UnitDefinition ids are the model-wide
         // defaults.  Level 2 Model has no corresponding unit attributes.
-        definitions[id] = *unit;
+        definitions[id] = *defaultUnit;
     }
 
     const auto extent = defaults.find("extentUnits");
@@ -288,7 +376,14 @@ std::string writeUnitDefinitions(const compile::CompiledModel& model, int level)
     }
     if (level == 2) mapLevel2Defaults(definitions, model);
     xml << "    <listOfUnitDefinitions>\n";
-    for (const auto& [id, unit] : definitions) xml << unitDefinition(id, unit);
+    for (const auto& [id, unit] : definitions) {
+        if (level == 2 && (id == "time" || id == "substance" || id == "volume" ||
+                           id == "area" || id == "length")) {
+            xml << level2ReservedUnitDefinition(id, unit);
+        } else {
+            xml << unitDefinition(id, unit);
+        }
+    }
     xml << "    </listOfUnitDefinitions>\n";
     return xml.str();
 }

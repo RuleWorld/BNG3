@@ -224,6 +224,16 @@ TEST_CASE("SBML L2V3 carries model unit defaults in reserved unit definitions") 
     CHECK(xml.find("<unitDefinition id=\"volume\">") != std::string::npos);
     CHECK(xml.find("kind=\"dimensionless\" exponent=\"1\" multiplier=\"60\"") !=
           std::string::npos);
+    const auto timeDefinitionBegin = xml.find("<unitDefinition id=\"time\">");
+    REQUIRE(timeDefinitionBegin != std::string::npos);
+    const auto timeDefinitionEnd = xml.find("</unitDefinition>", timeDefinitionBegin);
+    REQUIRE(timeDefinitionEnd != std::string::npos);
+    const auto timeDefinition = xml.substr(
+        timeDefinitionBegin, timeDefinitionEnd - timeDefinitionBegin);
+    CHECK(timeDefinition.find(
+              "<unit kind=\"second\" exponent=\"1\" multiplier=\"60\" scale=\"0\"/>") !=
+          std::string::npos);
+    CHECK(timeDefinition.find("kind=\"dimensionless\"") == std::string::npos);
     CHECK(xml.find("<unitDefinition id=\"substance\">") != std::string::npos);
     CHECK(species.find(" substanceUnits=\"item\"") != std::string::npos);
     CHECK(species.find(" units=\"") == std::string::npos);
@@ -247,7 +257,7 @@ TEST_CASE("SBML L2V3 reader recovers reserved model defaults and species units")
 
     REQUIRE(parsed.success);
     CHECK(parsed.unitDefaults.at("timeUnits") == "time");
-    CHECK(parsed.unitDefinitions.at("time").find("60*dimensionless*second") !=
+    CHECK(parsed.unitDefinitions.at("time").find("60*second") !=
           std::string::npos);
     CHECK(parsed.unitDefaults.at("substanceUnits") == "substance");
     CHECK(parsed.unitDefaults.at("volumeUnits") == "volume");
@@ -274,6 +284,69 @@ end model
         bng::io::SbmlWriter::write(*model, nullptr, options),
         Catch::Matchers::ContainsSubstring("extentUnits='mole'") &&
             Catch::Matchers::ContainsSubstring("substanceUnits must be physically equivalent"));
+}
+
+TEST_CASE("SBML L2V3 rejects extent units with a near but non-unit conversion factor") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  begin units
+    substanceUnits = item
+    extentUnits = almost_item
+    unit almost_item = 1.0000000000005 * item
+  end units
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    bng::io::SbmlWriter::Options options;
+    options.level = 2;
+    options.version = 3;
+    CHECK_THROWS_WITH(
+        bng::io::SbmlWriter::write(*model, nullptr, options),
+        Catch::Matchers::ContainsSubstring("extentUnits='almost_item'"));
+}
+
+TEST_CASE("SBML L2V3 rejects conflicting authored reserved unit IDs") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  begin units
+    timeUnits = second
+    unit time = 60 * second
+  end units
+  begin parameters
+    elapsed = 1 [time]
+  end parameters
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    bng::io::SbmlWriter::Options options;
+    options.level = 2;
+    options.version = 3;
+    CHECK_THROWS_WITH(
+        bng::io::SbmlWriter::write(*model, nullptr, options),
+        Catch::Matchers::ContainsSubstring("reserved UnitDefinition id 'time'"));
+}
+
+TEST_CASE("SBML L2V3 validates model default dimensions") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  begin units
+    timeUnits = litre
+  end units
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    bng::io::SbmlWriter::Options options;
+    options.level = 2;
+    options.version = 3;
+    CHECK_THROWS_WITH(
+        bng::io::SbmlWriter::write(*model, nullptr, options),
+        Catch::Matchers::ContainsSubstring("timeUnits='litre' must have time dimension"));
 }
 
 TEST_CASE("compiled unit references drive SBML unit emission") {
