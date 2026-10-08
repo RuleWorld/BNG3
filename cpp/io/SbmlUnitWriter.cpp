@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 
 namespace bng::io::sbml_units {
 namespace {
@@ -150,6 +151,66 @@ void collect(std::map<std::string, units::Unit>& definitions,
     definitions[reference(model, authored)] = resolved->second.unit;
 }
 
+const units::Unit* resolvedUnit(const compile::CompiledModel& model,
+                                const std::string& authored) {
+    const auto& references = model.metadata().resolvedUnitReferences;
+    const auto found = references.find(authored);
+    return found == references.end() ? nullptr : &found->second.unit;
+}
+
+bool sameUnitSemantics(const units::Unit& lhs, const units::Unit& rhs) {
+    const auto conversion = units::conversionFactor(lhs, rhs);
+    return conversion && std::abs(*conversion.factor - 1.0) <= 1e-12;
+}
+
+void mapLevel2Defaults(std::map<std::string, units::Unit>& definitions,
+                       const compile::CompiledModel& model) {
+    const auto& defaults = model.metadata().unitDefaults;
+    for (const auto& [role, id] : std::map<std::string, std::string>{
+             {"timeUnits", "time"}, {"substanceUnits", "substance"},
+             {"volumeUnits", "volume"}, {"areaUnits", "area"},
+             {"lengthUnits", "length"}}) {
+        const auto authored = defaults.find(role);
+        if (authored == defaults.end()) continue;
+        const auto* unit = resolvedUnit(model, authored->second);
+        if (unit == nullptr) {
+            throw std::invalid_argument(
+                "SBML Level 2 cannot resolve model default " + role + "='" +
+                authored->second + "'");
+        }
+        // In Level 2, these reserved UnitDefinition ids are the model-wide
+        // defaults.  Level 2 Model has no corresponding unit attributes.
+        definitions[id] = *unit;
+    }
+
+    const auto extent = defaults.find("extentUnits");
+    if (extent == defaults.end()) return;
+    const auto* extentUnit = resolvedUnit(model, extent->second);
+    if (extentUnit == nullptr) {
+        throw std::invalid_argument(
+            "SBML Level 2 cannot resolve model default extentUnits='" +
+            extent->second + "'");
+    }
+
+    // Level 2 has no extentUnits default: reaction extent uses the model's
+    // substance unit.  Use the effective substance UnitDefinition (including
+    // the writer's existing count-basis fallback) or SBML's implicit mole
+    // default, and fail closed if that changes the requested extent basis.
+    units::Unit implicitMole;
+    implicitMole.name = "mole";
+    implicitMole.dimension.substance = 1;
+    implicitMole.baseExponents[units::BaseUnit::Mole] = 1;
+    const auto substance = definitions.find("substance");
+    const auto& substanceUnit = substance == definitions.end()
+        ? implicitMole : substance->second;
+    if (!sameUnitSemantics(*extentUnit, substanceUnit)) {
+        throw std::invalid_argument(
+            "SBML Level 2 cannot preserve extentUnits='" + extent->second +
+            "' because reaction extent uses the model substance unit; "
+            "extentUnits and substanceUnits must be physically equivalent");
+    }
+}
+
 } // namespace
 
 bool enabled(const compile::CompiledModel& model) {
@@ -178,7 +239,15 @@ std::string attribute(const compile::CompiledModel& model, const std::string& au
     return authored.empty() ? std::string {} : " units=\"" + escapeXml(reference(model, authored)) + "\"";
 }
 
-std::string modelAttributes(const compile::CompiledModel& model) {
+std::string speciesAttribute(const compile::CompiledModel& model,
+                             const std::string& authored, int level) {
+    if (authored.empty()) return {};
+    const auto name = level == 1 ? "units" : "substanceUnits";
+    return " " + std::string(name) + "=\"" + escapeXml(reference(model, authored)) + "\"";
+}
+
+std::string modelAttributes(const compile::CompiledModel& model, int level) {
+    if (level < 3) return {};
     std::ostringstream result;
     for (const auto& [role, authored] : model.metadata().unitDefaults) {
         if (role != "timeUnits" && role != "substanceUnits" && role != "volumeUnits" &&
@@ -188,7 +257,7 @@ std::string modelAttributes(const compile::CompiledModel& model) {
     return result.str();
 }
 
-std::string writeUnitDefinitions(const compile::CompiledModel& model) {
+std::string writeUnitDefinitions(const compile::CompiledModel& model, int level) {
     std::ostringstream xml;
     std::map<std::string, units::Unit> definitions;
     if (!enabled(model)) {
@@ -217,6 +286,7 @@ std::string writeUnitDefinitions(const compile::CompiledModel& model) {
             if (seed.declaredUnit.has_value()) collect(definitions, model, seed.unitName);
         }
     }
+    if (level == 2) mapLevel2Defaults(definitions, model);
     xml << "    <listOfUnitDefinitions>\n";
     for (const auto& [id, unit] : definitions) xml << unitDefinition(id, unit);
     xml << "    </listOfUnitDefinitions>\n";
