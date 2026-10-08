@@ -6,10 +6,11 @@ weaken the formalization.  They are the concrete tasks required before one can
 honestly prove that production C++ lowering preserves the semantic model.
 
 Reviewed 2026-10-07 at [main `e1836c32`](https://github.com/RuleWorld/BNG3/tree/e1836c3274e685996d5e86883761e00e98257e09).
-The remaining work is tracked in issues [#138–#143](https://github.com/RuleWorld/BNG3/issues/138)
-and [#147–#148](https://github.com/RuleWorld/BNG3/issues/147); those issues own scope
-and acceptance. Existing typed declarations and endpoints are foundations,
-not missing implementations or proof of complete backend refinement.
+The remaining work is tracked in issues [#138–#143](https://github.com/RuleWorld/BNG3/issues/138),
+[#147–#148](https://github.com/RuleWorld/BNG3/issues/147), and
+[#166](https://github.com/RuleWorld/BNG3/issues/166); those issues own scope and
+acceptance. Existing typed declarations and endpoints are foundations, not
+missing implementations or proof of complete backend refinement.
 
 ## ELI15 summary
 
@@ -133,8 +134,18 @@ values.
 The formal `NFnextPacking` layer exists specifically to make this conversion
 checked and explicit.
 
-**Required migration:** production lowering must own an equivalent packing map
-and test it at the boundary.
+Candidate PR [#198](https://github.com/RuleWorld/BNG3/pull/198) at
+`5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd` adds a production preflight for
+canonical declaration positions and NFIR v5 field widths, plus a parser-to-
+lowering contract that rejects component index 65,536. This is bounded
+candidate evidence for ID packing; the PR remains unmerged, so it is not current
+`main` behavior. Its checks cover the named molecule-rule graph subset and do
+not prove general pattern, rate, bond, or transformation refinement. The
+[candidate CXX mapping](https://github.com/RuleWorld/BNG3/blob/5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd/formal/lean/CXX_MAPPING.md#issue-166-production-declaration-to-nfnext-id-packing)
+records the tested boundary.
+
+**Remaining migration:** retain fail-closed packing checks and qualify the
+production/reference correspondence beyond this bounded candidate slice (#166).
 
 ## 8. Backend parity needs an actual production lowering seam
 
