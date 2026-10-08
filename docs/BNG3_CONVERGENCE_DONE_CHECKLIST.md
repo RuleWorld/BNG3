@@ -1,6 +1,6 @@
 # BNG3 convergence checklist
 
-**Status:** incomplete. **Reviewed:** 2026-10-07 against main `e1836c3274e685996d5e86883761e00e98257e09`.
+**Status:** incomplete; current work paused at user request. **Reviewed:** 2026-10-08 against main `e1836c3274e685996d5e86883761e00e98257e09`.
 
 The target is one maintained C++/Python project containing the approved capability
 union of BioNetGen, PyBioNetGen, NFsim and Atomizer. C++ owns performance-critical
@@ -50,14 +50,17 @@ M: maintainer/product decision. R/M items require a reviewed scope decision,
 not automatic expansion. Estimates and detailed acceptance tests live in issues.
 
 An unchecked item remains open until its issue has a verified implementation or
-an approved disposition. A04 is implemented by this documentation change and
-awaits merge; other work is not completed by filing an issue.
+an approved disposition. A03 is the closed review/disposition issue; later PR
+#128 changes and the compatibility repair in #204 still need integration review.
+A04 is implemented by this documentation change and awaits merge. The pushed
+candidate ledger and next dependency order are in [current progress](CURRENT_PROGRESS.md);
+no other item is completed merely by an open PR or by filing an issue.
 
 ### Triage, documentation and product scope
 
 - [ ] **A01 · P0 D** — Resolve PR #130 assignment-rate parity failures. [#132](https://github.com/RuleWorld/BNG3/issues/132)
 - [ ] **A02 · P1 D** — Repair and qualify the optional JAX ODE backend. [#133](https://github.com/RuleWorld/BNG3/issues/133)
-- [ ] **A03 · P1 Q** — Review and disposition the legacy parser optimizations in PR #128. [#134](https://github.com/RuleWorld/BNG3/issues/134)
+- [x] **A03 · P1 Q** — Review and disposition the legacy parser optimizations in PR #128. [#134](https://github.com/RuleWorld/BNG3/issues/134)
 - [ ] **A04 · P1 R** — Replace historical convergence logs with a current issue-linked checklist. [#135](https://github.com/RuleWorld/BNG3/issues/135)
 - [ ] **A05 · P1 R** — Correct stale architecture and validation documentation. [#136](https://github.com/RuleWorld/BNG3/issues/136)
 - [ ] **A06 · P1 M** — Approve the BNG3 capability-union inventory and support policy. [#137](https://github.com/RuleWorld/BNG3/issues/137)
