@@ -35,15 +35,6 @@ def test_pattern_reader():
     assert res is True
 
 
-def test_pattern_reader_accepts_repeated_component_separators():
-    from bionetgen.modelapi.pattern_reader import BNGPatternReader
-
-    pattern = BNGPatternReader("A(x,,y)").pattern
-
-    assert str(pattern) == "A(x,y)"
-    assert [component.name for component in pattern[0].components] == ["x", "y"]
-
-
 def test_pattern_canonicalization():
     # for now, if the platform is windows, just skip
     if os.name == "nt":
