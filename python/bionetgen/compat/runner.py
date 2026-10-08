@@ -18,7 +18,6 @@ def _run_in_directory(
     *,
     suppress: bool,
     method: str | None,
-    timeout: int | None,
 ) -> BNGResult:
     if inp.suffix.lower() != ".bngl":
         raise NotImplementedError(
@@ -29,11 +28,6 @@ def _run_in_directory(
             "method overrides are not supported by the compatibility runner; "
             "edit the model actions or use load(...).simulate(...)"
         )
-    if timeout is not None:
-        raise NotImplementedError(
-            "timeout is not supported by the in-process BNG3 compatibility runner"
-        )
-
     output.mkdir(parents=True, exist_ok=True)
     copied = output / inp.name
     if copied.resolve() != inp.resolve():
@@ -165,6 +159,10 @@ def run(
         raise NotImplementedError(
             "only BNGL input is supported by the BNG3 compatibility runner"
         )
+    if timeout is not None:
+        raise NotImplementedError(
+            "timeout is not supported by the in-process BNG3 compatibility runner"
+        )
 
     inp_path = Path(inp).expanduser().resolve()
     if not inp_path.is_file():
@@ -195,7 +193,6 @@ def run(
                 Path(temp),
                 suppress=suppress,
                 method=method,
-                timeout=timeout,
             )
 
     output = Path(out).expanduser().resolve()
@@ -224,5 +221,4 @@ def run(
         output,
         suppress=suppress,
         method=method,
-        timeout=timeout,
     )

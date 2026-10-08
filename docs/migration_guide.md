@@ -21,6 +21,11 @@ BioNetGen 3 replaces the subprocess-based PyBioNetGen/BNG2 workflow with an in-p
 | Build models | Hand-written BNGL only | `ModelBuilder` API |
 | Import SBML | Atomizer CLI | `bionetgen.from_sbml("model.xml")` |
 
+The in-process compatibility file runner has no execution deadline. A non-`None`
+`timeout` passed to `bionetgen.run(path, out=...)` raises `NotImplementedError`
+before execution or output creation, including when method or time overrides
+are supplied. `timeout=None` retains the normal file-runner behavior.
+
 ## Before And After
 
 ### Load A Model

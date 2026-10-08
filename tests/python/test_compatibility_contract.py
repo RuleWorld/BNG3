@@ -58,6 +58,40 @@ def test_legacy_run_supports_method_and_time_overrides(tmp_path):
     assert np.allclose(data["time"], np.linspace(2.0, 3.0, 5))
 
 
+@pytest.mark.parametrize("output_directory", [False, True])
+@pytest.mark.parametrize("entry_point", ["compat", "public"])
+@pytest.mark.parametrize(
+    "override",
+    [
+        {},
+        {"method": "ssa"},
+        {"t_span": (0, 1)},
+        {"n_points": 2},
+        {"t_end": 1},
+        {"n_steps": 1},
+    ],
+)
+def test_compatibility_timeout_is_rejected_before_execution(
+    tmp_path, monkeypatch, output_directory, entry_point, override
+):
+    from bionetgen.compat.runner import run as compatibility_run
+
+    run = compatibility_run if entry_point == "compat" else bionetgen.run
+
+    def unexpected_execution(*args, **kwargs):
+        pytest.fail("unsupported timeout reached model execution")
+
+    monkeypatch.setattr(bionetgen, "load", unexpected_execution)
+    monkeypatch.setattr(bionetgen._bionetgen_cpp, "parse_file", unexpected_execution)
+    output = tmp_path / "results" if output_directory else None
+
+    with pytest.raises(NotImplementedError, match="timeout"):
+        run(MODEL, out=output, timeout=1, **override)
+
+    if output is not None:
+        assert not output.exists()
+
+
 def test_module_entry_point_exposes_cli_help(tmp_path):
     env = os.environ.copy()
     package_path = Path(bionetgen.__file__).resolve()
