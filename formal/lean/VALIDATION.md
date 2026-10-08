@@ -35,6 +35,44 @@ produce one channel event, while two matching molecules in separate complexes
 remain two events. Earlier failure banners in that file described a defect
 that is now fixed and have been removed.
 
+## Unmerged candidate evidence — 2026-10-08
+
+The pinned-toolchain results above are the dated `main` baseline at
+`e1836c3274e685996d5e86883761e00e98257e09`. The following evidence belongs to
+separate open PR candidates and is not yet evidence about merged `main`.
+
+- Matcher correctness: PR [#194](https://github.com/RuleWorld/BNG3/pull/194),
+  head `c5fafad022ff831374e669e4ce90ac6cf3102086`, passed hosted Lean run
+  [37725570914](https://github.com/RuleWorld/BNG3/actions/runs/37725570914).
+  On that candidate, `python3 scripts/static_validate.py` checked 39 Lean files,
+  `lake build` completed 38 jobs, `lake env lean tests/Smoke.lean` and
+  `lake env lean tests/Coverage.lean` passed, and
+  `scripts/check_axiom_dependencies.sh` reported `AXIOM AUDIT PASS`.
+  `BNG.referenceMatcher_correct` quantifies over every Lean `Pattern`,
+  `Mixture`, and embedding: emitted results satisfy `EmbeddingSpec`, and every
+  embedding satisfying that spec has a same-mapping emitted result. Completeness
+  compares mappings by per-pattern-node lookup, and the spec requires the exact
+  duplicate-free occurrence domain. There is no well-formed-input premise;
+  the general proof adds no `sorry`, `admit`, or new axiom. Its audited
+  dependencies are `[propext, Classical.choice, Quot.sound]`. This is a theorem
+  about the Lean reference matcher, not production C++ matcher correctness.
+- Bounded NFnext packing: PR [#198](https://github.com/RuleWorld/BNG3/pull/198),
+  head `5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd`, passed hosted Lean/NFnext run
+  [37786454166](https://github.com/RuleWorld/BNG3/actions/runs/37786454166),
+  and its exact-head [CI run 37786454220](https://github.com/RuleWorld/BNG3/actions/runs/37786454220)
+  passed the C++ matrix, ASan, and integration checks. The production preflight
+  checks declaration-order IDs and
+  NFIR v5 field widths; the parser-to-lowering bridge exercises the bounded
+  molecule-rule graph case and rejects component index 65,536. This is not a
+  general proof of C++ pattern, rate, bond, or transformation refinement. The
+  [candidate CXX mapping](https://github.com/RuleWorld/BNG3/blob/5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd/formal/lean/CXX_MAPPING.md#issue-166-production-declaration-to-nfnext-id-packing)
+  records the complete bounded surface.
+
+Both candidates edit `scripts/check_axiom_dependencies.sh`. When synchronizing
+them, preserve PR #194's matcher/specification `#print axioms` entries and PR
+#198's `NFnextPacking.fromSignature_*` entries. Both PRs remain open and
+unmerged as of this record.
+
 ## Trust and evidence categories
 
 | Evidence category | What it establishes | Boundary |

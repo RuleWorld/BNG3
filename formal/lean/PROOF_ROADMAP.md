@@ -111,25 +111,20 @@ stated trust boundaries. They do not prove that production C++ implements the
 Lean reference semantics; see `VALIDATION.md` and `CXX_MAPPING.md` for the
 separate native-test evidence and remaining correspondence boundary.
 
-## Stage 5 — connect Boolean checks to propositions
+## Stage 5 — connect Boolean checks to propositions: matcher candidate available
 
-Define proposition-level relations such as:
+The audited `main` baseline `e1836c3274e685996d5e86883761e00e98257e09` does not
+include a matcher-correctness theorem. Open candidate PR [#194](https://github.com/RuleWorld/BNG3/pull/194)
+at `c5fafad022ff831374e669e4ce90ac6cf3102086` now proves
+`BNG.embeddingMatches_iff_EmbeddingSpec` and soundness/completeness of the Lean
+reference enumerator. Its completeness statement compares node lookups rather
+than mapping-list order, and `EmbeddingSpec` requires the exact duplicate-free
+pattern occurrence domain. The candidate preserves all-pattern quantification
+without a hidden well-formed-input premise.
 
-```text
-EmbeddingIsMatch p mix e
-WellFormedMixture sig mix
-WellFormedRule sig scope d
-```
-
-and prove executable checker correspondence, e.g.:
-
-```text
-p.embeddingMatches mix e = true
-↔
-EmbeddingIsMatch p mix e
-```
-
-This matters before deeper proofs depend heavily on Boolean validators.
+Review and integrate that candidate; do not treat its proved obligation as a
+new theorem to re-prove. The theorem covers the Lean reference matcher only.
+Production C++ matcher/lowering correspondence remains separate work (#166).
 
 ## Stage 6 — canonical semantic interchange
 
@@ -273,11 +268,15 @@ implementations:
 - real C++ NFnext matcher/transformation conformance harness: IMPLEMENTED and
   passing 18/18 checks in this environment.
 
-The highest-priority remaining work is now narrower:
+The highest-priority remaining work, accounting for the unmerged candidates, is:
 
-1. prove `Pattern.embeddingMatches = true <-> EmbeddingSpec`;
-2. connect the actual production C++ `CompiledModel -> NFnext` lowering to the
-   checked packing/lowering contract;
+1. review and integrate the matcher proof in PR #194; do not repeat the proof
+   as new implementation work;
+2. qualify production C++ `CompiledModel -> NFnext` correspondence separately.
+   Candidate PR [#198](https://github.com/RuleWorld/BNG3/pull/198) at
+   `5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd` supplies bounded ID-packing
+   preflight and overflow-test evidence, but remains unmerged and does not prove
+   general pattern/rate/bond/transformation refinement;
 3. prove/test a production species canonicalizer against the brute-force graph
    isomorphism oracle;
 4. formalize exact special-rate/local-function/builtin conventions that are
