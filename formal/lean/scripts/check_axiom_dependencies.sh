@@ -67,6 +67,9 @@ open BNG
 #print axioms BNG.compileStructuralSemantics_deterministic
 #print axioms BNG.Examples.nfnextBridgeContract_holds
 #print axioms BNG.Examples.example_lowered_step_equals_semantic_step
+#print axioms BNG.NFnextPacking.fromSignature_type_entry
+#print axioms BNG.NFnextPacking.fromSignature_site_entry
+#print axioms BNG.NFnextPacking.fromSignature_state_entry
 LEAN
 
 OUT="$(lake env lean "$TMP/audit.lean" 2>&1)"
