@@ -2,6 +2,8 @@ from bionetgen.core.utils.logging import BNGLogger
 from bionetgen.modelapi.pattern import Pattern, Molecule, Component
 import pyparsing as pp
 
+_delimited_list = getattr(pp, "DelimitedList", pp.delimited_list)
+
 
 class BNGParsers:
     """
@@ -87,11 +89,11 @@ class BNGPatternReader:
         )
         component_parser = pp.Combine(self.parsers.component)
         # components are separated by commas
-        component_separator = pp.Literal(",")
-        self.parsers.components_parser = pp.DelimitedList(
+        component_separator = pp.Word(",")
+        self.parsers.components_parser = _delimited_list(
             component_parser, delim=component_separator
         )
-        self.parsers.combined_components_parser = pp.DelimitedList(
+        self.parsers.combined_components_parser = _delimited_list(
             component_parser, delim=component_separator, combine=True
         )
 
@@ -129,10 +131,10 @@ class BNGPatternReader:
         # molecules
         # components are separated by commas
         molecule_separator = pp.Literal(".")
-        self.parsers.molecules_parser = pp.DelimitedList(
+        self.parsers.molecules_parser = _delimited_list(
             molecule_parser, delim=molecule_separator
         )
-        self.parsers.combined_molecules_parser = pp.DelimitedList(
+        self.parsers.combined_molecules_parser = _delimited_list(
             molecule_parser, delim=molecule_separator, combine=True
         )
 
