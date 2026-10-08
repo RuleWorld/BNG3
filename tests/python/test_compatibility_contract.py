@@ -439,7 +439,7 @@ def test_notebook_command_writes_a_valid_model_specific_notebook(tmp_path):
         for cell in notebook["cells"]
         if cell["cell_type"] == "code"
     )
-    assert str(input_model.resolve()) in code
+    assert input_model.resolve().as_posix() in code
     assert "model = bionetgen.load(" in code
     assert "result = model.simulate()" in code
     assert "result.plot()" in code
