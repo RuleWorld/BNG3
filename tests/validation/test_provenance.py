@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -54,7 +55,7 @@ def test_ssts_revision_is_locked_without_approving_the_source_baseline():
         "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
         "role": "official-validation-corpus-not-oracle",
         "status": "observed",
-        "evidence": {"kind": "local-checkout", "checked_at": "2026-10-02"},
+        "evidence": {"kind": "remote-commit", "checked_at": "2026-10-08"},
     }
     assert lock["baseline"]["status"] == "pending-maintainer-approval"
 
@@ -111,3 +112,63 @@ def test_reconciliation_schema_has_all_plan_classifications():
         "pending-port",
         "blocked-on-design",
     }
+
+
+def test_reachable_historical_commit_is_valid_source_evidence(tmp_path):
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    lock["sources"]["bngplayground"]["evidence"] = {
+        "kind": "remote-commit",
+        "checked_at": "2026-10-08",
+    }
+    candidate = tmp_path / "upstreams.lock.yml"
+    candidate.write_text(json.dumps(lock), encoding="utf-8")
+    result = _run("--lock", str(candidate))
+    assert result.returncode == 0, result.stderr
+
+
+def test_claimed_python_lock_digest_cannot_hide_a_missing_file(tmp_path):
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    lock["dependencies"]["python_lock"] = {
+        "status": "locked",
+        "path": "provenance/dependencies/does-not-exist.lock",
+        "digest": "sha256:" + "0" * 64,
+    }
+    candidate = tmp_path / "upstreams.lock.yml"
+    candidate.write_text(json.dumps(lock), encoding="utf-8")
+    result = _run("--lock", str(candidate))
+    assert result.returncode == 1
+    assert "python_lock" in result.stderr
+
+
+@pytest.mark.parametrize("mutation", ["missing", "modified", "directory", "outside"])
+def test_locked_python_dependency_bytes_are_verified(tmp_path, mutation):
+    from scripts.validate_provenance import validate_lock
+
+    lock = json.loads(LOCK.read_text(encoding="utf-8"))
+    root = tmp_path / "repo"
+    root.mkdir()
+    artifact = root / "requirements.lock"
+    payload = b"pytest==8.4.2\n"
+    artifact.write_bytes(payload)
+    lock["dependencies"]["python_lock"] = {
+        "status": "locked",
+        "path": "requirements.lock",
+        "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+    }
+    errors, _ = validate_lock(lock, repository_root=root)
+    assert not errors
+
+    if mutation == "missing":
+        artifact.unlink()
+    elif mutation == "modified":
+        artifact.write_bytes(b"pytest==7.0.0\n")
+    elif mutation == "directory":
+        artifact.unlink()
+        artifact.mkdir()
+    else:
+        outside = tmp_path / "outside.lock"
+        outside.write_bytes(payload)
+        lock["dependencies"]["python_lock"]["path"] = "../outside.lock"
+
+    errors, _ = validate_lock(lock, repository_root=root)
+    assert any("python_lock" in error for error in errors), errors

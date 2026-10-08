@@ -1,0 +1,139 @@
+{
+  "checked_at": "2026-10-08",
+  "method": "gh api graphql, immutable commit objects and separate observed default branch heads",
+  "approval": "pending-maintainer-decision",
+  "query_file": "source-verification.graphql",
+  "data": {
+    "bng3": {
+      "nameWithOwner": "RuleWorld/BNG3",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "main",
+        "target": {
+          "oid": "e1836c3274e685996d5e86883761e00e98257e09"
+        }
+      },
+      "cutoff": {
+        "oid": "c345f3aa635aac0048681b79c6a4ff1e75a298f7",
+        "committedDate": "2026-10-01T03:50:44Z"
+      }
+    },
+    "bionetgen": {
+      "nameWithOwner": "RuleWorld/bionetgen",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "master",
+        "target": {
+          "oid": "9601746f8884ed19ab2acea49fe87fc4660ace46"
+        }
+      },
+      "cutoff": {
+        "oid": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+        "committedDate": "2026-09-22T19:08:15Z"
+      }
+    },
+    "nfsim": {
+      "nameWithOwner": "RuleWorld/nfsim",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "master",
+        "target": {
+          "oid": "9b00d42f734dcc3e695205600f12cae5b44d1daa"
+        }
+      },
+      "cutoff": {
+        "oid": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+        "committedDate": "2026-09-01T13:45:39Z"
+      }
+    },
+    "nfsim_rasi": {
+      "nameWithOwner": "akutuva21/nfsim",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "master",
+        "target": {
+          "oid": "61e59a0eabb72e8880c0854b09e42a9f38081b95"
+        }
+      },
+      "cutoff": {
+        "oid": "d13086bd3cf2fd268be5efea4d83089301479de3",
+        "committedDate": "2026-09-06T18:14:32Z"
+      }
+    },
+    "bngsim": {
+      "nameWithOwner": "lanl/bngsim",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "main",
+        "target": {
+          "oid": "48786b8f99f2fe691f597f9947b019688efb3253"
+        }
+      },
+      "cutoff": {
+        "oid": "49dc939035f5a272da663f8c9586e3c9f0e1c041",
+        "committedDate": "2026-08-27T18:28:39Z"
+      }
+    },
+    "pybionetgen": {
+      "nameWithOwner": "RuleWorld/PyBioNetGen",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "main",
+        "target": {
+          "oid": "28bf351a9bbfc197e19487c26dedda683716bb64"
+        }
+      },
+      "cutoff": {
+        "oid": "28bf351a9bbfc197e19487c26dedda683716bb64",
+        "committedDate": "2026-09-04T22:49:32Z"
+      }
+    },
+    "bngplayground": {
+      "nameWithOwner": "RuleWorld/bngplayground",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "main",
+        "target": {
+          "oid": "3cb2166048fbe98c0b6951e6d109849940c981f4"
+        }
+      },
+      "cutoff": {
+        "oid": "ba781d690512b964711a3ca2df059be95e01561d",
+        "committedDate": "2026-09-08T14:22:29Z"
+      }
+    },
+    "sbml_test_suite": {
+      "nameWithOwner": "sbmlteam/sbml-test-suite",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "develop",
+        "target": {
+          "oid": "473e119dd57226c3a7a729d598f9007f06f781c3"
+        }
+      },
+      "cutoff": {
+        "oid": "cf38585fac5de8e0e90112febb62851ee2181816",
+        "committedDate": "2025-07-14T16:50:00Z"
+      }
+    },
+    "rulehub": {
+      "nameWithOwner": "RuleWorld/RuleHub",
+      "isArchived": false,
+      "defaultBranchRef": {
+        "name": "master",
+        "target": {
+          "oid": "b84f0a72ad21dc70cb99d4880b49a40f17046357"
+        }
+      },
+      "cutoff": {
+        "oid": "b84f0a72ad21dc70cb99d4880b49a40f17046357",
+        "committedDate": "2026-06-24T18:05:01Z"
+      }
+    }
+  },
+  "historical_refs": {
+    "nfsim-rasi": "perf/rasi-translation-optimization no longer resolves; cutoff object remains reachable",
+    "bngplayground": "codex/atomizer-roundtrip-parity no longer resolves; cutoff object remains reachable"
+  },
+  "destination_proposal": "e1836c3274e685996d5e86883761e00e98257e09 from observed main; other eight source cutoffs unchanged"
+}

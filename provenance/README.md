@@ -49,6 +49,31 @@ The strict gate additionally requires accepted source revisions, locked oracle
 recipes and artifact digests, compiler image digests, and a Python lock-file
 digest.
 
+The 2026-10-08 candidate refresh is recorded in
+[`approvals/2026-10-08/source-verification.json`](approvals/2026-10-08/source-verification.json).
+It verifies all nine immutable commit objects, refreshes the destination
+reference to the audited BNG3 main revision, and preserves the other source
+cutoffs. `remote-commit` evidence means the commit is reachable upstream; it
+does not assert that an old branch name still exists or that the cutoff has
+been approved. Historical Rasi and Playground branch names no longer resolve.
+
+A locked Python dependency file must be repository-relative, readable, and
+match its recorded SHA-256 byte for byte. A syntactically valid digest cannot
+substitute for a missing or changed file. The candidate records remain pending
+until the actual source, recipe, compiler-image and dependency decisions are
+approved.
+
+The adjacent [oracle receipt](approvals/2026-10-08/oracle-verification.json)
+records fresh, clean pinned BNG2 and NFsim builds and the committed decay smoke
+inputs/outputs. BNG2's analytic ODE check and NFsim's single seeded trajectory
+are distinct checks; they do not establish distributional parity. The
+[Linux dependency evidence](dependencies/python-3.12-linux-x86_64-manylinux_2_28-full-dev-jax.evidence.md)
+records resolution, wheel hashes, and an immutable compiler-image manifest.
+Linux execution and other platform qualification remain unperformed.
+`--require-approved` deliberately still reports the 14 pending decisions.
+Issue #179 requires release-gate wiring after those decisions; this candidate
+does not substitute observations for approval or claim that issue complete.
+
 ## Golden bundles
 
 Provenance-complete golden bundles use the schema in
