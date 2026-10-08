@@ -1,6 +1,7 @@
 import pytest
 from bionetgen.modelapi.pattern_reader import BNGPatternReader
 
+
 def test_pattern_reader_accepts_repeated_component_separators():
     pat_str = "A(x,,y)"
     r = BNGPatternReader(pat_str)
