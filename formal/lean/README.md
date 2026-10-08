@@ -647,8 +647,24 @@ named declaration audit and its measured dependencies are listed in
 
 # Current scope and next proof steps
 
-The immediate open theorem is `ReferenceMatcherCorrect`, the soundness and
-completeness obligation defined in `BNG/MatcherSpec.lean`. The production C++
+`BNG.MatcherCorrectness.referenceMatcher_correct` proves the reference
+enumerator's soundness and completeness against the proposition-level
+`EmbeddingSpec`. Completeness compares the lookup assignment for each pattern
+node, so association-list order does not change a mapping. The independent
+`ExactEmbeddingDomain` requires a duplicate-free domain with exactly the
+pattern's occurrence IDs; the proved
+`exactEmbeddingDomain_iff_nodup_and_perm` connects this to order-independent
+list permutation while keeping the validator's behavior for repeated pattern
+IDs explicit. No input well-formedness premise is hidden in the theorem.
+
+[`BNG.MatcherCounterexamples.lean`](BNG/MatcherCounterexamples.lean) keeps the
+two pre-repair gaps as historical facts: literal whole-list membership rejects
+an emitted-order permutation of a valid assignment, and the old length-only
+specification admits a ghost key when occurrence IDs repeat. The current
+contract repairs both cases. This theorem covers the Lean reference matcher;
+the C++ backend boundary described below remains a separate proof obligation.
+
+The production C++
 bridge currently checks a concrete BNGL fixture; proving a general backend
 correspondence requires the complete, source-string-free compiled-model
 boundary described in [`CXX_MIGRATION_BLOCKERS.md`](CXX_MIGRATION_BLOCKERS.md).
@@ -737,6 +753,14 @@ MatcherSpec.lean
   independent proposition-level match specification and explicit
   soundness/completeness obligations
 
+MatcherCorrectness.lean
+  kernel-checked validator equivalence and soundness/completeness proof for the
+  reference matcher, with association-list order handled extensionally
+
+MatcherCounterexamples.lean
+  kernel-checked historical witnesses for the superseded literal-membership and
+  length-only domain contracts
+
 Evaluation.lean
   deliberately partial arithmetic/function evaluator; unsupported special
   numerical conventions fail explicitly
@@ -797,9 +821,10 @@ machine-checked C++ refinement theorem.
 
 The formalization is intentionally explicit about the remaining boundary:
 
-1. `ReferenceMatcherCorrect` is a proof obligation; the independent
-   proposition-level specification exists, but the full iff proof is not being
-   assumed.
+1. `BNG.referenceMatcher_correct` establishes kernel-checked soundness and
+   completeness for the Lean reference matcher. The C++ matcher is outside this
+   theorem's scope and still lacks a corresponding machine-checked refinement
+   proof.
 2. The C++ repository still lacks one complete production
    `CompiledModel -> nfnext::ModelIR/TransformationIR` boundary matching this
    target architecture. The concrete bridge fixture above does not prove that
