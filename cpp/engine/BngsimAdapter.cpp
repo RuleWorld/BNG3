@@ -1,5 +1,7 @@
 #include "BngsimAdapter.hpp"
+#include "FiniteBackend.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <filesystem>
@@ -8,33 +10,124 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
+#ifdef BNG3_HAS_BNGSIM_ADAPTER
 #include <bngsim/model_builder.hpp>
+#endif
 
+#include "ast/Model.hpp"
 #include "parser/antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGLexer.h"
 #include "BNGParser.h"
 #include "core/Ullmann.hpp"
-#include "parser/BNGAstVisitor.hpp"
 #include "parser/PatternGraphBuilder.hpp"
 
 namespace bng::engine {
 
 namespace {
 
-std::string reactionContext(std::size_t index, const ast::Rxn& reaction) {
+enum class BngsimRateKind {
+    Parameter,
+    Function,
+};
+
+struct BngsimRateReference {
+    BngsimRateKind kind;
+    std::string name;
+};
+
+std::string bngsimTableCounterName(const ast::Expression& counter);
+
+std::string normalizeRateLaw(std::string value) {
+    const auto first = value.find_first_not_of(" \t");
+    if (first != std::string::npos) value.erase(0, first);
+    else value.clear();
+    if (!value.empty()) {
+        const auto last = value.find_last_not_of(" \t");
+        value.erase(last + 1);
+    }
+    if (value.size() >= 2 && value.substr(value.size() - 2) == "()") {
+        value.erase(value.size() - 2);
+        if (!value.empty()) {
+            const auto last = value.find_last_not_of(" \t");
+            if (last != std::string::npos) value.erase(last + 1);
+            const auto leading = value.find_first_not_of(" \t");
+            if (leading != std::string::npos) value.erase(0, leading);
+        }
+    }
+    return value;
+}
+
+void collectExpressionBlockers(
+    const ast::Expression& expression,
+    std::vector<std::string>& blockers) {
+    switch (expression.kind()) {
+    case ast::ExpressionKind::Number:
+    case ast::ExpressionKind::Identifier:
+        return;
+    case ast::ExpressionKind::Unary:
+        if (expression.args().size() != 1) {
+            blockers.push_back("BNGsim adapter rejected malformed unary expression");
+            return;
+        }
+        collectExpressionBlockers(expression.args().front(), blockers);
+        return;
+    case ast::ExpressionKind::Binary:
+        if (expression.args().size() != 2) {
+            blockers.push_back("BNGsim adapter rejected malformed binary expression");
+            return;
+        }
+        collectExpressionBlockers(expression.args()[0], blockers);
+        collectExpressionBlockers(expression.args()[1], blockers);
+        return;
+    case ast::ExpressionKind::Function:
+    case ast::ExpressionKind::ObservableRef:
+        for (const auto& argument : expression.args()) {
+            collectExpressionBlockers(argument, blockers);
+        }
+        return;
+    case ast::ExpressionKind::TableFunction:
+        if (expression.args().size() != 1) {
+            blockers.push_back("BNGsim adapter rejected malformed TFUN expression");
+            return;
+        }
+        try {
+            (void)bngsimTableCounterName(expression.args().front());
+        } catch (const std::exception& error) {
+            blockers.push_back(error.what());
+            return;
+        }
+        if (!expression.tableFilePath().empty()) {
+            try {
+                if (!std::filesystem::path(expression.tableFilePath()).is_absolute()) {
+                    blockers.push_back(
+                        "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
+                }
+            } catch (const std::exception&) {
+                blockers.push_back(
+                    "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
+            }
+        }
+        return;
+    }
+    blockers.push_back("BNGsim adapter rejected unknown expression kind");
+}
+
+std::string bngsimReactionContext(std::size_t index, const ast::Rxn& reaction) {
     return "reaction " + std::to_string(index) +
            (reaction.getLabel().empty() ? std::string{} : " ('" + reaction.getLabel() + "')");
 }
 
-std::vector<int> checkedIndices(const std::vector<std::size_t>& indices,
-                                std::size_t nSpecies,
-                                const std::string& context) {
+std::vector<int> checkedBngsimIndices(
+    const std::vector<std::size_t>& indices,
+    std::size_t speciesCount,
+    const std::string& context) {
     std::vector<int> result;
     result.reserve(indices.size());
     for (const auto index : indices) {
-        if (index >= nSpecies) {
+        if (index >= speciesCount) {
             throw std::runtime_error(
                 "BNGsim adapter rejected " + context + ": species index out of range");
         }
@@ -47,7 +140,7 @@ std::vector<int> checkedIndices(const std::vector<std::size_t>& indices,
     return result;
 }
 
-std::vector<std::pair<int, double>> compileObservableEntries(
+std::vector<std::pair<int, double>> compileBngsimObservableEntries(
     ast::Model& model,
     const GeneratedNetwork& network,
     const ast::Observable& observable) {
@@ -189,7 +282,7 @@ std::vector<std::pair<int, double>> compileObservableEntries(
     return entries;
 }
 
-std::string tableCounterName(const ast::Expression& counter) {
+std::string bngsimTableCounterName(const ast::Expression& counter) {
     if (counter.kind() == ast::ExpressionKind::Identifier ||
         counter.kind() == ast::ExpressionKind::ObservableRef) {
         if (counter.name().empty()) {
@@ -206,6 +299,134 @@ std::string tableCounterName(const ast::Expression& counter) {
         "BNGsim adapter rejected TFUN: counter must be time or a named parameter/observable");
 }
 
+BngsimRateReference resolveBngsimRateReference(
+    const ast::Model& model,
+    const ast::Rxn& reaction,
+    std::size_t index) {
+    const auto& rateLaw = reaction.getRateLaw();
+    const auto normalized = normalizeRateLaw(rateLaw);
+    if (model.getParameters().contains(normalized)) {
+        return {BngsimRateKind::Parameter, normalized};
+    }
+    for (const auto& function : model.getFunctions()) {
+        if (function.getName() == normalized) {
+            return {BngsimRateKind::Function, normalized};
+        }
+    }
+    throw std::runtime_error(
+        "BNGsim adapter rejected " + bngsimReactionContext(index, reaction) +
+        ": rate law '" + rateLaw + "' is not a direct parameter or function reference");
+}
+
+} // namespace
+
+BngsimLoweringCheck checkBngsimLowering(
+    const ast::Model& model,
+    const GeneratedNetwork& network) {
+    BngsimLoweringCheck check;
+    auto& mutableModel = const_cast<ast::Model&>(model);
+    auto reject = [&](const std::string& blocker) {
+        check.blockers.push_back(blocker);
+    };
+
+    if (!model.getCompartments().empty()) {
+        reject("BNGsim adapter rejected model: compartments require a volume-aware bridge");
+    }
+    if (!model.getEnergyPatterns().empty()) {
+        reject("BNGsim adapter rejected model: energy patterns require an eBNGL rate bridge");
+    }
+    if (!model.getBarrierPatterns().empty()) {
+        reject("BNGsim adapter rejected model: barrier patterns require an eBNGL rate bridge");
+    }
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.hasDrivingWork()) {
+            reject(
+                "BNGsim adapter rejected model: driven_by() reservoir work requires "
+                "an eBNGL rate bridge");
+            break;
+        }
+    }
+    if (!model.getPopulationMaps().empty()) {
+        reject("BNGsim adapter rejected model: population maps are not a generated-network feature");
+    }
+    if (!model.getSimulationProtocol().empty()) {
+        reject("BNGsim adapter rejected model: simulation protocol requires a protocol bridge");
+    }
+    for (const auto& action : model.getActions()) {
+        if (action.name != "generate_network") {
+            reject(
+                "BNGsim adapter rejected model action '" + action.name +
+                "': action execution requires a protocol bridge");
+            break;
+        }
+    }
+
+    for (const auto& parameter : model.getParameters().all()) {
+        try {
+            if (!std::isfinite(model.getParameters().evaluate(parameter.getName()))) {
+                reject(
+                    "BNGsim adapter rejected parameter '" + parameter.getName() +
+                    "': value is not finite");
+            }
+        } catch (const std::exception& error) {
+            reject(
+                "BNGsim adapter rejected parameter '" + parameter.getName() +
+                "': " + error.what());
+        }
+    }
+
+    for (const auto& observable : model.getObservables()) {
+        try {
+            (void)compileBngsimObservableEntries(mutableModel, network, observable);
+        } catch (const std::exception& error) {
+            reject(error.what());
+            break;
+        } catch (...) {
+            reject(
+                "BNGsim adapter rejected observable '" + observable.getName() +
+                "': could not build observable pattern");
+            break;
+        }
+    }
+
+    for (const auto& function : model.getFunctions()) {
+        if (!function.getArgs().empty()) {
+            reject(
+                "BNGsim adapter rejected function '" + function.getName() +
+                "': function arguments require a local-function bridge");
+            continue;
+        }
+        collectExpressionBlockers(function.getExpression(), check.blockers);
+    }
+
+    for (std::size_t index = 0; index < network.reactions.size(); ++index) {
+        const auto& reaction = network.reactions.all()[index];
+        const auto context = bngsimReactionContext(index, reaction);
+        try {
+            (void)checkedBngsimIndices(reaction.getReactants(), network.species.size(), context);
+            (void)checkedBngsimIndices(reaction.getProducts(), network.species.size(), context);
+        } catch (const std::exception& error) {
+            reject(error.what());
+            break;
+        }
+        try {
+            (void)resolveBngsimRateReference(model, reaction, index);
+        } catch (const std::exception& error) {
+            reject(error.what());
+            break;
+        }
+    }
+
+    check.supported = check.blockers.empty();
+    return check;
+}
+
+
+#ifdef BNG3_HAS_BNGSIM_ADAPTER
+
+
+namespace {
+
 std::string expressionForBngsim(const ast::Expression& expression,
                                 const std::string& owner,
                                 bngsim::ModelBuilder& builder,
@@ -215,15 +436,9 @@ std::string expressionForBngsim(const ast::Expression& expression,
     case ast::ExpressionKind::Identifier:
         return expression.toString();
     case ast::ExpressionKind::Unary:
-        if (expression.args().size() != 1) {
-            throw std::runtime_error("BNGsim adapter rejected malformed unary expression");
-        }
         return "(" + expression.name() +
                expressionForBngsim(expression.args().front(), owner, builder, tableIndex) + ")";
     case ast::ExpressionKind::Binary:
-        if (expression.args().size() != 2) {
-            throw std::runtime_error("BNGsim adapter rejected malformed binary expression");
-        }
         return "(" + expressionForBngsim(expression.args()[0], owner, builder, tableIndex) +
                " " + expression.name() + " " +
                expressionForBngsim(expression.args()[1], owner, builder, tableIndex) + ")";
@@ -239,17 +454,10 @@ std::string expressionForBngsim(const ast::Expression& expression,
         return result.str();
     }
     case ast::ExpressionKind::TableFunction: {
-        if (expression.args().size() != 1) {
-            throw std::runtime_error("BNGsim adapter rejected malformed TFUN expression");
-        }
-        const std::string counter = tableCounterName(expression.args().front());
+        const std::string counter = bngsimTableCounterName(expression.args().front());
         const std::string syntheticName =
             owner + "__tfun" + std::to_string(tableIndex++);
         if (!expression.tableFilePath().empty()) {
-            if (!std::filesystem::path(expression.tableFilePath()).is_absolute()) {
-                throw std::runtime_error(
-                    "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
-            }
             builder.add_table_function_spec(
                 syntheticName,
                 expression.tableFilePath(),
@@ -266,7 +474,7 @@ std::string expressionForBngsim(const ast::Expression& expression,
         return "tfun_" + syntheticName + "()";
     }
     }
-    throw std::runtime_error("BNGsim adapter rejected unknown expression kind");
+    throw std::logic_error("Invalid expression reached BNGsim conversion after capability check");
 }
 
 } // namespace
@@ -274,57 +482,17 @@ std::string expressionForBngsim(const ast::Expression& expression,
 std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
     const ast::Model& model,
     const GeneratedNetwork& network) {
-    // ModelBuilder currently has no BNGL compartment, energy-pattern, or
-    // protocol surface. Reject these constructs before any partial model is
-    // built; silently dropping them would produce a numerically valid but
-    // scientifically different network.
-    if (!model.getCompartments().empty()) {
-        throw std::runtime_error(
-            "BNGsim adapter rejected model: compartments require a volume-aware bridge");
-    }
-    if (!model.getEnergyPatterns().empty()) {
-        throw std::runtime_error(
-            "BNGsim adapter rejected model: energy patterns require an eBNGL rate bridge");
-    }
-    if (!model.getBarrierPatterns().empty()) {
-        throw std::runtime_error(
-            "BNGsim adapter rejected model: barrier patterns require an eBNGL rate bridge");
-    }
-    // A driven rule can reach here without energy patterns, and dropping the
-    // reservoir work would turn a nonequilibrium model into an equilibrium one
-    // with no diagnostic.
-    for (const auto& rule : model.getReactionRules()) {
-        if (rule.hasDrivingWork()) {
-            throw std::runtime_error(
-                "BNGsim adapter rejected model: driven_by() reservoir work requires "
-                "an eBNGL rate bridge");
-        }
-    }
-    if (!model.getPopulationMaps().empty()) {
-        throw std::runtime_error(
-            "BNGsim adapter rejected model: population maps are not a generated-network feature");
-    }
-    if (!model.getSimulationProtocol().empty()) {
-        throw std::runtime_error(
-            "BNGsim adapter rejected model: simulation protocol requires a protocol bridge");
-    }
-    for (const auto& action : model.getActions()) {
-        if (action.name != "generate_network") {
-            throw std::runtime_error(
-                "BNGsim adapter rejected model action '" + action.name +
-                "': action execution requires a protocol bridge");
-        }
+    const auto check = checkBngsimLowering(model, network);
+    if (!check.supported) {
+        throw std::runtime_error(check.blockers.empty()
+                                     ? "BNGsim adapter rejected model: unsupported lowering"
+                                     : check.blockers.front());
     }
 
     bngsim::ModelBuilder builder;
 
     for (const auto& parameter : model.getParameters().all()) {
         const double value = model.getParameters().evaluate(parameter.getName());
-        if (!std::isfinite(value)) {
-            throw std::runtime_error(
-                "BNGsim adapter rejected parameter '" + parameter.getName() +
-                "': value is not finite");
-        }
         builder.add_parameter(parameter.getName(), value);
     }
 
@@ -336,20 +504,15 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
     }
 
     if (!model.getObservables().empty()) {
+        auto& mutableModel = const_cast<ast::Model&>(model);
         for (const auto& observable : model.getObservables()) {
-            auto& mutableModel = const_cast<ast::Model&>(model);
             builder.add_observable(
                 observable.getName(),
-                compileObservableEntries(mutableModel, network, observable));
+                compileBngsimObservableEntries(mutableModel, network, observable));
         }
     }
 
     for (const auto& function : model.getFunctions()) {
-        if (!function.getArgs().empty()) {
-            throw std::runtime_error(
-                "BNGsim adapter rejected function '" + function.getName() +
-                "': function arguments require a local-function bridge");
-        }
         std::size_t tableIndex = 0;
         builder.add_function(
             function.getName(),
@@ -358,67 +521,33 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
 
     for (std::size_t index = 0; index < network.reactions.size(); ++index) {
         const auto& reaction = network.reactions.all()[index];
-        const std::string context = reactionContext(index, reaction);
-        const auto reactants = checkedIndices(
+        const auto context = bngsimReactionContext(index, reaction);
+        const auto reactants = checkedBngsimIndices(
             reaction.getReactants(), network.species.size(), context);
-        const auto products = checkedIndices(
+        const auto products = checkedBngsimIndices(
             reaction.getProducts(), network.species.size(), context);
-        const auto& rateLaw = reaction.getRateLaw();
-        // Functional rates may be stored as "rate" or "rate()" depending on
-        // whether the BNGL rule wrote the function with explicit () . Normalize
-        // by stripping a trailing "()" so both forms match the function table.
-        auto normalizeRateLaw = [](std::string s) {
-            // trim
-            const auto first = s.find_first_not_of(" \t");
-            if (first != std::string::npos) s.erase(0, first);
-            else s.clear();
-            if (!s.empty()) {
-                const auto last = s.find_last_not_of(" \t");
-                s.erase(last + 1);
-            }
-            if (s.size() >= 2 && s.substr(s.size() - 2) == "()") {
-                s.erase(s.size() - 2);
-                const auto l2 = s.find_last_not_of(" \t");
-                if (l2 != std::string::npos) s.erase(l2 + 1);
-                const auto f2 = s.find_first_not_of(" \t");
-                if (f2 != std::string::npos) s.erase(0, f2);
-            }
-            return s;
-        };
-        const std::string normRateLaw = normalizeRateLaw(rateLaw);
+        const auto rate = resolveBngsimRateReference(model, reaction, index);
 
         bngsim::RateLawType type;
-        std::string bngsimRateName;
-        if (model.getParameters().contains(normRateLaw)) {
+        if (rate.kind == BngsimRateKind::Parameter) {
             type = bngsim::RateLawType::Elementary;
-            bngsimRateName = normRateLaw;
         } else {
-            bool isFunction = false;
-            for (const auto& function : model.getFunctions()) {
-                if (function.getName() == normRateLaw) {
-                    isFunction = true;
-                    break;
-                }
-            }
-            if (!isFunction) {
-                throw std::runtime_error(
-                    "BNGsim adapter rejected " + context + ": rate law '" + rateLaw +
-                    "' is not a direct parameter or function reference");
-            }
             type = bngsim::RateLawType::Functional;
-            bngsimRateName = normRateLaw;
         }
 
         builder.add_reaction(
             reactants,
             products,
             type,
-            bngsimRateName,
+            rate.name,
             reaction.getFactor(),
             true);
     }
 
     return std::make_unique<bngsim::NetworkModel>(builder.build());
 }
+
+
+#endif // BNG3_HAS_BNGSIM_ADAPTER
 
 } // namespace bng::engine

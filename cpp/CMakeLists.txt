@@ -143,9 +143,9 @@ target_include_directories(bng_finite_backend PUBLIC
     ${sundials_BINARY_DIR}/include
 )
 target_link_libraries(bng_finite_backend PUBLIC bng_engine bng_parser bng_ast)
+target_sources(bng_engine PRIVATE engine/BngsimAdapter.cpp)
 if(BUILD_BNGSIM_ADAPTER)
     target_sources(bng_finite_backend PRIVATE engine/BngsimBackend.cpp)
-    target_sources(bng_engine PRIVATE engine/BngsimAdapter.cpp)
     target_link_libraries(bng_finite_backend PUBLIC bngsim_external)
 endif()
 
