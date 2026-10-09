@@ -260,6 +260,13 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
         destination.requireBond(endpoints[0].first, endpoints[0].second,
                                 endpoints[1].first, endpoints[1].second);
     }
+    // A single BNGL pattern denotes one complex even when some bonds are
+    // unspecified. Preserve that relation; '+' boundaries are added separately
+    // by flattenReactants as DifferentComplex constraints.
+    for (std::size_t moleculeOffset = 1;
+         moleculeOffset < source.molecules().size(); ++moleculeOffset) {
+        destination.requireSameComplex(firstNode, firstNode + moleculeOffset);
+    }
     return true;
 }
 

@@ -4,6 +4,7 @@
 
 #include "compile/CompiledModel.hpp"
 #include "nfnext/from_bng.hpp"
+#include "nfnext/generic_matcher.hpp"
 #include "nfnext/transformation.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -64,6 +65,13 @@ void executeLoweredDeletionActions(const std::vector<nfnext::ActionIR>& actions,
         }
     }
     nfnext::applyTransformation(transformation, embedding, state);
+}
+
+nfnext::MatchEmbedding transformationEmbedding(const nfnext::Embedding& embedding) {
+    nfnext::MatchEmbedding result;
+    for (std::size_t node = 0; node < embedding.particles().size(); ++node)
+        result.bindNode(node, embedding.particle(node));
+    return result;
 }
 
 void rejectsUnrepresentablePackedSiteIndex() {
@@ -253,6 +261,96 @@ end reaction rules
     assert(wholeSpeciesAction != actions.end());
     assert(wholeSpeciesAction->target_node == 0);
     assert(wholeSpeciesAction->molecule_type == 0);
+}
+
+void loweredReactantPatternRequiresOneSharedComplex() {
+    auto parsed = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x)
+  D(y,z)
+  B(s~u~p,t)
+  C(q,w)
+end molecule types
+begin reaction rules
+  delete_AD_and_transform_B: A().D() + B(s~u) -> B(s~p) k
+end reaction rules
+)BNG");
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+    assert(semantic.rules().size() == 1);
+    assert(semantic.rules().front().forward().wholeSpeciesDeletions ==
+           std::vector<std::size_t>{0});
+
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    if (!lowered.ok()) {
+        for (const auto& item : lowered.issues)
+            std::cerr << item.entity << ": " << item.message << '\n';
+    }
+    assert(lowered.ok());
+    const auto& model = lowered.model;
+    const auto& rule = model.expanded_rules.front();
+    const auto aType = moleculeTypeId(model, "A");
+    const auto dType = moleculeTypeId(model, "D");
+    const auto bType = moleculeTypeId(model, "B");
+    const auto cType = moleculeTypeId(model, "C");
+    const auto aSite = siteIndex(model, aType, "x");
+    const auto dY = siteIndex(model, dType, "y");
+    const auto dZ = siteIndex(model, dType, "z");
+    const auto bSite = siteIndex(model, bType, "s");
+    const auto bT = siteIndex(model, bType, "t");
+    const auto cSite = siteIndex(model, cType, "q");
+    const auto cW = siteIndex(model, cType, "w");
+    nfnext::GenericMatcher matcher(model);
+
+    nfnext::GenericGraphState disconnected(model);
+    disconnected.create(aType);
+    disconnected.create(dType);
+    const auto disconnectedB = disconnected.create(bType);
+    disconnected.setSiteState(disconnectedB, static_cast<std::uint16_t>(bSite), 0);
+    const auto disconnectedMatches = matcher.enumerate(rule.pattern, disconnected);
+    if (!disconnectedMatches.empty())
+        std::cerr << "disconnected A and D unexpectedly matched as one BNGL pattern ("
+                  << disconnectedMatches.size() << " embedding(s))\n";
+    assert(disconnectedMatches.empty());
+
+    nfnext::GenericGraphState sameComplexAcrossPlus(model);
+    const auto sharedA = sameComplexAcrossPlus.create(aType);
+    const auto sharedD = sameComplexAcrossPlus.create(dType);
+    const auto sharedB = sameComplexAcrossPlus.create(bType);
+    const auto sharedC = sameComplexAcrossPlus.create(cType);
+    sameComplexAcrossPlus.setSiteState(sharedB, static_cast<std::uint16_t>(bSite), 0);
+    sameComplexAcrossPlus.bind(sharedA, static_cast<std::uint16_t>(aSite),
+                               sharedD, static_cast<std::uint16_t>(dY));
+    sameComplexAcrossPlus.bind(sharedD, static_cast<std::uint16_t>(dZ),
+                               sharedC, static_cast<std::uint16_t>(cSite));
+    sameComplexAcrossPlus.bind(sharedC, static_cast<std::uint16_t>(cW),
+                               sharedB, static_cast<std::uint16_t>(bT));
+    assert(matcher.enumerate(rule.pattern, sameComplexAcrossPlus).empty());
+
+    nfnext::GenericGraphState connected(model);
+    const auto a = connected.create(aType);
+    const auto d = connected.create(dType);
+    const auto b = connected.create(bType);
+    const auto c = connected.create(cType);
+    connected.setSiteState(b, static_cast<std::uint16_t>(bSite), 0);
+    connected.bind(a, static_cast<std::uint16_t>(aSite),
+                   d, static_cast<std::uint16_t>(dY));
+    connected.bind(d, static_cast<std::uint16_t>(dZ),
+                   c, static_cast<std::uint16_t>(cSite));
+    const auto connectedMatches = matcher.enumerate(rule.pattern, connected);
+    assert(connectedMatches.size() == 1);
+    executeLoweredDeletionActions(
+        rule.actions, transformationEmbedding(connectedMatches.front()), connected);
+    assert(connected.liveCount() == 1);
+    assert(!connected.alive(a));
+    assert(!connected.alive(d));
+    assert(!connected.alive(c));
+    assert(connected.alive(b));
+    assert(connected.siteState(b, static_cast<std::uint16_t>(bSite)) == 1);
 }
 
 void deleteMoleculesRemainsMoleculeScoped() {
@@ -495,6 +593,7 @@ end reaction rules
     rejectsUnrepresentablePackedSiteIndex();
     lowersWholeSpeciesDeletionWithHiddenConnectedContext();
     lowersExplicitBondAndHiddenContextAsOneSpeciesDeletion();
+    loweredReactantPatternRequiresOneSharedComplex();
     deleteMoleculesRemainsMoleculeScoped();
     reverseDirectionRetainsWholeSpeciesDeletionScope();
     rejectsSimultaneousMoleculeReplacement();
