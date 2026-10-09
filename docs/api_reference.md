@@ -26,12 +26,16 @@ The modern form returns a `SimResult`. With no overrides it runs ODE from 0 to
 The modern method, end time, and step count may also be positional, for example
 `bionetgen.run("model.bngl", "ssa", 20, 200)`.
 
-For the file-runner contract, pass `out=directory` or a non-method second
-positional path-like value. It returns a `BNGResult` and executes the model's
-declared actions. A string second argument equal to a supported method selects
-the modern API; use `out=` when the output directory name could be ambiguous.
-Invalid keyword methods raise `ValueError`; duplicate positional and keyword
-arguments raise `TypeError`.
+For the file-runner contract, pass `out=directory`, an explicit `None`, or a
+non-method second positional path-like value. It returns a `BNGResult` and
+executes the model's declared actions. A string second argument equal to a
+supported method selects the modern API; use `out=` when the output directory
+name could be ambiguous.
+After a positional output path, remaining positionals retain the PyBioNetGen
+order: `suppress`, `timeout`, `simulator`, `format`, `method`, `t_span`, and
+`n_points`. A non-`None` timeout is explicitly unsupported. Invalid keyword
+methods raise `ValueError`; duplicate positional and keyword arguments raise
+`TypeError`.
 
 An explicit `method=` in the file-runner form selects one modern simulation.
 Time-only overrides preserve declared action order and side effects, and apply

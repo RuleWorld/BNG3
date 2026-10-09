@@ -28,17 +28,21 @@ are supplied. `timeout=None` retains the normal file-runner behavior.
 
 ## Python and CLI Run Contracts
 
-`bionetgen.run()` supports two explicit call styles. With no output argument it
-uses the modern in-memory API and returns a `SimResult`; its default method is
-ODE with `t_end=100` and `n_steps=100`. The modern method and grid can also be
-positional: `bionetgen.run("model.bngl", "ssa", 20, 200)`. The dispatcher now
-uses `*args` plus keyword-only `method`, `t_end`, and `n_steps` so it can also
-preserve legacy positional output-directory calls. A path-like second
-positional argument, or a string that is not one of `ode`, `ssa`, `nf`, `pla`,
-or `psa`, selects the file runner and returns `BNGResult`; use `out=` when a
-directory's string name could be mistaken for a method. Invalid keyword
-methods raise `ValueError`, and duplicate positional/keyword values raise
-`TypeError`.
+`bionetgen.run()` supports two explicit call styles. With no output argument
+specified, it uses the modern in-memory API and returns a `SimResult`; its
+default method is ODE with `t_end=100` and `n_steps=100`. The modern method and
+grid can also be positional: `bionetgen.run("model.bngl", "ssa", 20, 200)`.
+The dispatcher uses `*args` plus keyword-only `method`, `t_end`, and `n_steps`
+so it can preserve legacy positional output-directory calls. An explicit
+`None`, a path-like second positional argument, or a string that is not one of
+`ode`, `ssa`, `nf`, `pla`, or `psa`, selects the file runner and returns
+`BNGResult`; use `out=` when a directory's string name could be mistaken for a
+method. After a positional output path, remaining positionals retain the
+PyBioNetGen order: `suppress`,
+`timeout`, `simulator`, `format`, `method`, `t_span`, and `n_points`. A
+non-`None` timeout is explicitly rejected because the in-process runner has no
+execution deadline. Invalid keyword methods raise `ValueError`, and duplicate
+positional/keyword values raise `TypeError`.
 
 ```python
 # Modern single-simulation result, defaulting to ODE, 0..100, 100 steps.
