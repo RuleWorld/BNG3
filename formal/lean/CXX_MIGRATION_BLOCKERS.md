@@ -38,9 +38,11 @@ The C++ [CompiledModel](../../cpp/compile/CompiledModel.hpp) now owns those
 declaration families, including resolved expressions, typed patterns, energy
 factors and population metadata. The remaining gap is consumer migration:
 [LegacyNetworkRuleKernel](../../cpp/engine/LegacyNetworkRuleKernel.cpp) still
-constructs an AST execution rule. The 43-file
+constructs an AST execution rule. The
 [compatibility allowlist](../../provenance/architecture/ast_compat_allowlist.txt)
-records remaining dependencies; declaration storage alone does not remove them.
+records remaining dependencies; its current count and evidence revision live in
+[CURRENT_PROGRESS.md](../../docs/CURRENT_PROGRESS.md). The audited allowance was
+43 entries, and the compile-owned unit/export migration in #196 reduced it to 41; declaration storage alone does not remove them.
 
 **Required migration:** move remaining consumers to the resolved model and
 retire each compatibility path after parity (#138–#139).
