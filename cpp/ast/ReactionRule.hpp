@@ -142,6 +142,13 @@ public:
     const std::vector<SpeciesGraph>& getReactantPatterns() const;
     const std::vector<SpeciesGraph>& getProductPatterns() const;
     const std::vector<TransformOp>& getOperations() const;
+    // Default deletion of every molecule in a pattern removes its entire
+    // matched species, including context absent from the pattern (BNG2 MolDel).
+    bool deletesWholeReactantPattern(std::size_t patternIndex) const;
+    // Shared scalar decision for forward source patterns and rebuilt reverse
+    // compiled patterns. Counts refer to distinct molecule occurrences.
+    static bool removesWholeSpecies(bool deleteMolecules, std::size_t moleculeCount,
+                                    std::size_t deletedCount, bool pureDegradation);
     // Product-to-reactant molecule correspondences computed during rule
     // initialization.  Writers use the canonical mapping so unchanged
     // molecules are not rematched heuristically.
