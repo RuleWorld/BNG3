@@ -111,6 +111,19 @@ CompositeFunction::CompositeFunction(System *s,
 	this->counterParamName = "";
 	// AS-2021
 }
+bool CompositeFunction::isMembershipOnlyRate() const
+{
+	if (fileFunc || !ctrType.empty() || containsTimeExpression(originalExpression) ||
+			n_lfs != 0 || n_refLfs != 0)
+		return false;
+	for (int i = 0; i < n_gfs; ++i)
+		if (gfs[i] == 0 || !gfs[i]->isRuntimeInvariant())
+			return false;
+	/* Reactant-count references are allowed: they are exactly the quantities
+	 * maintained by membership updates. Parameters are parser constants. */
+	return true;
+}
+
 CompositeFunction::~CompositeFunction()
 {
 	delete [] allFuncNames;

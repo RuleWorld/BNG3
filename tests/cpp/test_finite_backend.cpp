@@ -1,10 +1,16 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include "ast/Observable.hpp"
 #include "engine/FiniteBackend.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "parser/BNGAstVisitor.hpp"
+
+#ifdef BNG3_HAS_BNGSIM_ADAPTER
+#include "engine/BngsimAdapter.hpp"
+#include <bngsim/model.hpp>
+#endif
 
 using namespace bng;
 
@@ -43,17 +49,70 @@ end reaction rules
     engine::NetworkGenerator gen(*model);
     auto net = gen.generateNative();
     auto chk = engine::checkBngsimLowering(*model, net);
-#ifndef BNG3_HAS_BNGSIM_ADAPTER
-    // Without adapter, supported must be false and blockers must mention unavailable
-    REQUIRE(!chk.supported);
-    bool hasUnavailable = false;
-    for (const auto& b : chk.blockers) {
-        if (b.find("unavailable") != std::string::npos) hasUnavailable = true;
-    }
-    REQUIRE(hasUnavailable);
-#else
+    // Lowerability describes BNG3 semantics; availability is reported
+    // separately through getBngsimCapabilities().
     REQUIRE(chk.supported);
     REQUIRE(chk.blockers.empty());
+}
+
+TEST_CASE("FiniteBackend reports unsupported observable consistently", "[finite_backend]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ X() 1
+end seed species
+)");
+    REQUIRE(model != nullptr);
+    model->addObservable(ast::Observable("X_custom", "Custom", {"X()"}));
+    engine::NetworkGenerator gen(*model);
+    auto net = gen.generateNative();
+
+    const std::string expected =
+        "BNGsim adapter rejected observable 'X_custom': unsupported observable type 'Custom'";
+    const auto check = engine::checkBngsimLowering(*model, net);
+    REQUIRE_FALSE(check.supported);
+    REQUIRE(check.blockers.size() == 1);
+    CHECK(check.blockers.front() == expected);
+
+#ifdef BNG3_HAS_BNGSIM_ADAPTER
+    REQUIRE_THROWS_WITH(
+        engine::buildBngsimNetwork(*model, net),
+        Catch::Matchers::Equals(expected));
+#endif
+}
+
+TEST_CASE("FiniteBackend reports TFUN provenance blocker consistently", "[finite_backend]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ X() 1
+end seed species
+begin functions
+ rate() = TFUN('forcing.dat', time)
+end functions
+begin reaction rules
+ X() -> 0 rate
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator gen(*model);
+    auto net = gen.generateNative();
+
+    const std::string expected =
+        "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance";
+    const auto check = engine::checkBngsimLowering(*model, net);
+    REQUIRE_FALSE(check.supported);
+    REQUIRE(check.blockers.size() == 1);
+    CHECK(check.blockers.front() == expected);
+
+#ifdef BNG3_HAS_BNGSIM_ADAPTER
+    REQUIRE_THROWS_WITH(
+        engine::buildBngsimNetwork(*model, net),
+        Catch::Matchers::Equals(expected));
 #endif
 }
 

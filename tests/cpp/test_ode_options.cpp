@@ -368,6 +368,44 @@ end reaction rules
     REQUIRE(output.find("    2 present 1\n") != std::string::npos);
 }
 
+TEST_CASE("NetWriter associates seed amounts with compartmented species",
+          "[NetWriter][issue-142]") {
+    auto model = parser::parseModel(R"(
+begin compartments
+    cyto 3 1.0
+    nuc 3 1.0
+end compartments
+begin molecule types
+    A(x)
+end molecule types
+begin seed species
+    A(x)@cyto 2
+    A(x)@nuc 7
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 2);
+
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-compartment-seeds-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    input.close();
+    std::filesystem::remove(outputPath);
+
+    CHECK(output.find("@cyto::A(x) 2") != std::string::npos);
+    CHECK(output.find("@nuc::A(x) 7") != std::string::npos);
+}
+
 TEST_CASE("NetWriter does not apply pattern symmetry factor to TotalRate", "[NetWriter]") {
     auto model = parser::parseModel(R"(
 begin parameters

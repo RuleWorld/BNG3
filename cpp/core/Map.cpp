@@ -70,12 +70,14 @@ Map::~Map ( )
 Node *
 Map::mapf ( Node * node ) const
 {
-    // the map 
-    nodemap_const_iter = nodemap.find( node );
-    if ( nodemap_const_iter == nodemap.end() )
+    // Network generation may query independent maps on different threads.
+    // Keep this lookup iterator local rather than sharing the legacy static
+    // iterator across Map instances.
+    const auto map_iter = nodemap.find( node );
+    if ( map_iter == nodemap.end() )
         return 0;
     else
-        return nodemap_const_iter->second;
+        return map_iter->second;
 }
 
 
@@ -309,4 +311,3 @@ Map::quick_merge ( map_container_t & maps )
         delete curr_map;
     };
 };
-

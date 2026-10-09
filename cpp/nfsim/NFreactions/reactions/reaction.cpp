@@ -540,6 +540,13 @@ int BasicRxnClass::checkForEquality(Molecule *m, MappingSet* ms, int rxnIndex, R
  */
 bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 {
+	int rxnIndex = m->getMoleculeType()->getRxnIndex(this, reactantPos);
+	return tryToAddWithIndex(m, reactantPos, rxnIndex);
+}
+
+bool BasicRxnClass::tryToAddWithIndex(Molecule *m, unsigned int reactantPos,
+		int rxnIndex)
+{
 	if (system != 0 && system->isProfilingEnabled())
 		system->recordProfileMatchCandidate();
 
@@ -553,8 +560,8 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 	//Get the specified reactantList
 	ReactantList *rl = reactantLists[reactantPos];
 
-	//Check if the molecule is in this list
-	int rxnIndex = m->getMoleculeType()->getRxnIndex(this,reactantPos);
+	// The caller may already know the MoleculeType-local registration index.
+	// Avoid the legacy reaction/position lookup on hot sparse-membership paths.
 	//cout<<" got mappingSetId: " << m->getRxnListMappingId(rxnIndex)<<" size: " <<rl->size()<<endl;
 	//cout<< " testing whether to add molecule ";
 	//m->printDetails();
@@ -636,15 +643,41 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 		rl->noteMappedComplexSize(m->getComplex()->getComplexSize());
 	}
 
-	//Try to map it!
-	MappingSet *ms = rl->pushNextAvailableMappingSet();
+	// Match before activating a MappingSet when the conservative compiled path is
+	// available. Rejected candidates then avoid MappingSet setup/clear entirely.
+	MappingSet *ms = 0;
+	int reusedMappingId = -1;
 	symmetricMappingSet.clear();
-	comparisonResult = reactantTemplates[reactantPos]->compare(m,rl,ms,false,&symmetricMappingSet);
+	bool usedCompiledSimple = false;
+	comparisonResult = reactantTemplates[reactantPos]->matchesCompiledSimple(
+			m, usedCompiledSimple);
+	if (usedCompiledSimple && comparisonResult) {
+		/* If the event did not change the compiled molecule assignment, retain the
+		 * live mapping and its stable id instead of materializing an equivalent one. */
+		for (MappingIdSet::iterator it=deleteMs.begin();
+				it!=deleteMs.end(); ++it) {
+			MappingSet *existing = rl->getMappingSet(*it);
+			if (reactantTemplates[reactantPos]->compiledSimpleMappingEquals(existing)) {
+				reusedMappingId = static_cast<int>(*it);
+				break;
+			}
+		}
+		if (reusedMappingId >= 0) {
+			deleteMs.erase(static_cast<unsigned int>(reusedMappingId));
+		} else {
+			ms = rl->pushNextAvailableMappingSet();
+			reactantTemplates[reactantPos]->materializeCompiledSimple(ms);
+		}
+	} else if (!usedCompiledSimple) {
+		ms = rl->pushNextAvailableMappingSet();
+		comparisonResult = reactantTemplates[reactantPos]->compare(
+				m,rl,ms,false,&symmetricMappingSet);
+	}
 	if(!comparisonResult) {
 		//cout << "no mapping in normal reaction, remove"<<endl;
 		//we must remove, if we did not match.  This will also remove
 		//everything that was cloned off of the mapping set
-		rl->removeMappingSet(ms->getId());
+		if (ms != 0) rl->removeMappingSet(ms->getId());
 		//JJT: removes any symmetric mapping sets that might have been added since we are not using them
 		for(vector<MappingSet *>::iterator it=symmetricMappingSet.begin();it!=symmetricMappingSet.end();++it){
 			rl->removeMappingSet((*it)->getId());
@@ -666,7 +699,7 @@ bool BasicRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos)
 					}
             }
 		}
-		else{
+		else if (reusedMappingId < 0) {
 			int mapIndex = checkForEquality(m,ms,rxnIndex,rl);
 			if(mapIndex >= 0){
 				deleteMs.erase(mapIndex);
@@ -905,6 +938,30 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 			reactantLists[i]->pickRandomFromPopulation(mappingSet[i], rng);
 		} else {
 			reactantLists[i]->pickRandom(mappingSet[i], rng);
+		}
+	}
+}
+
+/*! Report the reaction-center molecule of every current match.  A rule that
+ *  collapses many physically distinct transitions into one channel still holds
+ *  one match per transition, so this is what allows q(s->s') to be compared
+ *  per successor state rather than only aggregated by channel. */
+void BasicRxnClass::listMatchIds(vector <int> &ids) const
+{
+	if (reactantLists == 0 || reactantLists[0] == 0) return;
+	int n = reactantLists[0]->size();
+	for (int i = 0; i < n; ++i) {
+		MappingSet *ms = reactantLists[0]->getMappingSetByIndex((unsigned int) i);
+		if (ms == 0 || ms->getNumOfMappings() == 0) continue;
+		/* -1 separates one match from the next.  Every mapped molecule is
+		 * reported, not just mapping 0, because the mapping order is not a
+		 * stable function of position: the harness identifies the mover as the
+		 * 5'-most molecule of the match instead of trusting that order. */
+		if (i > 0) ids.push_back(-1);
+		for (unsigned int k = 0; k < ms->getNumOfMappings(); ++k) {
+			Mapping *m = ms->get(k);
+			if (m == 0 || m->getMolecule() == 0) continue;
+			ids.push_back(m->getMolecule()->getUniqueID());
 		}
 	}
 }

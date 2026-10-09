@@ -1,18 +1,99 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <string>
+#include <tuple>
+#include <vector>
 
-#include "parser/BNGAstVisitor.hpp"
+#include "ast/SpeciesList.hpp"
+#include "NFcore.hh"
+#include "NFinput_fromAst.hh"
 #include "engine/NetworkGenerator.hpp"
+#include "parser/BNGAstVisitor.hpp"
 
 using namespace bng;
 
 static std::unique_ptr<ast::Model> parseModel(const std::string& bngl) {
     return parser::parseModel(bngl);
+}
+
+static std::size_t directedEdgeMultiplicity(const BNGcore::Node* source,
+                                            const BNGcore::Node* target) {
+    std::size_t count = 0;
+    for (auto edge = source->edges_out_begin(); edge != source->edges_out_end(); ++edge) {
+        if (*edge == target) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+// Test-only oracle: enumerate label-preserving node bijections and check every
+// directed edge. It does not call either production canonicalizer or matcher.
+static bool bruteForceGraphIsomorphic(const BNGcore::PatternGraph& lhs,
+                                      const BNGcore::PatternGraph& rhs) {
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    std::vector<const BNGcore::Node*> left;
+    std::vector<const BNGcore::Node*> right;
+    for (auto node = lhs.begin(); node != lhs.end(); ++node) left.push_back(*node);
+    for (auto node = rhs.begin(); node != rhs.end(); ++node) right.push_back(*node);
+
+    const auto sameLabel = [](const BNGcore::Node* a, const BNGcore::Node* b) {
+        return a->get_type() == b->get_type() &&
+               a->get_state().get_BNG2_string() == b->get_state().get_BNG2_string() &&
+               a->get_compartment() == b->get_compartment();
+    };
+    std::vector<std::size_t> mapping(left.size(), right.size());
+    std::vector<bool> used(right.size(), false);
+    std::function<bool(std::size_t)> search = [&](std::size_t index) {
+        if (index == left.size()) {
+            return true;
+        }
+        for (std::size_t candidate = 0; candidate < right.size(); ++candidate) {
+            if (used[candidate] || !sameLabel(left[index], right[candidate])) {
+                continue;
+            }
+            if (directedEdgeMultiplicity(left[index], left[index]) !=
+                directedEdgeMultiplicity(right[candidate], right[candidate])) {
+                continue;
+            }
+            bool consistent = true;
+            for (std::size_t prior = 0; prior < index; ++prior) {
+                const auto* mappedPrior = right[mapping[prior]];
+                if (directedEdgeMultiplicity(left[index], left[prior]) !=
+                        directedEdgeMultiplicity(right[candidate], mappedPrior) ||
+                    directedEdgeMultiplicity(left[prior], left[index]) !=
+                        directedEdgeMultiplicity(mappedPrior, right[candidate])) {
+                    consistent = false;
+                    break;
+                }
+            }
+            if (!consistent) {
+                continue;
+            }
+            mapping[index] = candidate;
+            used[candidate] = true;
+            if (search(index + 1)) {
+                return true;
+            }
+            used[candidate] = false;
+            mapping[index] = right.size();
+        }
+        return false;
+    };
+    return search(0);
+}
+
+static bng::ast::Species seedAsSpecies(const bng::ast::SeedSpecies& seed) {
+    return bng::ast::Species(bng::ast::SpeciesGraph(seed.getGraph()), 1.0,
+                             seed.isConstant(), seed.getCompartment());
 }
 
 TEST_CASE("HNauty: isomorphic species get same canonical label", "[HNauty]") {
@@ -186,4 +267,224 @@ end seed species
     const auto network = generator.generateNative(0);
     REQUIRE(network.species.size() == 1);
     CHECK_FALSE(network.species.get(0).getSpeciesGraph().canonicalLabel().empty());
+}
+
+TEST_CASE("Issue 142 graph identity matches an independent isomorphism partition",
+          "[HNauty][issue-142]") {
+    auto model = parseModel(R"(
+begin compartments
+    cyto 3 1.0
+    nuc 3 1.0
+end compartments
+begin molecule types
+    R(l,l)
+    L(r)
+    A(x~u~p,y)
+    B(x)
+    C(x)
+end molecule types
+begin seed species
+    R(l!1,l!2).L(r!1).L(r!2) 1
+    L(r!17).R(l!19,l!17).L(r!19) 1
+    A(x~u,y) 1
+    A(x~p,y) 1
+    A(x!1,y!2).B(x!1).C(x!2) 1
+    A(x!11,y!12).B(x!12).C(x!11) 1
+    A@cyto(x!1,y!2).B@nuc(x!1).C@cyto(x!2) 1
+    C@cyto(x!8).A@cyto(y!8,x!7).B@nuc(x!7) 1
+    A@nuc(x!1,y!2).B@cyto(x!1).C@nuc(x!2) 1
+    @cyto:A(x) 1
+    @nuc:A(x) 1
+    A(x) 1
+    A(x~u) 1
+end seed species
+)");
+    REQUIRE(model != nullptr);
+    const auto& seeds = model->getSeedSpecies();
+    REQUIRE(seeds.size() == 13);
+
+    const std::vector<std::tuple<std::size_t, std::size_t, bool, bool>> cases{
+        {0, 1, true, true},     // symmetric molecule/site ordering and bond labels
+        {2, 3, false, false},   // state differs
+        {4, 5, false, false},   // the B/C bond topology differs
+        {6, 7, true, true},     // same per-molecule compartments under reordering
+        {6, 8, false, true},    // structural canonical labels omit compartments
+        {9, 10, true, true},    // outer species compartments belong to the owner
+        {11, 12, false, false}, // wildcard state is not exact identity
+    };
+    for (const auto& [leftIndex, rightIndex, expectedGraphIdentity,
+                      expectedStructuralLabel] : cases) {
+        const auto& left = seeds[leftIndex].getGraph();
+        const auto& right = seeds[rightIndex].getGraph();
+        const bool oracle = bruteForceGraphIsomorphic(left, right);
+        CHECK(oracle == expectedGraphIdentity);
+        CHECK(bng::ast::SpeciesGraph(left).graphIsomorphicTo(right) == oracle);
+        CHECK((seeds[leftIndex].getCanonicalLabel() ==
+               seeds[rightIndex].getCanonicalLabel()) == expectedStructuralLabel);
+
+        bng::ast::SpeciesList species;
+        species.add(seedAsSpecies(seeds[leftIndex]));
+        const auto inserted = species.add(seedAsSpecies(seeds[rightIndex]));
+        const bool sameSpecies = oracle &&
+            seeds[leftIndex].getCompartment() == seeds[rightIndex].getCompartment();
+        CHECK(inserted.second == !sameSpecies);
+    }
+
+    // Structural labels intentionally omit compartments; the shared exact
+    // graph comparison adds per-molecule compartment semantics.
+}
+
+TEST_CASE("Issue 142 graph identity rejects extra target edges",
+          "[HNauty][issue-142]") {
+    const BNGcore::EntityType nodeType(
+        "node", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    const auto makeGraph = [&](bool withShortcut) {
+        BNGcore::PatternGraph graph;
+        BNGcore::Node first(nodeType);
+        BNGcore::Node second(nodeType);
+        BNGcore::Node third(nodeType);
+        auto* a = graph.add_node(first);
+        auto* b = graph.add_node(second);
+        auto* c = graph.add_node(third);
+        graph.add_edge(a, b);
+        graph.add_edge(b, c);
+        if (withShortcut) {
+            graph.add_edge(a, c);
+        }
+        return graph;
+    };
+
+    const auto path = makeGraph(false);
+    const auto closure = makeGraph(true);
+    CHECK_FALSE(bruteForceGraphIsomorphic(path, closure));
+    CHECK_FALSE(bng::ast::SpeciesGraph(path).graphIsomorphicTo(closure));
+}
+
+TEST_CASE("Issue 142 graph identity preserves parallel-edge multiplicity",
+          "[HNauty][issue-142]") {
+    const BNGcore::EntityType sourceType(
+        "source", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    const BNGcore::EntityType targetAType(
+        "targetA", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    const BNGcore::EntityType targetBType(
+        "targetB", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    enum class EdgePattern { AAB, ABB, AB, AA };
+    const auto makeGraph = [&](EdgePattern pattern) {
+        BNGcore::PatternGraph graph;
+        BNGcore::Node source(sourceType);
+        BNGcore::Node targetA(targetAType);
+        BNGcore::Node targetB(targetBType);
+        auto* a = graph.add_node(source);
+        auto* b = graph.add_node(targetA);
+        auto* c = graph.add_node(targetB);
+        a->set_index(0);
+        b->set_index(1);
+        c->set_index(2);
+        if (pattern == EdgePattern::AAB || pattern == EdgePattern::AA) {
+            graph.add_edge(a, b);
+            graph.add_edge(a, b);
+        } else {
+            graph.add_edge(a, b);
+        }
+        if (pattern == EdgePattern::AAB || pattern == EdgePattern::AB ||
+            pattern == EdgePattern::ABB) {
+            graph.add_edge(a, c);
+        }
+        if (pattern == EdgePattern::ABB) {
+            graph.add_edge(a, c);
+        }
+        return graph;
+    };
+
+    const auto aab = makeGraph(EdgePattern::AAB);
+    const auto abb = makeGraph(EdgePattern::ABB);
+    const auto ab = makeGraph(EdgePattern::AB);
+    const auto aa = makeGraph(EdgePattern::AA);
+    CHECK_FALSE(bruteForceGraphIsomorphic(aab, abb));
+    CHECK_FALSE(bng::ast::SpeciesGraph(aab).graphIsomorphicTo(abb));
+    CHECK_FALSE(bruteForceGraphIsomorphic(ab, aa));
+    CHECK_FALSE(bng::ast::SpeciesGraph(ab).graphIsomorphicTo(aa));
+
+    const auto makeSelfLoopGraph = [&](std::size_t loopCount) {
+        BNGcore::PatternGraph graph;
+        BNGcore::Node node(sourceType);
+        auto* a = graph.add_node(node);
+        a->set_index(0);
+        for (std::size_t i = 0; i < loopCount; ++i) {
+            graph.add_edge(a, a);
+        }
+        return graph;
+    };
+    const auto oneLoop = makeSelfLoopGraph(1);
+    const auto twoLoops = makeSelfLoopGraph(2);
+    CHECK_FALSE(bruteForceGraphIsomorphic(oneLoop, twoLoops));
+    CHECK_FALSE(bng::ast::SpeciesGraph(oneLoop).graphIsomorphicTo(twoLoops));
+
+    const auto makeLoopOrEdgeGraph = [&](bool selfLoop) {
+        BNGcore::PatternGraph graph;
+        BNGcore::Node source(sourceType);
+        BNGcore::Node targetA(targetAType);
+        auto* a = graph.add_node(source);
+        auto* b = graph.add_node(targetA);
+        a->set_index(0);
+        b->set_index(1);
+        graph.add_edge(a, selfLoop ? a : b);
+        return graph;
+    };
+    const auto selfLoop = makeLoopOrEdgeGraph(true);
+    const auto regularEdge = makeLoopOrEdgeGraph(false);
+    CHECK_FALSE(bruteForceGraphIsomorphic(selfLoop, regularEdge));
+    CHECK_FALSE(bng::ast::SpeciesGraph(selfLoop).graphIsomorphicTo(regularEdge));
+}
+
+TEST_CASE("Issue 142 native NFsim labels follow the same graph identity partition",
+          "[HNauty][issue-142][NFsim]") {
+    auto model = parseModel(R"(
+begin compartments
+    cyto 3 1.0
+    nuc 3 1.0
+end compartments
+begin molecule types
+    A(x,y)
+    B(x)
+    C(x)
+end molecule types
+begin seed species
+    A(x!1,y!2)@cyto.B(x!1)@nuc.C(x!2)@cyto 1
+    C(x!8)@cyto.A(y!8,x!7)@cyto.B(x!7)@nuc 1
+    A(x!1,y!2)@cyto.B(x!2)@nuc.C(x!1)@cyto 1
+    A(x!1,y!2)@nuc.B(x!1)@cyto.C(x!2)@nuc 1
+end seed species
+    )");
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    std::string unavailableReason;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, suggestedTraversalLimit, {},
+        &unavailableReason);
+    INFO(unavailableReason);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+
+    auto* aType = system->getMoleculeTypeByName("A");
+    REQUIRE(aType != nullptr);
+    REQUIRE(aType->getMoleculeCount() == 4);
+    std::vector<std::string> nativeLabels;
+    for (int index = 0; index < aType->getMoleculeCount(); ++index) {
+        auto* molecule = aType->getMolecule(index);
+        REQUIRE(molecule != nullptr);
+        REQUIRE(molecule->getComplex() != nullptr);
+        nativeLabels.push_back(molecule->getComplex()->getCanonicalLabel());
+    }
+
+    const auto& seeds = model->getSeedSpecies();
+    for (std::size_t index : {1u, 2u, 3u}) {
+        const bool oracle = bruteForceGraphIsomorphic(
+            seeds.front().getGraph(), seeds[index].getGraph());
+        CHECK((nativeLabels.front() == nativeLabels[index]) == oracle);
+    }
+    CHECK(nativeLabels[0] == nativeLabels[1]);
+    CHECK(nativeLabels[0] != nativeLabels[2]);
+    CHECK(nativeLabels[0] != nativeLabels[3]);
+    delete system;
 }

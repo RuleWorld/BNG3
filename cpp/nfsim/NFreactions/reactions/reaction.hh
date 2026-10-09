@@ -29,15 +29,25 @@ namespace NFcore
 			virtual int checkForEquality(Molecule *m, MappingSet* ms,int rxnIndex, ReactantList*);
 
 			virtual bool tryToAdd(Molecule *m, unsigned int reactantPos);
+			virtual bool tryToAddWithIndex(Molecule *m, unsigned int reactantPos,
+					int rxnIndex);
 			virtual void remove(Molecule *m, unsigned int reactantPos);
 			virtual double update_a();
+			/* DirectSelector mirrors every Basic/Functional/MM propensity update and
+			 * refactor, so zero-propensity Basic-family channels can be omitted from
+			 * the order-preserving scan without changing reaction order or RNG use. */
+			virtual bool supportsSparseSelection() const { return true; }
+			virtual bool supportsLazySparseSelection() const { return !supportsCompactPartnerPoolScale(); }
+			virtual bool propensityDependsOnlyOnMembership() const { return !hasPopulationReactant(); }
 			virtual void notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex);
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
 
 			virtual void printFullDetails() const;
 
-				protected:
+			virtual void listMatchIds(vector <int> &ids) const;
+
+		protected:
 					virtual void pickRuleMonkeyMappingSets(double randNumber) const;
 					virtual double exactRuleMonkey_a();
 
@@ -64,6 +74,11 @@ namespace NFcore
 			virtual ~FunctionalRxnClass();
 
 			virtual double update_a();
+			virtual bool propensityDependsOnlyOnMembership() const {
+				if (hasPopulationReactant()) return false;
+				return (gf != 0 && gf->isRuntimeInvariant()) ||
+					(cf != 0 && cf->isMembershipOnlyRate());
+			}
 			virtual double exactRuleMonkey_a();
 			virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
 			virtual void printDetails() const;
@@ -83,6 +98,7 @@ namespace NFcore
 			virtual ~MMRxnClass();
 
 			virtual double update_a();
+			virtual bool propensityDependsOnlyOnMembership() const { return !hasPopulationReactant(); }
 				virtual double exactRuleMonkey_a();
 				virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
 			virtual void printDetails() const;

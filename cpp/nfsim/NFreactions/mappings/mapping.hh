@@ -40,7 +40,7 @@ namespace NFcore
 			 	Destroys this mapping, but does not delete the molecule it is mapped to.
 			    @author Michael Sneddon
 			 */
-			~Mapping();
+			~Mapping() = default;
 
 			/*!
 			 	Returns the type of mapping this is.  See Transformation for the possible

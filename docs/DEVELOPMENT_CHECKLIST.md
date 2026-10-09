@@ -8,14 +8,17 @@ found.
 Start with [`docs/VALIDATION_EVIDENCE.md`](VALIDATION_EVIDENCE.md): it records
 what is currently verified, and by what. This file records how to verify it.
 
-## 0. Hosted CI is not a signal right now
+## 0. Read hosted CI for the exact revision
 
-On 2026-09-29 every workflow run queued for hours without a job starting,
-including for the head carrying the fixes referenced below. `ci.yml:10-14` and
-`parity.yml:13-16` were changed so a later push cannot cancel an in-flight run
-for the preceding head — that is the mechanism by which runs go missing. If you
-need CI evidence, read the run yourself for your exact SHA; do not infer a status
-from a prior head.
+The queued-run observation on 2026-09-29 was a historical outage, not a permanent
+property of this repository. Reviewed 2026-10-07: main
+[`e1836c32`](https://github.com/RuleWorld/BNG3/tree/e1836c3274e685996d5e86883761e00e98257e09)
+has completed [CI](https://github.com/RuleWorld/BNG3/actions/runs/37548838421),
+[parity](https://github.com/RuleWorld/BNG3/actions/runs/37548838423) and
+[Lean](https://github.com/RuleWorld/BNG3/actions/runs/37548838419) runs. Their
+configured scope and skipped jobs remain distinct from release qualification.
+For each later SHA, inspect `gh pr checks`, `gh run view` and the individual
+job conclusions; an earlier successful run cannot validate changed code.
 
 ## Local verification that actually works
 
@@ -46,13 +49,14 @@ python tests/test_batch_ssa_statistical_parity.py --mode cpu
 python -m pytest tests/python -q
 ```
 
-Two caveats, recorded rather than hidden: the strict provenance call fails (13
-errors at `6889fba`, re-run 2026-09-30, and no job runs it), and
-`tests/validation/` is a *pytest* CI gate for exactly one of its test modules —
-`test_parity_nfsim.py`. The lint job also runs that directory's non-test CLI
-module (`python -m tests.validation.exception_ledger`, `ci.yml:68`), and the
-corpus jobs import `tests/validation/compare.py` through `validate.py`
-(`scripts/validate.py:28`).
+Two current boundaries at `e1836c32`: strict provenance has 14 outstanding
+approval/lock errors ([#179](https://github.com/RuleWorld/BNG3/issues/179)), and
+the parity workflow selects NFsim modules plus five independent BNG2 network
+cases. Existing RHS, ODE, stochastic and broader export modules are not all
+hosted gates merely because they exist in `tests/validation/`
+([#182](https://github.com/RuleWorld/BNG3/issues/182)). Inspect the actual
+[workflow selections](../.github/workflows/parity.yml); the CLI corpus jobs
+also consume the comparator through [validate.py](../scripts/validate.py).
 
 **Editable-install hazard (verified 2026-09-30 at `6889fba`).** `bionetgen`
 is installed as a scikit-build editable whose meta_path finder

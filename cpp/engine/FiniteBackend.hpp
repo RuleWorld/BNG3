@@ -19,7 +19,7 @@ enum class FiniteBackend {
     Bngsim = 1,
 };
 
-// What the current build can do via BNGsim (availability + version).
+// What the current build can execute via BNGsim (availability + version).
 struct BngsimCapabilities {
     bool available = false;
     std::string version; // pinned revision or "unavailable"
@@ -30,6 +30,8 @@ struct BngsimCapabilities {
 };
 
 // Whether *this particular* generated network can be faithfully lowered.
+// This semantic decision is independent of whether the external solver was
+// linked into the current build; inspect BngsimCapabilities::available for that.
 struct BngsimLoweringCheck {
     bool supported = false;
     std::vector<std::string> blockers; // each is an adapter rejection message
@@ -40,7 +42,7 @@ BngsimCapabilities getBngsimCapabilities();
 bool isBngsimAvailable();
 std::string bngsimVersion();
 
-// Lowering check — never throws; returns supported=false with blockers on failure.
+// Semantic lowering check — never throws and does not depend on solver availability.
 BngsimLoweringCheck checkBngsimLowering(
     const ast::Model& model,
     const GeneratedNetwork& network);
@@ -51,9 +53,10 @@ std::string finiteBackendToString(FiniteBackend backend);
 
 // Resolve the effective backend given a requested value and the current
 // model/network.  "auto" semantics live here:
-//   - Bngsim requested but unavailable or unsupported  → Native (with diagnostics)
+//   - Bngsim requested but unavailable or unsupported  → Native
 //   - auto → Bngsim if available+lowerable else Native
-// Caller may inspect checkBngsimLowering() for the reason.
+// Caller may inspect checkBngsimLowering() for semantic blockers and
+// getBngsimCapabilities() for build availability.
 FiniteBackend resolveFiniteBackend(
     FiniteBackend requested,
     const ast::Model& model,

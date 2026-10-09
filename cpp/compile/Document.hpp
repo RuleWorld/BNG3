@@ -1,9 +1,12 @@
 #pragma once
 
+#include <cstddef>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "Capabilities.hpp"
 #include "CompiledModel.hpp"
 
 namespace bng::ast { class Model; }
@@ -19,6 +22,13 @@ struct ProtocolAction {
     ActionScope scope = ActionScope::Model;
     std::string name;
     std::map<std::string, std::string> arguments;
+    struct GenerateNetworkOptions {
+        std::optional<std::size_t> maxIterations;
+        // Kept with the typed option so callers that supply an explicit
+        // native override can bypass an invalid BNGL action value.
+        std::optional<Diagnostic> maxIterationsDiagnostic;
+    };
+    std::optional<GenerateNetworkOptions> generateNetworkOptions;
 };
 
 // Execution instructions are intentionally separate from reusable compiled
