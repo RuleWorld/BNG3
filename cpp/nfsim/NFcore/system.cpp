@@ -1204,6 +1204,17 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 	double delta_t = 0; unsigned long long iteration = 0, stepIteration = 0;
 	double end_time = current_time+duration;
 	tryToDump();
+	const auto evaluateSystemFunctions = [&]() {
+		for (unsigned int i=0; i<globalFunctions.size(); i++) {
+			if (globalFunctions.at(i)->getCtrType() == "System") {
+				FuncFactory::Eval(globalFunctions.at(i)->p);
+			}
+		}
+	};
+	const auto restoreEventTime = [&](double eventTime) {
+		current_time = eventTime;
+		evaluateSystemFunctions();
+	};
 
 	// AS2023 - depending on the tracking status we'll need a log string to build
 	string logstr;
@@ -1253,14 +1264,14 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 				try {
 					// Re-evaluate global functions depending on time so that they are accurate
 					// for the output log
-					for (unsigned int i=0; i<globalFunctions.size(); i++) {
-						if (globalFunctions.at(i)->getCtrType() == "System") {
-							FuncFactory::Eval(globalFunctions.at(i)->p);
-						}
-					}
+					evaluateSystemFunctions();
 					outputAllObservableCounts(curSampleTime,globalEventCounter);
 				} catch (...) {
-					current_time = eventTime;
+					try {
+						restoreEventTime(eventTime);
+					} catch (...) {
+						// Preserve the original output exception if cache restoration also fails.
+					}
 					throw;
 				}
 				current_time = eventTime;
@@ -1279,12 +1290,7 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 			// Output evaluation temporarily advances the clock. Restore system
 			// functions to the event-time state before recomputing propensities,
 			// so an output checkpoint cannot change event selection or its wait.
-			current_time = eventTime;
-			for (unsigned int i=0; i<globalFunctions.size(); i++) {
-				if (globalFunctions.at(i)->getCtrType() == "System") {
-					FuncFactory::Eval(globalFunctions.at(i)->p);
-				}
-			}
+		restoreEventTime(eventTime);
 			if(verbose) {
 			cout << "Sim time: " << (curSampleTime - dSampleTime);
 			current_cpu_time = ((double) (clock() - start) / (double) CLOCKS_PER_SEC);
@@ -1402,22 +1408,17 @@ nextReaction->fire(randElement);
 		current_time = curSampleTime;
 		try {
 			// Evaluate time-dependent output functions at the row's timestamp.
-			for (unsigned int i=0; i<globalFunctions.size(); i++) {
-				if (globalFunctions.at(i)->getCtrType() == "System") {
-					FuncFactory::Eval(globalFunctions.at(i)->p);
-				}
-			}
+			evaluateSystemFunctions();
 			outputAllObservableCounts(curSampleTime,globalEventCounter);
 		} catch (...) {
-			current_time = eventTime;
+			try {
+				restoreEventTime(eventTime);
+			} catch (...) {
+				// Preserve the original output exception if cache restoration also fails.
+			}
 			throw;
 		}
-		current_time = eventTime;
-		for (unsigned int i=0; i<globalFunctions.size(); i++) {
-			if (globalFunctions.at(i)->getCtrType() == "System") {
-				FuncFactory::Eval(globalFunctions.at(i)->p);
-			}
-		}
+		restoreEventTime(eventTime);
 	}
 	// AS2023 - if we missed a firing log, write what we have
 	if (!logged) {
