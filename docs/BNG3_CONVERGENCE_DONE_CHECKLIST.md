@@ -1,6 +1,6 @@
 # BNG3 convergence checklist
 
-**Status:** incomplete; current work paused at user request. **Reviewed:** 2026-10-08 against main `e1836c3274e685996d5e86883761e00e98257e09`.
+**Status:** incomplete; work resumed; review candidates remain unmerged. **Reviewed:** 2026-10-08 against main `e1836c3274e685996d5e86883761e00e98257e09`.
 
 The target is one maintained C++/Python project containing the approved capability
 union of BioNetGen, PyBioNetGen, NFsim and Atomizer. C++ owns performance-critical

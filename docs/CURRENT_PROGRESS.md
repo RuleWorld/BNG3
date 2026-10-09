@@ -27,10 +27,10 @@ Exact-head runs: [CI](https://github.com/RuleWorld/BNG3/actions/runs/37548838421
 [Lean](https://github.com/RuleWorld/BNG3/actions/runs/37548838419).
 These results describe the baseline above; reread checks for any later SHA.
 
-## Pushed checkpoints and pause
+## Pushed checkpoints and resumed work
 
-Work is paused at the user's request after pushing the current workstreams.
-No PR was merged. The GitHub snapshot has 54 open audit issues and one closed
+Work resumed on 2026-10-08 in isolated checkouts with Luna max workers.
+No PR was merged. The live resumption snapshot has 54 open audit issues and one closed
 review/disposition issue (#134). An open PR is a candidate, not an integrated
 baseline or automatic issue closure. The issue acceptance criteria still govern.
 
@@ -41,42 +41,47 @@ baseline or automatic issue closure. The issue acceptance criteria still govern.
 | #173 | [#191](https://github.com/RuleWorld/BNG3/pull/191), `9525d908` | Broken JAX SSA prototype removed; explicit unavailable result, undefined-name lint and JAX CPU CI. Stacked on #190. |
 | #134 | [#128](https://github.com/RuleWorld/BNG3/pull/128), `2cf7f6eb`; [#204](https://github.com/RuleWorld/BNG3/pull/204), `dd75fe28` | Review completed at `d0d695d7`; subsequent automated edits reintroduced a pyparsing 3.0.9 molecule-list defect. Separate stacked repair: reproduced failure, then 5 parser/regression tests pass with current and actual 3.0.9 pyparsing. Review both PRs together. |
 | #135 | [#187](https://github.com/RuleWorld/BNG3/pull/187) | Current issue-linked checklist and this handoff; documentation does not qualify scientific behavior. |
-| #136 | [#189](https://github.com/RuleWorld/BNG3/pull/189), `a2e598ed` | Stale architecture and validation claims corrected; historical results retain their dates and limits. |
+| #136 | [#189](https://github.com/RuleWorld/BNG3/pull/189), `50d754e3` | Stale architecture/validation claims corrected; formal blocker index now includes #166 and distinguishes #198 bounded packing candidate from the general production correspondence gap. Historical results retain dates and limits. |
 | #137 | [#195](https://github.com/RuleWorld/BNG3/pull/195), `e530328e` | Capability inventory and decision worksheet; policy and review ownership remain unapproved. |
-| #138 | [#196](https://github.com/RuleWorld/BNG3/pull/196), `07921382` | Compile-owned resolved unit metadata and exporter consumers; AST allowlist 43 → 42, 14 focused checks. Remaining runtime consumers are still open. |
+| #138 | [#196](https://github.com/RuleWorld/BNG3/pull/196), `24241dbc` | Resolved unit metadata plus compiled-model energy export guard; AST allowlist 43 → 42 → 41. Final guard slice: 129 energy and 16 SBML/unit checks pass; actual exporter refusal and false-positive boundaries covered. Guard compatibility wrapper compiles per call; broader runtime migration remains open. |
+| #140 | [#207](https://github.com/RuleWorld/BNG3/pull/207), `082e66ae` | Compile-owned typed generate_network.max_iter, consumed by execution; preserved default 100/direct Python numeric overrides. Pinned BNG2 probes exposed 1+1 truncation and negative unsigned wrap. Arithmetic dialect is explicitly bounded; divide-by-zero hidden by exponentiation was reproduced and repaired. Final focused 12 CTests and Python override 1 pass; broader compiler checks belong to preceding checkpoint. Other action options/dispatch remain untyped. |
 | #163 | [#197](https://github.com/RuleWorld/BNG3/pull/197), `6d44354f` | SBML version-aware unit attributes/defaults and unit-aware seed counts; 33 SBML/unit checks and libSBML fixture with zero diagnostics. Stacked on #196; broader Tier-X inventory/consumer qualification remains open. |
 | #165 | [#194](https://github.com/RuleWorld/BNG3/pull/194), `c5fafad0` | General Lean reference matcher soundness/completeness, using the user-approved exact-domain and order-independent mapping contract. Kernel/Smoke/Coverage and axiom audit pass; production C++ correspondence is separate. |
-| #169 | [#192](https://github.com/RuleWorld/BNG3/pull/192), `0ee57fe3` | Explicit trust accounting and scheduled/manual mutation harness; 32/32 harness cases on the semantic checkpoint, 56 CI contracts and formatting checks on final head. Resolve documentation overlap with #189. |
+| #169 | [#192](https://github.com/RuleWorld/BNG3/pull/192), `a4e14bdb` | Trust accounting and scheduled/manual mutation harness; earlier `0ee57fe3` evidence remains 32/32 harness cases and 56 CI contracts. Docs-only synchronization records #194 all-input reference matcher/axioms and #198 bounded packing separately from main; retain both audit-script entry sets during integration. |
 | #166 | [#198](https://github.com/RuleWorld/BNG3/pull/198), `5cc1fd57` | Checked declaration IDs and NFIR packing widths; native bridge and Lean packing theorems pass. Full production rule-lowering refinement remains unproved. |
-| #171 | [#193](https://github.com/RuleWorld/BNG3/pull/193), `866058a3` | 89 installed compatibility tests, including executed notebooks, API/CLI methods, SBML, SymPy and independent RoadRunner analytic decay. Review the explicit compatibility matrix before closure. |
-| #141 | [#203](https://github.com/RuleWorld/BNG3/pull/203), `74fccb47` | Thread-scoped compartment context, parameter refresh and network-cache invalidation; 13 native cases/129 assertions and 9 Python tests. Spawned workers still import shared-checkout Python sources; exact-clone worker identity is unresolved. |
-| #143 | [#201](https://github.com/RuleWorld/BNG3/pull/201), `d4019f96` | Typed ODE rate dependency classification; 21 ODE cases, 118 compiler-contract cases and 6 independent BNG2 RHS checks. Cross-backend local scopes/propensities remain open. Frozen michment SSA remains 10/306 outside 3 pooled SE, worst |z| 9.3449. |
-| #145 | [#200](https://github.com/RuleWorld/BNG3/pull/200) | Shared semantic lowerability and separate build availability; adapter ON/OFF and Python dispatch checks pass locally. The initial hosted architecture failure is repaired by relocating the shared implementation into an existing compatibility consumer; the checker passes with the unchanged 43-entry allowlist. Review final-head build evidence separately from earlier functional checks. |
+| #171 | [#193](https://github.com/RuleWorld/BNG3/pull/193), `b99c231c` | Windows notebook path assertion and macOS/Python 3.9 libSBML architecture failures repaired; 89 focused installed tests and 55 CI contracts pass. Replacement 5.21.1 wheel verified as arm64. Earlier independent RoadRunner/notebook qualification remains scoped; new platform checks require final-head results. |
+| #141 | [#203](https://github.com/RuleWorld/BNG3/pull/203), `cacee1ab` | Fixed reproduced shared-iterator races in graph reset/index and map lookup; instrumented ASan 13 cases/129 assertions plus 20 concurrent repeats. Worker initialization binds and checks parent Python/native paths; 9 source and 9 clean-installed scan tests pass, including shadowed sources and 2D workers. Broader graph/topology/solver/NFsim isolation remains unqualified. |
+| #143 | [#201](https://github.com/RuleWorld/BNG3/pull/201), `d4019f96` | Typed ODE rate dependency classification; 21 ODE cases, 118 compiler-contract cases and 6 independent BNG2 RHS checks. Cross-backend local scopes/propensities remain open. Frozen michment SSA remains 10/306 outside 3 pooled SE, worst |z| 9.3449. Fresh pinned BNG2 reproduces all 200 golden bytes; macOS C rand initialization under seeds 1–200 biases the first wait (0.03473 versus expected 0.00467). Source/probe receipts and analytic conditioning are in [#143](https://github.com/RuleWorld/BNG3/issues/143#issuecomment-6069308392); controls and red gate are unchanged. |
+| #145 | [#200](https://github.com/RuleWorld/BNG3/pull/200), `d9227862` | Final-head requalification: adapter ON finite 8 cases/34 assertions and adapter 8/41; OFF finite 8/34; Python dispatch 9; architecture CTest 1/1 in each build, unchanged 43 entries. Pinned BNGsim source and loaded library hashes verified. No broad numerical parity or backend-promotion claim. |
 | #179 | [#202](https://github.com/RuleWorld/BNG3/pull/202), `78543775` | Live immutable source verification, fresh pinned BNG2/NFsim builds, smoke artifact receipts, Linux dependency hashes and compiler-image manifest. 79 provenance/corpus/CI contract tests pass; 14 actual approvals remain pending. Corpus selection is unchanged; its source-lock digest is refreshed. Linux execution and release-gate wiring remain open. |
-| #182 | [#199](https://github.com/RuleWorld/BNG3/pull/199), `c8c065f9` | Required RHS/ODE/SSA determinism/export lanes, installed identity preflight and unchanged scheduled/manual ensembles. Local workflow contracts pass; new hosted numerical execution is not yet qualified. |
+| #182 | [#199](https://github.com/RuleWorld/BNG3/pull/199), `4996311d` | Repaired the zero-job hosted workflow failure: runner.temp expressions moved from forbidden job-level env to step env. Actionlint reproduces the old failure and passes the repair; final strict-head checkout/preflight follow-up passes 65 CI/wiring contracts. Hosted run at PR head `58a6641d` executes 59 required parity tests plus one worker identity check; scheduled ensembles skip. Actual checkout was synthetic merge `c9b9b49b`, with verified identical Git tree `e935910f`; final `4996311d` now checks out the declared SHA and requires it to match actual Git HEAD; its new hosted numerical execution is pending. Frozen ensembles unchanged. |
+| #183 | [#206](https://github.com/RuleWorld/BNG3/pull/206), `42f61aa0` | Pinned, hashed Linux Python 3.12 inputs; 32-case official-reference workflow with bounded workers and durable artifacts. Local semantic checkpoint `5f9a7b9d`: round-trip/RoadRunner 32 pass; official 31 pass/1 unsupported; all 32 worker identities match. 69 contracts and 64 runner/trigger checks pass. Broader Python at `5d6fc641`: 1009 pass/34 skip/1 xfail. Hosted setup fixture failure reproduced/repaired; final exact-head Linux run [37854179945](https://github.com/RuleWorld/BNG3/actions/runs/37854179945) passes: round-trip/RoadRunner 32, official 31 pass/1 unsupported. Source SHA equals checkout HEAD, all 32 worker native hashes match, artifact digests verified. Full-suite flags remain false. |
 
-Hosted checks were sampled without waiting for runs. At the sampled heads,
-#128/#190 had 41 successful and 5 skipped checks; #130/#189/#192/#194/#196 had
-40 successful and 5 skipped checks. Newer work has pending checks; stacked
-#191/#197/#204 had no recorded rollup in that snapshot. The initial #202 lint
+Historical pre-resumption snapshots recorded #128/#190 with 41 successful
+and 5 skipped checks, and #130/#189/#192/#194/#196 with 40 successful and
+5 skipped checks at their preceding heads. Those counts do not validate the
+new revisions above. Newer work has pending checks; stacked #191/#197/#204
+had no recorded rollup in that snapshot. The initial #202 lint
 failure was a stale corpus source-lock digest, repaired without changing model
-selection. The initial #200 architecture failure is corrected by relocation without expanding the allowlist; review its final-head build evidence.
+selection. The initial #200 architecture failure is corrected without expanding the allowlist, and its final-head functional evidence is now recorded. The #199 zero-job workflow failure and #206 setup fixture failure were reproduced and repaired; those fixes do not themselves prove hosted numerical execution.
 Neither a skipped job nor absent rollup is a pass. Requery the final candidate
 SHA after any push, rebase or integration.
 
-## Plan when work resumes
+## Continuing dependency order
 
 1. Review current PRs against every issue criterion and integrate in dependency
    order: #190 before #191, #196 before #197, #128 with #204. Reconcile the
-   overlapping formal documentation in #189/#192/#194/#198. Verify exact-head
+   formal documentation in #189/#192 with unmerged #194/#198 evidence now
+   reconciled. Preserve both matcher and packing axiom-audit entries when
+   synchronizing #194/#198, and keep #197 synchronized with the new #196 head. Verify exact-head
    required checks; do not infer permission to merge from this plan.
 2. Resolve actual capability/support decisions (#137), scientific/formal review
    owners (#185), and source/oracle/toolchain/dependency approvals (#179).
    Wire strict provenance into release qualification after substantiated
    decisions; do not approve by changing strings alone.
-3. Finish trustworthy baseline qualification: identify the frozen michment
-   reference/SSA discrepancy under #143, resolve #141 worker-source identity,
-   and qualify the newly wired #182 numerical lanes. Keep seeds, horizons,
+3. Finish trustworthy baseline qualification: qualify #143 reference RNG/seed/platform behavior after the reproduced
+   first-wait bias, broaden #141 isolation beyond the repaired worker paths,
+   and qualify the newly executable #182 numerical lanes. Keep seeds, horizons,
    tolerances and goldens unchanged until the cause is established.
 4. Continue dependency-ready canonical runtime tasks (#138–#140) and structural
    BNGIR integration (#153–#156), then the finite-backend decision (#144),
