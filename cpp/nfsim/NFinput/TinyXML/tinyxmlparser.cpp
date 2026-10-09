@@ -315,51 +315,31 @@ void TiXmlParsingData::Stamp( const char* now, TiXmlEncoding encoding )
 const char* TiXmlBase::SkipWhiteSpace( const char* p, TiXmlEncoding encoding )
 {
 	if ( !p || !*p )
-	{
 		return 0;
-	}
-	if ( encoding == TIXML_ENCODING_UTF8 )
-	{
-		while ( *p )
-		{
-			const unsigned char* pU = (const unsigned char*)p;
-			
-			// Skip the stupid Microsoft UTF-8 Byte order marks
-			if (	*(pU+0)==TIXML_UTF_LEAD_0
-				 && *(pU+1)==TIXML_UTF_LEAD_1 
-				 && *(pU+2)==TIXML_UTF_LEAD_2 )
-			{
-				p += 3;
-				continue;
-			}
-			else if(*(pU+0)==TIXML_UTF_LEAD_0
-				 && *(pU+1)==0xbfU
-				 && *(pU+2)==0xbeU )
-			{
-				p += 3;
-				continue;
-			}
-			else if(*(pU+0)==TIXML_UTF_LEAD_0
-				 && *(pU+1)==0xbfU
-				 && *(pU+2)==0xbfU )
-			{
-				p += 3;
-				continue;
-			}
 
-			if ( IsWhiteSpace( *p ) || *p == '\n' || *p =='\r' )		// Still using old rules for white space.
-				++p;
-			else
-				break;
-		}
-	}
-	else
+	/* XML produced by BioNetGen is overwhelmingly ASCII.  Handle the complete
+	 * ASCII whitespace set without the ctype/UTF-8 machinery, and only enter
+	 * the BOM path when the first non-whitespace byte can actually be one. */
+	for ( ;; )
 	{
-		while ( (*p && IsWhiteSpace( *p )) || *p == '\n' || *p =='\r' )
+		while ( *p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' ||
+				*p == '\v' || *p == '\f' )
 			++p;
-	}
+		if ( !*p )
+			return p;
+		if ( encoding != TIXML_ENCODING_UTF8 ||
+				static_cast<unsigned char>(*p) != TIXML_UTF_LEAD_0 )
+			return p;
 
-	return p;
+		const unsigned char* pU = reinterpret_cast<const unsigned char*>(p);
+		if ( (pU[1] == TIXML_UTF_LEAD_1 && pU[2] == TIXML_UTF_LEAD_2) ||
+				(pU[1] == 0xbfU && (pU[2] == 0xbeU || pU[2] == 0xbfU)) )
+		{
+			p += 3;
+			continue;
+		}
+		return p;
+	}
 }
 
 #ifdef TIXML_USE_STL
@@ -414,23 +394,33 @@ const char* TiXmlBase::ReadName( const char* p, TIXML_STRING * name, TiXmlEncodi
 	// After that, they can be letters, underscores, numbers,
 	// hyphens, or colons. (Colons are valid ony for namespaces,
 	// but tinyxml can't tell namespaces from names.)
-	if (    p && *p 
-		 && ( IsAlpha( (unsigned char) *p, encoding ) || *p == '_' ) )
+	if ( p && *p )
 	{
-		const char* start = p;
-		while(		p && *p
-				&&	(		IsAlphaNum( (unsigned char ) *p, encoding ) 
-						 || *p == '_'
-						 || *p == '-'
-						 || *p == '.'
-						 || *p == ':' ) )
+		const unsigned char first = static_cast<unsigned char>(*p);
+		const bool asciiFirst = first < 0x80;
+		const bool validFirst = asciiFirst
+				? ((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') || first == '_')
+				: IsAlpha(first, encoding);
+		if (!validFirst) return 0;
+
+		const char* start = p++;
+		while (*p)
 		{
-			//(*name) += *p; // expensive
+			const unsigned char c = static_cast<unsigned char>(*p);
+			if (c < 0x80)
+			{
+				if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+						(c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == ':')
+				{
+					++p;
+					continue;
+				}
+				break;
+			}
+			if (!IsAlphaNum(c, encoding)) break;
 			++p;
 		}
-		if ( p-start > 0 ) {
-			name->assign( start, p-start );
-		}
+		name->assign( start, p-start );
 		return p;
 	}
 	return 0;
@@ -585,11 +575,34 @@ const char* TiXmlBase::ReadText(	const char* p,
 	if (    !trimWhiteSpace			// certain tags always keep whitespace
 		 || !condenseWhiteSpace )	// if true, whitespace is always kept
 	{
-		// Keep all the white space.
+		// Keep all the white space.  The overwhelmingly common TinyXML path
+		// here is an ASCII attribute value terminated by a one-byte quote.
+		// Appending one character at a time is needlessly expensive on generated
+		// NFsim XML (millions of calls during startup), so copy ordinary ASCII
+		// runs in one operation.  Stop at entities and non-ASCII bytes so the
+		// existing GetChar path still performs entity decoding and UTF-8 handling.
+		const bool singleByteEnd = !caseInsensitive && endTag && endTag[0] && !endTag[1];
 		while (	   p && *p
 				&& !StringEqual( p, endTag, caseInsensitive, encoding )
 			  )
 		{
+			if ( singleByteEnd )
+			{
+				const char* run = p;
+				const unsigned char end = static_cast<unsigned char>( endTag[0] );
+				while ( *p )
+				{
+					const unsigned char c = static_cast<unsigned char>( *p );
+					if ( c == end || c == '&' || c >= 0x80 ) break;
+					++p;
+				}
+				if ( p != run )
+				{
+					text->append( run, static_cast<TIXML_STRING::size_type>( p - run ) );
+					if ( !*p || static_cast<unsigned char>( *p ) == end ) break;
+				}
+			}
+
 			int len;
 			char cArr[4] = { 0, 0, 0, 0 };
 			p = GetChar( p, cArr, &len, encoding );
@@ -1430,17 +1443,25 @@ const char* TiXmlAttribute::Parse( const char* p, TiXmlParsingData* data, TiXmlE
 	const char SINGLE_QUOTE = '\'';
 	const char DOUBLE_QUOTE = '\"';
 
-	if ( *p == SINGLE_QUOTE )
+	if ( *p == SINGLE_QUOTE || *p == DOUBLE_QUOTE )
 	{
-		++p;
-		end = "\'";		// single quote in string
-		p = ReadText( p, &value, false, end, false, encoding );
-	}
-	else if ( *p == DOUBLE_QUOTE )
-	{
-		++p;
-		end = "\"";		// double quote in string
-		p = ReadText( p, &value, false, end, false, encoding );
+		const char quote = *p++;
+		/* BioNetGen XML attributes overwhelmingly contain no entities.  For a
+		 * quoted value with no '&', copying the byte range verbatim is exactly
+		 * what ReadText/GetChar produces (including valid UTF-8), but avoids a
+		 * generic parser call for every attribute.  Preserve the original path
+		 * whenever entity decoding or malformed unterminated input is involved. */
+		const char* quoteEnd = strchr( p, quote );
+		if ( quoteEnd && memchr( p, '&', static_cast<size_t>( quoteEnd - p ) ) == 0 )
+		{
+			value.assign( p, static_cast<TIXML_STRING::size_type>( quoteEnd - p ) );
+			p = quoteEnd + 1;
+		}
+		else
+		{
+			end = (quote == SINGLE_QUOTE) ? "\'" : "\"";
+			p = ReadText( p, &value, false, end, false, encoding );
+		}
 	}
 	else
 	{

@@ -363,8 +363,12 @@ int MoleculesObservable::isObservable(Molecule *m) const
 		//cout<<endl<<endl<<endl;
 		//cout<<"starting!"<<endl;
 
-		if ( templateMolecules[t]->compare(m) ) {
-			//cout<<"  adding one"<<endl;
+		bool usedCompiledSimple = false;
+		bool matched = templateMolecules[t]->matchesCompiledSimple(
+				m, usedCompiledSimple);
+		if (!usedCompiledSimple) matched = templateMolecules[t]->compare(m);
+		if (matched) {
+			//cout<<"  adding one"<< "\n";
 			matches += m->getPopulation();
 			//return 1;
 		}

@@ -11,6 +11,7 @@
 
 
 #include "../NFcore.hh"
+#include <cstdint>
 //#include <vector>
 
 
@@ -52,6 +53,43 @@ namespace NFcore
 			System *sys_;  // Pointer to System for accessing per-instance RNG
 	};
 
+
+
+	/* Direct method with 64-bit fixed-point propensities (opt-in,
+	 * NFSIM_FIXED_POINT=1).  See fixedPointSelector.cpp. */
+	class FixedPointSelector : public ReactionSelector {
+		public:
+			FixedPointSelector(vector <ReactionClass *> &rxns, System *sys);
+			virtual ~FixedPointSelector();
+			/* Compact EnergyPattern partner pools need DirectSelector. */
+			static bool supports(const vector <ReactionClass *> &rxns);
+			virtual double refactorPropensities();
+			virtual double update(ReactionClass *r, double oldA, double newA);
+			virtual double updateBatch(vector<ReactionClass *> &rxns);
+			virtual double updateBatch(vector<ReactionClass *> &rxns,
+					const vector<double> &oldAs);
+			virtual double getNextReactionClass(ReactionClass *&rc);
+			virtual double getAtot();
+			unsigned long long getRescaleCount() const { return rescales; }
+			unsigned long long getSkippedUpdateCount() const { return skippedUpdates; }
+		protected:
+			void chooseScale(double atotEstimate);
+			std::uint64_t quantize(double a) const;
+			void rebuildSums();
+			void setQuantized(int reaction, double newA);
+			int indexOf(ReactionClass *r) const;
+			int n_reactions;
+			ReactionClass **reactionClassList;
+			vector<std::uint64_t> quantized;
+			vector<std::uint64_t> blockSums;
+			std::size_t blockSize;
+			std::uint64_t total;
+			int scaleBits;
+			double scale;
+			double invScale;
+			unsigned long long rescales;
+			unsigned long long skippedUpdates;
+	};
 
 	class DirectSelector : public ReactionSelector {
 
@@ -98,6 +136,11 @@ namespace NFcore
 			int n_reactions;
 			ReactionClass ** reactionClassList;
 			bool sparseSelectionSafe;
+			bool sparseSelectionTrackingActive;
+			unsigned int denseSelectionSamples;
+			unsigned long long denseSelectionIndexSum;
+			void activateSparseSelectionTracking();
+			void considerSparseSelectionActivation(std::size_t selectedReaction);
 			/* -1 until the first update; 1 when prepared reaction IDs match
 			 * selector positions, 0 for direct-selector compatibility callers. */
 			int reactionIndexMode;

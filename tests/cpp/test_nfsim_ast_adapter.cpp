@@ -6024,3 +6024,47 @@ end reaction rules
     std::error_code error;
     std::filesystem::remove(xmlPath, error);
 }
+
+
+TEST_CASE("NFsim fixed-point selector declines compact partner pool reactions") {
+    // The fixed-point selector has no compact-partner-pool batch path, so a
+    // system using that EnergyPattern feature must fall back to DirectSelector
+    // rather than silently running with propensities it cannot maintain.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    G 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c,d)
+    B(a)
+    C(x)
+    D(x)
+end molecule types
+begin seed species
+    A(b,c!1,d!2).C(x!1).D(x!2) 1
+    A(b) 1
+    B(a) 2
+end seed species
+begin energy patterns
+    A(b!1,c!2,d!3).B(a!1).C(x!2).D(x!3) G
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+
+    auto allReactions = system->getAllReactions();
+    REQUIRE_FALSE(allReactions.empty());
+    CHECK_FALSE(NFcore::FixedPointSelector::supports(allReactions));
+
+    delete system;
+}
