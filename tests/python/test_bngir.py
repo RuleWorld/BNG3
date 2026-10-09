@@ -442,11 +442,11 @@ end model
 """
 
 
-def _index_reference_model_and_document():
+def _index_reference_model_and_document(version="0.2"):
     model = bionetgen.BioNetGenModel(
         bionetgen.model._cpp.parse_string(INDEX_REFERENCE_MODEL)
     )
-    document = json.loads(model.to_bngir(version="0.2"))
+    document = json.loads(model.to_bngir(version=version))
     return model, document
 
 
@@ -495,3 +495,48 @@ def test_bngir_v02_integer_symbol_index_zero_preserves_payload_and_rhs():
     assert json.loads(restored.to_bngir(version="0.2")) == document
     assert _index_reference_rhs(model) == pytest.approx({"A()": -10.0, "B()": 10.0})
     assert _index_reference_rhs(restored) == pytest.approx({"A()": -10.0, "B()": 10.0})
+
+
+@pytest.mark.parametrize("version", ["0.1", "0.2"])
+def test_bngir_rejects_unknown_envelope_properties_before_source_parse(
+    version, monkeypatch
+):
+    _, document = _index_reference_model_and_document(version)
+    document["unexpected_extension"] = {"changed": True}
+    schema_path = (
+        Path(__file__).parents[2]
+        / "provenance"
+        / "schemas"
+        / f"bngir-{version}.schema.json"
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    import bionetgen.bngir as bngir_module
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail(
+            "unknown BNGIR envelope property reached source rendering or parsing"
+        )
+
+    monkeypatch.setattr(bngir_module, "_as_bngl_v01", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    monkeypatch.setattr(bionetgen.model._cpp, "parse_string", forbidden)
+    with pytest.raises(ValueError, match="unexpected_extension"):
+        bionetgen.from_bngir(document)
+
+
+@pytest.mark.parametrize("version", ["0.1", "0.2"])
+def test_bngir_optional_provenance_envelope_remains_valid(version):
+    model, document = _index_reference_model_and_document(version)
+    document["provenance"] = {"source": "fixture"}
+    schema_path = (
+        Path(__file__).parents[2]
+        / "provenance"
+        / "schemas"
+        / f"bngir-{version}.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    restored = bionetgen.from_bngir(document)
+    assert bionetgen.semantic_equal(model, restored, version=version)
