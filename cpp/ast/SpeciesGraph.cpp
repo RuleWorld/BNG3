@@ -60,7 +60,6 @@ bool indexCorrespondenceIsWitness(const BNGcore::PatternGraph& lhs,
         return false;
     }
 
-    std::vector<int> marked(n, -1);
     for (std::size_t i = 0; i < n; ++i) {
         const BNGcore::Node* left = lhsNodes[i];
         const BNGcore::Node* right = rhsNodes[i];
@@ -72,19 +71,30 @@ bool indexCorrespondenceIsWitness(const BNGcore::PatternGraph& lhs,
             left->out_degree() != right->out_degree()) {
             return false;
         }
+        std::vector<int> leftTargets;
+        std::vector<int> rightTargets;
+        leftTargets.reserve(left->out_degree());
+        rightTargets.reserve(right->out_degree());
         for (auto edge = left->edges_out_begin(); edge != left->edges_out_end(); ++edge) {
             const int target = (*edge)->get_index();
-            if (target < 0 || static_cast<std::size_t>(target) >= n) {
+            if (target < 0 || static_cast<std::size_t>(target) >= n ||
+                lhsNodes[static_cast<std::size_t>(target)] != *edge) {
                 return false;
             }
-            marked[target] = static_cast<int>(i);
+            leftTargets.push_back(target);
         }
         for (auto edge = right->edges_out_begin(); edge != right->edges_out_end(); ++edge) {
             const int target = (*edge)->get_index();
             if (target < 0 || static_cast<std::size_t>(target) >= n ||
-                marked[target] != static_cast<int>(i)) {
+                rhsNodes[static_cast<std::size_t>(target)] != *edge) {
                 return false;
             }
+            rightTargets.push_back(target);
+        }
+        std::sort(leftTargets.begin(), leftTargets.end());
+        std::sort(rightTargets.begin(), rightTargets.end());
+        if (leftTargets != rightTargets) {
+            return false;
         }
     }
     return true;

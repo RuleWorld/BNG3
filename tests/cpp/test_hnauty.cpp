@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -21,14 +22,15 @@ static std::unique_ptr<ast::Model> parseModel(const std::string& bngl) {
     return parser::parseModel(bngl);
 }
 
-static bool hasDirectedEdge(const BNGcore::Node* source,
-                            const BNGcore::Node* target) {
+static std::size_t directedEdgeMultiplicity(const BNGcore::Node* source,
+                                            const BNGcore::Node* target) {
+    std::size_t count = 0;
     for (auto edge = source->edges_out_begin(); edge != source->edges_out_end(); ++edge) {
         if (*edge == target) {
-            return true;
+            ++count;
         }
     }
-    return false;
+    return count;
 }
 
 // Test-only oracle: enumerate label-preserving node bijections and check every
@@ -58,13 +60,17 @@ static bool bruteForceGraphIsomorphic(const BNGcore::PatternGraph& lhs,
             if (used[candidate] || !sameLabel(left[index], right[candidate])) {
                 continue;
             }
+            if (directedEdgeMultiplicity(left[index], left[index]) !=
+                directedEdgeMultiplicity(right[candidate], right[candidate])) {
+                continue;
+            }
             bool consistent = true;
             for (std::size_t prior = 0; prior < index; ++prior) {
                 const auto* mappedPrior = right[mapping[prior]];
-                if (hasDirectedEdge(left[index], left[prior]) !=
-                        hasDirectedEdge(right[candidate], mappedPrior) ||
-                    hasDirectedEdge(left[prior], left[index]) !=
-                        hasDirectedEdge(mappedPrior, right[candidate])) {
+                if (directedEdgeMultiplicity(left[index], left[prior]) !=
+                        directedEdgeMultiplicity(right[candidate], mappedPrior) ||
+                    directedEdgeMultiplicity(left[prior], left[index]) !=
+                        directedEdgeMultiplicity(mappedPrior, right[candidate])) {
                     consistent = false;
                     break;
                 }
@@ -352,6 +358,83 @@ TEST_CASE("Issue 142 graph identity rejects extra target edges",
     const auto closure = makeGraph(true);
     CHECK_FALSE(bruteForceGraphIsomorphic(path, closure));
     CHECK_FALSE(bng::ast::SpeciesGraph(path).graphIsomorphicTo(closure));
+}
+
+TEST_CASE("Issue 142 graph identity preserves parallel-edge multiplicity",
+          "[HNauty][issue-142]") {
+    const BNGcore::EntityType sourceType(
+        "source", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    const BNGcore::EntityType targetAType(
+        "targetA", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    const BNGcore::EntityType targetBType(
+        "targetB", BNGcore::ENTITY_NODE_TYPE, BNGcore::NULL_STATE_TYPE);
+    enum class EdgePattern { AAB, ABB, AB, AA };
+    const auto makeGraph = [&](EdgePattern pattern) {
+        BNGcore::PatternGraph graph;
+        BNGcore::Node source(sourceType);
+        BNGcore::Node targetA(targetAType);
+        BNGcore::Node targetB(targetBType);
+        auto* a = graph.add_node(source);
+        auto* b = graph.add_node(targetA);
+        auto* c = graph.add_node(targetB);
+        a->set_index(0);
+        b->set_index(1);
+        c->set_index(2);
+        if (pattern == EdgePattern::AAB || pattern == EdgePattern::AA) {
+            graph.add_edge(a, b);
+            graph.add_edge(a, b);
+        } else {
+            graph.add_edge(a, b);
+        }
+        if (pattern == EdgePattern::AAB || pattern == EdgePattern::AB ||
+            pattern == EdgePattern::ABB) {
+            graph.add_edge(a, c);
+        }
+        if (pattern == EdgePattern::ABB) {
+            graph.add_edge(a, c);
+        }
+        return graph;
+    };
+
+    const auto aab = makeGraph(EdgePattern::AAB);
+    const auto abb = makeGraph(EdgePattern::ABB);
+    const auto ab = makeGraph(EdgePattern::AB);
+    const auto aa = makeGraph(EdgePattern::AA);
+    CHECK_FALSE(bruteForceGraphIsomorphic(aab, abb));
+    CHECK_FALSE(bng::ast::SpeciesGraph(aab).graphIsomorphicTo(abb));
+    CHECK_FALSE(bruteForceGraphIsomorphic(ab, aa));
+    CHECK_FALSE(bng::ast::SpeciesGraph(ab).graphIsomorphicTo(aa));
+
+    const auto makeSelfLoopGraph = [&](std::size_t loopCount) {
+        BNGcore::PatternGraph graph;
+        BNGcore::Node node(sourceType);
+        auto* a = graph.add_node(node);
+        a->set_index(0);
+        for (std::size_t i = 0; i < loopCount; ++i) {
+            graph.add_edge(a, a);
+        }
+        return graph;
+    };
+    const auto oneLoop = makeSelfLoopGraph(1);
+    const auto twoLoops = makeSelfLoopGraph(2);
+    CHECK_FALSE(bruteForceGraphIsomorphic(oneLoop, twoLoops));
+    CHECK_FALSE(bng::ast::SpeciesGraph(oneLoop).graphIsomorphicTo(twoLoops));
+
+    const auto makeLoopOrEdgeGraph = [&](bool selfLoop) {
+        BNGcore::PatternGraph graph;
+        BNGcore::Node source(sourceType);
+        BNGcore::Node targetA(targetAType);
+        auto* a = graph.add_node(source);
+        auto* b = graph.add_node(targetA);
+        a->set_index(0);
+        b->set_index(1);
+        graph.add_edge(a, selfLoop ? a : b);
+        return graph;
+    };
+    const auto selfLoop = makeLoopOrEdgeGraph(true);
+    const auto regularEdge = makeLoopOrEdgeGraph(false);
+    CHECK_FALSE(bruteForceGraphIsomorphic(selfLoop, regularEdge));
+    CHECK_FALSE(bng::ast::SpeciesGraph(selfLoop).graphIsomorphicTo(regularEdge));
 }
 
 TEST_CASE("Issue 142 native NFsim labels follow the same graph identity partition",
