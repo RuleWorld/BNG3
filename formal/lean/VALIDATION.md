@@ -2,8 +2,11 @@
 
 ## Pinned-toolchain results
 
-The audit began from `main` at `e1836c3274e685996d5e86883761e00e98257e09` on
-2026-10-07, using the pinned Lean toolchain `leanprover/lean4:v4.33.1`.
+The original audit baseline was `main` at
+`e1836c3274e685996d5e86883761e00e98257e09` on 2026-10-07, using the pinned Lean
+toolchain `leanprover/lean4:v4.33.1`. These counts remain historical baseline
+evidence; the matcher theorem from PR #194 is now merged at
+`c3b20f3e4a863300ac79dc9dfe71f0b406b6eda6`.
 
 ~~~text
 lake build                         -> success, 36 jobs
@@ -35,16 +38,18 @@ produce one channel event, while two matching molecules in separate complexes
 remain two events. Earlier failure banners in that file described a defect
 that is now fixed and have been removed.
 
-## Unmerged candidate evidence — 2026-10-08
+## Merged matcher proof and open packing candidate — 2026-10-09
 
-The pinned-toolchain results above are the dated `main` baseline at
-`e1836c3274e685996d5e86883761e00e98257e09`. The following evidence belongs to
-separate open PR candidates and is not yet evidence about merged `main`.
+The matcher proof below is included in current `main` through merge commit
+`c3b20f3e4a863300ac79dc9dfe71f0b406b6eda6`. The packing work remains in open
+PR #198 and is candidate evidence rather than merged-main evidence.
 
-- Matcher correctness: PR [#194](https://github.com/RuleWorld/BNG3/pull/194),
-  head `c5fafad022ff831374e669e4ce90ac6cf3102086`, passed hosted Lean run
-  [37725570914](https://github.com/RuleWorld/BNG3/actions/runs/37725570914).
-  On that candidate, `python3 scripts/static_validate.py` checked 39 Lean files,
+- Merged matcher correctness: PR [#194](https://github.com/RuleWorld/BNG3/pull/194),
+  candidate head `c5fafad022ff831374e669e4ce90ac6cf3102086`, merged on
+  2026-10-09. Its hosted Lean run
+  [37725570914](https://github.com/RuleWorld/BNG3/actions/runs/37725570914)
+  passed. On that candidate, `python3 scripts/static_validate.py` checked 39
+  Lean files,
   `lake build` completed 38 jobs, `lake env lean tests/Smoke.lean` and
   `lake env lean tests/Coverage.lean` passed, and
   `scripts/check_axiom_dependencies.sh` reported `AXIOM AUDIT PASS`.
@@ -68,10 +73,10 @@ separate open PR candidates and is not yet evidence about merged `main`.
   [candidate CXX mapping](https://github.com/RuleWorld/BNG3/blob/5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd/formal/lean/CXX_MAPPING.md#issue-166-production-declaration-to-nfnext-id-packing)
   records the complete bounded surface.
 
-Both candidates edit `scripts/check_axiom_dependencies.sh`. When synchronizing
-them, preserve PR #194's matcher/specification `#print axioms` entries and PR
-#198's `NFnextPacking.fromSignature_*` entries. Both PRs remain open and
-unmerged as of this record.
+The matcher/specification `#print axioms` entries from PR #194 are present in
+the merged main audit script. PR #198 adds separate
+`NFnextPacking.fromSignature_*` entries on its candidate branch; preserve them
+when synchronizing that PR. PR #198 remains open as of this record.
 
 ## Trust and evidence categories
 

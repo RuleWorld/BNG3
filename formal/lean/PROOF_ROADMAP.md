@@ -39,7 +39,6 @@ Implemented in `BNG/Runtime.lean` and `BNG/Operational.lean`:
 
 Still needed here:
 
-- proposition-level soundness/completeness theorems for the Boolean matcher;
 - explicit automorphism/equivalence treatment for embeddings;
 - connected-component/species semantics;
 - formal relation to current BNG/NFsim matcher behavior.
@@ -111,20 +110,19 @@ stated trust boundaries. They do not prove that production C++ implements the
 Lean reference semantics; see `VALIDATION.md` and `CXX_MAPPING.md` for the
 separate native-test evidence and remaining correspondence boundary.
 
-## Stage 5 — connect Boolean checks to propositions: matcher candidate available
+## Stage 5 — connect Boolean checks to propositions: DONE FOR LEAN REFERENCE MATCHER
 
-The audited `main` baseline `e1836c3274e685996d5e86883761e00e98257e09` does not
-include a matcher-correctness theorem. Open candidate PR [#194](https://github.com/RuleWorld/BNG3/pull/194)
-at `c5fafad022ff831374e669e4ce90ac6cf3102086` now proves
+PR [#194](https://github.com/RuleWorld/BNG3/pull/194) merged into `main` at
+`c3b20f3e4a863300ac79dc9dfe71f0b406b6eda6` on 2026-10-09. It proves
 `BNG.embeddingMatches_iff_EmbeddingSpec` and soundness/completeness of the Lean
-reference enumerator. Its completeness statement compares node lookups rather
-than mapping-list order, and `EmbeddingSpec` requires the exact duplicate-free
-pattern occurrence domain. The candidate preserves all-pattern quantification
-without a hidden well-formed-input premise.
+reference enumerator. Completeness compares node lookups independently of
+association-list order, and `EmbeddingSpec` requires the exact duplicate-free
+pattern occurrence domain. The theorems retain all-input quantification without
+a hidden well-formed-input premise.
 
-Review and integrate that candidate; do not treat its proved obligation as a
-new theorem to re-prove. The theorem covers the Lean reference matcher only.
-Production C++ matcher/lowering correspondence remains separate work (#166).
+This closes the proposition-level matcher obligation for the Lean reference
+implementation only. Production C++ matcher/lowering correspondence remains
+separate work (#166).
 
 ## Stage 6 — canonical semantic interchange
 
@@ -268,20 +266,18 @@ implementations:
 - real C++ NFnext matcher/transformation conformance harness: IMPLEMENTED and
   passing 18/18 checks in this environment.
 
-The highest-priority remaining work, accounting for the unmerged candidates, is:
+The highest-priority remaining work, accounting for the open candidates, is:
 
-1. review and integrate the matcher proof in PR #194; do not repeat the proof
-   as new implementation work;
-2. qualify production C++ `CompiledModel -> NFnext` correspondence separately.
+1. qualify production C++ `CompiledModel -> NFnext` correspondence separately.
    Candidate PR [#198](https://github.com/RuleWorld/BNG3/pull/198) at
    `5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd` supplies bounded ID-packing
-   preflight and overflow-test evidence, but remains unmerged and does not prove
+   preflight and overflow-test evidence. It remains open and does not prove
    general pattern/rate/bond/transformation refinement;
-3. prove/test a production species canonicalizer against the brute-force graph
+2. prove/test a production species canonicalizer against the brute-force graph
    isomorphism oracle;
-4. formalize exact special-rate/local-function/builtin conventions that are
+3. formalize exact special-rate/local-function/builtin conventions that are
    actually used by supported backends;
-5. extend stochastic refinement from channel multiplicity to complete
+4. extend stochastic refinement from channel multiplicity to complete
    propensities and event selection;
-6. add generated differential fixtures across BNG3 network generation, NFsim,
+5. add generated differential fixtures across BNG3 network generation, NFsim,
    and NFnext.
