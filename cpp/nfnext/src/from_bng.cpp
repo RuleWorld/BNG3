@@ -516,6 +516,13 @@ bool hasDeleteMoleculesModifier(const bng::compile::CompiledRule& rule) {
     });
 }
 
+bool isWholeSpeciesDeletion(const bng::compile::CompiledRuleDirection& direction,
+                            std::size_t patternIndex) {
+    return std::find(direction.wholeSpeciesDeletions.begin(),
+                     direction.wholeSpeciesDeletions.end(), patternIndex) !=
+           direction.wholeSpeciesDeletions.end();
+}
+
 bool appendDeletionActions(
     const bng::compile::CompiledRule& rule,
     const bng::compile::CompiledRuleDirection& direction,
@@ -527,6 +534,35 @@ bool appendDeletionActions(
     const bool pureDegradation = direction.productPatterns.empty();
     const bool deleteMolecules = hasDeleteMoleculesModifier(rule);
 
+    const auto appendWholeSpeciesDeletion = [&](std::size_t patternIndex) {
+        if (patternIndex >= direction.reactantPatterns.size() ||
+            direction.reactantPatterns[patternIndex].molecules().empty()) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "whole-species deletion has no reactant complex representative");
+            return false;
+        }
+        const bng::compile::PatternMoleculeRef ref{
+            BngPatternSide::Reactant, patternIndex, 0};
+        const auto node = nodeFor(ref, reactants);
+        if (!node) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "whole-species deletion could not identify a reactant complex representative");
+            return false;
+        }
+        const auto& molecule = direction.reactantPatterns[patternIndex].molecules().front();
+        if (!molecule.moleculeTypeId) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "whole-species deletion representative is not typed");
+            return false;
+        }
+        ActionIR destroy;
+        destroy.kind = ActionKind::DestroyComplex;
+        destroy.target_node = *node;
+        destroy.molecule_type = static_cast<TypeId>(molecule.moleculeTypeId->value());
+        actions.push_back(std::move(destroy));
+        return true;
+    };
+
     if (pureDegradation && !deleteMolecules) {
         // Standard BNGL degradation removes the matched reactant species/complex,
         // including context not explicitly present in the pattern. One action per
@@ -534,25 +570,7 @@ bool appendDeletionActions(
         // reactant complex in NFIR.
         for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
             if (direction.reactantPatterns[patternIndex].molecules().empty()) continue;
-            const bng::compile::PatternMoleculeRef ref{
-                BngPatternSide::Reactant, patternIndex, 0};
-            const auto node = nodeFor(ref, reactants);
-            if (!node) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "degradation rule could not identify a reactant complex representative");
-                return false;
-            }
-            const auto& molecule = direction.reactantPatterns[patternIndex].molecules().front();
-            if (!molecule.moleculeTypeId) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "degradation reactant molecule is not typed");
-                return false;
-            }
-            ActionIR destroy;
-            destroy.kind = ActionKind::DestroyComplex;
-            destroy.target_node = *node;
-            destroy.molecule_type = static_cast<TypeId>(molecule.moleculeTypeId->value());
-            actions.push_back(std::move(destroy));
+            if (!appendWholeSpeciesDeletion(patternIndex)) return false;
         }
         return true;
     }
@@ -578,9 +596,19 @@ bool appendDeletionActions(
         return false;
     }
 
+    // The compiler resolves default whole-pattern deletion once. Remove each
+    // matched species as a unit so connected, unspecified context is included.
+    // DeleteMolecules deliberately bypasses this path and stays molecule-scoped.
+    if (!deleteMolecules) {
+        for (const auto patternIndex : direction.wholeSpeciesDeletions) {
+            if (!appendWholeSpeciesDeletion(patternIndex)) return false;
+        }
+    }
+
     // DeleteMolecules and partial rule rewrites remove only explicit unmatched
     // molecule occurrences, preserving any unmatched surrounding context.
     for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
+        if (!deleteMolecules && isWholeSpeciesDeletion(direction, patternIndex)) continue;
         const auto& pattern = direction.reactantPatterns[patternIndex];
         for (std::size_t moleculeIndex = 0; moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
             const bng::compile::PatternMoleculeRef ref{
@@ -620,7 +648,14 @@ bool addActions(const bng::compile::CompiledRule& rule,
     if (!nodes) return false;
     if (!appendCreateActions(direction, *nodes, actions, result, entity)) return false;
 
+    const bool deleteMolecules = hasDeleteMoleculesModifier(rule);
     for (const auto& mutation : direction.mutations) {
+        if (mutation.kind == BngMutationKind::DeleteBond && !deleteMolecules &&
+            (isWholeSpeciesDeletion(direction, mutation.source.patternIndex) ||
+             isWholeSpeciesDeletion(direction, mutation.partner.patternIndex))) {
+            // Keep the matched graph connected until DestroyComplex traverses it.
+            continue;
+        }
         ActionIR action;
         switch (mutation.kind) {
         case BngMutationKind::ChangeState: {

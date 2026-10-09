@@ -4,14 +4,67 @@
 
 #include "compile/CompiledModel.hpp"
 #include "nfnext/from_bng.hpp"
+#include "nfnext/transformation.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
+#include <algorithm>
 #include <cassert>
+#include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
+
+nfnext::TypeId moleculeTypeId(const nfnext::ModelIR& model, const std::string& name) {
+    const auto found = std::find_if(model.molecule_types.begin(), model.molecule_types.end(),
+        [&](const auto& type) { return type.name == name; });
+    if (found == model.molecule_types.end())
+        throw std::runtime_error("test molecule type is missing: " + name);
+    return found->id;
+}
+
+std::uint32_t siteIndex(const nfnext::ModelIR& model, nfnext::TypeId type,
+                        const std::string& name) {
+    const auto molecule = std::find_if(model.molecule_types.begin(), model.molecule_types.end(),
+        [&](const auto& candidate) { return candidate.id == type; });
+    if (molecule == model.molecule_types.end())
+        throw std::runtime_error("test molecule type ID is missing");
+    const auto found = std::find_if(molecule->sites.begin(), molecule->sites.end(),
+        [&](const auto& site) { return site.name == name; });
+    if (found == molecule->sites.end())
+        throw std::runtime_error("test molecule site is missing: " + name);
+    return static_cast<std::uint32_t>(std::distance(molecule->sites.begin(), found));
+}
+
+void executeLoweredDeletionActions(const std::vector<nfnext::ActionIR>& actions,
+                                   const nfnext::MatchEmbedding& embedding,
+                                   nfnext::GenericGraphState& state) {
+    nfnext::TransformationIR transformation;
+    for (const auto& action : actions) {
+        switch (action.kind) {
+        case nfnext::ActionKind::SetSiteState:
+            transformation.setState(action.target_node, action.site, action.value);
+            break;
+        case nfnext::ActionKind::Unbind:
+            transformation.deleteBond(action.target_node, action.site,
+                                       action.partner_node, action.partner_site);
+            break;
+        case nfnext::ActionKind::Destroy:
+            transformation.destroyMolecule(action.target_node);
+            break;
+        case nfnext::ActionKind::DestroyComplex:
+            transformation.destroyComplexContaining(action.target_node);
+            break;
+        default:
+            throw std::runtime_error("unexpected action in deletion runtime regression");
+        }
+    }
+    nfnext::applyTransformation(transformation, embedding, state);
+}
 
 void rejectsUnrepresentablePackedSiteIndex() {
     // NFnext ActionIR and PredicateIR store packed site IDs as uint16_t.
@@ -43,6 +96,305 @@ void rejectsUnrepresentablePackedSiteIndex() {
     assert(lowered.issues.size() == 1);
     assert(lowered.issues.front().message.find("uint16 site capacity") != std::string::npos);
     assert(lowered.model.expanded_rules.empty());
+}
+
+void lowersWholeSpeciesDeletionWithHiddenConnectedContext() {
+    auto parsed = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x)
+  B(y~u~p)
+  C(z)
+end molecule types
+begin reaction rules
+  delete_A_and_transform_B: A(x!+) + B(y~u) -> B(y~p) k
+end reaction rules
+)BNG");
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+    assert(semantic.rules().size() == 1);
+    assert(semantic.rules().front().forward().wholeSpeciesDeletions ==
+           std::vector<std::size_t>{0});
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    if (!lowered.ok()) {
+        for (const auto& item : lowered.issues)
+            std::cerr << item.entity << ": " << item.message << '\n';
+    }
+    assert(lowered.ok());
+    const auto& actions = lowered.model.expanded_rules.front().actions;
+
+    // Exercise the lowered action through NFnext's existing graph transformation
+    // runtime. A is matched, while C is omitted from the rule but is connected
+    // to A in the runtime state; default deletion must remove the whole complex.
+    const auto& model = lowered.model;
+    const auto aType = moleculeTypeId(model, "A");
+    const auto bType = moleculeTypeId(model, "B");
+    const auto cType = moleculeTypeId(model, "C");
+    const auto aSite = siteIndex(model, aType, "x");
+    const auto bSite = siteIndex(model, bType, "y");
+    const auto cSite = siteIndex(model, cType, "z");
+    nfnext::GenericGraphState state(model);
+    const auto a = state.create(aType);
+    const auto b = state.create(bType);
+    const auto c = state.create(cType);
+    state.setSiteState(b, static_cast<std::uint16_t>(bSite), 0);
+    state.bind(a, static_cast<std::uint16_t>(aSite), c, static_cast<std::uint16_t>(cSite));
+    nfnext::MatchEmbedding embedding;
+    embedding.bindNode(0, a);
+    embedding.bindNode(1, b);
+    executeLoweredDeletionActions(actions, embedding, state);
+    assert(state.liveCount() == 1);
+    assert(!state.alive(a));
+    assert(!state.alive(c));
+    assert(state.alive(b));
+    assert(state.siteState(b, static_cast<std::uint16_t>(bSite)) == 1);
+    assert(actions.size() == 2);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::DestroyComplex;
+    }) == 1);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::Destroy;
+    }) == 0);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::SetSiteState;
+    }) == 1);
+    const auto wholeSpeciesAction = std::find_if(
+        actions.begin(), actions.end(), [](const auto& action) {
+            return action.kind == nfnext::ActionKind::DestroyComplex;
+        });
+    assert(wholeSpeciesAction != actions.end());
+    assert(wholeSpeciesAction->target_node == 0);
+    assert(wholeSpeciesAction->molecule_type == 0);
+}
+
+void lowersExplicitBondAndHiddenContextAsOneSpeciesDeletion() {
+    auto parsed = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x)
+  D(y,z)
+  B(s~u~p)
+  C(q)
+end molecule types
+begin reaction rules
+  delete_AD_and_transform_B: A(x!1).D(y!1,z!+) + B(s~u) -> B(s~p) k
+end reaction rules
+)BNG");
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+    assert(semantic.rules().size() == 1);
+    assert(semantic.rules().front().forward().wholeSpeciesDeletions ==
+           std::vector<std::size_t>{0});
+    assert(std::any_of(
+        semantic.rules().front().forward().mutations.begin(),
+        semantic.rules().front().forward().mutations.end(), [](const auto& mutation) {
+            return mutation.kind == bng::compile::MutationKind::DeleteBond &&
+                   mutation.source.patternIndex == 0 && mutation.partner.patternIndex == 0;
+        }));
+
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    if (!lowered.ok()) {
+        for (const auto& item : lowered.issues)
+            std::cerr << item.entity << ": " << item.message << '\n';
+    }
+    assert(lowered.ok());
+    const auto& actions = lowered.model.expanded_rules.front().actions;
+
+    const auto& model = lowered.model;
+    const auto aType = moleculeTypeId(model, "A");
+    const auto dType = moleculeTypeId(model, "D");
+    const auto bType = moleculeTypeId(model, "B");
+    const auto cType = moleculeTypeId(model, "C");
+    const auto aSite = siteIndex(model, aType, "x");
+    const auto dY = siteIndex(model, dType, "y");
+    const auto dZ = siteIndex(model, dType, "z");
+    const auto bSite = siteIndex(model, bType, "s");
+    const auto cSite = siteIndex(model, cType, "q");
+    nfnext::GenericGraphState state(model);
+    const auto a = state.create(aType);
+    const auto d = state.create(dType);
+    const auto b = state.create(bType);
+    const auto c = state.create(cType);
+    state.setSiteState(b, static_cast<std::uint16_t>(bSite), 0);
+    state.bind(a, static_cast<std::uint16_t>(aSite), d, static_cast<std::uint16_t>(dY));
+    state.bind(d, static_cast<std::uint16_t>(dZ), c, static_cast<std::uint16_t>(cSite));
+    nfnext::MatchEmbedding embedding;
+    embedding.bindNode(0, a);
+    embedding.bindNode(1, d);
+    embedding.bindNode(2, b);
+    executeLoweredDeletionActions(actions, embedding, state);
+    assert(state.liveCount() == 1);
+    assert(!state.alive(a));
+    assert(!state.alive(d));
+    assert(!state.alive(c));
+    assert(state.alive(b));
+    assert(state.siteState(b, static_cast<std::uint16_t>(bSite)) == 1);
+
+    assert(actions.size() == 2);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::DestroyComplex;
+    }) == 1);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::Destroy;
+    }) == 0);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::Unbind;
+    }) == 0);
+    const auto wholeSpeciesAction = std::find_if(
+        actions.begin(), actions.end(), [](const auto& action) {
+            return action.kind == nfnext::ActionKind::DestroyComplex;
+        });
+    assert(wholeSpeciesAction != actions.end());
+    assert(wholeSpeciesAction->target_node == 0);
+    assert(wholeSpeciesAction->molecule_type == 0);
+}
+
+void deleteMoleculesRemainsMoleculeScoped() {
+    auto parsed = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x)
+  D(y,z)
+  B(s~u~p)
+  C(q)
+end molecule types
+begin reaction rules
+  delete_AD_and_transform_B: A(x!1).D(y!1,z!+) + B(s~u) -> B(s~p) k DeleteMolecules
+end reaction rules
+)BNG");
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+    assert(semantic.rules().size() == 1);
+    assert(semantic.rules().front().forward().wholeSpeciesDeletions.empty());
+
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    if (!lowered.ok()) {
+        for (const auto& item : lowered.issues)
+            std::cerr << item.entity << ": " << item.message << '\n';
+    }
+    assert(lowered.ok());
+    const auto& actions = lowered.model.expanded_rules.front().actions;
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::DestroyComplex;
+    }) == 0);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::Destroy;
+    }) == 2);
+    assert(std::count_if(actions.begin(), actions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::SetSiteState;
+    }) == 1);
+
+    const auto& model = lowered.model;
+    const auto aType = moleculeTypeId(model, "A");
+    const auto dType = moleculeTypeId(model, "D");
+    const auto bType = moleculeTypeId(model, "B");
+    const auto cType = moleculeTypeId(model, "C");
+    const auto aSite = siteIndex(model, aType, "x");
+    const auto dY = siteIndex(model, dType, "y");
+    const auto dZ = siteIndex(model, dType, "z");
+    const auto bSite = siteIndex(model, bType, "s");
+    const auto cSite = siteIndex(model, cType, "q");
+    nfnext::GenericGraphState state(model);
+    const auto a = state.create(aType);
+    const auto d = state.create(dType);
+    const auto b = state.create(bType);
+    const auto c = state.create(cType);
+    state.setSiteState(b, static_cast<std::uint16_t>(bSite), 0);
+    state.bind(a, static_cast<std::uint16_t>(aSite), d, static_cast<std::uint16_t>(dY));
+    state.bind(d, static_cast<std::uint16_t>(dZ), c, static_cast<std::uint16_t>(cSite));
+    nfnext::MatchEmbedding embedding;
+    embedding.bindNode(0, a);
+    embedding.bindNode(1, d);
+    embedding.bindNode(2, b);
+    executeLoweredDeletionActions(actions, embedding, state);
+    assert(state.liveCount() == 2);
+    assert(!state.alive(a));
+    assert(!state.alive(d));
+    assert(state.alive(b));
+    assert(state.siteState(b, static_cast<std::uint16_t>(bSite)) == 1);
+    assert(state.alive(c));
+    assert(!state.bound(c, static_cast<std::uint16_t>(cSite)));
+}
+
+void rejectsSimultaneousMoleculeReplacement() {
+    auto parsed = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x)
+  B(y)
+  C(z)
+end molecule types
+begin reaction rules
+  replace_B_with_C: A(x!1).B(y!1) -> A(x) + C(z) k
+end reaction rules
+)BNG");
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(!lowered.ok());
+    assert(lowered.model.expanded_rules.empty());
+    assert(std::any_of(lowered.issues.begin(), lowered.issues.end(), [](const auto& item) {
+        return item.message.find("simultaneous molecule replacement requires orphan-context semantics") !=
+               std::string::npos;
+    }));
+}
+
+void reverseDirectionRetainsWholeSpeciesDeletionScope() {
+    auto parsed = bng::parser::parseModel(R"BNG(
+begin parameters
+  kf 1
+  kr 1
+end parameters
+begin molecule types
+  A(x~u~p)
+  B()
+end molecule types
+begin reaction rules
+  reversible_add_B: A(x~u) <-> A(x~p) + B() kf, kr
+end reaction rules
+)BNG");
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+    assert(semantic.rules().size() == 1);
+    assert(semantic.rules().front().reverse().has_value());
+    assert(semantic.rules().front().reverse()->wholeSpeciesDeletions ==
+           std::vector<std::size_t>{1});
+
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    if (!lowered.ok()) {
+        for (const auto& item : lowered.issues)
+            std::cerr << item.entity << ": " << item.message << '\n';
+    }
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 2);
+    const auto& reverseActions = lowered.model.expanded_rules.back().actions;
+    assert(reverseActions.size() == 2);
+    assert(std::count_if(reverseActions.begin(), reverseActions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::DestroyComplex;
+    }) == 1);
+    assert(std::count_if(reverseActions.begin(), reverseActions.end(), [](const auto& action) {
+        return action.kind == nfnext::ActionKind::Destroy;
+    }) == 0);
+    const auto wholeSpeciesAction = std::find_if(
+        reverseActions.begin(), reverseActions.end(), [](const auto& action) {
+            return action.kind == nfnext::ActionKind::DestroyComplex;
+        });
+    assert(wholeSpeciesAction != reverseActions.end());
+    assert(wholeSpeciesAction->target_node == 1);
+    assert(wholeSpeciesAction->molecule_type == 1);
 }
 
 } // namespace
@@ -141,6 +493,11 @@ end reaction rules
     assert(nonzeroSiteRule.actions[0].value == 1); // A.y~on
 
     rejectsUnrepresentablePackedSiteIndex();
+    lowersWholeSpeciesDeletionWithHiddenConnectedContext();
+    lowersExplicitBondAndHiddenContextAsOneSpeciesDeletion();
+    deleteMoleculesRemainsMoleculeScoped();
+    reverseDirectionRetainsWholeSpeciesDeletionScope();
+    rejectsSimultaneousMoleculeReplacement();
 
     std::cout << "BNG -> NFnext lowering bridge: PASS\n";
     return 0;
