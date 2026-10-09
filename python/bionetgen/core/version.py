@@ -1,5 +1,11 @@
 import os
-from cement.utils.version import get_version as cement_get_version
+
+try:
+    from cement.utils.version import get_version as cement_get_version
+except ModuleNotFoundError as exc:
+    if exc.name != "cement":
+        raise
+    cement_get_version = None
 
 # Find VERSION file
 vpath = os.path.dirname(os.path.abspath(__file__))
@@ -18,4 +24,11 @@ VERSION = tuple(vtuple)
 
 
 def get_version(version=VERSION):
-    return cement_get_version(version)
+    if cement_get_version is not None:
+        return cement_get_version(version)
+
+    # Cement is an optional legacy extra. Without its formatter, keep the
+    # defaults object importable and report the base version from this
+    # module's VERSION file. The legacy Cement CLI diagnoses the missing
+    # extra when a user tries to start it.
+    return ".".join(str(part) for part in version[:3])
