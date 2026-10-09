@@ -92,7 +92,13 @@ class BioNetGenModel:
         return self._model.get_parameter(name)
 
     def set_parameter(self, name: str, value: float) -> None:
-        self._model.set_parameter(name, value)
+        try:
+            self._model.set_parameter(name, value)
+        finally:
+            # Generated networks contain evaluated seed amounts and other
+            # parameter-dependent compile results. Also discard the cache if
+            # parameter reevaluation raises after changing the model.
+            self._network = None
 
     def parameter_scan(self, *args, **kwargs):
         from bionetgen.scan import parameter_scan as _parameter_scan

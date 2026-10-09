@@ -341,17 +341,16 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
     const bool logRules = parsePrintRules(document_.protocol());
     const bool checkIso = parseCheckIso(document_.protocol());
 
-    // Set compartment maps from the compiled semantic declarations.
-    {
-        std::unordered_map<std::string, int> compDims;
-        std::unordered_map<std::string, std::string> compParents;
-        for (const auto& comp : compiled.compartments()) {
-            compDims[comp.name] = comp.dimension;
-            if (!comp.parentName.empty()) compParents[comp.name] = comp.parentName;
-        }
-        ast::setCompartmentDimensions(compDims);
-        ast::setCompartmentParents(compParents);
+    // Rule expansion reads compartment metadata from its compatibility
+    // helpers. Keep that context isolated to this thread and restore it on
+    // every exit path, including exceptions.
+    std::unordered_map<std::string, int> compDims;
+    std::unordered_map<std::string, std::string> compParents;
+    for (const auto& comp : compiled.compartments()) {
+        compDims[comp.name] = comp.dimension;
+        if (!comp.parentName.empty()) compParents[comp.name] = comp.parentName;
     }
+    ast::CompartmentContextScope compartmentContext(compDims, compParents);
 
     GeneratedNetwork network;
     // Runtime graph types belong to this backend lowering context, not the
