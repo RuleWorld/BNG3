@@ -306,9 +306,9 @@ def test_native_import_accepts_only_integer_zero_mutation_references(monkeypatch
         ("molecule", False, "molecule reference is out of range"),
     ):
         invalid = copy.deepcopy(document)
-        invalid["model"]["rules"][0]["forward"]["mutations"][0]["molecule"][field] = (
-            value
-        )
+        invalid["model"]["rules"][0]["forward"]["mutations"][0]["molecule"][
+            field
+        ] = value
         with pytest.raises(ValueError, match=message):
             bionetgen.from_bngir(invalid, native=True)
 
