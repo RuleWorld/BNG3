@@ -226,6 +226,7 @@ void bind_model(py::module_& m) {
             // evaluateAll() picks up the new value instead of re-evaluating
             // the original parsed expression.
             params.add(Parameter(name, Expression::number(value)));
+            params.evaluateAll();
         })
         .def("get_parameter", [](const Model& m, const std::string& name) -> const Parameter& {
             return m.getParameters().get(name);

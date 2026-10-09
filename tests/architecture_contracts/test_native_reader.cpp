@@ -1,7 +1,11 @@
 #include <algorithm>
 #include <memory>
+#include <vector>
 #include <catch2/catch_test_macros.hpp>
 #include "NFcore.hh"
+#include "templateMolecule.hh"
+#include "transformationSet.hh"
+#include "reaction.hh"
 #include "NFinput_fromAst.hh"
 #include "parser/BNGAstVisitor.hpp"
 #include "nfsim_native_reader.hh"
@@ -19,6 +23,36 @@ std::unique_ptr<NFcore::System> systemFor(const std::string& rule) {
     auto system = std::unique_ptr<NFcore::System>(
         NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
     REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> conditionalDeletionDescriptorSystem() {
+    auto system = std::make_unique<NFcore::System>("conditional deletion descriptor");
+
+    std::vector<std::string> aComponents{"s", "b"};
+    std::vector<std::string> aDefaults{"U", "No State"};
+    std::vector<std::vector<std::string>> aStates{{"U", "P"}, {}};
+    auto* aType = new NFcore::MoleculeType(
+        "A", aComponents, aDefaults, aStates, system.get());
+
+    std::vector<std::string> bComponents{"a"};
+    std::vector<std::string> bDefaults{"No State"};
+    std::vector<std::vector<std::string>> bStates(1);
+    auto* bType = new NFcore::MoleculeType(
+        "B", bComponents, bDefaults, bStates, system.get());
+
+    auto* a = new NFcore::TemplateMolecule(aType);
+    a->addComponentConstraint("s", "U");
+    auto* b = new NFcore::TemplateMolecule(bType);
+    NFcore::TemplateMolecule::bind(a, "b", "", b, "a", "");
+
+    std::vector<NFcore::TemplateMolecule*> reactants{a};
+    auto* transformations = new NFcore::TransformationSet(reactants);
+    REQUIRE(transformations->addDeleteMolecule(
+        a, NFcore::TransformationFactory::DELETE_MOLECULES_NO_KEYWORD));
+    transformations->finalize();
+    system->addReaction(new NFcore::BasicRxnClass(
+        "conditional", 1.0, "", transformations, system.get()));
     return system;
 }
 
@@ -1107,8 +1141,11 @@ TEST_CASE("native NFcore2 reader captures complete species deletion") {
     CHECK_FALSE(engine.state().molecules(NFcore2::MoleculeTypeId(0)).alive(molecule));
 }
 
-TEST_CASE("native NFcore2 reader preserves implicit conditional deletion") {
-    auto system = systemFor("conditional: A(s~U,b!1).B(a!1) -> B(a) 1");
+TEST_CASE("native NFcore2 reader preserves conditional deletion metadata") {
+    // Model an already-existing native descriptor directly through NFsim's
+    // public API. This checks reader/snapshot/lowering preservation only; it
+    // does not claim that NFsim executes BNGL's conditional product-count rule.
+    auto system = conditionalDeletionDescriptorSystem();
     const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
     REQUIRE(snapshot.rules.size() == 1);
     const auto removal = std::find_if(snapshot.rules[0].transforms.begin(),
@@ -1121,6 +1158,28 @@ TEST_CASE("native NFcore2 reader preserves implicit conditional deletion") {
     const auto lowered = NFcore2::lowerLegacyNFsim(*system);
     CHECK(lowered.supported_rule_count == 1);
     CHECK(lowered.fallback_rule_count == 0);
+}
+
+TEST_CASE("direct BNGL admission rejects implicit conditional partial deletion") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+ A(s~U~P,b)
+ B(a)
+end molecule types
+begin seed species
+ A(s~U,b) 2
+ B(a) 2
+end seed species
+begin reaction rules
+ conditional: A(s~U,b!1).B(a!1) -> B(a) 1
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    int traversal = 0;
+    std::unique_ptr<NFcore::System> direct(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    CHECK_FALSE(direct);
 }
 
 TEST_CASE("native NFcore2 reader preserves explicit DeleteMolecules deletion") {

@@ -22,18 +22,20 @@ namespace bng::engine {
 
 namespace {
 
-std::optional<std::size_t> parseMaxIter(const compile::SimulationProtocol& protocol) {
+std::size_t maxIterations(const compile::SimulationProtocol& protocol) {
     for (const auto& action : protocol.actions) {
-        if (action.name != "generate_network") {
+        if (!action.generateNetworkOptions.has_value()) {
             continue;
         }
-        const auto found = action.arguments.find("max_iter");
-        if (found == action.arguments.end()) {
-            continue;
+        const auto& options = *action.generateNetworkOptions;
+        if (options.maxIterationsDiagnostic.has_value()) {
+            throw std::runtime_error(options.maxIterationsDiagnostic->message);
         }
-        return static_cast<std::size_t>(std::stoul(found->second));
+        if (options.maxIterations.has_value()) {
+            return *options.maxIterations;
+        }
     }
-    return std::nullopt;
+    return 100;
 }
 
 std::map<std::string, std::size_t> parseMaxStoich(const compile::SimulationProtocol& protocol) {
@@ -341,17 +343,16 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
     const bool logRules = parsePrintRules(document_.protocol());
     const bool checkIso = parseCheckIso(document_.protocol());
 
-    // Set compartment maps from the compiled semantic declarations.
-    {
-        std::unordered_map<std::string, int> compDims;
-        std::unordered_map<std::string, std::string> compParents;
-        for (const auto& comp : compiled.compartments()) {
-            compDims[comp.name] = comp.dimension;
-            if (!comp.parentName.empty()) compParents[comp.name] = comp.parentName;
-        }
-        ast::setCompartmentDimensions(compDims);
-        ast::setCompartmentParents(compParents);
+    // Rule expansion reads compartment metadata from its compatibility
+    // helpers. Keep that context isolated to this thread and restore it on
+    // every exit path, including exceptions.
+    std::unordered_map<std::string, int> compDims;
+    std::unordered_map<std::string, std::string> compParents;
+    for (const auto& comp : compiled.compartments()) {
+        compDims[comp.name] = comp.dimension;
+        if (!comp.parentName.empty()) compParents[comp.name] = comp.parentName;
     }
+    ast::CompartmentContextScope compartmentContext(compDims, compParents);
 
     GeneratedNetwork network;
     // Runtime graph types belong to this backend lowering context, not the
@@ -480,7 +481,7 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
 }
 
 GeneratedNetwork NetworkGenerator::generate(const std::filesystem::path& sourcePath) {
-    auto network = generateNative(parseMaxIter(document_.protocol()).value_or(100));
+    auto network = generateNative(maxIterations(document_.protocol()));
     if (!sourcePath.empty()) {
         if (sourceModel_ == nullptr) {
             throw std::runtime_error(

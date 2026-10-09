@@ -5,6 +5,22 @@
 
 using namespace NFcore;
 
+namespace {
+
+inline void appendRecycledProductNode(list<Molecule *> &products,
+		Molecule *molecule, list<Molecule *> *recycledNodes)
+{
+	if (recycledNodes == 0 || recycledNodes->empty()) {
+		products.push_back(molecule);
+		return;
+	}
+	list<Molecule *>::iterator node = recycledNodes->begin();
+	*node = molecule;
+	products.splice(products.end(), *recycledNodes, node);
+}
+
+}
+
 
 list <Molecule *> TransformationSet::deleteList;
 list <Molecule *> TransformationSet::updateAfterDeleteList;
@@ -818,7 +834,8 @@ bool TransformationSet::checkMolecularity( MappingSet ** mappingSets )
 
 bool TransformationSet::getListOfProducts(
 		MappingSet **mappingSets, list <Molecule *> &products, int traversalLimit,
-		vector <unsigned int> *componentSizes, bool *componentsTruncated)
+		vector <unsigned int> *componentSizes, bool *componentsTruncated,
+		list <Molecule *> *recycledNodes)
 {
 	System *profileSystem = 0;
 	if (n_reactants > 0 && reactants[0] != 0 &&
@@ -869,7 +886,7 @@ bool TransformationSet::getListOfProducts(
 				std::size_t productsBeforeTraversal = products.size();
 				auto last = was_empty ? products.end() : std::prev(products.end());
 				bool traversalTruncated = molecule->traverseBondedNeighborhood(
-						products, traversalLimit);
+						products, traversalLimit, recycledNodes);
 				if (traversalTruncated && componentsTruncated != 0)
 					*componentsTruncated = true;
 				if (componentSizes != 0)
@@ -902,7 +919,7 @@ bool TransformationSet::getListOfProducts(
 		// is this molecule already on the product list?
 		if ( product_set.find( molecule ) == product_set.end() )
 		{	// Add molecule to list
-			products.push_back( molecule );
+			appendRecycledProductNode(products, molecule, recycledNodes);
 			product_set.insert( molecule );
 			if (componentSizes != 0)
 				componentSizes->push_back(1);
@@ -925,8 +942,9 @@ Molecule * TransformationSet::getPopulationPointer( unsigned int r ) const
 		    : NULL;
 }
 
-bool TransformationSet::getListOfAddedMolecules(MappingSet **mappingSets, list <Molecule *> &products, int traversalLimit)
-// bool TransformationSet::getListOfAddedMolecules(MappingSet **mappingSets, vector <Molecule *> &products, int traversalLimit)
+bool TransformationSet::getListOfAddedMolecules(MappingSet **mappingSets,
+		list <Molecule *> &products, int traversalLimit,
+		list <Molecule *> *recycledNodes)
 {
 	System *profileSystem = 0;
 	if (n_reactants > 0 && reactants[0] != 0 &&
@@ -936,6 +954,14 @@ bool TransformationSet::getListOfAddedMolecules(MappingSet **mappingSets, list <
 	ProfileTime profileStart = profile ? profileNow() : ProfileTime();
 	unsigned long long productsBefore = profile
 		? static_cast<unsigned long long>(products.size()) : 0;
+	/* Without add-molecule transforms the loop below has nothing to visit;
+	 * skip building the duplicate-check set for every firing. */
+	if (n_addmol == 0) {
+		if (profile)
+			profileSystem->recordProfileProductCollection(
+					profileElapsedSeconds(profileStart), 0);
+		return true;
+	}
 
 	std::unordered_set<Molecule*> product_set(products.begin(), products.end());
 
@@ -953,7 +979,7 @@ bool TransformationSet::getListOfAddedMolecules(MappingSet **mappingSets, list <
 		// Is the molecule already in the products list?  If not, add to list.
 		if ( product_set.find( molecule ) == product_set.end() )
 		{	// Add molecule to list.
-			products.push_back( molecule );
+			appendRecycledProductNode(products, molecule, recycledNodes);
 			product_set.insert( molecule );
 			// NOTE: we don't need to traverse neighbors. All new molecules will be put in this
 			//  list separately and old molecules that bind to new molecules will be traversed elsewhere

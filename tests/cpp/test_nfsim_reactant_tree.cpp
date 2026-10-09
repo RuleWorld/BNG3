@@ -1,5 +1,6 @@
-#include <map>
+#include <cmath>
 #include <list>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -185,6 +186,118 @@ end reaction rules
 
     delete chunked;
     delete continuous;
+}
+
+TEST_CASE("NFsim sim stops before an event beyond the final checkpoint") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(b)
+    B(a,c)
+    C(b)
+    D()
+end molecule types
+begin seed species
+    A(b!1).B(a!1,c!2).C(b!2) 100
+    D() 1
+end seed species
+begin observables
+    Molecules OA A()
+    Molecules OB B()
+    Molecules OC C()
+    Molecules OD D()
+end observables
+begin reaction rules
+    delete: A(b!1).B(a!1) -> 0 k
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    int continuousTraversalLimit = 0;
+    auto* continuous = NFinput::buildSystemFromAst(
+        *model, false, 20000, false, continuousTraversalLimit);
+    REQUIRE(continuous != nullptr);
+    continuous->seedRNG(7);
+    continuous->prepareForSimulation();
+    continuous->getOutputFileStream().setUseFile(false);
+    continuous->sim(2.0, 20, false);
+
+    int chunkedTraversalLimit = 0;
+    auto* chunked = NFinput::buildSystemFromAst(
+        *model, false, 20000, false, chunkedTraversalLimit);
+    REQUIRE(chunked != nullptr);
+    chunked->seedRNG(7);
+    chunked->prepareForSimulation();
+    for (int checkpoint = 1; checkpoint <= 20; ++checkpoint) {
+        const double time = 2.0 * static_cast<double>(checkpoint) / 20.0;
+        CHECK(chunked->stepTo(time) == Catch::Approx(time));
+    }
+
+    int continuedTraversalLimit = 0;
+    auto* continued = NFinput::buildSystemFromAst(
+        *model, false, 20000, false, continuedTraversalLimit);
+    REQUIRE(continued != nullptr);
+    continued->seedRNG(7);
+    continued->prepareForSimulation();
+    continued->sim(1.0, 10, false);
+    CHECK(continued->getCurrentTime() == Catch::Approx(1.0));
+    continued->sim(1.0, 10, false);
+
+    CHECK(continuous->getCurrentTime() == Catch::Approx(2.0));
+    CHECK(continuous->getGlobalEventCounter() == chunked->getGlobalEventCounter());
+    CHECK(continuous->getObservableByName("OA")->getCount() ==
+          chunked->getObservableByName("OA")->getCount());
+    CHECK(continuous->getObservableByName("OB")->getCount() ==
+          chunked->getObservableByName("OB")->getCount());
+    CHECK(continued->getCurrentTime() == Catch::Approx(2.0));
+    CHECK(continued->getGlobalEventCounter() == continuous->getGlobalEventCounter());
+    CHECK(continued->getObservableByName("OA")->getCount() ==
+          continuous->getObservableByName("OA")->getCount());
+    CHECK(continued->getObservableByName("OB")->getCount() ==
+          continuous->getObservableByName("OB")->getCount());
+
+    delete continued;
+    delete chunked;
+    delete continuous;
+}
+
+TEST_CASE("NFsim sim defers an event exactly at its endpoint") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    X()
+end molecule types
+begin observables
+    Molecules X_total X()
+end observables
+begin reaction rules
+    birth: 0 -> X() 1.0
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    NFcore::NfsimRNG referenceRng;
+    referenceRng.seed(7);
+    const double eventTime = -std::log(referenceRng.random_open());
+
+    int traversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    REQUIRE(system != nullptr);
+    system->seedRNG(7);
+    system->prepareForSimulation();
+    system->sim(eventTime, 1, false);
+
+    CHECK(system->getCurrentTime() == Catch::Approx(eventTime));
+    CHECK(system->getGlobalEventCounter() == 0);
+    CHECK(system->getObservableByName("X_total")->getCount() == 0);
+
+    system->stepTo(eventTime + 0.1);
+    CHECK(system->getGlobalEventCounter() == 1);
+    CHECK(system->getObservableByName("X_total")->getCount() == 1);
+
+    delete system;
 }
 
 TEST_CASE("NFsim ReactantTree preserves the compact one-leaf contract") {

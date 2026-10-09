@@ -206,6 +206,112 @@ end BNG
 
 namespace BNG
 
+private theorem listGet?_mem {α : Type} : ∀ {xs : List α} {index : Nat} {value : α},
+    listGet? xs index = some value → value ∈ xs := by
+  intro xs
+  induction xs with
+  | nil =>
+      intro index value h
+      simp [listGet?] at h
+  | cons head tail ih =>
+      intro index value h
+      cases index with
+      | zero =>
+          simp [listGet?] at h
+          subst value
+          simp
+      | succ index =>
+          apply List.mem_cons_of_mem
+          exact ih (by simpa [listGet?] using h)
+
+private theorem enumerateWithNat_get? {α : Type} (base : Nat) (values : List α)
+    (index : Nat) :
+    listGet? (enumerateWithNat base values) index =
+      (listGet? values index).map (fun value => (value, base + index)) := by
+  induction values generalizing base index with
+  | nil =>
+      cases index <;> simp [enumerateWithNat, listGet?]
+  | cons head tail ih =>
+      cases index with
+      | zero => simp [enumerateWithNat, listGet?]
+      | succ index =>
+          simp [enumerateWithNat, listGet?, ih, Nat.add_assoc, Nat.add_comm 1 index]
+
+private theorem enumerateWithNat_mem_of_get? {α : Type} (base : Nat)
+    (values : List α) (index : Nat) (value : α)
+    (h : listGet? values index = some value) :
+    (value, base + index) ∈ enumerateWithNat base values := by
+  have hget := enumerateWithNat_get? base values index
+  rw [h] at hget
+  simp at hget
+  exact listGet?_mem hget
+
+/-- Every molecule declaration contributes its declaration position as its packed NFnext type ID. -/
+theorem NFnextPacking.fromSignature_type_entry (sig : Signature)
+    (index : Nat) (molecule : MoleculeType)
+    (h : listGet? sig.moleculeTypes index = some molecule) :
+    (molecule.id, (⟨index⟩ : PackedType)) ∈
+      (NFnextPacking.fromSignature sig).types := by
+  change (molecule.id, (⟨index⟩ : PackedType)) ∈
+    (enumerateWithNat 0 sig.moleculeTypes).map
+      (fun pair => (pair.1.id, ⟨pair.2⟩))
+  apply List.mem_map.mpr
+  refine ⟨(molecule, index),
+    (by simpa using enumerateWithNat_mem_of_get? 0 _ index molecule h), ?_⟩
+  rfl
+
+/-- Every component contributes its molecule-local declaration position as its packed NFnext site ID. -/
+theorem NFnextPacking.fromSignature_site_entry (sig : Signature)
+    (moleculeIndex componentIndex : Nat) (molecule : MoleculeType)
+    (component : ComponentType)
+    (hmolecule : listGet? sig.moleculeTypes moleculeIndex = some molecule)
+    (hcomponent : listGet? molecule.components componentIndex = some component) :
+    (({ moleculeType := molecule.id, component := component.id } : PackedComponentKey),
+      (⟨componentIndex⟩ : PackedSite)) ∈
+      (NFnextPacking.fromSignature sig).sites := by
+  change (({ moleculeType := molecule.id, component := component.id } : PackedComponentKey),
+      (⟨componentIndex⟩ : PackedSite)) ∈
+    sig.moleculeTypes.flatMap (fun current =>
+      (enumerateWithNat 0 current.components).map (fun pair =>
+        (({ moleculeType := current.id, component := pair.1.id } : PackedComponentKey),
+          (⟨pair.2⟩ : PackedSite))))
+  apply List.mem_flatMap.mpr
+  refine ⟨molecule, listGet?_mem hmolecule, ?_⟩
+  apply List.mem_map.mpr
+  refine ⟨(component, componentIndex),
+    (by simpa using enumerateWithNat_mem_of_get? 0 _ componentIndex component hcomponent), ?_⟩
+  rfl
+
+/-- Every state contributes its component-local declaration position as its packed NFnext state ID. -/
+theorem NFnextPacking.fromSignature_state_entry (sig : Signature)
+    (moleculeIndex componentIndex stateIndex : Nat) (molecule : MoleculeType)
+    (component : ComponentType) (state : StateDecl)
+    (hmolecule : listGet? sig.moleculeTypes moleculeIndex = some molecule)
+    (hcomponent : listGet? molecule.components componentIndex = some component)
+    (hstate : listGet? component.states stateIndex = some state) :
+    (({ moleculeType := molecule.id, component := component.id, state := state.id } : PackedStateKey),
+      (⟨stateIndex⟩ : PackedState)) ∈
+      (NFnextPacking.fromSignature sig).states := by
+  change (({ moleculeType := molecule.id, component := component.id, state := state.id } : PackedStateKey),
+      (⟨stateIndex⟩ : PackedState)) ∈
+    sig.moleculeTypes.flatMap (fun current =>
+      current.components.flatMap (fun currentComponent =>
+        (enumerateWithNat 0 currentComponent.states).map (fun pair =>
+          (({ moleculeType := current.id, component := currentComponent.id,
+              state := pair.1.id } : PackedStateKey), (⟨pair.2⟩ : PackedState)))))
+  apply List.mem_flatMap.mpr
+  refine ⟨molecule, listGet?_mem hmolecule, ?_⟩
+  apply List.mem_flatMap.mpr
+  refine ⟨component, listGet?_mem hcomponent, ?_⟩
+  apply List.mem_map.mpr
+  refine ⟨(state, stateIndex),
+    (by simpa using enumerateWithNat_mem_of_get? 0 _ stateIndex state hstate), ?_⟩
+  rfl
+
+end BNG
+
+namespace BNG
+
 /-! ## Exact-bond and transformation lowering -/
 
 /-- Compact site index for one explicit rule-site endpoint. -/
