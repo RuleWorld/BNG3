@@ -1,5 +1,6 @@
 """Acceptance contracts for the Python package CI installation path."""
 
+import ast
 import hashlib
 import json
 import os
@@ -43,6 +44,10 @@ VALIDATION_MANIFEST = REPO / "tests" / "validation" / "validation_manifest.json"
 VALIDATE_DIR = REPO / "tests" / "validation" / "Validate"
 PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
 FORMAL_WORKFLOW = REPO / ".github" / "workflows" / "formal.yml"
+UPSTREAMS_LOCK = REPO / "provenance" / "upstreams.lock.yml"
+SSA_ENSEMBLE_MANIFEST = (
+    REPO / "tests" / "validation" / "evidence" / "bng2-ssa-ensembles" / "manifest.json"
+)
 
 CPP_CMAKE = REPO / "cpp" / "CMakeLists.txt"
 TOP_LEVEL_CMAKE = REPO / "CMakeLists.txt"
@@ -603,8 +608,23 @@ def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
     parity_jobs = parity_doc.get("jobs") or {}
     for job in ("oracle-lock", "bng2-parity", "nfsim-parity", "pybionetgen-compat"):
         assert job in parity_jobs, f"parity.yml must define a {job} job"
+    oracle_lock_doc = parity_jobs["oracle-lock"]
     oracle_lock = _workflow_job_from(PARITY_WORKFLOW, "oracle-lock")
     assert "python -m pip install pytest numpy pyyaml" in oracle_lock
+    assert "scripts/ci/checkout_oracle.py --validate-only" in oracle_lock
+    assert (
+        "tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci"
+        in oracle_lock
+    )
+    assert (
+        "tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally"
+        in oracle_lock
+    )
+    lock_step_names = [step.get("name", "") for step in oracle_lock_doc["steps"]]
+    assert lock_step_names.index("Validate locked sources") < lock_step_names.index(
+        "Run CI contract tests"
+    )
+    assert parity_jobs["bng2-parity"]["needs"] == "oracle-lock"
 
 
 def _assert_exact_head_concurrency(path: Path, label: str) -> None:
@@ -652,6 +672,181 @@ def test_nfsim_parity_uses_regular_installed_api_and_pinned_native_oracle():
     assert "--bng-cpp build/cpp/bng_cpp" not in job
     assert "NFSIM_BIN" in job
     assert "$RUNNER_TEMP/oracle-nfsim/build/NFsim" in job
+
+
+def test_numerical_expression_export_parity_uses_one_installed_native_build():
+    """Parity steps share pinned BNG2 and BNG3 identities with valid contexts."""
+
+    job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["bng2-parity"]
+    job = _workflow_job_from(PARITY_WORKFLOW, "bng2-parity")
+    steps = {step.get("id"): step for step in job_doc["steps"] if step.get("id")}
+
+    job_env = job_doc.get("env") or {}
+    compare_step = next(
+        step
+        for step in job_doc["steps"]
+        if step.get("name") == "Compare graph-aware networks against BNG2"
+    )
+    required = steps["numerical_expression_export_parity"]
+
+    assert job_doc["timeout-minutes"] == 120
+    assert job_env.get("BNG3_PYTHON_TEST_MODE") == "installed"
+    assert "BNG2_PERL" not in job_env
+    assert "BNGPATH" not in job_env
+    for step in (compare_step, required):
+        step_env = step.get("env") or {}
+        assert step_env.get("BNG2_PERL") == (
+            "${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl"
+        )
+        assert step_env.get("BNGPATH") == "${{ runner.temp }}/oracle-bionetgen/bng2"
+
+    assert "--name bionetgen" in job
+    assert 'make -C "$network3" -f Makefile.cmake' in job
+    assert "bng2/bin/run_network" in job
+    assert 'sha256sum "$run_network"' in job
+    assert "python -m venv .venv" in job
+    assert (
+        ".venv/bin/python -m pip install scikit-build-core pybind11 pytest numpy" in job
+    )
+    assert "--no-build-isolation" in job
+    assert "--config-settings=build-dir=build" in job
+    assert "--config-settings=cmake.define.BUILD_CLI=ON" in job
+    assert '".[full,dev]"' in job
+    assert "-DBUILD_CLI=ON" in job
+    assert "-DBUILD_NFSIM_CLI=OFF" in job
+    assert "-DBUILD_TESTS=OFF" in job
+    assert "test -x build/cpp/bng_cpp" in job
+    assert "scripts/ci/check_python_package_identity.py" in job
+    assert "tests/validation/test_worker_package_identity.py" in job
+    assert ".venv/bin/python -m pytest" in job
+    assert "cmake --build build" not in job
+    assert "PYTHONPATH=python:build/cpp" not in job
+
+    required_run = required["run"]
+    for module in (
+        "tests/validation/test_parity_rhs.py",
+        "tests/validation/test_parity_ode.py",
+        "tests/validation/test_parity_stochastic.py",
+        "tests/validation/test_export_formats.py",
+    ):
+        assert module in required_run
+    assert '-m "not slow"' in required_run
+    assert "--bng-cpp build/cpp/bng_cpp" in required_run
+    assert "-q -ra" in required_run
+    assert '--junitxml="$RUNNER_TEMP/issue182-required-parity.xml"' in required_run
+
+    slow = steps["ssa_ensemble_parity"]
+    assert slow["if"] == (
+        "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+    )
+    assert "test_parity_stochastic.py" in slow["run"]
+    assert '-m "stochastic and slow"' in slow["run"]
+    assert '--junitxml="$RUNNER_TEMP/issue182-ssa-ensemble.xml"' in slow["run"]
+    assert slow.get("env", {}).get("BNG_ENSEMBLE_WORKERS") == "2"
+    assert "continue-on-error" not in job
+
+    report = steps["report_issue182_scope"]
+    assert report["if"] == "always()"
+    assert (
+        "steps.numerical_expression_export_parity.outcome"
+        in report["env"]["REQUIRED_OUTCOME"]
+    )
+    assert "steps.ssa_ensemble_parity.outcome" in report["env"]["ENSEMBLE_OUTCOME"]
+    report_script = report["run"]
+    assert "ElementTree.parse(path).getroot()" in report_script
+    assert 'root.iter("testcase")' in report_script
+    for count in ('"failures"', '"errors"', '"skipped"'):
+        assert count in report_script
+    assert (
+        'Per-PR required modules: RHS, ODE, SSA determinism, and export (`-m "not slow"`).'
+        in report_script
+    )
+    assert "No additional model-name filter is applied" in report_script
+    assert "Scheduled/manual-only:" in report_script
+    assert any(
+        step.get("uses", "").startswith("actions/upload-artifact@")
+        and "issue182-*.xml" in str(step.get("with", {}).get("path"))
+        for step in job_doc["steps"]
+    )
+
+
+def test_package_identity_preflight_rejects_a_wrong_declared_source_head():
+    """The strict identity gate must fail before package inspection on mismatch."""
+    actual = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    wrong = "0" * 40 if actual != "0" * 40 else "1" * 40
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "scripts" / "ci" / "check_python_package_identity.py"),
+            "--source-revision",
+            wrong,
+            "--require-source-head",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "does not match checked-out Git HEAD" in result.stderr
+    assert wrong in result.stderr
+
+
+def test_issue182_frozen_ssa_ensemble_inputs_match_the_bng2_lock():
+    """The scheduled statistical lane consumes the unchanged, hashed BNG2 fixtures."""
+
+    lock = json.loads(UPSTREAMS_LOCK.read_text(encoding="utf-8"))
+    manifest = json.loads(SSA_ENSEMBLE_MANIFEST.read_text(encoding="utf-8"))
+    stochastic_path = REPO / "tests" / "validation" / "test_parity_stochastic.py"
+    stochastic_module = ast.parse(stochastic_path.read_text(encoding="utf-8"))
+    model_assignment = next(
+        node
+        for node in ast.walk(stochastic_module)
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(target, ast.Name) and target.id == "STOCH_MODELS"
+            for target in node.targets
+        )
+    )
+    assert isinstance(model_assignment.value, ast.ListComp)
+    assert tuple(ast.literal_eval(model_assignment.value.generators[0].iter)) == (
+        "gene_expr",
+        "michment",
+        "simple_system",
+    )
+    assert manifest["oracle"]["revision"] == lock["sources"]["bionetgen"]["revision"]
+    assert manifest["generation"]["method"] == "ssa"
+    assert manifest["generation"]["seed_range"] == [1, 200]
+    assert manifest["generation"]["t_start"] == 0
+    assert manifest["generation"]["t_end"] == 10
+    assert manifest["generation"]["n_steps"] == 50
+    assert manifest["generation"]["reset_before_each_member"] is True
+
+    assert set(manifest["models"]) == {"gene_expr", "michment", "simple_system"}
+    for model_name, record in manifest["models"].items():
+        assert record["member_count"] == 200
+        assert [member["seed"] for member in record["members"]] == list(range(1, 201))
+        source = REPO / record["source_path"]
+        assert (
+            hashlib.sha256(source.read_bytes()).hexdigest() == record["source_sha256"]
+        )
+
+        aggregate = hashlib.sha256()
+        ensemble = REPO / "tests" / "validation" / "golden" / f"{model_name}.ens"
+        for member in record["members"]:
+            path = ensemble / member["path"]
+            contents = path.read_bytes()
+            assert len(contents) == member["bytes"]
+            digest = hashlib.sha256(contents).hexdigest()
+            assert digest == member["sha256"]
+            aggregate.update(f"{member['path']}\t{digest}\n".encode("utf-8"))
+        assert aggregate.hexdigest() == record["aggregate_sha256"]
 
 
 def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
