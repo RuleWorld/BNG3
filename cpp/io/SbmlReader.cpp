@@ -820,6 +820,20 @@ NetReader::ParseResult SbmlReader::parse(
             const auto value = attribute(model, role);
             if (!value.empty()) result.unitDefaults[role] = value;
         }
+        // Level 2 expresses model-wide defaults through UnitDefinition ids,
+        // not Model attributes.  The reserved ids have the same default-unit
+        // meaning as their corresponding Level 3 attributes.
+        if (attribute(root, "level") == "2") {
+            for (const auto& [id, role] : std::map<std::string, std::string>{
+                     {"time", "timeUnits"}, {"substance", "substanceUnits"},
+                     {"volume", "volumeUnits"}, {"area", "areaUnits"},
+                     {"length", "lengthUnits"}}) {
+                if (result.unitDefaults.count(role) == 0 &&
+                    result.unitDefinitions.count(id) != 0) {
+                    result.unitDefaults[role] = id;
+                }
+            }
+        }
 
         const auto* compartments = model->FirstChildElement("listOfCompartments");
         if (compartments != nullptr) {
@@ -875,7 +889,8 @@ NetReader::ParseResult SbmlReader::parse(
                     amount = attribute(species, "initialConcentration", "0");
                 }
                 result.species.emplace_back(pattern, amount);
-                result.speciesUnits.push_back(attribute(species, "units"));
+                result.speciesUnits.push_back(attribute(
+                    species, "substanceUnits", attribute(species, "units")));
                 result.speciesInitialConcentrations.push_back(initialConcentration);
             }
         }

@@ -3,11 +3,14 @@
 #include "EnergyExportGuard.hpp"
 
 #include <algorithm>
+#include <iomanip>
 #include <sstream>
 #include <cctype>
+#include <stdexcept>
 #include <utility>
 
 #include "compile/CompiledModel.hpp"
+#include "engine/NetworkGenerator.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -60,6 +63,12 @@ std::string SbmlMultiWriter::write(const ast::Model& model) {
 std::string SbmlMultiWriter::write(const ast::Model& model, const Options& options) {
     requireNoEnergySemantics(model, "SBML-multi");
     const compile::CompiledModel compiled(model);
+    if (sbml_units::enabled(compiled) && !model.getReactionRules().empty()) {
+        throw std::invalid_argument(
+            "SBML-Multi cannot preserve unit-aware reaction-rule rates because "
+            "the writer emits authored rate expressions without converting them "
+            "to the exported item/time basis");
+    }
     std::ostringstream sbml;
 
     // SBML L3V1 header with Multi package namespace
@@ -265,6 +274,7 @@ std::string SbmlMultiWriter::writeParameters(
 std::string SbmlMultiWriter::writeSeedSpecies(
     const ast::Model& model, const compile::CompiledModel& compiled) {
     std::ostringstream sbml;
+    sbml << std::setprecision(17);
 
     if (model.getSeedSpecies().empty() && model.getReactionRules().empty()) {
         return {};
@@ -281,6 +291,11 @@ std::string SbmlMultiWriter::writeSeedSpecies(
         auto amountValue = seed.getAmount().evaluate([&](const std::string& name) {
             return model.getParameters().evaluate(name);
         }, 0.0);
+        const auto& compiledSeed = compiled.seeds()[i];
+        if (sbml_units::enabled(compiled)) {
+            amountValue = engine::NetworkGenerator::normalizeSeedAmount(
+                compiled, compiledSeed);
+        }
 
         // A single-molecule seed can carry its concrete states and outward
         // binding status in the Multi vocabulary.  Keep richer complexes as
@@ -312,19 +327,14 @@ std::string SbmlMultiWriter::writeSeedSpecies(
             ? std::string()
             : "st_" + makeValidSBMLId(moleculeType->getName());
 
-        const bool concentration = seed.hasUnit() &&
-            seed.getUnit()->dimension.substance != 0 &&
-            seed.getUnit()->dimension.length == -3 &&
-            seed.getUnit()->dimension.time == 0;
-
         sbml << "      <species id=\"" << speciesId
              << "\" name=\"" << escapeXml(pattern)
              << "\" compartment=\"" << compartmentId
-             << (concentration ? "\" initialConcentration=\"" :
-                                  "\" initialAmount=\"") << amountValue
-             << (concentration ? "\" hasOnlySubstanceUnits=\"false\"" :
-                                  "\" hasOnlySubstanceUnits=\"true\"")
-             << sbml_units::attribute(compiled, seed.getUnitName());
+             << "\" initialAmount=\"" << amountValue
+             << "\" hasOnlySubstanceUnits=\"true\""
+             << (sbml_units::enabled(compiled)
+                     ? sbml_units::speciesAttribute(compiled, "item")
+                     : std::string{});
 
         if (seed.isConstant()) {
             sbml << " constant=\"true\" boundaryCondition=\"true\"";
