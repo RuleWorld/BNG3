@@ -2,6 +2,12 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cctype>
+#include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <stdexcept>
 #include <vector>
@@ -38,6 +44,127 @@ double msBetween(std::chrono::steady_clock::time_point t0,
 } // namespace
 
 namespace {
+
+using ActionOverrides =
+    std::map<std::size_t, std::map<std::string, std::string>>;
+
+double parseActionOverrideNumber(const std::string& value,
+                                 const std::string& key) {
+    std::size_t parsed = 0;
+    double number = 0.0;
+    try {
+        number = std::stod(value, &parsed);
+    } catch (const std::exception&) {
+        throw std::invalid_argument(
+            "action override '" + key + "' must be a finite number");
+    }
+    if (parsed != value.size() || !std::isfinite(number)) {
+        throw std::invalid_argument(
+            "action override '" + key + "' must be a finite number");
+    }
+    return number;
+}
+
+class ScopedActionOverrides {
+public:
+    ScopedActionOverrides(Model& model, const ActionOverrides& overrides)
+        : model_(model) {
+        auto& actions = model_.getActions();
+        const std::set<std::string> simulationActions = {
+            "simulate", "simulate_ode", "simulate_ssa", "simulate_nf",
+            "simulate_pla", "simulate_psa"};
+        const std::set<std::string> supportedKeys = {
+            "t_start", "t_end", "n_steps"};
+
+        for (const auto& [index, values] : overrides) {
+            if (index >= actions.size()) {
+                throw std::invalid_argument(
+                    "action override index is outside the model action list");
+            }
+            std::string actionName = actions[index].name;
+            std::transform(actionName.begin(), actionName.end(), actionName.begin(),
+                           [](unsigned char value) {
+                               return static_cast<char>(std::tolower(value));
+                           });
+            if (simulationActions.find(actionName) == simulationActions.end()) {
+                throw std::invalid_argument(
+                    "time overrides are only supported for simulation actions");
+            }
+
+            std::optional<double> start;
+            std::optional<double> end;
+            for (const auto& [key, value] : values) {
+                if (supportedKeys.find(key) == supportedKeys.end()) {
+                    throw std::invalid_argument(
+                        "unsupported action override key: " + key);
+                }
+                if (key == "t_start") {
+                    start = parseActionOverrideNumber(value, key);
+                } else if (key == "t_end") {
+                    end = parseActionOverrideNumber(value, key);
+                } else if (key == "n_steps") {
+                    const double count = parseActionOverrideNumber(value, key);
+                    if (count < 1.0 || std::floor(count) != count) {
+                        throw std::invalid_argument(
+                            "action override 'n_steps' must be a positive integer");
+                    }
+                }
+                const auto original = actions[index].arguments.find(key);
+                changes_.push_back({
+                    index,
+                    key,
+                    original == actions[index].arguments.end()
+                        ? std::nullopt
+                        : std::optional<std::string>(original->second)});
+            }
+            if (start.has_value() && end.has_value() && *end < *start) {
+                throw std::invalid_argument(
+                    "action override 't_end' must be greater than or equal to 't_start'");
+            }
+        }
+
+        try {
+            for (const auto& [index, values] : overrides) {
+                for (const auto& [key, value] : values) {
+                    actions[index].arguments[key] = value;
+                }
+            }
+        } catch (...) {
+            restore();
+            throw;
+        }
+    }
+
+    ScopedActionOverrides(const ScopedActionOverrides&) = delete;
+    ScopedActionOverrides& operator=(const ScopedActionOverrides&) = delete;
+
+    ~ScopedActionOverrides() { restore(); }
+
+private:
+    struct Change {
+        std::size_t index;
+        std::string key;
+        std::optional<std::string> original;
+    };
+
+    void restore() noexcept {
+        auto& actions = model_.getActions();
+        for (auto change = changes_.rbegin(); change != changes_.rend(); ++change) {
+            if (change->index >= actions.size()) {
+                continue;
+            }
+            if (change->original.has_value()) {
+                actions[change->index].arguments[change->key] = *change->original;
+            } else {
+                actions[change->index].arguments.erase(change->key);
+            }
+        }
+        changes_.clear();
+    }
+
+    Model& model_;
+    std::vector<Change> changes_;
+};
 
 bool isResultFunction(const std::string& name) {
     return !name.empty() && name.front() != '_' &&
@@ -675,9 +802,12 @@ void bind_engine(py::module_& m) {
         py::arg("backend") = std::string("auto"),
         "Run batched SSA on a GPU backend (auto/cuda/metal). Raises when the selected "
         "backend is unavailable; use simulate_batch_ssa_cpu for the CPU pool");
-    m.def("execute", [](Model& model, const std::string& source_path, bool verbose) {
+    m.def("execute", [](Model& model, const std::string& source_path, bool verbose,
+                         const ActionOverrides& action_overrides) {
+        ScopedActionOverrides scopedOverrides(model, action_overrides);
         py::gil_scoped_release release;
         ActionDispatch::execute(model, source_path, verbose);
     }, py::arg("model"), py::arg("source_path"), py::arg("verbose") = false,
-       "Execute all actions defined in the model");
+       py::arg("action_overrides") = ActionOverrides{},
+       "Execute model actions with temporary scalar time overrides");
 }

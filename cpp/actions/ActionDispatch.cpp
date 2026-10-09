@@ -2641,7 +2641,17 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             engine::OdeOptions opts;
             opts.tEnd = parseScalarValue(tEnd, model);
-            opts.nSteps = static_cast<std::size_t>(parseScalarValue(nSteps, model));
+            opts.tStart = parseScalarValue(
+                stripQuotes(readArgument(action, "t_start", "0")), model);
+            opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+            if (opts.nSteps == 0) {
+                throw std::runtime_error("n_steps must be positive");
+            }
+            if (!std::isfinite(opts.tStart) || !std::isfinite(opts.tEnd) ||
+                opts.tEnd < opts.tStart) {
+                throw std::runtime_error(
+                    "simulate_pla requires finite times with t_end greater than or equal to t_start");
+            }
             opts.method = "pla";
 
             const auto seedText = readArgument(action, "seed", "");
@@ -2684,7 +2694,17 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             engine::OdeOptions opts;
             opts.tEnd = parseScalarValue(tEnd, model);
-            opts.nSteps = static_cast<std::size_t>(parseScalarValue(nSteps, model));
+            opts.tStart = parseScalarValue(
+                stripQuotes(readArgument(action, "t_start", "0")), model);
+            opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+            if (opts.nSteps == 0) {
+                throw std::runtime_error("n_steps must be positive");
+            }
+            if (!std::isfinite(opts.tStart) || !std::isfinite(opts.tEnd) ||
+                opts.tEnd < opts.tStart) {
+                throw std::runtime_error(
+                    "simulate_psa requires finite times with t_end greater than or equal to t_start");
+            }
 
             const auto seedText = readArgument(action, "seed", "");
             if (!seedText.empty()) {
