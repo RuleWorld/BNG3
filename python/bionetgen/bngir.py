@@ -604,6 +604,16 @@ def _parse_document(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     return root
 
 
+def _validate_envelope_properties(root: Mapping[str, Any]) -> None:
+    """Reject unknown top-level properties while allowing schema provenance."""
+    allowed = {"format", "version", "features", "model", "protocol", "provenance"}
+    unexpected = sorted(str(key) for key in root if key not in allowed)
+    if unexpected:
+        raise ValueError(
+            f"BNGIR document has unsupported properties: {', '.join(unexpected)}"
+        )
+
+
 def _validate_actions(root: Mapping[str, Any]) -> None:
     protocol = _require_mapping(root.get("protocol", {}), "protocol")
     actions = protocol.get("actions", [])
@@ -2187,11 +2197,13 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
 
     if root["version"] == VERSION:
         root = _load_document_v01(root)
+        _validate_envelope_properties(root)
         source = _as_bngl_v01(root)
         model_data = _require_mapping(root["model"], "model")
         name = model_data.get("name")
     else:
         root = _load_document_v02(root)
+        _validate_envelope_properties(root)
         source = _as_bngl_v02(root)
         model_data = _require_mapping(root["model"], "model")
         name = _require_mapping(model_data.get("metadata", {}), "model.metadata").get(
