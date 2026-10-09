@@ -1,7 +1,13 @@
 #include "SpeciesGraph.hpp"
 
-#include <utility>
 #include <algorithm>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <vector>
+
+#include "core/List.hpp"
+#include "core/Ullmann.hpp"
 
 namespace bng::ast {
 
@@ -22,6 +28,127 @@ std::string SpeciesGraph::canonicalLabel() const {
 
 std::string SpeciesGraph::fingerprint() const {
     return graph_.computeFingerprint();
+}
+
+namespace {
+
+// A verified index-for-index correspondence avoids the general search for
+// already aligned graphs. Every node label, compartment, degree, and outgoing
+// edge is checked, so this is a sufficient witness rather than a heuristic.
+bool indexCorrespondenceIsWitness(const BNGcore::PatternGraph& lhs,
+                                  const BNGcore::PatternGraph& rhs) {
+    const std::size_t n = lhs.size();
+    if (n != rhs.size()) {
+        return false;
+    }
+
+    std::vector<const BNGcore::Node*> lhsNodes(n, nullptr);
+    std::vector<const BNGcore::Node*> rhsNodes(n, nullptr);
+    const auto indexNodes = [n](const BNGcore::PatternGraph& graph,
+                                std::vector<const BNGcore::Node*>& slots) {
+        for (auto it = graph.begin(); it != graph.end(); ++it) {
+            const int index = (*it)->get_index();
+            if (index < 0 || static_cast<std::size_t>(index) >= n ||
+                slots[index] != nullptr) {
+                return false;
+            }
+            slots[index] = *it;
+        }
+        return true;
+    };
+    if (!indexNodes(lhs, lhsNodes) || !indexNodes(rhs, rhsNodes)) {
+        return false;
+    }
+
+    std::vector<int> marked(n, -1);
+    for (std::size_t i = 0; i < n; ++i) {
+        const BNGcore::Node* left = lhsNodes[i];
+        const BNGcore::Node* right = rhsNodes[i];
+        if (left == nullptr || right == nullptr ||
+            !(left->get_type() == right->get_type()) ||
+            left->get_state().get_BNG2_string() !=
+                right->get_state().get_BNG2_string() ||
+            left->get_compartment() != right->get_compartment() ||
+            left->out_degree() != right->out_degree()) {
+            return false;
+        }
+        for (auto edge = left->edges_out_begin(); edge != left->edges_out_end(); ++edge) {
+            const int target = (*edge)->get_index();
+            if (target < 0 || static_cast<std::size_t>(target) >= n) {
+                return false;
+            }
+            marked[target] = static_cast<int>(i);
+        }
+        for (auto edge = right->edges_out_begin(); edge != right->edges_out_end(); ++edge) {
+            const int target = (*edge)->get_index();
+            if (target < 0 || static_cast<std::size_t>(target) >= n ||
+                marked[target] != static_cast<int>(i)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool mapIsExactLabeledIsomorphism(const BNGcore::PatternGraph& lhs,
+                                  const BNGcore::PatternGraph& rhs,
+                                  const BNGcore::Map& map) {
+    std::unordered_set<const BNGcore::Node*> mappedNodes;
+    for (auto node = lhs.begin(); node != lhs.end(); ++node) {
+        const auto* mapped = map.mapf(*node);
+        if (mapped == nullptr ||
+            !((*node)->get_type() == mapped->get_type()) ||
+            (*node)->get_state().get_BNG2_string() !=
+                mapped->get_state().get_BNG2_string() ||
+            (*node)->get_compartment() != mapped->get_compartment() ||
+            (*node)->out_degree() != mapped->out_degree() ||
+            !mappedNodes.insert(mapped).second) {
+            return false;
+        }
+
+        std::unordered_map<const BNGcore::Node*, std::size_t> expectedEdges;
+        for (auto edge = (*node)->edges_out_begin();
+             edge != (*node)->edges_out_end(); ++edge) {
+            const auto* mappedTarget = map.mapf(*edge);
+            if (mappedTarget == nullptr) {
+                return false;
+            }
+            ++expectedEdges[mappedTarget];
+        }
+        std::unordered_map<const BNGcore::Node*, std::size_t> actualEdges;
+        for (auto edge = mapped->edges_out_begin();
+             edge != mapped->edges_out_end(); ++edge) {
+            ++actualEdges[*edge];
+        }
+        if (expectedEdges != actualEdges) {
+            return false;
+        }
+    }
+    return mappedNodes.size() == rhs.size();
+}
+
+} // namespace
+
+bool SpeciesGraph::graphIsomorphicTo(const BNGcore::PatternGraph& other) const {
+    if (graph_.empty() || other.empty()) {
+        return graph_.get_BNG2_string() == other.get_BNG2_string();
+    }
+    if (graph_.size() != other.size()) {
+        return false;
+    }
+    if (indexCorrespondenceIsWitness(graph_, other)) {
+        return true;
+    }
+
+    BNGcore::UllmannSGIso matcher(graph_, other);
+    BNGcore::List<BNGcore::Map> maps;
+    matcher.find_maps(maps);
+    for (auto map = maps.begin(); map != maps.end(); ++map) {
+        if (mapIsExactLabeledIsomorphism(graph_, other, *map)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::string SpeciesGraph::toString() const {
