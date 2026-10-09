@@ -3,7 +3,7 @@
 **Refreshed:** 2026-10-09 UTC against RuleWorld/BNG3 main
 `dd23c2679ead1335d6aeefa47835f850e154256c`. Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
-[#132–#186](https://github.com/RuleWorld/BNG3/issues?q=is%3Aissue+label%3Arepository-audit).
+[#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md).
 After the closure audit, 50 of 55 remain open; #134, #136, #145, #165 and #169
 are closed. #135 remains open until the documentation PR merges.
 
@@ -41,9 +41,9 @@ publication remains unauthorized.
 
 ## Evidence and limits
 
-Main `dd23c267` hosted snapshot: 45 successful check runs, one skipped and one
-in progress (Intel macOS wheel); the
-[CI run](https://github.com/RuleWorld/BNG3/actions/runs/37946645248) was unfinished.
+Main `dd23c267` completed hosted snapshot: 46 successful check runs and two
+skipped, with no failures or nonterminal checks. The
+[CI run](https://github.com/RuleWorld/BNG3/actions/runs/37946645248) completed successfully.
 [Cross-tool parity](https://github.com/RuleWorld/BNG3/actions/runs/37946645282),
 [Lean](https://github.com/RuleWorld/BNG3/actions/runs/37946645272),
 [CodeQL](https://github.com/RuleWorld/BNG3/actions/runs/37946645337) and
@@ -74,20 +74,27 @@ The issue bodies' full acceptance criteria remain binding.
 | Issues | PR / observed head | Qualification boundary |
 | --- | --- | --- |
 | #132 | #130 `2f05ce2e` | Constant/dynamic assignment and XML changes; integrate without losing #210 whole-deletion bond suppression. |
-| #133/#173 | #190 `0e31190f`, stacked #191 `672c3d9a` | Static-subset JAX ODE; SSA explicitly unavailable. #190 has two completed formatting failures; #191 has no reported checks. Adaptive integration and functional/time-dependent rates remain unsupported. |
+| #133/#173 | #190 `694ecd1b`, stacked #191 `47e4b306` | Static-subset JAX ODE; SSA explicitly unavailable. Both candidates were synchronized with main to incorporate the formatting repair behind #190's prior failures. Local Black/Ruff and 59 CI contracts pass; fresh installed JAX and hosted qualification remain pending. Adaptive integration and functional/time-dependent rates remain unsupported. |
 | #134 | #128 `2cf7f6eb`, stacked #204 `dd75fe28` | Review together: #204 repairs #128's actual pyparsing 3.0.9 molecule-list regression. Closed review issue does not imply integration. |
 | #137 | #195 `e530328e` | Inventory proposal; policy and review owners remain unapproved. |
 | #143 | #201 `d4019f96` | ODE rate dependency classification; cross-backend scope and propensity work remains open. |
 | #171/#172 | #193 `4056205f`, stacked #208 `7a776c63` | Public compatibility and defaults without optional Cement. Installed evidence predates latest main; combined qualification is being refreshed. #193's numerical parity identity job failed; #208 has no reported checks. Neither slice retires all legacy paths. |
 | #179 | #202 `78543775` | Substantiated provenance proposal; 14 approval decisions remain pending and strict validation intentionally fails. |
-| #183 | #206 `42f61aa0` | Budgeted pinned SSTS CI. Local unpushed receipt `c5a4803e` records 32/1,923 selected cases: round-trip/RoadRunner 32 pass; official 31 pass/one unsupported. Integrated unit changes require rerun. Full-suite flags remain false; no broad #159 completion. |
+| #183 | #206 `13344aa4` | Budgeted pinned SSTS CI. Pushed receipt `c5a4803e` records 32/1,923 selected cases: round-trip/RoadRunner 32 pass; official 31 pass/one unsupported. The exact-head hosted integrated rerun is in progress. Full-suite flags remain false; no broad #159 completion. |
 | #174 | #188 `9456b290`, #218 `65e8ef09` | Other-author performance candidates; green checks alone do not establish correctness or a measured gain. #218 checks were still running. |
 | #135 | #187 | Existing documentation ledger; refreshed after live-state and disposition audit, awaiting review/merge. |
 
-The uncommitted #147 deletion slice remains in
-`/private/tmp/bng3-issue147-148-review` on `codex/issue147-delete-scope`, based on
-`dd23c267`. Bridge action checks passed in the prior log; runtime execution,
-effective assertions and pinned independent behavior are being qualified.
+The #147 deletion slice is committed as `5519cec7` in [PR #219](https://github.com/RuleWorld/BNG3/pull/219),
+based on `dd23c267`. Both runtime regressions fail on old lowering and pass with
+the fix; root reran 14 NFnext/architecture contracts successfully after building
+the omitted targets. The bridge assertions remain active in Release. Adversarial
+review found a missing same-complex matcher constraint for molecules within a
+BNGL pattern; the repair is in progress and merge is blocked. Independent pinned
+BNG2 network products distinguish whole-species from named-molecule deletion.
+The native NFsim terminal-output claim is being corrected: unchanged rows at
+the stated seed/horizon do not establish a post-event state. Hosted checks are
+pending. Production `ActionIR` execution is not connected;
+the tests adapt the emitted deletion actions to the existing graph runtime.
 It reuses `wholeSpeciesDeletions`/`DestroyComplex`, retains `DeleteMolecules`,
 and suppresses premature bond deletion. This is a bounded repair, not full
 #147/#148 completion or a production formal correspondence theorem.
