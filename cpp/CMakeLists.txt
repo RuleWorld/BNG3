@@ -88,7 +88,7 @@ add_library(bng_compile STATIC
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
     compile/CompiledModel.cpp)
-target_link_libraries(bng_compile PUBLIC bng_ast)
+target_link_libraries(bng_compile PUBLIC bng_ast PRIVATE bng_parser)
 
 # =============================================================================
 # bng_engine (simulators, I/O writers, actions, console)
