@@ -89,7 +89,7 @@ private:
         const compile::CompiledModel& compiled);
     static std::string writeSpecies(
         const ast::Model& model, const engine::GeneratedNetwork* network,
-        const compile::CompiledModel& compiled);
+        const compile::CompiledModel& compiled, int level);
     static std::string writeInitialAssignments(const ast::Model& model);
     static std::string writeAssignmentRules(
         const ast::Model& model,
