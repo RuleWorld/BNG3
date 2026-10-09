@@ -1119,8 +1119,8 @@ namespace NFcore
 			double a_tot;        /*< the sum of all a's (propensities) of all reactions */
 			double current_time; /*< keeps track of the simulation time */
 			ReactionClass * nextReaction;  /*< keeps track of the next reaction to fire */
-			bool pendingStepEventValid = false; /*< cached waiting-time draw for stepTo() */
-			double pendingStepEventTime = 0.0; /*< absolute event time for cached stepTo() draw */
+			bool pendingEventValid = false; /*< cached waiting-time draw across output boundaries */
+			double pendingEventTime = 0.0; /*< absolute time of the cached event */
 			// max CPU time for simulation
 			double max_cpu_time;
 
@@ -1130,9 +1130,9 @@ namespace NFcore
 			double recompute_A_tot();
 			double getNextRxn();
 			double getMaxCpuTime() const { return max_cpu_time; };
-			void invalidateStepToCache() {
-				pendingStepEventValid = false;
-				pendingStepEventTime = 0.0;
+			void invalidatePendingEvent() {
+				pendingEventValid = false;
+				pendingEventTime = 0.0;
 			}
 
 

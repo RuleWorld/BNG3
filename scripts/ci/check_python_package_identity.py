@@ -17,8 +17,43 @@ else:
     from python_package_mode import editable_finders_for_package
 
 
-def inspect_installed_package(source_revision: str | None = None) -> dict[str, str]:
+def _checked_out_git_head() -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[2],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unavailable"
+
+
+def _require_source_head(source_revision: str, git_head: str) -> None:
+    if not source_revision:
+        raise RuntimeError("exact-source identity requires a declared source revision")
+    if git_head == "unavailable":
+        raise RuntimeError(
+            "exact-source identity could not read the checked-out Git HEAD"
+        )
+    if source_revision != git_head:
+        raise RuntimeError(
+            "declared BNG3 source revision "
+            f"{source_revision} does not match checked-out Git HEAD {git_head}"
+        )
+
+
+def inspect_installed_package(
+    source_revision: str | None = None, *, require_source_head: bool = False
+) -> dict[str, str]:
     """Verify package and extension come from one installed distribution."""
+
+    if source_revision is None:
+        source_revision = os.environ.get("BNG3_SOURCE_REVISION", "")
+    git_head = _checked_out_git_head()
+    if require_source_head:
+        _require_source_head(source_revision, git_head)
 
     editable_finders = editable_finders_for_package(sys.meta_path, "bionetgen")
     if editable_finders:
@@ -71,20 +106,6 @@ def inspect_installed_package(source_revision: str | None = None) -> dict[str, s
             f"{model_native_file} (expected {extension_file})"
         )
 
-    if source_revision is None:
-        source_revision = os.environ.get("BNG3_SOURCE_REVISION", "")
-    git_head = "unavailable"
-    try:
-        git_head = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=Path(__file__).resolve().parents[2],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        pass
-
     digest = hashlib.sha256()
     with extension_file.open("rb") as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
@@ -110,9 +131,16 @@ def inspect_installed_package(source_revision: str | None = None) -> dict[str, s
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-revision")
+    parser.add_argument(
+        "--require-source-head",
+        action="store_true",
+        help="fail unless the declared source revision matches the checked-out Git HEAD",
+    )
     args = parser.parse_args()
     try:
-        identity = inspect_installed_package(args.source_revision)
+        identity = inspect_installed_package(
+            args.source_revision, require_source_head=args.require_source_head
+        )
     except (OSError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

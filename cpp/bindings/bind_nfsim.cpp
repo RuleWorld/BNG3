@@ -253,10 +253,14 @@ void bind_nfsim(py::module_& m) {
                 record_observables();
                 for (int step = 1; step <= n_steps; ++step) {
                     // Match NFsim::sim's repeated checkpoint accumulation.
-                    // Multiplication can round sample times differently.
-                    t_current += dt;
-                    system->stepTo(t_current);
-                    time_points.push_back(t_current);
+                    // Multiplication can round interior sample times
+                    // differently. Use the requested endpoint exactly for
+                    // the final checkpoint.
+                    const double checkpoint = step == n_steps
+                        ? t_end
+                        : (t_current += dt);
+                    system->stepTo(checkpoint);
+                    time_points.push_back(checkpoint);
                     record_observables();
                 }
             } else {
