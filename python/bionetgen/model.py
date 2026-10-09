@@ -692,7 +692,7 @@ def run(
     path : str or Path
         Path to the .bngl file.
     method : str
-        Simulation method ("ode", "ssa", "nf").
+        Simulation method ("ode", "ssa", "nf", "pla", or "psa").
     t_end : float
         End time.
     n_steps : int
