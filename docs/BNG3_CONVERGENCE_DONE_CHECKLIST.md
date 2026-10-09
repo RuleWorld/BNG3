@@ -1,6 +1,12 @@
 # BNG3 convergence checklist
 
-**Status:** incomplete; 51 of 55 audit issues are open (#134/#136/#145/#165 are closed). **Refreshed:** 2026-10-09 UTC against live main `2038e18693e29a0c646c723998d7a59d737b8cff`; see current progress for the merged runtime/docs/formal revisions and their limits. The earlier full qualification snapshot used main `e1836c3274e685996d5e86883761e00e98257e09`; see [current progress](CURRENT_PROGRESS.md) for the distinction and current partial PR evidence.
+**Status:** incomplete; 50 of 55 audit issues are open. #134/#136/#145/#165/#169
+are closed; #146/#154 were reopened after auditing their unmet acceptance criteria.
+**Refreshed:** 2026-10-09 UTC against live main
+`dd23c2679ead1335d6aeefa47835f850e154256c`. See
+[current progress](CURRENT_PROGRESS.md) for scoped integrations, exact evidence
+boundaries and candidates. The earlier audited qualification baseline was
+`e1836c3274e685996d5e86883761e00e98257e09`.
 
 The target is one maintained C++/Python project containing the approved capability
 union of BioNetGen, PyBioNetGen, NFsim and Atomizer. C++ owns performance-critical
@@ -52,8 +58,7 @@ not automatic expansion. Estimates and detailed acceptance tests live in issues.
 An unchecked item remains open until its issue has a verified implementation or
 an approved disposition. A03 is the closed review/disposition issue; later PR
 #128 changes and the compatibility repair in #204 still need integration review.
-A04 is implemented by this documentation change and awaits merge. A05, B08 and F01 closed after their documentation, shared capability and reference-matcher acceptance criteria were met; broader semantic/proof issues remain open. PRs #205, #203, #211, #210 and #207 have merged since the earlier audit snapshot;
-the bounded runtime repairs did not close their broader audit issues.
+A04 is implemented by this documentation change and awaits merge. A05, B08, F01 and F05 closed after their documentation, shared capability, reference-matcher and trust-accounting acceptance criteria were met; broader semantic/proof issues remain open. The bounded merged runtime and BNGIR repairs are listed in current progress and did not close their broader audit issues.
 The pushed candidate ledger and next dependency order are in
 [current progress](CURRENT_PROGRESS.md); no other item is completed merely by
 an open PR or by filing an issue.
@@ -90,7 +95,7 @@ an open PR or by filing an issue.
 
 ### BNG-IR
 
-- [ ] **D01 · P1 I** — Deserialize structural BNGIR directly into the native semantic model. [#153](https://github.com/RuleWorld/BNG3/issues/153) PR [#209](https://github.com/RuleWorld/BNG3/pull/209) qualifies a narrow parser-free v0.2 import subset with explicit unqualified-export refusal; observables and the remaining model families are still open.
+- [ ] **D01 · P1 I** — Deserialize structural BNGIR directly into the native semantic model. [#153](https://github.com/RuleWorld/BNG3/issues/153) Merged PR [#209](https://github.com/RuleWorld/BNG3/pull/209) qualifies a narrow parser-free v0.2 import subset with explicit unqualified-export refusal; observables and the remaining model families are still open.
 - [ ] **D02 · P1 Q** — Qualify BNGIR round trips across the supported semantic surface. [#154](https://github.com/RuleWorld/BNG3/issues/154)
 - [ ] **D03 · P1 I** — Add independent native BNGIR contracts and adversarial fixtures. [#155](https://github.com/RuleWorld/BNG3/issues/155)
 - [ ] **D04 · P2 M** — Define BNGIR version defaults, compatibility and semantic equality. [#156](https://github.com/RuleWorld/BNG3/issues/156)
@@ -112,7 +117,7 @@ an open PR or by filing an issue.
 - [ ] **F02 · P1 I** — Establish production lowering correspondence for a named supported subset. [#166](https://github.com/RuleWorld/BNG3/issues/166)
 - [ ] **F03 · P2 I** — Extend formal rate, propensity and stochastic execution semantics. [#167](https://github.com/RuleWorld/BNG3/issues/167)
 - [ ] **F04 · P2 I** — Qualify and formalize canonicalization and bounded network equivalence. [#168](https://github.com/RuleWorld/BNG3/issues/168)
-- [ ] **F05 · P1 Q** — Maintain explicit proof trust accounting and harness qualification. [#169](https://github.com/RuleWorld/BNG3/issues/169)
+- [x] **F05 · P1 Q** — Maintain explicit proof trust accounting and harness qualification. [#169](https://github.com/RuleWorld/BNG3/issues/169)
 - [ ] **F06 · P3 M** — Decide the optional CRNT model-property verification bridge. [#170](https://github.com/RuleWorld/BNG3/issues/170)
 
 ### Python compatibility, performance and maintainability

@@ -6,7 +6,11 @@ BNG3 already combines the main codebases and has a substantial native C++ implem
 
 This is a broad source, documentation, test-selection, and live GitHub audit, with bounded local checks. It is not an exhaustive correctness proof or a fresh run of every scientific corpus. “Outstanding” below includes demonstrated gaps, unfinished accepted designs, release qualification, and explicitly labeled engineering recommendations. An unsupported feature is not automatically a bug; retaining its rejection may be the correct maintained product scope.
 
-**Verified current state.**
+**Verified state at the 2026-10-07 audit baseline.**
+
+This historical snapshot predates the issue backlog and subsequent integrations.
+Use the [issue-linked checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) and
+[current progress](CURRENT_PROGRESS.md) for current disposition and evidence.
 
 | Check | Result and boundary |
 | --- | --- |
