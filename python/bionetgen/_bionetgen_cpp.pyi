@@ -464,6 +464,8 @@ def simulate_nf(
     source_path: str = "",
     sample_times: List[float] = [],
     traversal_limit: int = -1,
+    t_start: float = 0.0,
+    require_direct: bool = False,
 ) -> Dict[str, object]:
     """Run network-free (NFSim) simulation on a model.
 
@@ -492,6 +494,10 @@ def simulate_nf(
     traversal_limit : int
         NFsim bonded-neighborhood traversal depth. ``-1`` uses the model-derived
         recommendation; non-negative values mirror NFsim's ``-utl`` control.
+    t_start : float
+        Absolute API start time.
+    require_direct : bool
+        Fail if direct AST construction is unavailable instead of using XML.
 
     Returns
     -------

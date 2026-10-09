@@ -9,6 +9,7 @@ unsupported population-map reconstruction fail closed.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections.abc import Mapping
 from typing import Any
@@ -359,6 +360,11 @@ def to_bngir(
     patterns, expression trees, rule mappings, and transformation programs.
     """
 
+    if version == VERSION and getattr(model, "_native_bngir_v02_only", False):
+        raise ValueError(
+            "native BNGIR v0.2 imports cannot be exported as v0.1 because their "
+            "source pattern text is intentionally unavailable"
+        )
     if version == VERSION:
         payload = _payload_v01(model, provenance)
     elif version == STRUCTURAL_VERSION:
@@ -1198,6 +1204,474 @@ def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     return root
 
 
+def _native_exact_keys(value: Mapping[str, Any], keys: set[str], where: str) -> None:
+    actual = set(value)
+    if actual != keys:
+        missing = sorted(keys - actual)
+        extra = sorted((str(key) for key in actual - keys))
+        details = []
+        if missing:
+            details.append(f"missing {', '.join(missing)}")
+        if extra:
+            details.append(f"unsupported {', '.join(extra)}")
+        raise ValueError(f"native BNGIR {where} has {'; '.join(details)}")
+
+
+def _native_required_optional_keys(
+    value: Mapping[str, Any], required: set[str], allowed: set[str], where: str
+) -> None:
+    actual = set(value)
+    missing = sorted(required - actual)
+    extra = sorted(str(key) for key in actual - allowed)
+    if missing or extra:
+        details = []
+        if missing:
+            details.append(f"missing {', '.join(missing)}")
+        if extra:
+            details.append(f"unsupported {', '.join(extra)}")
+        raise ValueError(f"native BNGIR {where} has {'; '.join(details)}")
+
+
+def _is_native_finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _native_expression_v02(
+    expression: Mapping[str, Any], parameter_ids: set[int], where: str
+) -> None:
+    expression = _require_mapping(expression, where)
+    kind = expression.get("kind")
+    if kind == "number":
+        _native_exact_keys(expression, {"kind", "value"}, where)
+        value = expression["value"]
+        if not _is_native_finite_number(value):
+            raise ValueError(f"native BNGIR {where}.value must be finite")
+        return
+    if kind == "parameter_ref":
+        _native_exact_keys(expression, {"kind", "symbol"}, where)
+        symbol = _require_mapping(expression["symbol"], f"{where}.symbol")
+        _native_exact_keys(symbol, {"kind", "index"}, f"{where}.symbol")
+        index = symbol["index"]
+        if (
+            symbol["kind"] != "parameter"
+            or isinstance(index, bool)
+            or not isinstance(index, int)
+            or index not in parameter_ids
+        ):
+            raise ValueError(f"native BNGIR {where} references an unknown parameter id")
+        return
+    if kind == "unary":
+        _native_exact_keys(expression, {"kind", "operator", "arguments"}, where)
+        operator = expression["operator"]
+        if not isinstance(operator, str) or operator not in {"plus", "negate"}:
+            raise ValueError(f"native BNGIR {where} has unsupported unary operator")
+        args = expression["arguments"]
+        if not isinstance(args, list) or len(args) != 1:
+            raise ValueError(f"native BNGIR {where} must have one argument")
+        _native_expression_v02(args[0], parameter_ids, f"{where}.arguments[0]")
+        return
+    if kind == "binary":
+        _native_exact_keys(expression, {"kind", "operator", "arguments"}, where)
+        operator = expression["operator"]
+        if not isinstance(operator, str) or operator not in {
+            "add",
+            "subtract",
+            "multiply",
+            "divide",
+            "power",
+        }:
+            raise ValueError(f"native BNGIR {where} has unsupported binary operator")
+        args = expression["arguments"]
+        if not isinstance(args, list) or len(args) != 2:
+            raise ValueError(f"native BNGIR {where} must have two arguments")
+        for index, argument in enumerate(args):
+            _native_expression_v02(
+                argument, parameter_ids, f"{where}.arguments[{index}]"
+            )
+        return
+    raise ValueError(
+        f"native BNGIR {where} kind {kind!r} is outside the supported expression subset"
+    )
+
+
+def _native_pattern_v02(
+    pattern: Mapping[str, Any], where: str, molecule_ids: set[int]
+) -> None:
+    pattern = _require_mapping(pattern, where)
+    _native_exact_keys(pattern, {"compartment_prefix", "molecules"}, where)
+    if pattern["compartment_prefix"] is not False:
+        raise ValueError(f"native BNGIR {where} does not support compartment prefixes")
+    molecules = pattern["molecules"]
+    if not isinstance(molecules, list) or len(molecules) != 1:
+        raise ValueError(f"native BNGIR {where} requires exactly one molecule")
+    molecule = _require_mapping(molecules[0], f"{where}.molecules[0]")
+    _native_exact_keys(
+        molecule, {"occurrence", "sites", "type", "type_id"}, f"{where}.molecules[0]"
+    )
+    if (
+        isinstance(molecule["occurrence"], bool)
+        or not isinstance(molecule["occurrence"], int)
+        or molecule["occurrence"] != 0
+    ):
+        raise ValueError(f"native BNGIR {where} requires molecule occurrence zero")
+    type_id = molecule["type_id"]
+    if (
+        isinstance(type_id, bool)
+        or not isinstance(type_id, int)
+        or type_id not in molecule_ids
+    ):
+        raise ValueError(f"native BNGIR {where} references an unknown molecule type id")
+    if not isinstance(molecule["type"], str) or not molecule["type"]:
+        raise ValueError(f"native BNGIR {where} has no molecule type name")
+    if molecule["sites"] != []:
+        raise ValueError(f"native BNGIR {where} does not support molecule sites")
+
+
+def _validate_native_v02(root: Mapping[str, Any]) -> None:
+    """Fail-closed input gate for the first graph-native compatibility slice."""
+    _native_exact_keys(
+        root, {"format", "version", "features", "model", "protocol"}, "document"
+    )
+    features = _require_mapping(root["features"], "features")
+    _native_exact_keys(features, {"required", "used"}, "features")
+    if features["required"] != ["structured_patterns", "structured_expressions"]:
+        raise ValueError("native BNGIR requires the canonical structured feature set")
+
+    model = _require_mapping(root["model"], "model")
+    sections = {
+        "metadata",
+        "parameters",
+        "molecule_types",
+        "compartments",
+        "seeds",
+        "observables",
+        "functions",
+        "energy_patterns",
+        "barrier_patterns",
+        "population_maps",
+        "population_types",
+        "rules",
+    }
+    _native_exact_keys(model, sections, "model")
+    for section in (
+        "compartments",
+        "observables",
+        "functions",
+        "energy_patterns",
+        "barrier_patterns",
+        "population_maps",
+        "population_types",
+    ):
+        if model[section] != []:
+            raise ValueError(f"native BNGIR does not support model.{section}")
+
+    metadata = _require_mapping(model["metadata"], "model.metadata")
+    _native_exact_keys(
+        metadata, {"name", "version", "substance_units", "options"}, "model.metadata"
+    )
+    for key in ("name", "version", "substance_units"):
+        if not isinstance(metadata[key], str):
+            raise ValueError(f"native BNGIR model.metadata.{key} must be a string")
+    if metadata["substance_units"]:
+        raise ValueError("native BNGIR does not support substance-unit metadata")
+    options = _require_mapping(metadata["options"], "model.metadata.options")
+    if not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in options.items()
+    ):
+        raise ValueError(
+            "native BNGIR model.metadata.options must map strings to strings"
+        )
+
+    parameter_ids: set[int] = set()
+    parameter_names: set[str] = set()
+    if not isinstance(model["parameters"], list):
+        raise ValueError("native BNGIR model.parameters must be an array")
+    for index, raw in enumerate(model["parameters"]):
+        parameter = _require_mapping(raw, f"model.parameters[{index}]")
+        _native_required_optional_keys(
+            parameter,
+            {"id", "name", "expression"},
+            {"id", "name", "expression", "constant_value"},
+            f"model.parameters[{index}]",
+        )
+        if (
+            isinstance(parameter["id"], bool)
+            or not isinstance(parameter["id"], int)
+            or parameter["id"] != index
+        ):
+            raise ValueError("native BNGIR parameter ids must be dense and ordered")
+        name = parameter["name"]
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name)
+            or name in parameter_names
+        ):
+            raise ValueError(
+                f"native BNGIR parameter name is invalid or duplicated: {name!r}"
+            )
+        parameter_ids.add(index)
+        parameter_names.add(name)
+    for index, parameter in enumerate(model["parameters"]):
+        _native_expression_v02(
+            parameter["expression"],
+            parameter_ids,
+            f"model.parameters[{index}].expression",
+        )
+        if "constant_value" in parameter:
+            value = parameter["constant_value"]
+            if not _is_native_finite_number(value):
+                raise ValueError(
+                    f"native BNGIR model.parameters[{index}].constant_value must be finite"
+                )
+
+    molecule_ids: set[int] = set()
+    molecule_names: set[str] = set()
+    if not isinstance(model["molecule_types"], list):
+        raise ValueError("native BNGIR model.molecule_types must be an array")
+    for index, raw in enumerate(model["molecule_types"]):
+        molecule = _require_mapping(raw, f"model.molecule_types[{index}]")
+        _native_exact_keys(
+            molecule,
+            {"id", "name", "population", "components"},
+            f"model.molecule_types[{index}]",
+        )
+        name = molecule["name"]
+        if (
+            isinstance(molecule["id"], bool)
+            or not isinstance(molecule["id"], int)
+            or molecule["id"] != index
+        ):
+            raise ValueError("native BNGIR molecule type ids must be dense and ordered")
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name)
+            or name in molecule_names
+        ):
+            raise ValueError(
+                f"native BNGIR molecule type name is invalid or duplicated: {name!r}"
+            )
+        if molecule["population"] is not False or molecule["components"] != []:
+            raise ValueError(
+                f"native BNGIR molecule type {name!r} must be an ordinary site-free type"
+            )
+        molecule_ids.add(index)
+        molecule_names.add(name)
+
+    if not model["seeds"] or not model["rules"]:
+        raise ValueError(
+            "native BNGIR requires at least one seed and one reaction rule"
+        )
+    for index, raw in enumerate(model["seeds"]):
+        seed = _require_mapping(raw, f"model.seeds[{index}]")
+        _native_exact_keys(
+            seed, {"id", "pattern", "amount", "constant"}, f"model.seeds[{index}]"
+        )
+        if (
+            isinstance(seed["id"], bool)
+            or not isinstance(seed["id"], int)
+            or seed["id"] != index
+        ):
+            raise ValueError("native BNGIR seed ids must be dense and ordered")
+        if not isinstance(seed["constant"], bool):
+            raise ValueError(
+                f"native BNGIR model.seeds[{index}].constant must be boolean"
+            )
+        _native_pattern_v02(
+            seed["pattern"], f"model.seeds[{index}].pattern", molecule_ids
+        )
+        _native_expression_v02(
+            seed["amount"], parameter_ids, f"model.seeds[{index}].amount"
+        )
+
+    rule_names: set[str] = set()
+    for index, raw in enumerate(model["rules"]):
+        rule = _require_mapping(raw, f"model.rules[{index}]")
+        _native_exact_keys(
+            rule,
+            {
+                "id",
+                "name",
+                "label",
+                "bidirectional",
+                "modifiers",
+                "forward",
+                "molecule_mappings",
+                "component_mappings",
+            },
+            f"model.rules[{index}]",
+        )
+        if (
+            isinstance(rule["id"], bool)
+            or not isinstance(rule["id"], int)
+            or rule["id"] != index
+        ):
+            raise ValueError("native BNGIR rule ids must be dense and ordered")
+        if (
+            not isinstance(rule["name"], str)
+            or not rule["name"]
+            or rule["name"] in rule_names
+            or not isinstance(rule["label"], str)
+        ):
+            raise ValueError(f"native BNGIR model.rules[{index}] has invalid names")
+        rule_names.add(rule["name"])
+        if rule["bidirectional"] is not False or rule["modifiers"] != []:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] must be a forward ordinary rule"
+            )
+        if not isinstance(rule["molecule_mappings"], list) or not isinstance(
+            rule["component_mappings"], list
+        ):
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] mappings must be arrays"
+            )
+        direction = _require_mapping(rule["forward"], f"model.rules[{index}].forward")
+        _native_exact_keys(
+            direction,
+            {
+                "reactants",
+                "products",
+                "rate",
+                "filters",
+                "local_scopes",
+                "mutations",
+                "transformations_complete",
+            },
+            f"model.rules[{index}].forward",
+        )
+        if direction["filters"] != [] or direction["local_scopes"] != []:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] does not support filters or local scopes"
+            )
+        if direction["transformations_complete"] is not True:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] has incomplete transformations"
+            )
+        for side in ("reactants", "products"):
+            patterns = direction[side]
+            if not isinstance(patterns, list) or len(patterns) != 1:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].{side} requires one pattern"
+                )
+            _native_pattern_v02(
+                patterns[0], f"model.rules[{index}].{side}[0]", molecule_ids
+            )
+        if len(rule["molecule_mappings"]) > 1:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] has too many molecule mappings"
+            )
+        for mapping_index, raw_mapping in enumerate(rule["molecule_mappings"]):
+            mapping = _require_mapping(
+                raw_mapping,
+                f"model.rules[{index}].molecule_mappings[{mapping_index}]",
+            )
+            _native_exact_keys(
+                mapping,
+                {"product", "reactant"},
+                f"model.rules[{index}].molecule_mappings[{mapping_index}]",
+            )
+            for side in ("product", "reactant"):
+                ref = _require_mapping(
+                    mapping[side],
+                    f"model.rules[{index}].molecule_mappings[{mapping_index}].{side}",
+                )
+                _native_exact_keys(
+                    ref,
+                    {"side", "pattern", "molecule"},
+                    f"model.rules[{index}].molecule_mappings[{mapping_index}].{side}",
+                )
+                if (
+                    ref["side"] != side
+                    or isinstance(ref["pattern"], bool)
+                    or not isinstance(ref["pattern"], int)
+                    or ref["pattern"] != 0
+                    or isinstance(ref["molecule"], bool)
+                    or not isinstance(ref["molecule"], int)
+                    or ref["molecule"] != 0
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] has an out-of-slice molecule mapping reference"
+                    )
+        if rule["component_mappings"]:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] does not support component mappings"
+            )
+        rate = _require_mapping(direction["rate"], f"model.rules[{index}].forward.rate")
+        _native_exact_keys(
+            rate, {"kind", "expression"}, f"model.rules[{index}].forward.rate"
+        )
+        if rate["kind"] != 0 or isinstance(rate["kind"], bool):
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] requires an expression rate"
+            )
+        _native_expression_v02(
+            rate["expression"],
+            parameter_ids,
+            f"model.rules[{index}].forward.rate.expression",
+        )
+        mutations = direction["mutations"]
+        if not isinstance(mutations, list):
+            raise ValueError(
+                f"native BNGIR model.rules[{index}].forward.mutations must be an array"
+            )
+        for mutation_index, raw_mutation in enumerate(mutations):
+            mutation = _require_mapping(
+                raw_mutation,
+                f"model.rules[{index}].forward.mutations[{mutation_index}]",
+            )
+            kind = mutation.get("kind")
+            if not isinstance(kind, str) or kind not in {
+                "add_molecule",
+                "delete_molecule",
+            }:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] has unsupported mutation kind {kind!r}"
+                )
+            _native_exact_keys(
+                mutation,
+                {"kind", "molecule"},
+                f"model.rules[{index}].forward.mutations[{mutation_index}]",
+            )
+            ref = _require_mapping(
+                mutation["molecule"],
+                f"model.rules[{index}].forward.mutations[{mutation_index}].molecule",
+            )
+            _native_exact_keys(
+                ref,
+                {"side", "pattern", "molecule"},
+                f"model.rules[{index}].forward.mutations[{mutation_index}].molecule",
+            )
+            if (
+                ref["side"] != ("reactant" if kind == "delete_molecule" else "product")
+                or isinstance(ref["pattern"], bool)
+                or ref["pattern"] != 0
+                or isinstance(ref["molecule"], bool)
+                or ref["molecule"] != 0
+            ):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] has a contradictory molecule mutation reference"
+                )
+
+    protocol = _require_mapping(root["protocol"], "protocol")
+    _native_exact_keys(protocol, {"actions"}, "protocol")
+    if protocol["actions"] != []:
+        raise ValueError("native BNGIR does not support protocol actions")
+    expected_used = sorted(
+        ["structured_patterns", "structured_expressions"]
+        + (["rules"] if model["rules"] else [])
+        + (["seeds"] if model["seeds"] else [])
+    )
+    if features["used"] != expected_used:
+        raise ValueError(
+            "native BNGIR features.used does not match the supported model sections"
+        )
+
+
 def _section_id_map(
     model: Mapping[str, Any], section: str
 ) -> dict[int, Mapping[str, Any]]:
@@ -1672,10 +2146,31 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def from_bngir(document: str | Mapping[str, Any]):
-    """Reconstruct a modern ``BioNetGenModel`` from supported BNGIR versions."""
+def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
+    """Reconstruct a modern ``BioNetGenModel`` from supported BNGIR versions.
+
+    ``native=True`` selects the deliberately narrow, parser-free BNGIR v0.2
+    route. The default remains the source-compatible renderer/parser route.
+    """
+    if not isinstance(native, bool):
+        raise TypeError("native must be a bool")
     root = _parse_document(document)
     from .model import BioNetGenModel, _cpp
+
+    if native:
+        if root["version"] != STRUCTURAL_VERSION:
+            raise ValueError("native BNGIR import requires version 0.2")
+        root = _load_document_v02(root)
+        _validate_native_v02(root)
+        model_data = _require_mapping(root["model"], "model")
+        result = BioNetGenModel(_cpp._model_from_bngir_v02(dict(model_data)))
+        rebuilt = _parse_document(to_bngir(result, version=STRUCTURAL_VERSION))
+        if rebuilt != root:
+            raise ValueError(
+                "native BNGIR v0.2 payload does not match reconstructed compiled semantics"
+            )
+        result._native_bngir_v02_only = True
+        return result
 
     if root["version"] == VERSION:
         root = _load_document_v01(root)

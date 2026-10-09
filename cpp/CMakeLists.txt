@@ -445,6 +445,7 @@ if(BUILD_PYTHON_BINDINGS)
     pybind11_add_module(_bionetgen_cpp
         bindings/module.cpp
         bindings/bind_model.cpp
+        bindings/bind_bngir.cpp
         bindings/bind_compile_snapshot.cpp
         bindings/bind_parser.cpp
         bindings/bind_engine.cpp
