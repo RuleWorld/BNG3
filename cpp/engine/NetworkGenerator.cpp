@@ -101,16 +101,22 @@ bool parseBooleanLike(std::string text) {
            caseInsensitiveEqual(text, "on");
 }
 
-std::optional<std::size_t> parseMaxAgg(const compile::SimulationProtocol& protocol) {
+std::optional<double> parseMaxAgg(const compile::SimulationProtocol& protocol) {
     for (const auto& action : protocol.actions) {
         if (action.name != "generate_network") {
             continue;
         }
-        const auto found = action.arguments.find("max_agg");
-        if (found == action.arguments.end()) {
+        if (!action.generateNetworkOptions.has_value()) {
             continue;
         }
-        return static_cast<std::size_t>(std::stoul(found->second));
+        const auto& options = *action.generateNetworkOptions;
+        if (options.maxAggregateDiagnostic.has_value()) {
+            throw std::runtime_error(options.maxAggregateDiagnostic->message);
+        }
+        if (!options.maxAggregate.has_value()) {
+            continue;
+        }
+        return options.maxAggregate;
     }
     return std::nullopt;
 }
@@ -224,7 +230,7 @@ bool withinStoichLimits(const ast::SpeciesGraph& graph, const std::map<std::stri
     return true;
 }
 
-bool withinAggLimit(const ast::SpeciesGraph& graph, std::size_t maxAgg) {
+bool withinAggLimit(const ast::SpeciesGraph& graph, double maxAgg) {
     // Count total number of molecules in the species (regardless of type)
     std::size_t totalMolecules = 0;
     for (auto nodeIter = graph.getGraph().begin(); nodeIter != graph.getGraph().end(); ++nodeIter) {
@@ -232,7 +238,7 @@ bool withinAggLimit(const ast::SpeciesGraph& graph, std::size_t maxAgg) {
             ++totalMolecules;
         }
     }
-    return totalMolecules <= maxAgg;
+    return static_cast<double>(totalMolecules) <= maxAgg;
 }
 
 units::Unit itemUnit() {
