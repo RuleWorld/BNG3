@@ -182,14 +182,11 @@ __version__ = "3.0.0a1"
 def __getattr__(name):
     """Load legacy public names lazily to keep optional imports optional."""
     if name == "defaults":
-        # Constructing BNGDefaults pulls in cement (version banner) and runs
-        # subprocesses, so defer it from import time to first access.  The
-        # result is cached in the module namespace, so it is built at most
-        # once per process, exactly as the former eager attribute was.
-        try:
-            from bionetgen.core.defaults import defaults as _defaults
-        except Exception:
-            _defaults = None
+        # Defer legacy defaults setup until first access. The defaults module
+        # supports the optional Cement dependency; other import failures must
+        # remain visible instead of turning this public export into None.
+        from bionetgen.core.defaults import defaults as _defaults
+
         globals()["defaults"] = _defaults
         return _defaults
     if name == "bngmodel":

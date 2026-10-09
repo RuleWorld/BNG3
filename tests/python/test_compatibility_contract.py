@@ -497,6 +497,120 @@ assert not (blocked & {name.split('.')[0] for name in sys.modules})
     assert result.returncode == 0, result.stderr
 
 
+def test_defaults_and_legacy_cli_remain_diagnostic_without_cement(tmp_path):
+    code = """
+import importlib.abc
+import json
+import sys
+
+class BlockCement(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'cement' or fullname.startswith('cement.'):
+            raise ModuleNotFoundError("No module named 'cement'", name='cement')
+
+sys.meta_path.insert(0, BlockCement())
+import bionetgen
+
+defaults = bionetgen.defaults
+assert defaults is not None
+settings = defaults.config['bionetgen']
+assert settings['stdout'] == 'PIPE'
+assert settings['stderr'] == 'STDOUT'
+assert settings['cvode_lib'] is None
+assert settings['cvode_include'] is None
+assert settings['bngpath'] == defaults.bng_path
+assert settings['notebook']['name'] == 'bng-notebook.ipynb'
+from bionetgen.core.version import VERSION
+base_version = '.'.join(str(part) for part in VERSION[:3])
+assert defaults.banner.splitlines()[0] == (
+    'BioNetGen simple command line interface ' + base_version
+)
+
+import bionetgen.cli
+import bionetgen.main
+try:
+    bionetgen.main.BioNetGen()
+except ImportError as exc:
+    assert "Install 'cement'" in str(exc)
+else:
+    raise AssertionError('legacy Cement CLI unexpectedly started without Cement')
+
+assert not any(name == 'cement' or name.startswith('cement.') for name in sys.modules)
+print(json.dumps(settings, sort_keys=True))
+"""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == bionetgen.defaults.config["bionetgen"]
+
+
+def test_defaults_import_failure_is_not_cached_as_none(tmp_path):
+    code = """
+import sys
+import bionetgen
+
+sys.modules['bionetgen.core.defaults'] = None
+try:
+    bionetgen.defaults
+except ModuleNotFoundError as exc:
+    assert exc.name == 'bionetgen.core.defaults'
+else:
+    raise AssertionError('missing required defaults module was silently hidden')
+
+del sys.modules['bionetgen.core.defaults']
+assert bionetgen.defaults is not None
+"""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_explicit_perl_mode_keeps_the_sanctioned_legacy_adapter(tmp_path):
+    code = """
+import bionetgen
+assert bionetgen.BioNetGenModel.__module__ == 'bionetgen.compat.legacy_runner'
+assert bionetgen.run.__module__ == 'bionetgen.compat.legacy_runner'
+"""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env["BIONETGEN_USE_PERL"] = "1"
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_core_version_delegates_to_cement_formatter_when_available():
+    cement_version = pytest.importorskip("cement.utils.version")
+    from bionetgen.core.version import VERSION, get_version
+
+    assert get_version(VERSION) == cement_version.get_version(VERSION)
+
+
 def test_notebook_command_writes_a_valid_model_specific_notebook(tmp_path):
     input_model = _write_method_matrix_model(tmp_path / "notebook_model.bngl")
     output = tmp_path / "notebook_model.ipynb"
