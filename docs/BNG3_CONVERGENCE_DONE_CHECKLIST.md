@@ -1,6 +1,6 @@
 # BNG3 convergence checklist
 
-**Status:** incomplete; 54 of 55 audit issues are open (#134 is closed). **Refreshed:** 2026-10-09 UTC against live main `030f7beda88fd764af849805dc0ee8d551804277`, after [PR #205](https://github.com/RuleWorld/BNG3/pull/205) merged at `2026-10-09T03:42:32Z`. The earlier full qualification snapshot used main `e1836c3274e685996d5e86883761e00e98257e09`; see [current progress](CURRENT_PROGRESS.md) for the distinction and current partial PR evidence.
+**Status:** incomplete; 51 of 55 audit issues are open (#134/#136/#145/#165 are closed). **Refreshed:** 2026-10-09 UTC against live main `2038e18693e29a0c646c723998d7a59d737b8cff`; see current progress for the merged runtime/docs/formal revisions and their limits. The earlier full qualification snapshot used main `e1836c3274e685996d5e86883761e00e98257e09`; see [current progress](CURRENT_PROGRESS.md) for the distinction and current partial PR evidence.
 
 The target is one maintained C++/Python project containing the approved capability
 union of BioNetGen, PyBioNetGen, NFsim and Atomizer. C++ owns performance-critical
@@ -52,8 +52,8 @@ not automatic expansion. Estimates and detailed acceptance tests live in issues.
 An unchecked item remains open until its issue has a verified implementation or
 an approved disposition. A03 is the closed review/disposition issue; later PR
 #128 changes and the compatibility repair in #204 still need integration review.
-A04 is implemented by this documentation change and awaits merge. PR #205 has
-merged since the earlier audit snapshot but did not close another audit issue.
+A04 is implemented by this documentation change and awaits merge. A05, B08 and F01 closed after their documentation, shared capability and reference-matcher acceptance criteria were met; broader semantic/proof issues remain open. PRs #205, #203, #211, #210 and #207 have merged since the earlier audit snapshot;
+the bounded runtime repairs did not close their broader audit issues.
 The pushed candidate ledger and next dependency order are in
 [current progress](CURRENT_PROGRESS.md); no other item is completed merely by
 an open PR or by filing an issue.
@@ -64,7 +64,7 @@ an open PR or by filing an issue.
 - [ ] **A02 · P1 D** — Repair and qualify the optional JAX ODE backend. [#133](https://github.com/RuleWorld/BNG3/issues/133)
 - [x] **A03 · P1 Q** — Review and disposition the legacy parser optimizations in PR #128. [#134](https://github.com/RuleWorld/BNG3/issues/134)
 - [ ] **A04 · P1 R** — Replace historical convergence logs with a current issue-linked checklist. [#135](https://github.com/RuleWorld/BNG3/issues/135)
-- [ ] **A05 · P1 R** — Correct stale architecture and validation documentation. [#136](https://github.com/RuleWorld/BNG3/issues/136)
+- [x] **A05 · P1 R** — Correct stale architecture and validation documentation. [#136](https://github.com/RuleWorld/BNG3/issues/136)
 - [ ] **A06 · P1 M** — Approve the BNG3 capability-union inventory and support policy. [#137](https://github.com/RuleWorld/BNG3/issues/137)
 
 ### C++ semantic and runtime boundaries
@@ -73,14 +73,14 @@ an open PR or by filing an issue.
 - [ ] **B02 · P1 I** — Separate network-rule execution from reconstructed AST rules. [#139](https://github.com/RuleWorld/BNG3/issues/139)
 - [ ] **B03 · P1 I** — Type simulation protocol actions and share option semantics. [#140](https://github.com/RuleWorld/BNG3/issues/140)
 - [ ] **B04 · P1 Q** — Qualify compile-once model reuse and independent trajectory state. [#141](https://github.com/RuleWorld/BNG3/issues/141)
-- [ ] **B05 · P1 I** — Unify network and NFsim graph-identity semantics. [#142](https://github.com/RuleWorld/BNG3/issues/142) PR [#211](https://github.com/RuleWorld/BNG3/pull/211) repairs compartmental seed association and exact identity checks; separate backend encodings and broader qualification remain open.
+- [ ] **B05 · P1 I** — Unify network and NFsim graph-identity semantics. [#142](https://github.com/RuleWorld/BNG3/issues/142) Merged PR [#211](https://github.com/RuleWorld/BNG3/pull/211) repairs compartmental seed association and exact identity checks; separate backend encodings and broader qualification remain open.
 - [ ] **B06 · P1 I** — Complete the shared rate-law and local-function semantic contract. [#143](https://github.com/RuleWorld/BNG3/issues/143)
 - [ ] **B07 · P1 M** — Resolve and execute the canonical finite-backend migration. [#144](https://github.com/RuleWorld/BNG3/issues/144)
-- [ ] **B08 · P2 R** — Use one BNGsim capability and rejection implementation. [#145](https://github.com/RuleWorld/BNG3/issues/145)
+- [x] **B08 · P2 R** — Use one BNGsim capability and rejection implementation. [#145](https://github.com/RuleWorld/BNG3/issues/145)
 
 ### NFsim, NFcore2, NFnext and hybrid execution
 
-- [ ] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146) PR [#210](https://github.com/RuleWorld/BNG3/pull/210) repairs a bounded deletion slice; fixed-seed native final-endpoint parity remains red.
+- [ ] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146) Merged PR [#210](https://github.com/RuleWorld/BNG3/pull/210) repairs a bounded deletion slice; fixed-seed native final-endpoint parity remains red.
 - [ ] **C02 · P1 I** — Extend NFnext lowering for approved unsupported semantic families. [#147](https://github.com/RuleWorld/BNG3/issues/147)
 - [ ] **C03 · P1 I** — Qualify a complete model-to-NFnext execution boundary. [#148](https://github.com/RuleWorld/BNG3/issues/148)
 - [ ] **C04 · P2 M** — Decide maintained roles for NFcore, NFcore2 and NFnext. [#149](https://github.com/RuleWorld/BNG3/issues/149)
@@ -108,7 +108,7 @@ an open PR or by filing an issue.
 
 ### Lean and mathematical checks
 
-- [ ] **F01 · P1 I** — Prove ReferenceMatcherCorrect soundness and completeness. [#165](https://github.com/RuleWorld/BNG3/issues/165)
+- [x] **F01 · P1 I** — Prove ReferenceMatcherCorrect soundness and completeness. [#165](https://github.com/RuleWorld/BNG3/issues/165)
 - [ ] **F02 · P1 I** — Establish production lowering correspondence for a named supported subset. [#166](https://github.com/RuleWorld/BNG3/issues/166)
 - [ ] **F03 · P2 I** — Extend formal rate, propensity and stochastic execution semantics. [#167](https://github.com/RuleWorld/BNG3/issues/167)
 - [ ] **F04 · P2 I** — Qualify and formalize canonicalization and bounded network equivalence. [#168](https://github.com/RuleWorld/BNG3/issues/168)
