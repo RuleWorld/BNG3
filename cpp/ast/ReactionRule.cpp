@@ -870,6 +870,37 @@ ReactionRule::ReactionRule(
     bool bidirectional,
     std::vector<SpeciesGraph> reactantPatterns,
     std::vector<SpeciesGraph> productPatterns)
+    : ReactionRule(
+          std::move(ruleName), std::move(label), std::move(reactants),
+          std::move(products), std::move(rates), std::move(modifiers),
+          bidirectional, std::move(reactantPatterns),
+          std::move(productPatterns), true) {}
+
+ReactionRule ReactionRule::fromResolvedPatterns(
+    std::string ruleName,
+    std::string label,
+    std::vector<Expression> rates,
+    std::vector<SpeciesGraph> reactantPatterns,
+    std::vector<SpeciesGraph> productPatterns) {
+    std::vector<std::string> reactants(reactantPatterns.size());
+    std::vector<std::string> products(productPatterns.size());
+    return ReactionRule(
+        std::move(ruleName), std::move(label), std::move(reactants),
+        std::move(products), std::move(rates), {}, false,
+        std::move(reactantPatterns), std::move(productPatterns), false);
+}
+
+ReactionRule::ReactionRule(
+    std::string ruleName,
+    std::string label,
+    std::vector<std::string> reactants,
+    std::vector<std::string> products,
+    std::vector<Expression> rates,
+    std::vector<std::string> modifiers,
+    bool bidirectional,
+    std::vector<SpeciesGraph> reactantPatterns,
+    std::vector<SpeciesGraph> productPatterns,
+    bool parseTextModifiers)
     : ruleName_(std::move(ruleName)),
       label_(std::move(label)),
       reactants_(std::move(reactants)),
@@ -880,7 +911,7 @@ ReactionRule::ReactionRule(
       drivingWork_(Expression::number(0.0)),
       reactantPatterns_(std::move(reactantPatterns)),
       productPatterns_(std::move(productPatterns)) {
-    parseReactantFilters();
+    if (parseTextModifiers) parseReactantFilters();
     initialize();
 }
 

@@ -111,6 +111,14 @@ public:
         bool bidirectional,
         std::vector<SpeciesGraph> reactantPatterns = {},
         std::vector<SpeciesGraph> productPatterns = {});
+    // Construct from resolved graphs without parsing source pattern or
+    // modifier text. The graph lists are the semantic pattern authority.
+    static ReactionRule fromResolvedPatterns(
+        std::string ruleName,
+        std::string label,
+        std::vector<Expression> rates,
+        std::vector<SpeciesGraph> reactantPatterns,
+        std::vector<SpeciesGraph> productPatterns);
     ~ReactionRule();
     ReactionRule(ReactionRule&&) noexcept;
     ReactionRule& operator=(ReactionRule&&) noexcept;
@@ -193,6 +201,18 @@ public:
         const ExecutionHooks* hooks = nullptr) const;
 
 private:
+    ReactionRule(
+        std::string ruleName,
+        std::string label,
+        std::vector<std::string> reactants,
+        std::vector<std::string> products,
+        std::vector<Expression> rates,
+        std::vector<std::string> modifiers,
+        bool bidirectional,
+        std::vector<SpeciesGraph> reactantPatterns,
+        std::vector<SpeciesGraph> productPatterns,
+        bool parseTextModifiers);
+
     ExecutionState& compatibilityState() const;
     void prepareExecutionState(ExecutionState& state) const;
 
