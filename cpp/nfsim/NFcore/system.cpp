@@ -310,7 +310,7 @@ void System::setUsingComplex(bool val)
 void System::setCurrentTime(double time)
 {
 	current_time = time;
-	invalidateStepToCache();
+	invalidatePendingEvent();
 }
 
 void System::setOutputToBinary()
@@ -735,7 +735,7 @@ int System::getMolObsCount(int moleculeTypeIndex, int observableIndex) const
 //observables.
 void System::prepareForSimulation()
 {
-	invalidateStepToCache();
+	invalidatePendingEvent();
 	if (selector != 0) {
 		delete selector;
 		selector = 0;
@@ -1173,7 +1173,6 @@ double System::sim(double duration, long int sampleTimes)
 /* main simulation loop */
 double System::sim(double duration, long int sampleTimes, bool verbose)
 {
-	invalidateStepToCache();
 	if (isProfilingEnabled()) resetProfiling();
 	System::NULL_EVENT_COUNTER=0;
 	cout.setf(ios::scientific);
@@ -1195,13 +1194,27 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 	//Determine when to sample and print out initial setup
 	double dSampleTime = duration / sampleTimes;
 	double curSampleTime=current_time;
+	long int sampleIntervalsWritten = 0;
 
 	//Do this once at the beginning, so that we start on the right page
-	recompute_A_tot();
+	// A pending event can come from stepTo() or a preceding sim() call. Keep
+	// its absolute time and the RNG stream intact across continuation calls.
+	if (!pendingEventValid) recompute_A_tot();
 
 	double delta_t = 0; unsigned long long iteration = 0, stepIteration = 0;
 	double end_time = current_time+duration;
 	tryToDump();
+	const auto evaluateSystemFunctions = [&]() {
+		for (unsigned int i=0; i<globalFunctions.size(); i++) {
+			if (globalFunctions.at(i)->getCtrType() == "System") {
+				FuncFactory::Eval(globalFunctions.at(i)->p);
+			}
+		}
+	};
+	const auto restoreEventTime = [&](double eventTime) {
+		current_time = eventTime;
+		evaluateSystemFunctions();
+	};
 
 	// AS2023 - depending on the tracking status we'll need a log string to build
 	string logstr;
@@ -1219,29 +1232,65 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 		//   dt = -ln(rand) / a_tot;
 		//Choose a random number on the OPEN interval (0,1) so that we never
 		//have a dt=0 or a dt=infinity
-		if(a_tot>ATOT_TOLERANCE) delta_t = -log(rng_.random_open()) / a_tot;
-		else { delta_t=0; current_time=end_time; }
+		if (!pendingEventValid) {
+			if (a_tot > ATOT_TOLERANCE) {
+				pendingEventTime =
+					current_time + (-log(rng_.random_open()) / a_tot);
+				pendingEventValid = true;
+			} else {
+				current_time = end_time;
+			}
+		}
+		const bool hasPendingEvent = pendingEventValid;
+		if (hasPendingEvent) {
+			delta_t = pendingEventTime - current_time;
+		} else {
+			delta_t = 0;
+		}
+		const double nextEventTime =
+			hasPendingEvent ? pendingEventTime : end_time;
 		if(DEBUG) cout<<"   Determine dt : " << delta_t << endl;
 
 
 		//Report everything up until the next step if we have to
 		if(DEBUG) cout<<"  Current Sample Time: "<<curSampleTime<<endl;
-		if((current_time+delta_t)>=curSampleTime)
+		if(nextEventTime>=curSampleTime)
 		{
-			while((current_time+delta_t)>=(curSampleTime))
+			const double eventTime = current_time;
+			while(nextEventTime>=curSampleTime)
 			{
 				if(curSampleTime>end_time) break;
+				current_time = curSampleTime;
+				try {
 					// Re-evaluate global functions depending on time so that they are accurate
 					// for the output log
-					for (unsigned int i=0; i<globalFunctions.size(); i++) {
-						if (globalFunctions.at(i)->getCtrType() == "System") {
-							FuncFactory::Eval(globalFunctions.at(i)->p);
-						}
+					evaluateSystemFunctions();
+					outputAllObservableCounts(curSampleTime,globalEventCounter);
+				} catch (...) {
+					try {
+						restoreEventTime(eventTime);
+					} catch (...) {
+						// Preserve the original output exception if cache restoration also fails.
 					}
-				outputAllObservableCounts(curSampleTime,globalEventCounter);
+					throw;
+				}
+				current_time = eventTime;
 				//outputGroupData(curSampleTime);
-				curSampleTime+=dSampleTime;
+				if (sampleIntervalsWritten == sampleTimes) {
+					curSampleTime = end_time + dSampleTime;
+					break;
+				}
+				++sampleIntervalsWritten;
+				if (sampleIntervalsWritten == sampleTimes) {
+					curSampleTime = end_time;
+				} else {
+					curSampleTime += dSampleTime;
+				}
 			}
+			// Output evaluation temporarily advances the clock. Restore system
+			// functions to the event-time state before recomputing propensities,
+			// so an output checkpoint cannot change event selection or its wait.
+		restoreEventTime(eventTime);
 			if(verbose) {
 			cout << "Sim time: " << (curSampleTime - dSampleTime);
 			current_cpu_time = ((double) (clock() - start) / (double) CLOCKS_PER_SEC);
@@ -1257,10 +1306,16 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 				break;
 			}
 		}
+		if (!hasPendingEvent) break;
+
+		// Match stepTo(): an event at the requested endpoint belongs to the
+		// next continuation interval. Keep its pending wait for that call.
+		if (pendingEventTime >= end_time) {
+			current_time = end_time;
+			break;
+		}
 
 		//cout<<"delta_t: " <<delta_t<<" atot: "<<a_tot<<endl;
-		//Make sure we can react...
-		if(delta_t==0) break;
 
 		// Debug tracing is intentionally compile-time gated to avoid hot-loop I/O.
 		if(DEBUG && verbose && iteration < 5) {
@@ -1292,7 +1347,7 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 			if(verbose) cout << "Iteration: " << iteration << " Time: " << current_time << " a_tot: " << a_tot << endl;
 		}
 		globalEventCounter++;
-		current_time+=delta_t;
+		current_time = pendingEventTime;
 
 		// Recompute all propensities at each step to ensure time-dependent functions are updated correctly
 		if (hasTimeDependentFunctions) {
@@ -1340,6 +1395,7 @@ nextReaction->fire(randElement);
 				cout << "Fire returned" << endl;
 			}
 		}
+		invalidatePendingEvent();
 
 		// Replenish fixed species after reaction fires
 		replenishFixedSpecies();
@@ -1348,13 +1404,21 @@ nextReaction->fire(randElement);
 
 	}
 	if(curSampleTime-dSampleTime<(end_time-0.5*dSampleTime)) {
-			// Re-evaluate global functions depending on time so that they are accurate
-			for (unsigned int i=0; i<globalFunctions.size(); i++) {
-				if (globalFunctions.at(i)->getCtrType() == "System") {
-					FuncFactory::Eval(globalFunctions.at(i)->p);
-				}
+		const double eventTime = current_time;
+		current_time = curSampleTime;
+		try {
+			// Evaluate time-dependent output functions at the row's timestamp.
+			evaluateSystemFunctions();
+			outputAllObservableCounts(curSampleTime,globalEventCounter);
+		} catch (...) {
+			try {
+				restoreEventTime(eventTime);
+			} catch (...) {
+				// Preserve the original output exception if cache restoration also fails.
 			}
-		outputAllObservableCounts(curSampleTime,globalEventCounter);
+			throw;
+		}
+		restoreEventTime(eventTime);
 	}
 	// AS2023 - if we missed a firing log, write what we have
 	if (!logged) {
@@ -1395,13 +1459,13 @@ double System::stepTo(double stoppingTime)
 {
 	while(current_time < stoppingTime)
 	{
-		if(!pendingStepEventValid) {
+		if(!pendingEventValid) {
 			// Preserve the pending waiting-time draw across output boundaries so
 			// repeated stepTo() calls consume the same RNG stream as sim().
 			if(a_tot > ATOT_TOLERANCE) {
-				pendingStepEventTime =
+				pendingEventTime =
 					current_time + (-log(rng_.random_open()) / a_tot);
-				pendingStepEventValid = true;
+				pendingEventValid = true;
 			} else {
 				current_time = stoppingTime;
 				cout << "Total propensity is zero, no further rxns can fire in this step." << endl;
@@ -1410,23 +1474,23 @@ double System::stepTo(double stoppingTime)
 		}
 
 		// Check if we've reached stopping time
-		if(pendingStepEventTime >= stoppingTime) {
+		if(pendingEventTime >= stoppingTime) {
 			break;
 		}
 
 		// Select and fire the next reaction
 		double randElement = getNextRxn();
 		if(nextReaction == NULL) {
-			invalidateStepToCache();
+			invalidatePendingEvent();
 			break;
 		}
 
-		current_time = pendingStepEventTime;
+		current_time = pendingEventTime;
 		globalEventCounter++;
 
 if (NFcore::shadowOn()) { NFcore::shadowEvent++; cout << "@EVT " << NFcore::shadowEvent << " " << nextReaction->getRxnId() << " " << nextReaction->getName() << endl; }
 nextReaction->fire(randElement);
-		invalidateStepToCache();
+		invalidatePendingEvent();
 
 		// Replenish fixed species after reaction fires
 		replenishFixedSpecies();
@@ -1447,7 +1511,7 @@ nextReaction->fire(randElement);
 
 void System::singleStep()
 {
-	invalidateStepToCache();
+	invalidatePendingEvent();
 	cout<<"  -System is at time: "<<this->current_time<<endl;
 	double delta_t = 0;
 
@@ -1484,11 +1548,11 @@ nextReaction->fire(randElement);
 
 void System::equilibrate(double duration)
 {
-	invalidateStepToCache();
+	invalidatePendingEvent();
 	double startTime = current_time;
 	stepTo(startTime + duration);
 	current_time = startTime;
-	invalidateStepToCache();
+	invalidatePendingEvent();
 }
 
 void System::equilibrate(double duration, int statusReports)
@@ -1559,7 +1623,7 @@ void System::replenishFixedSpecies() {
 	}
 
 	if (updated) {
-		invalidateStepToCache();
+		invalidatePendingEvent();
 		recompute_A_tot();
 	}
 }
@@ -1578,13 +1642,13 @@ void System::resetConcentrations() {
 		cerr << "Error: no saved concentrations to reset to." << endl;
 		return;
 	}
-	invalidateStepToCache();
+	invalidatePendingEvent();
 	savedSnapshot->restore(this);
 	cout << "Reset concentrations to saved state." << endl;
 }
 
 void System::addConcentration(const string& speciesPattern, int count) {
-	invalidateStepToCache();
+	invalidatePendingEvent();
 	// Try to find the molecule type name (substring before parenthesis or entire string)
 	string molTypeName = speciesPattern;
 	size_t parenPos = speciesPattern.find('(');
@@ -1628,12 +1692,12 @@ void System::recalculateAllObservables() {
 }
 
 void System::updateAllReactionPropensities() {
-	invalidateStepToCache();
+	invalidatePendingEvent();
 	recompute_A_tot();
 }
 
 void System::destroyAllMolecules() {
-	invalidateStepToCache();
+	invalidatePendingEvent();
 	// For each MoleculeType, remove all molecules
 	for (auto molTypeIter = allMoleculeTypes.begin(); molTypeIter != allMoleculeTypes.end(); ++molTypeIter) {
 		(*molTypeIter)->removeAllMolecules();
@@ -2362,7 +2426,7 @@ void System::setParameter(const string& name, double value) {
 	this->paramMap[name]=value;
 }
 void System::updateSystemWithNewParameters() {
-	invalidateStepToCache();
+	invalidatePendingEvent();
 
 	//Update all global functions
 	for(unsigned int i=0; i<this->globalFunctions.size(); i++) {

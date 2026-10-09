@@ -19,6 +19,7 @@
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
+#include "engine/NetworkGenerator.hpp"
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
 #include "SbmlUnitWriter.hpp"
@@ -230,20 +231,20 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     sbml << "  <model id=\"" << escapeXml(makeValidSBMLId(model.getModelName())) << "\" name=\""
          << escapeXml(model.getModelName()) << "\""
-         << sbml_units::modelAttributes(compiled) << ">\n";
+         << sbml_units::modelAttributes(compiled, options.level) << ">\n";
 
     if (!options.sourceMetadata.empty()) {
         sbml << writeSourceMetadata(options.sourceMetadata);
     }
 
     // Unit definitions (Perl: substance = item)
-    sbml << sbml_units::writeUnitDefinitions(compiled);
+    sbml << sbml_units::writeUnitDefinitions(compiled, options.level);
 
     // Compartments
     sbml << writeCompartments(model, compiled, options.level);
 
     // Species
-    sbml << writeSpecies(model, network, compiled);
+    sbml << writeSpecies(model, network, compiled, options.level);
 
     // Keep parameters after species and rules before reactions.  This order
     // is accepted by both SBML L2 and L3 and keeps generated documents stable.
@@ -378,7 +379,7 @@ std::string SbmlWriter::writeParameters(
 
 std::string SbmlWriter::writeSpecies(
     const ast::Model& model, const engine::GeneratedNetwork* network,
-    const compile::CompiledModel& compiled) {
+    const compile::CompiledModel& compiled, int level) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
     const std::size_t speciesCount = network ? network->species.size() : model.getSeedSpecies().size();
@@ -402,7 +403,7 @@ std::string SbmlWriter::writeSpecies(
                  // make that backend basis explicit even when the model
                  // default substance unit is mole-based.
                  << (sbml_units::enabled(compiled)
-                         ? sbml_units::attribute(compiled, "item")
+                         ? sbml_units::speciesAttribute(compiled, "item", level)
                          : std::string{});
 
             if (species.isConstant()) {
@@ -424,19 +425,20 @@ std::string SbmlWriter::writeSpecies(
                 return model.getParameters().evaluate(name);
             }, 0.0);
 
-            const bool concentration = seed.hasUnit() &&
-                seed.getUnit()->dimension.substance != 0 &&
-                seed.getUnit()->dimension.length == -3 &&
-                seed.getUnit()->dimension.time == 0;
+            const auto& compiledSeed = compiled.seeds()[i];
+            if (sbml_units::enabled(compiled)) {
+                amountValue = engine::NetworkGenerator::normalizeSeedAmount(
+                    compiled, compiledSeed);
+            }
 
             sbml << "      <species id=\"" << speciesId
                  << "\" name=\"" << escapeXml(seed.getPattern())
                  << "\" compartment=\"" << compartmentId
-                 << (concentration ? "\" initialConcentration=\"" :
-                                      "\" initialAmount=\"") << amountValue
-                 << (concentration ? "\" hasOnlySubstanceUnits=\"false\"" :
-                                      "\" hasOnlySubstanceUnits=\"true\"")
-                 << sbml_units::attribute(compiled, seed.getUnitName());
+                 << "\" initialAmount=\"" << amountValue
+                 << "\" hasOnlySubstanceUnits=\"true\""
+                 << (sbml_units::enabled(compiled)
+                         ? sbml_units::speciesAttribute(compiled, "item", level)
+                         : std::string{});
 
             if (seed.isConstant()) {
                 sbml << " constant=\"true\" boundaryCondition=\"true\"";

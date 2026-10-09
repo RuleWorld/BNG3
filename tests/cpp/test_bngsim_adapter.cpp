@@ -13,6 +13,7 @@
 #include <bngsim/bngsim.hpp>
 
 #include "engine/BngsimAdapter.hpp"
+#include "engine/FiniteBackend.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -38,6 +39,40 @@ end observables
 begin reaction rules
     X() -> 0 k
 end reaction rules
+)");
+}
+
+std::unique_ptr<ast::Model> parseTwoSpeciesDecayModel() {
+    return parser::parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 1
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Btot B()
+end observables
+begin reaction rules
+    A() -> 0 k
+    B() -> 0 k
+end reaction rules
+)");
+}
+
+std::unique_ptr<ast::Model> parseEmptySpeciesModel() {
+    return parser::parseModel(R"(
+begin model
+begin parameters
+    k 1
+end parameters
+end model
 )");
 }
 
@@ -77,6 +112,175 @@ TEST_CASE("BNGsim adapter maps generated network without .net serialization", "[
                    Catch::Matchers::WithinAbs(bng3Result.timePoints.at(timeIndex), 1e-12));
         CHECK_THAT(bngsimResult.species_data().at(timeIndex),
                    Catch::Matchers::WithinAbs(bng3Result.concentrations.at(timeIndex).at(0), 1e-7));
+    }
+}
+
+TEST_CASE("BNGsim ODE preserves native steady-state stopping semantics", "[bngsim]") {
+    auto model = parseTwoSpeciesDecayModel();
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tStart = 0.0;
+    options.tEnd = 3.0;
+    options.nSteps = 3;
+    options.rtol = 1e-10;
+    options.atol = 1e-12;
+    options.steadyState = true;
+
+    SECTION("normalizes the derivative norm by species count") {
+        options.steadyStateTol = 0.1;
+        const auto native = engine::simulateFiniteOde(
+            *model, network, options, engine::FiniteBackend::Native);
+        const auto bngsim = engine::simulateFiniteOde(
+            *model, network, options, engine::FiniteBackend::Bngsim);
+
+        REQUIRE(native.timePoints == std::vector<double>{0.0, 1.0, 2.0});
+        REQUIRE(bngsim.timePoints == native.timePoints);
+        REQUIRE(bngsim.concentrations.size() == native.concentrations.size());
+        for (std::size_t timeIndex = 0; timeIndex < native.timePoints.size(); ++timeIndex) {
+            for (std::size_t speciesIndex = 0;
+                 speciesIndex < native.concentrations.at(timeIndex).size();
+                 ++speciesIndex) {
+                CHECK_THAT(
+                    bngsim.concentrations.at(timeIndex).at(speciesIndex),
+                    Catch::Matchers::WithinAbs(
+                        native.concentrations.at(timeIndex).at(speciesIndex), 1e-7));
+            }
+        }
+    }
+
+    SECTION("checks after recording the initial row") {
+        // At t=0, sqrt(sum(dy/dt^2))/n_species = sqrt(2)/2 < 0.8.
+        // Both engines must still record t=1 before testing the cutoff.
+        options.steadyStateTol = 0.8;
+        const auto native = engine::simulateFiniteOde(
+            *model, network, options, engine::FiniteBackend::Native);
+        const auto bngsim = engine::simulateFiniteOde(
+            *model, network, options, engine::FiniteBackend::Bngsim);
+
+        REQUIRE(native.timePoints == std::vector<double>{0.0, 1.0});
+        REQUIRE(bngsim.timePoints == native.timePoints);
+        REQUIRE(bngsim.concentrations.size() == native.concentrations.size());
+        for (std::size_t timeIndex = 0; timeIndex < native.timePoints.size(); ++timeIndex) {
+            for (std::size_t speciesIndex = 0;
+                 speciesIndex < native.concentrations.at(timeIndex).size();
+                 ++speciesIndex) {
+                CHECK_THAT(
+                    bngsim.concentrations.at(timeIndex).at(speciesIndex),
+                    Catch::Matchers::WithinAbs(
+                        native.concentrations.at(timeIndex).at(speciesIndex), 1e-7));
+            }
+        }
+    }
+}
+
+TEST_CASE("BNGsim ODE rejects unqualified native-only options", "[bngsim]") {
+    auto model = parseTwoSpeciesDecayModel();
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 2;
+
+    SECTION("stop_if") {
+        options.stopIf = "Atot < 0.5";
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteOde(*model, network, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring("BNGsim adapter rejected stop_if"));
+    }
+
+    SECTION("sparse solver request") {
+        options.sparse = true;
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteOde(*model, network, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring("BNGsim adapter rejected sparse"));
+    }
+
+    SECTION("product-scale warning") {
+        options.checkProductScale = 0.5;
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteOde(*model, network, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring(
+                "BNGsim adapter rejected check_product_scale"));
+    }
+
+    SECTION("non-positive steady-state tolerance") {
+        options.steadyState = true;
+        options.steadyStateTol = 0.0;
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteOde(*model, network, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring(
+                "BNGsim adapter rejected steady_state_tol"));
+    }
+
+    SECTION("empty species set") {
+        auto emptyModel = parseEmptySpeciesModel();
+        engine::NetworkGenerator emptyGenerator(*emptyModel);
+        const auto emptyNetwork = emptyGenerator.generateNative();
+        options.steadyState = true;
+        const auto native = engine::simulateFiniteOde(
+            *emptyModel, emptyNetwork, options, engine::FiniteBackend::Native);
+        REQUIRE(native.timePoints == std::vector<double>{0.0, 0.5});
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteOde(*emptyModel, emptyNetwork, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring(
+                "empty-state steady-state truncation differs"));
+    }
+}
+
+TEST_CASE("BNGsim SSA rejects controls it cannot represent", "[bngsim]") {
+    auto model = parseTwoSpeciesDecayModel();
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.tEnd = 1.0;
+    options.nSteps = 2;
+    options.seed = 17;
+
+    SECTION("stop_if") {
+        options.stopIf = "Atot < 0.5";
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteSsa(*model, network, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring("BNGsim adapter rejected stop_if"));
+    }
+
+    SECTION("maximum reaction events") {
+        options.maxSimSteps = 1;
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteSsa(*model, network, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring(
+                "BNGsim adapter rejected max_sim_steps"));
+    }
+
+    SECTION("event interval without explicit sample times") {
+        options.outputStepInterval = 2;
+        REQUIRE_THROWS_WITH(
+            engine::simulateFiniteSsa(*model, network, options,
+                                      engine::FiniteBackend::Bngsim),
+            Catch::Matchers::ContainsSubstring(
+                "BNGsim adapter rejected output_step_interval"));
+    }
+
+    SECTION("explicit sample times supersede event interval") {
+        options.sampleTimes = {0.0, 0.5, 1.0};
+        options.outputStepInterval = 2;
+        const auto native = engine::simulateFiniteSsa(
+            *model, network, options, engine::FiniteBackend::Native);
+        const auto bngsim = engine::simulateFiniteSsa(
+            *model, network, options, engine::FiniteBackend::Bngsim);
+
+        REQUIRE(native.timePoints == options.sampleTimes);
+        REQUIRE(bngsim.timePoints == options.sampleTimes);
     }
 }
 
