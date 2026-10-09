@@ -51,6 +51,10 @@ jax = [
     "jax>=0.4.30",
     "jaxlib>=0.4.30",
 ]
+notebook = [
+    "ipykernel>=6,<7",
+    "matplotlib>=3.4",
+]
 full = [
     "cement",
     "colorlog",

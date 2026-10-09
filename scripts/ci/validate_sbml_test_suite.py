@@ -1947,7 +1947,7 @@ def _validate_case(
 
 
 def _run_isolated_case(
-    case: dict[str, Any], args: argparse.Namespace
+    case: dict[str, Any], args: argparse.Namespace, expected_runtime: dict[str, Any]
 ) -> dict[str, Any]:
     """Run one suite case in a bounded child process."""
 
@@ -1991,7 +1991,28 @@ def _run_isolated_case(
                 f"worker exited {completed.returncode} without a report: "
                 f"{completed.stderr[-500:]}"
             )
-        return json.loads(worker_json.read_text(encoding="utf-8"))["records"][0]
+        worker_report = json.loads(worker_json.read_text(encoding="utf-8"))
+        worker_runtime = worker_report["runtime_provenance"]
+        identity_keys = (
+            "python_executable",
+            "bionetgen_package_path",
+            "native_extension_resolved_path",
+            "native_extension_sha256",
+            "libsbml_version",
+            "roadrunner_version",
+        )
+        mismatches = [
+            key
+            for key in identity_keys
+            if worker_runtime.get(key) != expected_runtime.get(key)
+        ]
+        if mismatches:
+            raise RuntimeError(
+                f"worker runtime identity mismatch: {', '.join(mismatches)}"
+            )
+        record = worker_report["records"][0]
+        record["worker_runtime_provenance"] = worker_runtime
+        return record
     except subprocess.TimeoutExpired:
         return {
             "category": case["category"],
@@ -2024,6 +2045,29 @@ def _run_isolated_case(
         worker_json.unlink(missing_ok=True)
 
 
+def _selected_surface_passed(records: list[dict[str, Any]]) -> bool:
+    """Gate a selected subset without claiming complete suite conformance.
+
+    Explicitly unsupported cases stay separate. An empty or wholly unsupported
+    selection provides no official-reference execution evidence and fails.
+    """
+    return (
+        any(
+            r.get("official_conformance", {}).get("status") == "passed" for r in records
+        )
+        and all(r.get("status") in {"passed", "unsupported"} for r in records)
+        and all(
+            r.get("official_conformance", {}).get("status") in {"passed", "unsupported"}
+            for r in records
+        )
+        and all(
+            r.get("simulation_comparison", {}).get("passed") is True
+            for r in records
+            if r.get("status") == "passed"
+        )
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite-dir", type=Path, required=True)
@@ -2036,6 +2080,11 @@ def main() -> int:
     )
     parser.add_argument("--categories", nargs="+", default=["semantic", "stochastic"])
     parser.add_argument("--max-cases", type=int, default=0)
+    parser.add_argument(
+        "--gate-selected-cases",
+        action="store_true",
+        help="gate executed selected cases; never claim full-suite conformance",
+    )
     parser.add_argument("--only-case", help="validate one case as CATEGORY/ID")
     parser.add_argument(
         "--isolate-cases",
@@ -2128,7 +2177,10 @@ def main() -> int:
                 raise SystemExit("--jobs must be at least one")
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
                 records = list(
-                    pool.map(lambda case: _run_isolated_case(case, args), selected)
+                    pool.map(
+                        lambda case: _run_isolated_case(case, args, runtime_info),
+                        selected,
+                    )
                 )
             for case, record in zip(selected, records):
                 print(
@@ -2216,6 +2268,7 @@ def main() -> int:
         "full_suite_inventory": full_suite_inventory,
         "selected_cases": len(selected),
         "partial_run": partial,
+        "selected_surface_passed": _selected_surface_passed(records),
         "counts": counts,
         "by_category": by_category,
         "records": records,
@@ -2267,7 +2320,8 @@ def main() -> int:
         f"official_timeouts={official_counts['timed-out']} "
         f"core={'PASS' if report['core_passed'] else 'FAIL'}"
     )
-    return 0 if report["core_passed"] else 1
+    gate = "selected_surface_passed" if args.gate_selected_cases else "core_passed"
+    return 0 if report[gate] else 1
 
 
 if __name__ == "__main__":

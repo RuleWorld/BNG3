@@ -19,18 +19,30 @@ Load a BNGL model file.
 
 ---
 
-### `bionetgen.run(path, method="ode", t_end=100.0, n_steps=100, **kwargs) → SimResult`
+### `bionetgen.run(path, *args, method=..., t_end=..., n_steps=..., **kwargs)`
 
-Load a model and run simulation in one call.
+The modern form returns a `SimResult`. With no overrides it runs ODE from 0 to
+100 with 100 steps. Supported methods are `ode`, `ssa`, `nf`, `pla`, and `psa`.
+The modern method, end time, and step count may also be positional, for example
+`bionetgen.run("model.bngl", "ssa", 20, 200)`.
 
-**Parameters:**
-- `path` (str | Path) — Path to the `.bngl` file.
-- `method` (str) — `"ode"`, `"ssa"`, or `"nf"`.
-- `t_end` (float) — End time.
-- `n_steps` (int) — Number of output steps.
-- `**kwargs` — Passed to `BioNetGenModel.simulate()`.
+For the file-runner contract, pass `out=directory`, an explicit `None`, or a
+non-method second positional path-like value. It returns a `BNGResult` and
+executes the model's declared actions. A string second argument equal to a
+supported method selects the modern API; use `out=` when the output directory
+name could be ambiguous.
+After a positional output path, remaining positionals retain the PyBioNetGen
+order: `suppress`, `timeout`, `simulator`, `format`, `method`, `t_span`, and
+`n_points`. A non-`None` timeout is explicitly unsupported. Invalid keyword
+methods raise `ValueError`; duplicate positional and keyword arguments raise
+`TypeError`.
 
-**Returns:** `SimResult`
+An explicit `method=` in the file-runner form selects one modern simulation.
+Time-only overrides preserve declared action order and side effects, and apply
+the specified absolute grid to every direct simulation action. `n_points=N`
+corresponds to `N-1` steps. Overrides combined with `sample_times` or
+`continue` are rejected; solver-specific options in this action-preserving
+form are also rejected rather than ignored.
 
 ---
 # API Reference
@@ -43,9 +55,11 @@ This reference covers the high-level public API. For low-level extension details
 
 Parse a BNGL file and return a model object.
 
-### `run(path, method="ode", t_end=100.0, n_steps=100, **kwargs) -> SimResult`
+### `run(path, *args, method=..., t_end=..., n_steps=..., **kwargs)`
 
-Load a BNGL file and run a simulation in one call.
+See the `bionetgen.run` dual-call contract above. The modern form returns a
+`SimResult`; the `out=` compatibility form returns a `BNGResult` and runs the
+model's declared actions.
 
 ### `parameter_scan(model_or_path, parameter, *, values=None, min=None, max=None, n_points=None, log_scale=False, **kwargs) -> ScanResult`
 
