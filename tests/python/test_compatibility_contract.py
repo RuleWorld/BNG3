@@ -134,6 +134,94 @@ def test_package_root_keeps_string_positional_legacy_output_directory(tmp_path):
     )
 
 
+@pytest.mark.parametrize("suppress", [False, True])
+def test_package_root_preserves_legacy_positional_suppress(tmp_path, suppress):
+    model = _write_action_workflow_model(tmp_path / "positional-suppress.bngl")
+    output = tmp_path / "positional-suppress-results"
+
+    result = bionetgen.run(model, output, suppress)
+
+    assert isinstance(result, bionetgen.BNGResult)
+    assert result.process_return == 0
+    for suffix in ("ode", "ssa"):
+        data = result.gdats[f"positional-suppress_{suffix}"]
+        assert len(data) == 21
+        assert data["time"][0] == 0.0
+        assert data["time"][-1] == 10.0
+
+
+def test_package_root_accepts_explicit_none_legacy_output_positional(
+    tmp_path, monkeypatch
+):
+    monkeypatch.chdir(tmp_path)
+    model = _write_action_workflow_model(tmp_path / "positional-none.bngl")
+
+    result = bionetgen.run(model, None, True)
+
+    assert isinstance(result, bionetgen.BNGResult)
+    assert result.process_return == 0
+    assert set(result.gdats) == {"positional-none_ode", "positional-none_ssa"}
+    assert {path.name for path in tmp_path.iterdir()} == {model.name}
+
+
+def test_package_root_rejects_legacy_positional_timeout_explicitly(tmp_path):
+    output = tmp_path / "positional-timeout-results"
+
+    with pytest.raises(NotImplementedError, match="timeout"):
+        bionetgen.run(MODEL, output, True, 1)
+
+    assert not output.exists()
+
+
+def test_package_root_rejects_duplicate_legacy_positional_keyword(tmp_path):
+    output = tmp_path / "duplicate-suppress-results"
+
+    with pytest.raises(TypeError, match="suppress.*multiple|multiple.*suppress"):
+        bionetgen.run(MODEL, output, True, suppress=False)
+
+    assert not output.exists()
+
+
+def test_package_root_rejects_duplicate_late_legacy_positional_keyword(tmp_path):
+    output = tmp_path / "duplicate-method-results"
+
+    with pytest.raises(TypeError, match="method.*multiple|multiple.*method"):
+        bionetgen.run(
+            MODEL,
+            output,
+            True,
+            None,
+            "auto",
+            None,
+            "ssa",
+            (0.0, 1.0),
+            5,
+            method="ode",
+        )
+
+    assert not output.exists()
+
+
+def test_package_root_rejects_more_than_canonical_legacy_positionals(tmp_path):
+    output = tmp_path / "too-many-results"
+
+    with pytest.raises(TypeError, match="at most nine positional arguments"):
+        bionetgen.run(
+            MODEL,
+            output,
+            True,
+            None,
+            "auto",
+            None,
+            "ssa",
+            (0.0, 1.0),
+            5,
+            0.01,
+        )
+
+    assert not output.exists()
+
+
 def test_legacy_run_accepts_output_directory_and_returns_file_result(tmp_path):
     output = tmp_path / "results"
 

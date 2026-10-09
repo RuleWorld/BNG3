@@ -21,6 +21,15 @@ else:
 
     _MODERN_METHODS = frozenset({"ode", "ssa", "nf", "pla", "psa"})
     _RUN_OUT_MISSING = object()
+    _LEGACY_RUN_POSITIONALS = (
+        "suppress",
+        "timeout",
+        "simulator",
+        "format",
+        "method",
+        "t_span",
+        "n_points",
+    )
 
     class _OmittedRunArgument:
         def __repr__(self):
@@ -41,9 +50,13 @@ else:
         Modern calls return a :class:`SimResult`; the second positional
         argument may be a supported simulation method, followed by positional
         ``t_end`` and ``n_steps`` values. A non-method path-like second
-        positional argument, or the legacy ``out=`` keyword, selects the
-        PyBioNetGen file-runner contract and returns a :class:`BNGResult`.
-        Use ``out=`` when an output directory's name matches a method.
+        positional argument (including explicit ``None``), or the legacy
+        ``out=`` keyword, selects the PyBioNetGen file-runner contract and
+        returns a :class:`BNGResult`.
+        File-runner positionals after the output path follow the legacy order:
+        ``suppress``, ``timeout``, ``simulator``, ``format``, ``method``,
+        ``t_span``, and ``n_points``. Use ``out=`` when an output directory's
+        name matches a method.
         """
         legacy_out = kwargs.pop("out", _RUN_OUT_MISSING)
         legacy_requested = legacy_out is not _RUN_OUT_MISSING
@@ -59,30 +72,54 @@ else:
                 method = second
                 method_was_provided = True
                 remaining = args[1:]
-            elif isinstance(second, (str, _os.PathLike)):
+            elif second is None or isinstance(second, (str, _os.PathLike)):
                 if legacy_requested:
                     raise TypeError("run() got multiple values for argument 'out'")
                 legacy_out = second
                 legacy_requested = True
                 remaining = args[1:]
+                if len(remaining) > len(_LEGACY_RUN_POSITIONALS):
+                    raise TypeError(
+                        "run() accepts at most nine positional arguments in the "
+                        "file-runner form"
+                    )
+                for name, value in zip(_LEGACY_RUN_POSITIONALS, remaining):
+                    if name == "method":
+                        if method_was_provided:
+                            raise TypeError(
+                                "run() got multiple values for argument 'method'"
+                            )
+                        method = value
+                        method_was_provided = True
+                    else:
+                        if name in kwargs:
+                            raise TypeError(
+                                f"run() got multiple values for argument '{name}'"
+                            )
+                        kwargs[name] = value
             else:
                 raise TypeError(
                     "the second positional argument must be a simulation method "
                     "or output path"
                 )
 
-            if len(remaining) > 2:
-                raise TypeError("run() accepts at most four positional arguments")
-            if remaining:
-                if end_was_provided:
-                    raise TypeError("run() got multiple values for argument 't_end'")
-                t_end = remaining[0]
-                end_was_provided = True
-            if len(remaining) > 1:
-                if steps_were_provided:
-                    raise TypeError("run() got multiple values for argument 'n_steps'")
-                n_steps = remaining[1]
-                steps_were_provided = True
+            if isinstance(second, str) and second.lower() in _MODERN_METHODS:
+                if len(remaining) > 2:
+                    raise TypeError("run() accepts at most four positional arguments")
+                if remaining:
+                    if end_was_provided:
+                        raise TypeError(
+                            "run() got multiple values for argument 't_end'"
+                        )
+                    t_end = remaining[0]
+                    end_was_provided = True
+                if len(remaining) > 1:
+                    if steps_were_provided:
+                        raise TypeError(
+                            "run() got multiple values for argument 'n_steps'"
+                        )
+                    n_steps = remaining[1]
+                    steps_were_provided = True
 
         if method is _RUN_ARGUMENT_MISSING or method is None:
             method_name = "ode"
