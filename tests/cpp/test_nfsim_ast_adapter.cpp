@@ -19,6 +19,7 @@
 #include "NFcore/reactionSelector/reactionSelector.hh"
 #include "NFreactions/reactions/reaction.hh"
 #include "compartment.hh"
+#include "compile/CompiledModel.hpp"
 #include "NFfunction/NFfunction.hh"
 #include "ast/Function.hpp"
 #include "ast/Model.hpp"
@@ -6134,4 +6135,39 @@ begin reaction rules
     CHECK(xml->getObservableByName("OC")->getCount() == testCase.c);
     CHECK(xml->getObservableByName("OD")->getCount() == 1);
     delete xml;
+}
+
+TEST_CASE("Compiled reversible molecule replacement retains deletion scopes", "[deletion-scope]") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() <-> B() k,k
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto& rule = compiled.rules().front();
+    CHECK(rule.forward().wholeSpeciesDeletions == std::vector<std::size_t>{0});
+    REQUIRE(rule.reverse().has_value());
+    CHECK(rule.reverse()->wholeSpeciesDeletions == std::vector<std::size_t>{0});
+    int traversal = NFcore::ReactionClass::NO_LIMIT;
+    auto* direct = NFinput::buildSystemFromAst(*model, false, 100, false, traversal);
+    REQUIRE(direct != nullptr);
+    direct->prepareForSimulation();
+    REQUIRE(direct->getAllReactions().size() == 2);
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(1.0));
+    direct->singleStep();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(0.0));
+    CHECK(direct->getReaction(1)->get_a() == Catch::Approx(1.0));
+    delete direct;
 }
