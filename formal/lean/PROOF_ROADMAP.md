@@ -266,13 +266,14 @@ implementations:
 - real C++ NFnext matcher/transformation conformance harness: IMPLEMENTED and
   passing 18/18 checks in this environment.
 
-The highest-priority remaining work, accounting for the open candidates, is:
+The highest-priority remaining work is:
 
-1. qualify production C++ `CompiledModel -> NFnext` correspondence separately.
-   Candidate PR [#198](https://github.com/RuleWorld/BNG3/pull/198) at
-   `5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd` supplies bounded ID-packing
-   preflight and overflow-test evidence. It remains open and does not prove
-   general pattern/rate/bond/transformation refinement;
+1. qualify production C++ `CompiledModel -> NFnext` correspondence beyond the
+   bounded declaration-ID and field-width checks merged in PR
+   [#198](https://github.com/RuleWorld/BNG3/pull/198) at
+   `2038e18693e29a0c646c723998d7a59d737b8cff`. The merge adds preflight and a
+   parser-to-lowering bridge case; it does not prove general
+   pattern/rate/bond/transformation refinement;
 2. prove/test a production species canonicalizer against the brute-force graph
    isomorphism oracle;
 3. formalize exact special-rate/local-function/builtin conventions that are

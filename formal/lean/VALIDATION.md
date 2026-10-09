@@ -4,9 +4,10 @@
 
 The original audit baseline was `main` at
 `e1836c3274e685996d5e86883761e00e98257e09` on 2026-10-07, using the pinned Lean
-toolchain `leanprover/lean4:v4.33.1`. These counts remain historical baseline
-evidence; the matcher theorem from PR #194 is now merged at
-`c3b20f3e4a863300ac79dc9dfe71f0b406b6eda6`.
+toolchain `leanprover/lean4:v4.33.1`. The counts below are historical baseline
+evidence. Current `main` is `2038e18693e29a0c646c723998d7a59d737b8cff`, which
+includes the matcher proof from PR #194 and bounded packing slice from PR #198;
+refreshed validation for that source tree is recorded below.
 
 ~~~text
 lake build                         -> success, 36 jobs
@@ -38,11 +39,13 @@ produce one channel event, while two matching molecules in separate complexes
 remain two events. Earlier failure banners in that file described a defect
 that is now fixed and have been removed.
 
-## Merged matcher proof and open packing candidate — 2026-10-09
+## Merged matcher and bounded packing results — 2026-10-09
 
-The matcher proof below is included in current `main` through merge commit
-`c3b20f3e4a863300ac79dc9dfe71f0b406b6eda6`. The packing work remains in open
-PR #198 and is candidate evidence rather than merged-main evidence.
+The matcher proof is included through merge commit
+`c3b20f3e4a863300ac79dc9dfe71f0b406b6eda6`; PR #198's bounded packing slice
+is included through merge commit `2038e18693e29a0c646c723998d7a59d737b8cff`.
+Neither merge establishes general production C++ matcher or lowering
+refinement.
 
 - Merged matcher correctness: PR [#194](https://github.com/RuleWorld/BNG3/pull/194),
   candidate head `c5fafad022ff831374e669e4ce90ac6cf3102086`, merged on
@@ -61,22 +64,65 @@ PR #198 and is candidate evidence rather than merged-main evidence.
   the general proof adds no `sorry`, `admit`, or new axiom. Its audited
   dependencies are `[propext, Classical.choice, Quot.sound]`. This is a theorem
   about the Lean reference matcher, not production C++ matcher correctness.
+- The #194 hosted run [37725570914](https://github.com/RuleWorld/BNG3/actions/runs/37725570914)
+  reports the candidate head `c5fafad022ff831374e669e4ce90ac6cf3102086`. Its
+  combined-validation synthetic merge revision was
+  `7858223443ce982b9774bceb79192e8352f4165c`; that revision's tree
+  `d9069aa3de418329a0831e00218c718138effe79` is the same as the PR candidate
+  tree. This records source-tree identity without describing the synthetic
+  merge as a literal checkout of the PR head.
 - Bounded NFnext packing: PR [#198](https://github.com/RuleWorld/BNG3/pull/198),
-  head `5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd`, passed hosted Lean/NFnext run
-  [37786454166](https://github.com/RuleWorld/BNG3/actions/runs/37786454166),
-  and its exact-head [CI run 37786454220](https://github.com/RuleWorld/BNG3/actions/runs/37786454220)
-  passed the C++ matrix, ASan, and integration checks. The production preflight
-  checks declaration-order IDs and
-  NFIR v5 field widths; the parser-to-lowering bridge exercises the bounded
-  molecule-rule graph case and rejects component index 65,536. This is not a
-  general proof of C++ pattern, rate, bond, or transformation refinement. The
-  [candidate CXX mapping](https://github.com/RuleWorld/BNG3/blob/5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd/formal/lean/CXX_MAPPING.md#issue-166-production-declaration-to-nfnext-id-packing)
-  records the complete bounded surface.
+  submitted candidate SHA `5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd`, merged at
+  `2038e18693e29a0c646c723998d7a59d737b8cff`. Hosted runs
+  [37786454166](https://github.com/RuleWorld/BNG3/actions/runs/37786454166) and
+  [37786454220](https://github.com/RuleWorld/BNG3/actions/runs/37786454220)
+  completed on 2026-10-08 and reported successful Lean, C++ matrix, ASan, and
+  integration checks for that submitted candidate. These are dated candidate
+  results, not a claim that the merged-main integration was run at that exact
+  source revision; the runs also contain skipped artifact/release jobs. The
+  production preflight validates declaration-order IDs and NFIR v5 field
+  widths; the parser-to-lowering bridge exercises the bounded molecule-rule
+  graph case and rejects component index 65,536. The merged
+  [CXX mapping](https://github.com/RuleWorld/BNG3/blob/2038e18693e29a0c646c723998d7a59d737b8cff/formal/lean/CXX_MAPPING.md#issue-166-production-declaration-to-nfnext-id-packing)
+  records that bounded surface.
 
-The matcher/specification `#print axioms` entries from PR #194 are present in
-the merged main audit script. PR #198 adds separate
-`NFnextPacking.fromSignature_*` entries on its candidate branch; preserve them
-when synchronizing that PR. PR #198 remains open as of this record.
+The merged-main integration at `2038e18693e29a0c646c723998d7a59d737b8cff` also
+passed the parser-to-NFnext native bridge test (1/1) and the architecture
+dependency check with its 41-entry allowlist. The pinned Lean 4.33.1 build,
+Smoke, Coverage, and axiom audit pass on the same merged source tree; the audit
+includes both matcher declarations and `NFnextPacking.fromSignature_*` entries.
+These checks cover the bounded bridge and packing contract only. General C++
+pattern/rate/bond/transformation refinement remains open.
+
+## Refreshed validation for the #192 update — 2026-10-09
+
+The synchronized update is based on current `main` at
+`2038e18693e29a0c646c723998d7a59d737b8cff`. Its changes outside these records
+are the scheduled/manual harness workflow and its focused contract test; the
+Lean and NFnext sources are the merged tree above. The private toolchain was
+Lean 4.33.1 (commit
+`819816b2e0a3bf405af45ae5c7af2491d8f5bee6`).
+
+~~~text
+lake build                                      -> success, 38 jobs
+python3 scripts/static_validate.py             -> PASS, 39 Lean files
+lake env lean tests/Smoke.lean                  -> success
+lake env lean tests/Coverage.lean               -> success
+scripts/check_axiom_dependencies.sh             -> AXIOM AUDIT PASS
+scripts/check_harness_itself.sh                 -> 32 passed, 0 failed
+/opt/anaconda3/bin/python -m pytest -q \
+  tests/test_ci_contract.py::test_formal_harness_mutation_selftest_is_scheduled_and_bounded
+                                                -> 1 passed
+python3 tools/check_architecture_dependencies.py
+                                                -> PASS, 41 explicit compatibility files
+parser-to-NFnext native bridge CTest            -> 1/1 passed (separate merged-source run)
+~~~
+
+The workflow contract and all 32 scratch-mutation cases passed on the
+synchronized #192 branch. The parser-to-NFnext bridge result is the separate
+merged-source integration run recorded above; the #192 update did not rebuild
+or rerun that C++ test. The axiom audit includes the matcher declarations and
+all three packing theorems and reported no unexpected nonstandard axioms.
 
 ## Trust and evidence categories
 
