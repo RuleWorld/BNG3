@@ -2,6 +2,7 @@
 
 
 #include "mappingSet.hh"
+#include <new>
 
 
 using namespace NFcore;
@@ -13,7 +14,7 @@ MappingSet::MappingSet(unsigned int id, vector <Transformation *> &transformatio
 {
 	this->id = id;
 	this->n_mappings = transformations.size();
-	this->mappings = new Mapping *[n_mappings];
+	this->mappings = static_cast<Mapping *>(::operator new(sizeof(Mapping) * n_mappings));
 	this->isSpeciesDeletion=false;
 	this->clonedMappingSet=MappingSet::NO_CLONE;
 
@@ -26,25 +27,23 @@ MappingSet::MappingSet(unsigned int id, vector <Transformation *> &transformatio
 				this->isSpeciesDeletion=true;
 
 			// add mapping with component index -1
-			mappings[t] = new Mapping(transformations.at(t)->getType(), -1 );
+			new (&mappings[t]) Mapping(transformations.at(t)->getType(), -1);
 		}
 		else {
-			mappings[t] = new Mapping(transformations.at(t)->getType(), transformations.at(t)->getComponentIndex() );
+			new (&mappings[t]) Mapping(transformations.at(t)->getType(), transformations.at(t)->getComponentIndex());
 		}
 	}
 }
 MappingSet::~MappingSet()
 {
-	for(unsigned int t=0; t<n_mappings; t++) {
-		delete mappings[t];
-	}
-	delete [] mappings;
+	for(unsigned int t=0; t<n_mappings; t++) mappings[t].~Mapping();
+	::operator delete(mappings);
 }
 
 void MappingSet::clear() {
 	this->clonedMappingSet=NO_CLONE;
 	for(unsigned int t=0; t<n_mappings; t++) {
-		mappings[t]->clear();
+		mappings[t].clear();
 	}
 
 }
@@ -53,8 +52,13 @@ void MappingSet::clear() {
 
 bool MappingSet::set(unsigned int mappingIndex, Molecule *m)
 {
-	mappings[mappingIndex]->setMolecule(m);
+	mappings[mappingIndex].setMolecule(m);
 	return true;
+}
+
+Mapping *MappingSet::get(unsigned int mappingIndex)
+{
+	return &mappings[mappingIndex];
 }
 
 
@@ -66,7 +70,7 @@ void MappingSet::clone(MappingSet *original, MappingSet *newClone)
 	}
 
 	for(unsigned int i=0; i<original->n_mappings; i++) {
-		Mapping::clone(original->mappings[i],newClone->mappings[i]);
+		Mapping::clone(&original->mappings[i], &newClone->mappings[i]);
 	}
 	original->clonedMappingSet=newClone->id;
 }
@@ -89,7 +93,7 @@ void MappingSet::printDetails(ostream &o) const
 
 	for(unsigned int i=0; i<n_mappings; i++) {
 		o<<"  >";
-		mappings[i]->printDetails(o); o<<"\n";
+		mappings[i].printDetails(o); o<<"\n";
 	}
 
 }
@@ -97,13 +101,13 @@ void MappingSet::printDetails(ostream &o) const
 
 int MappingSet::getComplexID() const
 {
-	return mappings[0]->getMolecule()->getComplexID();
+	return mappings[0].getMolecule()->getComplexID();
 }
 
 
 int MappingSet::getPopulation() const
 {
-	return mappings[0]->getMolecule()->getPopulation();
+	return mappings[0].getMolecule()->getPopulation();
 }
 
 
@@ -118,13 +122,13 @@ bool MappingSet::checkForCollisions( MappingSet * ms1, MappingSet * ms2 )
 	// make a list of molecules pointed to by mappingSet1
 	for ( imap = 0; imap < ms1->n_mappings;  ++imap )
 	{
-		molList.push_back( (ms1->mappings)[imap]->getMolecule() );
+		molList.push_back( (ms1->mappings)[imap].getMolecule() );
 	}
 
 	// see if mappingSet2 points to any of the same molecules
 	for ( imap = 0; imap < ms2->n_mappings;  ++imap )
 	{
-		molIter = find( molList.begin(), molList.end(), (ms2->mappings)[imap]->getMolecule() );
+		molIter = find( molList.begin(), molList.end(), (ms2->mappings)[imap].getMolecule() );
 		if ( molIter != molList.end() )
 		{
 			// found overlap
@@ -141,13 +145,13 @@ bool MappingSet::checkForEquality( MappingSet * ms1, MappingSet * ms2 )
 	// make a list of molecules pointed to by mappingSet1
 	for ( imap = 0; imap < ms1->n_mappings;  ++imap )
 	{
-		molList.push_back( (ms1->mappings)[imap]->getMolecule() );
+		molList.push_back( (ms1->mappings)[imap].getMolecule() );
 	}
 
 	// see if mappingSet2 points to all of the same molecules
 	for ( imap = 0; imap < ms2->n_mappings;  ++imap )
 	{
-		molIter = find( molList.begin(), molList.end(), (ms2->mappings)[imap]->getMolecule() );
+		molIter = find( molList.begin(), molList.end(), (ms2->mappings)[imap].getMolecule() );
 		if ( molIter == molList.end() )
 		{
 			// found a difference
@@ -162,7 +166,7 @@ bool MappingSet::checkForEquality( MappingSet * ms1, MappingSet * ms2 )
 // These functions defined inline with no checking in this faster version
 //bool NFcore::MappingSet::set(unsigned int mappingIndex, Molecule *m)
 //{
-//	mappings[mappingIndex]->setMolecule(m);
+//	mappings[mappingIndex].setMolecule(m);
 //	return true;
 //}
 //Mapping *NFcore::MappingSet::get(unsigned int mappingIndex)
@@ -189,7 +193,7 @@ NFcore::MappingSet::MappingSet(unsigned int id, vector <Transformation *> &trans
 	this->id = id;
 	this->isSet = false;
 	this->n_mappings = transformations.size();
-	this->mappings = new Mapping *[n_mappings];
+	this->mappings = static_cast<Mapping *>(::operator new(sizeof(Mapping) * n_mappings));
 
 	for(unsigned int t=0; t<n_mappings; t++) {
 		mappings[t] = new Mapping(transformations.at(t)->getType(), transformations.at(t)->getStateOrSiteIndex() );
@@ -197,10 +201,8 @@ NFcore::MappingSet::MappingSet(unsigned int id, vector <Transformation *> &trans
 }
 NFcore::MappingSet::~MappingSet()
 {
-	for(unsigned int t=0; t<n_mappings; t++) {
-		delete mappings[t];
-	}
-	delete [] mappings;
+	for(unsigned int t=0; t<n_mappings; t++) mappings[t].~Mapping();
+	::operator delete(mappings);
 }
 
 bool NFcore::MappingSet::set(unsigned int mappingIndex, Molecule *m)
@@ -209,7 +211,7 @@ bool NFcore::MappingSet::set(unsigned int mappingIndex, Molecule *m)
 		cerr<<"Out of bounds access to a mapping in set function of mapping set!"<< mappingIndex<<" but max is " << n_mappings<<endl;
 		return false;
 	}
-	mappings[mappingIndex]->setMolecule(m);
+	mappings[mappingIndex].setMolecule(m);
 	isSet = true;
 	return true;
 }
@@ -227,7 +229,7 @@ bool NFcore::MappingSet::clear()
 
 	//This is not entirely necessary, but for now can be used for debugging
 	for(unsigned int t=0; t<n_mappings; t++) {
-		mappings[t]->clear();
+		mappings[t].clear();
 	}
 
 	return true;

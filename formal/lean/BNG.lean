@@ -14,6 +14,8 @@ import BNG.Runtime
 import BNG.Graph
 import BNG.Operational
 import BNG.MatcherSpec
+import BNG.MatcherCorrectness
+import BNG.MatcherCounterexamples
 import BNG.Lowering
 import BNG.Examples
 import BNG.Theorems

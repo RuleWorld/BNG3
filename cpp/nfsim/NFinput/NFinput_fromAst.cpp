@@ -4944,6 +4944,20 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                           << "' uses an unsupported reaction modifier\n";
                 return false;
             }
+            // Native NFsim refuses molecule-only deletion without the keyword:
+            // its transformation runtime does not implement BNG2's conditional
+            // product-count check. Do not admit it only on the direct route.
+            if (!hasReactionModifier(rule, "deletemolecules")) {
+                for (const auto& operation : rule.getOperations()) {
+                    if (operation.type == bng::ast::ReactionRule::TransformOp::Type::DeleteMolecule &&
+                        !rule.deletesWholeReactantPattern(operation.patternIndex)) {
+                        std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
+                                  << "' requires DeleteMolecules for partial pattern deletion; "
+                                     "conditional deletion is unsupported\n";
+                        return false;
+                    }
+                }
+            }
             if (reactantPatterns.size() != rule.getReactants().size() &&
                 !rule.getReactants().empty()) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
@@ -5257,6 +5271,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         if (ok) {
             for (const auto& operation : operations) {
                 if (operation.type != bng::ast::ReactionRule::TransformOp::Type::DeleteBond) continue;
+                if (rule.deletesWholeReactantPattern(operation.source.patternIndex) ||
+                    rule.deletesWholeReactantPattern(operation.partner.patternIndex)) continue;
                 TemplateMolecule* lhs = nullptr;
                 TemplateMolecule* rhs = nullptr;
                 std::string lhsName;
@@ -5406,18 +5422,25 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 // `A(...) -> 0` has no product graph for ReactionRule to diff.
                 // Match the XML loader's complete-species versus
                 // DeleteMolecules distinction explicitly.
-                for (auto* root : reactantRoots) {
-                    if (root->getMoleculeType()->isPopulationType()) {
-                        ok = transformationSet->addDecrementPopulation(root);
-                    } else {
-                        ok = transformationSet->addDeleteMolecule(
-                            root, deleteMolecules
+                for (std::size_t patternIndex = 0; patternIndex < patternTemplates.size(); ++patternIndex) {
+                    // The keyword deletes every named molecule, while default
+                    // deletion traverses the entire connected species once.
+                    const auto& templates = patternTemplates[patternIndex];
+                    const auto count = deleteMolecules ? templates.size() : std::size_t{1};
+                    for (std::size_t moleculeIndex = 0; moleculeIndex < count; ++moleculeIndex) {
+                        auto* target = templates.at(moleculeIndex);
+                        ok = target->getMoleculeType()->isPopulationType()
+                            ? transformationSet->addDecrementPopulation(target)
+                            : transformationSet->addDeleteMolecule(
+                                  target, deleteMolecules
                                       ? TransformationFactory::DELETE_MOLECULES
                                       : TransformationFactory::COMPLETE_SPECIES_REMOVAL);
+                        if (!ok) break;
                     }
                     if (!ok) break;
                 }
             } else {
+                std::vector<bool> wholePatternDeleted(patternTemplates.size(), false);
                 for (const auto& operation : operations) {
                     if (operation.type != bng::ast::ReactionRule::TransformOp::Type::DeleteMolecule) continue;
                     TemplateMolecule* target = nullptr;
@@ -5427,17 +5450,17 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                         ok = false;
                         break;
                     }
+                    const bool wholePattern = rule.deletesWholeReactantPattern(operation.patternIndex);
+                    if (wholePattern && wholePatternDeleted.at(operation.patternIndex)) continue;
+                    if (wholePattern) wholePatternDeleted.at(operation.patternIndex) = true;
                     if (target->getMoleculeType()->isPopulationType()) {
                         ok = transformationSet->addDecrementPopulation(target);
                     } else {
-                        // A product graph that removes one molecule without
-                        // DeleteMolecules uses BNGL's conditional spelling:
-                        // delete only when the post-delete graph remains one
-                        // species. A bare degradation (`-> 0`) is handled
-                        // above as complete-species removal.
-                        const int deletionType = deleteMolecules
-                            ? TransformationFactory::DELETE_MOLECULES
-                            : TransformationFactory::DELETE_MOLECULES_NO_KEYWORD;
+                        // The same resolved deletion scope serves rules with
+                        // products (including catalysts) and pure degradation.
+                        const int deletionType = wholePattern
+                            ? TransformationFactory::COMPLETE_SPECIES_REMOVAL
+                            : TransformationFactory::DELETE_MOLECULES;
                         ok = transformationSet->addDeleteMolecule(
                             target, deletionType);
                     }

@@ -1806,13 +1806,6 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         // matching a reactant pattern only when every molecule of that pattern
         // is deleted and the rule lacks DeleteMolecules.  Otherwise each deleted
         // molecule gets its own Delete, carrying the rule's DeleteMolecules flag.
-        std::vector<std::size_t> deletedPerPattern(rule.getReactants().size(), 0);
-        for (const auto& operation : rule.getOperations()) {
-            if (operation.type == ast::ReactionRule::TransformOp::Type::DeleteMolecule &&
-                operation.patternIndex < deletedPerPattern.size()) {
-                ++deletedPerPattern[operation.patternIndex];
-            }
-        }
         std::vector<bool> wholePatternWritten(rule.getReactants().size(), false);
         const bool deleteMoleculesKeyword =
             hasModifier(rule.getModifiers(), "DeleteMolecules");
@@ -1832,6 +1825,10 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                     << "\"/>\n";
                 break;
             case Type::DeleteBond:
+                // Keep whole-species deletion connected until the XML loader
+                // traverses it; removing these bonds first strands context.
+                if (rule.deletesWholeReactantPattern(operation.source.patternIndex) ||
+                    rule.deletesWholeReactantPattern(operation.partner.patternIndex)) break;
                 xml << "          <DeleteBond site1=\""
                     << componentId(rrId, false, operation.source)
                     << "\" site2=\"" << componentId(rrId, false, operation.partner)
@@ -1843,11 +1840,8 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                     << "\"/>\n";
                 break;
             case Type::DeleteMolecule: {
-                const std::size_t patternMolecules =
-                    parsePattern(rule.getReactants().at(operation.patternIndex)).molecules.size();
                 const bool wholePattern =
-                    !deleteMoleculesKeyword &&
-                    deletedPerPattern[operation.patternIndex] >= patternMolecules;
+                    rule.deletesWholeReactantPattern(operation.patternIndex);
                 if (!wholePattern) {
                     // Some molecules of the pattern survive (or DeleteMolecules
                     // is set): delete this molecule only.  Without the keyword

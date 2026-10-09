@@ -831,8 +831,12 @@ void
 PatternGraph::reset_index ( ) const
 {
     canonical_flag = false;
-    for ( node_const_iter = nodes.begin();  node_const_iter != nodes.end();  ++node_const_iter )
-        (*node_const_iter)->set_index( -1 );
+    // Canonical labels are queried concurrently for independent graphs during
+    // network generation. Do not use the legacy static iterator here: it is
+    // shared by every PatternGraph instance.
+    node_const_iter_t node_iter;
+    for ( node_iter = nodes.begin();  node_iter != nodes.end();  ++node_iter )
+        (*node_iter)->set_index( -1 );
 }
 
 
@@ -1239,5 +1243,4 @@ PatternGraph::split_connected ( patterngraph_container_t & split_graphs )
         connected_nodes.clear();
     }
 }
-
 

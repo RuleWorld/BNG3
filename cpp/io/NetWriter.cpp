@@ -652,7 +652,10 @@ std::string formatSpeciesAmount(const ast::Species& species, const ast::Model& m
     const auto speciesLabel = species.getSpeciesGraph().canonicalLabel();
     for (std::size_t i = 0; i < model.getSeedSpecies().size(); ++i) {
         const auto& seed = model.getSeedSpecies()[i];
-        if (seed.getCanonicalLabel() == speciesLabel && std::abs(species.getAmount()) > 1e-12) {
+        if (std::abs(species.getAmount()) > 1e-12 &&
+            seed.getCanonicalLabel() == speciesLabel &&
+            seed.getCompartment() == species.getCompartment() &&
+            species.getSpeciesGraph().graphIsomorphicTo(seed.getGraph())) {
             // Use the original seed species amount expression (parameter name or value)
             return seed.getAmount().toString();
         }

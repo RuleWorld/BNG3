@@ -17,6 +17,31 @@ namespace NFcore
 	class ReactantContainer;
 	class Compartment;
 
+	/* Static reactant-pattern dependencies used by the topology-aware
+	 * membership filter.  These describe only matching predicates;
+	 * transformation semantics remain owned by ReactionClass/TransformationSet. */
+	struct MembershipPatternDependency {
+		enum Kind {
+			STATE_REQUIRED = 0,
+			STATE_EXCLUDED = 1,
+			BOND_FREE = 2,
+			BOND_BOUND = 3,
+			TOPOLOGY = 4,
+			PARTNER_STATE_REQUIRED = 5,
+			PARTNER_STATE_EXCLUDED = 6
+		};
+		MembershipPatternDependency() : kind(STATE_REQUIRED), moleculeType(0),
+				componentIndex(-1), stateValue(-1), partnerType(0),
+				partnerComponentIndex(-1), partnerStateComponentIndex(-1) {}
+		Kind kind;
+		MoleculeType *moleculeType;
+		int componentIndex;
+		int stateValue;
+		MoleculeType *partnerType;
+		int partnerComponentIndex;
+		int partnerStateComponentIndex;
+	};
+
 	struct PairHasher {
 		template <class T1, class T2>
 		std::size_t operator()(const std::pair<T1, T2>& p) const {
@@ -109,7 +134,7 @@ namespace NFcore
 		void addComponentConstraint(string cName, int stateValue);
 		void addComponentExclusion(string cName, string stateName);
 		void addComponentExclusion(string cName, int stateValue);
-		void addBond(string thisBsiteName,TemplateMolecule *t2, string bSiteName2);
+		void addBond(const string& thisBsiteName,TemplateMolecule *t2, const string& bSiteName2);
 
 		/* Methods for adding a disjoint component to a template pattern
 		 *  e.g.  X.Y
@@ -125,12 +150,12 @@ namespace NFcore
 		const static int NO_CONSTRAINT=-1;
 		void addSymCompConstraint(string cName, string uniqueId,
 				int bondState,int stateConstraint);
-		void addSymBond(string thisBsiteName, string thisCompId,
-				TemplateMolecule *t2, string bSiteName2);
+		void addSymBond(const string& thisBsiteName, const string& thisCompId,
+				TemplateMolecule *t2, const string& bSiteName2);
 
 		/* static function for binding two templates together */
-		static void bind(TemplateMolecule *t1, string bSiteName1, string compId1,
-				TemplateMolecule *t2, string bSiteName2, string compId2);
+		static void bind(TemplateMolecule *t1, const string& bSiteName1, const string& compId1,
+				TemplateMolecule *t2, const string& bSiteName2, const string& compId2);
 
 		/* functions that provide mapping capabilities */
 		void addMapGenerator(MapGenerator *mg);
@@ -154,6 +179,17 @@ namespace NFcore
 		/* functions that are needed to match to a molecule instance */
 		bool compare(Molecule *m);
 		bool compare(Molecule *m, ReactantContainer *rc, MappingSet *ms,bool holdMolClearToEnd=false,vector<MappingSet*>* v = 0);
+		/* Fast matcher for the common case of one explicitly bonded reactant
+		 * component with no symmetric sites, connectedTo semantics, or compartment
+		 * constraints.  `used` is false when the pattern is outside that proven-safe
+		 * subset, in which case callers must use compare(). */
+		bool compareCompiledSimple(Molecule *m, MappingSet *ms, bool &used);
+		/* Split matching from mapping materialization so rejected candidates do not
+		 * activate and clear a MappingSet.  A successful match leaves the proven
+		 * molecule assignment in compiledSimpleMappedScratch until the next match. */
+		bool matchesCompiledSimple(Molecule *m, bool &used);
+		void materializeCompiledSimple(MappingSet *ms);
+		bool compiledSimpleMappingEquals(MappingSet *ms) const;
 		void clear();
 		void clearTemplateOnly();
 		bool tryToMap(Molecule *toMap, string toMapComponent,
@@ -197,7 +233,46 @@ namespace NFcore
 		void setCompartment(Compartment* comp) { compartment = comp; }
 		string getCompartmentId() const;
 
+		/* Collect every local state/bond/topology predicate reachable from this
+		 * reactant root.  Returns false when the pattern contains semantics that
+		 * this extractor deliberately does not prove local (symmetric components,
+		 * connectedTo, or compartment constraints); callers must then treat the
+		 * runtime reaction-role entry as unconditional. */
+		bool collectMembershipDependencies(
+				vector<MembershipPatternDependency> &out) const;
+		/* Collect predicates attached to this root TemplateMolecule only.
+		 * This is a necessary-condition prefilter for gain candidates: after an
+		 * event, a molecule cannot acquire a mapping rooted here unless all of
+		 * these root-local predicates already hold. */
+		bool collectRootMembershipDependencies(
+				vector<MembershipPatternDependency> &out) const;
+
 	protected:
+
+		/* Helpers used by the compiled simple matcher.  They repeat exactly the
+		 * basic-component checks and MappingSet writes performed inline by
+		 * compare(). */
+		bool checkBasicComponents(Molecule *m);
+		void mapMolecule(Molecule *m, MappingSet *ms, vector<MappingSet*> *symmetricMappingSet);
+
+		struct CompiledSimpleNode {
+			CompiledSimpleNode() : tm(0), parent(-1), parentComp(-1), selfComp(-1) {}
+			TemplateMolecule *tm;
+			int parent;
+			int parentComp;
+			int selfComp;
+		};
+		struct CompiledSimpleEdge {
+			CompiledSimpleEdge() : a(-1), b(-1), compA(-1), compB(-1) {}
+			int a,b,compA,compB;
+		};
+		void buildCompiledSimpleMatcher();
+		bool compiledSimpleMatcherBuilt;
+		bool compiledSimpleMatcherSafe;
+		vector<CompiledSimpleNode> compiledSimpleNodes;
+		vector<CompiledSimpleEdge> compiledSimpleBackEdges;
+		vector<int> compiledSimpleMapOrder;
+		vector<Molecule *> compiledSimpleMappedScratch;
 
 		static int TotalTemplateMoleculeCount;
 

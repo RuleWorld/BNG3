@@ -1,9 +1,11 @@
 # BNG3 Unification Spec — Agent Work-Orders + Validation Framework
 
-> Live status is tracked in [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md)
-> and the dated convergence checklist. The work orders below are the
-> capability contract; their historical “current state” text is not release
-> evidence unless refreshed on the exact final tree.
+> Historical design reference, reviewed 2026-10-07 at
+> [main `e1836c32`](https://github.com/RuleWorld/BNG3/tree/e1836c3274e685996d5e86883761e00e98257e09).
+> Issues #132–#186 own outstanding scope, dependencies and acceptance. Use the
+> [convergence checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) and
+> [current progress](CURRENT_PROGRESS.md) for the task index and evidence
+> boundaries. Do not start an old work order merely because it appears below.
 
 The 2026-09-15 continuation strengthens WO-2 evidence by asserting direct
 NFsim construction rather than
@@ -22,7 +24,14 @@ BNG3 already merges three codebases structurally:
 
 The structural copy is done. What is **not** done: the three tools still each carry their own implementation of the same five operations. The merge is only finished when each operation has **one** implementation (a "master function") that every consumer calls, and that master is **proven** equivalent to the three originals it replaces.
 
-This document is a set of standalone work-orders for coding agents. Each is self-contained: exact paths, the master interface, the delete list, and a validation gate that must pass before the WO is done. Build the validation harness first (WO-0); every other WO is gated by it.
+The work orders below preserve the original consolidation design and its
+validation requirements. Several implementation slices have since landed;
+their old dependency lists and deletion plans do not replace the live issues.
+
+Batch SSA PR [#26](https://github.com/RuleWorld/BNG3/pull/26) was merged on
+2026-09-29 as `c2babc50acfc1141d13671389a18e91453977bea`. Historical entries
+calling it open are not current PR state. CUDA device qualification remains
+[#175](https://github.com/RuleWorld/BNG3/issues/175).
 
 ---
 
@@ -43,13 +52,16 @@ Any WO that removes a capability is wrong. The gate corpus exercises all of the 
 
 | # | Operation | Redundant today | Master function | Delete from default path |
 |---|-----------|-----------------|-----------------|--------------------------|
-| 1 | Canonical graph labeling | `cpp/nauty/` **and** `cpp/nfsim/nauty24/` (two nauty C builds); `cpp/core/HNauty.hpp` (engine); NFsim complex identity in `cpp/nfsim/NFcore/{complex,molecule,moleculeType}.cpp` | One `nauty` lib + one `bng::core::canonicalLabel(const SpeciesGraph&)` used by NetworkGenerator **and** NFsim | second nauty build; NFsim's private canonicalization |
+| 1 | Canonical graph labeling | One bundled nauty build now exists; [SpeciesGraph](../cpp/ast/SpeciesGraph.cpp) and [NFsim complex identity](../cpp/nfsim/NFcore/complex.cpp) still have separate graph encodings | Qualify a shared semantic graph-identity contract (#142) | Private canonicalization only after equivalence evidence |
 | 2 | Parse → model | ANTLR4 (`cpp/parser/`); Perl `BNGModel`; PyBioNetGen `modelapi/bngparser.py`; NFsim XML re-parse (`NFinput::initializeFromXML`) | ANTLR4 BNGL → `ast::Model` is the only front door; NFsim consumes `ast::Model` directly | XML round-trip bridge; `python/bionetgen/modelapi/`, `network/networkparser.py` |
-| 3 | Expression / rate-law eval | `cpp/ast/Expression.cpp`; NFsim exprtk (`NFSIM_USE_EXPRTK`); Perl `Expression.pm` | One `bng::ast::Expression` compiled once; ODE RHS, SSA propensity, **and** NFsim local functions all evaluate through it | NFsim exprtk path |
+| 3 | Expression / rate-law eval | NFsim's ExprTk dependency has been removed; [its evaluator shim](../cpp/nfsim/NFfunction/nfsim_funcparser.h) uses the shared expression infrastructure | Qualify remaining rate-law/local-function contracts across backends (#143) | Remaining semantic duplication after parity |
 | 4 | Simulate dispatch | `model.simulate()`; PyBioNetGen `simulator/{bngsimulator,librrsimulator}.py`; NFsim `main`; C++ `console/` | `model.simulate(method=...)` is the only public entry | `python/bionetgen/simulator/`, `core/main.py`, NFsim `main` build |
 | 5 | I/O writers | `cpp/io/` (C++); Perl `BNGOutput`; PyBioNetGen writers | `cpp/io/` writers, exposed via `cpp/bindings/bind_io.cpp`, consumed by Python | Perl writers on default path; any Python re-implementation |
 
-**The over-counting bug lives in #1.** Memory: `blbr` +26 reactions, `Motivating_example_cBNGL` +2 vs Perl. Two canonicalization implementations that disagree is both the redundancy and the correctness defect. WO-1 fixes both at once.
+The earlier `blbr`/cBNGL over-count observations are historical reproductions,
+not a current diagnosis of graph canonicalization. The current
+[exception ledger](../tests/validation/reference_exclusions.json) is empty;
+graph-identity unification remains a separate scientific correctness task (#142).
 
 ---
 
@@ -60,7 +72,10 @@ No master function lands without passing a differential test against the origina
 ### Oracles
 
 - **Oracle-Perl** — `legacy/perl/BNG2.pl`. Source of truth for network generation (`.net`) and ODE/SSA trajectories (`.gdat`/`.cdat`). Invoke via subprocess; cache outputs as golden files so the Perl runtime is not on the hot path.
-- **Oracle-NFsim** — native NFsim binary built from `cpp/nfsim/NFsim.cpp` (CMake already has the optional `NFsim` executable target). Source of truth for network-free trajectories. This is the *pre-merge* NFsim behavior; WO-2 must match it.
+- **Oracle-NFsim** — independently build the pinned upstream NFsim source using
+  [checkout_oracle.py](../scripts/ci/checkout_oracle.py) and the
+  [source lock](../provenance/upstreams.lock.yml). The embedded BNG3 NFsim
+  executable is not an independent oracle for BNG3.
 - **Oracle-Golden** — committed reference outputs under `tests/validation/golden/`. Regression guard; regenerated only by an explicit, reviewed step, never silently.
 
 ### Corpus (tiers)
@@ -75,8 +90,17 @@ No master function lands without passing a differential test against the origina
 - **ODE trajectory:** align on time grid; pass = relative error ≤ `1e-6` (Linf and L2) vs Oracle-Perl CVODE. Implemented in `tests/validation/test_parity_ode.py` at `1e-6` against a pinned Perl oracle. `scripts/validate_trajectories.py` was removed: it skipped all 7 models and exited 0, and its `1e-3` tolerance was 1000× looser.
 - **SSA / PLA / PSA trajectory:** not bit-comparable. Two checks: (a) **seeded determinism** — same seed twice = identical output; (b) **distributional** — ensemble mean of N≥200 runs within `mean ± 3·SE` of Oracle-Perl ensemble at each sampled time. New comparator `scripts/validate_stochastic.py`.
 - **Network-free trajectory:** same seeded + distributional checks vs Oracle-NFsim. Implemented in `tests/validation/test_parity_nfsim.py` and the `nfsim-parity` CI job. `scripts/validate_nfsim.py` was removed: it never invoked NFsim with a model, and measured 0 passed / 2 failed.
-- **Expression/rate-law:** function-heavy models (`localfunc`, `isingspin_localfcn`, `isingspin_energy`, `CaOscillate_Func`, all `test_tfun_*`) must match ODE RHS to `1e-9`. **Still open.** `tests/validation/test_parity_expressions.py` says so in its own docstring and no test consumes `TIER_EXPR`. `scripts/validate_ratelaws.py` is a smoke gate over 5 synthetic models, not this check — 3 of its 5 cases assert only that a product is greater than zero, and it hardcodes `5.0` rather than reading `k0` from the model.
-- **Export formats:** BNG-XML well-formed + schema-valid; SBML validated by libsbml when present, else XML well-formedness; `.net` write→read→write idempotent. `tests/validation/test_export_formats.py` covers the `.net` round trip and SBML validity; `scripts/validate_sbml.py` is a weaker duplicate of the SBML half. `scripts/validate_io_roundtrip.py` does **not** cover the write→read→write requirement — it runs the same BNGL twice and diffs raw text, so any deterministic writer defect reproduces identically in both outputs and compares equal. It measured 0 passed / 4 failed when invoked with a correct binary path. BNG-XML, MDL, MATLAB/MEX and LaTeX have no coverage in `tests/` at all.
+- **Expression/rate-law:** [test_parity_rhs.py](../tests/validation/test_parity_rhs.py)
+  consumes the frozen five-model expression tier, checks native coefficients
+  before mass-action factors, and compares RHS at three times with `rtol=1e-9`
+  and `atol=1e-12`. This is implemented bounded coverage, not all function-heavy
+  models or automatic hosted execution; #143/#182 own the remaining contract
+  and CI wiring.
+- **Export formats:** [test_export_formats.py](../tests/validation/test_export_formats.py)
+  covers XML well-formedness, SBML validity, NET round trips and SSC, MDL,
+  MATLAB/MEX and LaTeX artifact contracts. Focused writer/API tests also exist.
+  Artifact presence or well-formedness does not imply complete schema validity,
+  semantic round trips or downstream execution; #163 owns those remaining gates.
 
 ### Harness layout (build in WO-0)
 
@@ -118,7 +142,10 @@ Each `test_*` is parametrized over a tier and `xfail`-marks known-broken models 
 
 **Golden generation:** `scripts/regen_golden.py` runs Oracle-Perl over Tier-P, writes `.net`/`.gdat` into `tests/validation/golden/`. Reviewed, committed once. Never auto-regenerated by tests.
 
-**Gate (self):** harness runs end-to-end on Tier-S against current `bng_cpp`; produces a pass/strict-expected-failure report. Current state: `blbr` has the sole signature-gated net-parity exception (+26 reactions). `Motivating_example_cBNGL` passes after rate normalization and must remain unexcepted.
+**Gate (self):** harness runs end-to-end on Tier-S against the exact `bng_cpp`
+under review and produces a pass/strict-expected-failure report. The old `blbr`
+exception is historical; the ledger at `e1836c32` contains zero exceptions.
+Do not recreate an exclusion from this work order's earlier observations.
 
 **Done:** `pytest tests/validation -m smoke` runs green except the two documented `xfail`s; `regen_golden.py` reproducible.
 

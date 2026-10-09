@@ -5,6 +5,8 @@
 
 
 #include <algorithm>
+#include <cstring>
+#include <type_traits>
 #include <cmath>
 
 #include "compile/energy/DrivenEnergy.hpp"
@@ -49,6 +51,394 @@ component::~component()
 
 
 
+namespace {
+
+/* Iterates the <Species> or <ReactionRule> children of a list either from the
+ * loaded DOM or, when the XML was split by splitStreamedSections(), one
+ * element at a time from its byte span in the file.  In streaming mode only
+ * the current element's DOM is alive, so peak memory no longer scales with
+ * the size of these sections.  Elements are visited in document order in
+ * both modes, so parsing is unchanged. */
+class XmlChildCursor {
+public:
+	XmlChildCursor(TiXmlElement *list, const char *childName,
+			const string *file, const vector <NFinput::SpeciesSpan> *spans)
+		: list_(list), name_(childName), spans_(spans), handle_(0),
+		  index_(0), failed_(false), doc_(0) {
+		if (spans_ != 0 && file != 0) {
+			handle_ = fopen(file->c_str(), "rb");
+			if (handle_ == 0) failed_ = true;
+		}
+	}
+	~XmlChildCursor() {
+		delete doc_;
+		if (handle_ != 0) fclose(handle_);
+	}
+	bool streaming() const { return spans_ != 0; }
+	bool failed() const { return failed_; }
+	TiXmlElement *first() {
+		if (!streaming()) return list_ == 0 ? 0 : list_->FirstChildElement(name_);
+		index_ = 0;
+		return load();
+	}
+	TiXmlElement *next(TiXmlElement *current) {
+		if (!streaming()) return current->NextSiblingElement(name_);
+		++index_;
+		return load();
+	}
+private:
+	TiXmlElement *load() {
+		delete doc_;
+		doc_ = 0;
+		if (failed_ || index_ >= spans_->size()) return 0;
+		if (!NFinput::readSpeciesSpan(handle_, (*spans_)[index_], fragment_)) {
+			cerr << "Failed to read " << name_ << " block " << index_ << endl;
+			failed_ = true;
+			return 0;
+		}
+		doc_ = new TiXmlDocument();
+		doc_->SetTabSize(0);
+		doc_->Parse(fragment_.c_str());
+		if (doc_->Error()) {
+			cerr << "Failed to parse " << name_ << " block " << index_ << ": "
+			     << doc_->ErrorDesc() << endl;
+			failed_ = true;
+			return 0;
+		}
+		TiXmlElement *element = doc_->FirstChildElement(name_);
+		if (element == 0) {
+			cerr << name_ << " block " << index_ << " had no " << name_
+			     << " element." << endl;
+			failed_ = true;
+		}
+		return element;
+	}
+	TiXmlElement *list_;
+	const char *name_;
+	const vector <NFinput::SpeciesSpan> *spans_;
+	FILE *handle_;
+	size_t index_;
+	bool failed_;
+	TiXmlDocument *doc_;
+	string fragment_;
+	XmlChildCursor(const XmlChildCursor &);
+	XmlChildCursor &operator=(const XmlChildCursor &);
+};
+
+bool xmlStreamingEnabled()
+{
+	static int enabled = -1;
+	if (enabled < 0) {
+		const char *value = getenv("NFSIM_XML_STREAM");
+		enabled = (value != 0 && value[0] == '0') ? 0 : 1;
+	}
+	return enabled == 1;
+}
+
+namespace {
+
+/* Minimal, non-validating reader for one streamed <Species> fragment.
+ *
+ * The species reader only uses Attribute(), FirstChildElement() and
+ * NextSiblingElement().  For fragments made only of elements with quoted
+ * attributes and whitespace text, this parser builds the same element tree as
+ * TinyXML: element and attribute order, names and (verbatim) values.  It parses
+ * the fragment buffer in place and makes no per-node allocations.  Any other
+ * construct (entities, comments, processing instructions, CDATA, non-ASCII
+ * names, unquoted or duplicate attributes, non-whitespace text, mismatched
+ * tags) makes parse() return false, and the cursor then parses the fragment
+ * with TinyXML and copies its element tree, so the result is the same in both
+ * cases. */
+class LiteXmlDocument;
+
+class LiteXmlElement {
+public:
+	const char *Attribute(const char *attributeName) const;
+	LiteXmlElement *FirstChildElement(const char *elementName) const;
+	LiteXmlElement *NextSiblingElement(const char *elementName) const;
+	const char *Value() const { return name_; }
+private:
+	friend class LiteXmlDocument;
+	const LiteXmlDocument *doc_;
+	const char *name_;
+	int firstChild_;
+	int nextSibling_;
+	unsigned int attributeBegin_;
+	unsigned int attributeCount_;
+};
+
+class LiteXmlDocument {
+public:
+	bool parse(std::string &buffer);
+	bool copyFrom(const TiXmlElement *root);
+	LiteXmlElement *root() { return nodes_.empty() ? 0 : &nodes_[0]; }
+private:
+	friend class LiteXmlElement;
+	static bool isNameStart(unsigned char c) {
+		return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_';
+	}
+	static bool isNameChar(unsigned char c) {
+		return isNameStart(c) || (c >= '0' && c <= '9') || c == '-' || c == '.' || c == ':';
+	}
+	static bool isSpace(unsigned char c) {
+		return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+	}
+	int addNode(const char *name, int parent);
+	vector<LiteXmlElement> nodes_;
+	vector<std::pair<const char *, const char *> > attributes_;
+	vector<int> lastChild_;
+	vector<int> stack_;
+	std::string owned_;
+};
+
+inline const char *LiteXmlElement::Attribute(const char *attributeName) const
+{
+	for (unsigned int i = 0; i < attributeCount_; ++i) {
+		const std::pair<const char *, const char *> &a =
+			doc_->attributes_[attributeBegin_ + i];
+		if (std::strcmp(a.first, attributeName) == 0) return a.second;
+	}
+	return 0;
+}
+
+inline LiteXmlElement *LiteXmlElement::FirstChildElement(const char *elementName) const
+{
+	for (int c = firstChild_; c >= 0; c = doc_->nodes_[c].nextSibling_)
+		if (std::strcmp(doc_->nodes_[c].name_, elementName) == 0)
+			return const_cast<LiteXmlElement *>(&doc_->nodes_[c]);
+	return 0;
+}
+
+inline LiteXmlElement *LiteXmlElement::NextSiblingElement(const char *elementName) const
+{
+	for (int c = nextSibling_; c >= 0; c = doc_->nodes_[c].nextSibling_)
+		if (std::strcmp(doc_->nodes_[c].name_, elementName) == 0)
+			return const_cast<LiteXmlElement *>(&doc_->nodes_[c]);
+	return 0;
+}
+
+int LiteXmlDocument::addNode(const char *name, int parent)
+{
+	LiteXmlElement node;
+	node.doc_ = this;
+	node.name_ = name;
+	node.firstChild_ = -1;
+	node.nextSibling_ = -1;
+	node.attributeBegin_ = static_cast<unsigned int>(attributes_.size());
+	node.attributeCount_ = 0;
+	int index = static_cast<int>(nodes_.size());
+	nodes_.push_back(node);
+	lastChild_.push_back(-1);
+	if (parent >= 0) {
+		if (lastChild_[parent] < 0) nodes_[parent].firstChild_ = index;
+		else nodes_[lastChild_[parent]].nextSibling_ = index;
+		lastChild_[parent] = index;
+	}
+	return index;
+}
+
+bool LiteXmlDocument::parse(std::string &buffer)
+{
+	nodes_.clear(); attributes_.clear(); lastChild_.clear(); stack_.clear();
+	char *p = &buffer[0];
+	char *end = p + buffer.size();
+	bool haveRoot = false;
+	while (p < end) {
+		if (*p != '<') {
+			if (!isSpace(static_cast<unsigned char>(*p))) return false;
+			++p;
+			continue;
+		}
+		++p;
+		if (p >= end) return false;
+		if (*p == '/') {
+			++p;
+			if (stack_.empty()) return false;
+			const char *open = nodes_[stack_.back()].name_;
+			std::size_t n = std::strlen(open);
+			if (static_cast<std::size_t>(end - p) < n || std::strncmp(p, open, n) != 0) return false;
+			p += n;
+			if (p < end && isNameChar(static_cast<unsigned char>(*p))) return false;
+			while (p < end && isSpace(static_cast<unsigned char>(*p))) ++p;
+			if (p >= end || *p != '>') return false;
+			++p;
+			stack_.pop_back();
+			continue;
+		}
+		if (!isNameStart(static_cast<unsigned char>(*p))) return false;
+		if (stack_.empty() && haveRoot) return false;
+		char *name = p;
+		while (p < end && isNameChar(static_cast<unsigned char>(*p))) ++p;
+		if (p >= end) return false;
+		char after = *p;
+		if (!(isSpace(static_cast<unsigned char>(after)) || after == '>' || after == '/')) return false;
+		*p = '\0';
+		int parent = stack_.empty() ? -1 : stack_.back();
+		int node = addNode(name, parent);
+		haveRoot = true;
+		bool selfClosing = false;
+		char c = after;
+		++p;
+		for (;;) {
+			while (isSpace(static_cast<unsigned char>(c))) {
+				if (p >= end) return false;
+				c = *p++;
+			}
+			if (c == '>') break;
+			if (c == '/') {
+				if (p >= end || *p != '>') return false;
+				++p;
+				selfClosing = true;
+				break;
+			}
+			if (!isNameStart(static_cast<unsigned char>(c))) return false;
+			char *attrName = p - 1;
+			while (p < end && isNameChar(static_cast<unsigned char>(*p))) ++p;
+			if (p >= end) return false;
+			char *attrNameEnd = p;
+			while (p < end && isSpace(static_cast<unsigned char>(*p))) ++p;
+			if (p >= end || *p != '=') return false;
+			*attrNameEnd = '\0';
+			++p;
+			while (p < end && isSpace(static_cast<unsigned char>(*p))) ++p;
+			if (p >= end || (*p != '"' && *p != '\'')) return false;
+			char quote = *p++;
+			char *value = p;
+			while (p < end && *p != quote) {
+				if (*p == '&' || *p == '<') return false;
+				++p;
+			}
+			if (p >= end) return false;
+			*p = '\0';
+			++p;
+			LiteXmlElement &element = nodes_[node];
+			for (unsigned int i = 0; i < element.attributeCount_; ++i)
+				if (std::strcmp(attributes_[element.attributeBegin_ + i].first, attrName) == 0)
+					return false;
+			attributes_.push_back(std::make_pair(static_cast<const char *>(attrName),
+					static_cast<const char *>(value)));
+			++element.attributeCount_;
+			if (p >= end) return false;
+			c = *p++;
+			if (!(isSpace(static_cast<unsigned char>(c)) || c == '>' || c == '/')) return false;
+		}
+		if (!selfClosing) stack_.push_back(node);
+	}
+	return haveRoot && stack_.empty();
+}
+
+bool LiteXmlDocument::copyFrom(const TiXmlElement *root)
+{
+	nodes_.clear(); attributes_.clear(); lastChild_.clear(); stack_.clear();
+	if (root == 0) return false;
+	/* Two passes: size the owned string storage first so pointers into it stay
+	 * valid, then copy names and values in document order. */
+	std::size_t bytes = 0;
+	vector<const TiXmlElement *> work(1, root);
+	while (!work.empty()) {
+		const TiXmlElement *e = work.back(); work.pop_back();
+		bytes += std::strlen(e->Value()) + 1;
+		for (const TiXmlAttribute *a = e->FirstAttribute(); a; a = a->Next())
+			bytes += std::strlen(a->Name()) + std::strlen(a->Value()) + 2;
+		for (const TiXmlElement *c = e->FirstChildElement(); c; c = c->NextSiblingElement())
+			work.push_back(c);
+	}
+	owned_.assign(bytes, '\0');
+	char *out = &owned_[0];
+	auto keep = [&out](const char *text) -> const char * {
+		std::size_t n = std::strlen(text);
+		std::memcpy(out, text, n);
+		out[n] = '\0';
+		const char *kept = out;
+		out += n + 1;
+		return kept;
+	};
+	vector<std::pair<const TiXmlElement *, int> > order(1, std::make_pair(root, -1));
+	while (!order.empty()) {
+		std::pair<const TiXmlElement *, int> item = order.back(); order.pop_back();
+		int node = addNode(keep(item.first->Value()), item.second);
+		for (const TiXmlAttribute *a = item.first->FirstAttribute(); a; a = a->Next()) {
+			const char *n = keep(a->Name());
+			const char *v = keep(a->Value());
+			attributes_.push_back(std::make_pair(n, v));
+			++nodes_[node].attributeCount_;
+		}
+		/* Push children in reverse so they are visited, and linked, in order. */
+		vector<const TiXmlElement *> children;
+		for (const TiXmlElement *c = item.first->FirstChildElement(); c; c = c->NextSiblingElement())
+			children.push_back(c);
+		for (std::size_t i = children.size(); i-- > 0;)
+			order.push_back(std::make_pair(children[i], node));
+	}
+	return true;
+}
+
+/* Streams one kind of block (<Species> or <ReactionRule>) and exposes each as a
+ * LiteXmlElement tree. */
+class LiteElementCursor {
+public:
+	LiteElementCursor(const string *file, const vector <NFinput::SpeciesSpan> *spans,
+			const char *rootName)
+		: spans_(spans), handle_(0), index_(0), failed_(false), rootName_(rootName) {
+		handle_ = fopen(file->c_str(), "rb");
+		if (handle_ == 0) failed_ = true;
+	}
+	~LiteElementCursor() { if (handle_ != 0) fclose(handle_); }
+	bool failed() const { return failed_; }
+	LiteXmlElement *first() { index_ = 0; return load(); }
+	LiteXmlElement *next(LiteXmlElement *) { ++index_; return load(); }
+private:
+	LiteXmlElement *load() {
+		if (failed_ || index_ >= spans_->size()) return 0;
+		if (!NFinput::readSpeciesSpan(handle_, (*spans_)[index_], fragment_)) {
+			cerr << "Failed to read " << rootName_ << " block " << index_ << endl;
+			failed_ = true;
+			return 0;
+		}
+		if (doc_.parse(fragment_)) {
+			LiteXmlElement *root = doc_.root();
+			if (root != 0 && std::strcmp(root->Value(), rootName_) == 0)
+				return root;
+		}
+		/* Outside the supported subset: parse the original text with TinyXML
+		 * (parse() modified the buffer, so read the span again) and copy its
+		 * element tree. */
+		if (!NFinput::readSpeciesSpan(handle_, (*spans_)[index_], fragment_)) {
+			cerr << "Failed to read " << rootName_ << " block " << index_ << endl;
+			failed_ = true;
+			return 0;
+		}
+		TiXmlDocument tiny;
+		tiny.SetTabSize(0);
+		tiny.Parse(fragment_.c_str());
+		if (tiny.Error()) {
+			cerr << "Failed to parse " << rootName_ << " block " << index_ << ": "
+			     << tiny.ErrorDesc() << endl;
+			failed_ = true;
+			return 0;
+		}
+		if (!doc_.copyFrom(tiny.FirstChildElement(rootName_))) {
+			cerr << rootName_ << " block " << index_ << " had no " << rootName_ << " element." << endl;
+			failed_ = true;
+			return 0;
+		}
+		return doc_.root();
+	}
+	const vector <NFinput::SpeciesSpan> *spans_;
+	FILE *handle_;
+	size_t index_;
+	bool failed_;
+	LiteXmlDocument doc_;
+	string fragment_;
+	LiteElementCursor(const LiteElementCursor &);
+	LiteElementCursor &operator=(const LiteElementCursor &);
+	const char *rootName_;
+};
+
+}
+
+}
+
 System * NFinput::initializeFromXML(
 		string filename,
 		bool blockSameComplexBinding,
@@ -56,14 +446,45 @@ System * NFinput::initializeFromXML(
 		bool verbose,
 		int &suggestedTraversalLimit,
 		bool evaluateComplexScopedLocalFunctions,
-		bool connectivityFlag)
+		bool connectivityFlag,
+		bool buildSpeciesLog)
 {
 	if(!verbose) cout<<"reading xml file ("+filename+")  \n\t[";
 	if(verbose) cout<<"\tTrying to read xml model specification file: \t\n'"<<filename<<"'"<<endl;
 
 
-	TiXmlDocument doc(filename.c_str());
-	bool loadOkay = doc.LoadFile();
+	/* Parse the document without materializing <ListOfSpecies> or
+	 * <ListOfReactionRules> as a DOM: chain-encoded models put most of the
+	 * file in the species list and indexed models put it in the rules, and
+	 * TinyXML holds about ten bytes per byte of XML.  The rest of the document
+	 * is parsed as usual; species and rules are then parsed one element at a
+	 * time.  Any split failure falls back to the whole-file DOM load.
+	 * NFSIM_XML_STREAM=0 forces the whole-file load. */
+	string xmlSkeleton;
+	vector <SpeciesSpan> speciesSpans;
+	vector <SpeciesSpan> ruleSpans;
+	bool streamed = xmlStreamingEnabled() &&
+		splitStreamedSections(filename, xmlSkeleton, speciesSpans, ruleSpans);
+	TiXmlDocument doc;
+	bool loadOkay = false;
+	if (streamed) {
+		doc.SetTabSize(0);
+		doc.Parse(xmlSkeleton.c_str());
+		loadOkay = !doc.Error();
+		string().swap(xmlSkeleton);
+		if (!loadOkay) {
+			streamed = false;
+			speciesSpans.clear();
+			ruleSpans.clear();
+		}
+	}
+	if (!loadOkay) {
+		doc.Clear();
+		doc.SetTabSize(4);
+		doc.SetValue(filename.c_str());
+		loadOkay = doc.LoadFile(filename.c_str());
+	}
+	const string *streamFile = streamed ? &filename : 0;
 	if (loadOkay)
 	{
 		if(verbose) cout<<"\t\tread was successful... beginning parse..."<<endl<<endl;
@@ -155,7 +576,8 @@ System * NFinput::initializeFromXML(
 		else cout<<"\n\tReading list of Species..."<<endl;
 		// AS2023 - initialize log string, get the starting species
 		string logstr="";
-		logstr = initStartSpecies(pListOfSpecies, s, parameter, allowedStates, verbose);
+		logstr = initStartSpecies(pListOfSpecies, s, parameter, allowedStates, verbose,
+				streamFile, streamed ? &speciesSpans : 0, buildSpeciesLog);
 		// AS2023 - an empty log is a failed initStartSpecies call now
 		if(logstr.empty())
 		{
@@ -202,7 +624,10 @@ System * NFinput::initializeFromXML(
 			return NULL;
 		}
 
-		if(!initReactionRules(pListOfReactionRules, s, parameter, allowedStates, blockSameComplexBinding, verbose, suggestedTraversalLimit))
+		/* Product templates are only read by connectivity inference, and the
+		 * connectivity flag is already set on this System. */
+		if(!initReactionRules(pListOfReactionRules, s, parameter, allowedStates, blockSameComplexBinding, verbose, suggestedTraversalLimit,
+				streamFile, streamed ? &ruleSpans : 0, connectivityFlag))
 		{
 			cout<<"\n\nI failed at parsing your reaction rules.  Check standard error for a report."<<endl;
 			if(s!=NULL) delete s;
@@ -693,12 +1118,18 @@ bool NFinput::initMoleculeTypes(
 // AS2023 - this call can now return a string which is the 
 // log of the initial species to be written into the event
 // log file eventually
-string NFinput::initStartSpecies(
-		TiXmlElement * pListOfSpecies,
+namespace NFinput {
+/* The species reader is shared by the DOM path (TiXmlElement) and the
+ * streamed path (LiteXmlElement); both expose Attribute(),
+ * FirstChildElement() and NextSiblingElement(). */
+template <class Element, class Cursor>
+static string initStartSpeciesBody(
+		Cursor &speciesCursor,
 		System * s,
 		map <string,double> &parameter,
 		map<string,int> &allowedStates,
-		bool verbose)
+		bool verbose,
+		bool buildSpeciesLog)
 {
 	////map<string,int>::iterator iter;
 	////  for( iter = allowedStates.begin(); iter != allowedStates.end(); iter++ ) {
@@ -712,8 +1143,10 @@ string NFinput::initStartSpecies(
 
 		//A vector that maps binding site ids into a molecule location in the molecules vector
 		//and the name of the binding site
-		map <string, string> bSiteSiteMapping;
-		map <string, int> bSiteMolMapping;
+		/* Site-id lookups only (insert, find, clear); hashed maps avoid long
+		 * common-prefix string comparisons in large chain species. */
+		/* site id -> (component name, index into `molecules`) */
+		std::unordered_map <string, std::pair<string, int> > bSiteMapping;
 
 		vector <string> stateName;
 		vector <double> stateValue;
@@ -727,8 +1160,8 @@ string NFinput::initStartSpecies(
 		vector <int> mids;
 
 		//Loop through all the species
-		TiXmlElement *pSpec;
-		for ( pSpec = pListOfSpecies->FirstChildElement("Species"); pSpec != 0; pSpec = pSpec->NextSiblingElement("Species"))
+		Element *pSpec;
+		for ( pSpec = speciesCursor.first(); pSpec != 0; pSpec = speciesCursor.next(pSpec))
 		{
 			//First get the species name and make sure it exists
 			string speciesName;
@@ -767,31 +1200,19 @@ string NFinput::initStartSpecies(
 
 			//Try to parse out the number of this species, or look it up in the parameter map
 			int specCountInteger=0;
-			try {
-				specCountInteger = NFutil::convertToInt(specCount);
-			} catch (std::runtime_error &e1) {
-
-				// if we cannot get it as an integer, try as a double (for instance, for notation
-				// such as 2e4).  We cast it as an int, which will always round the number down
-				// to the nearest whole integer.
-				try {
-					specCountInteger = (int) NFutil::convertToDouble(specCount);
-
-				} catch (std::runtime_error &e1) {
-					// if we cannot get it as an integer, try as a double (for instance, for notation
-					// such as 2e4).  We cast it as an int, which will always round the number down
-					// to the nearest whole integer.
-					try {
-						specCountInteger = (int) NFutil::convertToDouble(specCount);
-					} catch (std::runtime_error &e1) {
-						if(parameter.find(specCount)==parameter.end()) {
-							cerr<<"Could not find parameter: "<<specCount<<" when creating species "<<speciesName<<". Quitting"<<endl;
-							// AS2023 - fails now return empty strings
-							return "";
-						}
-						specCountInteger = (int)parameter.find(specCount)->second;
+			/* Integer, then double (e.g. 2e4, truncated toward zero), then a
+			 * parameter name; tested without exceptions. */
+			double specCountDouble = 0.0;
+			if (!NFutil::tryConvertToInt(specCount, specCountInteger)) {
+				if (NFutil::tryConvertToDouble(specCount, specCountDouble)) {
+					specCountInteger = (int) specCountDouble;
+				} else {
+					if(parameter.find(specCount)==parameter.end()) {
+						cerr<<"Could not find parameter: "<<specCount<<" when creating species "<<speciesName<<". Quitting"<<endl;
+						// AS2023 - fails now return empty strings
+						return "";
 					}
-
+					specCountInteger = (int)parameter.find(specCount)->second;
 				}
 			}
 
@@ -824,7 +1245,7 @@ string NFinput::initStartSpecies(
 
 
 			//Make sure we have some molecules in our list of species
-			TiXmlElement *pListOfMol = pSpec->FirstChildElement("ListOfMolecules");
+			Element *pListOfMol = pSpec->FirstChildElement("ListOfMolecules");
 			if(!pListOfMol) {
 				cerr<<"Species "<<speciesName<<" contains no molecules!  I think that was a mistake, on your part, so I'm done."<<endl;
 				// AS2023 - fails now return empty strings
@@ -839,7 +1260,7 @@ string NFinput::initStartSpecies(
 			// Now loop through the molecules
 			bool found_population = false;
 			bool found_particle = false;
-			TiXmlElement *pMol;
+			Element *pMol;
 			for ( pMol = pListOfMol->FirstChildElement("Molecule"); pMol != 0; pMol = pMol->NextSiblingElement("Molecule"))
 			{
 				// only one molecule per population species!!  --justin
@@ -910,10 +1331,10 @@ string NFinput::initStartSpecies(
 				vector <string> usedComponentNames;
 
 				//Loop through the components of the molecule in order to set state values
-				TiXmlElement *pListOfComp = pMol->FirstChildElement("ListOfComponents");
+				Element *pListOfComp = pMol->FirstChildElement("ListOfComponents");
 				if(pListOfComp)
 				{
-					TiXmlElement *pComp;
+					Element *pComp;
 					for ( pComp = pListOfComp->FirstChildElement("Component"); pComp != 0; pComp = pComp->NextSiblingElement("Component"))
 					{
 					
@@ -998,7 +1419,9 @@ string NFinput::initStartSpecies(
 						{
 							//First grab the states value as a string
 							compStateValue = pComp->Attribute("state");
-							if(allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end()) {
+							map<string,int>::const_iterator allowedState =
+								allowedStates.find(molName+"_"+compName+"_"+compStateValue);
+							if(allowedState==allowedStates.end()) {
 								cerr<<"You are trying to create a molecule of type '"<<molName<<"', but you gave an "<<endl;
 								cerr<<"invalid state! The state you gave was: '"<<compStateValue<<"'.  Quitting now."<<endl;
 								// AS2023 - fails now return empty strings
@@ -1006,7 +1429,7 @@ string NFinput::initStartSpecies(
 							} else {
 
 								//State is a valid allowed state, so push it onto our list
-								int stateValueInt = allowedStates.find(molName+"_"+compName+"_"+compStateValue)->second;
+								int stateValueInt = allowedState->second;
 								stateName.push_back(compName);
 								stateValue.push_back(stateValueInt);
 							}
@@ -1015,8 +1438,8 @@ string NFinput::initStartSpecies(
 
 						//finally, we have to add the b site mapping that will let us later
 						//easily connect binding sites with the molecules involved
-						bSiteSiteMapping[compId] = compName;
-						bSiteMolMapping[compId] = molecules.size();
+						bSiteMapping[compId] = std::make_pair(compName,
+								static_cast<int>(molecules.size()));
 					}
 				}
 				else
@@ -1045,8 +1468,10 @@ string NFinput::initStartSpecies(
 						Molecule *mol = mt->genDefaultMolecule(moleculeCompartment);
 						// AS2023 - storing what has been generated, we need both the ID of the 
 						// molecule type as well as the global ID that's assigned to the instance
-						mids.push_back(mol->getMoleculeType()->getTypeID());
-						mgids.push_back(mol->getUniqueID());
+						if (buildSpeciesLog) {
+							mids.push_back(mol->getMoleculeType()->getTypeID());
+							mgids.push_back(mol->getUniqueID());
+						}
 
 						//for(int i=0; i<eqClassCount; i++) { currentCount[i]=1; }
 
@@ -1068,7 +1493,7 @@ string NFinput::initStartSpecies(
 							// note that the default molecule starts the component state at the 
 							// 0th state so any time we manually set that right after generating
 							// a default one, that's a reduntant operation
-							if ((int)stateValue.at(k)!=0) {
+							if (buildSpeciesLog && (int)stateValue.at(k)!=0) {
 								operations.push_back("[\"StateChange\"," + 
 								to_string(mol->getUniqueID()) + "," + 
 								to_string(mol->getMoleculeType()->getCompIndexFromName((*snIter))) + "," + 
@@ -1106,7 +1531,7 @@ string NFinput::initStartSpecies(
 
 			///////////////////////////////////////////////////////////////
 			//Here is where we add the bonds to the molecules in this species
-			TiXmlElement *pListOfBonds = pListOfMol->NextSiblingElement("ListOfBonds");
+			Element *pListOfBonds = pListOfMol->NextSiblingElement("ListOfBonds");
 			if(pListOfBonds)
 			{
 				// Complain and quit if this is a population species (no bonds allowed!)
@@ -1120,7 +1545,7 @@ string NFinput::initStartSpecies(
 				}
 
 				//First get the information on the bonds in the complex
-				TiXmlElement *pBond;
+				Element *pBond;
 				for ( pBond = pListOfBonds->FirstChildElement("Bond"); pBond != 0; pBond = pBond->NextSiblingElement("Bond"))
 				{
 					string bondId, bSite1, bSite2;
@@ -1138,19 +1563,29 @@ string NFinput::initStartSpecies(
 
 					//Get the information on this bond that tells us which molecules to connect
 					try {
-						auto it_site1 = bSiteSiteMapping.find(bSite1);
-						string bSiteName1 = it_site1->second;
-						int bSiteMolIndex1 = bSiteMolMapping.find(bSite1)->second;
-						auto it_site2 = bSiteSiteMapping.find(bSite2);
-						string bSiteName2 = it_site2->second;
-						int bSiteMolIndex2 = bSiteMolMapping.find(bSite2)->second;
+						auto it_site1 = bSiteMapping.find(bSite1);
+						const string &bSiteName1 = it_site1->second.first;
+						int bSiteMolIndex1 = it_site1->second.second;
+						auto it_site2 = bSiteMapping.find(bSite2);
+						const string &bSiteName2 = it_site2->second.first;
+						int bSiteMolIndex2 = it_site2->second.second;
 
+						/* Every copy shares the molecule types, so resolve the bound
+						 * component indices once (Molecule::bind by name only performs
+						 * this lookup before binding by index). */
+						int bondComponent1 = specCountInteger > 0
+							? molecules.at(bSiteMolIndex1).at(0)->getMoleculeType()->getCompIndexFromName(bSiteName1)
+							: -1;
+						int bondComponent2 = specCountInteger > 0
+							? molecules.at(bSiteMolIndex2).at(0)->getMoleculeType()->getCompIndexFromName(bSiteName2)
+							: -1;
 						for(int j=0;j<specCountInteger;j++) {
-							Molecule::bind( molecules.at(bSiteMolIndex1).at(j),bSiteName1.c_str(),
-											molecules.at(bSiteMolIndex2).at(j),bSiteName2.c_str());
+							Molecule::bind( molecules.at(bSiteMolIndex1).at(j),bondComponent1,
+											molecules.at(bSiteMolIndex2).at(j),bondComponent2);
 							// AS2023 - we keep track of what operations is required to generate the 
 							// correct initial state. These are equivalent operations to what happens
 							// during actual reactions/events
+							if (buildSpeciesLog)
 							operations.push_back("[\"AddBond\"," + 
 								to_string(molecules.at(bSiteMolIndex1).at(j)->getUniqueID()) + "," + 
 								to_string(molecules.at(bSiteMolIndex1).at(j)->getMoleculeType()->getCompIndexFromName(bSiteName1.c_str())) + "," +
@@ -1170,7 +1605,7 @@ string NFinput::initStartSpecies(
 			if (speciesIsFixed) {
 				// We expect a single molecule species
 				int molCount = 0;
-				for (TiXmlElement *m = pListOfMol->FirstChildElement("Molecule"); m != nullptr; m = m->NextSiblingElement("Molecule")) {
+				for (Element *m = pListOfMol->FirstChildElement("Molecule"); m != nullptr; m = m->NextSiblingElement("Molecule")) {
 					molCount++;
 				}
 				if (molCount > 1) {
@@ -1178,7 +1613,7 @@ string NFinput::initStartSpecies(
 						 << "' is not supported in NFsim. Only single-molecule fixed species are supported." << endl;
 					return "";
 				} else {
-					TiXmlElement *pFirstMol = pListOfMol->FirstChildElement("Molecule");
+					Element *pFirstMol = pListOfMol->FirstChildElement("Molecule");
 					if (pFirstMol && pFirstMol->Attribute("name")) {
 						string moleculeTypeName = pFirstMol->Attribute("name");
 						MoleculeType *mt = s->getMoleculeTypeByName(moleculeTypeName);
@@ -1200,10 +1635,17 @@ string NFinput::initStartSpecies(
 			}
 
 			molecules.clear();
-			bSiteMolMapping.clear();
-			bSiteSiteMapping.clear();
+			bSiteMapping.clear();
 		}
 		
+		if (!buildSpeciesLog) {
+			if (speciesCursor.failed())
+				return "";
+			/* The initial-state block is only written with -rxnlog; a non-empty
+			 * value still marks success to the caller. */
+			return string("    \"initialState\": {},\n");
+		}
+
 		// AS2023 - start initial state block
 		string logstr = "    \"initialState\": {\n";
 		logstr += "      \"molecule_array\": [\n";
@@ -1264,6 +1706,9 @@ string NFinput::initStartSpecies(
 		// s->printAllMoleculeTypes();
 
 
+		if (speciesCursor.failed())
+			return "";
+
 		// AS2023 - If we got here, then we are indeed successful
 		// and we are returning the log
 		return logstr;
@@ -1281,6 +1726,28 @@ string NFinput::initStartSpecies(
 
 
 
+
+}
+
+string NFinput::initStartSpecies(
+		TiXmlElement * pListOfSpecies,
+		System * s,
+		map <string,double> &parameter,
+		map<string,int> &allowedStates,
+		bool verbose,
+		const string *streamFile,
+		const vector <SpeciesSpan> *streamSpans,
+		bool buildSpeciesLog)
+{
+	if (streamFile != 0 && streamSpans != 0) {
+		LiteElementCursor speciesCursor(streamFile, streamSpans, "Species");
+		return initStartSpeciesBody<LiteXmlElement>(speciesCursor, s, parameter,
+				allowedStates, verbose, buildSpeciesLog);
+	}
+	XmlChildCursor speciesCursor(pListOfSpecies, "Species", 0, 0);
+	return initStartSpeciesBody<TiXmlElement>(speciesCursor, s, parameter,
+			allowedStates, verbose, buildSpeciesLog);
+}
 
 namespace {
 
@@ -1335,22 +1802,23 @@ bool parseLegacyCompositeDOR2(
 	return true;
 }
 
+template <class Element>
 bool readBareProductFilterMolecule(
-		TiXmlElement *pPattern, string &moleculeName, string &diagnostic)
+		Element *pPattern, string &moleculeName, string &diagnostic)
 {
 	if (!pPattern || pPattern->Attribute("compartment")) {
 		diagnostic = "NFsim product filters support only one bare molecule pattern";
 		return false;
 	}
-	TiXmlElement *pListOfMolecules = pPattern->FirstChildElement("ListOfMolecules");
-	TiXmlElement *pMolecule = pListOfMolecules
+	Element *pListOfMolecules = pPattern->FirstChildElement("ListOfMolecules");
+	Element *pMolecule = pListOfMolecules
 			? pListOfMolecules->FirstChildElement("Molecule") : NULL;
 	if (!pMolecule || pMolecule->NextSiblingElement("Molecule") != NULL ||
 			!pMolecule->Attribute("name") || pMolecule->Attribute("compartment")) {
 		diagnostic = "NFsim product filters support only one bare molecule pattern";
 		return false;
 	}
-	TiXmlElement *pComponents = pMolecule->FirstChildElement("ListOfComponents");
+	Element *pComponents = pMolecule->FirstChildElement("ListOfComponents");
 	if (pComponents && pComponents->FirstChildElement("Component") != NULL) {
 		diagnostic = "NFsim product filters support only one bare molecule pattern";
 		return false;
@@ -1359,13 +1827,14 @@ bool readBareProductFilterMolecule(
 	return true;
 }
 
+template <class Element>
 bool productPatternContainsMolecule(
-		TiXmlElement *pProductPattern, const string &moleculeName)
+		Element *pProductPattern, const string &moleculeName)
 {
 	if (!pProductPattern) return false;
-	TiXmlElement *pListOfMolecules = pProductPattern->FirstChildElement("ListOfMolecules");
+	Element *pListOfMolecules = pProductPattern->FirstChildElement("ListOfMolecules");
 	if (!pListOfMolecules) return false;
-	for (TiXmlElement *pMolecule = pListOfMolecules->FirstChildElement("Molecule");
+	for (Element *pMolecule = pListOfMolecules->FirstChildElement("Molecule");
 		 pMolecule != NULL;
 		 pMolecule = pMolecule->NextSiblingElement("Molecule")) {
 		if (pMolecule->Attribute("name") &&
@@ -1376,11 +1845,12 @@ bool productPatternContainsMolecule(
 	return false;
 }
 
+template <class Element>
 bool validateXmlProductFilters(
-		TiXmlElement *pRxnRule, bool &passes, string &diagnostic)
+		Element *pRxnRule, bool &passes, string &diagnostic)
 {
 	passes = true;
-	TiXmlElement *pListOfProductPatterns =
+	Element *pListOfProductPatterns =
 			pRxnRule->FirstChildElement("ListOfProductPatterns");
 	if (!pListOfProductPatterns) {
 		diagnostic = "product filter has no product patterns to inspect";
@@ -1391,7 +1861,7 @@ bool validateXmlProductFilters(
 			"ListOfIncludeProducts", "ListOfExcludeProducts"};
 	for (const char *filterListName : filterLists) {
 		const bool include = string(filterListName) == "ListOfIncludeProducts";
-		for (TiXmlElement *pFilterList = pRxnRule->FirstChildElement(filterListName);
+		for (Element *pFilterList = pRxnRule->FirstChildElement(filterListName);
 			 pFilterList != NULL;
 			 pFilterList = pFilterList->NextSiblingElement(filterListName)) {
 			if (!pFilterList->Attribute("id")) {
@@ -1399,8 +1869,8 @@ bool validateXmlProductFilters(
 				return false;
 			}
 			const string productPatternId = pFilterList->Attribute("id");
-			TiXmlElement *pProductPattern = NULL;
-			for (TiXmlElement *candidate =
+			Element *pProductPattern = NULL;
+			for (Element *candidate =
 					pListOfProductPatterns->FirstChildElement("ProductPattern");
 				 candidate != NULL;
 				 candidate = candidate->NextSiblingElement("ProductPattern")) {
@@ -1415,7 +1885,7 @@ bool validateXmlProductFilters(
 				return false;
 			}
 
-			TiXmlElement *pFilterPattern = pFilterList->FirstChildElement("Pattern");
+			Element *pFilterPattern = pFilterList->FirstChildElement("Pattern");
 			if (!pFilterPattern) {
 				diagnostic = "product filter list contains no pattern";
 				return false;
@@ -1438,26 +1908,27 @@ bool validateXmlProductFilters(
 	return true;
 }
 
+template <class Element>
 bool findReactantComponentState(
-		TiXmlElement *pListOfReactantPatterns, const string &componentId,
+		Element *pListOfReactantPatterns, const string &componentId,
 		string &state)
 {
 	if (!pListOfReactantPatterns) return false;
-	for (TiXmlElement *pReactant =
+	for (Element *pReactant =
 			pListOfReactantPatterns->FirstChildElement("ReactantPattern");
 			pReactant != NULL;
 			pReactant = pReactant->NextSiblingElement("ReactantPattern")) {
-		TiXmlElement *pListOfMolecules =
+		Element *pListOfMolecules =
 				pReactant->FirstChildElement("ListOfMolecules");
 		if (!pListOfMolecules) continue;
-		for (TiXmlElement *pMolecule =
+		for (Element *pMolecule =
 				pListOfMolecules->FirstChildElement("Molecule");
 				pMolecule != NULL;
 				pMolecule = pMolecule->NextSiblingElement("Molecule")) {
-			TiXmlElement *pListOfComponents =
+			Element *pListOfComponents =
 					pMolecule->FirstChildElement("ListOfComponents");
 			if (!pListOfComponents) continue;
-			for (TiXmlElement *pComponent =
+			for (Element *pComponent =
 					pListOfComponents->FirstChildElement("Component");
 					pComponent != NULL;
 					pComponent = pComponent->NextSiblingElement("Component")) {
@@ -1475,25 +1946,74 @@ bool findReactantComponentState(
 
 } // namespace
 
-bool NFinput::initReactionRules(
-		TiXmlElement * pListOfReactionRules,
+namespace NFinput {
+template <class Element>
+TemplateMolecule *readPatternT(
+		Element * pListOfMol,
+		System * s,
+		map <string,double> &parameter,
+		map <string,int> &allowedStates,
+		string patternName,
+		map <string , TemplateMolecule *> &templates,
+		map <string, component> &comps,
+		map <string, component> &symMap,
+		bool verbose,
+		int &suggestedTraversalLimit);
+template <class Element>
+bool readProductMoleculeT(
+		Element * pMol,
+		System * s,
+		map <string,double> & parameter,
+		map<string,int> & allowedStates,
+		string patternName,
+		vector <MoleculeCreator *> & moleculeCreatorsList,
+		map <string, component> & comps,
+		vector <Compartment *> & productCompartments,
+		bool verbose );
+template <class Element>
+int readTemplatePatternT(
+		Element * pListOfMol,
+		System * s,
+		map <string,int> &allowedStates,
+		string patternName,
+		map <string , TemplateMolecule *> &templates,
+		map <string, component> &comps,
+		map <string, component> &symMap,
+		bool verbose);
+
+template <class Element, class Cursor>
+static bool initReactionRulesBody(
+		Cursor &ruleCursor,
 		System * s,
 		map <string,double> &parameter,
 		map<string,int> &allowedStates,
 		bool blockSameComplexBinding,
 		bool verbose,
-		int &suggestedTraversalLimit)
+		int &suggestedTraversalLimit,
+		bool buildProductTemplates)
 {
 
 
 	try {
 
 		//First, loop through all the rules
-		TiXmlElement *pRxnRule;
+		Element *pRxnRule;
 		// Use for quick lookup of reaction id for each name
 		map <string, int> reaction_name_id_map;
 		int reaction_count = 0;
-		for ( pRxnRule = pListOfReactionRules->FirstChildElement("ReactionRule"); pRxnRule != 0; pRxnRule = pRxnRule->NextSiblingElement("ReactionRule"))
+		/* Symmetric permutations can only arise from molecule types that declare
+		 * equivalent components.  Without any, the per-rule symmetry scan finds no
+		 * symmetric components and generateRxnPermutations() yields the single
+		 * empty permutation, so the scan (a full second parse of every reactant
+		 * pattern) is skipped. */
+		bool hasEquivalentComponents = false;
+		for (int mtIndex = 0; mtIndex < s->getNumOfMoleculeTypes(); ++mtIndex) {
+			if (s->getMoleculeType(mtIndex)->getNumOfEquivalencyClasses() > 0) {
+				hasEquivalentComponents = true;
+				break;
+			}
+		}
+		for ( pRxnRule = ruleCursor.first(); pRxnRule != 0; pRxnRule = ruleCursor.next(pRxnRule))
 		{
 			bool productFiltersPass = true;
 			string productFilterDiagnostic;
@@ -1509,12 +2029,17 @@ bool NFinput::initReactionRules(
 			map <string, component> symComps;
 			map <string, component> symRxnCenter;
 
-			if(!FindReactionRuleSymmetry(pRxnRule, s,
-									parameter,
-									allowedStates,
-									symComps,
-									symRxnCenter,
-									verbose)) return false;
+			/* The streamed (LiteXmlElement) path is used only when no molecule type
+			 * has equivalent components, so the scan is reachable only with
+			 * TinyXML elements. */
+			if constexpr (std::is_same<Element, TiXmlElement>::value) {
+				if(hasEquivalentComponents && !FindReactionRuleSymmetry(pRxnRule, s,
+										parameter,
+										allowedStates,
+										symComps,
+										symRxnCenter,
+										verbose)) return false;
+			}
 
 			///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 			// Begin with some basic parsing of the rules and reactant patterns
@@ -1582,7 +2107,7 @@ bool NFinput::initReactionRules(
 
 
 				//  Read in the Reactant Patterns for this rule
-				TiXmlElement *pListOfReactantPatterns = pRxnRule->FirstChildElement("ListOfReactantPatterns");
+				Element *pListOfReactantPatterns = pRxnRule->FirstChildElement("ListOfReactantPatterns");
 				if(!pListOfReactantPatterns) {
 					cout<<"!!!!!!!!!!!!!!!!!!!!!!!! Warning:: ReactionRule "<<rxnName<<" contains no reactant patterns!"<<endl;
 					continue;
@@ -1595,7 +2120,7 @@ bool NFinput::initReactionRules(
 						ruleMatchOnce = (moVal == "1" || moVal == "true" || moVal == "True");
 					}
 
-				TiXmlElement *pReactant;
+				Element *pReactant;
 					vector<bool> matchOnceList;
 				for ( pReactant = pListOfReactantPatterns->FirstChildElement("ReactantPattern"); pReactant != 0; pReactant = pReactant->NextSiblingElement("ReactantPattern"))
 				{
@@ -1613,10 +2138,10 @@ bool NFinput::initReactionRules(
 						}
 						matchOnceList.push_back(reactantMatchOnce);
 
-					TiXmlElement *pListOfMols = pReactant->FirstChildElement("ListOfMolecules");
+					Element *pListOfMols = pReactant->FirstChildElement("ListOfMolecules");
 					if(pListOfMols) {
 						/* At this point, only the first reactant molecule is sent back as a template - rasi */
-						TemplateMolecule *tm = readPattern(pListOfMols, s, parameter, allowedStates, reactantName, reactants, comps, symMap, verbose, suggestedTraversalLimit);
+						TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, reactantName, reactants, comps, symMap, verbose, suggestedTraversalLimit);
 						if(tm==NULL) return false;
 						templates.push_back(tm);
 						reactantIndexMap[string(reactantName)] = templates.size() - 1;
@@ -1638,7 +2163,7 @@ bool NFinput::initReactionRules(
 					MoleculeType *arrheniusStateMoleculeType = NULL;
 					int arrheniusStateChangeCount = 0;
 					//Read in the list of operations we need to perform in this rule
-				TiXmlElement *pListOfOperations = pRxnRule->FirstChildElement("ListOfOperations");
+				Element *pListOfOperations = pRxnRule->FirstChildElement("ListOfOperations");
 				if ( !pListOfOperations )
 				{
 					cout<<"!!!!!!!!!!!!!!!!!!!!!!!! Warning:: ReactionRule "<<rxnName<<" contains no operations!  This rule will do nothing!"<<endl;
@@ -1663,7 +2188,7 @@ bool NFinput::initReactionRules(
 				// remember MoleculeCreator objects
 				vector <MoleculeCreator *> moleculeCreatorsList;
 
-				TiXmlElement *pAdd;
+				Element *pAdd;
 				for ( pAdd = pListOfOperations->FirstChildElement("Add");
 						pAdd != 0;  pAdd = pAdd->NextSiblingElement("Add") )
 				{
@@ -1728,7 +2253,7 @@ bool NFinput::initReactionRules(
 
 
 					//Go get the product pattern we need which will specify how to make this new species
-					TiXmlElement *pListOfProductPatterns = pRxnRule->FirstChildElement("ListOfProductPatterns");
+					Element *pListOfProductPatterns = pRxnRule->FirstChildElement("ListOfProductPatterns");
 					if ( !pListOfProductPatterns )
 					{
 						cerr << "Error:: ReactionRule " << rxnName << " contains no product patterns,\n"
@@ -1737,7 +2262,7 @@ bool NFinput::initReactionRules(
 					}
 
 					bool found_mol = false;
-					TiXmlElement * pProduct;
+					Element * pProduct;
 					for ( pProduct = pListOfProductPatterns->FirstChildElement("ProductPattern");
 							pProduct != 0; pProduct = pProduct->NextSiblingElement("ProductPattern") )
 					{
@@ -1753,7 +2278,7 @@ bool NFinput::initReactionRules(
 						// If this isn't the pattern we're looking for, go onto the next pattern
 						if ( productName != patt_id ) continue;
 
-						TiXmlElement *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
+						Element *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
 
 						if( pListOfMols==NULL )
 						{
@@ -1762,7 +2287,7 @@ bool NFinput::initReactionRules(
 							return false;
 						}
 
-						TiXmlElement * pMolecule;
+						Element * pMolecule;
 						for ( pMolecule = pListOfMols->FirstChildElement("Molecule");
 								pMolecule != 0;  pMolecule = pMolecule->NextSiblingElement("Molecule") )
 						{
@@ -1783,7 +2308,7 @@ bool NFinput::initReactionRules(
 
 							// This will create templates and components for the product molecule and its sites
 							//  (also handles increment population transforms!)
-							bool ok = NFinput::readProductMolecule(
+							bool ok = readProductMoleculeT(
 									      pMolecule, s, parameter, allowedStates,
 										  productName, moleculeCreatorsList,
 										  comps, productCompartments, verbose );
@@ -1813,13 +2338,13 @@ bool NFinput::initReactionRules(
 				}
 				
 				//  Read in the Product Patterns for this rule
-				TiXmlElement *pListOfProductPatterns = pRxnRule->FirstChildElement("ListOfProductPatterns");
+				Element *pListOfProductPatterns = pRxnRule->FirstChildElement("ListOfProductPatterns");
 				if(!pListOfProductPatterns) {
 					cout<<"!!!!!!!!!!!!!!!!!!!!!!!! Warning:: ReactionRule "<<rxnName<<" contains no product patterns!"<<endl;
 					continue;
 				}
 
-				TiXmlElement *pProduct;
+				Element *pProduct;
 				unsigned int numProductPatterns = 0;
 				for ( pProduct = pListOfProductPatterns->FirstChildElement("ProductPattern"); pProduct != 0; pProduct = pProduct->NextSiblingElement("ProductPattern"))
 				{
@@ -1831,10 +2356,14 @@ bool NFinput::initReactionRules(
 					}
 					if(verbose) cout<<"\t\t\tReading Product Pattern: "<<productName<<endl;
 
-					TiXmlElement *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
+					Element *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
 					if(pListOfMols) {
 						/* At this point, only the first reactant molecule is sent back as a template - rasi */
-						readTemplatePattern(pListOfMols, s, allowedStates, productName, products, comps, symMap, verbose);
+						/* Product templates (and the reactant/product partner links set
+						 * from the Map below) are only read by connectivity inference
+						 * (-connect); skip building them otherwise. */
+						if (buildProductTemplates)
+							readTemplatePatternT(pListOfMols, s, allowedStates, productName, products, comps, symMap, verbose);
 					}
 					else {
 						cerr<<"Product pattern "<<productName <<" in reaction "<<rxnName<<" without a valid 'ListOfMolecules'!  Quiting."<<endl;
@@ -1845,12 +2374,12 @@ bool NFinput::initReactionRules(
 				
 				// Read in the reactant-product maps for this rule
 				// Arvind Rasi Subramaniam
-				TiXmlElement *pListOfMaps = pRxnRule->FirstChildElement("Map");
+				Element *pListOfMaps = pRxnRule->FirstChildElement("Map");
 				if(!pListOfMaps) {
 					cout<<"!!!!!!!!!!!!!!!!!!!!!!!! Warning:: ReactionRule "<<rxnName<<" contains no reactant-product maps!"<<endl;
 					continue;
 				}
-				TiXmlElement *pMap;
+				Element *pMap;
 				string reactantId, productId;
 				for ( pMap = pListOfMaps->FirstChildElement("MapItem"); pMap != 0; pMap = pMap->NextSiblingElement("MapItem"))
 				{
@@ -1919,7 +2448,7 @@ bool NFinput::initReactionRules(
 				// Verified against BNG2 2.9.3 XML output.
 				// Format: <ListOfExcludeReactants> contains <Pattern> children directly,
 				// with 'id' matching the reactant pattern ID.
-				TiXmlElement *pExcludeReactants;
+				Element *pExcludeReactants;
 				for (pExcludeReactants = pRxnRule->FirstChildElement("ListOfExcludeReactants");
 					 pExcludeReactants != 0; pExcludeReactants = pExcludeReactants->NextSiblingElement("ListOfExcludeReactants"))
 				{
@@ -1934,13 +2463,13 @@ bool NFinput::initReactionRules(
 					}
 					int reactantIndex = reactantIndexMap[reactantId];
 
-					for (TiXmlElement *pPat = pExcludeReactants->FirstChildElement("Pattern"); pPat != 0; pPat = pPat->NextSiblingElement("Pattern")) {
+					for (Element *pPat = pExcludeReactants->FirstChildElement("Pattern"); pPat != 0; pPat = pPat->NextSiblingElement("Pattern")) {
 						string patternId = pPat->Attribute("id");
-						TiXmlElement *pListOfMols = pPat->FirstChildElement("ListOfMolecules");
+						Element *pListOfMols = pPat->FirstChildElement("ListOfMolecules");
 						if (pListOfMols) {
 							map<string, component> dummyComps, dummySymMap;
 							map<string, TemplateMolecule*> dummyTemplates;
-							TemplateMolecule *tm = readPattern(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit);
+							TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit);
 							if (tm != NULL) {
 								ts->addExcludeReactant(reactantIndex, tm, dummyTemplates);
 							} else {
@@ -1955,7 +2484,7 @@ bool NFinput::initReactionRules(
 				// Verified against BNG2 2.9.3 XML output.
 				// Format: <ListOfIncludeReactants> contains <Pattern> children directly,
 				// with 'id' matching the reactant pattern ID.
-				TiXmlElement *pIncludeReactants;
+				Element *pIncludeReactants;
 				for (pIncludeReactants = pRxnRule->FirstChildElement("ListOfIncludeReactants");
 					 pIncludeReactants != 0; pIncludeReactants = pIncludeReactants->NextSiblingElement("ListOfIncludeReactants"))
 				{
@@ -1970,13 +2499,13 @@ bool NFinput::initReactionRules(
 					}
 					int reactantIndex = reactantIndexMap[reactantId];
 
-					for (TiXmlElement *pPat = pIncludeReactants->FirstChildElement("Pattern"); pPat != 0; pPat = pPat->NextSiblingElement("Pattern")) {
+					for (Element *pPat = pIncludeReactants->FirstChildElement("Pattern"); pPat != 0; pPat = pPat->NextSiblingElement("Pattern")) {
 						string patternId = pPat->Attribute("id");
-						TiXmlElement *pListOfMols = pPat->FirstChildElement("ListOfMolecules");
+						Element *pListOfMols = pPat->FirstChildElement("ListOfMolecules");
 						if (pListOfMols) {
 							map<string, component> dummyComps, dummySymMap;
 							map<string, TemplateMolecule*> dummyTemplates;
-							TemplateMolecule *tm = readPattern(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit);
+							TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit);
 							if (tm != NULL) {
 								ts->addIncludeReactant(reactantIndex, tm, dummyTemplates);
 							} else {
@@ -1988,7 +2517,7 @@ bool NFinput::initReactionRules(
 				}
 
 				//Next extract out the state changes
-				TiXmlElement *pStateChange;
+				Element *pStateChange;
 				for ( pStateChange = pListOfOperations->FirstChildElement("StateChange"); pStateChange != 0; pStateChange = pStateChange->NextSiblingElement("StateChange"))
 				{
 					//Make sure all the information about the state change is here
@@ -2078,7 +2607,7 @@ bool NFinput::initReactionRules(
 				//would give you an error!)
 				// Capture binding site names for Arrhenius rule expansion (eBNGL)
 				string addBondSite1, addBondSite2;
-				TiXmlElement *pDeleteBond;
+				Element *pDeleteBond;
 				for ( pDeleteBond = pListOfOperations->FirstChildElement("DeleteBond");
 						pDeleteBond != 0;  pDeleteBond = pDeleteBond->NextSiblingElement("DeleteBond") )
 				{
@@ -2120,7 +2649,7 @@ bool NFinput::initReactionRules(
 				}
 
 				//Next extract out the new bonds that are formed
-				TiXmlElement *pAddBond;
+				Element *pAddBond;
 				for ( pAddBond = pListOfOperations->FirstChildElement("AddBond");
 						pAddBond != 0;  pAddBond = pAddBond->NextSiblingElement("AddBond") )
 				{
@@ -2234,7 +2763,7 @@ bool NFinput::initReactionRules(
 
 
 				//Next extract out compartment changes or transport operations
-				TiXmlElement *pChangeCompartment;
+				Element *pChangeCompartment;
 				for ( pChangeCompartment = pListOfOperations->FirstChildElement("ChangeCompartment");
 						pChangeCompartment != 0;  pChangeCompartment = pChangeCompartment->NextSiblingElement("ChangeCompartment") )
 				{
@@ -2280,7 +2809,7 @@ bool NFinput::initReactionRules(
 
 
 				//Next extract out anything that is destroyed
-				TiXmlElement *pDelete;
+				Element *pDelete;
 				for ( pDelete = pListOfOperations->FirstChildElement("Delete");
 						pDelete != 0;  pDelete = pDelete->NextSiblingElement("Delete") )
 				{
@@ -2450,7 +2979,7 @@ bool NFinput::initReactionRules(
 
 				///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 				//  Read in the rate law for this reaction
-				TiXmlElement *pRateLaw = pRxnRule->FirstChildElement("RateLaw");
+				Element *pRateLaw = pRxnRule->FirstChildElement("RateLaw");
 				if(!pRateLaw){
 					cerr<<"!!Error:: ReactionRule "<<rxnName<<" contains no rate law specification!"<<endl;
 					return false;
@@ -2547,12 +3076,12 @@ bool NFinput::initReactionRules(
 						ts->finalize();
 
 						// Read the activation energy (Ea0) from the rate constant
-						TiXmlElement *pListOfRateConstants = pRateLaw->FirstChildElement("ListOfRateConstants");
+						Element *pListOfRateConstants = pRateLaw->FirstChildElement("ListOfRateConstants");
 						if(!pListOfRateConstants) {
 							cerr << "Arrhenius rule " << rxnName << " has no ListOfRateConstants!" << endl;
 							return false;
 						}
-						TiXmlElement *pRateConstant = pListOfRateConstants->FirstChildElement("RateConstant");
+						Element *pRateConstant = pListOfRateConstants->FirstChildElement("RateConstant");
 						if(!pRateConstant) {
 							cerr << "Arrhenius rule " << rxnName << " has no valid RateConstant!" << endl;
 							return false;
@@ -2571,7 +3100,7 @@ bool NFinput::initReactionRules(
 							}
 						}
 
-						TiXmlElement *pRateConstant2 = pRateConstant->NextSiblingElement("RateConstant");
+						Element *pRateConstant2 = pRateConstant->NextSiblingElement("RateConstant");
 						if (!pRateConstant2 || !pRateConstant2->Attribute("value")) {
 							cerr << "Arrhenius rule " << rxnName << " missing second (Ea0) RateConstant!" << endl;
 							return false;
@@ -2671,12 +3200,12 @@ bool NFinput::initReactionRules(
 
 
 						//Make sure that the rate constant exists
-						TiXmlElement *pListOfRateConstants = pRateLaw->FirstChildElement("ListOfRateConstants");
+						Element *pListOfRateConstants = pRateLaw->FirstChildElement("ListOfRateConstants");
 						if(!pListOfRateConstants) {
 							cerr<<"Elementry Rate Law definition for "<<rxnName<<" does not have listOfRateConstants specified!  Quiting"<<endl;
 							return false;
 						}
-						TiXmlElement *pRateConstant = pListOfRateConstants->FirstChildElement("RateConstant");
+						Element *pRateConstant = pListOfRateConstants->FirstChildElement("RateConstant");
 						if(!pRateConstant) {
 							cerr<<"Elementry Rate Law definition for "<<rxnName<<" does not have RateConstants specified!  Quiting"<<endl;
 							return false;
@@ -2693,9 +3222,9 @@ bool NFinput::initReactionRules(
 
 							//Try to parse it into a double value or look it up in the parameter map
 							double rate=0; bool usedParam = false; string rateValueParameterName = "";
-							try {
-								rate = NFutil::convertToDouble(rateValue);
-							} catch (std::runtime_error &e1) {
+							/* Parameter names are the common case; test the number form
+							 * without throwing (the exception path dominated rule parsing). */
+							if (!NFutil::tryConvertToDouble(rateValue, rate)) {
 								if(parameter.find(rateValue)==parameter.end()) {
 									cerr<<"Could not find parameter: "<<rateValue<<" when reading rate for rxn "<<rxnName <<". Quitting"<<endl;
 									return false;
@@ -2731,9 +3260,9 @@ bool NFinput::initReactionRules(
 						//a local or global function...
 						bool isGlobal = true;
 						vector <string> funcArgs;
-						TiXmlElement *pListOfArgs = pRateLaw->FirstChildElement("ListOfArguments");
+						Element *pListOfArgs = pRateLaw->FirstChildElement("ListOfArguments");
 						if(pListOfArgs) {
-							TiXmlElement *pArg;
+							Element *pArg;
 							for ( pArg = pListOfArgs->FirstChildElement("Argument"); pArg != 0; pArg = pArg->NextSiblingElement("Argument"))
 							{
 								if(!pArg->Attribute("id") || !pArg->Attribute("type") || !pArg->Attribute("value") ) {
@@ -2909,10 +3438,10 @@ bool NFinput::initReactionRules(
 
 						//find argument1
 						vector <string> funcArgs1;
-						TiXmlElement *pListOfArgs1 = pRateLaw->FirstChildElement("ListOfArguments1");
+						Element *pListOfArgs1 = pRateLaw->FirstChildElement("ListOfArguments1");
 						if(pListOfArgs1)
 						{
-							TiXmlElement *pArg;
+							Element *pArg;
 							for ( pArg = pListOfArgs1->FirstChildElement("Argument"); pArg != 0; pArg = pArg->NextSiblingElement("Argument"))
 							{
 								if(!pArg->Attribute("id") || !pArg->Attribute("type") || !pArg->Attribute("value") ) {
@@ -2944,10 +3473,10 @@ bool NFinput::initReactionRules(
 
 						//find argument2
 						vector <string> funcArgs2;
-						TiXmlElement *pListOfArgs2 = pRateLaw->FirstChildElement("ListOfArguments2");
+						Element *pListOfArgs2 = pRateLaw->FirstChildElement("ListOfArguments2");
 						if(pListOfArgs2)
 						{
-							TiXmlElement *pArg;
+							Element *pArg;
 							for ( pArg = pListOfArgs2->FirstChildElement("Argument"); pArg != 0; pArg = pArg->NextSiblingElement("Argument"))
 							{
 								if(!pArg->Attribute("id") || !pArg->Attribute("type") || !pArg->Attribute("value") ) {
@@ -3051,7 +3580,7 @@ bool NFinput::initReactionRules(
 					}
 					else if(rateLawType=="MM") {
 						//Make sure that the rate constant exists
-						TiXmlElement *pListOfRateConstants = pRateLaw->FirstChildElement("ListOfRateConstants");
+						Element *pListOfRateConstants = pRateLaw->FirstChildElement("ListOfRateConstants");
 						if(!pListOfRateConstants) {
 							cerr<<"Michaelis-Menten Rate Law definition for "<<rxnName<<" does not have a ListOfRateConstants tag!  Quiting"<<endl;
 							return false;
@@ -3060,7 +3589,7 @@ bool NFinput::initReactionRules(
 							double Km=0;
 
 							//We should always get the catalytic rate (kcat) first!
-							TiXmlElement *pRateConstant = pListOfRateConstants->FirstChildElement("RateConstant");
+							Element *pRateConstant = pListOfRateConstants->FirstChildElement("RateConstant");
 							if(!pRateConstant) {
 								cerr<<"Michaelis-Menten Law definition for "<<rxnName<<" does not have kcat value defined!  Quiting"<<endl;
 								return false;
@@ -3073,9 +3602,7 @@ bool NFinput::initReactionRules(
 								} else {
 									kcatName = pRateConstant->Attribute("value");
 									bool usedParam = false;
-									try {
-										kcat = NFutil::convertToDouble(kcatName);
-									} catch (std::runtime_error &e1) {
+									if (!NFutil::tryConvertToDouble(kcatName, kcat)) {
 										if(parameter.find(kcatName)==parameter.end()) {
 											cerr<<"Could not find parameter: "<<kcatName<<" when reading kcat rate for rxn "<<rxnName <<". Quitting"<<endl;
 											return false;
@@ -3105,9 +3632,7 @@ bool NFinput::initReactionRules(
 								} else {
 									KmName = pRateConstant->Attribute("value");
 									bool usedParam = false;
-									try {
-										Km = NFutil::convertToDouble(KmName);
-									} catch (std::runtime_error &e1) {
+									if (!NFutil::tryConvertToDouble(KmName, Km)) {
 										if(parameter.find(KmName)==parameter.end()) {
 											cerr<<"Could not find parameter: "<<KmName<<" when reading Km rate for rxn "<<rxnName <<". Quitting"<<endl;
 											return false;
@@ -3146,7 +3671,7 @@ bool NFinput::initReactionRules(
 							return false;
 						}
 
-						TiXmlElement *pListOfRateConstants =
+						Element *pListOfRateConstants =
 							pRateLaw->FirstChildElement("ListOfRateConstants");
 						if (!pListOfRateConstants) {
 							cerr << "Rate Law " << rateLawType << " definition for " << rxnName
@@ -3156,7 +3681,7 @@ bool NFinput::initReactionRules(
 						}
 
 						vector<double> constants;
-						for (TiXmlElement *pRateConstant =
+						for (Element *pRateConstant =
 							 pListOfRateConstants->FirstChildElement("RateConstant");
 							 pRateConstant != 0;
 							 pRateConstant = pRateConstant->NextSiblingElement("RateConstant")) {
@@ -3168,9 +3693,7 @@ bool NFinput::initReactionRules(
 							}
 							const string valueName = pRateConstant->Attribute("value");
 							double value = 0.0;
-							try {
-								value = NFutil::convertToDouble(valueName);
-							} catch (std::runtime_error &) {
+							if (!NFutil::tryConvertToDouble(valueName, value)) {
 								const auto parameterIt = parameter.find(valueName);
 								if (parameterIt == parameter.end()) {
 									cerr << "Could not find parameter: " << valueName
@@ -3280,6 +3803,8 @@ bool NFinput::initReactionRules(
 			} //end loop through all permutations
 
 		} //end loop through all reaction rules
+		if (ruleCursor.failed())
+			return false;
 
 		//If we got here, then by golly, I think we have a new reaction rule
 		return true;
@@ -3292,6 +3817,39 @@ bool NFinput::initReactionRules(
 	return false;
 }
 
+
+}
+
+bool NFinput::initReactionRules(
+		TiXmlElement * pListOfReactionRules,
+		System * s,
+		map <string,double> &parameter,
+		map<string,int> &allowedStates,
+		bool blockSameComplexBinding,
+		bool verbose,
+		int &suggestedTraversalLimit,
+		const string *streamFile,
+		const vector <SpeciesSpan> *streamSpans,
+		bool buildProductTemplates)
+{
+	bool hasEquivalentComponents = false;
+	for (int mtIndex = 0; mtIndex < s->getNumOfMoleculeTypes(); ++mtIndex) {
+		if (s->getMoleculeType(mtIndex)->getNumOfEquivalencyClasses() > 0) {
+			hasEquivalentComponents = true;
+			break;
+		}
+	}
+	if (streamFile != 0 && streamSpans != 0 && !hasEquivalentComponents) {
+		LiteElementCursor ruleCursor(streamFile, streamSpans, "ReactionRule");
+		return initReactionRulesBody<LiteXmlElement>(ruleCursor, s, parameter,
+				allowedStates, blockSameComplexBinding, verbose, suggestedTraversalLimit,
+				buildProductTemplates);
+	}
+	XmlChildCursor ruleCursor(pListOfReactionRules, "ReactionRule", streamFile, streamSpans);
+	return initReactionRulesBody<TiXmlElement>(ruleCursor, s, parameter,
+			allowedStates, blockSameComplexBinding, verbose, suggestedTraversalLimit,
+			buildProductTemplates);
+}
 
 bool NFinput::readObservableForTemplateMolecules(TiXmlElement *pObs,
 		string observableName,
@@ -3554,8 +4112,10 @@ bool NFinput::initObservables(
 
 
 
-TemplateMolecule *NFinput::readPattern(
-		TiXmlElement * pListOfMol,
+namespace NFinput {
+template <class Element>
+TemplateMolecule *readPatternT(
+		Element * pListOfMol,
 		System * s,
 		map <string,double> &parameter,
 		map <string,int> &allowedStates,
@@ -3588,7 +4148,7 @@ TemplateMolecule *NFinput::readPattern(
 
 
 		// Now loop through the molecules in the list
-		TiXmlElement *pMol;
+		Element *pMol;
 		for ( pMol = pListOfMol->FirstChildElement("Molecule"); pMol != 0; pMol = pMol->NextSiblingElement("Molecule"))
 		{
 			//First get the type of molecule and retrieve the moleculeType object from the system
@@ -3641,10 +4201,10 @@ TemplateMolecule *NFinput::readPattern(
 
 
 			//Loop through the components of the molecule in order to set state values
-			TiXmlElement *pListOfComp = pMol->FirstChildElement("ListOfComponents");
+			Element *pListOfComp = pMol->FirstChildElement("ListOfComponents");
 			if(pListOfComp)
 			{
-				TiXmlElement *pComp;
+				Element *pComp;
 				for ( pComp = pListOfComp->FirstChildElement("Component"); pComp != 0; pComp = pComp->NextSiblingElement("Component"))
 				{
 					//Get the basic components of this molecule
@@ -3865,11 +4425,11 @@ TemplateMolecule *NFinput::readPattern(
 		}
 
 		//Here is where we add the bonds to the template molecules in the pattern
-		TiXmlElement *pListOfBonds = pListOfMol->NextSiblingElement("ListOfBonds");
+		Element *pListOfBonds = pListOfMol->NextSiblingElement("ListOfBonds");
 		if(pListOfBonds)
 		{
 			//First get the information on the bonds in the complex
-			TiXmlElement *pBond;
+			Element *pBond;
 			for ( pBond = pListOfBonds->FirstChildElement("Bond"); pBond != 0; pBond = pBond->NextSiblingElement("Bond"))
 			{
 				//First, grab the bond information that we need to set things up
@@ -4076,6 +4636,23 @@ TemplateMolecule *NFinput::readPattern(
 	return nullptr;
 }
 
+
+}
+
+TemplateMolecule *NFinput::readPattern(
+		TiXmlElement * pListOfMol,
+		System * s,
+		map <string,double> &parameter,
+		map <string,int> &allowedStates,
+		string patternName,
+		map <string , TemplateMolecule *> &templates,
+		map <string, component> &comps,
+		map <string, component> &symMap,
+		bool verbose,
+		int &suggestedTraversalLimit)
+{
+	return readPatternT<TiXmlElement>(pListOfMol, s, parameter, allowedStates, patternName, templates, comps, symMap, verbose, suggestedTraversalLimit);
+}
 
 bool NFinput::readProductPattern(
 		TiXmlElement * pListOfMol,
@@ -4323,8 +4900,10 @@ bool NFinput::readProductPattern(
 
 
 
-bool NFinput::readProductMolecule(
-		TiXmlElement * pMol,
+namespace NFinput {
+template <class Element>
+bool readProductMoleculeT(
+		Element * pMol,
 		System * s,
 		map <string,double> & parameter,
 		map<string,int> & allowedStates,
@@ -4452,10 +5031,10 @@ bool NFinput::readProductMolecule(
 
 
 		//Loop through the components of the molecule in order to remember state values
-		TiXmlElement * pListOfComp = pMol->FirstChildElement("ListOfComponents");
+		Element * pListOfComp = pMol->FirstChildElement("ListOfComponents");
 		if(pListOfComp)
 		{
-			TiXmlElement *pComp;
+			Element *pComp;
 			for ( pComp = pListOfComp->FirstChildElement("Component");
 					pComp != 0;  pComp = pComp->NextSiblingElement("Component") )
 			{
@@ -4484,7 +5063,7 @@ bool NFinput::readProductMolecule(
 						compName = (symmetricSitesNotUsed.at(eqClass)).front();
 						(symmetricSitesNotUsed.at(eqClass)).pop();
 					} else {
-						cerr <<"In NFinput::readProductMolecule(...): some symmetric components were specified more times than they were originally declared!"<<endl;
+						cerr <<"In readProductMoleculeT(...): some symmetric components were specified more times than they were originally declared!"<<endl;
 						cerr <<"This must be an error in BioNetGen, as all molecules to be created must have all component sites specified!\n\n"<<endl;
 						return false;
 					}
@@ -4529,7 +5108,7 @@ bool NFinput::readProductMolecule(
 		// //// quick check to see if we used up all symmetric component sites
 		for(unsigned int i=0; i<symmetricSitesNotUsed.size(); i++) {
 			if(symmetricSitesNotUsed.at(i).size()>0) {
-				cerr <<"In NFinput::readProductMolecule(...): some symmetric components exist, but were not defined!"<<endl;
+				cerr <<"In readProductMoleculeT(...): some symmetric components exist, but were not defined!"<<endl;
 				cerr <<"This must be an error in BioNetGen, as all molecules to be created must have all component sites specified!\n\n"<<endl;
 				return false;
 			}
@@ -4559,8 +5138,26 @@ bool NFinput::readProductMolecule(
 
 
 
-int NFinput::readTemplatePattern(
-		TiXmlElement * pListOfMol,
+}
+
+bool NFinput::readProductMolecule(
+		TiXmlElement * pMol,
+		System * s,
+		map <string,double> & parameter,
+		map<string,int> & allowedStates,
+		string patternName,
+		vector <MoleculeCreator *> & moleculeCreatorsList,
+		map <string, component> & comps,
+		vector <Compartment *> & productCompartments,
+		bool verbose )
+{
+	return readProductMoleculeT<TiXmlElement>(pMol, s, parameter, allowedStates, patternName, moleculeCreatorsList, comps, productCompartments, verbose);
+}
+
+namespace NFinput {
+template <class Element>
+int readTemplatePatternT(
+		Element * pListOfMol,
 		System * s,
 		map <string,int> &allowedStates,
 		string patternName,
@@ -4590,7 +5187,7 @@ int NFinput::readTemplatePattern(
 		vector <string>::iterator strVecIter;
 
 		// Now loop through the molecules in the list
-		TiXmlElement *pMol;
+		Element *pMol;
 		bool foundTrash = false;
 		for ( pMol = pListOfMol->FirstChildElement("Molecule"); pMol != 0; pMol = pMol->NextSiblingElement("Molecule"))
 		{
@@ -4647,10 +5244,10 @@ int NFinput::readTemplatePattern(
 			comps.insert(pair <string, component> (molUid,c));
 
 			//Loop through the components of the molecule in order to set state values
-			TiXmlElement *pListOfComp = pMol->FirstChildElement("ListOfComponents");
+			Element *pListOfComp = pMol->FirstChildElement("ListOfComponents");
 			if(pListOfComp)
 			{
-				TiXmlElement *pComp;
+				Element *pComp;
 				for ( pComp = pListOfComp->FirstChildElement("Component"); pComp != 0; pComp = pComp->NextSiblingElement("Component"))
 				{
 					//Get the basic components of this molecule
@@ -4851,11 +5448,11 @@ int NFinput::readTemplatePattern(
 		}
 
 		//Here is where we add the bonds to the template molecules in the pattern
-		TiXmlElement *pListOfBonds = pListOfMol->NextSiblingElement("ListOfBonds");
+		Element *pListOfBonds = pListOfMol->NextSiblingElement("ListOfBonds");
 		if(pListOfBonds)
 		{
 			//First get the information on the bonds in the complex
-			TiXmlElement *pBond;
+			Element *pBond;
 			for ( pBond = pListOfBonds->FirstChildElement("Bond"); pBond != 0; pBond = pBond->NextSiblingElement("Bond"))
 			{
 				//First, grab the bond information that we need to set things up
@@ -5045,4 +5642,18 @@ int NFinput::readTemplatePattern(
 	}
 
 	return 1;
+}
+}
+
+int NFinput::readTemplatePattern(
+		TiXmlElement * pListOfMol,
+		System * s,
+		map <string,int> &allowedStates,
+		string patternName,
+		map <string , TemplateMolecule *> &templates,
+		map <string, component> &comps,
+		map <string, component> &symMap,
+		bool verbose)
+{
+	return readTemplatePatternT<TiXmlElement>(pListOfMol, s, allowedStates, patternName, templates, comps, symMap, verbose);
 }

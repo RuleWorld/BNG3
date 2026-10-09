@@ -12,12 +12,6 @@ NFcore::Mapping::Mapping(unsigned int type, int index)
 	this->index = index;
 	this->m=NULL;
 }
-NFcore::Mapping::~Mapping()
-{
-	index=0;
-	clear();
-}
-
 
 unsigned int NFcore::Mapping::getType() const
 {

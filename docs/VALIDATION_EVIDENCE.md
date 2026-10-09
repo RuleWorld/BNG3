@@ -1,14 +1,14 @@
 # BNG3 validation evidence
 
-**What this is.** The single place to answer *what is actually verified, and by
-what*. The detailed history lives in
-[`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md) (a
-reverse-chronological log, in which an unchecked box describes what was true
-when it was written — see its own preamble at `:12-19`) and the reasoning lives
-in [`docs/adr/`](adr/). Those two disagree with the code in places. This file
-records the current truth and nothing else.
+**What this is.** A dated validation audit and its evidence boundaries. The
+[convergence checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) and live issues own
+the operational task index; [ADRs](adr/) record architectural decisions.
 
-**Tree state described:** `main` at `6889fba` (2026-09-30).
+**Historical audit:** `main` at `6889fba` (2026-09-30). **Targeted corrections:**
+2026-10-07 at [main `e1836c32`](https://github.com/RuleWorld/BNG3/tree/e1836c3274e685996d5e86883761e00e98257e09),
+covering SSTS locking/reference machinery, RHS coverage and hosted-run status.
+Other dated measurements below remain observations of their named revisions;
+this edit did not rerun their scientific suites or revalidate every statement.
 
 **Rule for this file.** Every claim below carries a `file:line` or a commit. A
 claim with neither does not belong here. Where a measurement is missing this
@@ -101,39 +101,43 @@ mildly, of `corpus-parse`, which only fails on an empty corpus.
 
 ## 2. What is NOT verified
 
-These are open. None of them is covered by anything in §1.
+These describe validation boundaries at the revisions named below. Current
+implementation corrections are dated explicitly; historical results do not
+become current acceptance evidence when the runner gains a new capability.
 
-1. **The pinned SBML Test Suite result (1,744 passed / 179 unsupported / 0 failed
-   / 0 timed out) cannot be re-derived from this repository.** The number is
+1. **The historical SBML Test Suite result (1,744 passed / 179 unsupported / 0 failed
+   / 0 timed out) is not current conformance evidence.** The number is
    quoted in the convergence checklist and in `CURRENT_PROGRESS.md`. Its
    provenance audit is recorded in the checklist:
-   - The suite is not in `provenance/upstreams.lock.yml`; there is no `suite`
-     key at all.
+   - At the 2026-10-07 review of `e1836c32`, the suite is pinned under
+     `sources.sbml-test-suite` in [upstreams.lock.yml](../provenance/upstreams.lock.yml).
    - It is not an oracle: `scripts/ci/oracle_sources.py:19` lists exactly
      `("bionetgen", "nfsim", "pybionetgen")`.
-   - The runner does not verify what it is handed: `--suite-dir` is required
-     (`scripts/ci/validate_sbml_test_suite.py:997`) and the report records
-     `git -C <suite-dir> rev-parse HEAD` verbatim (`:1021-1024`, `:1100`)
-     without comparing it to any lock.
+   - [validate_sbml_test_suite.py](../scripts/ci/validate_sbml_test_suite.py)
+     now checks the suite revision, origin and complete tracked case tree,
+     rejects hidden/sparse case data, and provides `--validate-only`.
    - No CI job runs it and no report is committed; the cited artifact is under
      `/private/tmp`.
-   - **What it measured, precisely:** the runner's own docstring says it "is an
-     import/round-trip gate, not a claim of numerical SBML Test Suite simulation
-     conformance" (`scripts/ci/validate_sbml_test_suite.py:8-9`) — import, SBML
-     write, reimport, native-reader species/reaction counts, plus a
-     BNG3-CVODE-versus-libRoadRunner comparison. It is **not** conformance
-     against the suite's expected numeric outputs.
+   - **What the historical result measured:** import, round trip and
+     BNG3-versus-libRoadRunner agreement. It did not establish official expected
+     output conformance. The current runner separately reads official settings
+     and reference time courses (`_read_reference_case`) and compares BNG3 on
+     that grid (`_compare_case_to_reference`). Existing machinery is not a new
+     aggregate result; [#159](https://github.com/RuleWorld/BNG3/issues/159) and
+     [#183](https://github.com/RuleWorld/BNG3/issues/183) own current conformance
+     evidence and hosted execution.
    - libRoadRunner is installed by no workflow, so even the comparison half
      cannot be reproduced without local setup.
 
    Treat every suite-derived count in this repository as one machine's
    historical observation.
 
-2. **The 1e-9 expression-vector/RHS gate is unimplemented.**
-   `tests/validation/corpus.py:56-57` declares `TIER_EXPR` with the requirement
-   "RHS must match the oracle to 1e-9", and
-   `tests/validation/test_parity_expressions.py:3-5` says outright: "The direct
-   expression-vector/RHS gate remains open." See §5.2 for the exact scope.
+2. **Expression/RHS coverage is bounded and its hosted wiring remains open.**
+   [test_parity_rhs.py](../tests/validation/test_parity_rhs.py) implements the
+   frozen five-model coefficient/RHS gate at three times, `rtol=1e-9` and
+   `atol=1e-12`. It consumes the expression tier; the older "unimplemented"
+   statement is stale. This does not qualify all rate-law classes or mean that
+   the parity workflow runs it; those gaps remain #143/#182.
 
 3. **`provenance/golden/` has no approved bundle.** The directory contains only
    `README.md`, which states: "No approved golden bundle is present until the
@@ -259,13 +263,12 @@ here, so four of them failed before doing any work until the default was fixed.
 
 ## 4. How to check a claim yourself
 
-**Warning first: "CI is green" is not currently an available signal on this
-repository.** On 2026-09-29 every workflow run queued for hours without a job
-starting, including for the head carrying the fixes above. Both `ci.yml:10-14`
-and `parity.yml:13-16` were changed to stop a later push from cancelling an
-in-flight run for the preceding head, which is the mechanism by which runs go
-missing. Read the run yourself for the exact SHA; do not infer a status from a
-prior head.
+The 2026-09-29 queued-run observation was historical. Reviewed 2026-10-07:
+main `e1836c32` has completed [CI](https://github.com/RuleWorld/BNG3/actions/runs/37548838421),
+[parity](https://github.com/RuleWorld/BNG3/actions/runs/37548838423) and
+[Lean](https://github.com/RuleWorld/BNG3/actions/runs/37548838419) runs. Read the
+job conclusions and skipped gates for the exact revision under review; a prior
+head or a configured subset cannot establish current release acceptance.
 
 Locally, the full command set recorded in the convergence checklist:
 

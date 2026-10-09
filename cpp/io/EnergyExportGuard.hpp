@@ -26,6 +26,10 @@ namespace bng::ast {
 class Model;
 }
 
+namespace bng::compile {
+class CompiledModel;
+}
+
 namespace bng::io {
 
 // Throws std::runtime_error naming `formatName` and the offending construct
@@ -39,10 +43,13 @@ namespace bng::io {
 // The Arrhenius check is deliberately separate from the energy-pattern check.
 // A rule can carry an Arrhenius rate law in a model whose energy patterns were
 // dropped or were never present, and that rule is still inexpressible.
+void requireNoEnergySemantics(const compile::CompiledModel& model,
+                              const std::string& formatName);
 void requireNoEnergySemantics(const ast::Model& model, const std::string& formatName);
 
 // True when the model uses any of the above. Exposed so a caller that wants to
 // degrade rather than throw can make that choice explicitly.
+bool usesEnergySemantics(const compile::CompiledModel& model);
 bool usesEnergySemantics(const ast::Model& model);
 
 } // namespace bng::io

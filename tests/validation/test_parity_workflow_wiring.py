@@ -1,10 +1,10 @@
 """The parity workflow must actually run the parity modules.
 
 `tests/validation/test_parity_nfsim.py` and
-`tests/validation/test_parity_nfsim_seed.py` are the only parity modules any CI
-job runs, and `parity.yml` selects them by path. That selection is invisible to
-a Python suite: nothing fails when a module stops being collected, and the job
-reports green having tested less than it did.
+`tests/validation/test_parity_nfsim_seed.py` are selected by path in
+`parity.yml`. Their selection is invisible to a Python suite: nothing fails
+when a module stops being collected, and the job reports green having tested
+less than it did.
 
 This file checks the wiring itself. It exists because the wiring was wrong once
 already, and the failure was invisible by construction:
@@ -116,6 +116,30 @@ def test_every_parity_job_step_is_executable():
                     f"{PARITY_WORKFLOW.name}: job {job_name!r} step {index} "
                     f"({step.get('name')!r}) has neither 'run' nor 'uses'"
                 )
+
+
+def test_parity_jobs_checkout_the_declared_source_commit():
+    """PR parity evidence must come from the PR source head, not its merge ref."""
+    parity_workflow = _parse_workflow()
+    exact_source = "${{ github.event.pull_request.head.sha || github.sha }}"
+
+    for job_name, job in parity_workflow["jobs"].items():
+        for index, step in enumerate(job.get("steps", [])):
+            if step.get("uses", "").startswith("actions/checkout@"):
+                ref = (step.get("with") or {}).get("ref")
+                assert ref == exact_source, (
+                    f"{PARITY_WORKFLOW.name}: job {job_name!r} checkout step "
+                    f"{index} uses {ref!r}; parity must test {exact_source!r}"
+                )
+
+    for job_name, step_name in (
+        ("bng2-parity", "Verify installed BNG3 package and native identity"),
+        ("nfsim-parity", "Report installed BNG3 package and native identities"),
+    ):
+        job = parity_workflow["jobs"][job_name]
+        step = next(item for item in job["steps"] if item.get("name") == step_name)
+        assert "--require-source-head" in step["run"]
+        assert (step.get("env") or {}).get("BNG3_SOURCE_REVISION") == exact_source
 
 
 def test_nfsim_parity_job_runs_every_parity_module():
