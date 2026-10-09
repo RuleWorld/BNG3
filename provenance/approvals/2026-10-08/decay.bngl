@@ -1,0 +1,20 @@
+begin model
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ A()
+end molecule types
+begin seed species
+ A() 100
+end seed species
+begin observables
+ Molecules A_total A()
+end observables
+begin reaction rules
+ A() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1})
+writeXML()
+simulate_ode({t_end=>1,n_steps=>10,rtol=>1e-10,atol=>1e-12})

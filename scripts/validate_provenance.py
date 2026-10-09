@@ -9,6 +9,7 @@ installed.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -67,7 +68,10 @@ def _datetime(value: Any, where: str, errors: list[str]) -> None:
 
 
 def validate_lock(
-    document: dict[str, Any], *, require_approved: bool = False
+    document: dict[str, Any],
+    *,
+    require_approved: bool = False,
+    repository_root: Path = REPO,
 ) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -124,6 +128,7 @@ def validate_lock(
                     "planning-snapshot",
                     "local-checkout",
                     "remote-head",
+                    "remote-commit",
                 }:
                     errors.append(f"{where}.evidence.kind is invalid")
                 _date(
@@ -206,6 +211,27 @@ def validate_lock(
                     errors.append("locked python_lock requires a path")
                 if not DIGEST_RE.fullmatch(str(python_lock.get("digest"))):
                     errors.append("locked python_lock requires a sha256 digest")
+                lock_path = python_lock.get("path")
+                if isinstance(lock_path, str) and lock_path:
+                    root = repository_root.resolve()
+                    artifact = (root / lock_path).resolve()
+                    if Path(lock_path).is_absolute() or not artifact.is_relative_to(
+                        root
+                    ):
+                        errors.append(
+                            "python_lock.path must stay inside the repository"
+                        )
+                    else:
+                        try:
+                            payload = artifact.read_bytes()
+                        except OSError as exc:
+                            errors.append(f"cannot read python_lock.path: {exc}")
+                        else:
+                            actual = "sha256:" + hashlib.sha256(payload).hexdigest()
+                            if python_lock.get("digest") != actual:
+                                errors.append(
+                                    "python_lock.digest does not match the lock file bytes"
+                                )
             if (require_approved or baseline_approved) and status != "locked":
                 errors.append("strict gate requires python_lock.status=locked")
 

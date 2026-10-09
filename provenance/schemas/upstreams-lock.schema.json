@@ -81,7 +81,7 @@
           "additionalProperties": false,
           "required": ["kind", "checked_at"],
           "properties": {
-            "kind": {"enum": ["planning-snapshot", "local-checkout", "remote-head"]},
+            "kind": {"enum": ["planning-snapshot", "local-checkout", "remote-head", "remote-commit"]},
             "checked_at": {"type": "string", "format": "date"}
           }
         }
