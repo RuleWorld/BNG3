@@ -1,12 +1,12 @@
 #include "SbmlUnitWriter.hpp"
 
+#include "compile/CompiledModel.hpp"
+
 #include <cmath>
-#include <algorithm>
 #include <cctype>
 #include <iomanip>
 #include <map>
 #include <sstream>
-#include <string_view>
 
 namespace bng::io::sbml_units {
 namespace {
@@ -136,52 +136,51 @@ std::string unitDefinition(const std::string& id, const units::Unit& unit) {
 }
 
 void collect(std::map<std::string, units::Unit>& definitions,
-             const ast::Model& model, const std::string& authored) {
+             const compile::CompiledModel& model, const std::string& authored) {
     if (authored.empty()) return;
     const auto canonical = canonicalBuiltin(authored);
-    const auto* resolved = model.getUnitSystem().find(authored);
-    if (resolved == nullptr) {
-        const auto parsed = model.getUnitSystem().parse(authored);
-        if (parsed) definitions[reference(model, authored)] = *parsed.unit;
-        return;
-    }
+    const auto& references = model.metadata().resolvedUnitReferences;
+    const auto resolved = references.find(authored);
+    if (resolved == references.end()) return;
     if (!canonical.empty()) {
         // SBML Core provides these base units directly.
         if (canonical == "item" && authored == "molecule") return;
         return;
     }
-    definitions[reference(model, authored)] = *resolved;
+    definitions[reference(model, authored)] = resolved->second.unit;
 }
 
 } // namespace
 
-bool enabled(const ast::Model& model) {
-    for (const auto& parameter : model.getParameters().all())
-        if (parameter.hasUnit()) return true;
-    for (const auto& compartment : model.getCompartments())
-        if (compartment.hasUnit()) return true;
-    for (const auto& seed : model.getSeedSpecies())
-        if (seed.hasUnit()) return true;
-    return !model.getUnitDefaults().empty() ||
-           std::any_of(model.getUnitSystem().definitions().begin(),
-                       model.getUnitSystem().definitions().end(),
-                       [](const auto& definition) { return !definition.builtin; });
+bool enabled(const compile::CompiledModel& model) {
+    for (const auto& parameter : model.parameters())
+        if (parameter.declaredUnit.has_value()) return true;
+    for (const auto& compartment : model.compartments())
+        if (compartment.declaredUnit.has_value()) return true;
+    for (const auto& seed : model.seeds())
+        if (seed.declaredUnit.has_value()) return true;
+    return !model.metadata().unitDefaults.empty() ||
+           !model.metadata().unitDefinitions.empty();
 }
 
-std::string reference(const ast::Model& model, const std::string& authored) {
+std::string reference(const compile::CompiledModel& model, const std::string& authored) {
     const auto canonical = canonicalBuiltin(authored);
     if (!canonical.empty()) return canonical;
-    if (model.getUnitSystem().find(authored) != nullptr) return validId(authored);
+    const auto& references = model.metadata().resolvedUnitReferences;
+    const auto resolved = references.find(authored);
+    if (resolved != references.end() && resolved->second.namedDefinition) {
+        return validId(authored);
+    }
     return "bng_unit_" + validId(authored);
 }
 
-std::string attribute(const ast::Model& model, const std::string& authored) {
+std::string attribute(const compile::CompiledModel& model, const std::string& authored) {
     return authored.empty() ? std::string {} : " units=\"" + escapeXml(reference(model, authored)) + "\"";
 }
 
-std::string modelAttributes(const ast::Model& model) {
+std::string modelAttributes(const compile::CompiledModel& model) {
     std::ostringstream result;
-    for (const auto& [role, authored] : model.getUnitDefaults()) {
+    for (const auto& [role, authored] : model.metadata().unitDefaults) {
         if (role != "timeUnits" && role != "substanceUnits" && role != "volumeUnits" &&
             role != "areaUnits" && role != "lengthUnits" && role != "extentUnits") continue;
         result << " " << role << "=\"" << escapeXml(reference(model, authored)) << "\"";
@@ -189,25 +188,34 @@ std::string modelAttributes(const ast::Model& model) {
     return result.str();
 }
 
-std::string writeUnitDefinitions(const ast::Model& model) {
+std::string writeUnitDefinitions(const compile::CompiledModel& model) {
     std::ostringstream xml;
     std::map<std::string, units::Unit> definitions;
     if (!enabled(model)) {
-        auto item = model.getUnitSystem().parse("item");
-        if (item) definitions["substance"] = *item.unit;
+        const auto& references = model.metadata().resolvedUnitReferences;
+        const auto item = references.find("item");
+        if (item != references.end()) definitions["substance"] = item->second.unit;
     } else {
-        auto item = model.getUnitSystem().parse("item");
-        if (item) definitions["substance"] = *item.unit;
-        for (const auto& definition : model.getUnitSystem().definitions()) {
-            if (!definition.builtin) definitions[reference(model, definition.id)] = definition.unit;
+        const auto& references = model.metadata().resolvedUnitReferences;
+        const auto item = references.find("item");
+        if (item != references.end()) definitions["substance"] = item->second.unit;
+        for (const auto& definition : model.metadata().unitDefinitions) {
+            definitions[reference(model, definition.id)] = definition.unit;
         }
-        for (const auto& [_, authored] : model.getUnitDefaults()) collect(definitions, model, authored);
-        for (const auto& parameter : model.getParameters().all())
-            if (parameter.hasUnit()) collect(definitions, model, parameter.getUnitName());
-        for (const auto& compartment : model.getCompartments())
-            if (compartment.hasUnit()) collect(definitions, model, compartment.getUnitName());
-        for (const auto& seed : model.getSeedSpecies())
-            if (seed.hasUnit()) collect(definitions, model, seed.getUnitName());
+        for (const auto& [_, authored] : model.metadata().unitDefaults) {
+            collect(definitions, model, authored);
+        }
+        for (const auto& parameter : model.parameters()) {
+            if (parameter.declaredUnit.has_value()) collect(definitions, model, parameter.unitName);
+        }
+        for (const auto& compartment : model.compartments()) {
+            if (compartment.declaredUnit.has_value()) {
+                collect(definitions, model, compartment.unitName);
+            }
+        }
+        for (const auto& seed : model.seeds()) {
+            if (seed.declaredUnit.has_value()) collect(definitions, model, seed.unitName);
+        }
     }
     xml << "    <listOfUnitDefinitions>\n";
     for (const auto& [id, unit] : definitions) xml << unitDefinition(id, unit);

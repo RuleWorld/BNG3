@@ -15,8 +15,11 @@
 #include "ast/EnergyPattern.hpp"
 #include "ast/Expression.hpp"
 #include "ast/Model.hpp"
+#include "ast/Observable.hpp"
 #include "ast/ReactionRule.hpp"
+#include "compile/CompiledModel.hpp"
 #include "io/EnergyExportGuard.hpp"
+#include "io/SbmlWriter.hpp"
 
 using namespace bng;
 
@@ -37,6 +40,15 @@ ast::Expression arrhenius(const std::string& spelling) {
 
 // Returns the rejection message, or an empty string when the model is accepted.
 std::string rejectionFor(const ast::Model& model) {
+    try {
+        io::requireNoEnergySemantics(model, "TestFormat");
+    } catch (const std::exception& error) {
+        return error.what();
+    }
+    return {};
+}
+
+std::string rejectionFor(const compile::CompiledModel& model) {
     try {
         io::requireNoEnergySemantics(model, "TestFormat");
     } catch (const std::exception& error) {
@@ -73,6 +85,10 @@ TEST_CASE("energy patterns are refused and the format is named") {
     REQUIRE_FALSE(message.empty());
     CHECK(mentions(message, "energy patterns"));
     CHECK(mentions(message, "TestFormat"));
+    CHECK(message ==
+          "TestFormat export rejected model: energy patterns cannot be represented in this "
+          "format. Energy-derived rates are only resolved by the .net writer and the NFsim "
+          "backends; exporting here would silently change the model's kinetics.");
 }
 
 TEST_CASE("an Arrhenius rate law is refused even without energy patterns") {
@@ -84,6 +100,11 @@ TEST_CASE("an Arrhenius rate law is refused even without energy patterns") {
     REQUIRE_FALSE(message.empty());
     CHECK(mentions(message, "Arrhenius"));
     CHECK(mentions(message, "R1"));
+    CHECK(message ==
+          "TestFormat export rejected model: an Arrhenius rate law on rule 'R1' cannot be "
+          "represented in this format. Energy-derived rates are only resolved by the .net "
+          "writer and the NFsim backends; exporting here would silently change the model's "
+          "kinetics.");
 }
 
 TEST_CASE("Arrhenius detection is case-insensitive and checks every rate") {
@@ -96,7 +117,11 @@ TEST_CASE("Arrhenius detection is case-insensitive and checks every rate") {
     ast::Model reverseOnly;
     reverseOnly.addReactionRule(makeRule(
         "R1", {ast::Expression::identifier("k1"), arrhenius("Arrhenius")}));
-    CHECK_FALSE(rejectionFor(reverseOnly).empty());
+    CHECK(rejectionFor(reverseOnly) ==
+          "TestFormat export rejected model: an Arrhenius rate law on rule 'R1' cannot be "
+          "represented in this format. Energy-derived rates are only resolved by the .net "
+          "writer and the NFsim backends; exporting here would silently change the model's "
+          "kinetics.");
 }
 
 TEST_CASE("barrier patterns are named ahead of accompanying energy patterns") {
@@ -107,9 +132,16 @@ TEST_CASE("barrier patterns are named ahead of accompanying energy patterns") {
         "GU", "A(s~U)", ast::Expression::identifier("GU"), ast::SpeciesGraph {}));
     model.addBarrierPattern(ast::BarrierPattern(
         "slow", makeRule("B1", {ast::Expression::identifier("Gbar")})));
+    auto driven = makeRule("R7", {arrhenius("Arrhenius")});
+    driven.setDrivingWorkExpression(ast::Expression::identifier("muATP"));
+    model.addReactionRule(std::move(driven));
     const auto message = rejectionFor(model);
     REQUIRE_FALSE(message.empty());
     CHECK(mentions(message, "barrier patterns"));
+    CHECK(message ==
+          "TestFormat export rejected model: barrier patterns cannot be represented in this "
+          "format. Energy-derived rates are only resolved by the .net writer and the NFsim "
+          "backends; exporting here would silently change the model's kinetics.");
 }
 
 TEST_CASE("reservoir work is refused and the offending rule is named") {
@@ -121,6 +153,11 @@ TEST_CASE("reservoir work is refused and the offending rule is named") {
     REQUIRE_FALSE(message.empty());
     CHECK(mentions(message, "driven_by"));
     CHECK(mentions(message, "R7"));
+    CHECK(message ==
+          "TestFormat export rejected model: driven_by() reservoir work on rule 'R7' cannot "
+          "be represented in this format. Energy-derived rates are only resolved by the .net "
+          "writer and the NFsim backends; exporting here would silently change the model's "
+          "kinetics.");
 }
 
 TEST_CASE("an unrelated function rate law is not energy semantics") {
@@ -132,4 +169,92 @@ TEST_CASE("an unrelated function rate law is not energy semantics") {
                                           ast::Expression::identifier("K")})}));
     CHECK_FALSE(io::usesEnergySemantics(model));
     CHECK(rejectionFor(model).empty());
+}
+
+TEST_CASE("compiled export guard preserves top-level Arrhenius semantics") {
+    ast::Model model;
+    model.addReactionRule(makeRule(
+        "R1", {ast::Expression::identifier("k1"), arrhenius("ARRHENIUS")}));
+    const compile::CompiledModel compiled(model);
+
+    CHECK(io::usesEnergySemantics(compiled));
+    CHECK(rejectionFor(compiled) ==
+          "TestFormat export rejected model: an Arrhenius rate law on rule 'R1' cannot be "
+          "represented in this format. Energy-derived rates are only resolved by the .net "
+          "writer and the NFsim backends; exporting here would silently change the model's "
+          "kinetics.");
+}
+
+TEST_CASE("compiled export guard preserves driving-work and energy priority") {
+    ast::Model driven;
+    driven.addEnergyPattern(ast::EnergyPattern(
+        "GU", "A(s~U)", ast::Expression::identifier("GU"), ast::SpeciesGraph {}));
+    auto drivenRule = makeRule("R7", {arrhenius("Arrhenius")});
+    drivenRule.setDrivingWorkExpression(ast::Expression::identifier("muATP"));
+    driven.addReactionRule(std::move(drivenRule));
+    const compile::CompiledModel compiledDriven(driven);
+    CHECK(rejectionFor(compiledDriven) ==
+          "TestFormat export rejected model: driven_by() reservoir work on rule 'R7' cannot "
+          "be represented in this format. Energy-derived rates are only resolved by the .net "
+          "writer and the NFsim backends; exporting here would silently change the model's "
+          "kinetics.");
+
+    ast::Model energy;
+    energy.addEnergyPattern(ast::EnergyPattern(
+        "GU", "A(s~U)", ast::Expression::identifier("GU"), ast::SpeciesGraph {}));
+    energy.addReactionRule(makeRule("R1", {arrhenius("Arrhenius")}));
+    const compile::CompiledModel compiledEnergy(energy);
+    CHECK(rejectionFor(compiledEnergy) ==
+          "TestFormat export rejected model: energy patterns cannot be represented in this "
+          "format. Energy-derived rates are only resolved by the .net writer and the NFsim "
+          "backends; exporting here would silently change the model's kinetics.");
+}
+
+TEST_CASE("a rate symbol named Arrhenius is not a top-level Arrhenius call") {
+    ast::Model model;
+    model.addReactionRule(makeRule(
+        "R1", {ast::Expression::identifier("Arrhenius")}));
+    const compile::CompiledModel compiled(model);
+
+    CHECK_FALSE(io::usesEnergySemantics(compiled));
+    CHECK(rejectionFor(compiled).empty());
+}
+
+TEST_CASE("an observable reference named Arrhenius is not the built-in rate law") {
+    ast::Model model;
+    model.addObservable(ast::Observable("Arrhenius", "Molecules", {"A"}));
+    model.addReactionRule(makeRule(
+        "R1", {ast::Expression::observableRef("Arrhenius", {})}));
+    const compile::CompiledModel compiled(model);
+
+    CHECK_FALSE(io::usesEnergySemantics(compiled));
+    CHECK(rejectionFor(compiled).empty());
+}
+
+TEST_CASE("nested Arrhenius syntax is not a top-level energy rate law") {
+    ast::Model model;
+    model.addReactionRule(makeRule(
+        "R1", {ast::Expression::binary("*", ast::Expression::number(2.0),
+                                        arrhenius("Arrhenius"))}));
+    const compile::CompiledModel compiled(model);
+
+    CHECK_FALSE(io::usesEnergySemantics(compiled));
+    CHECK(rejectionFor(compiled).empty());
+}
+
+TEST_CASE("the SBML writer refuses Arrhenius-only kinetics at the export boundary") {
+    ast::Model model;
+    model.addReactionRule(makeRule("R1", {arrhenius("Arrhenius")}));
+    std::string message;
+    try {
+        (void)io::SbmlWriter::write(model, nullptr);
+    } catch (const std::exception& error) {
+        message = error.what();
+    }
+
+    CHECK(message ==
+          "SBML export rejected model: an Arrhenius rate law on rule 'R1' cannot be "
+          "represented in this format. Energy-derived rates are only resolved by the .net "
+          "writer and the NFsim backends; exporting here would silently change the model's "
+          "kinetics.");
 }

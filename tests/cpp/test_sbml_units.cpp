@@ -9,8 +9,10 @@
 #include "io/NetWriter.hpp"
 #include "io/SbmlMultiWriter.hpp"
 #include "io/SbmlReader.hpp"
+#include "io/SbmlUnitWriter.hpp"
 #include "io/SbmlWriter.hpp"
 #include "engine/NetworkGenerator.hpp"
+#include "compile/CompiledModel.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 namespace {
@@ -67,6 +69,44 @@ TEST_CASE("SBML-Multi reuses Core units without a second unit system") {
     CHECK(xml.find("units=\"nM\"") != std::string::npos);
     CHECK(xml.find("units=\"fL\"") != std::string::npos);
     CHECK(xml.find("multi:units") == std::string::npos);
+}
+
+TEST_CASE("compiled unit references drive SBML unit emission") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin units
+  timeUnits = second
+  substanceUnits = item
+  volumeUnits = litre
+  unit per_s = second^-1
+end units
+begin parameters
+  k = 1 [second^-2]
+end parameters
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    const bng::compile::CompiledModel compiled(*model);
+    const auto& unitReferences = compiled.metadata().resolvedUnitReferences;
+    REQUIRE(unitReferences.count("per_s") == 1);
+    REQUIRE(unitReferences.count("second^-2") == 1);
+    CHECK(unitReferences.at("per_s").namedDefinition);
+    CHECK_FALSE(unitReferences.at("second^-2").namedDefinition);
+    CHECK(unitReferences.at("second^-2").unit.baseExponents.at(
+              bng::units::BaseUnit::Second) == -2);
+    CHECK(bng::io::sbml_units::enabled(compiled));
+    CHECK(bng::io::sbml_units::modelAttributes(compiled).find(
+              "timeUnits=\"second\"") != std::string::npos);
+    CHECK(bng::io::sbml_units::attribute(compiled, "per_s") ==
+          " units=\"per_s\"");
+    CHECK(bng::io::sbml_units::attribute(compiled, "second^-2") ==
+          " units=\"bng_unit_second__2\"");
+
+    const auto definitions = bng::io::sbml_units::writeUnitDefinitions(compiled);
+    CHECK(definitions.find("id=\"per_s\"") != std::string::npos);
+    CHECK(definitions.find("id=\"bng_unit_second__2\"") != std::string::npos);
+    CHECK(definitions.find(
+              "kind=\"second\" exponent=\"-2\" multiplier=\"1\" scale=\"0\"") !=
+          std::string::npos);
 }
 
 TEST_CASE("SBML unit factors are exact for inverse and higher-order units") {

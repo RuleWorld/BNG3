@@ -20,6 +20,7 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
+#include "compile/CompiledModel.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -205,6 +206,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
     requireNoEnergySemantics(model, "SBML");
+    const compile::CompiledModel compiled(model);
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default
     // stream precision (six digits) changes compartment conversion factors
@@ -228,24 +230,24 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     sbml << "  <model id=\"" << escapeXml(makeValidSBMLId(model.getModelName())) << "\" name=\""
          << escapeXml(model.getModelName()) << "\""
-         << sbml_units::modelAttributes(model) << ">\n";
+         << sbml_units::modelAttributes(compiled) << ">\n";
 
     if (!options.sourceMetadata.empty()) {
         sbml << writeSourceMetadata(options.sourceMetadata);
     }
 
     // Unit definitions (Perl: substance = item)
-    sbml << sbml_units::writeUnitDefinitions(model);
+    sbml << sbml_units::writeUnitDefinitions(compiled);
 
     // Compartments
-    sbml << writeCompartments(model, options.level);
+    sbml << writeCompartments(model, compiled, options.level);
 
     // Species
-    sbml << writeSpecies(model, network);
+    sbml << writeSpecies(model, network, compiled);
 
     // Keep parameters after species and rules before reactions.  This order
     // is accepted by both SBML L2 and L3 and keeps generated documents stable.
-    sbml << writeParameters(model, groups, symbolIds);
+    sbml << writeParameters(model, groups, symbolIds, compiled);
 
     // Assignment rules (observables + global functions)
     if (network && options.networksExport) {
@@ -274,7 +276,8 @@ std::string SbmlWriter::writeSourceMetadata(const std::string& payload) {
     return sbml.str();
 }
 
-std::string SbmlWriter::writeCompartments(const ast::Model& model, int level) {
+std::string SbmlWriter::writeCompartments(
+    const ast::Model& model, const compile::CompiledModel& compiled, int level) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
 
@@ -293,7 +296,7 @@ std::string SbmlWriter::writeCompartments(const ast::Model& model, int level) {
              << "\" spatialDimensions=\"" << comp.getDimension()
              << "\" size=\"" << comp.getVolume()
              << "\" constant=\"true\""
-             << sbml_units::attribute(model, comp.getUnitName());
+             << sbml_units::attribute(compiled, comp.getUnitName());
 
         if (!comp.getParent().empty() && level < 3) {
             sbml << " outside=\"" << makeValidSBMLId(comp.getParent()) << "\"";
@@ -321,7 +324,8 @@ std::string SbmlWriter::writeCompartments(const ast::Model& model, int level) {
 std::string SbmlWriter::writeParameters(
     const ast::Model& model,
     const std::vector<ObservableGroup>& groups,
-    const SymbolIds& symbolIds) {
+    const SymbolIds& symbolIds,
+    const compile::CompiledModel& compiled) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
     bool hasParameters = !model.getParameters().all().empty() || !groups.empty();
@@ -346,7 +350,7 @@ std::string SbmlWriter::writeParameters(
              << "\" name=\"" << escapeXml(param.getName())
              << "\" value=\"" << param.getValue()
              << "\" constant=\"true\""
-             << sbml_units::attribute(model, param.getUnitName()) << "/>\n";
+             << sbml_units::attribute(compiled, param.getUnitName()) << "/>\n";
     }
 
     // Observables as non-constant parameters (Perl: constant=false)
@@ -372,7 +376,9 @@ std::string SbmlWriter::writeParameters(
     return sbml.str();
 }
 
-std::string SbmlWriter::writeSpecies(const ast::Model& model, const engine::GeneratedNetwork* network) {
+std::string SbmlWriter::writeSpecies(
+    const ast::Model& model, const engine::GeneratedNetwork* network,
+    const compile::CompiledModel& compiled) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
     const std::size_t speciesCount = network ? network->species.size() : model.getSeedSpecies().size();
@@ -395,8 +401,8 @@ std::string SbmlWriter::writeSpecies(const ast::Model& model, const engine::Gene
                  // Unit-aware generated networks are lowered to item counts;
                  // make that backend basis explicit even when the model
                  // default substance unit is mole-based.
-                 << (sbml_units::enabled(model)
-                         ? sbml_units::attribute(model, "item")
+                 << (sbml_units::enabled(compiled)
+                         ? sbml_units::attribute(compiled, "item")
                          : std::string{});
 
             if (species.isConstant()) {
@@ -430,7 +436,7 @@ std::string SbmlWriter::writeSpecies(const ast::Model& model, const engine::Gene
                                       "\" initialAmount=\"") << amountValue
                  << (concentration ? "\" hasOnlySubstanceUnits=\"false\"" :
                                       "\" hasOnlySubstanceUnits=\"true\"")
-                 << sbml_units::attribute(model, seed.getUnitName());
+                 << sbml_units::attribute(compiled, seed.getUnitName());
 
             if (seed.isConstant()) {
                 sbml << " constant=\"true\" boundaryCondition=\"true\"";
