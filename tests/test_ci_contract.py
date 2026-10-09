@@ -1418,6 +1418,9 @@ def test_cross_validation_summary_records_both_engines_without_duplicate_header(
     bng_perl.write_text("#!/usr/bin/perl\n", encoding="utf-8")
     summary = tmp_path / "summary.md"
     monkeypatch.setenv("GITHUB_SHA", "source-sha-456")
+    # CI may supply this higher-priority exact-source identity. Own it in the
+    # fixture as well so an inherited candidate SHA cannot override the input.
+    monkeypatch.setenv("BNG3_SOURCE_REVISION", "source-sha-456")
 
     write_cross_validation_summary(
         summary,
