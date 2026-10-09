@@ -1410,6 +1410,34 @@ void ReactionRule::initialize() {
     }
 }
 
+bool ReactionRule::removesWholeSpecies(bool deleteMolecules, std::size_t moleculeCount,
+                                     std::size_t deletedCount, bool pureDegradation) {
+    return !deleteMolecules && moleculeCount != 0 &&
+           (pureDegradation || deletedCount == moleculeCount);
+}
+
+bool ReactionRule::deletesWholeReactantPattern(std::size_t patternIndex) const {
+    const auto& pattern = reactantPatterns_.at(patternIndex).getGraph();
+
+    std::size_t moleculeCount = 0;
+    for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
+        if (isMoleculeNode(**nodeIter)) ++moleculeCount;
+    }
+
+    std::unordered_set<std::size_t> deletedMolecules;
+    for (const auto& operation : operations_) {
+        if (operation.type == TransformOp::Type::DeleteMolecule &&
+            operation.patternIndex == patternIndex) {
+            deletedMolecules.insert(operation.moleculeIndex);
+        }
+    }
+    // Pure degradation has no explicit mutation program in this compatibility
+    // representation; its pattern still denotes whole-species deletion.
+    return removesWholeSpecies(hasModifier(modifiers_, "deletemolecules"),
+                               moleculeCount, deletedMolecules.size(),
+                               operations_.empty() && productPatterns_.empty());
+}
+
 std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddings(
     std::size_t patternIndex,
     const SpeciesList& speciesList) const {
@@ -1534,30 +1562,7 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
         // Preserve that rule-level matching semantics here, so symmetric embeddings
         // of the same species do not create duplicate reaction pathways.
         const bool speciesLevelTransport = reactantPatterns_.at(patternIndex).isCompartmentPrefix();
-        const bool defaultDeletion = !hasModifier(modifiers_, "deletemolecules");
-        const auto deletesWholeReactantPattern = [&]() {
-            if (!defaultDeletion) return false;
-
-            std::size_t moleculeCount = 0;
-            for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
-                if (isMoleculeNode(**nodeIter)) ++moleculeCount;
-            }
-            if (moleculeCount == 0) return false;
-
-            // `A(...) -> 0` has no product graph and initialize() returns before
-            // constructing explicit DeleteMolecule operations.
-            if (operations_.empty() && productPatterns_.empty()) return true;
-
-            std::unordered_set<std::size_t> deletedMolecules;
-            for (const auto& operation : operations_) {
-                if (operation.type == TransformOp::Type::DeleteMolecule &&
-                    operation.patternIndex == patternIndex) {
-                    deletedMolecules.insert(operation.moleculeIndex);
-                }
-            }
-            return deletedMolecules.size() == moleculeCount;
-        }();
-        const bool speciesLevelDeletion = deletesWholeReactantPattern;
+        const bool speciesLevelDeletion = deletesWholeReactantPattern(patternIndex);
         bool foundEmbeddingForSpecies = false;
 
         // Track signature → index in results for multiplicity counting
