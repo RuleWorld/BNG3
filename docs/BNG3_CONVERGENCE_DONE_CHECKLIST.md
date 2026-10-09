@@ -1,6 +1,6 @@
 # BNG3 convergence checklist
 
-**Status:** incomplete; work resumed; review candidates remain unmerged. **Reviewed:** 2026-10-08 against main `e1836c3274e685996d5e86883761e00e98257e09`.
+**Status:** incomplete; 54 of 55 audit issues are open (#134 is closed). **Refreshed:** 2026-10-09 UTC against live main `030f7beda88fd764af849805dc0ee8d551804277`, after [PR #205](https://github.com/RuleWorld/BNG3/pull/205) merged at `2026-10-09T03:42:32Z`. The earlier full qualification snapshot used main `e1836c3274e685996d5e86883761e00e98257e09`; see [current progress](CURRENT_PROGRESS.md) for the distinction and current partial PR evidence.
 
 The target is one maintained C++/Python project containing the approved capability
 union of BioNetGen, PyBioNetGen, NFsim and Atomizer. C++ owns performance-critical
@@ -52,9 +52,11 @@ not automatic expansion. Estimates and detailed acceptance tests live in issues.
 An unchecked item remains open until its issue has a verified implementation or
 an approved disposition. A03 is the closed review/disposition issue; later PR
 #128 changes and the compatibility repair in #204 still need integration review.
-A04 is implemented by this documentation change and awaits merge. The pushed
-candidate ledger and next dependency order are in [current progress](CURRENT_PROGRESS.md);
-no other item is completed merely by an open PR or by filing an issue.
+A04 is implemented by this documentation change and awaits merge. PR #205 has
+merged since the earlier audit snapshot but did not close another audit issue.
+The pushed candidate ledger and next dependency order are in
+[current progress](CURRENT_PROGRESS.md); no other item is completed merely by
+an open PR or by filing an issue.
 
 ### Triage, documentation and product scope
 
@@ -71,14 +73,14 @@ no other item is completed merely by an open PR or by filing an issue.
 - [ ] **B02 · P1 I** — Separate network-rule execution from reconstructed AST rules. [#139](https://github.com/RuleWorld/BNG3/issues/139)
 - [ ] **B03 · P1 I** — Type simulation protocol actions and share option semantics. [#140](https://github.com/RuleWorld/BNG3/issues/140)
 - [ ] **B04 · P1 Q** — Qualify compile-once model reuse and independent trajectory state. [#141](https://github.com/RuleWorld/BNG3/issues/141)
-- [ ] **B05 · P1 I** — Unify network and NFsim graph-identity semantics. [#142](https://github.com/RuleWorld/BNG3/issues/142)
+- [ ] **B05 · P1 I** — Unify network and NFsim graph-identity semantics. [#142](https://github.com/RuleWorld/BNG3/issues/142) PR [#211](https://github.com/RuleWorld/BNG3/pull/211) repairs compartmental seed association and exact identity checks; separate backend encodings and broader qualification remain open.
 - [ ] **B06 · P1 I** — Complete the shared rate-law and local-function semantic contract. [#143](https://github.com/RuleWorld/BNG3/issues/143)
 - [ ] **B07 · P1 M** — Resolve and execute the canonical finite-backend migration. [#144](https://github.com/RuleWorld/BNG3/issues/144)
 - [ ] **B08 · P2 R** — Use one BNGsim capability and rejection implementation. [#145](https://github.com/RuleWorld/BNG3/issues/145)
 
 ### NFsim, NFcore2, NFnext and hybrid execution
 
-- [ ] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146)
+- [ ] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146) PR [#210](https://github.com/RuleWorld/BNG3/pull/210) repairs a bounded deletion slice; fixed-seed native final-endpoint parity remains red.
 - [ ] **C02 · P1 I** — Extend NFnext lowering for approved unsupported semantic families. [#147](https://github.com/RuleWorld/BNG3/issues/147)
 - [ ] **C03 · P1 I** — Qualify a complete model-to-NFnext execution boundary. [#148](https://github.com/RuleWorld/BNG3/issues/148)
 - [ ] **C04 · P2 M** — Decide maintained roles for NFcore, NFcore2 and NFnext. [#149](https://github.com/RuleWorld/BNG3/issues/149)
@@ -88,7 +90,7 @@ no other item is completed merely by an open PR or by filing an issue.
 
 ### BNG-IR
 
-- [ ] **D01 · P1 I** — Deserialize structural BNGIR directly into the native semantic model. [#153](https://github.com/RuleWorld/BNG3/issues/153)
+- [ ] **D01 · P1 I** — Deserialize structural BNGIR directly into the native semantic model. [#153](https://github.com/RuleWorld/BNG3/issues/153) PR [#209](https://github.com/RuleWorld/BNG3/pull/209) qualifies a narrow parser-free v0.2 import subset with explicit unqualified-export refusal; observables and the remaining model families are still open.
 - [ ] **D02 · P1 Q** — Qualify BNGIR round trips across the supported semantic surface. [#154](https://github.com/RuleWorld/BNG3/issues/154)
 - [ ] **D03 · P1 I** — Add independent native BNGIR contracts and adversarial fixtures. [#155](https://github.com/RuleWorld/BNG3/issues/155)
 - [ ] **D04 · P2 M** — Define BNGIR version defaults, compatibility and semantic equality. [#156](https://github.com/RuleWorld/BNG3/issues/156)
@@ -116,7 +118,7 @@ no other item is completed merely by an open PR or by filing an issue.
 ### Python compatibility, performance and maintainability
 
 - [ ] **G01 · P1 Q** — Complete the PyBioNetGen public compatibility matrix. [#171](https://github.com/RuleWorld/BNG3/issues/171)
-- [ ] **G02 · P2 R** — Retire redundant legacy Python paths after compatibility qualification. [#172](https://github.com/RuleWorld/BNG3/issues/172)
+- [ ] **G02 · P2 R** — Retire redundant legacy Python paths after compatibility qualification. [#172](https://github.com/RuleWorld/BNG3/issues/172) PR [#208](https://github.com/RuleWorld/BNG3/pull/208) preserves defaults without optional Cement but does not retire `modelapi`, legacy imports, or compatibility fallbacks.
 - [ ] **G03 · P1 D** — Disposition JAX SSA stubs and gate optional backends and undefined names. [#173](https://github.com/RuleWorld/BNG3/issues/173)
 - [ ] **G04 · P2 Q** — Publish current representative speed and memory baselines. [#174](https://github.com/RuleWorld/BNG3/issues/174)
 - [ ] **G05 · P2 Q** — Qualify CUDA batch SSA on actual NVIDIA hardware. [#175](https://github.com/RuleWorld/BNG3/issues/175)
