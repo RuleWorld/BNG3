@@ -45,6 +45,7 @@ def oracle_source(environment: str, expected: str, artifact: Path) -> dict:
 
 
 def probe(output: Path) -> dict:
+    output = output.resolve()
     identity = inspect_installed_package()
     if os.environ.get("BNG3_PYTHON_TEST_MODE") != "installed":
         raise RuntimeError("qualification requires BNG3_PYTHON_TEST_MODE=installed")
