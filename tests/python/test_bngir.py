@@ -419,3 +419,79 @@ def test_bngir_v02_round_trip_preserves_rule_modifiers():
 
     restored = bionetgen.from_bngir(document)
     assert bionetgen.semantic_equal(model, restored, version="0.2")
+
+
+INDEX_REFERENCE_MODEL = r"""
+version("2.2")
+begin model
+begin parameters
+    k0 0.1
+    k1 0.2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+end seed species
+begin reaction rules
+    A() -> B() k0
+end reaction rules
+end model
+"""
+
+
+def _index_reference_model_and_document():
+    model = bionetgen.BioNetGenModel(
+        bionetgen.model._cpp.parse_string(INDEX_REFERENCE_MODEL)
+    )
+    document = json.loads(model.to_bngir(version="0.2"))
+    return model, document
+
+
+def _index_reference_rhs(model):
+    network = model.generate_network()
+    state = [100.0 if name == "A()" else 0.0 for name in network.species_names]
+    derivative = bionetgen.model._cpp._validation_ode_rhs(
+        model._model, network, 0.0, state
+    )
+    return dict(zip(network.species_names, derivative))
+
+
+@pytest.mark.parametrize("bad_index", [True, False])
+def test_bngir_v02_rejects_boolean_symbol_index_before_source_parse(
+    bad_index, monkeypatch
+):
+    _, document = _index_reference_model_and_document()
+    document["model"]["rules"][0]["forward"]["rate"]["expression"]["symbol"][
+        "index"
+    ] = bad_index
+
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    import bionetgen.bngir as bngir_module
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("invalid BNGIR reached source rendering or parsing")
+
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    monkeypatch.setattr(bionetgen.model._cpp, "parse_string", forbidden)
+    with pytest.raises(ValueError, match="symbol is malformed"):
+        bionetgen.from_bngir(document)
+
+
+def test_bngir_v02_integer_symbol_index_zero_preserves_payload_and_rhs():
+    model, document = _index_reference_model_and_document()
+    expression = document["model"]["rules"][0]["forward"]["rate"]["expression"]
+    assert type(expression["symbol"]["index"]) is int
+    assert expression["symbol"]["index"] == 0
+
+    restored = bionetgen.from_bngir(document)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert _index_reference_rhs(model) == pytest.approx({"A()": -10.0, "B()": 10.0})
+    assert _index_reference_rhs(restored) == pytest.approx({"A()": -10.0, "B()": 10.0})

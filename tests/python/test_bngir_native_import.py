@@ -301,14 +301,14 @@ def test_native_import_accepts_only_integer_zero_mutation_references(monkeypatch
     monkeypatch.setattr(_cpp, "_model_from_bngir_v02", forbidden)
     for field, value, message in (
         ("pattern", 0.0, "pattern reference is out of range"),
-        ("pattern", False, "molecule mutation reference"),
+        ("pattern", False, "pattern reference is out of range"),
         ("molecule", 0.0, "molecule reference is out of range"),
-        ("molecule", False, "molecule mutation reference"),
+        ("molecule", False, "molecule reference is out of range"),
     ):
         invalid = copy.deepcopy(document)
-        invalid["model"]["rules"][0]["forward"]["mutations"][0]["molecule"][
-            field
-        ] = value
+        invalid["model"]["rules"][0]["forward"]["mutations"][0]["molecule"][field] = (
+            value
+        )
         with pytest.raises(ValueError, match=message):
             bionetgen.from_bngir(invalid, native=True)
 
