@@ -4,6 +4,7 @@
 #include "nfnext/compiler.hpp"
 
 #include <cmath>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -21,6 +22,56 @@ using BngMutationKind = bng::compile::MutationKind;
 void issue(BngLoweringResult& result, BngLoweringSeverity severity,
            std::string entity, std::string message) {
     result.issues.push_back({severity, std::move(entity), std::move(message)});
+}
+
+bool validateNFnextIdPacking(const bng::compile::CompiledModel& source,
+                             BngLoweringResult& result) {
+    for (std::size_t moleculeIndex = 0;
+         moleculeIndex < source.moleculeTypes().size(); ++moleculeIndex) {
+        const auto& molecule = source.moleculeTypes()[moleculeIndex];
+        if (!molecule.id.valid() || molecule.id.value() != moleculeIndex ||
+            molecule.index != moleculeIndex || source.moleculeType(molecule.id) != &molecule) {
+            issue(result, BngLoweringSeverity::Error, molecule.name,
+                  "molecule type ID is not its canonical declaration index");
+            return false;
+        }
+        if (moleculeIndex > static_cast<std::size_t>(std::numeric_limits<TypeId>::max())) {
+            issue(result, BngLoweringSeverity::Error, molecule.name,
+                  "molecule type index exceeds NFIR v5 uint32 type capacity");
+            return false;
+        }
+
+        for (std::size_t componentIndex = 0;
+             componentIndex < molecule.components.size(); ++componentIndex) {
+            const auto& component = molecule.components[componentIndex];
+            const auto entity = molecule.name + "." + component.name;
+            if (!component.id.valid() || component.id.moleculeType != molecule.id ||
+                component.id.index != componentIndex ||
+                source.component(component.id) != &component) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "component ID is not its canonical molecule-local declaration index");
+                return false;
+            }
+            if (componentIndex > static_cast<std::size_t>(
+                                    std::numeric_limits<std::uint16_t>::max())) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "component index exceeds NFIR v5 uint16 site capacity");
+                return false;
+            }
+
+            for (std::size_t stateIndex = 0;
+                 stateIndex < component.stateNames.size(); ++stateIndex) {
+                if (stateIndex > static_cast<std::size_t>(
+                                     std::numeric_limits<std::int32_t>::max()) ||
+                    source.stateName({component.id, stateIndex}) == nullptr) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "state ID is not representable by NFIR v5 int32 state values");
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
 }
 
 std::optional<double> constantExpression(
@@ -703,6 +754,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
               "BioNetGen compiled model contains semantic errors");
         return result;
     }
+    if (!validateNFnextIdPacking(source, result)) return result;
     if (!source.compartments().empty())
         issue(result, BngLoweringSeverity::Warning, source.metadata().name,
               "NFIR v5 retains molecule topology/rules but does not yet carry compartment declarations");

@@ -5,11 +5,12 @@ exactly.
 
 | Lean | Current/proposed BNG3 concept | Notes |
 |---|---|---|
-| `CompiledModel` | `bng::compile::CompiledModel` | Lean includes the proposed missing declaration classes. |
+| `CompiledModel` | `bng::compile::CompiledModel` | Both are semantic model boundaries; the Lean and C++ models remain independently implemented. |
 | `Document` | `bng::compile::Document` | Keeps simulation protocol separate from reusable model semantics. |
 | `ParameterDecl` | proposed `CompiledParameter` | Expression is already resolved. |
-| `MoleculeType` | proposed `CompiledMoleculeType` | Contains typed component declarations. |
-| `ComponentType` | proposed `CompiledComponentType` | Contains typed allowed state IDs. |
+| `MoleculeType` | `CompiledMoleculeType` | Contains typed component declarations. |
+| `ComponentType` | `CompiledComponentType` | Owns the molecule-local component ID and ordered allowed state names. |
+| `StateDecl` | `CompiledComponentType::stateNames` plus resolved `StateId` | State IDs carry their owning component and declaration-local index. |
 | `CompartmentDecl` | proposed `CompiledCompartment` | Parent is an ID; size is a resolved expression. |
 | `Pattern` | proposed `PatternV2` / current `compile::Pattern` | Lean preserves multi-bond and molecule-wildcard cases. |
 | `PatternMoleculeId` | proposed `PatternMoleculeId` | Pattern-local occurrence identity. |
@@ -36,15 +37,59 @@ exactly.
 | `PopulationMapDecl` | proposed compiled population map | Exact execution semantics still future formal work. |
 | `BackendPattern` | proof-only stand-in for NFIR pattern | Replace/extend with real NFIR formal model later. |
 
-## Current tested bridge
+## Issue #166: production declaration-to-NFnext ID packing
 
-The first production-boundary bridge is intentionally narrower than this
-mapping table. `tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp` parses the
-rule `A(x~u) + B(y) -> A(x~p!1).B(y!1) k`, builds a real
-`bng::compile::CompiledModel`, and calls `nfnext::lowerFromBioNetGen`. It then
-checks `DifferentComplex`, `SetSiteState`, and `Bind`. The Lean example in
-`BNG/Examples.lean` checks the corresponding typed NFnext shape independently.
-The bridge is a regression contract, not a complete refinement theorem.
+The named production boundary is the **NFIR v5 molecule-rule graph subset**
+accepted by `nfnext::lowerFromBioNetGen(const CompiledModel&)`. At this boundary,
+declaration positions become compact NFnext IDs:
+
+| C++ semantic declaration | NFnext representation | Lean reference packing |
+|---|---|---|
+| `MoleculeTypeId.value()` and molecule declaration index | `TypeId` in `MoleculeTypeIR` and rule nodes (`uint32_t`) | `NFnextPacking.types`: `MoleculeTypeId` paired with `PackedType(index)` |
+| `ComponentTypeId{moleculeType, index}` | molecule-local site position; `PredicateIR` and `ActionIR` store it as `uint16_t` | `NFnextPacking.sites`: owner/type component key paired with `PackedSite(index)` |
+| `StateId{component, index}` | component-local state position and state value (`int32_t`) | `NFnextPacking.states`: owner/type/component/state key paired with `PackedState(index)` |
+
+Before emitting IR, the production lowerer checks that molecule IDs match the
+declaration order, component IDs match their molecule and local declaration
+order, and each ID fits the destination NFIR v5 field width. In particular,
+component index 65,536 is rejected because it cannot be represented by the
+runtime's 16-bit predicate/action site fields. The check prevents a narrowing
+cast from aliasing it to site zero. The ordered site/state vectors emitted by
+the same loop retain the declaration order used by this mapping.
+
+`NFnextPacking.fromSignature_type_entry`,
+`NFnextPacking.fromSignature_site_entry`, and
+`NFnextPacking.fromSignature_state_entry` are general Lean theorems: for any
+signature and any molecule/component/state selected by list position, the
+packing table contains its semantic key paired with that declaration position.
+The Lean `Nat` packing has no machine-width limit; the production preflight is
+the separate check that makes those positions representable in NFIR v5.
+
+The named subset also excludes population maps and energy factors, filters,
+unsupported modifiers, compartment-dependent patterns, incomplete rule
+transformations, and rates that do not resolve to finite nonnegative constants.
+The current lowerer reports model-level compartment declarations as a warning
+and does not emit them, so this contract makes no exact whole-model claim for
+models whose behavior depends on compartment semantics. Rule-level support for
+created states, bond edits, deletions, and orphan context is further limited by
+the explicit rejection cases in `from_bng.cpp`.
+
+This is a molecule-type and rule-graph correspondence only. The current
+`lowerFromBioNetGen` path does not encode compiled seed species, observables, or
+simulation protocol, so the contract does not claim equivalence for those
+`CompiledModel` fields.
+
+`tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp` exercises the
+actual BNGL parser -> `CompiledModel` -> `lowerFromBioNetGen` path. Its ordinary
+case checks a nonzero local site and state index, free-site predicates, a state
+change, and a bond action. Its overflow case constructs 65,537 components and
+checks that the unrepresentable last site is rejected. These native tests are
+implementation evidence, separate from the Lean packing theorem.
+
+The theorem establishes declaration-order ID packing only. It does not prove
+that all production C++ pattern, rate, bond, or transformation lowering is
+equivalent to the Lean rule semantics, nor does the native fixture prove a
+general C++ refinement theorem.
 
 ## Suggested C++ consequences
 
