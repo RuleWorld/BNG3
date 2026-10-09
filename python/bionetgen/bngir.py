@@ -642,7 +642,7 @@ def _validate_expression_v02(
         symbol = _require_mapping(expression.get("symbol"), f"{where}.symbol")
         symbol_kind = symbol.get("kind")
         symbol_id = symbol.get("index")
-        if not isinstance(symbol_kind, str) or not isinstance(symbol_id, int):
+        if not isinstance(symbol_kind, str) or not _is_json_integer(symbol_id):
             raise ValueError(f"BNGIR {where}.symbol is malformed")
         _name_for_symbol(model, symbol_kind, symbol_id)
     elif kind == "local_ref":
@@ -653,7 +653,7 @@ def _validate_expression_v02(
             raise ValueError(f"BNGIR {where} references unknown local scope {name!r}")
     elif kind == "reactant_count_ref":
         value = expression.get("reactant_index")
-        if not isinstance(value, int) or value < 0:
+        if not _is_json_integer(value) or value < 0:
             raise ValueError(f"BNGIR {where} has invalid reactant_index")
         if reactant_count is not None and value >= reactant_count:
             raise ValueError(f"BNGIR {where} reactant_index is out of range: {value}")
@@ -677,6 +677,11 @@ def _validate_expression_v02(
         )
 
 
+def _is_json_integer(value: Any) -> bool:
+    """Accept integer references while excluding JSON booleans."""
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def _validate_pattern_v02(
     pattern: Mapping[str, Any], model: Mapping[str, Any], where: str
 ) -> None:
@@ -691,7 +696,7 @@ def _validate_pattern_v02(
         molecule = _require_mapping(raw_molecule, f"{where}.molecules[{mi}]")
         occurrence = molecule.get("occurrence", mi)
         if (
-            not isinstance(occurrence, int)
+            not _is_json_integer(occurrence)
             or occurrence < 0
             or occurrence in seen_occurrences
         ):
@@ -700,7 +705,7 @@ def _validate_pattern_v02(
         type_id = molecule.get("type_id")
         declaration = None
         if type_id is not None:
-            if not isinstance(type_id, int) or type_id not in molecule_types:
+            if not _is_json_integer(type_id) or type_id not in molecule_types:
                 raise ValueError(
                     f"BNGIR {where} references unknown molecule type id: {type_id}"
                 )
@@ -709,7 +714,7 @@ def _validate_pattern_v02(
                 raise ValueError(f"BNGIR {where} molecule type name/id disagree")
         compartment_id = molecule.get("compartment_id")
         if compartment_id is not None and (
-            not isinstance(compartment_id, int) or compartment_id not in compartments
+            not _is_json_integer(compartment_id) or compartment_id not in compartments
         ):
             raise ValueError(
                 f"BNGIR {where} references unknown compartment id: {compartment_id}"
@@ -720,13 +725,14 @@ def _validate_pattern_v02(
             component_index = site.get("component_index")
             component_decl = None
             if component_index is not None and declaration is not None:
-                if not isinstance(component_index, int) or component_index < 0:
+                if not _is_json_integer(component_index) or component_index < 0:
                     raise ValueError(f"BNGIR {where} has invalid component index")
                 component_decl = next(
                     (
                         c
                         for c in components
-                        if int(c.get("index", -1)) == component_index
+                        if _is_json_integer(c.get("index"))
+                        and c["index"] == component_index
                     ),
                     None,
                 )
@@ -746,7 +752,7 @@ def _validate_pattern_v02(
                 state_index = state["index"]
                 states = component_decl.get("states", [])
                 if (
-                    not isinstance(state_index, int)
+                    not _is_json_integer(state_index)
                     or state_index < 0
                     or state_index >= len(states)
                 ):
@@ -763,7 +769,7 @@ def _validate_pattern_v02(
                 states = component_decl.get("states", [])
                 for state_index, state_value in zip(indices, values):
                     if (
-                        not isinstance(state_index, int)
+                        not _is_json_integer(state_index)
                         or state_index < 0
                         or state_index >= len(states)
                     ):
@@ -776,7 +782,7 @@ def _validate_pattern_v02(
                 raise ValueError(f"BNGIR {where} has invalid state constraint")
     pattern_compartment_id = pattern.get("compartment_id")
     if pattern_compartment_id is not None and (
-        not isinstance(pattern_compartment_id, int)
+        not _is_json_integer(pattern_compartment_id)
         or pattern_compartment_id not in compartments
     ):
         raise ValueError(f"BNGIR {where} references unknown graph compartment id")
@@ -795,15 +801,15 @@ def _validate_pattern_ref_v02(
     patterns = direction.get(section, [])
     pi = ref.get("pattern")
     mi = ref.get("molecule")
-    if not isinstance(pi, int) or pi < 0 or pi >= len(patterns):
+    if not _is_json_integer(pi) or pi < 0 or pi >= len(patterns):
         raise ValueError(f"BNGIR {where} pattern reference is out of range")
     molecules = _require_mapping(patterns[pi], f"{where}.pattern").get("molecules", [])
-    if not isinstance(mi, int) or mi < 0 or mi >= len(molecules):
+    if not _is_json_integer(mi) or mi < 0 or mi >= len(molecules):
         raise ValueError(f"BNGIR {where} molecule reference is out of range")
     if site:
         si = ref.get("site")
         sites = _require_mapping(molecules[mi], f"{where}.molecule").get("sites", [])
-        if not isinstance(si, int) or si < 0 or si >= len(sites):
+        if not _is_json_integer(si) or si < 0 or si >= len(sites):
             raise ValueError(f"BNGIR {where} site reference is out of range")
 
 
@@ -836,7 +842,7 @@ def _validate_direction_v02(
         local_names.add(name)
         if kind not in {"molecule", "species"}:
             raise ValueError(f"BNGIR {where} has invalid local scope kind")
-        if not isinstance(pi, int) or pi < 0 or pi >= len(reactants):
+        if not _is_json_integer(pi) or pi < 0 or pi >= len(reactants):
             raise ValueError(
                 f"BNGIR {where} local scope reactant pattern is out of range"
             )
@@ -846,7 +852,7 @@ def _validate_direction_v02(
                 "molecules", []
             )
             if (
-                not isinstance(occurrence, int)
+                not _is_json_integer(occurrence)
                 or occurrence < 0
                 or occurrence >= len(molecules)
             ):
@@ -872,10 +878,17 @@ def _validate_direction_v02(
         patterns = (
             reactants
             if side == "reactant"
-            else direction.get("products", []) if side == "product" else None
+            else direction.get("products", [])
+            if side == "product"
+            else None
         )
         pi = filter_.get("pattern_index")
-        if patterns is None or not isinstance(pi, int) or pi < 0 or pi >= len(patterns):
+        if (
+            patterns is None
+            or not _is_json_integer(pi)
+            or pi < 0
+            or pi >= len(patterns)
+        ):
             raise ValueError(f"BNGIR {where} filter target is out of range")
         for j, pattern in enumerate(filter_.get("patterns", [])):
             _validate_pattern_v02(
@@ -1036,7 +1049,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
                     f"BNGIR model.observables[{i}].terms[{j}] has unsupported "
                     f"count relation: {relation!r}"
                 )
-            if not isinstance(term.get("quantity"), int):
+            if not _is_json_integer(term.get("quantity")):
                 raise ValueError(
                     f"BNGIR model.observables[{i}].terms[{j}].quantity must be an integer"
                 )
@@ -1116,7 +1129,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             f"model.population_maps[{i}].pattern",
         )
         population_id = mapping.get("population_id")
-        if not isinstance(population_id, int) or population_id not in population_types:
+        if not _is_json_integer(population_id) or population_id not in population_types:
             raise ValueError(
                 f"BNGIR model.population_maps[{i}] references unknown population type"
             )
@@ -1682,7 +1695,7 @@ def _section_id_map(
     for position, raw in enumerate(values):
         item = _require_mapping(raw, f"model.{section}[{position}]")
         semantic_id = item.get("id", position)
-        if not isinstance(semantic_id, int) or semantic_id < 0:
+        if not _is_json_integer(semantic_id) or semantic_id < 0:
             raise ValueError(
                 f"BNGIR model.{section}[{position}].id must be a non-negative integer"
             )
@@ -1708,7 +1721,7 @@ def _name_for_symbol(model: Mapping[str, Any], kind: str, index: int) -> str:
     if section is None:
         raise ValueError(f"unsupported BNGIR symbol kind: {kind}")
     values = _section_id_map(model, section)
-    if not isinstance(index, int) or index < 0 or index not in values:
+    if not _is_json_integer(index) or index < 0 or index not in values:
         raise ValueError(f"BNGIR {kind} symbol id is unknown: {index}")
     item = values[index]
     name = item.get("name")
