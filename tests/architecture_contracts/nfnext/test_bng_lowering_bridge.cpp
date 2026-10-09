@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -104,6 +105,44 @@ void rejectsUnrepresentablePackedSiteIndex() {
     assert(lowered.issues.size() == 1);
     assert(lowered.issues.front().message.find("uint16 site capacity") != std::string::npos);
     assert(lowered.model.expanded_rules.empty());
+}
+
+void rejectsMolecularityNodeIndexOverflow() {
+    const auto maxNodeIndex = static_cast<std::size_t>(
+        std::numeric_limits<std::uint16_t>::max());
+    const auto maxNodeCount = maxNodeIndex + 1;
+    nfnext::PatternIR boundary;
+    for (std::size_t index = 0; index < maxNodeCount; ++index)
+        boundary.addNode(0);
+    boundary.requireSameComplex(0, maxNodeIndex);
+    assert(boundary.nodes.size() == 65536);
+    assert(boundary.molecularity.size() == 1);
+    assert(boundary.molecularity.front().left == 0);
+    assert(boundary.molecularity.front().right == 65535);
+
+    std::ostringstream source;
+    source << "begin parameters\n  k 1\nend parameters\n"
+           << "begin molecule types\n  A(x)\n  B(y)\nend molecule types\n"
+           << "begin reaction rules\n  overflow: ";
+    // The first complex reaches node index 65,536; the '+' reactant adds
+    // another node. Lowering must reject before either molecularity cast.
+    for (std::size_t index = 0; index < maxNodeCount + 1; ++index) {
+        if (index != 0) source << '.';
+        source << "A()";
+    }
+    source << " + B() -> 0 k\nend reaction rules\n";
+    const auto parsed = bng::parser::parseModel(source.str());
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+    assert(semantic.rules().size() == 1);
+
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(!lowered.ok());
+    assert(lowered.model.expanded_rules.empty());
+    assert(std::any_of(lowered.issues.begin(), lowered.issues.end(), [](const auto& item) {
+        return item.message.find("uint16 molecularity capacity") != std::string::npos;
+    }));
 }
 
 void lowersWholeSpeciesDeletionWithHiddenConnectedContext() {
@@ -591,6 +630,7 @@ end reaction rules
     assert(nonzeroSiteRule.actions[0].value == 1); // A.y~on
 
     rejectsUnrepresentablePackedSiteIndex();
+    rejectsMolecularityNodeIndexOverflow();
     lowersWholeSpeciesDeletionWithHiddenConnectedContext();
     lowersExplicitBondAndHiddenContextAsOneSpeciesDeletion();
     loweredReactantPatternRequiresOneSharedComplex();

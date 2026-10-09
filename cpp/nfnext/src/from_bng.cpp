@@ -273,6 +273,20 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
 std::optional<FlattenedPattern> flattenReactants(
     const std::vector<BngPattern>& patterns, BngLoweringResult& result,
     const std::string& entity) {
+    const auto maxNodeIndex = static_cast<std::size_t>(
+        std::numeric_limits<std::uint16_t>::max());
+    const auto maxNodeCount = maxNodeIndex + 1;
+    std::size_t nodeCount = 0;
+    for (const auto& pattern : patterns) {
+        const auto patternNodeCount = pattern.molecules().size();
+        if (patternNodeCount > maxNodeCount - nodeCount) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "reactant pattern node index exceeds NFIR v5 uint16 molecularity capacity");
+            return std::nullopt;
+        }
+        nodeCount += patternNodeCount;
+    }
+
     FlattenedPattern flattened;
     flattened.patternOffsets.reserve(patterns.size());
     std::vector<std::size_t> representatives;
