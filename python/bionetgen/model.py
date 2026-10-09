@@ -84,6 +84,13 @@ class BioNetGenModel:
     def name(self) -> str:
         return self._model.model_name
 
+    def _require_export_supported(self, operation: str) -> None:
+        if getattr(self, "_native_bngir_v02_only", False):
+            raise NotImplementedError(
+                f"{operation} is not supported for native BNGIR v0.2 imports; "
+                "use to_bngir(version='0.2') to preserve the structural model"
+            )
+
     @property
     def source_path(self) -> Optional[str]:
         return self._source_path
@@ -377,6 +384,7 @@ class BioNetGenModel:
                 source_path=self._source_path or "",
                 sample_times=normalized_sample_times,
                 traversal_limit=traversal_limit,
+                require_direct=getattr(self, "_native_bngir_v02_only", False),
             )
             # NFsim path remains independent; annotate backend for diagnostics.
             if isinstance(raw, dict) and "backend" not in raw:
@@ -567,21 +575,26 @@ class BioNetGenModel:
 
     def execute(self, verbose: bool = False) -> None:
         """Execute all actions defined in the model's action block."""
+        self._require_export_supported("Action execution")
         source = self._source_path or "."
         _cpp.execute(self._model, source, verbose=verbose)
 
     def write_xml(self, path: str) -> None:
+        self._require_export_supported("BNG-XML export")
         _cpp.io.write_xml(self._model, path)
 
     def to_xml(self) -> str:
         """Serialize the model to an in-memory BNG-XML string."""
+        self._require_export_supported("BNG-XML export")
         return _cpp.io.write_xml_string(self._model)
 
     def write_bngl(self, path: str) -> None:
+        self._require_export_supported("BNGL export")
         _cpp.io.write_bngl(self._model, path)
 
     def to_bngl(self) -> str:
         """Serialize the model to an in-memory BNGL string."""
+        self._require_export_supported("BNGL export")
         return _cpp.io.write_bngl_string(self._model)
 
     def to_bngir(self, *, provenance=None, version="0.1") -> str:
@@ -595,11 +608,13 @@ class BioNetGenModel:
         return to_bngir(self, provenance=provenance, version=version)
 
     def write_net(self, path: str) -> None:
+        self._require_export_supported("NET export")
         if self._network is None:
             self.generate_network()
         _cpp.io.write_net(self._model, self._network, path)
 
     def write_sbml(self, path: str) -> None:
+        self._require_export_supported("SBML export")
         if self._network is None:
             self.generate_network()
         _cpp.io.write_sbml(
@@ -610,11 +625,13 @@ class BioNetGenModel:
         )
 
     def write_matlab(self, path: str) -> None:
+        self._require_export_supported("MATLAB export")
         if self._network is None:
             self.generate_network()
         _cpp.io.write_matlab(self._model, self._network, path)
 
     def write_latex(self, path: str) -> None:
+        self._require_export_supported("LaTeX export")
         if self._network is None:
             self.generate_network()
         _cpp.io.write_latex(self._model, self._network, path)

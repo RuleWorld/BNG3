@@ -48,7 +48,8 @@ void bind_nfsim(py::module_& m) {
                             int seed, double equilibrate, bool verbose,
                             const std::string& source_path,
                             const std::vector<double>& sample_times,
-                            int traversal_limit, double t_start) -> py::dict {
+                            int traversal_limit, double t_start,
+                            bool require_direct) -> py::dict {
         if (model.getEventFormatVersion().has_value()) {
             throw std::runtime_error(bng::ast::kUnsupportedEventExecutionMessage);
         }
@@ -118,7 +119,8 @@ void bind_nfsim(py::module_& m) {
                     direct_unavailable_reason.empty()
                         ? std::string()
                         : ": " + direct_unavailable_reason;
-                if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
+                if (require_direct ||
+                    std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
                     throw std::runtime_error(
                         "NFsim direct AST initialization required but unavailable" +
                         because);
@@ -302,6 +304,7 @@ void bind_nfsim(py::module_& m) {
         py::arg("sample_times") = std::vector<double>{},
         py::arg("traversal_limit") = -1,
         py::arg("t_start") = 0.0,
+        py::arg("require_direct") = false,
         "Run network-free (NFSim) simulation on a model.\n\n"
         "Returns a dict with 'time' (numpy array of time points) and\n"
         "'observables' (dict of name -> numpy array of values at each time point).");

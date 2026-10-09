@@ -67,7 +67,112 @@ def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypa
     by_species = dict(zip(network.species_names, derivative))
     assert by_species["A()"] == pytest.approx(-10.0)
     assert by_species["B()"] == pytest.approx(10.0)
+    finite_result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    assert finite_result.time.tolist() == pytest.approx([0.0, 0.1])
+    nf_result = restored.simulate(method="nf", t_end=0.1, n_steps=1, seed=1)
+    assert nf_result.time.tolist() == pytest.approx([0.0, 0.1])
+    assert nf_result.construction_path == "direct"
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "write_xml",
+        "write_bngl",
+        "write_net",
+        "write_sbml",
+        "write_matlab",
+        "write_latex",
+        "contact_map",
+        "regulatory_graph",
+        "rule_influence_graph",
+        "reaction_network_graph",
+        "ruleviz_pattern",
+        "ruleviz_operation",
+        "process_graph",
+        "sbml_multi",
+    ],
+)
+def test_native_import_refuses_unqualified_file_exports_without_output(
+    tmp_path, method
+):
+    model = bionetgen.from_bngir(_document(), native=True)
+    output = tmp_path / f"{method}.out"
+
+    with pytest.raises(
+        RuntimeError,
+        match="not supported for native BNGIR v0.2 imports",
+    ):
+        getattr(model, method)(str(output))
+
+    assert not output.exists()
+    assert model._network is None
+
+
+@pytest.mark.parametrize("method", ["to_xml", "to_bngl"])
+def test_native_import_refuses_unqualified_string_exports(method):
+    model = bionetgen.from_bngir(_document(), native=True)
+
+    with pytest.raises(
+        RuntimeError,
+        match="not supported for native BNGIR v0.2 imports",
+    ):
+        getattr(model, method)()
+
+
+def test_native_import_refuses_sbml_multi_module_entrypoint_before_writing(
+    tmp_path,
+):
+    from bionetgen.viz import write_sbml_multi
+
+    model = bionetgen.from_bngir(_document(), native=True)
+    output = tmp_path / "direct-sbml-multi.xml"
+    with pytest.raises(
+        RuntimeError,
+        match="not supported for native BNGIR v0.2 imports",
+    ):
+        write_sbml_multi(model, output)
+    assert not output.exists()
+
+
+def test_native_import_refuses_unavailable_action_execution():
+    model = bionetgen.from_bngir(_document(), native=True)
+    with pytest.raises(
+        RuntimeError,
+        match="not supported for native BNGIR v0.2 imports",
+    ):
+        model.execute()
+
+
+def test_source_backed_model_legacy_exports_remain_available(tmp_path):
+    model = bionetgen.BioNetGenModel(_cpp.parse_string(SOURCE))
+
+    bngl = model.to_bngl()
+    xml = model.to_xml()
+    assert "A() 100" in bngl
+    assert "R1: A() -> B() k" in bngl
+    assert "<Molecule id=" in xml
+
+    bngl_path = tmp_path / "source.bngl"
+    xml_path = tmp_path / "source.xml"
+    model.write_bngl(str(bngl_path))
+    model.write_xml(str(xml_path))
+    assert "A() 100" in bngl_path.read_text()
+    assert "<Molecule id=" in xml_path.read_text()
+
+
+def test_native_nf_simulation_does_not_use_forced_xml_fallback(monkeypatch):
+    model = bionetgen.from_bngir(_document(), native=True)
+    monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+    monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
+    monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT", raising=False)
+
+    with pytest.raises(
+        RuntimeError,
+        match="direct AST initialization required but unavailable.*FORCE_XML",
+    ):
+        model.simulate(method="nf", t_end=0.1, n_steps=1, seed=1)
 
 
 def test_native_import_surfaces_builder_failure_without_fallback(monkeypatch):
