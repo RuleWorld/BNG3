@@ -1,11 +1,10 @@
 # BNG3 convergence checklist
 
-**Status:** incomplete; 50 of 55 audit issues are open. #134/#136/#145/#165/#169
-are closed; #146/#154 were reopened after auditing their unmet acceptance criteria.
-**Refreshed:** 2026-10-09 UTC against live main
-`dd23c2679ead1335d6aeefa47835f850e154256c`. See
+**Status:** incomplete; 46 of 55 audit issues are open. #133/#134/#135/#136/#145/#165/#169/#173/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
+**Refreshed:** 2026-10-10 UTC against live main
+`9a1de7ed7fb617df4cf8828748de45fac486e14e`. See
 [current progress](CURRENT_PROGRESS.md) for scoped integrations, exact evidence
-boundaries and candidates. The earlier audited qualification baseline was
+boundaries and candidates. The original audited qualification baseline was
 `e1836c3274e685996d5e86883761e00e98257e09`.
 
 The target is one maintained C++/Python project containing the approved capability
@@ -43,7 +42,7 @@ supported scope rather than reimplementing them.
 - [x] Lean semantic/reference modules, scoped interpreter-refinement proofs,
   explicit Smoke/Coverage/axiom gates and native NFnext contract tests.
 - [x] SSTS revision-lock and official-reference comparison machinery;
-  current aggregate evidence and hosted conformance remain open (E03/H05).
+  bounded hosted conformance CI has permanent receipts (H05); full aggregate qualification remains open (E03).
 - [x] CPU/Metal/CUDA batch-SSA infrastructure and platform/package CI;
   real CUDA-device qualification remains open (G05).
 
@@ -56,9 +55,9 @@ M: maintainer/product decision. R/M items require a reviewed scope decision,
 not automatic expansion. Estimates and detailed acceptance tests live in issues.
 
 An unchecked item remains open until its issue has a verified implementation or
-an approved disposition. A03 is the closed review/disposition issue; later PR
-#128 changes and the compatibility repair in #204 still need integration review.
-A04 is implemented by this documentation change and awaits merge. A05, B08, F01 and F05 closed after their documentation, shared capability, reference-matcher and trust-accounting acceptance criteria were met; broader semantic/proof issues remain open. The bounded merged runtime and BNGIR repairs are listed in current progress and did not close their broader audit issues.
+an approved disposition. A03 is the closed review/disposition issue; #128 and its required pyparsing repair
+#204 subsequently landed together after combined source review.
+A04 closed after #187 merged and its issue-linked documentation criteria were reviewed. A02 and G03 closed after the exact-source installed JAX qualification and explicit SSA-unavailable disposition; H05 closed after bounded official-suite CI and durable receipts were reviewed. A05, B08, F01 and F05 closed after their documentation, shared capability, reference-matcher and trust-accounting acceptance criteria were met; broader semantic/proof issues remain open. The bounded merged runtime and BNGIR repairs are listed in current progress and did not close their broader audit issues.
 The pushed candidate ledger and next dependency order are in
 [current progress](CURRENT_PROGRESS.md); no other item is completed merely by
 an open PR or by filing an issue.
@@ -66,9 +65,9 @@ an open PR or by filing an issue.
 ### Triage, documentation and product scope
 
 - [ ] **A01 · P0 D** — Resolve PR #130 assignment-rate parity failures. [#132](https://github.com/RuleWorld/BNG3/issues/132)
-- [ ] **A02 · P1 D** — Repair and qualify the optional JAX ODE backend. [#133](https://github.com/RuleWorld/BNG3/issues/133)
+- [x] **A02 · P1 D** — Repair and qualify the optional JAX ODE backend. [#133](https://github.com/RuleWorld/BNG3/issues/133)
 - [x] **A03 · P1 Q** — Review and disposition the legacy parser optimizations in PR #128. [#134](https://github.com/RuleWorld/BNG3/issues/134)
-- [ ] **A04 · P1 R** — Replace historical convergence logs with a current issue-linked checklist. [#135](https://github.com/RuleWorld/BNG3/issues/135)
+- [x] **A04 · P1 R** — Replace historical convergence logs with a current issue-linked checklist. [#135](https://github.com/RuleWorld/BNG3/issues/135)
 - [x] **A05 · P1 R** — Correct stale architecture and validation documentation. [#136](https://github.com/RuleWorld/BNG3/issues/136)
 - [ ] **A06 · P1 M** — Approve the BNG3 capability-union inventory and support policy. [#137](https://github.com/RuleWorld/BNG3/issues/137)
 
@@ -123,8 +122,8 @@ an open PR or by filing an issue.
 ### Python compatibility, performance and maintainability
 
 - [ ] **G01 · P1 Q** — Complete the PyBioNetGen public compatibility matrix. [#171](https://github.com/RuleWorld/BNG3/issues/171)
-- [ ] **G02 · P2 R** — Retire redundant legacy Python paths after compatibility qualification. [#172](https://github.com/RuleWorld/BNG3/issues/172) PR [#208](https://github.com/RuleWorld/BNG3/pull/208) preserves defaults without optional Cement but does not retire `modelapi`, legacy imports, or compatibility fallbacks.
-- [ ] **G03 · P1 D** — Disposition JAX SSA stubs and gate optional backends and undefined names. [#173](https://github.com/RuleWorld/BNG3/issues/173)
+- [ ] **G02 · P2 R** — Retire redundant legacy Python paths after compatibility qualification. [#172](https://github.com/RuleWorld/BNG3/issues/172) Merged PR [#208](https://github.com/RuleWorld/BNG3/pull/208) preserves defaults without optional Cement but does not retire `modelapi`, legacy imports, or compatibility fallbacks.
+- [x] **G03 · P1 D** — Disposition JAX SSA stubs and gate optional backends and undefined names. [#173](https://github.com/RuleWorld/BNG3/issues/173)
 - [ ] **G04 · P2 Q** — Publish current representative speed and memory baselines. [#174](https://github.com/RuleWorld/BNG3/issues/174)
 - [ ] **G05 · P2 Q** — Qualify CUDA batch SSA on actual NVIDIA hardware. [#175](https://github.com/RuleWorld/BNG3/issues/175)
 - [ ] **G06 · P2 M** — Refresh the NFsim CPU, ensemble and GPU roadmap from measurements. [#176](https://github.com/RuleWorld/BNG3/issues/176)
@@ -137,7 +136,7 @@ an open PR or by filing an issue.
 - [ ] **H02 · P1 Q** — Refresh upstream reconciliation and map behavior claims to tests. [#180](https://github.com/RuleWorld/BNG3/issues/180)
 - [ ] **H03 · P1 Q** — Approve complete capability-based corpus tiers and budgets. [#181](https://github.com/RuleWorld/BNG3/issues/181)
 - [ ] **H04 · P1 Q** — Wire numerical, expression and export parity into explicit CI gates. [#182](https://github.com/RuleWorld/BNG3/issues/182)
-- [ ] **H05 · P1 Q** — Add budgeted official SBML conformance CI with durable artifacts. [#183](https://github.com/RuleWorld/BNG3/issues/183)
+- [x] **H05 · P1 Q** — Add budgeted official SBML conformance CI with durable artifacts. [#183](https://github.com/RuleWorld/BNG3/issues/183)
 - [ ] **H06 · P2 Q** — Complete release-candidate scientific and packaging qualification. [#184](https://github.com/RuleWorld/BNG3/issues/184)
 - [ ] **H07 · P2 M** — Assign scientific, formal and compatibility review ownership. [#185](https://github.com/RuleWorld/BNG3/issues/185)
 - [ ] **H08 · P2 M** — Publish alpha migration, backend-support and repository-maintenance guidance. [#186](https://github.com/RuleWorld/BNG3/issues/186)
