@@ -1,0 +1,228 @@
+{
+  "identity": {
+    "python_executable": "/private/tmp/bng3-issue146-venv/bin/python",
+    "python_prefix": "/private/tmp/bng3-issue146-venv",
+    "source_revision": "cfdc91e3f6b07689213114c1f73684d44ebb107d",
+    "git_head": "cfdc91e3f6b07689213114c1f73684d44ebb107d",
+    "pr_head_sha": "",
+    "distribution_version": "3.0.0a1",
+    "packaging_version": "26.3",
+    "packaging_module": "/private/tmp/bng3-issue146-venv/lib/python3.12/site-packages/packaging/__init__.py",
+    "distribution_package": "/private/tmp/bng3-issue146-venv/lib/python3.12/site-packages/bionetgen",
+    "package_file": "/private/tmp/bng3-issue146-venv/lib/python3.12/site-packages/bionetgen/__init__.py",
+    "native_extension": "/private/tmp/bng3-issue146-venv/lib/python3.12/site-packages/bionetgen/_bionetgen_cpp.cpython-312-darwin.so",
+    "model_module": "/private/tmp/bng3-issue146-venv/lib/python3.12/site-packages/bionetgen/model.py",
+    "model_native_extension": "/private/tmp/bng3-issue146-venv/lib/python3.12/site-packages/bionetgen/_bionetgen_cpp.cpython-312-darwin.so",
+    "native_extension_sha256": "fd2563743f3feedfde92e7e09ab9cf3350f8d6d77f55b9ed01bf58eb150c35df"
+  },
+  "controls": {
+    "t_end": 2.0,
+    "n_steps": 20,
+    "fixed_seed": 7,
+    "ensemble_runs": 200,
+    "base_seed": 1,
+    "native_workers": 2,
+    "columns": "exact"
+  },
+  "oracles": {
+    "source_lock_sha256": "5115caf21f90a954de259e58a21e8efd6240170764ec0e2ffac3f13b43d96a49",
+    "bng2_perl": "/private/tmp/bng2-oracle-9601746-20261008/bng2/BNG2.pl",
+    "bng2_perl_sha256": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4",
+    "nfsim": "/private/tmp/nfsim-oracle-9b00d42f-20261008/build/NFsim",
+    "nfsim_sha256": "7621bb850efc6cf203ec2c42004c2cffcc0115af7e3ce03d62aabab100bf31a1",
+    "bng2_source": {
+      "checkout": "/private/tmp/bng2-oracle-9601746-20261008",
+      "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+      "clean": true
+    },
+    "nfsim_source": {
+      "checkout": "/private/tmp/nfsim-oracle-9b00d42f-20261008",
+      "revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+      "clean": true
+    }
+  },
+  "probe_sha256": "4c74ee97c9856a0c23aaf42879ec1a8983ee49989a227c68989b69bac8cd33d6",
+  "cases": {
+    "whole_species": {
+      "source_sha256": "ecebcb3c7c3e1ab3c42f7d0f376e2b6cf26768bd71d41452e84c28004258e483",
+      "columns": [
+        "time",
+        "OA",
+        "OB",
+        "OC",
+        "OD"
+      ],
+      "independent_xml_sha256": "177355692c6d5105e3a840cb2fd2626933d7121b8d1c518b72100c311d93e303",
+      "fixed_seed": {
+        "ok": false,
+        "max_rel_err": 0.14285714285714285,
+        "max_rel_col": "OA",
+        "l2_rel_err": 0.026997462357801944,
+        "note": ""
+      },
+      "fixed_seed_mismatching_rows": [
+        20
+      ],
+      "fixed_seed_native_final": [
+        2.0,
+        7.0,
+        7.0,
+        7.0,
+        1.0
+      ],
+      "fixed_seed_direct_final": [
+        2.0000000000000004,
+        8.0,
+        8.0,
+        8.0,
+        1.0
+      ],
+      "ensemble": {
+        "ok": true,
+        "n_violations": 0,
+        "n_points_checked": 84,
+        "worst_z": 2.9967734289355477,
+        "worst_col": "OA",
+        "note": ""
+      },
+      "native_runs": 200,
+      "direct_runs": 200
+    },
+    "named_molecules": {
+      "source_sha256": "a7642fb2ce9d93f0099b3c61491988b36e66a506a7042b7842a93bd2123e7488",
+      "columns": [
+        "time",
+        "OA",
+        "OB",
+        "OC",
+        "OD"
+      ],
+      "independent_xml_sha256": "471001ab343da892c1b6bca7c77fd7eea42f2c086df3c6baf710dc7192594695",
+      "fixed_seed": {
+        "ok": false,
+        "max_rel_err": 0.14285714285714285,
+        "max_rel_col": "OA",
+        "l2_rel_err": 0.022043335708870272,
+        "note": ""
+      },
+      "fixed_seed_mismatching_rows": [
+        20
+      ],
+      "fixed_seed_native_final": [
+        2.0,
+        7.0,
+        7.0,
+        100.0,
+        1.0
+      ],
+      "fixed_seed_direct_final": [
+        2.0000000000000004,
+        8.0,
+        8.0,
+        100.0,
+        1.0
+      ],
+      "ensemble": {
+        "ok": true,
+        "n_violations": 0,
+        "n_points_checked": 84,
+        "worst_z": 2.9967734289355477,
+        "worst_col": "OA",
+        "note": ""
+      },
+      "native_runs": 200,
+      "direct_runs": 200
+    },
+    "partial_keyword": {
+      "source_sha256": "d675e8dfacc4d18d97161320278be833623a523d65ec33086d024613e279bcbe",
+      "columns": [
+        "time",
+        "OA",
+        "OB",
+        "OC",
+        "OD"
+      ],
+      "independent_xml_sha256": "fd2210a7e4d1a32fc30313426beedacfaf32f61af625a07a404e9ba16df88594",
+      "fixed_seed": {
+        "ok": false,
+        "max_rel_err": 0.14285714285714285,
+        "max_rel_col": "OA",
+        "l2_rel_err": 0.015586992159713741,
+        "note": ""
+      },
+      "fixed_seed_mismatching_rows": [
+        20
+      ],
+      "fixed_seed_native_final": [
+        2.0,
+        7.0,
+        100.0,
+        100.0,
+        1.0
+      ],
+      "fixed_seed_direct_final": [
+        2.0000000000000004,
+        8.0,
+        100.0,
+        100.0,
+        1.0
+      ],
+      "ensemble": {
+        "ok": true,
+        "n_violations": 0,
+        "n_points_checked": 84,
+        "worst_z": 2.9967734289355477,
+        "worst_col": "OA",
+        "note": ""
+      },
+      "native_runs": 200,
+      "direct_runs": 200
+    },
+    "with_catalyst": {
+      "source_sha256": "5b46e44eb6edb0af580b49d148ba02af33706fb34498f87940c220a3ab830b36",
+      "columns": [
+        "time",
+        "OA",
+        "OB",
+        "OC",
+        "OD"
+      ],
+      "independent_xml_sha256": "8f4d2a04ea24b76ca24d8df66496520022f8b1126ace86f5f03f2a1d1496c895",
+      "fixed_seed": {
+        "ok": false,
+        "max_rel_err": 0.14285714285714285,
+        "max_rel_col": "OA",
+        "l2_rel_err": 0.026997462357801944,
+        "note": ""
+      },
+      "fixed_seed_mismatching_rows": [
+        20
+      ],
+      "fixed_seed_native_final": [
+        2.0,
+        7.0,
+        7.0,
+        7.0,
+        1.0
+      ],
+      "fixed_seed_direct_final": [
+        2.0000000000000004,
+        8.0,
+        8.0,
+        8.0,
+        1.0
+      ],
+      "ensemble": {
+        "ok": true,
+        "n_violations": 0,
+        "n_points_checked": 84,
+        "worst_z": 2.9967734289355477,
+        "worst_col": "OA",
+        "note": ""
+      },
+      "native_runs": 200,
+      "direct_runs": 200
+    }
+  },
+  "all_parity_passed": false
+}

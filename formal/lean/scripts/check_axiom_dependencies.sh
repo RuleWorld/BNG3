@@ -45,6 +45,22 @@ trap 'rm -rf "$TMP"' EXIT
 cat > "$TMP/audit.lean" <<'LEAN'
 import BNG
 open BNG
+#print axioms BNG.MatcherCounterexamples.ordering_fixture_wellFormed
+#print axioms BNG.MatcherCounterexamples.reversed_embedding_matches
+#print axioms BNG.MatcherCounterexamples.reversed_embedding_not_enumerated
+#print axioms BNG.MatcherCounterexamples.reversed_embedding_spec
+#print axioms BNG.MatcherCounterexamples.reference_matcher_not_complete_by_literal_membership
+#print axioms BNG.MatcherCounterexamples.reference_matcher_not_correct_by_literal_membership
+#print axioms BNG.MatcherCounterexamples.duplicate_occurrences_not_wellFormed
+#print axioms BNG.MatcherCounterexamples.extra_entry_embedding_historical_spec
+#print axioms BNG.MatcherCounterexamples.extra_entry_embedding_rejected
+#print axioms BNG.MatcherCounterexamples.extra_entry_embedding_not_in_current_spec
+#print axioms BNG.MatcherCounterexamples.historical_spec_not_equivalent_to_validator
+#print axioms BNG.exactEmbeddingDomain_iff_nodup_and_perm
+#print axioms BNG.embeddingMatches_iff_EmbeddingSpec
+#print axioms BNG.referenceMatcher_sound
+#print axioms BNG.referenceMatcher_complete
+#print axioms BNG.referenceMatcher_correct
 #print axioms BNG.source_text_is_not_semantics
 #print axioms BNG.source_irrelevance_again
 #print axioms BNG.rule_side_roundtrip
@@ -67,6 +83,9 @@ open BNG
 #print axioms BNG.compileStructuralSemantics_deterministic
 #print axioms BNG.Examples.nfnextBridgeContract_holds
 #print axioms BNG.Examples.example_lowered_step_equals_semantic_step
+#print axioms BNG.NFnextPacking.fromSignature_type_entry
+#print axioms BNG.NFnextPacking.fromSignature_site_entry
+#print axioms BNG.NFnextPacking.fromSignature_state_entry
 LEAN
 
 OUT="$(lake env lean "$TMP/audit.lean" 2>&1)"

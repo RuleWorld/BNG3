@@ -281,7 +281,7 @@ target_include_directories(test_hnauty PRIVATE
     ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
 )
 target_link_libraries(test_hnauty PRIVATE
-    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast nfsim_core)
 catch_discover_tests(test_hnauty)
 
 # test_ullmann

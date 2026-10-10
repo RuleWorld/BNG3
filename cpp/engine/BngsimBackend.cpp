@@ -2,6 +2,7 @@
 
 #ifdef BNG3_HAS_BNGSIM_ADAPTER
 
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -109,6 +110,32 @@ OdeResult simulateOdeViaBngsim(
     const GeneratedNetwork& network,
     const OdeOptions& options) {
 
+    // These options change stopping, solver selection, or diagnostics in the
+    // native backend. Do not silently drop them at the BNGsim boundary.
+    if (!options.stopIf.empty()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected stop_if: native stop expressions are not supported");
+    }
+    if (options.sparse) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected sparse: BNG3 GMRES selection is not equivalent to BNGsim KLU selection");
+    }
+    if (options.checkProductScale > 0.0) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected check_product_scale: native threshold warnings are not emitted by BNGsim");
+    }
+    if (options.steadyState) {
+        if (network.species.size() == 0) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected steady_state: empty-state steady-state truncation differs; native stops at the first non-initial output point while BNGsim returns the full algebraic-only grid");
+        }
+        if (!(options.steadyStateTol > 0.0) ||
+            !std::isfinite(options.steadyStateTol)) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected steady_state_tol: a finite positive tolerance is required to match native semantics");
+        }
+    }
+
     // Fail closed before solver construction — same boundary as buildBngsimNetwork.
     auto bngsimModel = buildBngsimNetwork(model, network);
     if (!bngsimModel) {
@@ -123,6 +150,11 @@ OdeResult simulateOdeViaBngsim(
     solverOpts.rtol = options.rtol;
     solverOpts.atol = options.atol;
     if (options.maxStep > 0.0) solverOpts.max_step_size = options.maxStep;
+    // Both solvers test ||f(t,y)||_2 / n_species < tolerance after recording
+    // each non-initial output row. This mapping is limited to non-empty species
+    // vectors and positive finite tolerances, checked above.
+    solverOpts.steady_state = options.steadyState;
+    solverOpts.steady_state_tol = options.steadyStateTol;
 
     bngsim::Result bngsimResult;
     try {
@@ -159,6 +191,19 @@ OdeResult simulateSsaViaBngsim(
     const ast::Model& model,
     const GeneratedNetwork& network,
     const OdeOptions& options) {
+
+    if (!options.stopIf.empty()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected stop_if: native event stop expressions are not supported");
+    }
+    if (options.maxSimSteps > 0) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected max_sim_steps: BNGsim SSA has no reaction-event cap");
+    }
+    if (options.outputStepInterval > 0 && options.sampleTimes.empty()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected output_step_interval: event-indexed output is not represented by TimeSpec");
+    }
 
     auto bngsimModel = buildBngsimNetwork(model, network);
     if (!bngsimModel) {

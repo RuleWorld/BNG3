@@ -1,6 +1,7 @@
 #ifndef NFINPUT_HH_
 #define NFINPUT_HH_
 
+#include "speciesStream.hh"
 #include <iostream>
 #include <map>
 #include <vector>
@@ -66,7 +67,8 @@ namespace NFinput {
 			bool verbose,
 			int &suggestedTraversalLimit,
 			bool evaluateComplexScopedLocalFunctions=false,
-			bool connectivityFlag=false);
+			bool connectivityFlag=false,
+			bool buildSpeciesLog=true);
 
     System * initializeFromModel(
             void* model_ptr,
@@ -169,7 +171,10 @@ namespace NFinput {
 			System * system,
 			map <string,double> &parameter,
 			map<string,int> &allowedStates,
-			bool verbose);
+			bool verbose,
+			const string *streamFile = 0,
+			const vector <SpeciesSpan> *streamSpans = 0,
+			bool buildSpeciesLog = true);
 
 	//! Reads a reactionRule XML block and adds the rules to the system.
 	/*!
@@ -182,7 +187,10 @@ namespace NFinput {
 			map<string,int> &allowedStates,
 			bool blockSameComplexBinding,
 			bool verbose,
-			int &suggestedTraversalLimit);
+			int &suggestedTraversalLimit,
+			const string *streamFile = 0,
+			const vector <SpeciesSpan> *streamSpans = 0,
+			bool buildProductTemplates = true);
 
 	//! Reads an observable XML block and adds the new observables to the system.
 	/*!

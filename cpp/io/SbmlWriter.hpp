@@ -6,6 +6,8 @@
 #include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
 
+namespace bng::compile { class CompiledModel; }
+
 namespace bng::io {
 
 /**
@@ -78,12 +80,16 @@ private:
         const std::vector<ObservableGroup>& groups);
 
     static std::string writeSourceMetadata(const std::string& payload);
-    static std::string writeCompartments(const ast::Model& model, int level);
+    static std::string writeCompartments(
+        const ast::Model& model, const compile::CompiledModel& compiled, int level);
     static std::string writeParameters(
         const ast::Model& model,
         const std::vector<ObservableGroup>& groups,
-        const SymbolIds& symbolIds);
-    static std::string writeSpecies(const ast::Model& model, const engine::GeneratedNetwork* network);
+        const SymbolIds& symbolIds,
+        const compile::CompiledModel& compiled);
+    static std::string writeSpecies(
+        const ast::Model& model, const engine::GeneratedNetwork* network,
+        const compile::CompiledModel& compiled, int level);
     static std::string writeInitialAssignments(const ast::Model& model);
     static std::string writeAssignmentRules(
         const ast::Model& model,

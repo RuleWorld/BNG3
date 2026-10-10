@@ -85,14 +85,12 @@ std::string trimText(std::string value) {
     const auto last = value.find_last_not_of(" \t\r\n");
     return value.substr(first, last - first + 1);
 }
+
 // Split a trailing observable quantifier (R==1, EGFR>20) from a pattern
-// string.  BNG2 (SpeciesGraph.pm) stores the quantifier on the pattern graph
-// and serializes it as relation/quantity attributes on <Pattern>, leaving the
-// molecule name bare.  Returns true and strips the quantifier when the text
-// ends with (=|==|<=|>=|<|>)(digits) outside any parentheses; a lone `=`
-// normalizes to `==` as in BNG2, and `!=` never counts as a quantifier.
+// string. BNG2 stores the quantifier on the pattern and serializes it as
+// relation/quantity attributes on <Pattern>, leaving the molecule name bare.
 bool stripPatternQuantifier(std::string& text, std::string& relation,
-                             std::string& quantity) {
+                            std::string& quantity) {
     static const std::regex quantifier(R"((==|<=|>=|=|<|>)(\d+)\s*$)");
     std::smatch match;
     if (!std::regex_search(text, match, quantifier)) return false;
@@ -1348,8 +1346,9 @@ bool needsGeneratedDynamicRateFunction(const ast::Model& model,
 std::string generatedDynamicRateFunctionName(const std::string& reactionId) {
     return "__bng3_reaction_rate_" + reactionId;
 }
-// RateLaw type dispatch shared by the rule serializer and the TotalRate
-// wrapper check below.  Must stay in sync with writeRateLaw's branches.
+
+// Keep RateLaw type selection shared between serialization and the TotalRate
+// compatibility wrapper check below.
 std::string xmlRateLawType(const ast::Model& model, const ast::Expression& rate) {
     const bool isCall = rate.kind() == ast::ExpressionKind::Function ||
                         rate.kind() == ast::ExpressionKind::ObservableRef;
@@ -1384,13 +1383,12 @@ bool ruleHasModifier(const ast::ReactionRule& rule, const std::string& wanted) {
                        });
 }
 
-// BNG2 RateLaw.pm newRateLaw forces even a plain elementary rate into a
-// generated zero-argument function when TotalRate is present (force_fcn), so
-// the XML RateLaw is type Function rather than Ele.  Rates that already
-// serialize as another type are left alone.
+// BNG2 forces an elementary rate into a generated zero-argument function when
+// TotalRate is present. Rates already represented by another XML type need no
+// wrapper.
 bool needsTotalRateFunctionWrapper(const ast::Model& model,
-                                    const ast::ReactionRule& rule,
-                                    const ast::Expression& rate) {
+                                   const ast::ReactionRule& rule,
+                                   const ast::Expression& rate) {
     return ruleHasModifier(rule, "TotalRate") &&
            xmlRateLawType(model, rate) == "Ele";
 }
@@ -1648,6 +1646,7 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             needsTotalRateFunctionWrapper(model, rule, rate);
         const bool generatedRateFunction =
             needsGeneratedDynamicRateFunction(model, rate) || totalRateFunctionWrapper;
+        const auto* declaredFunction = modelFunction(rate.name());
         std::vector<std::string> generatedArguments;
         if (generatedRateFunction && !totalRateFunctionWrapper) {
             std::set<std::string> seenArguments;
@@ -1659,7 +1658,6 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         }
         std::string type = xmlRateLawType(model, rate);
         if (totalRateFunctionWrapper) type = "Function";
-        const auto* declaredFunction = modelFunction(rate.name());
 
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
             << "\" totalrate=\""
@@ -1717,9 +1715,8 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                                            : rate.name();
             xml << " name=\"" << escapeXml(functionName) << "\">\n";
             xml << "          <ListOfArguments>\n";
-            // BNG2 writes call-site tags (e.g. x) in the RateLaw argument
-            // list, never the declared formals (e.g. z). The Function
-            // definition keeps the formals; the RateLaw lists the actuals.
+            // The RateLaw binds the call-site tags, while the Function
+            // definition declares its own formal argument names.
             std::vector<std::string> callSiteArguments;
             if (!generatedRateFunction &&
                 (rate.kind() == ast::ExpressionKind::Function ||
@@ -1872,14 +1869,14 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         }
         xml << "        </Map>\n";
 
-xml << "        <ListOfOperations>\n";
-        // Operation order follows BNG2 RxnRule.pm toXML, which orders
-        // operations to match application order: state changes, edge
-        // deletions, molecule additions, edge additions, then molecule
-        // deletions.  DeleteBond must precede AddBond so a bond-swap rule
-        // frees the site before rebinding it; a strict reader rejects an
-        // AddBond to a site the reactant pattern still shows as bound.
+        xml << "        <ListOfOperations>\n";
+
+        // Preserve BNG2's operation order: state changes, bond deletions,
+        // molecule additions, bond additions, then molecule deletions.
         using Type = ast::ReactionRule::TransformOp::Type;
+        const bool deleteMoleculesKeyword =
+            hasModifier(rule.getModifiers(), "DeleteMolecules");
+
         for (const auto& operation : rule.getOperations()) {
             if (operation.type != Type::ChangeState) continue;
             xml << "          <StateChange site=\""
@@ -1888,6 +1885,11 @@ xml << "        <ListOfOperations>\n";
         }
         for (const auto& operation : rule.getOperations()) {
             if (operation.type != Type::DeleteBond) continue;
+            // Keep whole-species deletion connected until the XML loader
+            // traverses it; removing these bonds first strands context.
+            if (rule.deletesWholeReactantPattern(operation.source.patternIndex) ||
+                rule.deletesWholeReactantPattern(operation.partner.patternIndex))
+                continue;
             xml << "          <DeleteBond site1=\""
                 << componentId(rrId, false, operation.source)
                 << "\" site2=\"" << componentId(rrId, false, operation.partner)
@@ -1896,7 +1898,8 @@ xml << "        <ListOfOperations>\n";
         for (const auto& operation : rule.getOperations()) {
             if (operation.type != Type::AddMolecule) continue;
             xml << "          <Add id=\""
-                << moleculeId(rrId, true, {operation.patternIndex, operation.moleculeIndex, 0})
+                << moleculeId(rrId, true,
+                              {operation.patternIndex, operation.moleculeIndex, 0})
                 << "\"/>\n";
         }
         for (const auto& operation : rule.getOperations()) {
@@ -1918,12 +1921,11 @@ xml << "        <ListOfOperations>\n";
             xml << "          <AddBond site1=\"" << componentId(rrId, true, product1)
                 << "\" site2=\"" << componentId(rrId, true, product2) << "\"/>\n";
         }
+
         // Zero-order synthesis returns from ReactionRule::initialize() before
         // the bond diff runs, so bonds wholly inside the product patterns have
-        // no TransformOp or cross/new-molecule record.  BNG2 (RxnRule.pm
-        // EdgeAdd with an empty reactant map) emits them as product-side
-        // AddBonds; reproduce that here.  Gated on empty reactants, where the
-        // vectors above are always empty, so nothing is emitted twice.
+        // no TransformOp or cross/new-molecule record.  BNG2 emits them as
+        // product-side AddBonds.
         if (rule.getReactants().empty()) {
             for (std::size_t index = 0; index < rule.getProducts().size(); ++index) {
                 const auto patternId = rrId + "_PP" + std::to_string(index + 1);
@@ -1931,60 +1933,54 @@ xml << "        <ListOfOperations>\n";
                 for (const auto& bond : parsed.bonds) {
                     xml << "          <AddBond site1=\"" << patternId << "_M"
                         << (bond.mol1 + 1) << "_C" << (bond.comp1 + 1)
-                        << "\" site2=\"" << patternId << "_M" << (bond.mol2 + 1)
-                        << "_C" << (bond.comp2 + 1) << "\"/>\n";
+                        << "\" site2=\"" << patternId << "_M"
+                        << (bond.mol2 + 1) << "_C" << (bond.comp2 + 1)
+                        << "\"/>\n";
                 }
             }
         }
 
-        // Molecule deletion follows BNG2 RxnRule.pm findMap: for each reactant
-        // pattern, when the DeleteMolecules modifier is present or only some
-        // molecules of the pattern are deleted, every deleted molecule gets
-        // its own <Delete> (flag 1 with the modifier, else 0).  Only when
-        // every molecule of the pattern is deleted without the modifier is
-        // the whole reactant pattern deleted (flag 0).
-        const bool deleteMoleculesModifier =
-            hasModifier(rule.getModifiers(), "DeleteMolecules");
-        const auto writePatternDeletes = [&](std::size_t patternIndex,
-                                             const std::vector<std::size_t>& deleted,
-                                             std::size_t total) {
-            if (deleteMoleculesModifier || deleted.size() < total) {
-                for (const auto moleculeIndex : deleted) {
-                    xml << "          <Delete id=\""
-                        << moleculeId(rrId, false,
-                                      {patternIndex, moleculeIndex, 0})
-                        << "\" DeleteMolecules=\""
-                        << (deleteMoleculesModifier ? "1" : "0") << "\"/>\n";
-                }
-            } else {
+        // BNG2 deletes a whole reactant pattern only when every molecule in it
+        // is deleted and DeleteMolecules is absent; otherwise emit each deleted
+        // molecule separately after the bond operations above.
+        std::vector<bool> wholePatternWritten(rule.getReactants().size(), false);
+        for (const auto& operation : rule.getOperations()) {
+            if (operation.type != Type::DeleteMolecule) continue;
+            const bool wholePattern =
+                rule.deletesWholeReactantPattern(operation.patternIndex);
+            if (!wholePattern) {
+                xml << "          <Delete id=\""
+                    << moleculeId(rrId, false,
+                                  {operation.patternIndex, operation.moleculeIndex, 0})
+                    << "\" DeleteMolecules=\""
+                    << (deleteMoleculesKeyword ? "1" : "0") << "\"/>\n";
+            } else if (!wholePatternWritten[operation.patternIndex]) {
+                wholePatternWritten[operation.patternIndex] = true;
                 xml << "          <Delete id=\"" << rrId << "_RP"
-                    << (patternIndex + 1) << "\" DeleteMolecules=\"0\"/>\n";
-            }
-        };
-        {
-            std::map<std::size_t, std::vector<std::size_t>> deletedByPattern;
-            for (const auto& operation : rule.getOperations()) {
-                if (operation.type != Type::DeleteMolecule) continue;
-                deletedByPattern[operation.patternIndex].push_back(
-                    operation.moleculeIndex);
-            }
-            for (const auto& [patternIndex, deleted] : deletedByPattern) {
-                const auto parsed = parsePattern(rule.getReactants()[patternIndex]);
-                writePatternDeletes(patternIndex, deleted, parsed.molecules.size());
+                    << (operation.patternIndex + 1)
+                    << "\" DeleteMolecules=\"0\"/>\n";
             }
         }
 
         // Pure degradation has no product graph and therefore no TransformOp
-        // from ReactionRule::initialize().  Every molecule of every reactant
-        // pattern is deleted, so with the DeleteMolecules modifier each
-        // molecule gets its own <Delete>, and without it the whole reactant
-        // pattern is deleted.
+        // from ReactionRule::initialize().  Preserve its species-removal
+        // operation for the XML compatibility loader.
+        // As above, every molecule goes: with DeleteMolecules BNG2 deletes the
+        // molecules one by one (flag 1), otherwise the whole species.
         if (rule.getProducts().empty() && rule.getOperations().empty()) {
             for (std::size_t index = 0; index < rule.getReactants().size(); ++index) {
-                const auto parsed = parsePattern(rule.getReactants()[index]);
-                std::vector<std::size_t> deleted(parsed.molecules.size());
-                std::iota(deleted.begin(), deleted.end(), 0);
-                writePatternDeletes(index, deleted, parsed.molecules.size());
+                if (deleteMoleculesKeyword) {
+                    const std::size_t patternMolecules =
+                        parsePattern(rule.getReactants()[index]).molecules.size();
+                    for (std::size_t molecule = 0; molecule < patternMolecules; ++molecule) {
+                        xml << "          <Delete id=\""
+                            << moleculeId(rrId, false, {index, molecule, 0})
+                            << "\" DeleteMolecules=\"1\"/>\n";
+                    }
+                } else {
+                    xml << "          <Delete id=\"" << rrId << "_RP" << (index + 1)
+                        << "\" DeleteMolecules=\"0\"/>\n";
+                }
             }
         }
 
@@ -2181,8 +2177,9 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
         const auto& rule = model.getReactionRules()[index];
         const auto& rates = rule.getRates();
         const auto forwardId = "RR" + std::to_string(index + 1);
-        if (!rates.empty() && (needsGeneratedDynamicRateFunction(model, rates.front()) ||
-                               needsTotalRateFunctionWrapper(model, rule, rates.front()))) {
+        if (!rates.empty() &&
+            (needsGeneratedDynamicRateFunction(model, rates.front()) ||
+             needsTotalRateFunctionWrapper(model, rule, rates.front()))) {
             addGeneratedRateFunction(
                 generatedDynamicRateFunctionName(forwardId), rates.front());
         }

@@ -9,6 +9,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "NFinput_fromAst.hh"
@@ -18,6 +19,7 @@
 #include "NFcore/reactionSelector/reactionSelector.hh"
 #include "NFreactions/reactions/reaction.hh"
 #include "compartment.hh"
+#include "compile/CompiledModel.hpp"
 #include "NFfunction/NFfunction.hh"
 #include "ast/Function.hpp"
 #include "ast/Model.hpp"
@@ -6023,4 +6025,149 @@ end reaction rules
     delete system;
     std::error_code error;
     std::filesystem::remove(xmlPath, error);
+}
+
+
+TEST_CASE("NFsim fixed-point selector declines compact partner pool reactions") {
+    // The fixed-point selector has no compact-partner-pool batch path, so a
+    // system using that EnergyPattern feature must fall back to DirectSelector
+    // rather than silently running with propensities it cannot maintain.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    phi 0.5
+    G 1.0
+    RT 1.0
+end parameters
+begin molecule types
+    A(b,c,d)
+    B(a)
+    C(x)
+    D(x)
+end molecule types
+begin seed species
+    A(b,c!1,d!2).C(x!1).D(x!2) 1
+    A(b) 1
+    B(a) 2
+end seed species
+begin energy patterns
+    A(b!1,c!2,d!3).B(a!1).C(x!2).D(x!3) G
+end energy patterns
+begin reaction rules
+    A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(*model, false, 100, false,
+                                                suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+
+    auto allReactions = system->getAllReactions();
+    REQUIRE_FALSE(allReactions.empty());
+    CHECK_FALSE(NFcore::FixedPointSelector::supports(allReactions));
+
+    delete system;
+}
+
+TEST_CASE("NFsim direct deletion preserves pattern versus molecule scope", "[deletion-scope]") {
+    struct Case { const char* rule; int a; int b; int c; bool supported; };
+    const auto testCase = GENERATE(
+        Case {"A(b!1).B(a!1) -> 0 k", 0, 0, 0, true},
+        Case {"A(b!1).B(a!1) -> 0 k DeleteMolecules", 0, 0, 1, true},
+        Case {"A(b!1).B(a!1) -> B(a) k DeleteMolecules", 0, 1, 1, true},
+        Case {"A(b!1).B(a!1) -> B(a) k", 1, 1, 1, false},
+        Case {"A(b!1).B(a!1) + D() -> D() k", 0, 0, 0, true});
+    auto model = bng::parser::parseModel(std::string(R"BNG(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(b)
+    B(a,c)
+    C(b)
+    D()
+end molecule types
+begin seed species
+    A(b!1).B(a!1,c!2).C(b!2) 1
+    D() 1
+end seed species
+begin observables
+    Molecules OA A()
+    Molecules OB B()
+    Molecules OC C()
+    Molecules OD D()
+end observables
+begin reaction rules
+)BNG") + testCase.rule + "\nend reaction rules\n");
+    REQUIRE(model != nullptr);
+    int traversal = NFcore::ReactionClass::NO_LIMIT;
+    auto* direct = NFinput::buildSystemFromAst(*model, false, 100, false, traversal);
+    if (!testCase.supported) {
+        CHECK(direct == nullptr);
+        delete direct;
+        auto* xml = NFinput::initializeFromModel(
+            static_cast<void*>(model.get()), false, 100, false, traversal);
+        CHECK(xml == nullptr);
+        delete xml;
+        return;
+    }
+    REQUIRE(direct != nullptr);
+    direct->prepareForSimulation();
+    REQUIRE(direct->getReaction(0)->get_a() > 0.0);
+    direct->singleStep();
+    CHECK(direct->getObservableByName("OA")->getCount() == testCase.a);
+    CHECK(direct->getObservableByName("OB")->getCount() == testCase.b);
+    CHECK(direct->getObservableByName("OC")->getCount() == testCase.c);
+    CHECK(direct->getObservableByName("OD")->getCount() == 1);
+    delete direct;
+
+    traversal = NFcore::ReactionClass::NO_LIMIT;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversal);
+    REQUIRE(xml != nullptr);
+    xml->prepareForSimulation();
+    REQUIRE(xml->getReaction(0)->get_a() > 0.0);
+    xml->singleStep();
+    CHECK(xml->getObservableByName("OA")->getCount() == testCase.a);
+    CHECK(xml->getObservableByName("OB")->getCount() == testCase.b);
+    CHECK(xml->getObservableByName("OC")->getCount() == testCase.c);
+    CHECK(xml->getObservableByName("OD")->getCount() == 1);
+    delete xml;
+}
+
+TEST_CASE("Compiled reversible molecule replacement retains deletion scopes", "[deletion-scope]") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() <-> B() k,k
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto& rule = compiled.rules().front();
+    CHECK(rule.forward().wholeSpeciesDeletions == std::vector<std::size_t>{0});
+    REQUIRE(rule.reverse().has_value());
+    CHECK(rule.reverse()->wholeSpeciesDeletions == std::vector<std::size_t>{0});
+    int traversal = NFcore::ReactionClass::NO_LIMIT;
+    auto* direct = NFinput::buildSystemFromAst(*model, false, 100, false, traversal);
+    REQUIRE(direct != nullptr);
+    direct->prepareForSimulation();
+    REQUIRE(direct->getAllReactions().size() == 2);
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(1.0));
+    direct->singleStep();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(0.0));
+    CHECK(direct->getReaction(1)->get_a() == Catch::Approx(1.0));
+    delete direct;
 }

@@ -252,10 +252,71 @@ double evaluateExpressionString(const std::string& expr,
 
 struct ScopedRateValue {
   std::optional<std::string> scope;
+  std::optional<ast::Expression> expression;
   double number = 0.0;
 };
 
 using ScopedRateCounts = std::unordered_map<std::string, double>;
+
+bool isScopedRateClockName(const std::string &name) {
+  return name == "time" || name == "t";
+}
+
+std::optional<double> scopedRateBuiltinConstant(const std::string &name) {
+  if (name == "_pi" || name == "pi") return std::acos(-1.0);
+  if (name == "_e" || name == "e") return std::exp(1.0);
+  return std::nullopt;
+}
+
+bool isScopedLocalScopeName(const std::string &name,
+                            const ScopedRateCounts &localCounts) {
+  const auto prefix = name + "::";
+  return std::any_of(localCounts.begin(), localCounts.end(),
+                     [&](const auto &item) {
+                       return item.first.rfind(prefix, 0) == 0;
+                     });
+}
+
+double evaluateScopedRateExpression(
+    const ast::Expression &expression, const ast::Model &model,
+    const ScopedRateCounts &localCounts,
+    const std::unordered_map<std::string, ScopedRateValue> &environment,
+    std::unordered_set<std::string> &activeFunctions);
+
+double evaluateScopedRateIdentifier(
+    const std::string &name, const ast::Model &model,
+    const ScopedRateCounts &localCounts,
+    const std::unordered_map<std::string, ScopedRateValue> &environment,
+    std::unordered_set<std::string> &activeFunctions) {
+  const auto local = environment.find(name);
+  if (local != environment.end()) {
+    if (local->second.scope.has_value()) {
+      throw std::runtime_error("local scope '" + *local->second.scope +
+                               "' used as a numeric value");
+    }
+    if (local->second.expression.has_value()) {
+      return evaluateScopedRateExpression(*local->second.expression, model,
+                                          localCounts, environment,
+                                          activeFunctions);
+    }
+    return local->second.number;
+  }
+  if (isScopedRateClockName(name)) {
+    throw std::runtime_error(
+        "time-dependent local rate is not constant in a finite network");
+  }
+
+  const auto &parameters = model.getParameters();
+  if (parameters.contains(name)) {
+    if (parameters.isTimeDependent(name)) {
+      throw std::runtime_error("time-dependent parameter '" + name +
+                               "' cannot be folded in a local rate");
+    }
+    return parameters.evaluate(name);
+  }
+  if (const auto constant = scopedRateBuiltinConstant(name)) return *constant;
+  return parameters.evaluate(name);
+}
 
 double evaluateScopedRateExpression(
     const ast::Expression &expression, const ast::Model &model,
@@ -266,25 +327,9 @@ double evaluateScopedRateExpression(
   switch (expression.kind()) {
   case Kind::Number:
     return expression.numberValue();
-  case Kind::Identifier: {
-    const auto local = environment.find(expression.name());
-    if (local != environment.end()) {
-      if (local->second.scope.has_value()) {
-        throw std::runtime_error("local scope '" + *local->second.scope +
-                                 "' used as a numeric value");
-      }
-      return local->second.number;
-    }
-    if (expression.name() == "_pi" || expression.name() == "pi")
-      return std::acos(-1.0);
-    if (expression.name() == "_e" || expression.name() == "e")
-      return std::exp(1.0);
-    if (expression.name() == "time" || expression.name() == "t") {
-      throw std::runtime_error(
-          "time-dependent local rate is not constant in a finite network");
-    }
-    return model.getParameters().evaluate(expression.name());
-  }
+  case Kind::Identifier:
+    return evaluateScopedRateIdentifier(expression.name(), model, localCounts,
+                                         environment, activeFunctions);
   case Kind::Unary: {
     if (expression.args().size() != 1) {
       throw std::runtime_error("malformed unary expression in local rate");
@@ -413,14 +458,12 @@ double evaluateScopedRateExpression(
           if (bound != environment.end()) {
             value = bound->second;
           } else {
-            const bool isLocalScope = std::any_of(
-                localCounts.begin(), localCounts.end(), [&](const auto &item) {
-                  return item.first.rfind(args[index].name() + "::", 0) == 0;
-                });
-            if (isLocalScope)
+            if (isScopedLocalScopeName(args[index].name(), localCounts))
               value.scope = args[index].name();
             else
-              value.number = model.getParameters().evaluate(args[index].name());
+              value.number = evaluateScopedRateIdentifier(
+                  args[index].name(), model, localCounts, environment,
+                  activeFunctions);
           }
         } else {
           value.number = evaluateScopedRateExpression(
@@ -481,6 +524,283 @@ double evaluateScopedRateExpression(
     }
     throw std::runtime_error("unsupported function '" + name +
                              "' in a local finite-network rate");
+  }
+  case Kind::TableFunction:
+    throw std::runtime_error("time-table functions are not supported in a "
+                             "local finite-network rate");
+  }
+  throw std::runtime_error(
+      "unsupported expression in a local finite-network rate");
+}
+
+bool scopedRateExpressionUsesTime(
+    const ast::Expression &expression, const ast::Model &model,
+    std::unordered_set<std::string> &activeFunctions,
+    std::unordered_set<std::string> boundNames = {},
+    const std::unordered_map<std::string, ScopedRateValue> *environment =
+        nullptr) {
+  using Kind = ast::ExpressionKind;
+  if (expression.kind() == Kind::Identifier) {
+    if (isScopedRateClockName(expression.name())) return true;
+    if (boundNames.find(expression.name()) == boundNames.end()) {
+      if (environment != nullptr) {
+        const auto local = environment->find(expression.name());
+        if (local != environment->end()) {
+          if (local->second.expression.has_value()) {
+            std::unordered_set<std::string> expressionFunctions;
+            return scopedRateExpressionUsesTime(*local->second.expression,
+                                                model, expressionFunctions);
+          }
+          return false;
+        }
+      }
+      if (model.getParameters().contains(expression.name()) &&
+          model.getParameters().isTimeDependent(expression.name())) {
+        return true;
+      }
+    }
+  }
+  if ((expression.kind() == Kind::Function ||
+       expression.kind() == Kind::ObservableRef) &&
+      (expression.name() == "time" || expression.name() == "t")) {
+    return true;
+  }
+
+  if (expression.kind() == Kind::Function ||
+      expression.kind() == Kind::ObservableRef) {
+    const auto function =
+        std::find_if(model.getFunctions().begin(), model.getFunctions().end(),
+                     [&](const auto &candidate) {
+                       return candidate.getName() == expression.name();
+                     });
+    if (function != model.getFunctions().end() &&
+        activeFunctions.insert(function->getName()).second) {
+      auto functionBoundNames = boundNames;
+      functionBoundNames.insert(function->getArgs().begin(),
+                                function->getArgs().end());
+      const bool functionUsesTime = scopedRateExpressionUsesTime(
+          function->getExpression(), model, activeFunctions,
+          std::move(functionBoundNames), environment);
+      activeFunctions.erase(function->getName());
+      if (functionUsesTime)
+        return true;
+    }
+  }
+  for (const auto &argument : expression.args()) {
+    if (scopedRateExpressionUsesTime(argument, model, activeFunctions,
+                                     boundNames, environment))
+      return true;
+  }
+  return false;
+}
+
+ast::Expression lowerScopedTimeRateExpression(
+    const ast::Expression &expression, const ast::Model &model,
+    const ScopedRateCounts &localCounts,
+    const std::unordered_map<std::string, ScopedRateValue> &environment,
+    std::unordered_set<std::string> &activeFunctions,
+    bool foldStatic = true,
+    bool specializeStaticConditionals = false) {
+  std::unordered_set<std::string> timeFunctions;
+  if (foldStatic &&
+      !scopedRateExpressionUsesTime(expression, model, timeFunctions, {},
+                                    &environment)) {
+    return ast::Expression::number(evaluateScopedRateExpression(
+        expression, model, localCounts, environment, activeFunctions));
+  }
+
+  using Kind = ast::ExpressionKind;
+  switch (expression.kind()) {
+  case Kind::Number:
+    return expression;
+  case Kind::Identifier: {
+    const auto local = environment.find(expression.name());
+    if (local != environment.end()) {
+      if (local->second.scope.has_value()) {
+        throw std::runtime_error("local scope '" + *local->second.scope +
+                                 "' used as a numeric value");
+      }
+      if (local->second.expression.has_value())
+        return *local->second.expression;
+      return ast::Expression::number(local->second.number);
+    }
+    std::unordered_set<std::string> identifierTimeFunctions;
+    if (scopedRateExpressionUsesTime(expression, model,
+                                     identifierTimeFunctions, {}, &environment)) {
+      return expression;
+    }
+    return ast::Expression::number(
+        evaluateScopedRateIdentifier(expression.name(), model, localCounts,
+                                     environment, activeFunctions));
+  }
+  case Kind::Unary:
+    if (expression.args().size() != 1)
+      throw std::runtime_error("malformed unary expression in local rate");
+    return ast::Expression::unary(
+        expression.name(),
+        lowerScopedTimeRateExpression(expression.args().front(), model,
+                                      localCounts, environment, activeFunctions,
+                                      foldStatic, specializeStaticConditionals));
+  case Kind::Binary:
+    if (expression.args().size() != 2)
+      throw std::runtime_error("malformed binary expression in local rate");
+    return ast::Expression::binary(
+        expression.name(),
+        lowerScopedTimeRateExpression(expression.args()[0], model,
+                                      localCounts, environment, activeFunctions,
+                                      foldStatic, specializeStaticConditionals),
+        lowerScopedTimeRateExpression(expression.args()[1], model,
+                                      localCounts, environment, activeFunctions,
+                                      foldStatic, specializeStaticConditionals));
+  case Kind::ObservableRef: {
+    const auto function =
+        std::find_if(model.getFunctions().begin(), model.getFunctions().end(),
+                     [&](const auto &candidate) {
+                       return candidate.getName() == expression.name();
+                     });
+    if (function != model.getFunctions().end()) {
+      return lowerScopedTimeRateExpression(
+          ast::Expression::function(expression.name(), expression.args()),
+          model, localCounts, environment, activeFunctions, foldStatic,
+          specializeStaticConditionals);
+    }
+    if (expression.args().size() != 1 ||
+        expression.args().front().kind() != Kind::Identifier) {
+      throw std::runtime_error("finite-network local observable '" +
+                               expression.name() +
+                               "' must have one named scope argument");
+    }
+    const auto &actual = expression.args().front().name();
+    const auto bound = environment.find(actual);
+    const std::string scopeName =
+        bound != environment.end() && bound->second.scope.has_value()
+            ? *bound->second.scope
+            : actual;
+    const auto count = localCounts.find(scopeName + "::" + expression.name());
+    if (count == localCounts.end()) {
+      throw std::runtime_error("missing scoped count for '" +
+                               expression.name() + "(" + scopeName + ")'");
+    }
+    return ast::Expression::number(count->second);
+  }
+  case Kind::Function: {
+    const auto &name = expression.name();
+    const auto &arguments = expression.args();
+    const auto lowerName = [&]() {
+      std::string lower = name;
+      std::transform(
+          lower.begin(), lower.end(), lower.begin(),
+          [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+      return lower;
+    }();
+
+    const auto function =
+        std::find_if(model.getFunctions().begin(), model.getFunctions().end(),
+                     [&](const auto &candidate) {
+                       return candidate.getName() == name;
+                     });
+    if (function != model.getFunctions().end()) {
+      if (function->getArgs().size() != arguments.size()) {
+        throw std::runtime_error("function '" + name +
+                                 "' has incompatible arity");
+      }
+      if (!activeFunctions.insert(name).second) {
+        throw std::runtime_error("recursive local function cycle at '" + name +
+                                 "'");
+      }
+      std::unordered_map<std::string, ScopedRateValue> nestedEnvironment =
+          environment;
+      for (std::size_t index = 0; index < arguments.size(); ++index) {
+        ScopedRateValue value;
+        if (arguments[index].kind() == Kind::Identifier) {
+          if (const auto bound = environment.find(arguments[index].name());
+              bound != environment.end()) {
+            value = bound->second;
+          } else if (isScopedLocalScopeName(arguments[index].name(),
+                                            localCounts)) {
+            value.scope = arguments[index].name();
+          } else {
+            auto loweredArgument = lowerScopedTimeRateExpression(
+                arguments[index], model, localCounts, environment,
+                activeFunctions, false, specializeStaticConditionals);
+            if (loweredArgument.kind() == Kind::Number)
+              value.number = loweredArgument.numberValue();
+            else
+              value.expression = std::move(loweredArgument);
+          }
+        } else {
+          value.expression = lowerScopedTimeRateExpression(
+              arguments[index], model, localCounts, environment,
+              activeFunctions, foldStatic, specializeStaticConditionals);
+        }
+        nestedEnvironment[function->getArgs()[index]] = std::move(value);
+      }
+      try {
+        auto lowered = lowerScopedTimeRateExpression(
+            function->getExpression(), model, localCounts, nestedEnvironment,
+            activeFunctions, foldStatic, specializeStaticConditionals);
+        activeFunctions.erase(name);
+        return lowered;
+      } catch (...) {
+        activeFunctions.erase(name);
+        throw;
+      }
+    }
+
+    if (lowerName == "if") {
+      if (arguments.size() != 3)
+        throw std::runtime_error("if expects three arguments");
+      auto loweredCondition = lowerScopedTimeRateExpression(
+          arguments[0], model, localCounts, environment, activeFunctions,
+          specializeStaticConditionals, specializeStaticConditionals);
+      if (specializeStaticConditionals &&
+          loweredCondition.kind() != Kind::Number) {
+        std::unordered_set<std::string> conditionTimeFunctions;
+        if (!scopedRateExpressionUsesTime(loweredCondition, model,
+                                          conditionTimeFunctions, {},
+                                          &environment)) {
+          loweredCondition = ast::Expression::number(
+              evaluateScopedRateExpression(loweredCondition, model,
+                                            localCounts, environment,
+                                            activeFunctions));
+        }
+      }
+      auto loweredTrue = lowerScopedTimeRateExpression(
+          arguments[1], model, localCounts, environment, activeFunctions,
+          true, specializeStaticConditionals);
+      auto loweredFalse = lowerScopedTimeRateExpression(
+          arguments[2], model, localCounts, environment, activeFunctions,
+          true, specializeStaticConditionals);
+      if (specializeStaticConditionals &&
+          loweredCondition.kind() == Kind::Number) {
+        return loweredCondition.numberValue() != 0.0 ? loweredTrue
+                                                     : loweredFalse;
+      }
+      std::vector<ast::Expression> loweredArguments;
+      loweredArguments.reserve(arguments.size());
+      loweredArguments.push_back(std::move(loweredCondition));
+      loweredArguments.push_back(std::move(loweredTrue));
+      loweredArguments.push_back(std::move(loweredFalse));
+      return ast::Expression::function(name, std::move(loweredArguments));
+    }
+    if ((lowerName == "time" || lowerName == "t") && arguments.empty())
+      return ast::Expression::function(name, {});
+
+    static const std::unordered_set<std::string> dynamicMathBuiltins = {
+        "exp", "ln", "log10", "log2", "sqrt", "abs", "sin", "cos",
+        "tan", "min", "max"};
+    if (dynamicMathBuiltins.count(lowerName) == 0) {
+      throw std::runtime_error("unsupported function '" + name +
+                               "' in a local finite-network rate");
+    }
+    std::vector<ast::Expression> loweredArguments;
+    loweredArguments.reserve(arguments.size());
+    for (const auto &argument : arguments) {
+      loweredArguments.push_back(lowerScopedTimeRateExpression(
+          argument, model, localCounts, environment, activeFunctions,
+          foldStatic, specializeStaticConditionals));
+    }
+    return ast::Expression::function(name, std::move(loweredArguments));
   }
   case Kind::TableFunction:
     throw std::runtime_error("time-table functions are not supported in a "
@@ -652,7 +972,10 @@ std::string formatSpeciesAmount(const ast::Species& species, const ast::Model& m
     const auto speciesLabel = species.getSpeciesGraph().canonicalLabel();
     for (std::size_t i = 0; i < model.getSeedSpecies().size(); ++i) {
         const auto& seed = model.getSeedSpecies()[i];
-        if (seed.getCanonicalLabel() == speciesLabel && std::abs(species.getAmount()) > 1e-12) {
+        if (std::abs(species.getAmount()) > 1e-12 &&
+            seed.getCanonicalLabel() == speciesLabel &&
+            seed.getCompartment() == species.getCompartment() &&
+            species.getSpeciesGraph().graphIsomorphicTo(seed.getGraph())) {
             // Use the original seed species amount expression (parameter name or value)
             return seed.getAmount().toString();
         }
@@ -1202,12 +1525,41 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 }
               }
 
-              std::unordered_set<std::string> activeFunctions;
-              const double rateValue = evaluateScopedRateExpression(
-                  expression, model, localCounts, {}, activeFunctions);
               const std::string paramName =
                   info.paramName + std::to_string(sequence++);
-              info.perReactionRates[rxnIndex] = {paramName, rateValue};
+              std::unordered_set<std::string> timeFunctions;
+              if (scopedRateExpressionUsesTime(expression, model,
+                                               timeFunctions)) {
+                std::unordered_set<std::string> activeFunctions;
+                auto rateExpression = lowerScopedTimeRateExpression(
+                    expression, model, localCounts, {}, activeFunctions);
+                info.perReactionRateFunctions[rxnIndex] =
+                    {paramName, std::move(rateExpression)};
+
+                std::unordered_set<std::string> runtimeFunctions;
+                const auto runtimeExpression = lowerScopedTimeRateExpression(
+                    expression, model, localCounts, {}, runtimeFunctions,
+                    true, true);
+                if (runtimeExpression.kind() == ast::ExpressionKind::Number) {
+                  info.perReactionRuntimeRateConstants[rxnIndex] =
+                      runtimeExpression.numberValue();
+                } else {
+                  std::unordered_set<std::string> runtimeTimeFunctions;
+                  if (!scopedRateExpressionUsesTime(
+                          runtimeExpression, model, runtimeTimeFunctions)) {
+                    std::unordered_set<std::string> foldFunctions;
+                    info.perReactionRuntimeRateConstants[rxnIndex] =
+                        evaluateScopedRateExpression(
+                            runtimeExpression, model, localCounts, {},
+                            foldFunctions);
+                  }
+                }
+              } else {
+                std::unordered_set<std::string> activeFunctions;
+                const double rateValue = evaluateScopedRateExpression(
+                    expression, model, localCounts, {}, activeFunctions);
+                info.perReactionRates[rxnIndex] = {paramName, rateValue};
+              }
             }
             return info;
           };
@@ -1911,10 +2263,10 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 
     for (const auto& [ruleName, info] : derivedRateParams) {
         if (info.isPerReactionLocalFunction) {
-      for (const auto &[rxnIdx, paramPair] : info.perReactionRates) {
-        model.getParameters().add(ast::Parameter(
-            paramPair.first, ast::Expression::number(paramPair.second)));
-      }
+            for (const auto &[rxnIdx, paramPair] : info.perReactionRates) {
+                model.getParameters().add(ast::Parameter(
+                    paramPair.first, ast::Expression::number(paramPair.second)));
+            }
     } else if (info.isLocalFunction) {
             // Register per-species rate params
             for (const auto& [specIdx, paramPair] : info.perSpeciesRates) {
@@ -1940,6 +2292,9 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     if (info.isPerReactionLocalFunction) {
       for (const auto &[rxnIdx, paramPair] : info.perReactionRates) {
         derivedParamNames.insert(paramPair.first);
+      }
+      for (const auto &[rxnIdx, functionPair] : info.perReactionRateFunctions) {
+        derivedParamNames.insert(functionPair.first);
       }
     } else if (info.isLocalFunction) {
             for (const auto& [specIdx, paramPair] : info.perSpeciesRates) {
@@ -2075,7 +2430,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     // Write functions section: model-level named functions + derived rate laws
     bool hasDerivedFunctions = false;
     for (const auto& [ruleName, info] : derivedRateParams) {
-        if (info.asFunction) {
+        if (info.asFunction || !info.perReactionRateFunctions.empty()) {
             hasDerivedFunctions = true;
             break;
         }
@@ -2100,9 +2455,38 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             if (found != derivedRateParams.end() && found->second.asFunction) {
                 out << "    " << functionIndex++ << " " << found->second.paramName << "() " << compactExpression(found->second.expression) << '\n';
             }
+            if (found != derivedRateParams.end()) {
+                std::vector<std::pair<std::size_t,
+                                      std::pair<std::string, ast::Expression>>>
+                    localFunctions(found->second.perReactionRateFunctions.begin(),
+                                   found->second.perReactionRateFunctions.end());
+                std::sort(localFunctions.begin(), localFunctions.end(),
+                          [](const auto &left, const auto &right) {
+                            return left.first < right.first;
+                          });
+                for (const auto &[rxnIdx, functionPair] : localFunctions) {
+                    out << "    " << functionIndex++ << " " << functionPair.first
+                        << "() " << functionPair.second.toString() << '\n';
+                }
+            }
             const auto reverseFound = derivedRateParams.find("_reverse__" + rule.getRuleName());
             if (reverseFound != derivedRateParams.end() && reverseFound->second.asFunction) {
                 out << "    " << functionIndex++ << " " << reverseFound->second.paramName << "() " << compactExpression(reverseFound->second.expression) << '\n';
+            }
+            if (reverseFound != derivedRateParams.end()) {
+                std::vector<std::pair<std::size_t,
+                                      std::pair<std::string, ast::Expression>>>
+                    localFunctions(
+                        reverseFound->second.perReactionRateFunctions.begin(),
+                        reverseFound->second.perReactionRateFunctions.end());
+                std::sort(localFunctions.begin(), localFunctions.end(),
+                          [](const auto &left, const auto &right) {
+                            return left.first < right.first;
+                          });
+                for (const auto &[rxnIdx, functionPair] : localFunctions) {
+                    out << "    " << functionIndex++ << " " << functionPair.first
+                        << "() " << functionPair.second.toString() << '\n';
+                }
             }
         }
         out << "end functions\n";
@@ -2179,11 +2563,15 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
         const auto derivedFound = derivedRateParams.find(reaction.getOriginRuleName());
     if (derivedFound != derivedRateParams.end() &&
         derivedFound->second.isPerReactionLocalFunction) {
+      const auto functionIt =
+          derivedFound->second.perReactionRateFunctions.find(rxnIdx);
       const auto rxnIt = derivedFound->second.perReactionRates.find(rxnIdx);
       const std::string rateParamName =
-          rxnIt != derivedFound->second.perReactionRates.end()
-              ? rxnIt->second.first
-              : derivedFound->second.paramName;
+          functionIt != derivedFound->second.perReactionRateFunctions.end()
+              ? functionIt->second.first
+              : (rxnIt != derivedFound->second.perReactionRates.end()
+                     ? rxnIt->second.first
+                     : derivedFound->second.paramName);
       const auto unitFactor = unitConversionFactor(reaction, model, network);
       const auto unitExpr = unitConversionExpression(reaction, model, network);
       double combinedFactor = totalRate ? 1.0 : reaction.getFactor();

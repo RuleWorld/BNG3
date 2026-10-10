@@ -159,7 +159,14 @@ end model
 
         output = tmp_path / "inside_model.gdat"
         assert output.exists()
-        assert "Atot" in output.read_text()
+        content = output.read_text()
+        assert "Atot" in content
+        rows = [
+            line.split()
+            for line in content.splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert [float(row[0]) for row in rows] == [0.0, 1.0]
 
     def test_integer_state_increment_and_decrement_rules_are_expanded(self, tmp_path):
         bngl = tmp_path / "integer_states.bngl"
@@ -277,6 +284,40 @@ end model
         network = _cpp.generate_network(model, max_iter=3)
 
         assert network.num_species == 16
+
+    def test_python_max_iter_override_bypasses_invalid_bngl_protocol_option(
+        self, tmp_path
+    ):
+        bngl = tmp_path / "python_max_iter_override.bngl"
+        bngl.write_text(
+            """
+begin molecule types
+    A(s~0~1~2)
+end molecule types
+begin seed species
+    A(s~0) 1
+end seed species
+begin reaction rules
+    r01: A(s~0) -> A(s~1) 1
+    r12: A(s~1) -> A(s~2) 1
+end reaction rules
+begin actions
+    generate_network({max_iter=>(1/0)**0})
+end actions
+""",
+            encoding="utf-8",
+        )
+        model = _cpp.parse_file(str(bngl))
+
+        # The direct binding's numeric option (default 100, or the explicit
+        # value below) retains its existing contract independently of BNGL actions.
+        default_network = _cpp.generate_network(model)
+        assert default_network.num_species == 3
+        assert default_network.num_reactions == 2
+
+        network = _cpp.generate_network(model, max_iter=2)
+        assert network.num_species == 3
+        assert network.num_reactions == 2
 
     def test_model_function_forward_rate_keeps_complex_reverse_rate(self, tmp_path):
         """A model-function forward rate must not drop its reverse rate."""
@@ -675,6 +716,15 @@ end model
         assert result.time.tolist() == pytest.approx([100.0, 101.0, 102.0])
         assert result.observables["Xtot"][-1] > 100.0
 
+        uniform = model.simulate(
+            method="nf", t_start=100.0, t_end=102.0, n_steps=20, seed=1
+        )
+        assert uniform.time[0] == 100.0
+        assert uniform.time[-1] == 102.0
+        assert uniform.observables["Xtot"][-1] > 100.0
+        assert uniform.observables["Xtot"][10] == result.observables["Xtot"][1]
+        assert uniform.observables["Xtot"][-1] == result.observables["Xtot"][-1]
+
     def test_nf_sampling_matches_nfsim_accumulated_output_grid(self, tmp_path):
         # Source-derived from NFsim System::sim: output checkpoints advance by
         # repeated dSampleTime addition, not by multiplying the step index.
@@ -697,8 +747,9 @@ end model
 
         dt = 0.2 / 20
         expected = [0.0]
-        for _ in range(20):
+        for _ in range(19):
             expected.append(expected[-1] + dt)
+        expected.append(0.2)
         assert result["time"].tolist() == expected
 
     def test_nf_final_sample_excludes_event_after_stopping_time(self, tmp_path):
@@ -721,6 +772,7 @@ end model
         result = _cpp.simulate_nf(model, t_end=1e-6, n_steps=1, seed=1)
 
         assert result["construction_path"] == "direct"
+        assert result["time"].tolist() == [0.0, 1e-6]
         assert result["observables"]["Xtot"].tolist() == [0.0, 0.0]
 
     def test_nf_simulation_accepts_traversal_limit(self, tmp_path):
@@ -1146,6 +1198,7 @@ begin reaction rules
 end reaction rules
 begin actions
     simulate_nf({prefix=>"issue78",t_start=>100,t_end=>102,sample_times=>[100,101,102],seed=>1,print_functions=>1})
+    simulate_nf({prefix=>"issue78_uniform",t_start=>100,t_end=>102,n_steps=>20,seed=>1,print_functions=>1})
 end actions
 end model
 """)
@@ -1160,6 +1213,23 @@ end model
         ]
         assert [float(row[0]) for row in rows] == pytest.approx([100.0, 101.0, 102.0])
         assert "stimulus" in output.read_text()
+
+        uniform_output = tmp_path / "issue78_uniform.gdat"
+        uniform_rows = [
+            line.split()
+            for line in uniform_output.read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert len(uniform_rows) == 21
+        assert float(uniform_rows[0][0]) == 100.0
+        assert float(uniform_rows[10][0]) == 101.0
+        assert float(uniform_rows[-1][0]) == 102.0
+        assert float(uniform_rows[0][-1]) == 100.0
+        assert float(uniform_rows[10][-1]) == 101.0
+        assert float(uniform_rows[-1][-1]) == 102.0
+        assert float(uniform_rows[0][1]) == float(rows[0][1])
+        assert float(uniform_rows[10][1]) == float(rows[1][1])
+        assert float(uniform_rows[-1][1]) == float(rows[-1][1])
 
     def test_simulate_nf_action_outputs_global_functions(self, tmp_path):
         bngl = tmp_path / "nf_functions.bngl"

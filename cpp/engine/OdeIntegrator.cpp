@@ -224,15 +224,25 @@ void OdeIntegrator::compile() {
     // This handles local functions (%x:: scope prefix), energy patterns, and Arrhenius
     // rates where the NetWriter creates per-reaction derived parameters.
     std::unordered_map<std::size_t, std::pair<std::string, double>> perRxnDerivedRates;
+    std::unordered_map<std::size_t, ast::Expression> perRxnDerivedRateFunctions;
+    std::unordered_map<std::size_t, double> perRxnDerivedRuntimeRateConstants;
     {
         auto derived = bng::io::NetWriter::buildDerivedRateParams(model_, network_);
         for (const auto& [ruleName, info] : derived) {
             if (info.isPerReactionArrhenius || info.isPerReactionLocalFunction || info.isLocalFunction) {
+                for (const auto& [rxnIdx, functionPair] : info.perReactionRateFunctions) {
+                    perRxnDerivedRateFunctions[rxnIdx] = functionPair.second;
+                }
+                for (const auto& [rxnIdx, rate] : info.perReactionRuntimeRateConstants) {
+                    perRxnDerivedRuntimeRateConstants[rxnIdx] = rate;
+                }
                 for (const auto& [rxnIdx, paramPair] : info.perReactionRates) {
                     perRxnDerivedRates[rxnIdx] = paramPair;
                 }
                 // Also build from perSpeciesRates by walking the reaction list
-                if (!info.perReactionRates.empty()) continue;
+                if (!info.perReactionRates.empty() ||
+                    !info.perReactionRateFunctions.empty() ||
+                    !info.perReactionRuntimeRateConstants.empty()) continue;
                 std::size_t rxnIdx = 0;
                 for (const auto& rxn2 : network_.reactions.all()) {
                     if (rxn2.getOriginRuleName() == ruleName) {
@@ -393,6 +403,49 @@ void OdeIntegrator::compile() {
         // compartments) and the statistical factor, matching what Perl writes in
         // the .net reactions section.
         {
+            auto runtimeConstantIt =
+                perRxnDerivedRuntimeRateConstants.find(rxnIndex);
+            if (runtimeConstantIt != perRxnDerivedRuntimeRateConstants.end()) {
+                double rate = runtimeConstantIt->second;
+                if (!crxn.isTotalRate) {
+                    const auto unitFactor =
+                        bng::io::NetWriter::computeUnitConversionFactor(
+                            rxn, model_, network_);
+                    if (unitFactor.has_value()) rate *= *unitFactor;
+                    if (std::abs(rxn.getFactor() - 1.0) >= 1e-9)
+                        rate *= rxn.getFactor();
+                }
+                crxn.rateConstant = rate;
+                crxn.isFunctional = false;
+                crxn.isTimeDependent = false;
+                compiledRxns_.push_back(crxn);
+                ++rxnIndex;
+                continue;
+            }
+            auto functionIt = perRxnDerivedRateFunctions.find(rxnIndex);
+            if (functionIt != perRxnDerivedRateFunctions.end()) {
+                auto rateExpression = functionIt->second;
+                double combinedFactor = 1.0;
+                if (!crxn.isTotalRate) {
+                    const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(
+                        rxn, model_, network_);
+                    if (unitFactor.has_value()) combinedFactor *= *unitFactor;
+                    combinedFactor *= rxn.getFactor();
+                }
+                if (std::abs(combinedFactor - 1.0) >= 1e-9) {
+                    rateExpression = ast::Expression::binary(
+                        "*", ast::Expression::number(combinedFactor),
+                        std::move(rateExpression));
+                }
+                crxn.functionalRateExpr = std::move(rateExpression);
+                crxn.rateConstant = 0.0;
+                crxn.isFunctional = true;
+                crxn.isTimeDependent = true;
+                hasFunctionalRates_ = true;
+                compiledRxns_.push_back(crxn);
+                ++rxnIndex;
+                continue;
+            }
             auto drIt = perRxnDerivedRates.find(rxnIndex);
             if (drIt != perRxnDerivedRates.end()) {
                 double rate = drIt->second.second;  // numeric value

@@ -16,6 +16,13 @@ namespace bng::ast { class Model; }
 
 namespace bng::compile {
 
+struct ResolvedUnitReference {
+    units::Unit unit;
+    // True when the authored key names a unit-system entry. False for a
+    // compound expression resolved by the compiler.
+    bool namedDefinition = false;
+};
+
 struct ModelMetadata {
     std::string name;
     std::string version;
@@ -23,6 +30,10 @@ struct ModelMetadata {
     std::map<std::string, std::string> options;
     std::map<std::string, std::string> unitDefaults;
     std::vector<units::UnitDefinition> unitDefinitions;
+    // Unit spellings are resolved once while compiling. Writers may retain
+    // an authored spelling as a lookup key, but must use this typed value and
+    // identity bit rather than parse the string again.
+    std::map<std::string, ResolvedUnitReference> resolvedUnitReferences;
 };
 
 struct CompiledParameter {

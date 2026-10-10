@@ -26,6 +26,15 @@ struct DerivedRateInfo {
     // Per-reaction rate parameters for Arrhenius energy-pattern rules:
     // maps reaction index -> (parameter name, numeric value)
     std::unordered_map<std::size_t, std::pair<std::string, double>> perReactionRates;
+    // Time-dependent scoped rates remain no-argument functions evaluated by
+    // the simulation clock instead of being folded to per-reaction numbers.
+    std::unordered_map<std::size_t,
+                       std::pair<std::string, ast::Expression>>
+        perReactionRateFunctions;
+    // Runtime-only constants for scoped-rate functions whose clock-bearing
+    // branches are unreachable after substituting per-reaction scope counts.
+    // The symbolic functions above remain unchanged for .net serialization.
+    std::unordered_map<std::size_t, double> perReactionRuntimeRateConstants;
 };
 
 struct NetWriterOptions {

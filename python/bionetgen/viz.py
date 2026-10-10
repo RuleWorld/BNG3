@@ -25,6 +25,9 @@ def _viz_module():
 
 
 def _write(name: str, model, path: Optional[Union[str, Path]] = None):
+    require_export_supported = getattr(model, "_require_export_supported", None)
+    if require_export_supported is not None:
+        require_export_supported(f"{name} visualization/export")
     writer = getattr(_viz_module(), name)
     cpp_model = _unwrap_model(model)
     if path is None:

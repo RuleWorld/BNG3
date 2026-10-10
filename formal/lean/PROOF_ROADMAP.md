@@ -39,7 +39,6 @@ Implemented in `BNG/Runtime.lean` and `BNG/Operational.lean`:
 
 Still needed here:
 
-- proposition-level soundness/completeness theorems for the Boolean matcher;
 - explicit automorphism/equivalence treatment for embeddings;
 - connected-component/species semantics;
 - formal relation to current BNG/NFsim matcher behavior.
@@ -98,39 +97,32 @@ for the current supported feature gate.
 
 This is the first substantive refinement theorem in the project.
 
-## Stage 4 — kernel validation: IMMEDIATE BLOCKER
+## Stage 4 — Lean kernel validation: IMPLEMENTED
 
-Before treating any theorem as trusted:
+The pinned Lean 4.33.1 workflow builds the `BNG/**` library, runs
+`tests/Smoke.lean` and `tests/Coverage.lean` explicitly, and audits named axiom
+dependencies. The package's default Lake target does not include either test
+file, so the explicit commands are required. A weekly/manual run also mutates
+scratch copies to verify that the harness gates reject representative defects.
 
-```bash
-lake build
-lake env lean tests/Smoke.lean
-```
+These checks validate Lean declarations and executable fixtures within their
+stated trust boundaries. They do not prove that production C++ implements the
+Lean reference semantics; see `VALIDATION.md` and `CXX_MAPPING.md` for the
+separate native-test evidence and remaining correspondence boundary.
 
-must succeed under the pinned Lean toolchain.
+## Stage 5 — connect Boolean checks to propositions: DONE FOR LEAN REFERENCE MATCHER
 
-The packaging environment currently lacks Lean, so this stage must happen in CI
-or on a developer machine.
+PR [#194](https://github.com/RuleWorld/BNG3/pull/194) merged into `main` at
+`c3b20f3e4a863300ac79dc9dfe71f0b406b6eda6` on 2026-10-09. It proves
+`BNG.embeddingMatches_iff_EmbeddingSpec` and soundness/completeness of the Lean
+reference enumerator. Completeness compares node lookups independently of
+association-list order, and `EmbeddingSpec` requires the exact duplicate-free
+pattern occurrence domain. The theorems retain all-input quantification without
+a hidden well-formed-input premise.
 
-## Stage 5 — connect Boolean checks to propositions
-
-Define proposition-level relations such as:
-
-```text
-EmbeddingIsMatch p mix e
-WellFormedMixture sig mix
-WellFormedRule sig scope d
-```
-
-and prove executable checker correspondence, e.g.:
-
-```text
-p.embeddingMatches mix e = true
-↔
-EmbeddingIsMatch p mix e
-```
-
-This matters before deeper proofs depend heavily on Boolean validators.
+This closes the proposition-level matcher obligation for the Lean reference
+implementation only. Production C++ matcher/lowering correspondence remains
+separate work (#166).
 
 ## Stage 6 — canonical semantic interchange
 
@@ -274,17 +266,19 @@ implementations:
 - real C++ NFnext matcher/transformation conformance harness: IMPLEMENTED and
   passing 18/18 checks in this environment.
 
-The highest-priority remaining work is now narrower:
+The highest-priority remaining work is:
 
-1. kernel-build every Lean file under the pinned toolchain;
-2. prove `Pattern.embeddingMatches = true <-> EmbeddingSpec`;
-3. connect the actual production C++ `CompiledModel -> NFnext` lowering to the
-   checked packing/lowering contract;
-4. prove/test a production species canonicalizer against the brute-force graph
+1. qualify production C++ `CompiledModel -> NFnext` correspondence beyond the
+   bounded declaration-ID and field-width checks merged in PR
+   [#198](https://github.com/RuleWorld/BNG3/pull/198) at
+   `2038e18693e29a0c646c723998d7a59d737b8cff`. The merge adds preflight and a
+   parser-to-lowering bridge case; it does not prove general
+   pattern/rate/bond/transformation refinement;
+2. prove/test a production species canonicalizer against the brute-force graph
    isomorphism oracle;
-5. formalize exact special-rate/local-function/builtin conventions that are
+3. formalize exact special-rate/local-function/builtin conventions that are
    actually used by supported backends;
-6. extend stochastic refinement from channel multiplicity to complete
+4. extend stochastic refinement from channel multiplicity to complete
    propensities and event selection;
-7. add generated differential fixtures across BNG3 network generation, NFsim,
+5. add generated differential fixtures across BNG3 network generation, NFsim,
    and NFnext.

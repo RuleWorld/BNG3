@@ -1918,6 +1918,23 @@ bool lowerDirection(const CompiledModel& model,
         }
     }
 
+    const bool deleteMolecules = hasModifier(rule, ModifierKind::DeleteMolecules);
+    const auto wholeSpeciesDeletion = [&](std::size_t patternIndex) {
+        return std::find(direction.wholeSpeciesDeletions.begin(),
+                         direction.wholeSpeciesDeletions.end(), patternIndex) !=
+               direction.wholeSpeciesDeletions.end();
+    };
+    if (!deleteMolecules) {
+        for (const auto& mutation : direction.mutations) {
+            if (mutation.kind == MutationKind::DeleteMolecule &&
+                !wholeSpeciesDeletion(mutation.molecule.patternIndex)) {
+                diagnostic = "conditional partial pattern deletion is unsupported; "
+                             "requires DeleteMolecules";
+                return false;
+            }
+        }
+    }
+
     const auto symmetric = addSymmetricCompiledDirection(
         model, rule, direction, reverse, system, blockSameComplexBinding, verbose,
         suggestedTraversalLimit, sourcePath, ordinal, diagnostic);
@@ -2017,6 +2034,8 @@ bool lowerDirection(const CompiledModel& model,
     // Add creator transformations before edits; then unbind, bind, state-change.
     for (const auto& mutation : direction.mutations) {
         if (mutation.kind != MutationKind::DeleteBond) continue;
+        if (wholeSpeciesDeletion(mutation.source.patternIndex) ||
+            wholeSpeciesDeletion(mutation.partner.patternIndex)) continue;
         NFcore::TemplateMolecule *lhs=nullptr, *rhs=nullptr; std::string lhsName, rhsName;
         if (!componentForRef(model, direction, mutation.source, templates, lhs, lhsName, diagnostic) ||
             !componentForRef(model, direction, mutation.partner, templates, rhs, rhsName, diagnostic) ||
@@ -2103,28 +2122,36 @@ bool lowerDirection(const CompiledModel& model,
         if (!applied) { diagnostic = "could not lower state change"; delete transformations; return false; }
     }
 
-    const bool deleteMolecules = hasModifier(rule, ModifierKind::DeleteMolecules);
     if (direction.productPatterns.empty() && direction.mutations.empty()) {
-        for (auto* root : roots) {
-            const bool ok = root->getMoleculeType()->isPopulationType()
-                ? transformations->addDecrementPopulation(root)
-                : transformations->addDeleteMolecule(
-                    root, deleteMolecules ? NFcore::TransformationFactory::DELETE_MOLECULES
-                                          : NFcore::TransformationFactory::COMPLETE_SPECIES_REMOVAL);
-            if (!ok) { delete transformations; return false; }
+        for (const auto& pattern : templates) {
+            const auto count = deleteMolecules ? pattern.size() : std::size_t{1};
+            for (std::size_t index = 0; index < count; ++index) {
+                auto* target = pattern.at(index);
+                const bool ok = target->getMoleculeType()->isPopulationType()
+                    ? transformations->addDecrementPopulation(target)
+                    : transformations->addDeleteMolecule(
+                        target, deleteMolecules ? NFcore::TransformationFactory::DELETE_MOLECULES
+                                               : NFcore::TransformationFactory::COMPLETE_SPECIES_REMOVAL);
+                if (!ok) { delete transformations; return false; }
+            }
         }
     } else {
+        std::vector<bool> deletedPattern(templates.size(), false);
         for (const auto& mutation : direction.mutations) {
             if (mutation.kind != MutationKind::DeleteMolecule) continue;
             NFcore::TemplateMolecule* target = nullptr;
             if (!templateForRef(mutation.molecule, templates, target, diagnostic)) {
                 delete transformations; return false;
             }
+            const auto patternIndex = mutation.molecule.patternIndex;
+            const bool wholeSpecies = wholeSpeciesDeletion(patternIndex);
+            if (wholeSpecies && deletedPattern.at(patternIndex)) continue;
+            if (wholeSpecies) deletedPattern.at(patternIndex) = true;
             const bool ok = target->getMoleculeType()->isPopulationType()
                 ? transformations->addDecrementPopulation(target)
                 : transformations->addDeleteMolecule(
-                    target, deleteMolecules ? NFcore::TransformationFactory::DELETE_MOLECULES
-                                            : NFcore::TransformationFactory::DELETE_MOLECULES_NO_KEYWORD);
+                    target, wholeSpecies ? NFcore::TransformationFactory::COMPLETE_SPECIES_REMOVAL
+                                         : NFcore::TransformationFactory::DELETE_MOLECULES);
             if (!ok) { delete transformations; return false; }
         }
     }

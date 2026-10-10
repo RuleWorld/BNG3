@@ -116,6 +116,9 @@ struct CompiledRuleDirection {
     std::vector<Pattern> productPatterns;
     std::optional<CompiledRateLaw> rateLaw;
     std::vector<MutationSignature> mutations;
+    // Pattern indices whose default deletion removes the full matched species.
+    // Resolved once by the compiler; backend lowering must preserve connectivity.
+    std::vector<std::size_t> wholeSpeciesDeletions;
     std::vector<CompiledFilter> filters;
     std::vector<CompiledLocalScope> localScopes;
 

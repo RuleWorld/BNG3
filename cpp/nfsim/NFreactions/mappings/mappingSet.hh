@@ -58,7 +58,7 @@ namespace NFcore
 			 	that fired.
 			    @author Michael Sneddon
 			 */
-			Mapping *get(unsigned int mappingIndex) { return mappings[mappingIndex]; }
+			Mapping *get(unsigned int mappingIndex);
 
 			/*!
 			 	This clears the Mapping objects belonging to this MappingSet.  It is generally
@@ -137,7 +137,7 @@ namespace NFcore
 			/*!
 				An array of pointers to Mapping objects.  This is where the actual Mappings are stored.
 			*/
-			Mapping ** mappings;
+			Mapping * mappings;
 
 
 			bool isSpeciesDeletion;

@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <iostream>
 #include "NFcore.hh"
 #include "compartment.hh"
@@ -17,6 +18,18 @@ unsigned long long profileMoleculeSignature(int id)
 	value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
 	value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
 	return value ^ (value >> 31);
+}
+
+inline void appendRecycledListNode(list<Molecule *> &members, Molecule *molecule,
+		list<Molecule *> *recycledNodes)
+{
+	if (recycledNodes == 0 || recycledNodes->empty()) {
+		members.push_back(molecule);
+		return;
+	}
+	list<Molecule *>::iterator node = recycledNodes->begin();
+	*node = molecule;
+	members.splice(members.end(), *recycledNodes, node);
 }
 
 }
@@ -41,14 +54,22 @@ Molecule::Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * 
 
 	//First initialize the component states and bonds
 	this->numOfComponents = parentMoleculeType->getNumOfComponents();
-	this->component = new int [parentMoleculeType->getNumOfComponents()];
+	/* One fused allocation for the four per-site arrays; see siteBlock. */
+	{
+		const size_t n = (size_t) numOfComponents;
+		const size_t bondBytes  = ((n * sizeof(Molecule *) + 7) / 8) * 8;
+		const size_t compBytes  = ((n * sizeof(int) + 7) / 8) * 8;
+		const size_t idxBytes   = ((n * sizeof(int) + 7) / 8) * 8;
+		const size_t visitBytes = n * sizeof(bool);
+		this->siteBlock = new char [bondBytes + compBytes + idxBytes + visitBytes];
+		char *blk = this->siteBlock;
+		this->bond           = reinterpret_cast<Molecule **>(blk); blk += bondBytes;
+		this->component      = reinterpret_cast<int *>(blk);       blk += compBytes;
+		this->indexOfBond    = reinterpret_cast<int *>(blk);       blk += idxBytes;
+		this->hasVisitedBond = reinterpret_cast<bool *>(blk);
+	}
 	for(int c=0; c<numOfComponents; c++)
 		component[c] = parentMoleculeType->getDefaultComponentState(c);
-
-	// initialize bond sites
-	this->bond = new Molecule * [numOfComponents];
-	this->indexOfBond = new int [numOfComponents];
-	this->hasVisitedBond = new bool [numOfComponents];
 	for(int b=0; b<numOfComponents; b++) {
 		bond[b]=0; indexOfBond[b]=NOBOND;
 		hasVisitedBond[b] = false;
@@ -80,15 +101,11 @@ Molecule::Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * 
 Molecule::~Molecule()
 {
 	if(DEBUG) cout <<"   -destroying molecule instance of type " << parentMoleculeType->getName() << endl;
-	delete [] bond;
-
 	parentMoleculeType = 0;
 
-
 	delete [] isObservable;
-	delete [] component;
-	delete [] indexOfBond;
-	delete [] hasVisitedBond;
+	delete [] siteBlock;
+	bond = 0; component = 0; indexOfBond = 0; hasVisitedBond = 0;
 
 	if(localFunctionValues!=0)
 		delete [] localFunctionValues;
@@ -104,6 +121,14 @@ void Molecule::removeActiveReactionMembershipIndex(int rxnIndex)
 			return;
 		}
 	}
+}
+
+
+namespace NFcore {
+	bool shadowOn();
+	extern long long shadowEvent;
+	void shadowMutBond(Molecule *m1, int c1, Molecule *m2, int c2, bool added);
+	void shadowMutState(Molecule *m, int c, int oldValue, int newValue);
 }
 
 
@@ -313,6 +338,12 @@ bool Molecule::decrementPopulation()
 
 void Molecule::setComponentState(int cIndex, int newValue)
 {
+	if (this->component[cIndex] != newValue) {
+		if (parentMoleculeType != 0 && parentMoleculeType->getSystem() != 0)
+			parentMoleculeType->getSystem()->recordMembershipStateMutation(
+					this, cIndex, this->component[cIndex], newValue);
+		NFcore::shadowMutState(this, cIndex, this->component[cIndex], newValue);
+	}
 	this->component[cIndex]=newValue;
 	if (useComplex)
 		// Need to manually unset canonical flag since we're not calling a Complex method
@@ -430,10 +461,7 @@ void Molecule::printBondDetails(NFstream &o)
 //Get the number of molecules this molecule is bonded to
 int Molecule::getDegree()
 {
-	int degree = 0;
-	for(int c=0; c<numOfComponents; c++)
-		if(bond[c]!=nullptr) degree++;
-	return degree;
+	return static_cast<int>(bondedComponentIndices.size());
 }
 
 // Get a label for this molecule or one of it's components (labels are not unique)
@@ -460,39 +488,44 @@ string Molecule::getLabel ( int cIndex ) const
 }
 
 
-bool Molecule::isBindingSiteOpen(int cIndex) const
-{
-	if(bond[cIndex]==nullptr) return true;
-	return false;
+/* ---- shadow mutation tracking (NFSIM_SHADOW=1) ------------------------
+ * Records the mutations an event performs -- changed component, and both the
+ * old and new bond endpoints -- so a hypothetical topology-aware candidate
+ * set can be constructed and compared against what the full membership scan
+ * actually changed.  Nothing is skipped; this is diagnostic only. */
+namespace NFcore {
+	bool shadowOn() {
+		static int on = -1;
+		if (on < 0) on = (getenv("NFSIM_SHADOW") != 0) ? 1 : 0;
+		return on == 1;
+	}
+	long long shadowEvent = 0;
+	void shadowMutBond(Molecule *m1, int c1, Molecule *m2, int c2, bool added) {
+		if (!shadowOn()) return;
+		cout << "@MUTB " << shadowEvent
+		     << " " << m1->getUniqueID()
+		     << " " << m1->getMoleculeType()->getName()
+		     << " " << m1->getMoleculeType()->getComponentName(c1)
+		     << " " << m2->getUniqueID()
+		     << " " << m2->getMoleculeType()->getName()
+		     << " " << m2->getMoleculeType()->getComponentName(c2)
+		     << " " << (added ? "add" : "del") << endl;
+	}
+	void shadowMutState(Molecule *m, int c, int oldValue, int newValue) {
+		if (!shadowOn() || oldValue == newValue) return;
+		cout << "@MUTS " << shadowEvent
+		     << " " << m->getUniqueID()
+		     << " " << m->getMoleculeType()->getName()
+		     << " " << m->getMoleculeType()->getComponentName(c)
+		     /* State NAMES, not internal integer indices: the dependency
+		      * index is keyed on the XML state string, so logging the
+		      * integer made every state dependency silently incomparable
+		      * and suppressed loss-side state candidates entirely. */
+		     << " " << m->getMoleculeType()->getComponentStateName(c, oldValue)
+		     << " " << m->getMoleculeType()->getComponentStateName(c, newValue)
+		     << endl;
+	}
 }
-
-bool Molecule::isBindingSiteBonded(int cIndex) const
-{
-	if(bond[cIndex]==nullptr) return false;
-	return true;
-}
-
-Molecule * Molecule::getBondedMolecule(int cIndex) const
-{
-	return bond[cIndex];
-}
-
-// given the component index, look up what we are bonded to.  Then
-// in the molecule we are bonded to, look at what site we are bonded to
-//
-//  for instance
-//
-//    this(a!1).other(b!),   and we call this->getBondedMoleculeBindingSiteIndex(0)
-//
-//    where index 0 = this site a, then this function would return the
-//    component index of b in molecule other.
-//
-int Molecule::getBondedMoleculeBindingSiteIndex(int cIndex) const
-{
-	return indexOfBond[cIndex];
-}
-
-
 
 void Molecule::bind(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2)
 {
@@ -523,10 +556,20 @@ void Molecule::bind(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2)
 	m2->indexOfBond[cIndex2] = cIndex1;
 	if (profile)
 		profileSystem->recordProfileTopologyMutation();
+	if (profileSystem != 0)
+		profileSystem->recordMembershipBondMutation(
+				m1, cIndex1, m2, cIndex2, true);
+	NFcore::shadowMutBond(m1, cIndex1, m2, cIndex2, true);
 	if (cIndex1 < 64)
 		m1->boundComponentMask |= (std::uint64_t(1) << cIndex1);
 	if (cIndex2 < 64)
 		m2->boundComponentMask |= (std::uint64_t(1) << cIndex2);
+	m1->bondedComponentIndices.insert(
+			std::lower_bound(m1->bondedComponentIndices.begin(),
+				m1->bondedComponentIndices.end(), cIndex1), cIndex1);
+	m2->bondedComponentIndices.insert(
+			std::lower_bound(m2->bondedComponentIndices.begin(),
+				m2->bondedComponentIndices.end(), cIndex2), cIndex2);
 
 	//Handle Complexes
 	if(m1->useComplex)
@@ -586,12 +629,24 @@ vector<int> Molecule::unbind(Molecule *m1, int cIndex)
 	m2->indexOfBond[cIndex2] = NOINDEX;
 	if (profile)
 		profileSystem->recordProfileTopologyMutation();
+	if (profileSystem != 0)
+		profileSystem->recordMembershipBondMutation(
+				m1, cIndex, m2, cIndex2, false);
+	NFcore::shadowMutBond(m1, cIndex, m2, cIndex2, false);
 	if (cIndex < 64)
 		m1->boundComponentMask &=
 				~(std::uint64_t(1) << cIndex);
 	if (cIndex2 < 64)
 		m2->boundComponentMask &=
 				~(std::uint64_t(1) << cIndex2);
+	vector<int>::iterator occupied1 = std::lower_bound(
+			m1->bondedComponentIndices.begin(), m1->bondedComponentIndices.end(), cIndex);
+	if (occupied1 != m1->bondedComponentIndices.end() && *occupied1 == cIndex)
+		m1->bondedComponentIndices.erase(occupied1);
+	vector<int>::iterator occupied2 = std::lower_bound(
+			m2->bondedComponentIndices.begin(), m2->bondedComponentIndices.end(), cIndex2);
+	if (occupied2 != m2->bondedComponentIndices.end() && *occupied2 == cIndex2)
+		m2->bondedComponentIndices.erase(occupied2);
 
 	//Handle Complexes
 	if(m1->useComplex)
@@ -628,22 +683,24 @@ vector<int> Molecule::unbind(Molecule *m1, char * compName)
 // queue <Molecule *> Molecule::q;
 // queue <int> Molecule::d;
 // list <Molecule *>::iterator Molecule::molIter;
-bool Molecule::breadthFirstSearch(list <Molecule *> &members, Molecule *m, int depth)
+template <bool PROFILE, bool TRACKING, bool TRACK_TRUNCATION>
+bool Molecule::breadthFirstSearchImpl(
+		list <Molecule *> &members, Molecule *m, int depth,
+		string *logstr, System *profileSystem,
+		list <Molecule *> *recycledNodes)
 {
 	static queue <Molecule *> q;
 	static queue <int> d;
 	static list <Molecule *>::iterator molIter;
-	System *profileSystem = m != 0 && m->getMoleculeType() != 0
-		? m->getMoleculeType()->getSystem() : 0;
-	bool profile = profileSystem != 0 && profileSystem->isProfileReactionActive();
-	ProfileTime profileStart = profile ? profileNow() : ProfileTime();
+	ProfileTime profileStart = ProfileTime();
 	unsigned long long moleculesVisited = 0;
 	unsigned long long edgeVisits = 0;
 	unsigned long long componentMinimumMoleculeId =
 		std::numeric_limits<unsigned long long>::max();
 	unsigned long long componentMaximumMoleculeId = 0;
 	unsigned long long componentSignature = 0;
-	bool truncated = false;
+	bool traversalTruncated = false;
+	if (PROFILE) profileStart = profileNow();
 
 	// Reset queues to be safe (though they should be empty)
 	while(!q.empty()) q.pop();
@@ -666,7 +723,7 @@ bool Molecule::breadthFirstSearch(list <Molecule *> &members, Molecule *m, int d
 
 	//First add this molecule
 	q.push(m);
-	members.push_back(m);
+	appendRecycledListNode(members, m, recycledNodes);
 	d.push(currentDepth+1);
 	m->hasVisitedMolecule=true;
 
@@ -678,8 +735,8 @@ bool Molecule::breadthFirstSearch(list <Molecule *> &members, Molecule *m, int d
 		currentDepth = d.front();
 		q.pop();
 		d.pop();
-		++moleculesVisited;
-		if (profile) {
+		if (PROFILE) {
+			++moleculesVisited;
 			unsigned long long moleculeId =
 				static_cast<unsigned long long>(cM->getUniqueID());
 			if (moleculeId < componentMinimumMoleculeId)
@@ -688,163 +745,93 @@ bool Molecule::breadthFirstSearch(list <Molecule *> &members, Molecule *m, int d
 				componentMaximumMoleculeId = moleculeId;
 			componentSignature ^= profileMoleculeSignature(cM->getUniqueID());
 		}
+		if (TRACKING && !logstr->empty()) {
+			*logstr += "          [\"Delete\"," +
+					to_string(cM->getUniqueID()) + "],\n";
+		}
 
 		//Make sure the depth does not exceed the limit we want to search
 		if((depth!=ReactionClass::NO_LIMIT) && (currentDepth>=depth)) {
-			for (int c = 0; c < cM->numOfComponents; ++c) {
-				if (cM->isBindingSiteBonded(c) &&
-					!cM->getBondedMolecule(c)->hasVisitedMolecule) {
-					truncated = true;
-					break;
+			if (TRACK_TRUNCATION) {
+				for (vector<int>::const_iterator bit =
+						cM->bondedComponentIndices.begin();
+						bit != cM->bondedComponentIndices.end(); ++bit) {
+					Molecule *neighbor = cM->bond[*bit];
+					if (neighbor != 0 && !neighbor->hasVisitedMolecule) {
+						traversalTruncated = true;
+						break;
+					}
 				}
 			}
 			continue;
 		}
 
-		//Loop through the bonds
-		int cMax = cM->numOfComponents;
-		for(int c=0; c<cMax; c++)
+		// Iterate only occupied sites.  Large polymer-like molecule types can
+		// declare hundreds or thousands of components but usually have low degree.
+		for (vector<int>::const_iterator bit = cM->bondedComponentIndices.begin();
+				bit != cM->bondedComponentIndices.end(); ++bit)
 		{
-			//cM->getComp
-			if(cM->isBindingSiteBonded(c))
+			const int c = *bit;
+			Molecule *neighbor = cM->bond[c];
+			if (neighbor == 0) continue; // defensive: sparse list must mirror bond[]
+			if (PROFILE) ++edgeVisits;
+			if(!neighbor->hasVisitedMolecule)
 			{
-				++edgeVisits;
-				Molecule *neighbor = cM->getBondedMolecule(c);
-				//cout<<"looking at neighbor: "<<endl;
-				//neighbor->printDetails();
-				if(!neighbor->hasVisitedMolecule)
-				{
-					neighbor->hasVisitedMolecule=true;
-					members.push_back(neighbor);
-					q.push(neighbor);
-					d.push(currentDepth+1);
-					//cout<<"adding... to traversal list."<<endl;
-				}
+				neighbor->hasVisitedMolecule=true;
+				appendRecycledListNode(members, neighbor, recycledNodes);
+				q.push(neighbor);
+				d.push(currentDepth+1);
 			}
 		}
 	}
 
-
 	//clear the has visitedMolecule values
 	for( molIter = members.begin(); molIter != members.end(); molIter++ )
 		(*molIter)->hasVisitedMolecule=false;
-	if (profile)
+	if (PROFILE)
 		profileSystem->recordProfileConnectivity(profileElapsedSeconds(profileStart),
 				moleculesVisited, edgeVisits, componentMinimumMoleculeId,
 				componentMaximumMoleculeId, componentSignature);
-	return truncated;
+	return traversalTruncated;
+}
+
+bool Molecule::breadthFirstSearch(list <Molecule *> &members, Molecule *m, int depth,
+		list <Molecule *> *recycledNodes)
+{
+	System *profileSystem = m != 0 && m->getMoleculeType() != 0
+		? m->getMoleculeType()->getSystem() : 0;
+	if (profileSystem != 0 && profileSystem->isProfileReactionActive())
+		return breadthFirstSearchImpl<true, false, true>(
+				members, m, depth, 0, profileSystem, recycledNodes);
+	return breadthFirstSearchImpl<false, false, true>(
+				members, m, depth, 0, 0, recycledNodes);
 }
 
 // AS2023 - alternative call sig for logging that includes a log string
 void Molecule::breadthFirstSearch(list <Molecule *> &members, Molecule *m, int depth, string &logstr)
 {
-	static queue <Molecule *> q;
-	static queue <int> d;
-	static list <Molecule *>::iterator molIter;
 	System *profileSystem = m != 0 && m->getMoleculeType() != 0
 		? m->getMoleculeType()->getSystem() : 0;
-	bool profile = profileSystem != 0 && profileSystem->isProfileReactionActive();
-	ProfileTime profileStart = profile ? profileNow() : ProfileTime();
-	unsigned long long moleculesVisited = 0;
-	unsigned long long edgeVisits = 0;
-	unsigned long long componentMinimumMoleculeId =
-		std::numeric_limits<unsigned long long>::max();
-	unsigned long long componentMaximumMoleculeId = 0;
-	unsigned long long componentSignature = 0;
-
-	// Reset queues to be safe
-	while(!q.empty()) q.pop();
-	while(!d.empty()) d.pop();
-
-	if(m==0) {
-		// Defensive check: mapping may be missing for some transformations (e.g., internal bond reconnection).
-		// Avoid crashing the entire simulation; just skip traversal.
-		cerr<<"Warning: Molecule::breadthFirstSearch called with m==null; skipping traversal.\n";
+	if (profileSystem != 0 && profileSystem->isProfileReactionActive()) {
+		breadthFirstSearchImpl<true, true, false>(
+				members, m, depth, &logstr, profileSystem, 0);
 		return;
 	}
-
-	//Create the queues (for effeciency, now queues are a static attribute of Molecule...)
-	//queue <Molecule *> q;
-	//queue <int> d;
-	int currentDepth = 0;
-
-	//cout<<"traversing on:"<<endl;
-	//m->printDetails();
-
-	//First add this molecule
-	q.push(m);
-	members.push_back(m);
-	d.push(currentDepth+1);
-	m->hasVisitedMolecule=true;
-
-	//Look at children until the queue is empty
-	while(!q.empty())
-	{
-		//Get the next parent to look at (currentMolecule)
-		Molecule *cM = q.front();
-		currentDepth = d.front();
-		q.pop();
-		d.pop();
-		++moleculesVisited;
-		if (profile) {
-			unsigned long long moleculeId =
-				static_cast<unsigned long long>(cM->getUniqueID());
-			if (moleculeId < componentMinimumMoleculeId)
-				componentMinimumMoleculeId = moleculeId;
-			if (moleculeId > componentMaximumMoleculeId)
-				componentMaximumMoleculeId = moleculeId;
-			componentSignature ^= profileMoleculeSignature(cM->getUniqueID());
-		}
-
-		if (!logstr.empty()) {
-			logstr += "          [\"Delete\"," + to_string(cM->getUniqueID()) + "],\n";
-		}
-			
-		//Make sure the depth does not exceed the limit we want to search
-		if((depth!=ReactionClass::NO_LIMIT) && (currentDepth>=depth)) continue;
-
-		//Loop through the bonds
-		int cMax = cM->numOfComponents;
-		for(int c=0; c<cMax; c++)
-		{
-			//cM->getComp
-			if(cM->isBindingSiteBonded(c))
-			{
-				++edgeVisits;
-				Molecule *neighbor = cM->getBondedMolecule(c);
-				//cout<<"looking at neighbor: "<<endl;
-				//neighbor->printDetails();
-				if(!neighbor->hasVisitedMolecule)
-				{
-					neighbor->hasVisitedMolecule=true;
-					members.push_back(neighbor);
-					q.push(neighbor);
-					d.push(currentDepth+1);
-					//cout<<"adding... to traversal list."<<endl;
-				}
-			}
-		}
-	}
-
-
-	//clear the has visitedMolecule values
-	for( molIter = members.begin(); molIter != members.end(); molIter++ )
-		(*molIter)->hasVisitedMolecule=false;
-	if (profile)
-		profileSystem->recordProfileConnectivity(profileElapsedSeconds(profileStart),
-				moleculesVisited, edgeVisits, componentMinimumMoleculeId,
-				componentMaximumMoleculeId, componentSignature);
+	breadthFirstSearchImpl<false, true, false>(
+			members, m, depth, &logstr, 0, 0);
 }
 
 
 
 
 
-bool Molecule::traverseBondedNeighborhood(list <Molecule *> &members, int traversalLimit)
+bool Molecule::traverseBondedNeighborhood(list <Molecule *> &members, int traversalLimit,
+		list <Molecule *> *recycledNodes)
 {
 	//always call breadth first search, it is a bit faster
 	//if(traversalLimit>=0)
-	return Molecule::breadthFirstSearch(members, this, traversalLimit);
+		return Molecule::breadthFirstSearch(
+				members, this, traversalLimit, recycledNodes);
 	//else
 	//	this->depthFirstSearch(members);
 }
