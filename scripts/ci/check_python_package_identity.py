@@ -110,9 +110,12 @@ def inspect_installed_package(source_revision: str | None = None) -> dict[str, s
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-revision")
+    parser.add_argument("--require-source-head", action="store_true")
     args = parser.parse_args()
     try:
         identity = inspect_installed_package(args.source_revision)
+        if args.require_source_head and identity['source_revision'] != identity['git_head']:
+            raise RuntimeError(f"source revision {identity['source_revision']} does not match git HEAD {identity['git_head']}")
     except (OSError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
