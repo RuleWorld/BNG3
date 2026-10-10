@@ -10,6 +10,7 @@
 #include <set>
 #include <string>
 #include <stdexcept>
+#include <cstring>
 #include <vector>
 
 #include "ast/Model.hpp"
@@ -40,6 +41,15 @@ double msSince(std::chrono::steady_clock::time_point t0) {
 double msBetween(std::chrono::steady_clock::time_point t0,
                  std::chrono::steady_clock::time_point t1) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
+}
+
+template <typename T>
+py::array_t<T> vector_to_array(const std::vector<T>& values) {
+    py::array_t<T> array(values.size());
+    if (!values.empty()) {
+        std::memcpy(array.mutable_data(), values.data(), values.size() * sizeof(T));
+    }
+    return array;
 }
 } // namespace
 
@@ -398,6 +408,66 @@ void bind_engine(py::module_& m) {
         return gen.generateNative(max_iter);
     }, py::arg("model"), py::arg("max_iter") = 100,
        "Generate the reaction network from a model");
+
+    m.def("jax_ode_flatten", [](Model& model, GeneratedNetwork& network) {
+        std::vector<double> initialState;
+        std::vector<uint8_t> fixedSpecies;
+        std::vector<double> rateConstants;
+        std::vector<uint8_t> totalRates;
+        std::vector<uint8_t> functionalRates;
+        std::vector<uint8_t> timeDependentRates;
+        std::vector<std::size_t> reactantOffsets{0};
+        std::vector<std::size_t> reactantSpecies;
+        std::vector<std::size_t> productOffsets{0};
+        std::vector<std::size_t> productSpecies;
+
+        {
+            py::gil_scoped_release release;
+            OdeIntegrator integrator(model, network);
+            const auto& compiledReactions = integrator.getCompiledReactions();
+            const auto& fixed = integrator.getFixedSpecies();
+            initialState.reserve(network.species.size());
+            fixedSpecies.reserve(network.species.size());
+            for (std::size_t i = 0; i < network.species.size(); ++i) {
+                initialState.push_back(network.species.get(i).getAmount());
+                fixedSpecies.push_back(fixed[i] ? 1 : 0);
+            }
+
+            rateConstants.reserve(compiledReactions.size());
+            totalRates.reserve(compiledReactions.size());
+            functionalRates.reserve(compiledReactions.size());
+            timeDependentRates.reserve(compiledReactions.size());
+            for (const auto& reaction : compiledReactions) {
+                rateConstants.push_back(reaction.rateConstant);
+                totalRates.push_back(reaction.isTotalRate ? 1 : 0);
+                functionalRates.push_back(reaction.isFunctional ? 1 : 0);
+                timeDependentRates.push_back(reaction.isTimeDependent ? 1 : 0);
+                reactantSpecies.insert(
+                    reactantSpecies.end(), reaction.reactantIndices.begin(),
+                    reaction.reactantIndices.end());
+                reactantOffsets.push_back(reactantSpecies.size());
+                productSpecies.insert(
+                    productSpecies.end(), reaction.productIndices.begin(),
+                    reaction.productIndices.end());
+                productOffsets.push_back(productSpecies.size());
+            }
+        }
+
+        py::dict result;
+        result["num_species"] = network.species.size();
+        result["initial_state"] = vector_to_array(initialState);
+        result["fixed_species"] = vector_to_array(fixedSpecies);
+        result["rate_constants"] = vector_to_array(rateConstants);
+        result["total_rate"] = vector_to_array(totalRates);
+        result["functional_rates"] = vector_to_array(functionalRates);
+        result["time_dependent_rates"] = vector_to_array(timeDependentRates);
+        result["reactant_offsets"] = vector_to_array(reactantOffsets);
+        result["reactant_species"] = vector_to_array(reactantSpecies);
+        result["product_offsets"] = vector_to_array(productOffsets);
+        result["product_species"] = vector_to_array(productSpecies);
+        return result;
+    }, py::arg("model"), py::arg("network"),
+       "Export the native compiled ODE reaction data used by the optional JAX ODE backend");
 
     // Private validation hook: parity tests need the engine's instantaneous
     // derivative at arbitrary documented states, without inferring it from a
