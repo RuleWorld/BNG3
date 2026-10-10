@@ -31,7 +31,7 @@ A bounded repair does not close its broader issue.
 | #143 | #201 | Typed ODE dependency classification and time/state reevaluation; broader backend scope, propensity and cache-invalidation criteria remain open. |
 | #146 | #210/#215 | Deletion scope, pending waits and output clocks. Strict native -oSteps endpoint comparison remains red. |
 | #147/#148 | #219 | Whole-species DestroyComplex, same-complex matcher constraints and native index-width refusal. Runtime tests use an action adapter; production ActionIR execution and formal correspondence remain open. |
-| #153–#155 | #209/#212/#213/#217/#226/#227 | Narrow parser-free BNGIR v0.2 import, strict envelopes and boolean-reference rejection; seed-only zero-reaction models execute static ODE/SSA. Direct-builder dense IDs, boolean references and unsupported declarations now reject; broader structural round trips and nested validation remain open. |
+| #153–#155 | #209/#212/#213/#217/#226/#227 | Narrow parser-free BNGIR v0.2 import, strict envelopes and boolean-reference rejection; seed-only zero-reaction models execute static ODE/SSA. Direct-builder malformed dense IDs, boolean references and nonempty known unsupported top-level sections now reject; broader structural round trips and nested validation remain open. |
 | #165/#166 | #194/#198 | All-input Lean reference matcher and bounded packing/native guards; #165 closed, production lowering correspondence remains open. |
 | #169 | #192 | Proof trust accounting and harness qualification. Closed after review. |
 | #171/#172 | #193/#208 | Legacy positional run compatibility and defaults/version without optional Cement. Broader public matrix and legacy retirement remain open. |
