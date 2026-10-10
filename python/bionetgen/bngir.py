@@ -1484,10 +1484,8 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         molecule_ids.add(index)
         molecule_names.add(name)
 
-    if not model["seeds"] or not model["rules"]:
-        raise ValueError(
-            "native BNGIR requires at least one seed and one reaction rule"
-        )
+    if not model["seeds"]:
+        raise ValueError("native BNGIR requires at least one seed")
     for index, raw in enumerate(model["seeds"]):
         seed = _require_mapping(raw, f"model.seeds[{index}]")
         _native_exact_keys(

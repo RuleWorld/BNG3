@@ -1,5 +1,6 @@
-#include <memory>
+#include <limits>
 #include <map>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -21,6 +22,50 @@ using namespace bng::ast;
 
 namespace {
 
+std::size_t indexFromBngir(const py::handle& value, const std::string& where) {
+    if (PyBool_Check(value.ptr()) || !PyLong_Check(value.ptr())) {
+        throw std::runtime_error(
+            "native BNGIR " + where + " must be a non-boolean integer index");
+    }
+
+    const auto raw = PyLong_AsUnsignedLongLong(value.ptr());
+    if (PyErr_Occurred()) {
+        PyErr_Clear();
+        throw std::runtime_error("native BNGIR " + where + " is out of range");
+    }
+    if (raw > std::numeric_limits<std::size_t>::max()) {
+        throw std::runtime_error("native BNGIR " + where + " is out of range");
+    }
+    return static_cast<std::size_t>(raw);
+}
+
+void requireDenseOrderedIds(const py::list& entries, const std::string& section) {
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        const auto entry = py::cast<py::dict>(entries[index]);
+        const auto id = indexFromBngir(entry["id"], section + " id");
+        if (id != index) {
+            throw std::runtime_error(
+                "native BNGIR " + section + " ids must be dense and ordered");
+        }
+    }
+}
+
+void rejectUnsupportedModelSections(const py::dict& document) {
+    static const std::vector<std::string> sections = {
+        "compartments", "observables", "functions", "energy_patterns",
+        "barrier_patterns", "population_maps", "population_types",
+    };
+    for (const auto& section : sections) {
+        const py::str key(section);
+        if (!document.contains(key)) continue;
+        const auto entries = py::cast<py::list>(document[key]);
+        if (!entries.empty()) {
+            throw std::runtime_error(
+                "native BNGIR model." + section + " is not supported");
+        }
+    }
+}
+
 Expression expressionFromBngir(const py::dict& value,
                                const std::vector<std::string>& parameterNames) {
     const auto kind = py::cast<std::string>(value["kind"]);
@@ -29,7 +74,7 @@ Expression expressionFromBngir(const py::dict& value,
     }
     if (kind == "parameter_ref") {
         const auto symbol = py::cast<py::dict>(value["symbol"]);
-        const auto index = py::cast<std::size_t>(symbol["index"]);
+        const auto index = indexFromBngir(symbol["index"], "parameter reference");
         if (index >= parameterNames.size()) {
             throw std::runtime_error("native BNGIR parameter reference is out of range");
         }
@@ -66,7 +111,8 @@ BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
     const auto molecules = py::cast<py::list>(pattern["molecules"]);
     for (const auto& rawMolecule : molecules) {
         const auto molecule = py::cast<py::dict>(rawMolecule);
-        const auto typeId = py::cast<std::size_t>(molecule["type_id"]);
+        const auto typeId =
+            indexFromBngir(molecule["type_id"], "molecule type reference");
         if (typeId >= model.getMoleculeTypes().size()) {
             throw std::runtime_error("native BNGIR molecule type reference is out of range");
         }
@@ -79,6 +125,16 @@ BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
 }
 
 std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
+    rejectUnsupportedModelSections(document);
+    const auto parameters = py::cast<py::list>(document["parameters"]);
+    const auto moleculeTypes = py::cast<py::list>(document["molecule_types"]);
+    const auto seeds = py::cast<py::list>(document["seeds"]);
+    const auto rules = py::cast<py::list>(document["rules"]);
+    requireDenseOrderedIds(parameters, "parameter");
+    requireDenseOrderedIds(moleculeTypes, "molecule type");
+    requireDenseOrderedIds(seeds, "seed");
+    requireDenseOrderedIds(rules, "rule");
+
     auto model = std::make_unique<Model>();
     const auto metadata = py::cast<py::dict>(document["metadata"]);
     model->setVersion(py::cast<std::string>(metadata["version"]));
@@ -90,7 +146,6 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                          py::cast<std::string>(entry.second));
     }
 
-    const auto parameters = py::cast<py::list>(document["parameters"]);
     std::vector<std::string> parameterNames;
     parameterNames.reserve(parameters.size());
     for (const auto& rawParameter : parameters) {
@@ -104,14 +159,12 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             expressionFromBngir(py::cast<py::dict>(parameter["expression"]), parameterNames)));
     }
 
-    const auto moleculeTypes = py::cast<py::list>(document["molecule_types"]);
     for (const auto& rawMoleculeType : moleculeTypes) {
         const auto moleculeType = py::cast<py::dict>(rawMoleculeType);
         model->addMoleculeType(MoleculeType(
             py::cast<std::string>(moleculeType["name"]), {}, false));
     }
 
-    const auto seeds = py::cast<py::list>(document["seeds"]);
     for (const auto& rawSeed : seeds) {
         const auto seed = py::cast<py::dict>(rawSeed);
         auto graph = patternFromBngir(*model, py::cast<py::dict>(seed["pattern"]));
@@ -121,7 +174,6 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             {}, std::move(amount), py::cast<bool>(seed["constant"]), {}, std::move(graph)));
     }
 
-    const auto rules = py::cast<py::list>(document["rules"]);
     for (const auto& rawRule : rules) {
         const auto rule = py::cast<py::dict>(rawRule);
         const auto direction = py::cast<py::dict>(rule["forward"]);
