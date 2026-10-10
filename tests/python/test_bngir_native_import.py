@@ -88,8 +88,9 @@ def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypa
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
 
 
+@pytest.mark.parametrize("method", ["ode", "ssa"])
 def test_native_import_reconstructs_and_executes_seed_only_model_without_source_parsing(
-    monkeypatch,
+    monkeypatch, method
 ):
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(SEED_ONLY_SOURCE))
     document = json.loads(source_model.to_bngir(version="0.2"))
@@ -111,7 +112,7 @@ def test_native_import_reconstructs_and_executes_seed_only_model_without_source_
 
     derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, [5.0])
     assert derivative == pytest.approx([0.0])
-    result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    result = restored.simulate(method=method, t_end=0.1, n_steps=1, seed=1)
     assert result.time.tolist() == pytest.approx([0.0, 0.1])
     assert result.concentrations[:, 0].tolist() == pytest.approx([5.0, 5.0])
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
