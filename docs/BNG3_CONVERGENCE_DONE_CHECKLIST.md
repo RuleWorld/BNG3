@@ -2,7 +2,7 @@
 
 **Status:** incomplete; 46 of 55 audit issues are open. #133/#134/#135/#136/#145/#165/#169/#173/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
 **Refreshed:** 2026-10-10 UTC against live main
-`9a1de7ed7fb617df4cf8828748de45fac486e14e`. See
+`2c3ebf2126071e2a0189ab2d537f768239ff519d`. See
 [current progress](CURRENT_PROGRESS.md) for scoped integrations, exact evidence
 boundaries and candidates. The original audited qualification baseline was
 `e1836c3274e685996d5e86883761e00e98257e09`.
