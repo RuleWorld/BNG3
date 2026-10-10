@@ -129,6 +129,27 @@ struct ResolvedExpression {
     bool fullyResolved() const noexcept;
 };
 
+// Dependency kinds are derived from the typed expression tree. This keeps
+// backend classification from having to rescan source spellings for names like
+// `time`, observables, local variables, or reactant counts. Parameter values
+// are intentionally separate: model-level metadata determines whether a
+// parameter is time-dependent.
+struct RateDependencySummary {
+    bool parameter = false;
+    bool observable = false;
+    bool function = false;
+    bool local = false;
+    bool reactantCount = false;
+    bool time = false;
+    bool tableFunction = false;
+    bool unresolved = false;
+
+    bool requiresRuntimeEvaluation() const noexcept {
+        return observable || function || local || reactantCount || time ||
+               tableFunction || unresolved;
+    }
+};
+
 // Typed execution metadata for a source rate expression. Source spelling is
 // retained only for diagnostics/round-tripping; semantic consumers use the
 // resolved expression tree.
@@ -144,6 +165,7 @@ struct CompiledRateLaw {
     const ResolvedExpression& resolvedExpression() const { return resolved_; }
     const std::vector<SymbolRef>& references() const { return references_; }
     const std::vector<Diagnostic>& diagnostics() const { return diagnostics_; }
+    const RateDependencySummary& dependencies() const { return dependencies_; }
     bool isEnergyCoupled() const { return kind == RateLawKind::ArrheniusEnergy; }
     bool fullyResolved() const noexcept { return resolved_.fullyResolved(); }
 
@@ -158,6 +180,7 @@ private:
     std::vector<SymbolRef> references_;
     std::vector<Diagnostic> diagnostics_;
     ResolvedExpression resolved_;
+    RateDependencySummary dependencies_;
 };
 
 } // namespace bng::compile

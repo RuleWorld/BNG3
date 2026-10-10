@@ -319,6 +319,64 @@ end actions
         assert network.num_species == 3
         assert network.num_reactions == 2
 
+    @pytest.mark.parametrize(
+        "max_agg, expected_species, expected_reactions",
+        [("1+1", 2, 1), ("-1", 1, 0)],
+    )
+    def test_python_generate_network_uses_typed_bngl_max_agg(
+        self, tmp_path, max_agg, expected_species, expected_reactions
+    ):
+        bngl = tmp_path / "python_max_agg.bngl"
+        bngl.write_text(
+            f"""
+begin model
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 1
+end seed species
+begin reaction rules
+    bind: A(b) + A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+generate_network({{overwrite=>1,max_iter=>3,max_agg=>{max_agg}}})
+""",
+            encoding="utf-8",
+        )
+        model = _cpp.parse_file(str(bngl))
+
+        # The direct Python API continues to use its existing max_iter default;
+        # max_agg remains the option on the model's BNGL generate_network action.
+        network = _cpp.generate_network(model)
+        assert network.num_species == expected_species
+        assert network.num_reactions == expected_reactions
+
+    def test_python_generate_network_defers_invalid_max_agg_diagnostic(self, tmp_path):
+        bngl = tmp_path / "python_invalid_max_agg.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 1
+end seed species
+end model
+
+generate_network({max_agg=>"2junk"})
+""",
+            encoding="utf-8",
+        )
+        model = _cpp.parse_file(str(bngl))
+
+        with pytest.raises(RuntimeError) as error:
+            _cpp.generate_network(model)
+        assert "max_agg" in str(error.value)
+        assert '"2junk"' in str(error.value)
+
     def test_model_function_forward_rate_keeps_complex_reverse_rate(self, tmp_path):
         """A model-function forward rate must not drop its reverse rate."""
         bngl = tmp_path / "reversible_function_rate.bngl"

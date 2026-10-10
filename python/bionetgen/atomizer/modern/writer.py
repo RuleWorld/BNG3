@@ -10,6 +10,7 @@ import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from fractions import Fraction
+from functools import lru_cache
 from typing import (
     Dict,
     Iterable,
@@ -792,9 +793,21 @@ def _split_arguments(inner: str) -> List[str]:
     return arguments
 
 
+@lru_cache(maxsize=128)
+def _function_call_pattern(function: str):
+    """Compile the call-site matcher, retaining a bounded working set.
+
+    The existing event-function writer fixture exercises 51 distinct names
+    in one SBML conversion. 128 entries leave room for model-defined names
+    alongside the built-in MathML names while preventing the cache from
+    growing with untrusted or one-off SBML identifiers.
+    """
+    return re.compile(rf"\b{re.escape(function)}\s*\(")
+
+
 def _replace_nested_function(expression: str, function: str, replacer) -> str:
     result = expression
-    pattern = re.compile(rf"\b{re.escape(function)}\s*\(")
+    pattern = _function_call_pattern(function)
     search_index = 0
     guard = 0
     while guard < 10000:

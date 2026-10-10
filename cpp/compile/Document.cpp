@@ -27,6 +27,17 @@ Diagnostic maxIterationsDiagnostic(const std::string& source,
     return diagnostic;
 }
 
+Diagnostic maxAggregateDiagnostic(const std::string& source,
+                                  const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "generate_network.max_agg";
+    diagnostic.message = "invalid generate_network max_agg '" + source + "': " + reason;
+    return diagnostic;
+}
+
 bool containsOnlyNumericActionSyntax(const std::string& source) {
     for (std::size_t index = 0; index < source.size(); ++index) {
         const auto character = static_cast<unsigned char>(source[index]);
@@ -138,6 +149,51 @@ bool supportsStaticActionArithmetic(const ast::Expression& expression,
 GenerateNetworkOptions compileGenerateNetworkOptions(
     const std::map<std::string, std::string>& arguments) {
     GenerateNetworkOptions options;
+    const auto maxAggregate = arguments.find("max_agg");
+    if (maxAggregate != arguments.end()) {
+        const auto& source = maxAggregate->second;
+        if (!containsOnlyNumericActionSyntax(source)) {
+            options.maxAggregateDiagnostic = maxAggregateDiagnostic(
+                source, "names, functions, and non-numeric syntax are not supported");
+        } else {
+            ast::Expression expression;
+            try {
+                expression = parser::parseExpression(source);
+            } catch (const std::exception& error) {
+                options.maxAggregateDiagnostic = maxAggregateDiagnostic(
+                    source, std::string("could not be parsed as a numeric expression: ") +
+                                error.what());
+            }
+
+            if (!options.maxAggregateDiagnostic.has_value()) {
+                std::size_t powerOperators = 0;
+                if (!supportsStaticActionArithmetic(expression, powerOperators)) {
+                    options.maxAggregateDiagnostic = maxAggregateDiagnostic(
+                        source,
+                        "cannot be translated without changing Safe-Perl arithmetic semantics");
+                }
+            }
+
+            if (!options.maxAggregateDiagnostic.has_value()) {
+                double value = 0.0;
+                try {
+                    value = evaluateStaticExpression(expression);
+                } catch (const std::exception& error) {
+                    options.maxAggregateDiagnostic = maxAggregateDiagnostic(
+                        source, std::string("could not be evaluated: ") + error.what());
+                }
+                if (!options.maxAggregateDiagnostic.has_value()) {
+                    if (!std::isfinite(value)) {
+                        options.maxAggregateDiagnostic = maxAggregateDiagnostic(
+                            source, "must evaluate to a finite number");
+                    } else {
+                        options.maxAggregate = value;
+                    }
+                }
+            }
+        }
+    }
+
     const auto found = arguments.find("max_iter");
     if (found == arguments.end()) {
         return options;

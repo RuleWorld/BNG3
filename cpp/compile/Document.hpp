@@ -27,6 +27,8 @@ struct ProtocolAction {
         // Kept with the typed option so callers that supply an explicit
         // native override can bypass an invalid BNGL action value.
         std::optional<Diagnostic> maxIterationsDiagnostic;
+        std::optional<double> maxAggregate;
+        std::optional<Diagnostic> maxAggregateDiagnostic;
     };
     std::optional<GenerateNetworkOptions> generateNetworkOptions;
 };

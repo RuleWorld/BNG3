@@ -287,6 +287,52 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
     return resolved;
 }
 
+void collectDependencies(const ResolvedExpression& expression,
+                         RateDependencySummary& dependencies) {
+    switch (expression.kind) {
+    case ResolvedExpressionKind::ParameterRef:
+        dependencies.parameter = true;
+        break;
+    case ResolvedExpressionKind::ObservableRef:
+        dependencies.observable = true;
+        break;
+    case ResolvedExpressionKind::FunctionRef:
+        dependencies.function = true;
+        break;
+    case ResolvedExpressionKind::LocalRef:
+        dependencies.local = true;
+        break;
+    case ResolvedExpressionKind::ReactantCountRef:
+        dependencies.reactantCount = true;
+        break;
+    case ResolvedExpressionKind::TimeRef:
+        dependencies.time = true;
+        break;
+    case ResolvedExpressionKind::TableFunction:
+        dependencies.tableFunction = true;
+        break;
+    case ResolvedExpressionKind::BuiltinCall:
+        if (expression.builtin == BuiltinFunction::Time) {
+            dependencies.time = true;
+        }
+        if (expression.builtin == BuiltinFunction::TableFunction) {
+            dependencies.tableFunction = true;
+        }
+        break;
+    case ResolvedExpressionKind::Unresolved:
+        dependencies.unresolved = true;
+        break;
+    case ResolvedExpressionKind::Number:
+    case ResolvedExpressionKind::Unary:
+    case ResolvedExpressionKind::Binary:
+        break;
+    }
+
+    for (const auto& argument : expression.arguments) {
+        collectDependencies(argument, dependencies);
+    }
+}
+
 } // namespace
 
 
@@ -312,6 +358,9 @@ CompiledRateLaw CompiledRateLaw::compile(const ast::Expression& expression) {
         compiled.kind = classifyFunction(expression.name());
         compiled.arguments = expression.args();
     }
+    // This overload has no symbol table, so it cannot make a dependency
+    // summary safe for backend classification.
+    compiled.dependencies_.unresolved = true;
     return compiled;
 }
 
@@ -325,10 +374,14 @@ CompiledRateLaw CompiledRateLaw::compile(
     const SymbolTable& symbols,
     const std::vector<std::string>& localNames) {
     auto compiled = compile(expression);
+    compiled.dependencies_ = {};
     const std::unordered_set<std::string> lexicalNames(
         localNames.begin(), localNames.end());
     compiled.resolved_ = resolveExpression(
         expression, symbols, compiled.references_, compiled.diagnostics_, lexicalNames);
+    collectDependencies(compiled.resolved_, compiled.dependencies_);
+    compiled.dependencies_.unresolved =
+        compiled.dependencies_.unresolved || !compiled.resolved_.fullyResolved();
     return compiled;
 }
 

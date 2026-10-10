@@ -207,6 +207,50 @@ end model
     assert not np.array_equal(serial[0].concentrations, serial[1].concentrations)
 
 
+def test_concurrent_ode_instances_reuse_network_with_independent_parameters(tmp_path):
+    model_path = tmp_path / "ode_decay.bngl"
+    _write_decay_model(model_path)
+    topology_model = bionetgen.load(str(model_path))
+    shared_network = topology_model.generate_network()
+
+    rates = [0.07, 0.31]
+    models = [bionetgen.load(str(model_path)) for _ in rates]
+    for model, rate in zip(models, rates):
+        model.set_parameter("k", rate)
+        # A rate-only override does not change this generated topology. Each
+        # model snapshot gets its own OdeIntegrator while sharing the network.
+        model._network = shared_network
+
+    options = dict(
+        method="ode",
+        t_end=12.0,
+        n_steps=120,
+        sample_times=[0.0, 0.3, 1.0, 4.0, 12.0],
+    )
+    serial = [model.simulate(**options) for model in models]
+
+    with ThreadPoolExecutor(max_workers=len(models)) as executor:
+        concurrent = list(executor.map(lambda model: model.simulate(**options), models))
+
+    expected_times = options["sample_times"]
+    for model, rate, expected_result, observed_result in zip(
+        models, rates, serial, concurrent
+    ):
+        assert model._network is shared_network
+        np.testing.assert_allclose(
+            observed_result.observables["Xtot"],
+            expected_result.observables["Xtot"],
+            rtol=1e-12,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            observed_result.observables["Xtot"],
+            100.0 * np.exp(-rate * np.asarray(expected_times)),
+            rtol=1e-6,
+            atol=1e-8,
+        )
+
+
 def test_parameter_scan_forwards_advanced_simulation_controls(tmp_path):
     model_path = tmp_path / "decay.bngl"
     _write_decay_model(model_path)

@@ -455,3 +455,174 @@ end actions
 
     REQUIRE(network.reactions.size() >= 1);
 }
+
+TEST_CASE("generate_network max_agg is numeric and filters generated products only") {
+    const auto generateWithMaxAgg = [](const std::string& maxAgg) {
+        auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+begin reaction rules
+  bind: A(b) + A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>3,max_agg=>)" + maxAgg + R"(})
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        return generator.generate({});
+    };
+
+    const auto expressionBound = generateWithMaxAgg("1+1");
+    CHECK(expressionBound.species.size() == 2);
+    CHECK(expressionBound.reactions.size() == 1);
+
+    const auto fractionalBelowProductSize = generateWithMaxAgg("1.5");
+    CHECK(fractionalBelowProductSize.species.size() == 1);
+    CHECK(fractionalBelowProductSize.reactions.size() == 0);
+
+    const auto fractionalAboveProductSize = generateWithMaxAgg("2.5");
+    CHECK(fractionalAboveProductSize.species.size() == 2);
+    CHECK(fractionalAboveProductSize.reactions.size() == 1);
+
+    const auto negativeBound = generateWithMaxAgg("-1");
+    CHECK(negativeBound.species.size() == 1);
+    CHECK(negativeBound.reactions.size() == 0);
+
+    auto boundaryModel = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+  X(b)
+  Y(b)
+  Z(b)
+end molecule types
+begin seed species
+  A(b!1!2).A(b!1).A(b!2) 1
+  X(b) 1
+  Y(b) 1
+end seed species
+begin reaction rules
+  trimer: X(b) + X(b) + X(b) -> X(b!1).X(b!1!2).X(b!2) 1
+  convert: Y(b) -> Z(b) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>3,max_agg=>2})
+)");
+    REQUIRE(boundaryModel != nullptr);
+    engine::NetworkGenerator boundaryGenerator(*boundaryModel);
+    const auto boundary = boundaryGenerator.generate({});
+    REQUIRE(boundary.species.size() == 4);
+    REQUIRE(boundary.reactions.size() == 1);
+
+    bool retainedOverLimitSeed = false;
+    bool rejectedOverLimitProduct = true;
+    bool allowedOtherProduct = false;
+    for (const auto& species : boundary.species.all()) {
+        const auto& graph = species.getSpeciesGraph().toString();
+        retainedOverLimitSeed = retainedOverLimitSeed ||
+            graph == "A(b!1!2).A(b!1).A(b!2)";
+        rejectedOverLimitProduct = rejectedOverLimitProduct &&
+            graph != "X(b!1).X(b!1!2).X(b!2)";
+        allowedOtherProduct = allowedOtherProduct || graph == "Z(b)";
+    }
+    CHECK(retainedOverLimitSeed);
+    CHECK(rejectedOverLimitProduct);
+    CHECK(allowedOtherProduct);
+}
+
+TEST_CASE("generate_network max_agg compiles finite numeric expressions and defers diagnostics") {
+    const auto compileMaxAgg = [](const std::string& source) {
+        auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+end model
+
+generate_network({max_agg=>)" + source + R"(})
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        REQUIRE(generator.document().valid());
+        const auto& action = generator.document().protocol().actions.front();
+        REQUIRE(action.generateNetworkOptions.has_value());
+        CHECK(action.arguments.at("max_agg") == source);
+        return *action.generateNetworkOptions;
+    };
+
+    for (const auto& [source, expected] : std::vector<std::pair<std::string, double>>{
+             {"1+1", 2.0}, {"2.5", 2.5}, {"1e2", 100.0}, {"-1", -1.0}}) {
+        INFO("max_agg expression: " << source);
+        const auto options = compileMaxAgg(source);
+        CHECK_FALSE(options.maxAggregateDiagnostic.has_value());
+        REQUIRE(options.maxAggregate.has_value());
+        CHECK(*options.maxAggregate == expected);
+    }
+
+    for (const auto& source : {"unknown", "exp(2)", "1e309", "1/0", "\"2junk\""}) {
+        INFO("max_agg expression: " << source);
+        const auto options = compileMaxAgg(source);
+        CHECK_FALSE(options.maxAggregate.has_value());
+        REQUIRE(options.maxAggregateDiagnostic.has_value());
+        CHECK(options.maxAggregateDiagnostic->message.find("max_agg") != std::string::npos);
+        CHECK(options.maxAggregateDiagnostic->message.find(source) != std::string::npos);
+
+        const std::string invalidBnglPrefix = R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+end model
+
+generate_network({max_agg=>)";
+        auto invalidModel = parseModel(invalidBnglPrefix + source + "})\n");
+        REQUIRE(invalidModel != nullptr);
+        engine::NetworkGenerator invalidGenerator(*invalidModel);
+        CHECK(invalidGenerator.document().valid());
+        try {
+            (void)invalidGenerator.generateNative(3);
+            FAIL("invalid max_agg must fail when generation begins");
+        } catch (const std::runtime_error& error) {
+            CHECK(std::string(error.what()).find(source) != std::string::npos);
+        }
+    }
+}
+
+TEST_CASE("generate_network max_agg uses the first action that supplies the option") {
+    auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+begin reaction rules
+  bind: A(b) + A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+begin actions
+  generate_network({max_iter=>1})
+  generate_network({max_agg=>1})
+end actions
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generate({});
+    CHECK(network.species.size() == 1);
+    CHECK(network.reactions.size() == 0);
+}

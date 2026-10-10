@@ -181,21 +181,6 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
     return false;
 }
 
-bool expressionReferencesObservable(
-    const ast::Expression& expression,
-    const ast::Model& model) {
-    if (expression.kind() == ast::ExpressionKind::ObservableRef ||
-        expression.kind() == ast::ExpressionKind::Function) {
-        for (const auto& observable : model.getObservables()) {
-            if (observable.getName() == expression.name()) return true;
-        }
-    }
-    for (const auto& argument : expression.args()) {
-        if (expressionReferencesObservable(argument, model)) return true;
-    }
-    return false;
-}
-
 } // anonymous namespace
 
 
@@ -218,6 +203,30 @@ void OdeIntegrator::compile() {
     // Compile reactions
     auto paramResolver = [&](const std::string& name) -> double {
         return model_.getParameters().evaluate(name);
+    };
+    const auto rateSymbols = bng::compile::SymbolTable::fromModel(model_);
+    const auto hasRuntimeRateDependencies = [&](const ast::Expression& expression) {
+        const auto rate = bng::compile::CompiledRateLaw::compile(expression, rateSymbols);
+        const auto& dependencies = rate.dependencies();
+        if (dependencies.requiresRuntimeEvaluation()) return true;
+        const auto& parameters = model_.getParameters().all();
+        for (const auto& reference : rate.references()) {
+            if (reference.kind == bng::compile::SymbolKind::Parameter &&
+                reference.index < parameters.size() &&
+                model_.getParameters().isTimeDependent(
+                    parameters[reference.index].getName())) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto rateTextHasRuntimeDependencies = [&](const std::string& text)
+        -> std::optional<bool> {
+        try {
+            return hasRuntimeRateDependencies(parser::parseExpression(text));
+        } catch (...) {
+            return std::nullopt;
+        }
     };
 
     // Build per-reaction derived rate parameter map from NetWriter's naming convention.
@@ -440,7 +449,9 @@ void OdeIntegrator::compile() {
                 crxn.functionalRateExpr = std::move(rateExpression);
                 crxn.rateConstant = 0.0;
                 crxn.isFunctional = true;
-                crxn.isTimeDependent = true;
+                std::unordered_set<std::string> visitedFunctions;
+                crxn.isTimeDependent = expressionReadsTime(
+                    *crxn.functionalRateExpr, visitedFunctions);
                 hasFunctionalRates_ = true;
                 compiledRxns_.push_back(crxn);
                 ++rxnIndex;
@@ -812,54 +823,23 @@ void OdeIntegrator::compile() {
 
         bool checkedFunctions = false;
         if (!isFunctional && rateExpr.has_value()) {
-            ensureLowerRawRL();
-
-            if (lowerRawRL.find("time") != std::string::npos ||
-                hasWordBoundaryMatch(lowerRawRL, "t")) {
-                isFunctional = true;
-            } else {
-                // A rate is constant only if every symbol it reads is a
-                // *time-independent* parameter. Referencing `k` is not enough:
-                // `k` may itself be defined as `time*kbase`, and baking that
-                // rate at t=0 freezes the model.
-                auto deps = rateExpr->getDependencies();
-                for (const auto& dep : deps) {
-                    if (!model_.getParameters().contains(dep) ||
-                        model_.getParameters().isTimeDependent(dep)) {
-                        isFunctional = true;
-                        break;
-                    }
-                }
-            }
-
-            // --- Bug 2 fix: Check for user-defined function references ---
-            std::string matchedFuncName;
+            isFunctional = hasRuntimeRateDependencies(*rateExpr);
             if (!isFunctional) {
-                std::size_t functionIndex = 0;
-                for (const auto& func : model_.getFunctions()) {
-                    const auto& fname = func.getName();
-                    if (hasWordBoundaryMatchCaseInsensitive(rawRateLaw, lowerFuncNames[functionIndex]) ||
-                        hasWordBoundaryMatch(rawRateLaw, fname)) {
+                // When present, the parsed AST is authoritative for the rate
+                // expression; its serialized spelling may also carry local-
+                // context metadata. A .net-loaded reaction has no AST, so its
+                // serialized rate expression is parsed below as the source.
+                const auto sourceDependencies = rateTextHasRuntimeDependencies(rawRateLaw);
+                if (sourceDependencies.has_value()) {
+                    isFunctional = *sourceDependencies;
+                    checkedFunctions = true;
+                } else {
+                    // Keep a narrow compatibility fallback for legacy rate
+                    // strings that the current expression parser cannot read.
+                    ensureLowerRawRL();
+                    if (lowerRawRL.find("time") != std::string::npos ||
+                        hasWordBoundaryMatch(lowerRawRL, "t")) {
                         isFunctional = true;
-                        matchedFuncName = fname;
-                        break;
-                    }
-                    ++functionIndex;
-                }
-                checkedFunctions = true;
-            }
-
-            // Observable names are parsed as zero-argument function calls
-            // (e.g. total()) in legacy rate syntax. They are runtime values,
-            // not parameter functions, so preserve the parsed expression and
-            // resolve the name through the compiled group table below.
-            if (!isFunctional &&
-                (rateExpr->kind() == ast::ExpressionKind::Function ||
-                 rateExpr->kind() == ast::ExpressionKind::ObservableRef)) {
-                for (const auto& observable : model_.getObservables()) {
-                    if (observable.getName() == rateExpr->name()) {
-                        isFunctional = true;
-                        break;
                     }
                 }
             }
@@ -940,54 +920,9 @@ void OdeIntegrator::compile() {
                 try {
                     auto parsed = parser::parseExpression(str);
 
-                    // Check whether the expression depends on anything that
-                    // isn't a plain parameter (observables, user-defined
-                    // functions, time, etc.).  If so, it must be evaluated
-                    // at every time-step (functional rate).
-                    bool needsRuntime = false;
-
-                    // ObservableRef nodes do not contribute their own name to
-                    // Expression::getDependencies().  A compound law such as
-                    // k*S_amt would otherwise be misclassified as constant,
-                    // then fail closed to a zero rate when its derived
-                    // _rateLaw function is evaluated.
-                    //
-                    // The reaction carries no parsed expression when the
-                    // network was built directly rather than lowered from a
-                    // model; there is nothing to inspect then, and the
-                    // dependency scan below covers the parsed rate string.
-                    if (rateExpr.has_value() && expressionReferencesObservable(*rateExpr, model_)) {
-                        needsRuntime = true;
-                    }
-
-                    auto deps = parsed.getDependencies();
-                    for (const auto& dep : deps) {
-                        if (dep == "time") {
-                            needsRuntime = true;
-                            break;
-                        }
-                        // A known parameter is constant only if it is itself
-                        // time-independent; see the note in compile().
-                        if (!model_.getParameters().contains(dep) ||
-                            model_.getParameters().isTimeDependent(dep)) {
-                            needsRuntime = true;
-                            break;
-                        }
-                    }
-
-                    // Also check for user-defined function calls (zero-arg
-                    // functions like kPlus() appear as Function nodes whose
-                    // name is not a built-in).
-                    if (!needsRuntime && str.find('(') != std::string::npos) {
-                        std::size_t functionIndex = 0;
-                        for (const auto& func : model_.getFunctions()) {
-                            const auto& lowerFunctionName = lowerFuncNames[functionIndex++];
-                            if (hasWordBoundaryMatchCaseInsensitive(str, lowerFunctionName)) {
-                                needsRuntime = true;
-                                break;
-                            }
-                        }
-                    }
+                    // Dependency kinds come from one typed expression walk;
+                    // time-dependent parameter values remain model metadata.
+                    const bool needsRuntime = hasRuntimeRateDependencies(parsed);
 
                     if (needsRuntime) {
                         crxn.isFunctional = true;
