@@ -5,6 +5,8 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import pytest
+
 from tests.validation.compare import (
     _canon_expr,
     compare_net,
@@ -222,6 +224,38 @@ def test_same_counts_with_different_rate_values_fail(tmp_path):
     assert not diff.ok
     assert diff.n_reactions_ref == diff.n_reactions_test == 1
     assert diff.reactions_only_test
+
+
+@pytest.mark.parametrize(
+    ("expression", "value"),
+    [
+        ("if((0==1),1,if((0>0),2,if((0>0),3,0)))", "0"),
+        ("if(1==1,2,3)", "2"),
+        ("if(-1,2,3)", "2"),
+        ("2*if(0,3,if(2>1,4,5))", "8"),
+        ("if(1,2,1/0)", "2"),
+        ("if(0,sqrt(-1),3)", "3"),
+    ],
+)
+def test_constant_conditional_rates_compare_by_value(tmp_path, expression, value):
+    reference = parse_net(_net(tmp_path / "reference.net", expression))
+    generated = parse_net(_net(tmp_path / "generated.net", value))
+    changed = parse_net(_net(tmp_path / "changed.net", "9"))
+    assert reference is not None and generated is not None and changed is not None
+    assert compare_net(reference, generated).ok
+    assert not compare_net(reference, changed).ok
+
+
+@pytest.mark.parametrize(
+    "expression", ["if(Obs1==1,1,2)", "if(time()>1,1,2)", "if(1,2,Obs1)"]
+)
+def test_dynamic_conditional_rates_do_not_compare_equal_to_initial_value(expression):
+    from tests.validation.compare import _resolve_rate
+
+    rate = _resolve_rate(expression, {}, "value")
+    assert rate.startswith("expr:")
+    assert rate != _resolve_rate("1", {}, "value")
+    assert rate != _resolve_rate("2", {}, "value")
 
 
 def test_species_graph_equivalence_ignores_order_and_bond_labels():

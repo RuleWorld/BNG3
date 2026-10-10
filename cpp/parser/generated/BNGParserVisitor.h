@@ -3,7 +3,6 @@
 
 #pragma once
 
-
 #include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParser.h"
@@ -63,6 +62,8 @@ public:
     virtual std::any visitSeed_species_block(BNGParser::Seed_species_blockContext *context) = 0;
 
     virtual std::any visitSeed_species_def(BNGParser::Seed_species_defContext *context) = 0;
+
+    virtual std::any visitSeed_amount_annotation(BNGParser::Seed_amount_annotationContext *context) = 0;
 
     virtual std::any visitSpecies_def(BNGParser::Species_defContext *context) = 0;
 
@@ -139,6 +140,8 @@ public:
     virtual std::any visitFunctions_block(BNGParser::Functions_blockContext *context) = 0;
 
     virtual std::any visitFunction_def(BNGParser::Function_defContext *context) = 0;
+
+    virtual std::any visitFunction_name(BNGParser::Function_nameContext *context) = 0;
 
     virtual std::any visitParam_list(BNGParser::Param_listContext *context) = 0;
 
@@ -242,3 +245,4 @@ public:
 
 
 };
+
