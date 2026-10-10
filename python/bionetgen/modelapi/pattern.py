@@ -292,6 +292,8 @@ class Pattern:
                         ):
                             return self.canonical_label == other.canonical_label
                         # now we can check contents
+                        if len(self.molecules) != len(other.molecules):
+                            return False
                         for molecule in self:
                             if molecule not in other.molecules:
                                 logger.debug(
@@ -445,6 +447,8 @@ class Molecule:
                     if self.canonical_label != other.canonical_label:
                         return False
                 # check components now
+                if len(self.components) != len(other.components):
+                    return False
                 for component in self:
                     if component not in other.components:
                         logger.debug(f"component doesn't match: {component}", loc=loc)
