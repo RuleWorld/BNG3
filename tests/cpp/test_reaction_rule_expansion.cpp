@@ -3,6 +3,9 @@
 #include <string>
 #include <utility>
 
+#include "compile/CompiledModel.hpp"
+#include "compile/PatternLowering.hpp"
+#include "engine/NetworkRulePlan.hpp"
 #include "parser/BNGAstVisitor.hpp"
 #include "engine/NetworkGenerator.hpp"
 
@@ -258,6 +261,147 @@ end actions
 
     REQUIRE(network.species.size() >= 2);
     REQUIRE(network.reactions.size() >= 1);
+}
+
+TEST_CASE("compiled whole-species deletion metadata controls a non-symmetric embedding",
+          "[NetworkRulePlan][deletion]") {
+    auto model = parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(x)
+    B(x)
+end molecule types
+begin seed species
+    A(x!1).A(x!1) 1
+end seed species
+begin reaction rules
+    convert_one: A(x!+) -> B(x) k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto& rule = compiled.rules().front();
+    REQUIRE(rule.forward().wholeSpeciesDeletions == std::vector<std::size_t>{0});
+
+    const auto factorFor = [&](const compile::CompiledRuleDirection& direction) {
+        compile::BNGcoreLoweringContext loweringContext(compiled);
+        engine::NetworkRulePlan plan(rule, direction, compiled, loweringContext);
+        ast::SpeciesList species;
+        species.add(ast::Species(
+            ast::SpeciesGraph(model->getSeedSpecies().front().getGraph()), 1.0));
+        ast::RxnList reactions;
+        plan.expand(species, reactions, 0, {}, species.size());
+        if (reactions.size() != 1 || species.size() != 2) return -1.0;
+        CHECK(species.get(1).getSpeciesGraph().toString() == "B(x)");
+        const auto& reaction = reactions.all().front();
+        CHECK(reaction.getReactants() == std::vector<std::size_t>{0});
+        CHECK(reaction.getProducts() == std::vector<std::size_t>{1});
+        CHECK(reaction.getRateLaw() == "k");
+        return reaction.getFactor();
+    };
+
+    // The pinned BNG2 2.9.3 network has one reaction for this dimer seed.
+    CHECK(factorFor(rule.forward()) == 1.0);
+
+    // The compatibility AST can independently reconstruct the same deletion
+    // from graph edits, so clearing the compiler-owned decision distinguishes
+    // whether the network runtime actually consumes the compiled metadata.
+    auto forwardWithoutWholeDeletion = rule.forward();
+    forwardWithoutWholeDeletion.wholeSpeciesDeletions.clear();
+    CHECK(factorFor(forwardWithoutWholeDeletion) == 2.0);
+}
+
+TEST_CASE("compiled reverse whole-species deletion remains compatible",
+          "[NetworkRulePlan][deletion]") {
+    auto model = parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(x)
+    B(x)
+end molecule types
+begin seed species
+    A(x!1).A(x!1) 1
+    B(x!1).B(x!1) 1
+end seed species
+begin reaction rules
+    convert: A(x!1).A(x!1) <-> B(x!1).B(x!1) k,k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto& rule = compiled.rules().front();
+    REQUIRE(rule.reverse().has_value());
+    REQUIRE(rule.forward().wholeSpeciesDeletions == std::vector<std::size_t>{0});
+    REQUIRE(rule.reverse()->wholeSpeciesDeletions == std::vector<std::size_t>{0});
+
+    compile::BNGcoreLoweringContext loweringContext(compiled);
+    engine::NetworkRulePlan plan(rule, *rule.reverse(), compiled, loweringContext, true);
+    ast::SpeciesList species;
+    species.add(ast::Species(
+        ast::SpeciesGraph(model->getSeedSpecies().at(1).getGraph()), 1.0));
+    ast::RxnList reactions;
+    plan.expand(species, reactions, 0, {}, species.size());
+
+    REQUIRE(reactions.size() == 1);
+    REQUIRE(species.size() == 2);
+    CHECK(reactions.all().front().getFactor() == 1.0);
+    CHECK(species.get(1).getSpeciesGraph().toString() == "A(x!1).A(x!1)");
+}
+
+TEST_CASE("compiled DeleteMolecules semantics preserve unmatched connected context",
+          "[NetworkRulePlan][deletion]") {
+    auto model = parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(b)
+    B(a,c)
+    C(c)
+    D()
+end molecule types
+begin seed species
+    A(b!1).B(a!1,c!2).C(c!2) 1
+end seed species
+begin reaction rules
+    replace_A: A(b!+) -> D() k DeleteMolecules
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto& rule = compiled.rules().front();
+    CHECK(rule.forward().wholeSpeciesDeletions.empty());
+    REQUIRE(rule.modifiers().size() == 1);
+    CHECK(rule.modifiers().front().kind == compile::ModifierKind::DeleteMolecules);
+
+    compile::BNGcoreLoweringContext loweringContext(compiled);
+    engine::NetworkRulePlan plan(
+        rule, rule.forward(), compiled, loweringContext, false);
+    ast::SpeciesList species;
+    species.add(ast::Species(
+        ast::SpeciesGraph(model->getSeedSpecies().front().getGraph()), 1.0));
+    ast::RxnList reactions;
+    plan.expand(species, reactions, 0, {}, species.size());
+
+    REQUIRE(reactions.size() == 1);
+    REQUIRE(species.size() == 3);
+    CHECK(species.get(1).getSpeciesGraph().toString() == "D()");
+    CHECK(species.get(2).getSpeciesGraph().toString() == "B(a,c!1).C(c!1)");
+    const auto& reaction = reactions.all().front();
+    CHECK(reaction.getReactants() == std::vector<std::size_t>{0});
+    CHECK(reaction.getProducts() == std::vector<std::size_t>{1, 2});
+    CHECK(reaction.getRateLaw() == "k");
+    CHECK(reaction.getFactor() == 1.0);
 }
 
 TEST_CASE("Rule expansion: deleting a bound molecule preserves a free site", "[ReactionRule]") {

@@ -23,9 +23,24 @@ bool isFilterModifier(compile::ModifierKind kind) {
 std::vector<std::string> executionModifiers(const compile::CompiledRule& rule) {
     std::vector<std::string> result;
     for (const auto& modifier : rule.modifiers()) {
-        if (!isFilterModifier(modifier.kind)) result.push_back(modifier.source);
+        // The compiled DeleteMolecules kind is supplied through ExecutionHooks
+        // below; keeping it out of the lowered text makes that runtime decision
+        // independent of modifier spelling. The compatibility constructor may
+        // still derive its mismatch hint from this list, but the typed deletion
+        // hook controls orphan retention during compiled execution.
+        if (!isFilterModifier(modifier.kind) &&
+            modifier.kind != compile::ModifierKind::DeleteMolecules) {
+            result.push_back(modifier.source);
+        }
     }
     return result;
+}
+
+bool deletesMolecules(const compile::CompiledRule& rule) {
+    return std::any_of(rule.modifiers().begin(), rule.modifiers().end(),
+        [](const auto& modifier) {
+            return modifier.kind == compile::ModifierKind::DeleteMolecules;
+        });
 }
 
 bool hasSpeciesScope(const compile::CompiledRuleDirection& direction) {
@@ -66,6 +81,8 @@ struct LegacyNetworkRuleKernel::Impl {
               compile::lowerPatternsToSpeciesGraphs(direction.productPatterns, context)),
           state(rule.createExecutionState()) {
         rule.setHasScopePrefix(hasSpeciesScope(direction));
+        astHooks.deleteMolecules = deletesMolecules(compiledRule);
+        astHooks.wholeSpeciesDeletions = direction.wholeSpeciesDeletions;
     }
 
     void refreshHooks() {

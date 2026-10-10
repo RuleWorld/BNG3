@@ -692,6 +692,26 @@ bool hasModifier(const std::vector<std::string>& modifiers, const std::string& n
     return false;
 }
 
+bool deleteMoleculesEnabled(
+    const std::vector<std::string>& modifiers,
+    const ReactionRule::ExecutionHooks* hooks) {
+    if (hooks != nullptr && hooks->deleteMolecules.has_value()) {
+        return *hooks->deleteMolecules;
+    }
+    return hasModifier(modifiers, "deletemolecules");
+}
+
+bool deletesWholeReactantPatternForExecution(
+    const ReactionRule& rule,
+    std::size_t patternIndex,
+    const ReactionRule::ExecutionHooks* hooks) {
+    if (hooks != nullptr && hooks->wholeSpeciesDeletions.has_value()) {
+        const auto& patterns = *hooks->wholeSpeciesDeletions;
+        return std::find(patterns.begin(), patterns.end(), patternIndex) != patterns.end();
+    }
+    return rule.deletesWholeReactantPattern(patternIndex);
+}
+
 std::string canonicalNodeId(const BNGcore::Node* node) {
     // Create a canonical identifier based on node type, state, and adjacency.
     // This collapses symmetric nodes (same type/state/neighbors).
@@ -1593,7 +1613,8 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
         // Preserve that rule-level matching semantics here, so symmetric embeddings
         // of the same species do not create duplicate reaction pathways.
         const bool speciesLevelTransport = reactantPatterns_.at(patternIndex).isCompartmentPrefix();
-        const bool speciesLevelDeletion = deletesWholeReactantPattern(patternIndex);
+        const bool speciesLevelDeletion = deletesWholeReactantPatternForExecution(
+            *this, patternIndex, hooks);
         bool foundEmbeddingForSpecies = false;
 
         // Track signature → index in results for multiplicity counting
@@ -1614,7 +1635,7 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
             // to distinguish embeddings with different reactive sites.
             const bool isDeleteMoleculesDegradation = operations_.empty()
                 && productPatterns_.empty() && !reactantPatterns_.empty()
-                && hasModifier(modifiers_, "deletemolecules");
+                && deleteMoleculesEnabled(modifiers_, hooks);
             auto sigBase = std::to_string(speciesIndex) + "|" +
                 (reactionCenter_.at(patternIndex).empty()
                     ? (isDeleteMoleculesDegradation
@@ -2654,7 +2675,7 @@ bool ReactionRule::buildReaction(
         }
     }
 
-    const bool deleteMoleculesModifier = hasModifier(modifiers_, "deletemolecules");
+    const bool deleteMoleculesModifier = deleteMoleculesEnabled(modifiers_, hooks);
     if (productPatterns_.empty() && !reactantPatterns_.empty()) {
         if (deleteMoleculesModifier) {
             // DeleteMolecules rule applied to a complex: delete the matched
@@ -2788,7 +2809,7 @@ bool ReactionRule::buildReaction(
         if (debug) {
             std::cerr << "[BUILD_RXN] after splitIntoSpeciesGraphs: " << productGraphs.size() << " graphs\n";
         }
-        const bool deleteMolecules = hasModifier(modifiers_, "deletemolecules");
+        const bool deleteMolecules = deleteMoleculesEnabled(modifiers_, hooks);
 
         // Track which product pattern each product graph corresponds to
         std::vector<std::size_t> productPatternIndices;
