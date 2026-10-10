@@ -2450,6 +2450,7 @@ namespace NFcore
             TransformationSet* getTransformationSet() const { return transformationSet; }
 
 			void setBaseRate(double newBaseRate,string newBaseRateName);
+			void setBaseRateParameterConversionFactor(double factor);
 			void resetBaseRateFromSystemParamter();
 
 			void setTraversalLimit(int limit) { this->traversalLimit = limit; };
@@ -2691,6 +2692,8 @@ namespace NFcore
 
 			double baseRate;
 			string baseRateParameterName;
+			double baseRateParameterConversionFactor = 1.0;
+			bool usesBaseRateParameterConversion = false;
 			double a;
 			unsigned int fireCounter;
 			unsigned long long deferredMembershipUpdateGeneration = 0;

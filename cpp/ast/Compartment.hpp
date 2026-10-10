@@ -15,6 +15,8 @@ public:
     std::string getName() const;
     double getVolume() const;
     void setVolume(double volume);
+    bool isVolumeTimeDependent() const { return volumeTimeDependent_; }
+    void setVolumeTimeDependent(bool value) { volumeTimeDependent_ = value; }
     int getDimension() const;
     const std::string& getParent() const;
     bool hasUnit() const;
@@ -36,6 +38,7 @@ private:
     double volume_;
     int dimension_;
     std::string parent_;
+    bool volumeTimeDependent_ = false;
     std::optional<units::Unit> unit_;
     std::string unitName_;
 };

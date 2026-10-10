@@ -15,6 +15,7 @@
 #include <random>
 
 #include "ast/Model.hpp"
+#include "compile/Capabilities.hpp"
 #include "io/XmlWriter.hpp"
 
 #include "NFcore/NFcore.hh"
@@ -97,6 +98,8 @@ void bind_nfsim(py::module_& m) {
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
         std::string construction_path = "direct";
+        const bool model_uses_units =
+            bng::compile::featuresUsed(model).contains(bng::compile::Feature::Units);
         // Carries the precise reason the direct adapter declined, so the
         // fail-closed error names the failing stage instead of only saying
         // that construction was "unavailable".
@@ -131,6 +134,10 @@ void bind_nfsim(py::module_& m) {
                         "; XML fallback disabled "
                         "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
                 }
+                if (model_uses_units) {
+                    throw std::runtime_error(
+                        "NFsim XML fallback cannot preserve physical units; refusing model");
+                }
                 construction_path = "in-memory-xml";
                 if (verbose) {
                     std::cerr << "[bind_nfsim] Direct AST initialization unavailable; "
@@ -150,6 +157,10 @@ void bind_nfsim(py::module_& m) {
             }
 
             if (!system) {
+                if (model_uses_units) {
+                    throw std::runtime_error(
+                        "NFsim on-disk XML fallback cannot preserve physical units; refusing model");
+                }
                 construction_path = "on-disk-xml";
                 // Preserve the historical on-disk initializer as a last-resort
                 // compatibility mode.  This branch is expected to be rare and

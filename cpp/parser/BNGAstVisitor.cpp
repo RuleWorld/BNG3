@@ -1691,6 +1691,8 @@ std::any BNGAstVisitor::visitCompartment_def(BNGParser::Compartment_defContext* 
         std::stoi(ctx->INT()->getText()),
         names.size() > 1 ? names.back()->getText() : std::string {}));
     auto& compartment = currentModel_->getCompartments().back();
+    compartment.setVolumeTimeDependent(
+        currentModel_->getParameters().expressionIsTimeDependent(expr));
     std::string inferredUnitName;
     if (const auto* unitName = currentModel_->findCompartmentUnit(compartment.getName())) {
         inferredUnitName = *unitName;

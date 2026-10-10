@@ -2,6 +2,8 @@
 
 
 #include "NFcore.hh"
+#include <cmath>
+#include <stdexcept>
 #include <unordered_set>
 
 
@@ -55,6 +57,7 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 	this->name = name;
 	this->baseRate = baseRate;
 	this->baseRateParameterName=baseRateParameterName;
+	this->baseRateParameterConversionFactor = 1.0;
 	this->fireCounter = 0;
 	this->a = 0;
 	this->volumeConversionFactor = 1.0;
@@ -373,6 +376,8 @@ void ReactionClass::setAllReactantAndProductTemplates(map <string,TemplateMolecu
 
 
 void ReactionClass::setBaseRate(double newBaseRate,string newBaseRateName) {
+	if (!newBaseRateName.empty())
+		newBaseRate *= this->baseRateParameterConversionFactor;
 	if ( this->transformationSet->usingSymmetryFactor() )
 	{	this->baseRate = this->transformationSet->getSymmetryFactor() * newBaseRate;   }
 	else if (isDimerStyle)
@@ -384,19 +389,34 @@ void ReactionClass::setBaseRate(double newBaseRate,string newBaseRateName) {
 	update_a();
 };
 
+void ReactionClass::setBaseRateParameterConversionFactor(double factor) {
+	if (!std::isfinite(factor) || factor < 0.0) {
+		throw std::invalid_argument("NFsim parameter-rate conversion factor must be finite and non-negative");
+	}
+	this->baseRateParameterConversionFactor = factor;
+	this->usesBaseRateParameterConversion = true;
+	resetBaseRateFromSystemParamter();
+}
+
 
 void ReactionClass::resetBaseRateFromSystemParamter() {
 
 	if(!this->baseRateParameterName.empty()) {
+		const double parameterRate = system->getParameter(this->baseRateParameterName) *
+									this->baseRateParameterConversionFactor;
+		double updatedBaseRate = parameterRate;
 		if ( transformationSet->usingSymmetryFactor() ) {
-			this->baseRate = transformationSet->getSymmetryFactor() * system->getParameter(this->baseRateParameterName);
+			updatedBaseRate = transformationSet->getSymmetryFactor() * parameterRate;
 		}
 		else if (isDimerStyle) {
-			this->baseRate = 0.5 * system->getParameter(this->baseRateParameterName);
+			updatedBaseRate = 0.5 * parameterRate;
 		}
-		else {
-			this->baseRate=system->getParameter(this->baseRateParameterName);
+		if (usesBaseRateParameterConversion &&
+			(!std::isfinite(updatedBaseRate) || updatedBaseRate < 0.0)) {
+			throw std::overflow_error(
+				"updated NFsim physical parameter rate must be finite and non-negative");
 		}
+		this->baseRate = updatedBaseRate;
 		this->update_a();
 	}
 

@@ -1,5 +1,6 @@
 #include "NFinput_fromCompiled.hh"
 
+#include "compile/Capabilities.hpp"
 #include "compile/CompiledModel.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
 #include "NFcore/NFcore.hh"
@@ -2165,28 +2166,77 @@ bool lowerDirection(const CompiledModel& model,
         for (std::size_t index = 0; index < roots.size(); ++index)
             reaction->setMatchOnce(static_cast<unsigned int>(index), true);
 
+    const auto& compiledRate = *direction.rateLaw;
     if (roots.empty()) {
         NFcore::Compartment* productCompartment = nullptr;
+        std::optional<bng::compile::CompartmentId> productCompartmentId;
         bool same = true;
         for (const auto& pattern : direction.productPatterns) {
             for (const auto& molecule : pattern.molecules()) {
                 const auto name = compartmentName(model, pattern, molecule);
                 if (name.empty()) continue;
                 auto* compartment = resolveCompartment(system, name, diagnostic);
-                if (compartment == nullptr) { delete reaction; delete transformations; return false; }
+                if (compartment == nullptr) { delete reaction; return false; }
                 if (productCompartment == nullptr) productCompartment = compartment;
                 else if (productCompartment != compartment) same = false;
+                auto compartmentId = molecule.compartmentId;
+                if (!compartmentId.has_value()) compartmentId = pattern.compartmentId();
+                if (!compartmentId.has_value()) same = false;
+                else if (productCompartmentId.has_value() &&
+                         *productCompartmentId != *compartmentId) same = false;
+                else productCompartmentId = *compartmentId;
             }
         }
         double factor = 1.0;
-        if (productCompartment != nullptr && same) {
-            factor = productCompartment->getSize();
+        if (compiledRate.unit.has_value()) {
+            if (productCompartment == nullptr || !same ||
+                !productCompartmentId.has_value()) {
+                diagnostic = "physical zero-order rate requires one declared product compartment";
+                delete reaction;
+                return false;
+            }
+            const auto* declaration = model.compartment(*productCompartmentId);
+            if (declaration == nullptr || declaration->volumeTimeDependent ||
+                !declaration->declaredUnit.has_value()) {
+                diagnostic = "physical zero-order rate requires a static declared product volume unit";
+                delete reaction;
+                return false;
+            }
+            bng::units::ConversionContext context;
             if (system.getNumberPerQuantityUnit() > 0.0)
-                factor *= system.getNumberPerQuantityUnit();
+                context.numberPerQuantityUnit = system.getNumberPerQuantityUnit();
+            context.compartmentVolume = declaration->volume;
+            context.volumeUnit = declaration->declaredUnit;
+            const auto conversion = bng::units::stochasticRateFactor(
+                *compiledRate.unit, direction.reactantPatterns.size(), context);
+            if (!conversion) {
+                diagnostic = "physical zero-order rate unit cannot be converted to a count rate: " +
+                             conversion.error;
+                delete reaction;
+                return false;
+            }
+            factor = *conversion.factor;
+            // The typed conversion already includes volume and any required
+            // mole-to-item bridge. Do not apply NFsim's legacy synthesis scale
+            // on top of it.
+            reaction->volumeConversionFactor = 1.0;
+            if (reaction->getRxnType() != NFcore::ReactionClass::OBS_DEPENDENT_RXN) {
+                if (compiledRate.resolvedExpression().kind ==
+                    bng::compile::ResolvedExpressionKind::ParameterRef)
+                    reaction->setBaseRateParameterConversionFactor(factor);
+                else
+                    reaction->setBaseRate(reaction->getBaseRate() * factor, "");
+            }
+        } else {
+            if (productCompartment != nullptr && same) {
+                factor = productCompartment->getSize();
+                if (system.getNumberPerQuantityUnit() > 0.0)
+                    factor *= system.getNumberPerQuantityUnit();
+            }
+            reaction->volumeConversionFactor = factor;
+            if (reaction->getRxnType() != NFcore::ReactionClass::OBS_DEPENDENT_RXN)
+                reaction->setBaseRate(reaction->getBaseRate() * factor, "");
         }
-        reaction->volumeConversionFactor = factor;
-        if (reaction->getRxnType() != NFcore::ReactionClass::OBS_DEPENDENT_RXN)
-            reaction->setBaseRate(reaction->getBaseRate() * factor, "");
     }
 
     if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN &&
@@ -2210,6 +2260,11 @@ bool addReactionRulesFromCompiled(const CompiledModel& model,
                                   int& suggestedTraversalLimit,
                                   const std::filesystem::path& sourcePath) {
     if (system == nullptr) return false;
+    if (const auto rejection = bng::compile::nfSimPhysicalUnitBridgeRejection(model)) {
+        std::cerr << "[nfsim/compiled] physical-unit model requires compatibility lowering: "
+                  << *rejection << "\n";
+        return false;
+    }
     for (std::size_t index = 0; index < model.rules().size(); ++index) {
         const auto& rule = model.rules()[index];
         std::string diagnostic;

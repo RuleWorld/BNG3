@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "NFinput_fromAst.hh"
+#include "NFinput_fromCompiled.hh"
 #include "NFinput.hh"
 #include "NFcore.hh"
 #include "NFcore/energyPattern.hh"
@@ -27,6 +29,7 @@
 #include "ast/Observable.hpp"
 #include "ast/Parameter.hpp"
 #include "ast/SeedSpecies.hpp"
+#include "compile/Capabilities.hpp"
 #include "PatternGraphBuilder.hpp"
 #include "BNGLexer.h"
 #include "BNGParser.h"
@@ -2568,6 +2571,646 @@ end reaction rules
     xml->prepareForSimulation();
     CHECK(xml->getReaction(0)->get_a() == Catch::Approx(80.0));
     delete xml;
+}
+
+TEST_CASE("NFsim AST adapter converts static zero-order physical rates exactly once") {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 1e-9 [M/second]
+  end parameters
+  begin compartments
+    cell 3 2 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin seed species
+    A()@cell 0
+  end seed species
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    REQUIRE_FALSE(model->getCompartments().front().isVolumeTimeDependent());
+    const bng::compile::CompiledModel compiledStaticVolume(*model);
+    REQUIRE(compiledStaticVolume.valid());
+    CHECK_FALSE(compiledStaticVolume.compartments().front().volumeTimeDependent);
+
+    int traversalLimit = 0;
+    std::string unavailableReason;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit, {}, &unavailableReason);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.204428152));
+    system->setParameter("k", 2e-9);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.408856304));
+    system->setParameter("k", 1e308);
+    CHECK_THROWS_WITH(
+        system->updateSystemWithNewParameters(),
+        Catch::Matchers::ContainsSubstring(
+            "updated NFsim physical parameter rate must be finite and non-negative"));
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.408856304));
+    delete system;
+
+    auto itemRateModel = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 0.75 [molecule/fL/second]
+  end parameters
+  begin compartments
+    cell 3 2 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(itemRateModel != nullptr);
+    traversalLimit = 0;
+    system = NFinput::buildSystemFromAst(
+        *itemRateModel, false, 100, false, traversalLimit, {}, &unavailableReason);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.5));
+    system->setParameter("k", 1.5);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(3.0));
+    delete system;
+
+    auto directItemRateModel = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 0.75 [molecule/second]
+  end parameters
+  begin compartments
+    cell 3 2 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(directItemRateModel != nullptr);
+    const bng::compile::CompiledModel compiledDirectItemRate(*directItemRateModel);
+    REQUIRE(compiledDirectItemRate.valid());
+    CHECK(bng::compile::capabilitiesFor(*directItemRateModel,
+                                        bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::ExactLowering);
+    traversalLimit = 0;
+    system = NFinput::buildSystemFromAst(
+        *directItemRateModel, false, 100, false, traversalLimit, {}, &unavailableReason);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(0.75));
+    system->setParameter("k", 1.5);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.5));
+    delete system;
+}
+
+TEST_CASE("NFsim XML initialization refuses unit-bearing models") {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 1e-9 [M/second]
+  end parameters
+  begin compartments
+    cell 3 2 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    CHECK(bng::compile::capabilitiesFor(*model, bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::ExactLowering);
+
+    int traversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    CHECK(xml == nullptr);
+    delete xml;
+}
+
+TEST_CASE("NFsim raw physical-rate lowering requires a 3D product volume for count rates") {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 0.75 [molecule/second]
+  end parameters
+  begin compartments
+    cell 2 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.valid());
+    CHECK(bng::compile::capabilitiesFor(*model, bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::Unsupported);
+
+    NFcore::System system("compiled physical-unit 2D guard", false, 100);
+    std::map<std::string, double> parameters;
+    std::map<std::string, int> allowedStates;
+    REQUIRE(NFinput::addOptionsFromCompiled(compiled, &system, false));
+    REQUIRE(NFinput::addParametersFromCompiled(compiled, &system, parameters, false));
+    REQUIRE(NFinput::addCompartmentsFromCompiled(compiled, &system, false));
+    REQUIRE(NFinput::addMoleculeTypesFromCompiled(compiled, &system, allowedStates, false));
+    int traversalLimit = 0;
+    CHECK_FALSE(NFinput::addReactionRulesFromCompiled(
+        compiled, &system, false, false, traversalLimit));
+}
+
+TEST_CASE("NFsim physical unit bridge refuses converted rate overflow") {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 1e308 [M/second]
+  end parameters
+  begin compartments
+    cell 3 2 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.valid());
+    CHECK(bng::compile::capabilitiesFor(*model, bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::Unsupported);
+
+    NFcore::System system("compiled physical-unit overflow guard", false, 100);
+    std::map<std::string, double> parameters;
+    std::map<std::string, int> allowedStates;
+    REQUIRE(NFinput::addOptionsFromCompiled(compiled, &system, false));
+    REQUIRE(NFinput::addParametersFromCompiled(compiled, &system, parameters, false));
+    REQUIRE(NFinput::addCompartmentsFromCompiled(compiled, &system, false));
+    REQUIRE(NFinput::addMoleculeTypesFromCompiled(compiled, &system, allowedStates, false));
+    int traversalLimit = 0;
+    CHECK_FALSE(NFinput::addReactionRulesFromCompiled(
+        compiled, &system, false, false, traversalLimit));
+}
+
+TEST_CASE("NFsim AST adapter rejects unsupported physical zero-order contexts") {
+    const auto compiledRulesAccepted = [](const bng::compile::CompiledModel& model) {
+        NFcore::System system("compiled physical-unit guard", false, 100);
+        std::map<std::string, double> parameters;
+        std::map<std::string, int> allowedStates;
+        if (!NFinput::addOptionsFromCompiled(model, &system, false) ||
+            !NFinput::addParametersFromCompiled(model, &system, parameters, false) ||
+            !NFinput::addCompartmentsFromCompiled(model, &system, false) ||
+            !NFinput::addMoleculeTypesFromCompiled(model, &system, allowedStates, false))
+            return std::optional<bool>{};
+        int traversalLimit = 0;
+        return std::optional<bool>(NFinput::addReactionRulesFromCompiled(
+            model, &system, false, false, traversalLimit));
+    };
+
+    const auto checkTimeDependentCompartmentVolume = [&](const std::string& source) {
+        auto model = bng::parser::parseModel(source);
+        REQUIRE(model != nullptr);
+        const bng::compile::CompiledModel compiled(*model);
+        REQUIRE(compiled.valid());
+        REQUIRE(compiled.compartments().size() == 1);
+        CHECK(compiled.compartments().front().volume > 0.0);
+        CHECK(model->getCompartments().front().isVolumeTimeDependent());
+        CHECK(compiled.compartments().front().volumeTimeDependent);
+        const auto compiledResult = compiledRulesAccepted(compiled);
+        REQUIRE(compiledResult.has_value());
+        CHECK_FALSE(*compiledResult);
+        int traversalLimit = 0;
+        std::string unavailableReason;
+        auto* system = NFinput::buildSystemFromAst(
+            *model, false, 100, false, traversalLimit, {}, &unavailableReason);
+        CHECK(system == nullptr);
+        CHECK(unavailableReason.find("physical-unit") != std::string::npos);
+        delete system;
+    };
+
+    checkTimeDependentCompartmentVolume(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    Vbase = 1 [fL]
+    Vrate = 0.1 [fL/second]
+    Vdrift = Vrate * time() [fL]
+    Vcell = Vbase + Vdrift [fL]
+    k = 1e-9 [M/second]
+  end parameters
+  begin compartments
+    cell 3 Vcell [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+
+    checkTimeDependentCompartmentVolume(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    Vbase = 1 [fL]
+    Vrate = 0.1 [fL/second]
+    k = 1e-9 [M/second]
+  end parameters
+  begin compartments
+    cell 3 Vbase + Vrate * time() [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+
+    auto compoundParameterRate = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    kbase = 0.5e-9 [M/second]
+    k = 2 * kbase [M/second]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(compoundParameterRate != nullptr);
+    const bng::compile::CompiledModel compiledCompoundParameterRate(*compoundParameterRate);
+    REQUIRE(compiledCompoundParameterRate.valid());
+    CHECK(bng::compile::capabilitiesFor(
+              *compoundParameterRate, bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::Unsupported);
+    const auto compoundCompiledResult = compiledRulesAccepted(compiledCompoundParameterRate);
+    REQUIRE(compoundCompiledResult.has_value());
+    CHECK_FALSE(*compoundCompiledResult);
+    int compoundTraversalLimit = 0;
+    std::string compoundUnavailableReason;
+    auto* compoundSystem = NFinput::buildSystemFromAst(
+        *compoundParameterRate, false, 100, false, compoundTraversalLimit, {},
+        &compoundUnavailableReason);
+    CHECK(compoundSystem == nullptr);
+    CHECK(compoundUnavailableReason.find("physical-unit") != std::string::npos);
+    delete compoundSystem;
+
+    auto mixedTypedAndLegacyRates = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "permissive")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 1e-9 [M/second]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+    B()
+  end molecule types
+  begin seed species
+    A()@cell 1
+  end seed species
+  begin observables
+    Molecules countA A()
+  end observables
+  begin reaction rules
+    source: 0 -> A()@cell k
+    legacy: 0 -> B()@cell countA()
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(mixedTypedAndLegacyRates != nullptr);
+    const bng::compile::CompiledModel compiledMixedRates(*mixedTypedAndLegacyRates);
+    REQUIRE(compiledMixedRates.valid());
+    CHECK(bng::compile::capabilitiesFor(
+              *mixedTypedAndLegacyRates, bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::Unsupported);
+    const auto mixedCompiledResult = compiledRulesAccepted(compiledMixedRates);
+    REQUIRE(mixedCompiledResult.has_value());
+    CHECK_FALSE(*mixedCompiledResult);
+
+    auto nonsecondTimeBasisModel = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin units
+    timeunits minute
+  end units
+  begin parameters
+    k = 1e-9 [M/minute]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(nonsecondTimeBasisModel != nullptr);
+    const bng::compile::CompiledModel compiledNonsecondTimeBasis(
+        *nonsecondTimeBasisModel);
+    REQUIRE(compiledNonsecondTimeBasis.valid());
+    const auto nonsecondCompiledResult = compiledRulesAccepted(compiledNonsecondTimeBasis);
+    REQUIRE(nonsecondCompiledResult.has_value());
+    CHECK_FALSE(*nonsecondCompiledResult);
+    int nonsecondTraversalLimit = 0;
+    std::string nonsecondUnavailableReason;
+    auto* nonsecondSystem = NFinput::buildSystemFromAst(
+        *nonsecondTimeBasisModel, false, 100, false, nonsecondTraversalLimit, {},
+        &nonsecondUnavailableReason);
+    CHECK(nonsecondSystem == nullptr);
+    CHECK(nonsecondUnavailableReason.find("physical-unit") != std::string::npos);
+    delete nonsecondSystem;
+
+    auto nearSecondTimeBasisModel = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin units
+    unit near_second = 1.0000000000001*second
+    timeunits near_second
+  end units
+  begin parameters
+    k = 1e-9 [M/near_second]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(nearSecondTimeBasisModel != nullptr);
+    const bng::compile::CompiledModel compiledNearSecondTimeBasis(
+        *nearSecondTimeBasisModel);
+    REQUIRE(compiledNearSecondTimeBasis.valid());
+    CHECK(bng::compile::capabilitiesFor(
+              *nearSecondTimeBasisModel, bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::Unsupported);
+
+    auto timedParameterModel = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    kbase = 1e-9 [M/second]
+    kslope = 1e-10 [M/second^2]
+    k = kbase + kslope * time() [M/second]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(timedParameterModel != nullptr);
+    const bng::compile::CompiledModel typedTimedParameterModel(*timedParameterModel);
+    REQUIRE(typedTimedParameterModel.valid());
+    CHECK(timedParameterModel->getParameters().isTimeDependent("k"));
+    const auto timedRateCompiledResult = compiledRulesAccepted(typedTimedParameterModel);
+    REQUIRE(timedRateCompiledResult.has_value());
+    CHECK_FALSE(*timedRateCompiledResult);
+
+    int timedTraversalLimit = 0;
+    std::string timedUnavailableReason;
+    auto* timedSystem = NFinput::buildSystemFromAst(
+        *timedParameterModel, false, 100, false, timedTraversalLimit, {},
+        &timedUnavailableReason);
+    CHECK(timedSystem == nullptr);
+    CHECK(timedUnavailableReason.find("physical-unit") != std::string::npos);
+    delete timedSystem;
+
+    const std::string prefix = R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 1e-9 [M/second]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+    other 3 2 [fL]
+  end compartments
+  begin molecule types
+    A()
+    B()
+  end molecule types
+)BNGL";
+    auto missingVolume = prefix;
+    const auto annotatedVolume = missingVolume.find("cell 3 1 [fL]");
+    REQUIRE(annotatedVolume != std::string::npos);
+    missingVolume.replace(annotatedVolume, std::string("cell 3 1 [fL]").size(),
+                          "cell 3 1");
+    auto missingBridge = prefix;
+    const std::string bridgeOption =
+        "  setOption(\"NumberPerQuantityUnit\", 6.02214076e23)\n";
+    const auto bridgeOptionOffset = missingBridge.find(bridgeOption);
+    REQUIRE(bridgeOptionOffset != std::string::npos);
+    missingBridge.erase(bridgeOptionOffset, bridgeOption.size());
+    auto twoDimensional = prefix;
+    const auto volumeDimension = twoDimensional.find("cell 3 1 [fL]");
+    REQUIRE(volumeDimension != std::string::npos);
+    twoDimensional.replace(volumeDimension, std::string("cell 3 1 [fL]").size(),
+                           "cell 2 1 [fL]");
+    auto invalidRateDimension = prefix;
+    const auto rateUnit = invalidRateDimension.find("k = 1e-9 [M/second]");
+    REQUIRE(rateUnit != std::string::npos);
+    invalidRateDimension.replace(rateUnit, std::string("k = 1e-9 [M/second]").size(),
+                                 "k = 1e-9 [second]");
+
+    const std::vector<std::string> unsupportedModels {
+        // A concentration rate needs an explicit declared product volume.
+        missingVolume + R"BNGL(
+begin reaction rules
+  source: 0 -> A()@cell k
+end reaction rules
+end model
+)BNGL",
+        // Physical volume units do not make a two-dimensional surface a volume.
+        twoDimensional + R"BNGL(
+begin reaction rules
+  source: 0 -> A()@cell k
+end reaction rules
+end model
+)BNGL",
+        // Typed rate dimensions must match the zero-order rate contract.
+        invalidRateDimension + R"BNGL(
+begin reaction rules
+  source: 0 -> A()@cell k
+end reaction rules
+end model
+)BNGL",
+        // Molar rates need an explicit mole-to-item bridge.
+        missingBridge + R"BNGL(
+begin reaction rules
+  source: 0 -> A()@cell k
+end reaction rules
+end model
+)BNGL",
+        // Reverse direction has its own molecularity and is outside this slice.
+        prefix + R"BNGL(
+begin reaction rules
+  source: 0 <-> A()@cell k, k
+end reaction rules
+end model
+)BNGL",
+        // Non-elementary saturating laws remain outside the direct bridge.
+        prefix + R"BNGL(
+begin reaction rules
+  source: 0 -> A()@cell Sat(k, k)
+end reaction rules
+end model
+)BNGL",
+        // Higher molecularities remain outside the zero-order bridge.
+        R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 1e-3 [M^-1/second]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+    B()
+  end molecule types
+  begin seed species
+    A()@cell 1
+    B()@cell 1
+  end seed species
+  begin reaction rules
+    bind: A()@cell + B()@cell -> A()@cell k
+  end reaction rules
+end model
+)BNGL",
+        // Time-dependent rates are not static physical count-rate constants.
+        R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k0 = 1e-9 [M/second^2]
+  end parameters
+  begin compartments
+    cell 3 1 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin reaction rules
+    source: 0 -> A()@cell k0 * time
+  end reaction rules
+end model
+)BNGL",
+        // Seed conversion remains outside this bridge even for item units.
+        prefix + R"BNGL(
+begin seed species
+  A()@cell 1 [molecule]
+end seed species
+begin reaction rules
+  source: 0 -> A()@cell k
+end reaction rules
+end model
+)BNGL",
+        // A single zero-order event cannot place products in two volumes.
+        prefix + R"BNGL(
+begin reaction rules
+  source: 0 -> A()@cell + B()@other k
+end reaction rules
+end model
+)BNGL",
+    };
+
+    for (const auto& source : unsupportedModels) {
+        CAPTURE(source);
+        auto model = bng::parser::parseModel(source);
+        REQUIRE(model != nullptr);
+        int traversalLimit = 0;
+        std::string unavailableReason;
+        auto* system = NFinput::buildSystemFromAst(
+            *model, false, 100, false, traversalLimit, {}, &unavailableReason);
+        CHECK(system == nullptr);
+        CHECK(unavailableReason.find("physical-unit") != std::string::npos);
+        delete system;
+    }
 }
 
 TEST_CASE("NFsim AST adapter maps zero-argument functional reaction rates") {
