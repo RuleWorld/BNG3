@@ -10,8 +10,9 @@ options {
 }
 
 // Entry point - support both "begin actions...end actions" and loose action commands after model
+// BNG2 parity: "end model" may be omitted; actions then follow the last block directly
 prog
-    : LB* (header_block | action_command)* ((BEGIN MODEL LB+ program_block* END MODEL LB*) | program_block*) (wrapped_actions_block | actions_block)? EOF
+    : LB* (header_block | action_command)* ((BEGIN MODEL LB+ program_block* (END MODEL)? LB*) | program_block*) (wrapped_actions_block | actions_block)? EOF
     ;
 
 header_block
@@ -140,7 +141,13 @@ seed_species_block
 
 // Support: "1 @c0:Species(...) concentration" or just species without concentration
 seed_species_def
-    : INT? (STRING COLON)? DOLLAR? (AT STRING COLON)? species_def expression?
+    : INT? (STRING COLON)? DOLLAR? (AT STRING COLON)? species_def expression? seed_amount_annotation?
+    ;
+
+// BNG2 parity: trailing %... annotation after a seed amount is accepted and ignored
+// e.g. CaM(...) 10*(NA*V) %(10, 30 50 or 100)*(NA*V)
+seed_amount_annotation
+    : MOD (~LB)*
     ;
 
 // Species can optionally have compartment annotation using @ (prefix @comp: or suffix @comp)
@@ -157,13 +164,14 @@ molecule_compartment
 // Molecule patterns can have optional parentheses (e.g., ".CK1a" is valid in reactions)
 // Molecule tagging: pattern%1, pattern%2 for identifying molecules in reactions
 // Bond wildcards can appear after entire patterns: e.g., Smad1(loc~cyt)!+
-// Scope prefix: %x:: for local function parameterization (e.g., %x::A())
+// Scope prefix: %x:: for local function parameterization (e.g., %x::A());
+// a single colon also tags the molecule (e.g., %a:A(x~0) needs no rule label)
 molecule_pattern
     : scope_prefix? (STRING | keyword_as_mol_name) molecule_compartment? molecule_tag? (LPAREN component_pattern_list? RPAREN)? pattern_bond_wildcard? molecule_tag? molecule_attributes?
     ;
 
 scope_prefix
-    : MOLECULE_TAG_TOKEN COLON COLON
+    : MOLECULE_TAG_TOKEN COLON COLON?
     ;
 
 // Bond wildcards that apply to entire molecule patterns
@@ -344,8 +352,13 @@ functions_block
     ;
 
 // Support both "funcName() = expr" and "funcName expr" formats
+// BNG2 parity: the function name may be a keyword (e.g., t_start()=if(...))
 function_def
-    : (STRING COLON)? STRING (LPAREN param_list? RPAREN)? BECOMES? expression
+    : (STRING COLON)? function_name (LPAREN param_list? RPAREN)? BECOMES? expression
+    ;
+
+function_name
+    : arg_name
     ;
 
 param_list
@@ -618,7 +631,7 @@ primary_expr
 function_call
     : (EXP | LN | LOG10 | LOG2 | SQRT | ABS | SIN | COS | TAN | ASIN | ACOS | ATAN 
        | SINH | COSH | TANH | ASINH | ACOSH | ATANH | RINT | MIN | MAX | SUM | AVG
-       | IF | SAT | MM | HILL | ARRHENIUS | TIME
+       | IF | SAT | MM | HILL | ARRHENIUS | TIME | T_START | T_END
        | MRATIO | TFUN | FUNCTIONPRODUCT)  // BNG2 parity: mratio, TFUN, FunctionProduct
       LPAREN expression_list? RPAREN
     ;

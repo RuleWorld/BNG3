@@ -4,6 +4,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -22,8 +23,8 @@ class Model;  // forward declaration
 class ReactionRule {
 public:
     // Optional backend-owned execution hooks. These let compiled backends
-    // provide already-resolved filter and local-rate semantics without
-    // requiring ReactionRule to consult or reparse an ast::Model.
+    // provide already-resolved filter, local-rate, and deletion semantics
+    // without requiring ReactionRule to consult or reparse an ast::Model.
     struct ExecutionHooks {
         std::function<bool(std::size_t, const SpeciesGraph&)> reactantFilter;
         std::function<bool(const std::vector<SpeciesGraph>&)> productFilter;
@@ -36,6 +37,13 @@ public:
     std::function<std::string(const std::vector<SpeciesGraph> &,
                               const std::vector<std::size_t> &)>
         productLocalRateFingerprint;
+
+        // Compiled network plans supply deletion decisions here so the
+        // compatibility expansion code does not need to reconstruct them
+        // from modifier text or graph edits. An unset value preserves direct
+        // AST execution behavior.
+        std::optional<bool> deleteMolecules;
+        std::optional<std::vector<std::size_t>> wholeSpeciesDeletions;
 
         // Bidirectional rules are materialized as a lazily-created reverse
         // ReactionRule. Compiled execution metadata is direction-specific, so

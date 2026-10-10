@@ -3,7 +3,6 @@
 
 #pragma once
 
-
 #include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParser.h"
@@ -80,6 +79,9 @@ public:
 
   virtual void enterSeed_species_def(BNGParser::Seed_species_defContext *ctx) = 0;
   virtual void exitSeed_species_def(BNGParser::Seed_species_defContext *ctx) = 0;
+
+  virtual void enterSeed_amount_annotation(BNGParser::Seed_amount_annotationContext *ctx) = 0;
+  virtual void exitSeed_amount_annotation(BNGParser::Seed_amount_annotationContext *ctx) = 0;
 
   virtual void enterSpecies_def(BNGParser::Species_defContext *ctx) = 0;
   virtual void exitSpecies_def(BNGParser::Species_defContext *ctx) = 0;
@@ -194,6 +196,9 @@ public:
 
   virtual void enterFunction_def(BNGParser::Function_defContext *ctx) = 0;
   virtual void exitFunction_def(BNGParser::Function_defContext *ctx) = 0;
+
+  virtual void enterFunction_name(BNGParser::Function_nameContext *ctx) = 0;
+  virtual void exitFunction_name(BNGParser::Function_nameContext *ctx) = 0;
 
   virtual void enterParam_list(BNGParser::Param_listContext *ctx) = 0;
   virtual void exitParam_list(BNGParser::Param_listContext *ctx) = 0;
@@ -347,3 +352,4 @@ public:
 
 
 };
+

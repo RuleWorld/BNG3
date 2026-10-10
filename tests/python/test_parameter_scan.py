@@ -207,6 +207,63 @@ end model
     assert not np.array_equal(serial[0].concentrations, serial[1].concentrations)
 
 
+def test_failed_serial_scan_restores_parameters_and_network(tmp_path):
+    model_path = tmp_path / "dependent_decay.bngl"
+    model_path.write_text("""
+begin model
+begin parameters
+    k 0.1
+    k2 2*k
+    X0 100
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() X0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k2
+end reaction rules
+end model
+""")
+    model = bionetgen.load(str(model_path))
+    original_network = model.generate_network()
+    original_k = model.get_parameter("k").value
+    original_k2 = model.get_parameter("k2").value
+
+    with pytest.raises(RuntimeError, match="Failed to evaluate stop_if expression"):
+        model.parameter_scan(
+            parameter="k",
+            values=[0.25],
+            method="ode",
+            t_end=1.0,
+            n_steps=2,
+            stop_if="missing > 0",
+        )
+
+    assert model.get_parameter("k").value == pytest.approx(original_k)
+    assert model.get_parameter("k2").value == pytest.approx(original_k2)
+    assert model._network is original_network
+
+    options = dict(t_end=2.0, n_steps=4, sample_times=[0.0, 1.0, 2.0])
+    recovered = model.simulate(method="ode", **options)
+    fresh = bionetgen.load(str(model_path)).simulate(method="ode", **options)
+    expected = 100.0 * np.exp(-original_k2 * np.asarray(options["sample_times"]))
+    np.testing.assert_allclose(
+        recovered.observables["Xtot"], expected, rtol=1e-6, atol=1e-8
+    )
+    np.testing.assert_allclose(
+        recovered.observables["Xtot"],
+        fresh.observables["Xtot"],
+        rtol=1e-12,
+        atol=1e-12,
+    )
+
+
 def test_concurrent_ode_instances_reuse_network_with_independent_parameters(tmp_path):
     model_path = tmp_path / "ode_decay.bngl"
     _write_decay_model(model_path)

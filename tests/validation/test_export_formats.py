@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from tests.validation import compare, corpus, runner
+from tests.validation.strict import require_oracle
 
 EXPORT_MODELS = [
     m
@@ -124,6 +129,112 @@ def test_net_roundtrip_idempotent(model_name, bng_cpp, work_dir):
     n1, n2 = compare.parse_net(net1), compare.parse_net(net2)
     diff = compare.compare_net(n1, n2)
     assert diff.ok, f"net not idempotent [{model_name}]:\n{diff.summary()}"
+
+
+def _network3_executable() -> Path | None:
+    """Return only the Network3 executable rooted at the pinned BNG2 checkout.
+
+    The parity workflow sets BNGPATH to the checkout produced by
+    scripts/ci/checkout_oracle.py and adds its bin directory to PATH. Requiring
+    those paths to agree prevents an unrelated run_network earlier on PATH
+    from silently becoming the consumer oracle.
+    """
+    bngpath = os.environ.get("BNGPATH")
+    if not bngpath:
+        return None
+
+    expected = (Path(bngpath).expanduser() / "bin" / "run_network").resolve()
+    on_path = shutil.which("run_network")
+    if on_path and Path(on_path).resolve() != expected:
+        return None
+    if not expected.is_file() or not os.access(expected, os.X_OK):
+        return None
+    return expected
+
+
+@pytest.mark.export
+def test_bng2_network3_consumes_exported_net_ode(bng_cpp, tmp_path):
+    """The pinned downstream reader executes this .net against its analytic solution."""
+    run_network = _network3_executable()
+    require_oracle(
+        run_network is not None,
+        "pinned Network3 run_network not found (set BNGPATH to the locked BNG2 checkout)",
+    )
+    assert run_network is not None
+
+    source = tmp_path / "irreversible_conversion.bngl"
+    source.write_text(
+        """begin model
+  begin parameters
+    k 0.2
+  end parameters
+  begin molecule types
+    A()
+    B()
+  end molecule types
+  begin seed species
+    A() 10
+    B() 0
+  end seed species
+  begin reaction_rules
+    convert: A() -> B() k
+  end reaction_rules
+end model
+
+generate_network({overwrite=>1})
+""",
+        encoding="utf-8",
+    )
+    net_path, _, err = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
+    assert net_path is not None, f"BNG3 failed to write the .net: {err}"
+
+    network = compare.parse_net(net_path)
+    assert network is not None
+    assert network.species_by_index == {1: "A()", 2: "B()"}
+
+    output_prefix = tmp_path / "network3_consumed"
+    proc = subprocess.run(
+        [
+            str(run_network),
+            "-o",
+            str(output_prefix),
+            str(net_path),
+            "0",
+            "0.5",
+            "1",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, (
+        "pinned Network3 could not consume the BNG3 .net:\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+
+    cdat_path = output_prefix.with_suffix(".cdat")
+    observed, columns = compare.parse_gdat(cdat_path)
+    assert observed is not None, f"Network3 produced no readable {cdat_path.name}"
+    assert columns == ["time", "S1", "S2"]
+
+    times = np.asarray([0.0, 0.5, 1.0])
+    a = 10.0 * np.exp(-0.2 * times)
+    expected = np.column_stack((times, a, 10.0 - a))
+    assert np.array_equal(observed[:, 0], times)
+    diff = compare.compare_trajectories(
+        expected,
+        ["time", "S1", "S2"],
+        observed,
+        columns,
+        rtol=1e-6,
+        atol=1e-9,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert diff.ok, (
+        "Network3 trajectory disagrees with analytic A -> B solution: "
+        f"{diff.summary()}"
+    )
 
 
 # --------------------------------------------------------------------------- #
