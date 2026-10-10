@@ -1719,6 +1719,59 @@ def test_playground_function_inlining_handles_nested_arguments_and_parameters():
     assert extend_function("kPlus() * 2", {}, zero_argument) == "(1.5) * 2"
 
 
+def test_playground_function_inlining_reuses_call_patterns_without_changing_output():
+    from bionetgen.atomizer.modern import SBMLFunctionDefinition, extend_function
+    from bionetgen.atomizer.modern.writer import _function_call_pattern
+
+    _function_call_pattern.cache_clear()
+    definitions = OrderedDict(
+        [
+            (
+                "square",
+                SBMLFunctionDefinition(
+                    id="square", name="square", arguments=["x"], math="x * x"
+                ),
+            )
+        ]
+    )
+    expression = "square(square(a)) + square(2)"
+
+    first = extend_function(expression, {}, definitions)
+    first_info = _function_call_pattern.cache_info()
+    second = extend_function(expression, {}, definitions)
+    second_info = _function_call_pattern.cache_info()
+
+    assert first == second == "((((a) * (a))) * (((a) * (a)))) + ((2) * (2))"
+    assert first_info.misses > 0
+    assert second_info.hits > first_info.hits
+
+
+def test_playground_function_call_pattern_cache_is_bounded_for_many_names():
+    from bionetgen.atomizer.modern import SBMLFunctionDefinition, extend_function
+    from bionetgen.atomizer.modern.writer import _function_call_pattern
+
+    _function_call_pattern.cache_clear()
+    cache_limit = _function_call_pattern.cache_info().maxsize
+    assert cache_limit is not None
+
+    definitions = OrderedDict(
+        (
+            f"f_{index}",
+            SBMLFunctionDefinition(
+                id=f"f_{index}", name=f"f_{index}", arguments=["x"], math="x"
+            ),
+        )
+        for index in range(cache_limit + 25)
+    )
+
+    assert extend_function("unrelated(x)", {}, definitions) == "unrelated(x)"
+    info = _function_call_pattern.cache_info()
+
+    assert info.maxsize == cache_limit
+    assert info.currsize <= cache_limit
+    assert info.misses > cache_limit
+
+
 def test_playground_bngl_function_maps_species_compartments_and_saturation_rates():
     from bionetgen.atomizer.modern import bngl_function
 
