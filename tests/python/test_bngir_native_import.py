@@ -35,6 +35,19 @@ end reaction rules
 end model
 """
 
+SEED_ONLY_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_static")
+begin model
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 5
+end seed species
+end model
+"""
+
 
 def _document(source: str = SOURCE) -> dict:
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
@@ -73,6 +86,44 @@ def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypa
     assert nf_result.time.tolist() == pytest.approx([0.0, 0.1])
     assert nf_result.construction_path == "direct"
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+def test_native_import_reconstructs_and_executes_seed_only_model_without_source_parsing(
+    monkeypatch,
+):
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(SEED_ONLY_SOURCE))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+
+    restored = bionetgen.from_bngir(document, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+    network = restored.generate_network()
+    assert network.num_species == 1
+    assert network.num_reactions == 0
+    assert network.species_names == ["A()"]
+
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, [5.0])
+    assert derivative == pytest.approx([0.0])
+    result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    assert result.time.tolist() == pytest.approx([0.0, 0.1])
+    assert result.concentrations[:, 0].tolist() == pytest.approx([5.0, 5.0])
+    assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+def test_native_import_still_requires_at_least_one_seed():
+    document = _document()
+    document["model"]["seeds"] = []
+    document["features"]["used"].remove("seeds")
+
+    with pytest.raises(ValueError, match="requires at least one seed"):
+        bionetgen.from_bngir(document, native=True)
 
 
 @pytest.mark.parametrize(
