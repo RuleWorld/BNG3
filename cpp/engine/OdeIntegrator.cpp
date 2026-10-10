@@ -770,9 +770,10 @@ void OdeIntegrator::compile() {
         if (!isFunctional && rateExpr.has_value()) {
             isFunctional = hasRuntimeRateDependencies(*rateExpr);
             if (!isFunctional) {
-                // Some generated networks retain a simplified AST expression
-                // beside a richer serialized rate field. Classify both typed
-                // forms so a dynamic source law is not frozen as a constant.
+                // When present, the parsed AST is authoritative for the rate
+                // expression; its serialized spelling may also carry local-
+                // context metadata. A .net-loaded reaction has no AST, so its
+                // serialized rate expression is parsed below as the source.
                 const auto sourceDependencies = rateTextHasRuntimeDependencies(rawRateLaw);
                 if (sourceDependencies.has_value()) {
                     isFunctional = *sourceDependencies;
