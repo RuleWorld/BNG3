@@ -5,6 +5,14 @@ pytest.importorskip("bionetgen._bionetgen_cpp")
 from bionetgen.builder import ModelBuilder
 
 
+@pytest.mark.parametrize("method", ["add_seed_species", "add_rule", "add_function"])
+def test_builder_annotations_resolve(method):
+    """Public builder annotations must resolve for introspection clients."""
+    from typing import get_type_hints
+
+    get_type_hints(getattr(ModelBuilder, method))
+
+
 def test_builder_to_bngl_and_simulation():
     builder = ModelBuilder("MyModel")
     builder.add_parameter("k_on", 1.0)

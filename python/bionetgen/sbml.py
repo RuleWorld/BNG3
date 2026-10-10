@@ -21,10 +21,22 @@ class BioNetGenError(BNGError):
     """Public SBML import error used by the new API."""
 
 
+def _require_libsbml() -> None:
+    try:
+        __import__("libsbml")
+    except ImportError as exc:
+        raise BioNetGenError(
+            "SBML import requires the optional 'python-libsbml' dependency; "
+            "install it with bionetgen[full]"
+        ) from exc
+
+
 def _translate_modern_with_model(
     sbml_path: str, atomize: bool, options: dict
 ) -> tuple[str, object]:
     """Translate through one Atomizer instance and retain its source model."""
+
+    _require_libsbml()
 
     try:
         from bionetgen.atomizer.modern import Atomizer
@@ -51,14 +63,16 @@ def _translate_modern_with_model(
 
 def _translate_sbml(sbml_path: str, atomize: bool = False, **options) -> str:
     backend = str(options.pop("atomizer_backend", "modern")).lower()
+    if backend not in {"modern", "playground", "legacy", "native"}:
+        raise BioNetGenError(
+            f"Unknown SBML atomizer backend {backend!r}; use 'modern' or 'legacy'"
+        )
+
     if backend in {"modern", "playground"}:
         bngl_text, _ = _translate_modern_with_model(sbml_path, atomize, options)
         return bngl_text
 
-    if backend not in {"legacy", "native"}:
-        raise BioNetGenError(
-            f"Unknown SBML atomizer backend {backend!r}; use 'modern' or 'legacy'"
-        )
+    _require_libsbml()
 
     try:
         from bionetgen.atomizer import libsbml2bngl as translator

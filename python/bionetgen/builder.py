@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
-from typing import Sequence
+from typing import Optional, Sequence
 
 from bionetgen.model import BioNetGenModel
 

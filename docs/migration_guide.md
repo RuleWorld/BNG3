@@ -21,6 +21,79 @@ BioNetGen 3 replaces the subprocess-based PyBioNetGen/BNG2 workflow with an in-p
 | Build models | Hand-written BNGL only | `ModelBuilder` API |
 | Import SBML | Atomizer CLI | `bionetgen.from_sbml("model.xml")` |
 
+The in-process compatibility file runner has no execution deadline. A non-`None`
+`timeout` passed to `bionetgen.run(path, out=...)` raises `NotImplementedError`
+before execution or output creation, including when method or time overrides
+are supplied. `timeout=None` retains the normal file-runner behavior.
+
+## Python and CLI Run Contracts
+
+`bionetgen.run()` supports two explicit call styles. With no output argument
+specified, it uses the modern in-memory API and returns a `SimResult`; its
+default method is ODE with `t_end=100` and `n_steps=100`. The modern method and
+grid can also be positional: `bionetgen.run("model.bngl", "ssa", 20, 200)`.
+The dispatcher uses `*args` plus keyword-only `method`, `t_end`, and `n_steps`
+so it can preserve legacy positional output-directory calls. An explicit
+`None`, a path-like second positional argument, or a string that is not one of
+`ode`, `ssa`, `nf`, `pla`, or `psa`, selects the file runner and returns
+`BNGResult`; use `out=` when a directory's string name could be mistaken for a
+method. After a positional output path, remaining positionals retain the
+PyBioNetGen order: `suppress`,
+`timeout`, `simulator`, `format`, `method`, `t_span`, and `n_points`. A
+non-`None` timeout is explicitly rejected because the in-process runner has no
+execution deadline. Invalid keyword methods raise `ValueError`, and duplicate
+positional/keyword values raise `TypeError`.
+
+```python
+# Modern single-simulation result, defaulting to ODE, 0..100, 100 steps.
+result = bionetgen.run("model.bngl")
+
+# Legacy action workflow and its .xml, .net, .gdat and .cdat outputs.
+files = bionetgen.run("model.bngl", out="results")
+```
+
+In the file runner, an explicit `method=` selects one modern simulation and
+writes one `.gdat` result. Time-only options preserve the model's declared
+actions, ordering, and non-simulation side effects. The same absolute
+`t_start`/`t_end` and step count are applied to each direct simulation action;
+`t_span=(start, end)` sets both times, and `n_points=N` means `N-1` steps plus
+both endpoints. A lone time or step option changes only that part of each
+action's existing grid. This is the BNG3 compatibility contract; it does not
+claim PyBioNetGen parity for time-grid forwarding. Combining a time override
+with an action's `sample_times` or truthy `continue` option raises
+`NotImplementedError` before the output directory is created. Solver-specific
+options such as `rtol`, `atol`, `seed`, `pla_config`, and `psa_poplevel` require
+an explicit modern `method=` override; action-preserving calls reject them
+rather than dropping them.
+
+The CLI keeps the same distinction. `bng3 run MODEL --method ssa ...` writes a
+tab-separated table for one selected simulation. `bng3 run --input MODEL`
+executes the model's actions into an output directory; explicit time options
+modify the action grid while preserving actions. Supplying `--method` with
+`--input` opts into a single modern simulation; solver-specific options are
+accepted there. The five modern methods
+(`ode`, `ssa`, `nf`, `pla`, and `psa`) are contract-tested through the Python
+API and positional-model CLI. The notebook command clears saved execution
+outputs from its templates. Its model-specific example uses
+`bionetgen.load(...).simulate()` and `SimResult.plot()`; the built-in example
+uses the file-runner result's `gdats` mapping. Install `bionetgen[notebook]`
+for an IPython kernel and Matplotlib before running either template in a
+Jupyter frontend. The frontend itself is not included in that extra.
+
+The maintained integration surface includes `from_sbml` and `sbml_to_bngl`,
+the optional SymPy ODE export, and the legacy
+`sim_getter(..., sim_type="libRR")` adapter. SBML import and SymPy ODE export
+require `python-libsbml` and `sympy`, respectively; both are included in
+`bionetgen[full]`. The RoadRunner adapter remains optional. Install its
+separate PyPI dependency with `python -m pip install libroadrunner` (the
+import module is named `roadrunner`); when that module is absent, the adapter
+raises an `ImportError` that names the dependency. `sim_getter` accepts SBML
+through either `model_file` or `model_str`; `.simulate(...)` returns
+RoadRunner's time-course matrix. The file-runner rejects
+`simulator="bngsim"`; BNG3's `backend="bngsim"` belongs to its separate native
+finite-network API and does not reproduce PyBioNetGen's optional Python
+`bngsim` routing contract. BNG3 does not expose a PySB adapter.
+
 ## Before And After
 
 ### Load A Model
