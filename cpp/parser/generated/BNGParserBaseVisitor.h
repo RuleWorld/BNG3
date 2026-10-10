@@ -3,7 +3,6 @@
 
 #pragma once
 
-
 #include "../antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGParserVisitor.h"
@@ -101,6 +100,10 @@ public:
   }
 
   virtual std::any visitSeed_species_def(BNGParser::Seed_species_defContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitSeed_amount_annotation(BNGParser::Seed_amount_annotationContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -253,6 +256,10 @@ public:
   }
 
   virtual std::any visitFunction_def(BNGParser::Function_defContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitFunction_name(BNGParser::Function_nameContext *ctx) override {
     return visitChildren(ctx);
   }
 
@@ -458,3 +465,4 @@ public:
 
 
 };
+

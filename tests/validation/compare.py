@@ -182,7 +182,7 @@ def _eval_expr(
     while index < len(toks):
         t = toks[index]
         if re.match(r"^[A-Za-z_]\w*$", t):
-            if t in _SAFE_NAMES:
+            if t in _SAFE_NAMES or t == "if":
                 sub_parts.append(t)
             else:
                 v, sub = _eval_symbol(t, defs, seen, rate_functions)
@@ -213,13 +213,28 @@ def _eval_expr(
         return None, sub_expr
 
 
+class _ConditionalToIfExp(ast.NodeTransformer):
+    """Preserve BNGL if's selected-branch evaluation in numeric expressions."""
+
+    def visit_Call(self, node):
+        self.generic_visit(node)
+        if isinstance(node.func, ast.Name) and node.func.id == "_bng_if":
+            if len(node.args) != 3 or node.keywords:
+                raise ValueError("if expects three arguments")
+            return ast.copy_location(
+                ast.IfExp(test=node.args[0], body=node.args[1], orelse=node.args[2]),
+                node,
+            )
+        return node
+
+
 def _safe_arith(expr: str) -> float:
     """Evaluate a pure-numeric arithmetic expression with safe math functions."""
     e = expr.replace("^", "**")
 
     # Check that all alphabetical tokens are allowed math functions
     for word in re.findall(r"\b[A-Za-z_]\w*\b", e):
-        if word not in _SAFE_NAMES:
+        if word not in _SAFE_NAMES and word != "if":
             raise ValueError(f"unknown function or symbol {word!r}")
 
     ns = {
@@ -248,8 +263,15 @@ def _safe_arith(expr: str) -> float:
         "pi": math.pi,
         "e": math.e,
     }
+    # `if` is a Python keyword. Turn only BNGL calls into lazy conditional
+    # expressions; a function wrapper would evaluate both branches eagerly.
+    e = re.sub(r"\bif\s*(?=\()", "_bng_if", e)
+    tree = _ConditionalToIfExp().visit(ast.parse(e, mode="eval"))
+    ast.fix_missing_locations(tree)
     # Only approved functions — safe to eval in an empty namespace.
-    return float(eval(e, {"__builtins__": {}}, ns))
+    return float(
+        eval(compile(tree, "<numeric rate>", "eval"), {"__builtins__": {}}, ns)
+    )
 
 
 def _canon_expr(expr: str) -> str:

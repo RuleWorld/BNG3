@@ -54,6 +54,124 @@ def _document(source: str = SOURCE) -> dict:
     return json.loads(source_model.to_bngir(version="0.2"))
 
 
+def _direct_native_model(document: dict):
+    return bionetgen.BioNetGenModel(
+        _cpp._model_from_bngir_v02(copy.deepcopy(document["model"]))
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "species_count", "reaction_count"),
+    [(SOURCE, 2, 1), (SEED_ONLY_SOURCE, 1, 0)],
+    ids=["conversion", "seed-only"],
+)
+def test_direct_native_builder_preserves_supported_models_and_executes(
+    source, species_count, reaction_count
+):
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    restored = _direct_native_model(document)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    network = restored.generate_network()
+    assert network.num_species == species_count
+    assert network.num_reactions == reaction_count
+    result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    assert result.time.tolist() == pytest.approx([0.0, 0.1])
+    assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+@pytest.mark.parametrize(
+    ("section", "index", "value"),
+    [
+        ("parameters", 0, 1),
+        ("molecule_types", 1, 0),
+        ("seeds", 0, 1),
+        ("rules", 0, 1),
+    ],
+    ids=[
+        "parameter-misordered",
+        "molecule-type-duplicate",
+        "seed-misordered",
+        "rule-misordered",
+    ],
+)
+def test_direct_native_builder_rejects_non_dense_declaration_ids(section, index, value):
+    document = _document()
+    document["model"][section][index]["id"] = value
+
+    with pytest.raises(RuntimeError, match="dense and ordered"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_boolean_declaration_ids():
+    document = _document()
+    document["model"]["parameters"][0]["id"] = False
+
+    with pytest.raises(RuntimeError):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    "value",
+    [True, 0.0, -1, 99, 10**100],
+    ids=["boolean", "float", "negative", "out-of-range", "integer-overflow"],
+)
+def test_direct_native_builder_rejects_invalid_molecule_type_indices(value):
+    document = _document()
+    document["model"]["seeds"][0]["pattern"]["molecules"][0]["type_id"] = value
+
+    with pytest.raises(RuntimeError):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    "value",
+    [True, 0.0, -1, 99, 10**100],
+    ids=["boolean", "float", "negative", "out-of-range", "integer-overflow"],
+)
+def test_direct_native_builder_rejects_invalid_parameter_reference_indices(value):
+    source = SOURCE.replace("    k 0.1", "    k 0.1\n    k2 0.2")
+    document = _document(source)
+    expression = document["model"]["rules"][0]["forward"]["rate"]["expression"]
+    expression["symbol"]["index"] = value
+
+    with pytest.raises(RuntimeError):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    "section",
+    [
+        "compartments",
+        "observables",
+        "functions",
+        "energy_patterns",
+        "barrier_patterns",
+        "population_maps",
+        "population_types",
+    ],
+)
+def test_direct_native_builder_rejects_nonempty_unsupported_sections(section):
+    document = _document()
+    unsupported_entry = (
+        {
+            "id": 0,
+            "name": "f",
+            "arguments": [],
+            "expression": {"kind": "number", "value": 1.0},
+        }
+        if section == "functions"
+        else {}
+    )
+    document["model"][section].append(unsupported_entry)
+
+    with pytest.raises(
+        RuntimeError, match=f"native BNGIR model.{section} is not supported"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
 def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypatch):
     document = _document()
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(SOURCE))
