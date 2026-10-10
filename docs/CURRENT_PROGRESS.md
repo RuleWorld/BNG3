@@ -1,7 +1,7 @@
 # BNG3 current progress
 
 **Refreshed:** 2026-10-10 UTC against RuleWorld/BNG3 main
-`9a1de7ed7fb617df4cf8828748de45fac486e14e`. Semantic convergence and release
+`2c3ebf2126071e2a0189ab2d537f768239ff519d`. Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
 [#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 46 open and nine closed
 (#133/#134/#135/#136/#145/#165/#169/#173/#183).
@@ -24,9 +24,10 @@ A bounded repair does not close its broader issue.
 | #134 | #128/#204 | Combined parser grammar reuse, cardinality guards and pyparsing 3.0.9 fallback. Source-only shape/fallback checks pass; same-cardinality equality asymmetry remains pre-existing. |
 | #135/#136 | #187/#189 | Current issue-linked ledger and corrected architecture/validation claims. Closed after review; historical reports remain historical. |
 | #140 | #207/#220 | Compile-owned numeric max_iter/max_agg, fractional/negative aggregate thresholds and product-only filtering. Broader protocol typing remains open. |
-| #141/#142 | #203/#211 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Broader isolation and backend graph encoding unification remain open. |
+| #141/#142 | #203/#211/#222 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots now have a shared-topology contract. Broader invalidation/lifecycle and graph encoding unification remain open. |
 | #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
 | #138/#163 | #196/#197 | Compile-owned units and version-aware SBML units; broader runtime migration/export qualification remains open. |
+| #143 | #201 | Typed ODE dependency classification and time/state reevaluation; broader backend scope, propensity and cache-invalidation criteria remain open. |
 | #146 | #210/#215 | Deletion scope, pending waits and output clocks. Strict native -oSteps endpoint comparison remains red. |
 | #147/#148 | #219 | Whole-species DestroyComplex, same-complex matcher constraints and native index-width refusal. Runtime tests use an action adapter; production ActionIR execution and formal correspondence remain open. |
 | #153–#155 | #209/#212/#213/#217 | Narrow parser-free BNGIR v0.2 import, strict envelopes and boolean-reference rejection. Full structural round trips remain open. |
@@ -36,7 +37,7 @@ A bounded repair does not close its broader issue.
 | #182 | #199/#216 | Numerical/expression/export CI wiring and source-selected harness isolation; scientific acceptance remains open. |
 | #183 | #206 | Budgeted locked SSTS CI, per-case classifications/digests and permanent receipts. This bounded workflow issue is closed; full #159 qualification remains open. |
 
-Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220 during this continuation.
+Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188 plus ledger refresh #221 during this continuation.
 PR #205 integrated the Rasi performance port separately. The shared checkout
 remains on perf/nfsim-rasi-translation-port-v2 at `07ea87d3`, with its unrelated
 untracked audit file preserved. Work continues in isolated checkouts. Only root
@@ -44,6 +45,24 @@ may merge reviewed changes or close satisfied issues; release/publication remain
 unauthorized.
 
 ## Current qualification receipts
+
+- Shared rates #201: exact source `b8428dc6fe1f8ebbdd3189ff430777c350abb9af`,
+  merge `dbf1dac0faaf2b2cfdd65d09e1da54c80aae5ad3`. Focused ODE 22/120,
+  compiler 124/2,572,270 and reaction-rule 14/239 tests passed, plus 75 verified
+  source-mode Python backend tests. Root reran six live pinned BNG2 RHS items
+  at the final source with cached goldens disabled and source=perl asserted.
+  CLI SHA256 `8653f9283912719e3d6ff842a28e3975b362fb1ea5749c677277a56f6306da69`;
+  native `620f40b6be5fcc40b71edee602188407c7bed6680b734bd7e24bd23c3aea17e5`.
+  Final-head hosted native, Python, corpus, JAX and parity checks passed;
+  release-only jobs were skipped. No full #143 closure.
+- ODE reuse #222: merge `3118fa66a7fa33ebc066bd940ebac9f12e727faa`, test-only
+  source `8d1d0005442c75acdab6867c896ae91f81419900`. Root verified b842 source
+  cpp/python equals integration main dbf1, then ran all ten scan contracts with
+  the proposed test on that verified runtime. A guarded file entry point passed;
+  an earlier stdin launch failed worker startup and is excluded. The older
+  installed source9712 receipt remains historical. This qualifies independent
+  parameter snapshots sharing unchanged topology, not concurrent mutation,
+  broader topology/volume invalidation, exception cleanup or NFsim lifecycle.
 
 - max_agg #220: exact source `ffd4043a8798dd20d708b26b1e370c6a294b371d`,
   merge `9a1de7ed7fb617df4cf8828748de45fac486e14e`. Root reviewed the five-file
@@ -53,8 +72,9 @@ unauthorized.
   negative/fractional thresholds, seed/product filtering and empty products.
   Quoted numeric-prefix coercion stays explicitly unsupported. Direct Python
   max_iter/default behavior is preserved; no new max_agg API keyword. Hosted
-  Linux C++, Lean, SSTS and compatibility checks passed at integration; other
-  C++/parity jobs were still running/queued. No full #140 completion.
+  Linux C++, Lean, SSTS and compatibility checks passed at integration. All native
+  C++/ASan/parity, Python and corpus checks subsequently passed; release-only
+  jobs were skipped. No full #140 completion.
 - Parser #128/#204: combined source preview on main `f4adb7b7` passed 68 parsed
   field/text comparisons against baseline on actual pyparsing 3.0.9 and 3.3.2;
   root independently reran 68 round trips and separator/fallback/cardinality
@@ -120,10 +140,23 @@ reopened with their full unmet criteria:
 | Issues | PR / head | Qualification boundary |
 | --- | --- | --- |
 | #132 | #130 `2f05ce2e` | Preserved isolated main merge plus scoped time-function repair in progress; retain integrated whole-deletion bond suppression. New scoped-time acceptance is not qualified by old-head CI. |
-| #143 | #201 `b8428dc6` | Independently reviewed ODE dependency classification, synchronized to main9a1. Focused ODE22/120, compiler124/2,572,270, reaction-rule14/239 and75 verified source-mode backend tests pass. New exact-head hosted checks pending. Five pinned live BNG2 coefficient/RHS checks remain separate from frozen SSA failures. |
 | #137 | #195 `e530328e` | Capability inventory; policy/owners remain unapproved. |
 | #179 | #202 `78543775` | 14 approvals pending; strict validation intentionally reports 14 errors. |
-| #174 | #188 `9456b290`, #218 `65e8ef09` | Performance candidates need source review and controlled measurements; green checks alone are insufficient. |
+| #174 | #188 merged; #218 closed as superseded, former head `2f51b79f` | #188 was narrowed to a bounded 128-entry function-call regex cache and merged after root/Luna review; slower copy changes were removed. #218’s branch and commits are preserved. Broader representative speed/memory qualification remains open. |
+
+The [initial #188 review](https://github.com/RuleWorld/BNG3/pull/188#issuecomment-6093309268)
+and [initial #218 review](https://github.com/RuleWorld/BNG3/pull/218#issuecomment-6093309400)
+record the historical overlapping copy regressions and unbounded cache. Those
+findings motivated the narrowed #188 candidate. Five alternating fresh-process
+runs measured a 4.9% median gain for 40,000 function expansions and a 1.6% median
+gain for 200 existing event-fixture exports, with identical output hashes. These
+are source-level workload measurements, not native simulation or broad application
+speed claims. The representative export difference is inconclusive for noise. Final-head native, Python, corpus, parity and package-smoke checks pass;
+release-only jobs were skipped. Root merged exact head
+`67b46804d0be63636bca28b59967f2075f9e1bc8` as
+`2c3ebf2126071e2a0189ab2d537f768239ff519d`; the
+[final review](https://github.com/RuleWorld/BNG3/pull/188#issuecomment-6097669630)
+records source-only test limitations and excludes broad speed/RSS claims.
 
 ## Unchanged stop conditions
 
@@ -132,8 +165,12 @@ reopened with their full unmet criteria:
   files. Preserve seeds, horizons, tolerances, exclusions and goldens while
   investigating source/harness/output/RNG behavior.
 - NFsim strict pinned native `-oSteps`: final-row mismatch on four deletion
-  fixtures remains red. Supplemental `-oTimes` agreement and passing unchanged
-  distributional checks are separate evidence; receipts remain under
+  fixtures remains red. For the unchanged whole_species fixture, root/Luna traced
+  the pinned native `System::sim` fallback: accumulated sample 2.0000000000000004
+  skips the in-loop endpoint, then writes after a post-horizon firing (93 events
+  versus 92 in stepTo/direct). The [causal review](https://github.com/RuleWorld/BNG3/issues/146#issuecomment-6093362793)
+  retains the red strict gate; BNG3 horizon semantics are unchanged. Supplemental
+  `-oTimes` and distributional checks remain separate; receipts remain under
   `tests/validation/evidence/`.
 - Reference pins: BNG2 `9601746f8884ed19ab2acea49fe87fc4660ace46`;
   NFsim `9b00d42f734dcc3e695205600f12cae5b44d1daa`. BNG3-generated artifacts
@@ -145,7 +182,8 @@ reopened with their full unmet criteria:
   CUDA #175 requires actual NVIDIA hardware. #195 policy/owners and #202's
   14 approval decisions remain unresolved.
 
-Continue existing candidates and explicit issue dependencies. Three Luna max helpers
-are reviewing shared rates, runtime reuse/invalidation and the preserved XML/rate
-slice. Preserve exact source/artifact/oracle identity, commit tested checkpoints,
-and update this ledger after integration. Do not create a replacement roadmap.
+Continue existing candidates and explicit issue dependencies. Current work covers
+the preserved XML/scoped-time slice, the #188 cache review and a bounded #139
+compiler-owned deletion boundary. Preserve exact source/artifact/oracle identity,
+commit tested checkpoints and update this ledger after integration. Do not create
+a replacement roadmap.
