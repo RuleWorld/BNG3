@@ -792,18 +792,9 @@ def _split_arguments(inner: str) -> List[str]:
     return arguments
 
 
-# ⚡ Bolt: Cache compiled regex patterns to avoid repeated compilation overhead in tight loops
-_REPLACE_CALLS_CACHE = {}
-
-
 def _replace_nested_function(expression: str, function: str, replacer) -> str:
     result = expression
-
-    # ⚡ Bolt: Utilize module-level cache for function regex patterns
-    if function not in _REPLACE_CALLS_CACHE:
-        _REPLACE_CALLS_CACHE[function] = re.compile(rf"\b{re.escape(function)}\s*\(")
-    pattern = _REPLACE_CALLS_CACHE[function]
-
+    pattern = re.compile(rf"\b{re.escape(function)}\s*\(")
     search_index = 0
     guard = 0
     while guard < 10000:
