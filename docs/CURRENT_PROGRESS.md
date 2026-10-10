@@ -120,7 +120,7 @@ reopened with their full unmet criteria:
 | Issues | PR / head | Qualification boundary |
 | --- | --- | --- |
 | #132 | #130 `2f05ce2e` | Preserved isolated main merge plus scoped time-function repair in progress; retain integrated whole-deletion bond suppression. New scoped-time acceptance is not qualified by old-head CI. |
-| #143 | #201 `95075d19` | ODE dependency classification. Root reran 22 ODE cases and 124 compiler cases successfully; independent review in progress. Coefficient/RHS checks against five pinned live BNG2 models are separate from frozen SSA failures. |
+| #143 | #201 `b8428dc6` | Independently reviewed ODE dependency classification, synchronized to main9a1. Focused ODE22/120, compiler124/2,572,270, reaction-rule14/239 and75 verified source-mode backend tests pass. New exact-head hosted checks pending. Five pinned live BNG2 coefficient/RHS checks remain separate from frozen SSA failures. |
 | #137 | #195 `e530328e` | Capability inventory; policy/owners remain unapproved. |
 | #179 | #202 `78543775` | 14 approvals pending; strict validation intentionally reports 14 errors. |
 | #174 | #188 `9456b290`, #218 `65e8ef09` | Performance candidates need source review and controlled measurements; green checks alone are insufficient. |
