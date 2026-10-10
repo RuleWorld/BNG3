@@ -144,6 +144,73 @@ end reaction rules
     REQUIRE_THAT(derivatives[0], Catch::Matchers::WithinAbs(-2.0, 1e-12));
 }
 
+TEST_CASE("OdeIntegrator reevaluates functional rates after time and state changes",
+          "[OdeOptions][RateDependencies]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules Xtotal X()
+end observables
+begin functions
+    rate() = Xtotal + time
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const engine::OdeIntegrator integrator(*model, network);
+    std::vector<double> state(network.species.size(), 0.0);
+    REQUIRE(network.species.size() == 1);
+
+    state[0] = 1.0;
+    CHECK_THAT(integrator.evaluateRateCoefficients(0.0, state.data()).front(),
+               Catch::Matchers::WithinAbs(1.0, 1e-12));
+    CHECK_THAT(integrator.evaluateRateCoefficients(1.0, state.data()).front(),
+               Catch::Matchers::WithinAbs(2.0, 1e-12));
+
+    state[0] = 3.0;
+    CHECK_THAT(integrator.evaluateRateCoefficients(0.0, state.data()).front(),
+               Catch::Matchers::WithinAbs(3.0, 1e-12));
+}
+
+TEST_CASE("OdeIntegrator reevaluates a rate through a time-dependent parameter",
+          "[OdeOptions][RateDependencies]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k time + 1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const engine::OdeIntegrator integrator(*model, network);
+    const double state[] = {1.0};
+
+    CHECK_THAT(integrator.evaluateRateCoefficients(0.0, state).front(),
+               Catch::Matchers::WithinAbs(1.0, 1e-12));
+    CHECK_THAT(integrator.evaluateRateCoefficients(1.0, state).front(),
+               Catch::Matchers::WithinAbs(2.0, 1e-12));
+}
+
 TEST_CASE("OdeIntegrator preserves case-insensitive rate classification", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen commit
     // 5fab87788a4d6253ea83fd2cb35312be0c99c725: caching the lowercased raw
@@ -299,6 +366,44 @@ end reaction rules
     REQUIRE(output.find("begin groups\n") != std::string::npos);
     REQUIRE(output.find("    1 total 1,2\n") != std::string::npos);
     REQUIRE(output.find("    2 present 1\n") != std::string::npos);
+}
+
+TEST_CASE("NetWriter associates seed amounts with compartmented species",
+          "[NetWriter][issue-142]") {
+    auto model = parser::parseModel(R"(
+begin compartments
+    cyto 3 1.0
+    nuc 3 1.0
+end compartments
+begin molecule types
+    A(x)
+end molecule types
+begin seed species
+    A(x)@cyto 2
+    A(x)@nuc 7
+end seed species
+)");
+
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 2);
+
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-compartment-seeds-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    input.close();
+    std::filesystem::remove(outputPath);
+
+    CHECK(output.find("@cyto::A(x) 2") != std::string::npos);
+    CHECK(output.find("@nuc::A(x) 7") != std::string::npos);
 }
 
 TEST_CASE("NetWriter does not apply pattern symmetry factor to TotalRate", "[NetWriter]") {

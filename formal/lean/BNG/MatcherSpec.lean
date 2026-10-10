@@ -9,8 +9,9 @@ namespace BNG
 story we also want a specification that says *what a match is* without simply
 calling that Boolean function again.
 
-This file deliberately separates the two.  Production matchers should
-ultimately prove soundness and completeness against `EmbeddingSpec`.
+This file deliberately separates the two. `BNG.MatcherCorrectness` proves
+soundness and completeness for the Lean reference enumerator against
+`EmbeddingSpec`; native backends need their own correspondence proofs.
 -/
 
 /-- Exactly one mapping entry exists for a pattern molecule occurrence. -/
@@ -20,6 +21,19 @@ def mapsExactlyOnce (e : Embedding) (id : PatternMoleculeId) : Prop :=
 /-- No two distinct pattern molecules share a concrete molecule. -/
 def InjectiveEmbedding (e : Embedding) : Prop :=
   allUnique e.range = true
+
+/--
+The embedding domain is exactly the pattern occurrence domain, independent of
+association-list order. Requiring a duplicate-free domain, the same cardinality,
+and the same members is equivalent to an exact permutation of the occurrence
+IDs when a permutation exists. In particular, repeated pattern occurrence IDs
+cannot be paired with unrelated mapping keys.
+-/
+def ExactEmbeddingDomain (p : Pattern) (e : Embedding) : Prop :=
+  e.domain.Nodup ∧
+  e.domain.length = p.molecules.length ∧
+  p.molecules.map (fun pm => pm.occurrence) ⊆ e.domain ∧
+  e.domain ⊆ p.molecules.map (fun pm => pm.occurrence)
 
 /-- The concrete molecule selected for `pm` satisfies its local constraints. -/
 def MoleculeSatisfies (p : Pattern) (mix : Mixture) (e : Embedding)
@@ -49,7 +63,7 @@ def OneComplexEmbedding (mix : Mixture) (e : Embedding) : Prop :=
 /-- Independent proposition-level meaning of one pattern embedding. -/
 def EmbeddingSpec (p : Pattern) (mix : Mixture) (e : Embedding) : Prop :=
   (∀ pm, pm ∈ p.molecules → mapsExactlyOnce e pm.occurrence) ∧
-  e.domain.length = p.molecules.length ∧
+  ExactEmbeddingDomain p e ∧
   InjectiveEmbedding e ∧
   (∀ pm, pm ∈ p.molecules → MoleculeSatisfies p mix e pm) ∧
   ExplicitBondsSatisfy p mix e ∧
@@ -64,8 +78,14 @@ pretend these properties are already established.
 def MatcherSound (matcher : Pattern → Mixture → List Embedding) : Prop :=
   ∀ p mix e, e ∈ matcher p mix → EmbeddingSpec p mix e
 
+/-- Two embeddings describe the same assignment on every pattern node. -/
+def SamePatternMapping (p : Pattern) (left right : Embedding) : Prop :=
+  ∀ pm, pm ∈ p.molecules →
+    left.lookup? pm.occurrence = right.lookup? pm.occurrence
+
 def MatcherComplete (matcher : Pattern → Mixture → List Embedding) : Prop :=
-  ∀ p mix e, EmbeddingSpec p mix e → e ∈ matcher p mix
+  ∀ p mix e, EmbeddingSpec p mix e →
+    ∃ emitted, emitted ∈ matcher p mix ∧ SamePatternMapping p e emitted
 
 /-- Reference matcher proof obligation. -/
 def ReferenceMatcherCorrect : Prop :=

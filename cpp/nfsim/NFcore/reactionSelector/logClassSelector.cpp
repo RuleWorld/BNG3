@@ -7,6 +7,7 @@
 
 
 
+#include <cstdlib>
 #include "reactionSelector.hh"
 
 using namespace std;
@@ -66,8 +67,8 @@ LogClassSelector::LogClassSelector(vector <ReactionClass *> &rxns, System *sys) 
 
 
 
-	cout<<"totalLength = "<<totalLogClassCount<<endl;
 	int startingClassCapacity=(int)n_reactions/10;
+	if(startingClassCapacity < 4) startingClassCapacity = 4;
 	for(int i=-(totalLogClassCount-1)/2; i<=(totalLogClassCount-1)/2; i++) {
 		logClassSize[i]=0;
 		logClassCapacity[i]=startingClassCapacity;
@@ -153,6 +154,7 @@ void LogClassSelector::place(ReactionClass *r,int logClass,double a)
 		//Determine the new capacity for the log class
 		int oldCap = logClassCapacity[logClass];
 		int newCap = oldCap+oldCap/2;
+		if(newCap <= oldCap) newCap = oldCap + 4;
 
 		//create the new log class and copy over the new data
 		ReactionClass ** singleLogClass = new ReactionClass *[newCap];
@@ -185,12 +187,15 @@ void LogClassSelector::place(ReactionClass *r,int logClass,double a)
 
 LogClassSelector::~LogClassSelector()
 {
-	//Print debug message
-	cout<<endl<<endl<<endl;
-	for(int i=-(totalLogClassCount-1)/2; i<=(totalLogClassCount-1)/2; i++) {
-		cout<<"logClassList["<<i<<"], size= "<<logClassSize[i];
-		cout<<" / "<<logClassCapacity[i]<<"  atot= "<<logClassPropensity[i];
-		cout<<" is active: "<<isLogClassActive[i]<<endl;
+	/* The class histogram is useful when tuning but must not be printed on
+	 * every run; it corrupted stdout for any caller parsing simulator output. */
+	if (getenv("NFSIM_LOGSEL_STATS") != 0) {
+		for(int i=-(totalLogClassCount-1)/2; i<=(totalLogClassCount-1)/2; i++) {
+			if (logClassSize[i] == 0) continue;
+			cout<<"logClassList["<<i<<"], size= "<<logClassSize[i];
+			cout<<" / "<<logClassCapacity[i]<<"  atot= "<<logClassPropensity[i];
+			cout<<" is active: "<<isLogClassActive[i]<<endl;
+		}
 	}
 
 //	Atot = 0;
@@ -358,7 +363,7 @@ int LogClassSelector::calculateClass(double a) {
 
 	int logClass = 0; int i=0;
 	if(a==0) {
-		logClass = 0;
+		logClass = -minClassLimit;
 	}
 
 	//Calculate the class for propensities larger than 1, by
@@ -384,7 +389,7 @@ int LogClassSelector::calculateClass(double a) {
 
 	//Finally, make sure we are within the bounds of the specified limits
 	if(logClass>maxClassLimit) logClass = maxClassLimit;
-	else if(logClass<-minClassLimit) logClass = minClassLimit;
+	else if(logClass<-minClassLimit) logClass = -minClassLimit;
 
 
 	return logClass;

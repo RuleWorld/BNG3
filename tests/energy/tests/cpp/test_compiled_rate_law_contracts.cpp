@@ -120,3 +120,66 @@ end reaction rules
           bng::compile::ResolvedExpressionKind::LocalRef);
     CHECK(expression.arguments[0].localName == "x");
 }
+
+TEST_CASE("compiled rate law exposes typed dependency kinds") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules count A()
+end observables
+begin functions
+  f(x) = x
+end functions
+)BNG");
+    REQUIRE(model != nullptr);
+    const auto symbols = bng::compile::SymbolTable::fromModel(*model);
+    const auto rate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression(
+            "k + count + f(x) + time + reactant_1 + TFUN([0, 1], [1, 2], time)"),
+        symbols, {"x"});
+
+    REQUIRE(rate.diagnostics().empty());
+    CHECK(rate.fullyResolved());
+    const auto& dependencies = rate.dependencies();
+    CHECK(dependencies.parameter);
+    CHECK(dependencies.observable);
+    CHECK(dependencies.function);
+    CHECK(dependencies.local);
+    CHECK(dependencies.reactantCount);
+    CHECK(dependencies.time);
+    CHECK(dependencies.tableFunction);
+    CHECK_FALSE(dependencies.unresolved);
+
+    const auto repeated = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("k + k"), symbols);
+    CHECK_FALSE(repeated.dependencies().requiresRuntimeEvaluation());
+    CHECK(repeated.references().size() == 1);
+    REQUIRE(repeated.resolvedExpression().arguments.size() == 2);
+    REQUIRE(repeated.resolvedExpression().arguments[0].symbol.has_value());
+    REQUIRE(repeated.resolvedExpression().arguments[1].symbol.has_value());
+    CHECK(repeated.resolvedExpression().arguments[0].symbol->kind ==
+          repeated.resolvedExpression().arguments[1].symbol->kind);
+    CHECK(repeated.resolvedExpression().arguments[0].symbol->index ==
+          repeated.resolvedExpression().arguments[1].symbol->index);
+
+    const auto fileTable = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("TFUN('rates.dat', time)"), symbols);
+    REQUIRE(fileTable.resolvedExpression().kind ==
+            bng::compile::ResolvedExpressionKind::TableFunction);
+    CHECK(fileTable.resolvedExpression().tableFile == "rates.dat");
+    CHECK(fileTable.dependencies().tableFunction);
+    CHECK(fileTable.dependencies().time);
+
+    const auto untyped = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("k"));
+    CHECK(untyped.dependencies().unresolved);
+    CHECK(untyped.dependencies().requiresRuntimeEvaluation());
+}

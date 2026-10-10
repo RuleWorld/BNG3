@@ -4,6 +4,7 @@
 #include "nfnext/compiler.hpp"
 
 #include <cmath>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -21,6 +22,56 @@ using BngMutationKind = bng::compile::MutationKind;
 void issue(BngLoweringResult& result, BngLoweringSeverity severity,
            std::string entity, std::string message) {
     result.issues.push_back({severity, std::move(entity), std::move(message)});
+}
+
+bool validateNFnextIdPacking(const bng::compile::CompiledModel& source,
+                             BngLoweringResult& result) {
+    for (std::size_t moleculeIndex = 0;
+         moleculeIndex < source.moleculeTypes().size(); ++moleculeIndex) {
+        const auto& molecule = source.moleculeTypes()[moleculeIndex];
+        if (!molecule.id.valid() || molecule.id.value() != moleculeIndex ||
+            molecule.index != moleculeIndex || source.moleculeType(molecule.id) != &molecule) {
+            issue(result, BngLoweringSeverity::Error, molecule.name,
+                  "molecule type ID is not its canonical declaration index");
+            return false;
+        }
+        if (moleculeIndex > static_cast<std::size_t>(std::numeric_limits<TypeId>::max())) {
+            issue(result, BngLoweringSeverity::Error, molecule.name,
+                  "molecule type index exceeds NFIR v5 uint32 type capacity");
+            return false;
+        }
+
+        for (std::size_t componentIndex = 0;
+             componentIndex < molecule.components.size(); ++componentIndex) {
+            const auto& component = molecule.components[componentIndex];
+            const auto entity = molecule.name + "." + component.name;
+            if (!component.id.valid() || component.id.moleculeType != molecule.id ||
+                component.id.index != componentIndex ||
+                source.component(component.id) != &component) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "component ID is not its canonical molecule-local declaration index");
+                return false;
+            }
+            if (componentIndex > static_cast<std::size_t>(
+                                    std::numeric_limits<std::uint16_t>::max())) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "component index exceeds NFIR v5 uint16 site capacity");
+                return false;
+            }
+
+            for (std::size_t stateIndex = 0;
+                 stateIndex < component.stateNames.size(); ++stateIndex) {
+                if (stateIndex > static_cast<std::size_t>(
+                                     std::numeric_limits<std::int32_t>::max()) ||
+                    source.stateName({component.id, stateIndex}) == nullptr) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "state ID is not representable by NFIR v5 int32 state values");
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
 }
 
 std::optional<double> constantExpression(
@@ -209,12 +260,33 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
         destination.requireBond(endpoints[0].first, endpoints[0].second,
                                 endpoints[1].first, endpoints[1].second);
     }
+    // A single BNGL pattern denotes one complex even when some bonds are
+    // unspecified. Preserve that relation; '+' boundaries are added separately
+    // by flattenReactants as DifferentComplex constraints.
+    for (std::size_t moleculeOffset = 1;
+         moleculeOffset < source.molecules().size(); ++moleculeOffset) {
+        destination.requireSameComplex(firstNode, firstNode + moleculeOffset);
+    }
     return true;
 }
 
 std::optional<FlattenedPattern> flattenReactants(
     const std::vector<BngPattern>& patterns, BngLoweringResult& result,
     const std::string& entity) {
+    const auto maxNodeIndex = static_cast<std::size_t>(
+        std::numeric_limits<std::uint16_t>::max());
+    const auto maxNodeCount = maxNodeIndex + 1;
+    std::size_t nodeCount = 0;
+    for (const auto& pattern : patterns) {
+        const auto patternNodeCount = pattern.molecules().size();
+        if (patternNodeCount > maxNodeCount - nodeCount) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "reactant pattern node index exceeds NFIR v5 uint16 molecularity capacity");
+            return std::nullopt;
+        }
+        nodeCount += patternNodeCount;
+    }
+
     FlattenedPattern flattened;
     flattened.patternOffsets.reserve(patterns.size());
     std::vector<std::size_t> representatives;
@@ -465,6 +537,13 @@ bool hasDeleteMoleculesModifier(const bng::compile::CompiledRule& rule) {
     });
 }
 
+bool isWholeSpeciesDeletion(const bng::compile::CompiledRuleDirection& direction,
+                            std::size_t patternIndex) {
+    return std::find(direction.wholeSpeciesDeletions.begin(),
+                     direction.wholeSpeciesDeletions.end(), patternIndex) !=
+           direction.wholeSpeciesDeletions.end();
+}
+
 bool appendDeletionActions(
     const bng::compile::CompiledRule& rule,
     const bng::compile::CompiledRuleDirection& direction,
@@ -476,6 +555,35 @@ bool appendDeletionActions(
     const bool pureDegradation = direction.productPatterns.empty();
     const bool deleteMolecules = hasDeleteMoleculesModifier(rule);
 
+    const auto appendWholeSpeciesDeletion = [&](std::size_t patternIndex) {
+        if (patternIndex >= direction.reactantPatterns.size() ||
+            direction.reactantPatterns[patternIndex].molecules().empty()) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "whole-species deletion has no reactant complex representative");
+            return false;
+        }
+        const bng::compile::PatternMoleculeRef ref{
+            BngPatternSide::Reactant, patternIndex, 0};
+        const auto node = nodeFor(ref, reactants);
+        if (!node) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "whole-species deletion could not identify a reactant complex representative");
+            return false;
+        }
+        const auto& molecule = direction.reactantPatterns[patternIndex].molecules().front();
+        if (!molecule.moleculeTypeId) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "whole-species deletion representative is not typed");
+            return false;
+        }
+        ActionIR destroy;
+        destroy.kind = ActionKind::DestroyComplex;
+        destroy.target_node = *node;
+        destroy.molecule_type = static_cast<TypeId>(molecule.moleculeTypeId->value());
+        actions.push_back(std::move(destroy));
+        return true;
+    };
+
     if (pureDegradation && !deleteMolecules) {
         // Standard BNGL degradation removes the matched reactant species/complex,
         // including context not explicitly present in the pattern. One action per
@@ -483,25 +591,7 @@ bool appendDeletionActions(
         // reactant complex in NFIR.
         for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
             if (direction.reactantPatterns[patternIndex].molecules().empty()) continue;
-            const bng::compile::PatternMoleculeRef ref{
-                BngPatternSide::Reactant, patternIndex, 0};
-            const auto node = nodeFor(ref, reactants);
-            if (!node) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "degradation rule could not identify a reactant complex representative");
-                return false;
-            }
-            const auto& molecule = direction.reactantPatterns[patternIndex].molecules().front();
-            if (!molecule.moleculeTypeId) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "degradation reactant molecule is not typed");
-                return false;
-            }
-            ActionIR destroy;
-            destroy.kind = ActionKind::DestroyComplex;
-            destroy.target_node = *node;
-            destroy.molecule_type = static_cast<TypeId>(molecule.moleculeTypeId->value());
-            actions.push_back(std::move(destroy));
+            if (!appendWholeSpeciesDeletion(patternIndex)) return false;
         }
         return true;
     }
@@ -527,9 +617,19 @@ bool appendDeletionActions(
         return false;
     }
 
+    // The compiler resolves default whole-pattern deletion once. Remove each
+    // matched species as a unit so connected, unspecified context is included.
+    // DeleteMolecules deliberately bypasses this path and stays molecule-scoped.
+    if (!deleteMolecules) {
+        for (const auto patternIndex : direction.wholeSpeciesDeletions) {
+            if (!appendWholeSpeciesDeletion(patternIndex)) return false;
+        }
+    }
+
     // DeleteMolecules and partial rule rewrites remove only explicit unmatched
     // molecule occurrences, preserving any unmatched surrounding context.
     for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
+        if (!deleteMolecules && isWholeSpeciesDeletion(direction, patternIndex)) continue;
         const auto& pattern = direction.reactantPatterns[patternIndex];
         for (std::size_t moleculeIndex = 0; moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
             const bng::compile::PatternMoleculeRef ref{
@@ -569,7 +669,14 @@ bool addActions(const bng::compile::CompiledRule& rule,
     if (!nodes) return false;
     if (!appendCreateActions(direction, *nodes, actions, result, entity)) return false;
 
+    const bool deleteMolecules = hasDeleteMoleculesModifier(rule);
     for (const auto& mutation : direction.mutations) {
+        if (mutation.kind == BngMutationKind::DeleteBond && !deleteMolecules &&
+            (isWholeSpeciesDeletion(direction, mutation.source.patternIndex) ||
+             isWholeSpeciesDeletion(direction, mutation.partner.patternIndex))) {
+            // Keep the matched graph connected until DestroyComplex traverses it.
+            continue;
+        }
         ActionIR action;
         switch (mutation.kind) {
         case BngMutationKind::ChangeState: {
@@ -703,6 +810,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
               "BioNetGen compiled model contains semantic errors");
         return result;
     }
+    if (!validateNFnextIdPacking(source, result)) return result;
     if (!source.compartments().empty())
         issue(result, BngLoweringSeverity::Warning, source.metadata().name,
               "NFIR v5 retains molecule topology/rules but does not yet carry compartment declarations");

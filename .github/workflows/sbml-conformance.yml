@@ -1,0 +1,134 @@
+name: Official SBML conformance subset
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/sbml-conformance.yml'
+      - 'provenance/ssts-ci-linux-py312.lock'
+      - 'provenance/upstreams.lock.yml'
+      - 'scripts/ci/validate_sbml_test_suite.py'
+      - 'tests/test_ssts_selected_gate.py'
+      - 'python/**'
+      - 'cpp/**'
+      - 'pyproject.toml'
+  schedule:
+    - cron: '31 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  conformance:
+    name: Locked official references (32 semantic cases)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_ARGS: '-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF'
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install hashed runtime and exact-source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ssts-artifacts"
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m venv "$RUNNER_TEMP/ssts-venv"
+          echo "$RUNNER_TEMP/ssts-venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --require-hashes \
+            -r provenance/ssts-ci-linux-py312.lock
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --no-deps --no-build-isolation .
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip check
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip freeze > "$RUNNER_TEMP/ssts-artifacts/runtime.txt"
+          cp provenance/ssts-ci-linux-py312.lock "$RUNNER_TEMP/ssts-artifacts/"
+
+      - name: Verify installed identity and required independent engines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/check_python_package_identity.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            > "$RUNNER_TEMP/ssts-artifacts/package-identity.json"
+          python -c 'import libsbml, roadrunner; print(libsbml.getLibSBMLDottedVersion(), roadrunner.__version__)'
+          python -m pytest tests/test_ssts_selected_gate.py tests/test_ci_contract.py -q
+
+      - name: Checkout and preflight complete locked suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          from scripts.ci.validate_sbml_test_suite import _suite_lock_entry
+          source = _suite_lock_entry()
+          destination = Path(os.environ['RUNNER_TEMP']) / 'official-ssts'
+          subprocess.run(['git', 'clone', '--filter=blob:none', '--no-checkout', source['repository'], str(destination)], check=True)
+          subprocess.run(['git', '-C', str(destination), 'checkout', '--detach', source['revision']], check=True)
+          PY
+          python scripts/ci/validate_sbml_test_suite.py \
+            --suite-dir "$RUNNER_TEMP/official-ssts" --validate-only \
+            > "$RUNNER_TEMP/ssts-artifacts/suite-identity.json"
+
+      - name: Run bounded official conformance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/validate_sbml_test_suite.py \
+            --suite-dir "$RUNNER_TEMP/official-ssts" \
+            --categories semantic --max-cases 32 \
+            --isolate-cases --case-timeout 60 --jobs 2 \
+            --gate-selected-cases \
+            --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
+            2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
+
+      - name: Summarize separate evidence and digest artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          directory = Path(os.environ['RUNNER_TEMP']) / 'ssts-artifacts'
+          directory.mkdir(exist_ok=True)
+          report_path = directory / 'report.json'
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Bounded subset only; full-suite aggregate flags remain false for a partial run.\n\n')
+              if report_path.exists():
+                  report = json.loads(report_path.read_text())
+                  summary.write('Round-trip / independent RoadRunner: ' + json.dumps(report['counts']) + '\n\n')
+                  summary.write('Official reference: ' + json.dumps(report['official_conformance']['counts']) + '\n\n')
+                  summary.write('Selected-surface gate: ' + str(report['selected_surface_passed']) + '\n')
+              else:
+                  summary.write('No numerical report: setup/preflight/execution failed; no conformance claim.\n')
+          digests = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(directory.iterdir()) if p.is_file()}
+          (directory / 'sha256.json').write_text(json.dumps(digests, indent=2) + '\n')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ssts-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ssts-artifacts/
+          if-no-files-found: error
+          retention-days: 90

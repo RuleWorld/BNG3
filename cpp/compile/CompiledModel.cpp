@@ -59,6 +59,15 @@ std::vector<units::UnitDefinition> authoredUnitDefinitions(const ast::Model& mod
     return result;
 }
 
+void recordResolvedUnitReference(ModelMetadata& metadata, const ast::Model& model,
+                                 const std::string& authored,
+                                 const units::Unit& unit) {
+    if (authored.empty()) return;
+    const bool namedDefinition = model.getUnitSystem().find(authored) != nullptr;
+    metadata.resolvedUnitReferences.try_emplace(
+        authored, ResolvedUnitReference{unit, namedDefinition});
+}
+
 std::optional<units::Unit> defaultUnit(const ast::Model& model,
                                        const std::string& role) {
     const auto found = model.getUnitDefaults().find(role);
@@ -163,6 +172,32 @@ CompiledModel::CompiledModel(const ast::Model& model)
       features_(featuresUsed(model)),
       symbols_(SymbolTable::fromModel(model)),
       diagnostics_(symbols_.diagnostics()) {
+
+    for (const auto& definition : model.getUnitSystem().definitions()) {
+        metadata_.resolvedUnitReferences.try_emplace(
+            definition.id, ResolvedUnitReference{definition.unit, true});
+    }
+    for (const auto& [_, authored] : model.getUnitDefaults()) {
+        const auto parsed = model.getUnitSystem().parse(authored);
+        if (parsed) recordResolvedUnitReference(metadata_, model, authored, *parsed.unit);
+    }
+    for (const auto& parameter : model.getParameters().all()) {
+        if (parameter.hasUnit()) {
+            recordResolvedUnitReference(metadata_, model, parameter.getUnitName(),
+                                        *parameter.getUnit());
+        }
+    }
+    for (const auto& compartment : model.getCompartments()) {
+        if (compartment.hasUnit()) {
+            recordResolvedUnitReference(metadata_, model, compartment.getUnitName(),
+                                        *compartment.getUnit());
+        }
+    }
+    for (const auto& seed : model.getSeedSpecies()) {
+        if (seed.hasUnit()) {
+            recordResolvedUnitReference(metadata_, model, seed.getUnitName(), *seed.getUnit());
+        }
+    }
 
     if (model.getEventFormatVersion().has_value()) {
         Diagnostic diagnostic;

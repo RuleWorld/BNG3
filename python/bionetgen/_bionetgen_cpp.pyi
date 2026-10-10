@@ -277,6 +277,15 @@ def generate_network(model: Model, max_iter: int = 100) -> GeneratedNetwork:
     """
     ...
 
+def jax_ode_flatten(model: Model, network: GeneratedNetwork) -> Dict[str, object]:
+    """Export native compiled ODE data for the optional JAX ODE backend.
+
+    The result contains the initial state, fixed-species flags, compiled rate
+    coefficients, reaction participants, and flags for TotalRate and
+    unsupported functional or time-dependent rates.
+    """
+    ...
+
 def simulate_ode(
     model: Model,
     network: GeneratedNetwork,
@@ -464,6 +473,8 @@ def simulate_nf(
     source_path: str = "",
     sample_times: List[float] = [],
     traversal_limit: int = -1,
+    t_start: float = 0.0,
+    require_direct: bool = False,
 ) -> Dict[str, object]:
     """Run network-free (NFSim) simulation on a model.
 
@@ -492,6 +503,10 @@ def simulate_nf(
     traversal_limit : int
         NFsim bonded-neighborhood traversal depth. ``-1`` uses the model-derived
         recommendation; non-negative values mirror NFsim's ``-utl`` control.
+    t_start : float
+        Absolute API start time.
+    require_direct : bool
+        Fail if direct AST construction is unavailable instead of using XML.
 
     Returns
     -------
@@ -501,8 +516,13 @@ def simulate_nf(
     """
     ...
 
-def execute(model: Model, source_path: str, verbose: bool = False) -> None:
-    """Execute all actions defined in the model's action block.
+def execute(
+    model: Model,
+    source_path: str,
+    verbose: bool = False,
+    action_overrides: dict[int, dict[str, str]] = ...,
+) -> None:
+    """Execute model actions, optionally with temporary simulation time overrides.
 
     Parameters
     ----------
@@ -512,6 +532,9 @@ def execute(model: Model, source_path: str, verbose: bool = False) -> None:
         Path to the source .bngl file (used for relative output paths).
     verbose : bool
         Print progress information.
+    action_overrides : dict[int, dict[str, str]]
+        Temporary per-action values for ``t_start``, ``t_end``, and ``n_steps``.
+        Original action arguments are restored after success or failure.
     """
     ...
 

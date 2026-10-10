@@ -23,11 +23,11 @@
 
 namespace bng::ast {
 
-// Global compartment dimension map for cross-compartment species assignment.
-// Populated by NetworkGenerator before rule expansion.
-static std::unordered_map<std::string, int> g_compartmentDimensions;
-// Global compartment parent map: child → parent (e.g., PM→EC, CP→PM)
-static std::unordered_map<std::string, std::string> g_compartmentParents;
+// Per-thread compartment dimensions for cross-compartment species assignment.
+// Installed by NetworkGenerator while expanding rules.
+static thread_local std::unordered_map<std::string, int> g_compartmentDimensions;
+// Per-thread compartment parents: child → parent (e.g., PM→EC, CP→PM).
+static thread_local std::unordered_map<std::string, std::string> g_compartmentParents;
 
 void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims) {
     g_compartmentDimensions = dims;
@@ -35,6 +35,25 @@ void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims) 
 
 void setCompartmentParents(const std::unordered_map<std::string, std::string>& parents) {
     g_compartmentParents = parents;
+}
+
+CompartmentContextScope::CompartmentContextScope(
+    const std::unordered_map<std::string, int>& dimensions,
+    const std::unordered_map<std::string, std::string>& parents) {
+    // Copy both incoming maps before changing the current context. The swaps
+    // below are non-throwing, so construction either installs the full new
+    // context or leaves the previous one untouched.
+    auto activeDimensions = dimensions;
+    auto activeParents = parents;
+    previousDimensions_.swap(g_compartmentDimensions);
+    previousParents_.swap(g_compartmentParents);
+    g_compartmentDimensions.swap(activeDimensions);
+    g_compartmentParents.swap(activeParents);
+}
+
+CompartmentContextScope::~CompartmentContextScope() {
+    g_compartmentDimensions.swap(previousDimensions_);
+    g_compartmentParents.swap(previousParents_);
 }
 
 // Get the "Outside" compartment for a given compartment.
@@ -870,6 +889,37 @@ ReactionRule::ReactionRule(
     bool bidirectional,
     std::vector<SpeciesGraph> reactantPatterns,
     std::vector<SpeciesGraph> productPatterns)
+    : ReactionRule(
+          std::move(ruleName), std::move(label), std::move(reactants),
+          std::move(products), std::move(rates), std::move(modifiers),
+          bidirectional, std::move(reactantPatterns),
+          std::move(productPatterns), true) {}
+
+ReactionRule ReactionRule::fromResolvedPatterns(
+    std::string ruleName,
+    std::string label,
+    std::vector<Expression> rates,
+    std::vector<SpeciesGraph> reactantPatterns,
+    std::vector<SpeciesGraph> productPatterns) {
+    std::vector<std::string> reactants(reactantPatterns.size());
+    std::vector<std::string> products(productPatterns.size());
+    return ReactionRule(
+        std::move(ruleName), std::move(label), std::move(reactants),
+        std::move(products), std::move(rates), {}, false,
+        std::move(reactantPatterns), std::move(productPatterns), false);
+}
+
+ReactionRule::ReactionRule(
+    std::string ruleName,
+    std::string label,
+    std::vector<std::string> reactants,
+    std::vector<std::string> products,
+    std::vector<Expression> rates,
+    std::vector<std::string> modifiers,
+    bool bidirectional,
+    std::vector<SpeciesGraph> reactantPatterns,
+    std::vector<SpeciesGraph> productPatterns,
+    bool parseTextModifiers)
     : ruleName_(std::move(ruleName)),
       label_(std::move(label)),
       reactants_(std::move(reactants)),
@@ -880,7 +930,7 @@ ReactionRule::ReactionRule(
       drivingWork_(Expression::number(0.0)),
       reactantPatterns_(std::move(reactantPatterns)),
       productPatterns_(std::move(productPatterns)) {
-    parseReactantFilters();
+    if (parseTextModifiers) parseReactantFilters();
     initialize();
 }
 
@@ -1391,6 +1441,34 @@ void ReactionRule::initialize() {
     }
 }
 
+bool ReactionRule::removesWholeSpecies(bool deleteMolecules, std::size_t moleculeCount,
+                                     std::size_t deletedCount, bool pureDegradation) {
+    return !deleteMolecules && moleculeCount != 0 &&
+           (pureDegradation || deletedCount == moleculeCount);
+}
+
+bool ReactionRule::deletesWholeReactantPattern(std::size_t patternIndex) const {
+    const auto& pattern = reactantPatterns_.at(patternIndex).getGraph();
+
+    std::size_t moleculeCount = 0;
+    for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
+        if (isMoleculeNode(**nodeIter)) ++moleculeCount;
+    }
+
+    std::unordered_set<std::size_t> deletedMolecules;
+    for (const auto& operation : operations_) {
+        if (operation.type == TransformOp::Type::DeleteMolecule &&
+            operation.patternIndex == patternIndex) {
+            deletedMolecules.insert(operation.moleculeIndex);
+        }
+    }
+    // Pure degradation has no explicit mutation program in this compatibility
+    // representation; its pattern still denotes whole-species deletion.
+    return removesWholeSpecies(hasModifier(modifiers_, "deletemolecules"),
+                               moleculeCount, deletedMolecules.size(),
+                               operations_.empty() && productPatterns_.empty());
+}
+
 std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddings(
     std::size_t patternIndex,
     const SpeciesList& speciesList) const {
@@ -1515,30 +1593,7 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
         // Preserve that rule-level matching semantics here, so symmetric embeddings
         // of the same species do not create duplicate reaction pathways.
         const bool speciesLevelTransport = reactantPatterns_.at(patternIndex).isCompartmentPrefix();
-        const bool defaultDeletion = !hasModifier(modifiers_, "deletemolecules");
-        const auto deletesWholeReactantPattern = [&]() {
-            if (!defaultDeletion) return false;
-
-            std::size_t moleculeCount = 0;
-            for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
-                if (isMoleculeNode(**nodeIter)) ++moleculeCount;
-            }
-            if (moleculeCount == 0) return false;
-
-            // `A(...) -> 0` has no product graph and initialize() returns before
-            // constructing explicit DeleteMolecule operations.
-            if (operations_.empty() && productPatterns_.empty()) return true;
-
-            std::unordered_set<std::size_t> deletedMolecules;
-            for (const auto& operation : operations_) {
-                if (operation.type == TransformOp::Type::DeleteMolecule &&
-                    operation.patternIndex == patternIndex) {
-                    deletedMolecules.insert(operation.moleculeIndex);
-                }
-            }
-            return deletedMolecules.size() == moleculeCount;
-        }();
-        const bool speciesLevelDeletion = deletesWholeReactantPattern;
+        const bool speciesLevelDeletion = deletesWholeReactantPattern(patternIndex);
         bool foundEmbeddingForSpecies = false;
 
         // Track signature → index in results for multiplicity counting

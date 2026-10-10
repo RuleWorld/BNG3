@@ -3,10 +3,14 @@
 #include "EnergyExportGuard.hpp"
 
 #include <algorithm>
+#include <iomanip>
 #include <sstream>
 #include <cctype>
+#include <stdexcept>
 #include <utility>
 
+#include "compile/CompiledModel.hpp"
+#include "engine/NetworkGenerator.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -58,6 +62,13 @@ std::string SbmlMultiWriter::write(const ast::Model& model) {
 
 std::string SbmlMultiWriter::write(const ast::Model& model, const Options& options) {
     requireNoEnergySemantics(model, "SBML-multi");
+    const compile::CompiledModel compiled(model);
+    if (sbml_units::enabled(compiled) && !model.getReactionRules().empty()) {
+        throw std::invalid_argument(
+            "SBML-Multi cannot preserve unit-aware reaction-rule rates because "
+            "the writer emits authored rate expressions without converting them "
+            "to the exported item/time basis");
+    }
     std::ostringstream sbml;
 
     // SBML L3V1 header with Multi package namespace
@@ -70,24 +81,24 @@ std::string SbmlMultiWriter::write(const ast::Model& model, const Options& optio
 
     sbml << "  <model id=\"" << escapeXml(makeValidSBMLId(model.getModelName())) << "\" name=\""
          << escapeXml(model.getModelName()) << "\""
-         << sbml_units::modelAttributes(model) << ">\n";
+         << sbml_units::modelAttributes(compiled) << ">\n";
 
     // SBML Multi reuses SBML Core's unit system.  Emit the exact same Core
     // unit definitions as the flattened writer; no Multi-specific aliases
     // or conversion rules are introduced here.
-    sbml << sbml_units::writeUnitDefinitions(model);
+    sbml << sbml_units::writeUnitDefinitions(compiled);
 
     // Species types (molecule types with components and states)
     sbml << writeSpeciesTypes(model);
 
     // Compartments
-    sbml << writeCompartments(model);
+    sbml << writeCompartments(model, compiled);
 
     // Parameters
-    sbml << writeParameters(model);
+    sbml << writeParameters(model, compiled);
 
     // Seed species with multi:speciesType references
-    sbml << writeSeedSpecies(model);
+    sbml << writeSeedSpecies(model, compiled);
 
     // Reaction rules with pattern matching
     sbml << writeReactionRules(model);
@@ -98,7 +109,8 @@ std::string SbmlMultiWriter::write(const ast::Model& model, const Options& optio
     return sbml.str();
 }
 
-std::string SbmlMultiWriter::writeCompartments(const ast::Model& model) {
+std::string SbmlMultiWriter::writeCompartments(
+    const ast::Model& model, const compile::CompiledModel& compiled) {
     std::ostringstream sbml;
 
     if (model.getCompartments().empty()) {
@@ -116,7 +128,7 @@ std::string SbmlMultiWriter::writeCompartments(const ast::Model& model) {
              << "\" spatialDimensions=\"" << comp.getDimension()
              << "\" size=\"" << comp.getVolume()
              << "\" constant=\"true\""
-             << sbml_units::attribute(model, comp.getUnitName());
+             << sbml_units::attribute(compiled, comp.getUnitName());
 
         if (!comp.getParent().empty()) {
             sbml << " outside=\"" << makeValidSBMLId(comp.getParent()) << "\"";
@@ -242,7 +254,8 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
     return sbml.str();
 }
 
-std::string SbmlMultiWriter::writeParameters(const ast::Model& model) {
+std::string SbmlMultiWriter::writeParameters(
+    const ast::Model& model, const compile::CompiledModel& compiled) {
     std::ostringstream sbml;
     sbml << "    <listOfParameters>\n";
 
@@ -251,15 +264,17 @@ std::string SbmlMultiWriter::writeParameters(const ast::Model& model) {
              << "\" name=\"" << escapeXml(param.getName())
              << "\" value=\"" << param.getValue()
              << "\" constant=\"true\""
-             << sbml_units::attribute(model, param.getUnitName()) << "/>\n";
+             << sbml_units::attribute(compiled, param.getUnitName()) << "/>\n";
     }
 
     sbml << "    </listOfParameters>\n";
     return sbml.str();
 }
 
-std::string SbmlMultiWriter::writeSeedSpecies(const ast::Model& model) {
+std::string SbmlMultiWriter::writeSeedSpecies(
+    const ast::Model& model, const compile::CompiledModel& compiled) {
     std::ostringstream sbml;
+    sbml << std::setprecision(17);
 
     if (model.getSeedSpecies().empty() && model.getReactionRules().empty()) {
         return {};
@@ -276,6 +291,11 @@ std::string SbmlMultiWriter::writeSeedSpecies(const ast::Model& model) {
         auto amountValue = seed.getAmount().evaluate([&](const std::string& name) {
             return model.getParameters().evaluate(name);
         }, 0.0);
+        const auto& compiledSeed = compiled.seeds()[i];
+        if (sbml_units::enabled(compiled)) {
+            amountValue = engine::NetworkGenerator::normalizeSeedAmount(
+                compiled, compiledSeed);
+        }
 
         // A single-molecule seed can carry its concrete states and outward
         // binding status in the Multi vocabulary.  Keep richer complexes as
@@ -307,19 +327,14 @@ std::string SbmlMultiWriter::writeSeedSpecies(const ast::Model& model) {
             ? std::string()
             : "st_" + makeValidSBMLId(moleculeType->getName());
 
-        const bool concentration = seed.hasUnit() &&
-            seed.getUnit()->dimension.substance != 0 &&
-            seed.getUnit()->dimension.length == -3 &&
-            seed.getUnit()->dimension.time == 0;
-
         sbml << "      <species id=\"" << speciesId
              << "\" name=\"" << escapeXml(pattern)
              << "\" compartment=\"" << compartmentId
-             << (concentration ? "\" initialConcentration=\"" :
-                                  "\" initialAmount=\"") << amountValue
-             << (concentration ? "\" hasOnlySubstanceUnits=\"false\"" :
-                                  "\" hasOnlySubstanceUnits=\"true\"")
-             << sbml_units::attribute(model, seed.getUnitName());
+             << "\" initialAmount=\"" << amountValue
+             << "\" hasOnlySubstanceUnits=\"true\""
+             << (sbml_units::enabled(compiled)
+                     ? sbml_units::speciesAttribute(compiled, "item")
+                     : std::string{});
 
         if (seed.isConstant()) {
             sbml << " constant=\"true\" boundaryCondition=\"true\"";

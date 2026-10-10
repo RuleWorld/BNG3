@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+import importlib
 import operator
 from pathlib import Path
+import sys
 from typing import Any, Mapping, Optional
 
 import numpy as np
@@ -117,6 +119,99 @@ def _worker_scan_single(payload):
         model.set_parameter(name, float(value))
     model._network = None
     return model.simulate(**sim_kwargs)
+
+
+def _scan_runtime_identity() -> dict[str, Optional[str]]:
+    """Return the files backing the package and native engine in this process."""
+    package = importlib.import_module("bionetgen")
+    model_module = importlib.import_module("bionetgen.model")
+    scan_module = importlib.import_module("bionetgen.scan")
+    native_module = getattr(model_module, "_cpp", None)
+    return {
+        "package": str(Path(package.__file__).resolve()),
+        "model": str(Path(model_module.__file__).resolve()),
+        "scan": str(Path(scan_module.__file__).resolve()),
+        "native": (
+            str(Path(native_module.__file__).resolve())
+            if native_module is not None and getattr(native_module, "__file__", None)
+            else None
+        ),
+    }
+
+
+def _initialize_scan_worker(expected_identity: dict[str, Optional[str]]) -> None:
+    """Bind spawned workers to the exact Python and native files used by parent.
+
+    Spawned interpreters rebuild ``sys.path`` from their parent. When a second
+    checkout appears earlier on that path, they can import its Python package
+    while the caller used an installed wheel. Put the caller's package and
+    extension locations first, then reload only BNG3 modules before accepting
+    the worker.
+    """
+    current_identity = _scan_runtime_identity()
+    if current_identity == expected_identity:
+        return
+
+    package_file = Path(expected_identity["package"])
+    native_file = expected_identity.get("native")
+    if native_file is None:
+        raise RuntimeError("parallel scan requires a loaded BNG3 native extension")
+    expected_native = str(Path(native_file).resolve())
+    loaded_native = sys.modules.get("bionetgen._bionetgen_cpp")
+    if loaded_native is None:
+        loaded_native = sys.modules.get("_bionetgen_cpp")
+    loaded_native_file = getattr(loaded_native, "__file__", None)
+    if loaded_native_file is not None:
+        loaded_native_file = str(Path(loaded_native_file).resolve())
+    current_native = current_identity.get("native")
+    if current_native is not None and current_native != expected_native:
+        loaded_native_file = current_native
+    if loaded_native_file is not None and loaded_native_file != expected_native:
+        raise RuntimeError(
+            "parallel scan worker already loaded a different BNG3 native "
+            f"extension: {loaded_native_file} (expected {expected_native}); "
+            "refusing to reload pybind11 modules in this process"
+        )
+
+    package_root = str(package_file.parent.parent)
+    native_dir = str(Path(native_file).parent)
+    preferred_paths = [package_root]
+    if native_dir != package_root:
+        preferred_paths.append(native_dir)
+    normalized_preferred = {str(Path(path).resolve()) for path in preferred_paths}
+    sys.path[:] = preferred_paths + [
+        path
+        for path in sys.path
+        if str(Path(path or ".").resolve()) not in normalized_preferred
+    ]
+
+    keep_native = loaded_native is not None and loaded_native_file == expected_native
+    for module_name in tuple(sys.modules):
+        if (
+            module_name == "bionetgen"
+            or module_name.startswith("bionetgen.")
+            or module_name == "_bionetgen_cpp"
+        ):
+            if keep_native and module_name == "bionetgen._bionetgen_cpp":
+                continue
+            if keep_native and module_name == "_bionetgen_cpp":
+                continue
+            del sys.modules[module_name]
+
+    package = importlib.import_module("bionetgen")
+    package_native_dir = str(Path(native_dir).resolve())
+    if package_native_dir not in package.__path__:
+        package.__path__.insert(0, package_native_dir)
+    if keep_native:
+        package._bionetgen_cpp = loaded_native
+        sys.modules.setdefault("bionetgen._bionetgen_cpp", loaded_native)
+
+    actual_identity = _scan_runtime_identity()
+    if actual_identity != expected_identity:
+        raise RuntimeError(
+            "parallel scan worker loaded a different BNG3 runtime: "
+            f"expected {expected_identity!r}, got {actual_identity!r}"
+        )
 
 
 def _simulate_serial(
@@ -389,7 +484,11 @@ def parameter_scan(
             (source_path, {parameter: float(value)}, sim_kwargs)
             for value in scan_values
         ]
-        with ProcessPoolExecutor(max_workers=parallel) as executor:
+        with ProcessPoolExecutor(
+            max_workers=parallel,
+            initializer=_initialize_scan_worker,
+            initargs=(_scan_runtime_identity(),),
+        ) as executor:
             results = list(executor.map(_worker_scan_single, payloads))
     else:
         results = [
@@ -483,7 +582,11 @@ def parameter_scan_2d(
             for value1 in values1
             for value2 in values2
         ]
-        with ProcessPoolExecutor(max_workers=parallel) as executor:
+        with ProcessPoolExecutor(
+            max_workers=parallel,
+            initializer=_initialize_scan_worker,
+            initargs=(_scan_runtime_identity(),),
+        ) as executor:
             flat_results = list(executor.map(_worker_scan_single, payloads))
     else:
         flat_results = []

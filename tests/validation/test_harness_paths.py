@@ -6,8 +6,10 @@ paths must be anchored before execution begins.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
+import textwrap
 
 import numpy as np
 import pytest
@@ -152,13 +154,62 @@ def test_native_ensemble_parallel_workers_preserve_seed_order(tmp_path):
     assert runs[0][0][0, 0] == pytest.approx(0.0)
 
 
-def test_source_python_path_is_anchored_for_spawned_workers(monkeypatch):
-    source_python = str((runner.corpus.REPO / "python").resolve())
-    monkeypatch.setattr(sys, "path", [p for p in sys.path if p != source_python])
+def test_source_python_path_is_anchored_for_spawned_workers():
+    repo = runner.corpus.REPO.resolve()
+    extension_dir = (repo / "build" / "cpp").resolve()
+    child = textwrap.dedent("""
+        import sys
+        from pathlib import Path
 
-    runner._ensure_source_python_path()
+        from tests.validation import runner
 
-    assert sys.path[0] == source_python
+        repo = runner.corpus.REPO.resolve()
+        source_python = (repo / "python").resolve()
+        source_package = source_python / "bionetgen"
+        extension_dir = (repo / "build" / "cpp").resolve()
+        assert all(
+            Path(path or ".").resolve() != source_python for path in sys.path
+        ), sys.path
+
+        available = runner.api_available()
+        assert runner._API_PACKAGE_MODE == "source"
+        assert sys.path[0] == str(source_python), sys.path
+
+        import bionetgen
+        import bionetgen.model as model_module
+
+        assert Path(bionetgen.__file__).resolve() == source_package / "__init__.py"
+        native = getattr(model_module, "_cpp", None)
+        candidates = tuple(extension_dir.glob("_bionetgen_cpp*"))
+        if candidates:
+            assert native is not None, "built source extension was not imported"
+            assert available
+            assert Path(native.__file__).resolve().parent == extension_dir
+            assert Path(native.__file__).resolve() in {
+                candidate.resolve() for candidate in candidates
+            }
+        else:
+            assert native is None
+            assert not available
+        """)
+    env = os.environ.copy()
+    env["BNG3_PYTHON_TEST_MODE"] = "source"
+    # Start without the source package on PYTHONPATH. The child must select it
+    # itself before importing the API, without inheriting memoized parent state.
+    env["PYTHONPATH"] = os.pathsep.join((str(repo), str(extension_dir)))
+    proc = subprocess.run(
+        [sys.executable, "-c", child],
+        cwd=str(repo),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert proc.returncode == 0, (
+        "fresh source-mode worker path check failed\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
 
 
 def test_required_oracle_fails_in_strict_ci(monkeypatch):

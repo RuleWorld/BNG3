@@ -2,8 +2,15 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cctype>
+#include <map>
+#include <optional>
+#include <set>
 #include <string>
 #include <stdexcept>
+#include <cstring>
 #include <vector>
 
 #include "ast/Model.hpp"
@@ -35,9 +42,139 @@ double msBetween(std::chrono::steady_clock::time_point t0,
                  std::chrono::steady_clock::time_point t1) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
+
+template <typename T>
+py::array_t<T> vector_to_array(const std::vector<T>& values) {
+    py::array_t<T> array(values.size());
+    if (!values.empty()) {
+        std::memcpy(array.mutable_data(), values.data(), values.size() * sizeof(T));
+    }
+    return array;
+}
 } // namespace
 
 namespace {
+
+using ActionOverrides =
+    std::map<std::size_t, std::map<std::string, std::string>>;
+
+double parseActionOverrideNumber(const std::string& value,
+                                 const std::string& key) {
+    std::size_t parsed = 0;
+    double number = 0.0;
+    try {
+        number = std::stod(value, &parsed);
+    } catch (const std::exception&) {
+        throw std::invalid_argument(
+            "action override '" + key + "' must be a finite number");
+    }
+    if (parsed != value.size() || !std::isfinite(number)) {
+        throw std::invalid_argument(
+            "action override '" + key + "' must be a finite number");
+    }
+    return number;
+}
+
+class ScopedActionOverrides {
+public:
+    ScopedActionOverrides(Model& model, const ActionOverrides& overrides)
+        : model_(model) {
+        auto& actions = model_.getActions();
+        const std::set<std::string> simulationActions = {
+            "simulate", "simulate_ode", "simulate_ssa", "simulate_nf",
+            "simulate_pla", "simulate_psa"};
+        const std::set<std::string> supportedKeys = {
+            "t_start", "t_end", "n_steps"};
+
+        for (const auto& [index, values] : overrides) {
+            if (index >= actions.size()) {
+                throw std::invalid_argument(
+                    "action override index is outside the model action list");
+            }
+            std::string actionName = actions[index].name;
+            std::transform(actionName.begin(), actionName.end(), actionName.begin(),
+                           [](unsigned char value) {
+                               return static_cast<char>(std::tolower(value));
+                           });
+            if (simulationActions.find(actionName) == simulationActions.end()) {
+                throw std::invalid_argument(
+                    "time overrides are only supported for simulation actions");
+            }
+
+            std::optional<double> start;
+            std::optional<double> end;
+            for (const auto& [key, value] : values) {
+                if (supportedKeys.find(key) == supportedKeys.end()) {
+                    throw std::invalid_argument(
+                        "unsupported action override key: " + key);
+                }
+                if (key == "t_start") {
+                    start = parseActionOverrideNumber(value, key);
+                } else if (key == "t_end") {
+                    end = parseActionOverrideNumber(value, key);
+                } else if (key == "n_steps") {
+                    const double count = parseActionOverrideNumber(value, key);
+                    if (count < 1.0 || std::floor(count) != count) {
+                        throw std::invalid_argument(
+                            "action override 'n_steps' must be a positive integer");
+                    }
+                }
+                const auto original = actions[index].arguments.find(key);
+                changes_.push_back({
+                    index,
+                    key,
+                    original == actions[index].arguments.end()
+                        ? std::nullopt
+                        : std::optional<std::string>(original->second)});
+            }
+            if (start.has_value() && end.has_value() && *end < *start) {
+                throw std::invalid_argument(
+                    "action override 't_end' must be greater than or equal to 't_start'");
+            }
+        }
+
+        try {
+            for (const auto& [index, values] : overrides) {
+                for (const auto& [key, value] : values) {
+                    actions[index].arguments[key] = value;
+                }
+            }
+        } catch (...) {
+            restore();
+            throw;
+        }
+    }
+
+    ScopedActionOverrides(const ScopedActionOverrides&) = delete;
+    ScopedActionOverrides& operator=(const ScopedActionOverrides&) = delete;
+
+    ~ScopedActionOverrides() { restore(); }
+
+private:
+    struct Change {
+        std::size_t index;
+        std::string key;
+        std::optional<std::string> original;
+    };
+
+    void restore() noexcept {
+        auto& actions = model_.getActions();
+        for (auto change = changes_.rbegin(); change != changes_.rend(); ++change) {
+            if (change->index >= actions.size()) {
+                continue;
+            }
+            if (change->original.has_value()) {
+                actions[change->index].arguments[change->key] = *change->original;
+            } else {
+                actions[change->index].arguments.erase(change->key);
+            }
+        }
+        changes_.clear();
+    }
+
+    Model& model_;
+    std::vector<Change> changes_;
+};
 
 bool isResultFunction(const std::string& name) {
     return !name.empty() && name.front() != '_' &&
@@ -271,6 +408,66 @@ void bind_engine(py::module_& m) {
         return gen.generateNative(max_iter);
     }, py::arg("model"), py::arg("max_iter") = 100,
        "Generate the reaction network from a model");
+
+    m.def("jax_ode_flatten", [](Model& model, GeneratedNetwork& network) {
+        std::vector<double> initialState;
+        std::vector<uint8_t> fixedSpecies;
+        std::vector<double> rateConstants;
+        std::vector<uint8_t> totalRates;
+        std::vector<uint8_t> functionalRates;
+        std::vector<uint8_t> timeDependentRates;
+        std::vector<std::size_t> reactantOffsets{0};
+        std::vector<std::size_t> reactantSpecies;
+        std::vector<std::size_t> productOffsets{0};
+        std::vector<std::size_t> productSpecies;
+
+        {
+            py::gil_scoped_release release;
+            OdeIntegrator integrator(model, network);
+            const auto& compiledReactions = integrator.getCompiledReactions();
+            const auto& fixed = integrator.getFixedSpecies();
+            initialState.reserve(network.species.size());
+            fixedSpecies.reserve(network.species.size());
+            for (std::size_t i = 0; i < network.species.size(); ++i) {
+                initialState.push_back(network.species.get(i).getAmount());
+                fixedSpecies.push_back(fixed[i] ? 1 : 0);
+            }
+
+            rateConstants.reserve(compiledReactions.size());
+            totalRates.reserve(compiledReactions.size());
+            functionalRates.reserve(compiledReactions.size());
+            timeDependentRates.reserve(compiledReactions.size());
+            for (const auto& reaction : compiledReactions) {
+                rateConstants.push_back(reaction.rateConstant);
+                totalRates.push_back(reaction.isTotalRate ? 1 : 0);
+                functionalRates.push_back(reaction.isFunctional ? 1 : 0);
+                timeDependentRates.push_back(reaction.isTimeDependent ? 1 : 0);
+                reactantSpecies.insert(
+                    reactantSpecies.end(), reaction.reactantIndices.begin(),
+                    reaction.reactantIndices.end());
+                reactantOffsets.push_back(reactantSpecies.size());
+                productSpecies.insert(
+                    productSpecies.end(), reaction.productIndices.begin(),
+                    reaction.productIndices.end());
+                productOffsets.push_back(productSpecies.size());
+            }
+        }
+
+        py::dict result;
+        result["num_species"] = network.species.size();
+        result["initial_state"] = vector_to_array(initialState);
+        result["fixed_species"] = vector_to_array(fixedSpecies);
+        result["rate_constants"] = vector_to_array(rateConstants);
+        result["total_rate"] = vector_to_array(totalRates);
+        result["functional_rates"] = vector_to_array(functionalRates);
+        result["time_dependent_rates"] = vector_to_array(timeDependentRates);
+        result["reactant_offsets"] = vector_to_array(reactantOffsets);
+        result["reactant_species"] = vector_to_array(reactantSpecies);
+        result["product_offsets"] = vector_to_array(productOffsets);
+        result["product_species"] = vector_to_array(productSpecies);
+        return result;
+    }, py::arg("model"), py::arg("network"),
+       "Export the native compiled ODE reaction data used by the optional JAX ODE backend");
 
     // Private validation hook: parity tests need the engine's instantaneous
     // derivative at arbitrary documented states, without inferring it from a
@@ -675,9 +872,12 @@ void bind_engine(py::module_& m) {
         py::arg("backend") = std::string("auto"),
         "Run batched SSA on a GPU backend (auto/cuda/metal). Raises when the selected "
         "backend is unavailable; use simulate_batch_ssa_cpu for the CPU pool");
-    m.def("execute", [](Model& model, const std::string& source_path, bool verbose) {
+    m.def("execute", [](Model& model, const std::string& source_path, bool verbose,
+                         const ActionOverrides& action_overrides) {
+        ScopedActionOverrides scopedOverrides(model, action_overrides);
         py::gil_scoped_release release;
         ActionDispatch::execute(model, source_path, verbose);
     }, py::arg("model"), py::arg("source_path"), py::arg("verbose") = false,
-       "Execute all actions defined in the model");
+       py::arg("action_overrides") = ActionOverrides{},
+       "Execute model actions with temporary scalar time overrides");
 }

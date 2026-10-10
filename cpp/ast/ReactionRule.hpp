@@ -111,6 +111,14 @@ public:
         bool bidirectional,
         std::vector<SpeciesGraph> reactantPatterns = {},
         std::vector<SpeciesGraph> productPatterns = {});
+    // Construct from resolved graphs without parsing source pattern or
+    // modifier text. The graph lists are the semantic pattern authority.
+    static ReactionRule fromResolvedPatterns(
+        std::string ruleName,
+        std::string label,
+        std::vector<Expression> rates,
+        std::vector<SpeciesGraph> reactantPatterns,
+        std::vector<SpeciesGraph> productPatterns);
     ~ReactionRule();
     ReactionRule(ReactionRule&&) noexcept;
     ReactionRule& operator=(ReactionRule&&) noexcept;
@@ -142,6 +150,13 @@ public:
     const std::vector<SpeciesGraph>& getReactantPatterns() const;
     const std::vector<SpeciesGraph>& getProductPatterns() const;
     const std::vector<TransformOp>& getOperations() const;
+    // Default deletion of every molecule in a pattern removes its entire
+    // matched species, including context absent from the pattern (BNG2 MolDel).
+    bool deletesWholeReactantPattern(std::size_t patternIndex) const;
+    // Shared scalar decision for forward source patterns and rebuilt reverse
+    // compiled patterns. Counts refer to distinct molecule occurrences.
+    static bool removesWholeSpecies(bool deleteMolecules, std::size_t moleculeCount,
+                                    std::size_t deletedCount, bool pureDegradation);
     // Product-to-reactant molecule correspondences computed during rule
     // initialization.  Writers use the canonical mapping so unchanged
     // molecules are not rematched heuristically.
@@ -193,6 +208,18 @@ public:
         const ExecutionHooks* hooks = nullptr) const;
 
 private:
+    ReactionRule(
+        std::string ruleName,
+        std::string label,
+        std::vector<std::string> reactants,
+        std::vector<std::string> products,
+        std::vector<Expression> rates,
+        std::vector<std::string> modifiers,
+        bool bidirectional,
+        std::vector<SpeciesGraph> reactantPatterns,
+        std::vector<SpeciesGraph> productPatterns,
+        bool parseTextModifiers);
+
     ExecutionState& compatibilityState() const;
     void prepareExecutionState(ExecutionState& state) const;
 
@@ -314,5 +341,24 @@ private:
 void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims);
 // Set compartment parent map for transport (endocytosis/exocytosis)
 void setCompartmentParents(const std::unordered_map<std::string, std::string>& parents);
+
+// Temporarily installs compartment metadata for one network-generation pass.
+// The metadata is thread-local and restored when the pass returns or throws.
+class CompartmentContextScope {
+public:
+    CompartmentContextScope(
+        const std::unordered_map<std::string, int>& dimensions,
+        const std::unordered_map<std::string, std::string>& parents);
+    ~CompartmentContextScope();
+
+    CompartmentContextScope(const CompartmentContextScope&) = delete;
+    CompartmentContextScope& operator=(const CompartmentContextScope&) = delete;
+    CompartmentContextScope(CompartmentContextScope&&) = delete;
+    CompartmentContextScope& operator=(CompartmentContextScope&&) = delete;
+
+private:
+    std::unordered_map<std::string, int> previousDimensions_;
+    std::unordered_map<std::string, std::string> previousParents_;
+};
 
 } // namespace bng::ast

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <stdexcept>
+#include <set>
 #include <unordered_set>
 #include <utility>
 
@@ -394,6 +395,11 @@ public:
             }
         }
 
+        for (std::size_t index = 0; index < rule.getReactantPatterns().size(); ++index) {
+            if (rule.deletesWholeReactantPattern(index))
+                compiled.forward_.wholeSpeciesDeletions.push_back(index);
+        }
+
         compiled.forward_.localScopes = collectLocalScopes(
             rule, diagnostics, PatternSide::Reactant);
         const auto rateLocalScopeNames = localScopeNames(compiled.forward_.localScopes);
@@ -631,6 +637,26 @@ public:
                     modifier.kind == ModifierKind::MoveConnected ||
                     modifier.kind == ModifierKind::DeleteMolecules) {
                     reverse.transformationsComplete = false;
+                }
+            }
+            // Reverse mutations are rebuilt in reverse coordinates. Resolve
+            // their default whole-pattern deletion just as for the forward rule.
+            if (std::none_of(compiled.modifiers_.begin(), compiled.modifiers_.end(),
+                            [](const auto& modifier) {
+                                return modifier.kind == ModifierKind::DeleteMolecules;
+                            })) {
+                for (std::size_t index = 0; index < reverse.reactantPatterns.size(); ++index) {
+                    std::set<std::size_t> deleted;
+                    for (const auto& mutation : reverse.mutations) {
+                        if (mutation.kind == MutationKind::DeleteMolecule &&
+                            mutation.molecule.patternIndex == index)
+                            deleted.insert(mutation.molecule.moleculeIndex);
+                    }
+                    const auto count = reverse.reactantPatterns[index].molecules().size();
+                    if (ast::ReactionRule::removesWholeSpecies(
+                            false, count, deleted.size(),
+                            reverse.productPatterns.empty() && reverse.mutations.empty()))
+                        reverse.wholeSpeciesDeletions.push_back(index);
                 }
             }
             compiled.reverse_ = std::move(reverse);
