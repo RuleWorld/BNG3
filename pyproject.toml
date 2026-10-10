@@ -110,13 +110,15 @@ BUILD_TESTS = "OFF"
 
 [tool.ruff]
 target-version = "py39"
+# Vendored legacy Atomizer/assets are outside the maintained Python lint gate.
+# Neither exclusion applies to native API wrappers such as jax_ode/jax_ssa.
 extend-exclude = [
     "python/bionetgen/assets/",
     "python/bionetgen/atomizer/",
 ]
 
 [tool.ruff.lint]
-select = ["F401", "F841"]
+select = ["F401", "F821", "F841"]
 ignore = []
 
 [tool.ruff.lint.per-file-ignores]
