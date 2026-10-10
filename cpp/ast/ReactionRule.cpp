@@ -2854,6 +2854,17 @@ bool ReactionRule::buildReaction(
             if (hasModifier(modifiers_, "MoveConnected") && !deleteMolecules) {
                 return false;
             }
+            // BNG2 build_reaction (RxnRule.pm) rejects a reaction whose
+            // transformation yields more product subgraphs than product
+            // patterns unless the DeleteMolecules modifier is set.  A plain
+            // molecule deletion (e.g. A(b!1).B(a!1) -> A(b)) that would split
+            // the target into several fragments therefore produces no
+            // reaction; only DeleteMolecules releases the extra fragments.
+            // Molecule-type replacement rules keep their historical
+            // discard-orphans behavior below.
+            if (hasDeleteMoleculeOps && !deleteMolecules && !hasMoleculeTypeMismatch_) {
+                return false;
+            }
             const bool keepOrphans = deleteMolecules
                 || (!hasMoleculeTypeMismatch_ && !hasDeleteMoleculeOps);
             std::vector<SpeciesGraph> orderedProducts;

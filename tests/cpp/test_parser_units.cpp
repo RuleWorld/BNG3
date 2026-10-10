@@ -397,3 +397,120 @@ end bng3_events
     REQUIRE(event.assignments.size() == 1);
     CHECK(event.assignments.front().target == "priority");
 }
+
+TEST_CASE("local-function tag at rule start needs no label") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 1.0
+end parameters
+begin molecule types
+  A(x~0~P)
+end molecule types
+begin functions
+  rate(a) = a
+end functions
+begin reaction rules
+  %a:A(x~0)->A(x~P) k*rate(a)
+end reaction rules
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 1);
+    const auto& rule = model->getReactionRules().front();
+    CHECK(rule.hasScopePrefix());
+    REQUIRE(rule.getReactants().size() == 1);
+    CHECK(rule.getReactants().front() == "%a:A(x~0)");
+    REQUIRE(rule.getRates().size() == 1);
+    CHECK(rule.getRates().front().toString() == "(k * rate(a))");
+}
+
+TEST_CASE("separator lines before the model are ignored") {
+    for (const auto* separator : {"========================\n", "-------------------------\n"}) {
+        const auto model = bng::parser::parseModel(
+            std::string(separator) + "begin parameters\n  k 1.0\nend parameters\n");
+        REQUIRE(model != nullptr);
+        CHECK(model->getParameters().get("k").getValue() == 1.0);
+    }
+}
+
+TEST_CASE("begin model without end model accepts trailing actions") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1.0
+end parameters
+generate_network({overwrite=>1})
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    CHECK(model->getParameters().get("k").getValue() == 1.0);
+    REQUIRE(model->getActions().size() == 1);
+    CHECK(model->getActions().front().name == "generate_network");
+}
+
+TEST_CASE("keywords work as function names and calls") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  t 10.0
+  k 2.0
+end parameters
+begin functions
+  t_start()=if(t<365,1,0)
+end functions
+begin molecule types
+  A(x)
+  B(x)
+end molecule types
+begin reaction rules
+  A(x)->B(x) k*t_start()
+end reaction rules
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getFunctions().size() == 1);
+    CHECK(model->getFunctions().front().getName() == "t_start");
+    CHECK(model->getFunctions().front().getExpression().toString() == "if((t < 365), 1, 0)");
+    REQUIRE(model->getReactionRules().size() == 1);
+    REQUIRE(model->getReactionRules().front().getRates().size() == 1);
+    CHECK(model->getReactionRules().front().getRates().front().toString() == "(k * t_start())");
+}
+
+TEST_CASE("bare-decimal-point exponents parse as floats") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  a1 1.e-3
+  a2 2.
+end parameters
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    CHECK(model->getParameters().get("a1").getValue() == Catch::Approx(0.001));
+    CHECK(model->getParameters().get("a2").getValue() == Catch::Approx(2.0));
+}
+
+TEST_CASE("line continuation allows a trailing comment") {
+    const auto model = bng::parser::parseModel("begin parameters\nkf 1 \\ # /uM/s\n *2\nend parameters\n");
+
+    REQUIRE(model != nullptr);
+    CHECK(model->getParameters().get("kf").getValue() == Catch::Approx(2.0));
+}
+
+TEST_CASE("trailing annotation after a seed amount is ignored") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x)
+end molecule types
+begin parameters
+  NA 1.0
+  V 2.0
+end parameters
+begin seed species
+  A(x) 10*(NA*V) %(10, 30 50 or 100)*(NA*V)
+end seed species
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getSeedSpecies().size() == 1);
+    CHECK(model->getSeedSpecies().front().getPattern() == "A(x)");
+    CHECK(model->getSeedSpecies().front().getAmount().toString() == "(10 * (NA * V))");
+}

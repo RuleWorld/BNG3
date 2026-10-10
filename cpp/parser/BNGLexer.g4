@@ -5,10 +5,18 @@
  */
 lexer grammar BNGLexer;
 
+@lexer::header {
+#include <cctype>
+}
+
+
 // Comments and whitespace
 LINE_COMMENT: '#' ~[\r\n]* -> skip;
 LB: [\r\n]+;
 WS: [ \t]+ -> channel(HIDDEN);
+// BNG2 parity: separator lines of = or - (e.g. a leading ====...) are ignored
+SEPARATOR_LINE: '===' '='* -> skip;
+MINUS_SEPARATOR_LINE: '---' '-'* -> skip;
 
 // Keywords - Blocks
 BEGIN: 'begin';
@@ -246,7 +254,8 @@ FLOAT
     : DIGIT+ '.' DIGIT+ EXPONENT_ALL?
     | '.' DIGIT+ EXPONENT_ALL?
     | DIGIT+ EXPONENT_ALL
-    | DIGIT+ '.' { _input->LA(1) < 'a' || _input->LA(1) > 'z' && _input->LA(1) < 'A' || _input->LA(1) > 'Z' && _input->LA(1) != '_' }?
+    | DIGIT+ '.' EXPONENT
+    | DIGIT+ '.' {!isalpha(_input->LA(1)) && _input->LA(1) != '_'}?
     ;
 INT: DIGIT+;
 STRING: (LETTER | '_') (LETTER | DIGIT | '_')*;
@@ -304,5 +313,5 @@ fragment EXPONENT_ALL: [eEdDfFgG] [+-]? DIGIT+;  // Includes Fortran-style expon
 // Version number
 VERSION_NUMBER: INT '.' INT '.' INT [+-]?;
 
-// Line continuation
-ULB: '\\' [ ]* '\r'? '\n' WS* -> skip;
+// Line continuation (BNG2 parity: a trailing comment may follow the backslash)
+ULB: '\\' [ ]* ('#' ~[\r\n]*)? '\r'? '\n' WS* -> skip;
