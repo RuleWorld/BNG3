@@ -477,6 +477,112 @@ std::size_t parseNonNegativeCount(const std::string& text,
     return static_cast<std::size_t>(value);
 }
 
+bool supportsRuntimeSafeStepArithmetic(const ast::Expression& expression,
+                                       ast::Model& model,
+                                       std::size_t& powerOperators) {
+    using ast::ExpressionKind;
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        return std::isfinite(expression.numberValue());
+    case ExpressionKind::Identifier:
+        return true;
+    case ExpressionKind::Unary:
+        return (expression.name() == "+" || expression.name() == "-") &&
+            expression.args().size() == 1 &&
+            supportsRuntimeSafeStepArithmetic(expression.args().front(), model,
+                                              powerOperators);
+    case ExpressionKind::Binary: {
+        const auto& op = expression.name();
+        if (op != "+" && op != "-" && op != "*" && op != "/" && op != "**") {
+            return false;
+        }
+        if (expression.args().size() != 2 ||
+            !supportsRuntimeSafeStepArithmetic(expression.args()[0], model,
+                                               powerOperators) ||
+            !supportsRuntimeSafeStepArithmetic(expression.args()[1], model,
+                                               powerOperators)) {
+            return false;
+        }
+        if (op == "**") {
+            if (++powerOperators > 1) {
+                return false;
+            }
+            try {
+                const double base = expression.args()[0].evaluate(
+                    [&](const std::string& name) {
+                        return model.getParameters().evaluate(name);
+                    });
+                if (!std::isfinite(base) || base < 0.0) {
+                    return false;
+                }
+            } catch (const std::exception&) {
+                return false;
+            }
+        }
+        return true;
+    }
+    case ExpressionKind::Function:
+    case ExpressionKind::ObservableRef:
+    case ExpressionKind::TableFunction:
+        return false;
+    }
+    return false;
+}
+
+std::size_t checkedSimulationStepCount(double value, const std::string& source) {
+    if (!std::isfinite(value) || value < 0.0 || std::floor(value) != value) {
+        throw std::runtime_error(
+            "n_steps must be a non-negative integer (value '" + source + "')");
+    }
+    const double firstUnsupportedValue =
+        std::ldexp(1.0, std::numeric_limits<std::size_t>::digits);
+    if (value >= firstUnsupportedValue) {
+        throw std::runtime_error(
+            "n_steps exceeds the supported integer step-count range: '" + source + "'");
+    }
+    return static_cast<std::size_t>(value);
+}
+
+std::size_t parseSimulationStepCount(const std::string& text, ast::Model& model) {
+    const auto expressionSource = stripQuotes(trim(text));
+    if (expressionSource.find('^') != std::string::npos) {
+        throw std::runtime_error(
+            "invalid n_steps '" + text +
+            "': Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
+    }
+
+    if (expressionSource.find("**") == std::string::npos) {
+        return checkedSimulationStepCount(
+            parseScalarValue(expressionSource, model), text);
+    }
+
+    ast::Expression expression;
+    try {
+        expression = parser::parseExpression(expressionSource);
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "invalid n_steps '" + text +
+            "': could not be parsed as a Safe-Perl numeric expression: " + error.what());
+    }
+
+    std::size_t powerOperators = 0;
+    if (!supportsRuntimeSafeStepArithmetic(expression, model, powerOperators)) {
+        throw std::runtime_error(
+            "invalid n_steps '" + text +
+            "': cannot be translated without changing Safe-Perl arithmetic semantics");
+    }
+    double value = 0.0;
+    try {
+        value = expression.evaluate([&](const std::string& name) {
+            return model.getParameters().evaluate(name);
+        });
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "invalid n_steps '" + text + "': could not be evaluated: " + error.what());
+    }
+    return checkedSimulationStepCount(value, text);
+}
+
 bool parseBoolean(const std::string& text, bool defaultValue = false) {
     const auto value = lowercase(stripQuotes(trim(text)));
     if (value.empty()) {
@@ -1097,7 +1203,8 @@ void runSimulation(
     engine::GeneratedNetwork& network,
     bool verbose,
     std::vector<double>& lastSimulationState,
-    double& lastSimulationEndTime) {
+    double& lastSimulationEndTime,
+    const compile::ProtocolAction::SimulationOptions* compiledOptions = nullptr) {
 
     // Handle argfile: read arguments from file (file args have lower priority than inline args)
     ast::Action action = actionOrig;
@@ -1159,7 +1266,28 @@ void runSimulation(
         opts.tEnd = parseScalarValue(tEnd, model);
     }
     if (!nSteps.empty()) {
-        opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+        const auto inlineSteps = actionOrig.arguments.find("n_steps");
+        const bool usesCompiledInlineValue = compiledOptions != nullptr &&
+            inlineSteps != actionOrig.arguments.end() &&
+            stripQuotes(trim(inlineSteps->second)) == stripQuotes(trim(nSteps));
+        const bool finiteOdeOrSsaMethod =
+            method == "cvode" || method == "ssa" ||
+            method == "euler" || method == "rk4";
+        if (!finiteOdeOrSsaMethod) {
+            // Keep the existing PLA/PSA count parsing path outside this
+            // bounded ODE/SSA expression change.
+            opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+        } else {
+            if (usesCompiledInlineValue &&
+                compiledOptions->nStepsDiagnostic.has_value()) {
+                throw std::runtime_error(compiledOptions->nStepsDiagnostic->message);
+            }
+            if (usesCompiledInlineValue && compiledOptions->nSteps.has_value()) {
+                opts.nSteps = *compiledOptions->nSteps;
+            } else {
+                opts.nSteps = parseSimulationStepCount(nSteps, model);
+            }
+        }
         if (opts.nSteps == 0) {
             throw std::runtime_error("n_steps must be positive");
         }
@@ -1539,6 +1667,16 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             document.model(), document.model().seeds()[index]);
     };
 
+    const auto simulationOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::SimulationOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].simulationOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].simulationOptions;
+    };
+
     const auto writeNetworkAt = [&](const std::filesystem::path& outputPath,
                                     const io::NetWriterOptions& options = {}) {
         if (loadedNetData.has_value()) {
@@ -1883,7 +2021,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             throw std::runtime_error("simulate_protocol requires a non-empty protocol block");
         }
 
+        std::size_t compiledActionIndex = model.getActions().size();
         for (const auto& protoAction : protocol) {
+            const auto* compiledSimulationOptions =
+                simulationOptionsAt(compiledActionIndex++);
             const auto protoName = lowercase(protoAction.name);
             if (protoName == "simulate_nf" ||
                 (protoName == "simulate" &&
@@ -1914,7 +2055,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     actualAction.arguments["continue"] = "1";
                 }
                 runSimulation(model, actualAction, sourcePath, *network, verbose,
-                              lastSimulationState, lastSimulationEndTime);
+                              lastSimulationState, lastSimulationEndTime,
+                              compiledSimulationOptions);
                 continue;
             }
 
@@ -2036,7 +2178,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
     };
 
+    std::size_t compiledActionIndex = 0;
     for (const auto& action : model.getActions()) {
+        const auto* compiledSimulationOptions =
+            simulationOptionsAt(compiledActionIndex++);
         // Normalize action name to lowercase for case-insensitive matching
         std::string actionName = lowercase(action.name);
 
@@ -2762,7 +2907,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             ensureNetwork();
             // Don't re-write .net file - already written by generate_network
             // Re-writing would cause duplicate parameters and corrupt stat factors
-            runSimulation(model, action, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+            runSimulation(model, action, sourcePath, *network, verbose,
+                          lastSimulationState, lastSimulationEndTime,
+                          compiledSimulationOptions);
             continue;
         }
 

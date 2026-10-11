@@ -15,6 +15,7 @@ namespace bng::compile {
 namespace {
 
 using GenerateNetworkOptions = ProtocolAction::GenerateNetworkOptions;
+using SimulationOptions = ProtocolAction::SimulationOptions;
 
 Diagnostic maxIterationsDiagnostic(const std::string& source,
                                    const std::string& reason) {
@@ -36,6 +37,25 @@ Diagnostic maxAggregateDiagnostic(const std::string& source,
     diagnostic.entity = "generate_network.max_agg";
     diagnostic.message = "invalid generate_network max_agg '" + source + "': " + reason;
     return diagnostic;
+}
+
+Diagnostic nStepsDiagnostic(const std::string& source, const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "simulation.n_steps";
+    diagnostic.message = "invalid n_steps '" + source + "': " + reason;
+    return diagnostic;
+}
+
+std::string unquoteActionValue(std::string value) {
+    if (value.size() >= 2 &&
+        ((value.front() == '"' && value.back() == '"') ||
+         (value.front() == '\'' && value.back() == '\''))) {
+        value = value.substr(1, value.size() - 2);
+    }
+    return value;
 }
 
 bool containsOnlyNumericActionSyntax(const std::string& source) {
@@ -261,6 +281,102 @@ GenerateNetworkOptions compileGenerateNetworkOptions(
     return options;
 }
 
+SimulationOptions compileSimulationOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SimulationOptions options;
+    const auto found = arguments.find("n_steps");
+    if (found == arguments.end()) {
+        return options;
+    }
+
+    const auto& source = found->second;
+    const auto expressionSource = unquoteActionValue(source);
+    if (expressionSource.find('^') != std::string::npos) {
+        options.nStepsDiagnostic = nStepsDiagnostic(
+            source,
+            "Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
+        return options;
+    }
+
+    // Parameter-backed and otherwise dynamic values remain raw for execution:
+    // protocol actions may change parameters, and runSimulation resolves them
+    // only after argfile merging and earlier protocol actions have run.
+    if (!containsOnlyNumericActionSyntax(expressionSource)) {
+        return options;
+    }
+
+    ast::Expression expression;
+    try {
+        expression = parser::parseExpression(expressionSource);
+    } catch (const std::exception& error) {
+        options.nStepsDiagnostic = nStepsDiagnostic(
+            source,
+            std::string("could not be parsed as a numeric expression: ") + error.what());
+        return options;
+    }
+
+    std::size_t powerOperators = 0;
+    if (!supportsStaticActionArithmetic(expression, powerOperators)) {
+        options.nStepsDiagnostic = nStepsDiagnostic(
+            source,
+            "cannot be translated without changing Safe-Perl arithmetic semantics");
+        return options;
+    }
+
+    double value = 0.0;
+    if (!evaluateFiniteStaticExpression(expression, value)) {
+        options.nStepsDiagnostic = nStepsDiagnostic(
+            source, "must evaluate to a finite number");
+        return options;
+    }
+    if (value <= 0.0 || std::floor(value) != value) {
+        options.nStepsDiagnostic = nStepsDiagnostic(
+            source, "must evaluate to a positive integer");
+        return options;
+    }
+
+    const double firstUnsupportedValue =
+        std::ldexp(1.0, std::numeric_limits<std::size_t>::digits);
+    if (value >= firstUnsupportedValue) {
+        options.nStepsDiagnostic = nStepsDiagnostic(
+            source, "exceeds the supported integer step-count range");
+        return options;
+    }
+
+    options.nSteps = static_cast<std::size_t>(value);
+    return options;
+}
+
+std::optional<SimulationOptions> compileSimulationOptions(
+    const ast::Action& action) {
+    const auto name = [&]() {
+        std::string value = action.name;
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return value;
+    }();
+
+    const auto methodArgument = action.arguments.find("method");
+    std::string method = methodArgument == action.arguments.end()
+        ? "ode"
+        : unquoteActionValue(methodArgument->second);
+    std::transform(method.begin(), method.end(), method.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    const bool deterministic = name == "simulate_ode" ||
+        (name == "simulate" && (method.empty() || method == "ode" ||
+                                 method == "cvode" || method == "euler" ||
+                                 method == "rk4"));
+    const bool stochastic = name == "simulate_ssa" ||
+        (name == "simulate" && method == "ssa");
+    if (!deterministic && !stochastic) {
+        return std::nullopt;
+    }
+    return compileSimulationOptions(action.arguments);
+}
+
 ProtocolAction compileProtocolAction(ActionScope scope, const ast::Action& action) {
     ProtocolAction compiled;
     compiled.scope = scope;
@@ -269,6 +385,7 @@ ProtocolAction compileProtocolAction(ActionScope scope, const ast::Action& actio
     if (action.name == "generate_network") {
         compiled.generateNetworkOptions = compileGenerateNetworkOptions(action.arguments);
     }
+    compiled.simulationOptions = compileSimulationOptions(action);
     return compiled;
 }
 
