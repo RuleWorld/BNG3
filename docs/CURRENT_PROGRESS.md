@@ -1,10 +1,10 @@
 # BNG3 current progress
 
-**Refreshed:** 2026-10-10 UTC against RuleWorld/BNG3 main
-`0bf3a0446f46515b6ab09ed54d90f4e6fac228a4`. Semantic convergence and release
+**Refreshed:** 2026-10-11 UTC against RuleWorld/BNG3 main
+`4795179ef16ae679d58e03e03444c28fc079b1fd`. Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
-[#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 45 open and ten closed
-(#132/#133/#134/#135/#136/#145/#165/#169/#173/#183).
+[#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 44 open and eleven closed
+(#132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183).
 
 The [convergence checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) maps all 55 tasks
 one-to-one. Issues own acceptance criteria, dependencies and detailed evidence;
@@ -27,7 +27,9 @@ A bounded repair does not close its broader issue.
 | #140 | #207/#220 | Compile-owned numeric max_iter/max_agg, fractional/negative aggregate thresholds and product-only filtering. Broader protocol typing remains open. |
 | #141/#142 | #203/#211/#222/#224 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots have a shared-topology contract; serial scan exceptions restore base/dependent parameters and the original network before successful analytic/fresh-model recovery. Broader invalidation/lifecycle and graph encoding unification remain open. |
 | #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
-| #138/#163 | #196/#197/#228 | Compile-owned units and version-aware SBML units; NET output has an independent Network3 analytic consumer contract; broader runtime migration/export qualification remains open. |
+| #138/#163 | #196/#197/#228/#230 | Compile-owned units and version-aware SBML units; NET output has an independent Network3 analytic consumer contract; C++ observable coefficients now use the shared projection with BNG2-compatible counting modes and inert Molecules qualifiers; broader runtime migration/export qualification remains open. |
+| #139 | #225 | Compiler-owned direction-specific whole-deletion and typed DeleteMolecules hooks drive compatibility execution; full kernel retirement remains open. |
+| #151 | #231 | Verified static zero-order physical count rates and bound parameter updates in one explicit positive 3D compartment. Physical XML fallback refuses; broader molecularity, unit seeds and dynamic contexts remain unsupported. |
 | #143 | #201 | Typed ODE dependency classification and time/state reevaluation; broader backend scope, propensity and cache-invalidation criteria remain open. |
 | #146 | #210/#215 | Deletion scope, pending waits and output clocks. Strict native -oSteps endpoint comparison remains red. |
 | #147/#148 | #219 | Whole-species DestroyComplex, same-complex matcher constraints and native index-width refusal. Runtime tests use an action adapter; production ActionIR execution and formal correspondence remain open. |
@@ -35,10 +37,10 @@ A bounded repair does not close its broader issue.
 | #165/#166 | #194/#198 | All-input Lean reference matcher and bounded packing/native guards; #165 closed, production lowering correspondence remains open. |
 | #169 | #192 | Proof trust accounting and harness qualification. Closed after review. |
 | #171/#172 | #193/#208 | Legacy positional run compatibility and defaults/version without optional Cement. Broader public matrix and legacy retirement remain open. |
-| #182 | #199/#216 | Numerical/expression/export CI wiring and source-selected harness isolation; scientific acceptance remains open. |
+| #182 | #199/#216 | Required numerical/expression/export and scheduled/manual frozen ensemble CI wiring, exact-source package/native/worker checks and permanent receipts; #182 closed. Scientific stochastic and historical NFsim qualification remain open. |
 | #183 | #206 | Budgeted locked SSTS CI, per-case classifications/digests and permanent receipts. This bounded workflow issue is closed; full #159 qualification remains open. |
 
-Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228 plus ledger refreshes #221/#223 during this continuation.
+Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230 plus ledger refreshes #221/#223/#229 during this continuation.
 PR #205 integrated the Rasi performance port separately. The shared checkout
 remains on perf/nfsim-rasi-translation-port-v2 at `07ea87d3`, with its unrelated
 untracked audit file preserved. Work continues in isolated checkouts. Only root
@@ -47,6 +49,67 @@ unauthorized.
 
 ## Current qualification receipts
 
+- C++ observable coefficients #230: exact source `bfbeeff497097da76539024b86d7055e0c01a99e`,
+  merge `4795179ef16ae679d58e03e03444c28fc079b1fd`. Root/fresh Luna reviewed
+  the shared-projection migration and repaired valid Molecules qualifier refusal:
+  Molecules thresholds are inert in BNG2, while Species predicates stay active.
+  Root preserved the unit artifacts and reused that cached build at the exact PR
+  tree `1b1c0a5b00e00e0ac2ca3236cc72e5d7d28419ec`, avoiding another full build.
+  Native projection 6 cases/49 assertions, existing ODE count-filter contracts
+  2/18, strict live pinned-BNG2 exporter 10 tests and architecture 41 pass.
+  CLI SHA256 `59dba6c49a93e8ed22569eeb1bf9f66f4d08ef710b43bbb9024fb9bcafb0d2c8`.
+  Oracle inputs require the locked revision/script digest, clean tracked tree and
+  no index-hiding flags; emitted coefficients match independent BNG2 group rows.
+  At merge: three hosted successes and eleven pending checks. This is observable
+  emission, not full generated CVODE solver consumption or general compartment
+  correspondence. Outer AST dependencies remain; #138/#142/#163 stay open.
+  NET groups still bypass CountUnique and need a separately qualified repair.
+- CI wiring #182: root/fresh Luna accepted the existing #199/#216 implementation
+  after [manual run 38076443040](https://github.com/RuleWorld/BNG3/actions/runs/38076443040)
+  executed exact source `dfc4ba9cdefa62c96617d26ddba93151ef16b2be`.
+  Installed source/git/expected head, package/native/model and worker identities
+  verified on Linux Python 3.12.15; worker 1, assignment 32, live BNG2 network 5
+  and required RHS/ODE/SSA determinism/export 60 tests pass. Three frozen
+  200-member cohorts executed: two pass, michment fails with unchanged 10/306
+  violations and worst |z|=9.344938257977688 at ScT. Both JUnit reports have
+  zero skips/errors; the scheduled report explicitly records one failure.
+  Native SHA256 `1965bfde6cc8269eaef95acb159033fd38f262e141f8f293496b6c25bbeecd8e`;
+  CLI `a57825af859fc18a54245d38cd67c08fcad5132e1d69f9c8a6b00e216ac310ad`.
+  The [permanent receipt](../tests/validation/evidence/issue182-parity-linux-py312-dfc4ba9.tar.gz)
+  retains original JUnit, identity, limitations and four internal checksums;
+  archive SHA256 `d4313dd1266d71646a0739ad492b461f4ad3af7aad1956f4f3535af8d124c999`.
+  Overall workflow FAILED: historical NFsim also has three failures/three errors
+  in 74 tests (v17 scoped-rate rejection, v19 parser errors, r21 statistics and
+  empty-reference assertions). #182 closed for wiring with these reds retained;
+  #146 and broader numerical qualification remain open. Later #231/#230 are
+  excluded from this artifact. #202's 14 provenance approval decisions stay pending.
+- Physical units #231: exact source `4637d8e340c8fdc1004e3a7e8d6ce7de996d4fc1`,
+  merge `35af757ae1143d1679d63317859b2b3220f18374`. Root/fresh Luna review
+  repaired time/volume, capability/raw-lowering disagreement, aliases/mixed
+  rates, geometry, parameter lifecycle, overflow and XML fallback admission.
+  Final native adapter 136 cases/1,574 assertions, units 7/41, parser units 21/141,
+  XML writer 8/32, forced-XML CLI gate and targeted source-mode Python checks pass.
+  Root's guarded Python direct API returns [0,2,4,4] at [0,1,2,3], seed42;
+  module SHA256 `09f57276889decb8f7fb9222b92eba7c4a9cbcb29cee80750cacfeb7f6c5f3d4`,
+  CLI `37c9799ca223fd9899653ab2f426bfe7874a1d6df4602daacb22aa308e3cf789`.
+  Fresh pinned BNG2 count-model XML `d0563b3a5bc38f1ac0079f9da57c7ae513ad666eee9ce1c6916d379dbcae9c4f`
+  records rounded value=1.2044282, expr=1.204428152; pinned native NFsim explicit
+  times agree with direct gdat SHA256 `cf9fe03790a4e6a249c6d4178d621e1aff9284e05acb081a5f716cda8d0bc5df`.
+  Analytic native propensity asserts prove the conversion separately; this
+  fixed-time agreement does not prove full stochastic or -oSteps equivalence.
+  One explicit positive 3D-volume static zero-order subset only. Source-mode,
+  not an installed wheel. At merge: five hosted successes, one neutral, one
+  scheduled skip and 13 pending checks. Broader #151 remains open.
+- Typed deletion #225: final synced source `0094dfe9f249fd6f2caa026d49006f980112258f`,
+  merge `dfc4ba9cdefa62c96617d26ddba93151ef16b2be`. Root/fresh Luna review
+  preserves #130's orphan guard. Final 19 native cases/276 assertions,
+  architecture ratchet 41 and four fresh full-network comparisons against pinned
+  BNG2 pass. Root independently regenerated both engines' networks; parameter,
+  species/count and complete reaction/rate fields agree. CLI SHA256
+  `6d1e38f74c821a8f185bbe39bbc8942bc754729f22f3b532065ac0b8d7e4a2af`.
+  Final-head hosted snapshot: 41 successes, one neutral, five skips, no failures
+  or pending checks. This migrates deletion decisions, not the full AST kernel;
+  #138/#139 remain open.
 - NET consumer #228: exact source `bd41199fbf08e4b484c4303f2ee6adc640bab829`,
   merge `0bf3a0446f46515b6ab09ed54d90f4e6fac228a4`. Root reviewed and reran
   the strict test on the tested #130 CLI against independent pinned-source Network3;
@@ -193,7 +256,6 @@ reopened with their full unmet criteria:
 
 | Issues | PR / head | Qualification boundary |
 | --- | --- | --- |
-| #139 | #225 `7fc7500a` | Compiler-owned whole-deletion/typed DeleteMolecules execution hooks; 17 cases/274 assertions and four pinned full-network probes pass. Root/fresh Luna review; original exact-head hosted checks pass (42 successful/five skipped); current-main integration is under review. Broader kernel retirement remains open. |
 | #137 | #195 `e530328e` | Capability inventory; policy/owners remain unapproved. |
 | #179 | #202 `78543775` | 14 approvals pending; strict validation intentionally reports 14 errors. |
 | #174 | #188 merged; #218 closed as superseded, former head `2f51b79f` | #188 was narrowed to a bounded 128-entry function-call regex cache and merged after root/Luna review; slower copy changes were removed. #218’s branch and commits are preserved. Broader representative speed/memory qualification remains open. |
@@ -237,8 +299,8 @@ records source-only test limitations and excludes broad speed/RSS claims.
   14 approval decisions remain unresolved.
 
 Continue existing candidates and explicit issue dependencies. Current work covers
-the bounded #139 deletion boundary. The
-NFsim zero-order unit bridge is under repair for time-dependent provenance,
-consistent admission and parameter mutation; it has no qualified final checkpoint. Preserve exact source/artifact/oracle identity,
+NET group counting/compartment investigation and classification of the historical NFsim failures.
+The bounded unit/deletion checkpoints are integrated; higher-order units and
+remaining writer/runtime consumers still need qualified slices. Preserve exact source/artifact/oracle identity,
 commit tested checkpoints and update this ledger after integration. Do not create
 a replacement roadmap.
