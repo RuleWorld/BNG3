@@ -14,7 +14,6 @@ from tests.validation import compare, runner
 from tests.validation.strict import require_oracle
 from tests.validation.test_export_formats import _locked_bng2_script
 
-
 MODEL = """begin model
 begin parameters
   N 3
@@ -68,9 +67,12 @@ def _source(entry: str, expression: str) -> str:
     method = entry.removeprefix("simulate_method_")
     action = (
         f'simulate({{method=>"{method}",t_start=>0,t_end=>1,'
-        f'n_steps=>{expression},seed=>1}})'
+        f"n_steps=>{expression},seed=>1}})"
     )
-    return MODEL.format(declaration=f"begin protocol\n{action}\nend protocol\n", action="simulate_protocol()")
+    return MODEL.format(
+        declaration=f"begin protocol\n{action}\nend protocol\n",
+        action="simulate_protocol()",
+    )
 
 
 def _run_bng2(script: Path, source: Path, out_dir: Path) -> Path:
@@ -94,8 +96,12 @@ def _run_bng2(script: Path, source: Path, out_dir: Path) -> Path:
         check=False,
     )
     output = out_dir / f"{source.stem}.gdat"
-    assert proc.returncode == 0, f"pinned BNG2 action failed: {proc.stderr or proc.stdout}"
-    assert output.is_file(), f"pinned BNG2 produced no .gdat: {proc.stderr or proc.stdout}"
+    assert (
+        proc.returncode == 0
+    ), f"pinned BNG2 action failed: {proc.stderr or proc.stdout}"
+    assert (
+        output.is_file()
+    ), f"pinned BNG2 produced no .gdat: {proc.stderr or proc.stdout}"
     return output
 
 
@@ -137,16 +143,16 @@ def test_caret_n_steps_is_refused_instead_of_reinterpreted(
     reference_path = _run_bng2(locked_bng2, source, tmp_path / "bng2")
     reference, _ = compare.parse_gdat(reference_path)
     assert reference is not None
-    assert np.array_equal(reference[:, 0], np.array([0.0, 1.0])), (
-        "pinned BNG2 evaluates numeric ^ as Perl XOR, so 2^3 means one interval"
-    )
+    assert np.array_equal(
+        reference[:, 0], np.array([0.0, 1.0])
+    ), "pinned BNG2 evaluates numeric ^ as Perl XOR, so 2^3 means one interval"
 
-    generated_path, _, error = runner.run_cli_path(
-        bng_cpp, source, tmp_path / "bng3"
-    )
+    generated_path, _, error = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
     assert generated_path is None, "BNG3 must refuse ^ rather than exponentiate it"
     assert "2^3" in error, f"diagnostic must preserve raw n_steps spelling: {error}"
-    assert "Safe-Perl" in error, f"expected an explicit semantic-boundary diagnostic: {error}"
+    assert (
+        "Safe-Perl" in error
+    ), f"expected an explicit semantic-boundary diagnostic: {error}"
 
 
 def _gdat_rows(path: Path) -> int:
@@ -164,23 +170,21 @@ def test_protocol_parameter_mutation_is_resolved_when_simulation_executes(
     source.write_text(
         MODEL.format(
             declaration=(
-                'begin protocol\n'
+                "begin protocol\n"
                 '  setParameter("N",4)\n'
                 '  simulate({method=>"ode",t_start=>0,t_end=>1,n_steps=>N})\n'
-                'end protocol\n'
+                "end protocol\n"
             ),
             action="simulate_protocol()",
         ),
         encoding="utf-8",
     )
 
-    _, generated_path, error = runner.run_cli_path(
-        bng_cpp, source, tmp_path / "bng3"
-    )
+    _, generated_path, error = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
     assert generated_path is not None, f"protocol simulation failed: {error}"
-    assert _gdat_rows(generated_path) == 5, (
-        "setParameter must take effect before the later action resolves n_steps=>N"
-    )
+    assert (
+        _gdat_rows(generated_path) == 5
+    ), "setParameter must take effect before the later action resolves n_steps=>N"
 
 
 @pytest.mark.parametrize(
@@ -193,16 +197,13 @@ def test_argfile_step_count_is_resolved_after_inline_precedence(
     source = tmp_path / "argfile_steps.bngl"
     work_dir = tmp_path / "bng3"
     work_dir.mkdir()
-    (work_dir / "steps.txt").write_text(
-        f"n_steps {file_steps}\n", encoding="utf-8"
-    )
+    (work_dir / "steps.txt").write_text(f"n_steps {file_steps}\n", encoding="utf-8")
     inline = "" if inline_steps is None else f"n_steps=>{inline_steps},"
     source.write_text(
         MODEL.format(
             declaration="",
             action=(
-                "simulate_ode({t_start=>0,t_end=>1,"
-                f'{inline}argfile=>"steps.txt"}})'
+                "simulate_ode({t_start=>0,t_end=>1," f'{inline}argfile=>"steps.txt"}})'
             ),
         ),
         encoding="utf-8",
@@ -223,13 +224,11 @@ def test_dynamic_exponent_uses_current_parameter_value(bng_cpp, tmp_path):
         encoding="utf-8",
     )
 
-    _, generated_path, error = runner.run_cli_path(
-        bng_cpp, source, tmp_path / "bng3"
-    )
+    _, generated_path, error = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
     assert generated_path is not None, f"parameterized exponent failed: {error}"
-    assert _gdat_rows(generated_path) == 9, (
-        "2**N must evaluate exponentiation against the current parameter value N=3"
-    )
+    assert (
+        _gdat_rows(generated_path) == 9
+    ), "2**N must evaluate exponentiation against the current parameter value N=3"
 
 
 def test_dynamic_exponent_uses_protocol_mutated_parameter_value(bng_cpp, tmp_path):
@@ -237,23 +236,23 @@ def test_dynamic_exponent_uses_protocol_mutated_parameter_value(bng_cpp, tmp_pat
     source.write_text(
         MODEL.format(
             declaration=(
-                'begin protocol\n'
+                "begin protocol\n"
                 '  setParameter("N",4)\n'
                 '  simulate({method=>"ode",t_start=>0,t_end=>1,n_steps=>2**N})\n'
-                'end protocol\n'
+                "end protocol\n"
             ),
             action="simulate_protocol()",
         ),
         encoding="utf-8",
     )
 
-    _, generated_path, error = runner.run_cli_path(
-        bng_cpp, source, tmp_path / "bng3"
-    )
-    assert generated_path is not None, f"parameterized protocol exponent failed: {error}"
-    assert _gdat_rows(generated_path) == 17, (
-        "2**N must use the live protocol value N=4 when simulation executes"
-    )
+    _, generated_path, error = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
+    assert (
+        generated_path is not None
+    ), f"parameterized protocol exponent failed: {error}"
+    assert (
+        _gdat_rows(generated_path) == 17
+    ), "2**N must use the live protocol value N=4 when simulation executes"
 
 
 def test_argfile_caret_is_refused_after_effective_arguments_are_merged(
@@ -287,14 +286,12 @@ def test_pla_psa_step_expression_keeps_its_existing_dispatch_path(
             declaration="",
             action=(
                 f'simulate({{method=>"{method}",t_start=>0,t_end=>1,'
-                'n_steps=>2^3,seed=>1,poplevel=>0})'
+                "n_steps=>2^3,seed=>1,poplevel=>0})"
             ),
         ),
         encoding="utf-8",
     )
 
-    _, generated_path, error = runner.run_cli_path(
-        bng_cpp, source, tmp_path / "bng3"
-    )
+    _, generated_path, error = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
     assert generated_path is not None, f"{method.upper()} simulation failed: {error}"
     assert _gdat_rows(generated_path) == 9
