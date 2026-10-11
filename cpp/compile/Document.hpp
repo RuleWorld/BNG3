@@ -30,7 +30,14 @@ struct ProtocolAction {
         std::optional<double> maxAggregate;
         std::optional<Diagnostic> maxAggregateDiagnostic;
     };
+    struct SimulationOptions {
+        std::optional<std::size_t> nSteps;
+        // Action diagnostics are deferred until execution, so unused actions
+        // do not invalidate otherwise usable model metadata.
+        std::optional<Diagnostic> nStepsDiagnostic;
+    };
     std::optional<GenerateNetworkOptions> generateNetworkOptions;
+    std::optional<SimulationOptions> simulationOptions;
 };
 
 // Execution instructions are intentionally separate from reusable compiled

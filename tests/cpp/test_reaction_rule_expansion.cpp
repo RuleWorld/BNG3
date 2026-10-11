@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "compile/CompiledModel.hpp"
+#include "compile/Document.hpp"
 #include "compile/PatternLowering.hpp"
 #include "engine/NetworkRulePlan.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -31,6 +32,35 @@ begin actions
     generate_network({max_iter=>)" + option + R"(,overwrite=>1})
 end actions
 )");
+}
+
+static std::unique_ptr<ast::Model> modelWithSimulationAction(
+    const std::string& action, bool protocol = false) {
+    std::string source = R"(
+begin model
+begin parameters
+    N 3
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+    B() 0
+end seed species
+begin reaction rules
+    convert: A() -> B() 0.4
+end reaction rules
+)";
+    if (protocol) {
+        source += "begin protocol\n" + action + "\nend protocol\n";
+    }
+    source += "end model\n";
+    if (!protocol) {
+        source += action + "\n";
+    }
+    return parseModel(source);
 }
 
 TEST_CASE("Rule expansion: execution caches are independent", "[ReactionRule]") {
@@ -98,6 +128,90 @@ TEST_CASE("generate_network max_iter is compiled as a qualified typed option") {
         CHECK(action.generateNetworkOptions->maxIterationsDiagnostic->message.find("max_iter") !=
               std::string::npos);
     }
+}
+
+TEST_CASE("ODE and SSA n_steps compile Safe-Perl exponentiation for finite actions") {
+    struct Case {
+        const char* action;
+        bool protocol;
+    };
+    const Case cases[] = {
+        {"simulate_ode({t_end=>1,n_steps=>2**3})", false},
+        {"simulate_ssa({t_end=>1,n_steps=>2**3,seed=>1})", false},
+        {"simulate({method=>\"ode\",t_end=>1,n_steps=>2**3})", true},
+        {"simulate({method=>\"ssa\",t_end=>1,n_steps=>2**3,seed=>1})", true},
+    };
+
+    for (const auto& testCase : cases) {
+        INFO("action: " << testCase.action);
+        auto model = modelWithSimulationAction(testCase.action, testCase.protocol);
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        REQUIRE(document.protocol().actions.size() == 1);
+        const auto& action = document.protocol().actions.front();
+        REQUIRE(action.simulationOptions.has_value());
+        CHECK(action.arguments.at("n_steps") == "2**3");
+        CHECK_FALSE(action.simulationOptions->nStepsDiagnostic.has_value());
+        REQUIRE(action.simulationOptions->nSteps.has_value());
+        CHECK(*action.simulationOptions->nSteps == 8);
+    }
+}
+
+TEST_CASE("simulation n_steps diagnostics preserve raw source and defer failure") {
+    for (const auto& expression : {"2^3", "2.5", "-1", "0", "1e309",
+                                   "1e30", "2**3**2"}) {
+        INFO("n_steps: " << expression);
+        auto model = modelWithSimulationAction(
+            std::string("simulate_ode({t_end=>1,n_steps=>") + expression + "})");
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        CHECK(document.valid());
+        REQUIRE(document.protocol().actions.size() == 1);
+        const auto& action = document.protocol().actions.front();
+        REQUIRE(action.simulationOptions.has_value());
+        CHECK(action.arguments.at("n_steps") == expression);
+        CHECK_FALSE(action.simulationOptions->nSteps.has_value());
+        REQUIRE(action.simulationOptions->nStepsDiagnostic.has_value());
+        CHECK(action.simulationOptions->nStepsDiagnostic->message.find("n_steps") !=
+              std::string::npos);
+        CHECK(action.simulationOptions->nStepsDiagnostic->message.find(expression) !=
+              std::string::npos);
+    }
+}
+
+TEST_CASE("absent n_steps stays unset and non-finite backends are not typed") {
+    auto model = modelWithSimulationAction("simulate_ode({t_end=>1})");
+    REQUIRE(model != nullptr);
+    const compile::Document document(*model);
+    REQUIRE(document.protocol().actions.size() == 1);
+    REQUIRE(document.protocol().actions.front().simulationOptions.has_value());
+    CHECK_FALSE(document.protocol().actions.front().simulationOptions->nSteps.has_value());
+    CHECK_FALSE(document.protocol().actions.front().simulationOptions->nStepsDiagnostic.has_value());
+
+    for (const auto& actionSource : {
+             "simulate({method=>\"nf\",t_end=>1,n_steps=>2**3})",
+             "simulate_pla({t_end=>1,n_steps=>2**3})",
+             "simulate({method=>\"psa\",t_end=>1,n_steps=>2**3})"}) {
+        INFO("action: " << actionSource);
+        auto backendModel = modelWithSimulationAction(actionSource);
+        REQUIRE(backendModel != nullptr);
+        const compile::Document backendDocument(*backendModel);
+        REQUIRE(backendDocument.protocol().actions.size() == 1);
+        CHECK_FALSE(backendDocument.protocol().actions.front().simulationOptions.has_value());
+    }
+}
+
+TEST_CASE("parameter-backed simulation n_steps remain execution-time values") {
+    auto model = modelWithSimulationAction(
+        "simulate({method=>\"ode\",t_end=>1,n_steps=>N})", true);
+    REQUIRE(model != nullptr);
+    const compile::Document document(*model);
+    REQUIRE(document.protocol().actions.size() == 1);
+    const auto& action = document.protocol().actions.front();
+    REQUIRE(action.simulationOptions.has_value());
+    CHECK(action.arguments.at("n_steps") == "N");
+    CHECK_FALSE(action.simulationOptions->nSteps.has_value());
+    CHECK_FALSE(action.simulationOptions->nStepsDiagnostic.has_value());
 }
 
 TEST_CASE("BNGL network generation uses typed max_iter and explicit native overrides") {
