@@ -2223,6 +2223,9 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 }
 
 void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model, const engine::GeneratedNetwork& network, const NetWriterOptions& writerOpts) {
+    const compile::CompiledModel compiledModel(model);
+    const engine::ObservableProjection projection(compiledModel);
+
     std::ofstream out(outputPath);
     if (!out) {
         throw std::runtime_error("Could not open output file: " + outputPath.string());
@@ -2725,8 +2728,6 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 
     out << "begin groups\n";
     std::size_t groupIndex = 1;
-    const compile::CompiledModel compiledModel(model);
-    const engine::ObservableProjection projection(compiledModel);
     for (std::size_t observableIndex = 0; observableIndex < projection.size();
          ++observableIndex) {
         out << "    " << groupIndex++ << " " << projection.name(observableIndex) << " ";

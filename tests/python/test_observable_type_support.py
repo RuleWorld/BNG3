@@ -1,16 +1,10 @@
-"""A `Concentration` observable must be refused, not silently aliased.
+"""Observable types without compiled semantics must be refused explicitly.
 
-BNG3 does not apply the compartment volume to any observable, so a
-`Concentration` observable could only ever have reported the same number as
-`Molecules`.  BNG2 refuses the type outright; BNG3 accepted it and gave the
-caller a molecule count under the name of a concentration, with nothing in the
-output to say so.  The acceptance criterion here is the refusal and its wording:
-the diagnostic has to name the offending type, say that the volume is not
-applied by *any* type, and say what the number a user does get means.
-
-The supported types must keep working.  `Species` and `Counter` are accepted by
-both BNG2 and BNG3, and `Fraction` by neither's vocabulary but by BNG3's
-grammar, so none of them may start failing here.
+The `Concentration` spelling is refused by the parser because BNG3 never
+applies compartment volume to observables.  The compiled projection supports
+`Molecules` (and its `Molecule` alias) and `Species`; other parsed spellings
+such as `Counter` and `Fraction` must fail by name before the NET writer touches
+its output file.
 """
 
 from __future__ import annotations
@@ -90,12 +84,32 @@ def test_a_concentration_observable_is_refused_with_a_named_diagnostic(
     assert not (tmp_path / f"obs_{spelling}.net").exists()
 
 
-@pytest.mark.parametrize("spelling", ["Molecules", "Species", "Counter", "Fraction"])
-def test_the_other_observable_types_still_parse_and_generate(spelling, tmp_path):
-    # BNG3 accepts any string here and ignores the type, so all of these
-    # produce the same network.  That is a separate, reported finding; what
-    # matters for this commit is that refusing `Concentration` did not take the
-    # others down with it.
+@pytest.mark.parametrize("spelling", ["Counter", "Fraction"])
+@pytest.mark.parametrize(
+    "preexisting_net", [False, True], ids=["new-output", "existing-output"]
+)
+def test_unlowered_observable_types_are_refused_before_net_output_is_opened(
+    spelling, preexisting_net, tmp_path
+):
+    net_path = tmp_path / f"obs_{spelling}.net"
+    previous_contents = "existing network must survive an unsupported observable\n"
+    if preexisting_net:
+        net_path.write_text(previous_contents)
+
+    result = _run(tmp_path, spelling)
+    output = result.stdout + result.stderr
+
+    assert result.returncode != 0, output
+    assert f"unsupported observable type '{spelling}'" in output, output
+    assert "observable 'At'" in output, output
+    if preexisting_net:
+        assert net_path.read_text() == previous_contents
+    else:
+        assert not net_path.exists()
+
+
+@pytest.mark.parametrize("spelling", ["Molecules", "Species"])
+def test_compiled_observable_types_still_parse_and_generate(spelling, tmp_path):
     result = _run(tmp_path, spelling)
     output = result.stdout + result.stderr
 
