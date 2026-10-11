@@ -2,7 +2,7 @@
 
 **Status:** incomplete; 44 of 55 audit issues are open. #132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
 **Refreshed:** 2026-10-11 against live main
-`9bf28a0b0b89d30560f5920339101b2d5ef82de1`. See
+`af6afb00279a236031dc50afde452a6bfb913175`. See
 [current progress](CURRENT_PROGRESS.md) for scoped integrations, exact evidence
 boundaries and candidates. The original audited qualification baseline was
 `e1836c3274e685996d5e86883761e00e98257e09`.
@@ -73,9 +73,9 @@ an open PR or by filing an issue.
 
 ### C++ semantic and runtime boundaries
 
-- [ ] **B01 · P1 I** — Migrate remaining runtime consumers to the resolved semantic model. [#138](https://github.com/RuleWorld/BNG3/issues/138) Merged PR [#233](https://github.com/RuleWorld/BNG3/pull/233) migrates NET observable groups and preserves shared graph-prefix/counting semantics; 41 files remain in the compatibility allowlist; broader migration remains open.
+- [ ] **B01 · P1 I** — Migrate remaining runtime consumers to the resolved semantic model. [#138](https://github.com/RuleWorld/BNG3/issues/138) Merged PR [#233](https://github.com/RuleWorld/BNG3/pull/233) migrates NET observable groups and preserves shared graph-prefix/counting semantics; its pre-#237 hosted Python matrix had 18 failed jobs, all involving Counter/Fraction handling. Merged [PR #237](https://github.com/RuleWorld/BNG3/pull/237) now rejects those unsupported kinds before opening the NET destination and preserves existing output, without adding runtime support. Root's focused source/CLI/native checks pass; no PR-head hosted checks ran after retargeting. During the 2026-10-11 20:49:40–20:49:44 UTC merge-push refresh, run 38171605273 had 9 successes, 22 queued jobs and no failures ([run](https://github.com/RuleWorld/BNG3/actions/runs/38171605273)); it remained queued overall. The compatibility allowlist contains 41 explicit files and broader migration remains open. See [current progress](CURRENT_PROGRESS.md) for evidence and limits.
 - [ ] **B02 · P1 I** — Separate network-rule execution from reconstructed AST rules. [#139](https://github.com/RuleWorld/BNG3/issues/139)
-- [ ] **B03 · P1 I** — Type simulation protocol actions and share option semantics. [#140](https://github.com/RuleWorld/BNG3/issues/140)
+- [ ] **B03 · P1 I** — Type simulation protocol actions and share option semantics. [#140](https://github.com/RuleWorld/BNG3/issues/140) Merged [PR #236](https://github.com/RuleWorld/BNG3/pull/236) adds the finite ODE/SSA n_steps expression slice; broad typed values, CLI/Python equivalence, defaults, invalid-option coverage and installed-package qualification remain open.
 - [ ] **B04 · P1 Q** — Qualify compile-once model reuse and independent trajectory state. [#141](https://github.com/RuleWorld/BNG3/issues/141)
 - [ ] **B05 · P1 I** — Unify network and NFsim graph-identity semantics. [#142](https://github.com/RuleWorld/BNG3/issues/142) Merged PR [#211](https://github.com/RuleWorld/BNG3/pull/211) repairs compartmental seed association and exact identity checks; separate backend encodings and broader qualification remain open.
 - [ ] **B06 · P1 I** — Complete the shared rate-law and local-function semantic contract. [#143](https://github.com/RuleWorld/BNG3/issues/143)
@@ -84,7 +84,7 @@ an open PR or by filing an issue.
 
 ### NFsim, NFcore2, NFnext and hybrid execution
 
-- [ ] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146) Merged PR [#210](https://github.com/RuleWorld/BNG3/pull/210) repairs a bounded deletion slice; fixed-seed native final-endpoint parity remains red.
+- [ ] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146) Merged PR [#210](https://github.com/RuleWorld/BNG3/pull/210) repairs a bounded deletion slice; [#235](https://github.com/RuleWorld/BNG3/pull/235) adds canonical leading %label: local-function XML scope and [#238](https://github.com/RuleWorld/BNG3/pull/238) binds compiled local-function scope in direct NFsim. Independent native parity now covers four scoped cases, while the original unmapped conditional remains unsupported and the composite XML case is unsupported by native NFsim. Strict native -oSteps final-endpoint rows remain red; full #146 qualification remains open.
 - [ ] **C02 · P1 I** — Extend NFnext lowering for approved unsupported semantic families. [#147](https://github.com/RuleWorld/BNG3/issues/147)
 - [ ] **C03 · P1 I** — Qualify a complete model-to-NFnext execution boundary. [#148](https://github.com/RuleWorld/BNG3/issues/148)
 - [ ] **C04 · P2 M** — Decide maintained roles for NFcore, NFcore2 and NFnext. [#149](https://github.com/RuleWorld/BNG3/issues/149)
