@@ -71,7 +71,8 @@ unauthorized.
   verified on Linux Python 3.12.15; worker 1, assignment 32, live BNG2 network 5
   and required RHS/ODE/SSA determinism/export 60 tests pass. Three frozen
   200-member cohorts executed: two pass, michment fails with unchanged 10/306
-  violations and worst |z|=9.344938257977688 at ScT. JUnit has no skips/errors.
+  violations and worst |z|=9.344938257977688 at ScT. Both JUnit reports have
+  zero skips/errors; the scheduled report explicitly records one failure.
   Native SHA256 `1965bfde6cc8269eaef95acb159033fd38f262e141f8f293496b6c25bbeecd8e`;
   CLI `a57825af859fc18a54245d38cd67c08fcad5132e1d69f9c8a6b00e216ac310ad`.
   The [permanent receipt](../tests/validation/evidence/issue182-parity-linux-py312-dfc4ba9.tar.gz)
