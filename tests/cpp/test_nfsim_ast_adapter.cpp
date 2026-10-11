@@ -3,8 +3,10 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <map>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -4458,6 +4460,160 @@ end reaction rules
     REQUIRE(system->getAllReactions().size() == 1);
     system->prepareForSimulation();
     CHECK(system->getReaction(0)->get_a() == Catch::Approx(0.0));
+    delete system;
+}
+
+TEST_CASE("NFsim compiled lowering binds a non-root molecule suffix scope by occurrence") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(x)
+    B(y)
+end molecule types
+begin seed species
+    A(x!1).B(y!1) 100
+end seed species
+begin observables
+    Molecules BoundB B(y!+)
+end observables
+begin functions
+    f(v) = BoundB(v)
+end functions
+begin reaction rules
+    A(x!1).B%v(y!1) -> A(x) + B%v(y) f(v)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto* scope = compiled.rules().front().forward().findLocalScope("v");
+    REQUIRE(scope != nullptr);
+    CHECK(scope->kind == bng::compile::LocalScopeKind::Molecule);
+    REQUIRE(scope->moleculeOccurrence.has_value());
+    CHECK(*scope->moleculeOccurrence == 1);
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find(
+              "<Argument id=\"v\" type=\"ObjectReference\" value=\"RR1_RP1_M2\"/>") !=
+          std::string::npos);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() > 0.0);
+    delete system;
+}
+
+TEST_CASE("NFsim compiled lowering still refuses suffix scopes on population-rooted reactants") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    P() population
+    B(y)
+    C(x)
+end molecule types
+begin seed species
+    P() 10
+    B(y!1).C(x!1) 100
+end seed species
+begin observables
+    Molecules BoundB B(y!+)
+end observables
+begin functions
+    f(v) = BoundB(v)
+end functions
+begin reaction rules
+    P().B%v(y!1).C(x!1) -> P() + B%v(y) + C(x) f(v)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    std::ostringstream diagnostics;
+    auto* previousErrorBuffer = std::cerr.rdbuf(diagnostics.rdbuf());
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    std::cerr.rdbuf(previousErrorBuffer);
+
+    CHECK(system == nullptr);
+    CHECK(diagnostics.str().find(
+              "local functions cannot scope population reactants") != std::string::npos);
+    delete system;
+}
+
+TEST_CASE("NFsim compiled composite rates bind suffix scopes by molecule occurrence") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(x)
+    B(y)
+end molecule types
+begin seed species
+    A(x!1).B(y!1) 1
+end seed species
+begin observables
+    Molecules BoundB B(y!+)
+    Molecules FreeA A(x)
+end observables
+begin functions
+    f(v) = BoundB(v)
+end functions
+begin reaction rules
+    A(x!1).B%v(y!1) -> A(x) + B%v(y) f(v) + FreeA
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getCompositeFunctionByName("__bng3_reaction_rate_1") != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() > 0.0);
+    delete system;
+}
+
+TEST_CASE("NFsim compiled lowering keeps species scopes anchored to the reactant root") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(x)
+    B(y)
+end molecule types
+begin seed species
+    A(x!1).B(y!1) 1
+end seed species
+begin observables
+    Molecules BoundB B(y!+)
+end observables
+begin functions
+    f(v) = BoundB(v)
+end functions
+begin reaction rules
+    %v:A(x!1).B(y!1) -> A(x) + B(y) f(v)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto* scope = compiled.rules().front().forward().findLocalScope("v");
+    REQUIRE(scope != nullptr);
+    CHECK(scope->kind == bng::compile::LocalScopeKind::Species);
+    CHECK_FALSE(scope->moleculeOccurrence.has_value());
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->getRxnType() == NFcore::ReactionClass::DOR_RXN);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() > 0.0);
     delete system;
 }
 
