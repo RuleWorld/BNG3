@@ -4357,6 +4357,8 @@ end reaction rules
 
     REQUIRE(model != nullptr);
     const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("<ReactantPattern id=\"RR1_RP1\" label=\"x\">") !=
+          std::string::npos);
     CHECK(xml.find("<Argument id=\"x\" type=\"ObjectReference\" value=\"RR1_RP1\"/>") !=
           std::string::npos);
 
@@ -4380,6 +4382,83 @@ end reaction rules
     xmlSystem->singleStep();
     CHECK(xmlSystem->getObservableByName("A_phosphorylated")->getCount() == 1);
     delete xmlSystem;
+}
+
+TEST_CASE("NFsim compiled lowering treats a leading single-colon label as species scope") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(s~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(s~u!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules I_total I()
+end observables
+begin functions
+    f(x) = I_total(x)
+end functions
+begin reaction rules
+    %x:A(s~u!1).I(i!1) -> A(s~p!1).I(i!1) f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto* scope = compiled.rules().front().forward().findLocalScope("x");
+    REQUIRE(scope != nullptr);
+    CHECK(scope->kind == bng::compile::LocalScopeKind::Species);
+    CHECK(scope->patternIndex == 0);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(1.0));
+    delete system;
+}
+
+TEST_CASE("NFsim compiled lowering keeps molecule suffix labels molecule-scoped") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(s~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(s~u!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules I_total I()
+end observables
+begin functions
+    f(x) = I_total(x)
+end functions
+begin reaction rules
+    A%x(s~u!1).I(i!1) -> A%x(s~p!1).I(i!1) f(x)
+end reaction rules
+)");
+
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.rules().size() == 1);
+    const auto* scope = compiled.rules().front().forward().findLocalScope("x");
+    REQUIRE(scope != nullptr);
+    CHECK(scope->kind == bng::compile::LocalScopeKind::Molecule);
+    REQUIRE(scope->moleculeOccurrence.has_value());
+    CHECK(*scope->moleculeOccurrence == 0);
+
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(0.0));
+    delete system;
 }
 
 TEST_CASE("NFsim AST adapter enforces reactant include and exclude filters") {

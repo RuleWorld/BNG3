@@ -213,6 +213,7 @@ std::vector<CompiledLocalScope> collectLocalScopes(
                                PatternSide side) {
     for (std::size_t patternIndex = 0; patternIndex < patterns.size(); ++patternIndex) {
         const auto& pattern = patterns[patternIndex];
+        std::size_t leadingPatternStart = pattern.find_first_not_of(" \t\r\n");
         std::size_t moleculeIndex = 0;
         int depth = 0;
         for (std::size_t cursor = 0; cursor < pattern.size(); ++cursor) {
@@ -234,9 +235,14 @@ std::vector<CompiledLocalScope> collectLocalScopes(
                    (std::isalnum(static_cast<unsigned char>(pattern[end])) ||
                     pattern[end] == '_')) ++end;
             const std::string name = pattern.substr(begin, end - begin);
-            const bool speciesScope = pattern.compare(end, 2, "::") == 0;
+            const bool leadingSingleColonScope =
+                cursor == leadingPatternStart && end < pattern.size() &&
+                pattern[end] == ':';
+            const bool speciesScope = pattern.compare(end, 2, "::") == 0 ||
+                                      leadingSingleColonScope;
             // Named component labels live inside a molecule's component list;
-            // local function variables are molecule tags or %x:: species anchors.
+            // suffix tags are molecule-local, while a leading %x: / %x:: is
+            // the SpeciesGraph label used by local functions.
             if (!speciesScope && depth != 0) {
                 cursor = end - 1;
                 continue;
