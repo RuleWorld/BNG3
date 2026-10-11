@@ -16,6 +16,7 @@
 #include "NFinput.hh"
 #include "NFinput_energy.hh"
 #include "../NFcore/compartment.hh"
+#include "compile/Capabilities.hpp"
 
 // ast & io headers (include paths added to nfsim_core in CMakeLists.txt)
 #include "ast/Model.hpp"
@@ -51,6 +52,10 @@ System* initializeFromModel(
     }
 
     auto* model = static_cast<bng::ast::Model*>(model_ptr);
+    if (bng::compile::featuresUsed(*model).contains(bng::compile::Feature::Units)) {
+        cerr << "[nfsim] initializeFromModel: XML fallback cannot preserve physical units; refusing model.\n";
+        return nullptr;
+    }
 
     // -----------------------------------------------------------------------
     // Step 1: Serialise the model to a BNG-XML string (in-process, no disk).

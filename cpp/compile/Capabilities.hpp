@@ -13,6 +13,8 @@ class Model;
 
 namespace bng::compile {
 
+class CompiledModel;
+
 enum class Severity {
     Info,
     Warning,
@@ -121,5 +123,10 @@ private:
 // CompatibilityOnly feature is supported through the existing compatibility
 // bridge; Unsupported is a hard fail and must never be silently ignored.
 CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend);
+
+// Returns the first semantic boundary that prevents a compiled unit-bearing
+// model from entering NFsim's narrow static zero-order count-rate bridge.
+std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
+    const CompiledModel& model);
 
 } // namespace bng::compile

@@ -1015,6 +1015,39 @@ end model
         with pytest.raises(RuntimeError, match="XML fallback disabled"):
             _cpp.simulate_nf(model, t_end=1.0, n_steps=1)
 
+    def test_nf_physical_units_cannot_use_forced_xml_fallback(
+        self, tmp_path, monkeypatch
+    ):
+        bngl = tmp_path / "physical_units_forced_xml.bngl"
+        bngl.write_text("""
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin parameters
+    k = 1e-9 [M/second]
+  end parameters
+  begin compartments
+    cell 3 2 [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin seed species
+    A()@cell 0
+  end seed species
+  begin reaction rules
+    source: 0 -> A()@cell k
+  end reaction rules
+end model
+""")
+        model = _cpp.parse_file(str(bngl))
+        monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+        monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
+        monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT", raising=False)
+
+        with pytest.raises(RuntimeError, match="cannot preserve physical units"):
+            _cpp.simulate_nf(model, t_end=1e-14, n_steps=1, seed=42)
+
     def test_simulate_method_nf_uses_nf_route(self, tmp_path, monkeypatch):
         bngl = tmp_path / "action_nf.bngl"
         bngl.write_text("""

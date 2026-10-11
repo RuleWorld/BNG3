@@ -157,8 +157,23 @@ public:
                 const auto itemConversion = countExpected
                     ? units::conversionFactor(*inferred.unit, *countExpected, context_)
                     : units::ConversionResult{std::nullopt, "no item rate basis"};
-                if (!units::dimensionallyCompatible(*inferred.unit, *expected) ||
-                    (!moleConversion && !itemConversion)) {
+                bool concentrationRateCompatible =
+                    units::dimensionallyCompatible(*inferred.unit, *expected) &&
+                    (moleConversion || itemConversion);
+                bool zeroOrderCountRateCompatible = false;
+                if (molecularity == 0) {
+                    const auto item = model_.getUnitSystem().parse("item");
+                    const auto second = model_.getUnitSystem().parse("second");
+                    if (item && second) {
+                        const auto countRate = units::divideUnits(*item.unit, *second.unit);
+                        const auto countRateConversion = units::conversionFactor(
+                            *inferred.unit, countRate, context_);
+                        zeroOrderCountRateCompatible =
+                            units::dimensionallyCompatible(*inferred.unit, countRate) &&
+                            countRateConversion;
+                    }
+                }
+                if (!concentrationRateCompatible && !zeroOrderCountRateCompatible) {
                     addUnitDiagnostic(
                         result_.diagnostics, Severity::Error, rule.getRuleName(),
                         "rate expression has unit '" + units::formatUnit(*inferred.unit) +
