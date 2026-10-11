@@ -1,7 +1,7 @@
 # BNG3 current progress
 
 **Refreshed:** 2026-10-11 against RuleWorld/BNG3 main
-`9bf28a0b0b89d30560f5920339101b2d5ef82de1`. Semantic convergence and release
+`af6afb00279a236031dc50afde452a6bfb913175`. Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
 [#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 44 open and eleven closed
 (#132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183).
@@ -24,14 +24,14 @@ A bounded repair does not close its broader issue.
 | #133/#173 | #190/#191 | Native-compiled static mass-action JAX ODE, fixed-step RK4; public JAX SSA explicitly unavailable. Installed CPU qualification satisfies these scoped issues; functional/time-dependent rates and adaptive integration remain unsupported. |
 | #134 | #128/#204 | Combined parser grammar reuse, cardinality guards and pyparsing 3.0.9 fallback. Source-only shape/fallback checks pass; same-cardinality equality asymmetry remains pre-existing. |
 | #135/#136 | #187/#189 | Current issue-linked ledger and corrected architecture/validation claims. Closed after review; historical reports remain historical. |
-| #140 | #207/#220 | Compile-owned numeric max_iter/max_agg, fractional/negative aggregate thresholds and product-only filtering. Broader protocol typing remains open. |
+| #140 | #207/#220/#236 | Compile-owned numeric max_iter/max_agg and product filtering; merged PR [#236](https://github.com/RuleWorld/BNG3/pull/236) adds validated finite ODE/SSA n_steps expressions. Broader protocol typing and shared CLI/Python semantics remain open. |
 | #141/#142 | #203/#211/#222/#224 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots have a shared-topology contract; serial scan exceptions restore base/dependent parameters and the original network before successful analytic/fresh-model recovery. Broader invalidation/lifecycle and graph encoding unification remain open. |
 | #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
-| #138/#163 | #196/#197/#228/#230/#233 | Compile-owned units and version-aware SBML units; NET has an independent Network3 analytic consumer contract. NET, C++ and regulatory graph observable projection now preserve graph-prefix context, counting modes, inert Molecules qualifiers and qualified Species CountUnique termination; broader runtime migration/export qualification remains open. |
+| #138/#163 | #196/#197/#228/#230/#233/#237 | Compile-owned units and version-aware SBML units; NET has an independent Network3 analytic consumer contract. Observable projection preserves graph-prefix context, counting modes, inert Molecules qualifiers and qualified Species CountUnique termination; #237 explicitly rejects unsupported Counter/Fraction kinds before opening the NET destination, without adding runtime support. Broader runtime migration/export qualification remains open. |
 | #139 | #225 | Compiler-owned direction-specific whole-deletion and typed DeleteMolecules hooks drive compatibility execution; full kernel retirement remains open. |
 | #151 | #231 | Verified static zero-order physical count rates and bound parameter updates in one explicit positive 3D compartment. Physical XML fallback refuses; broader molecularity, unit seeds and dynamic contexts remain unsupported. |
 | #143 | #201 | Typed ODE dependency classification and time/state reevaluation; broader backend scope, propensity and cache-invalidation criteria remain open. |
-| #146 | #210/#215 | Deletion scope, pending waits and output clocks. Strict native -oSteps endpoint comparison remains red. |
+| #146 | #210/#215/#235/#238 | Deletion scope, pending waits, output clocks, canonical leading %label: XML scope and direct-NFsim compiled local-function binding. Independent native checks now cover four scoped cases; the original unmapped conditional remains unsupported, composite XML is not native parity, and strict native -oSteps final-endpoint rows remain red. |
 | #147/#148 | #219 | Whole-species DestroyComplex, same-complex matcher constraints and native index-width refusal. Runtime tests use an action adapter; production ActionIR execution and formal correspondence remain open. |
 | #153–#155 | #209/#212/#213/#217/#226/#227 | Narrow parser-free BNGIR v0.2 import, strict envelopes and boolean-reference rejection; seed-only zero-reaction models execute static ODE/SSA. Direct-builder malformed dense IDs, boolean references and nonempty known unsupported top-level sections now reject; broader structural round trips and nested validation remain open. |
 | #165/#166 | #194/#198 | All-input Lean reference matcher and bounded packing/native guards; #165 closed, production lowering correspondence remains open. |
@@ -40,12 +40,13 @@ A bounded repair does not close its broader issue.
 | #182 | #199/#216 | Required numerical/expression/export and scheduled/manual frozen ensemble CI wiring, exact-source package/native/worker checks and permanent receipts; #182 closed. Scientific stochastic and historical NFsim qualification remain open. |
 | #183 | #206 | Budgeted locked SSTS CI, per-case classifications/digests and permanent receipts. This bounded workflow issue is closed; full #159 qualification remains open. |
 
-Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230, #233 plus ledger refreshes #221/#223/#229/#232 during this continuation.
+Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230, #233, #235, #236, #237, #238 plus ledger refreshes #221/#223/#229/#232 during this continuation.
 PR #205 integrated the Rasi performance port separately. The shared checkout
 remains on perf/nfsim-rasi-translation-port-v2 at `07ea87d3`, with its unrelated
-untracked audit file preserved. Work continues in isolated checkouts. Only root
-may merge reviewed changes or close satisfied issues; release/publication remain
-unauthorized.
+untracked audit file preserved. PR #236 is a merged, bounded #140 slice; the
+umbrella issue remains open. Work continues in isolated checkouts. Only root may
+merge reviewed changes or close satisfied issues; no release publication is
+authorized.
 
 ## Current qualification receipts
 
@@ -69,7 +70,50 @@ unauthorized.
   is a validity guard. Zero-count `<1` coverage uses the AST API; CLI grammar
   still rejects that form. Full generated solver consumption, installed package
   qualification and general compartment correspondence remain open. Outer AST
-  dependencies remain; #138/#142/#163 stay open.
+  dependencies remain; #138/#142/#163 stay open. The final #233 hosted Python
+  matrix is red in 18 jobs across Python 3.9–3.14 on Ubuntu, macOS and Windows;
+  the failures are the same Counter/Fraction `unknown compiled observable kind: At`
+  error. The separate #235 PR-event [Linux Python 3.12 job](https://github.com/RuleWorld/BNG3/actions/runs/38152302145/job/114510215542)
+  at exact head `b54ed0076166003b9f1a5c0af241b512a71e136d` reproduces the same
+  two failures, with 1,142 passes, 58 skips and two xfails. Merged PR #237 adds the bounded fail-closed and destination-preservation
+  behavior; its PR-head checks were absent after retargeting.
+- Observable-kind fail-closed repair #237, merged
+  [PR #237](https://github.com/RuleWorld/BNG3/pull/237)
+  ([root review](https://github.com/RuleWorld/BNG3/pull/237#issuecomment-6113295483)):
+  exact source `9561dd058519ce0d10f301bd56a1a752e167b1b1`, merge
+  `e3dc33a4d272d621b2f969f1423253468f884a64`, base
+  `eeb22cb4fed34a71f9ef11b904cf3963c2bfc981`, three files, tested tree
+  `c4cc8d2a7655c54663c658935d4353c0aefb31a8`. Unsupported `Counter` and
+  `Fraction` remain unsupported; NET now fails before opening the destination,
+  preserving an existing file or leaving a missing output path absent. Root's
+  restored source-mode qualification passed 36 Python tests (9 observable-type,
+  27 BNGIR), 34 strict CLI tests (37 deselected), and 93 native projection
+  assertions across 11 cases; the architecture scan found 41 explicit
+  compatibility files. Inverting the unknown-kind predicate failed seven
+  tests while two passed; restoring it returned the focused Python/native
+  checks to green. PR-head hosted checks did not rerun after retargeting. At the
+  2026-10-11 20:44:36 UTC query, merge commit `e3dc33a4` had Formatting
+  patch, Lean semantic kernel, CodeQL and Cross-tool parity passed. Its CI run
+  reported nine successes and 22 queued jobs, no failures, and remained queued
+  overall ([run 38171605273](https://github.com/RuleWorld/BNG3/actions/runs/38171605273)).
+  No full hosted matrix or #138 closure is claimed.
+- Local-function XML scope #235: exact source
+  `b54ed0076166003b9f1a5c0af241b512a71e136d`, merge
+  `bc952d4f76235d4710de9528a76505f99ccb664d`. The canonical leading `%label:`
+  header is compiled as species-level local-function scope; XML binds both
+  directions from checked scope metadata and refuses missing or ambiguous
+  anchors. Restored focused qualification: NFsim adapter 138 cases/1,592
+  assertions, XML writer 11/47, ODE options 23/132, projection 11/93, 18 strict
+  exporter checks passed (37 deselected), and the architecture scan found 41
+  explicit compatibility files. The review mutation failed two assertions before restoration. This covers
+  the canonical prefix form only; installed packaging remains unqualified,
+  and strict native `-oSteps` final-endpoint rows remain red. The final #235
+  PR hosted-check aggregate at exact source
+  `b54ed0076166003b9f1a5c0af241b512a71e136d` was 22 successes, 18 failures and
+  7 skips. Run 38152302145 is that pull-request workflow; its [Linux Python
+  3.12 job](https://github.com/RuleWorld/BNG3/actions/runs/38152302145/job/114510215542)
+  reports 1,142 passes, 58 skips and two xfails, including the Counter/Fraction
+  failures above. Full #146 remains open.
 - C++ observable coefficients #230: exact source `bfbeeff497097da76539024b86d7055e0c01a99e`,
   merge `4795179ef16ae679d58e03e03444c28fc079b1fd`. Root/fresh Luna reviewed
   the shared-projection migration and repaired valid Molecules qualifier refusal:
@@ -77,7 +121,8 @@ unauthorized.
   Root preserved the unit artifacts and reused that cached build at the exact PR
   tree `1b1c0a5b00e00e0ac2ca3236cc72e5d7d28419ec`, avoiding another full build.
   Native projection 6 cases/49 assertions, existing ODE count-filter contracts
-  2/18, strict live pinned-BNG2 exporter 10 tests and architecture 41 pass.
+  2/18, strict live pinned-BNG2 exporter 10 tests and the architecture scan
+  with 41 explicit compatibility files pass.
   CLI SHA256 `59dba6c49a93e8ed22569eeb1bf9f66f4d08ef710b43bbb9024fb9bcafb0d2c8`.
   Oracle inputs require the locked revision/script digest, clean tracked tree and
   no index-hiding flags; emitted coefficients match independent BNG2 group rows.
@@ -207,6 +252,54 @@ unauthorized.
   installed source9712 receipt remains historical. This qualifies independent
   parameter snapshots sharing unchanged topology, not concurrent mutation,
   broader topology/volume invalidation, exception cleanup or NFsim lifecycle.
+- CPython 3.14 full CPU suite and parallel-scan diagnosis: the run was launched
+  from commit `ed49cfa3a6dc4144a20b26357f600cbef2b7899c` plus a frozen three-file
+  #237 fail-closed patch. That patch content was later committed as source
+  `9561dd058519ce0d10f301bd56a1a752e167b1b1` with tested tree
+  `c4cc8d2a7655c54663c658935d4353c0aefb31a8`; the suite was not run from a clean
+  checkout of that final source head. It reported 1,208 passed, 28 skipped, two
+  xfailed and 10 failed. For eight subprocess tests, the global editable finder
+  resolved package modules from the shared Anaconda installation at `07ea87d3`;
+  those results do not qualify the source checkpoint. The other two failures
+  occurred before worker startup because a stdin-launched pytest process could
+  not be re-imported as `<stdin>` by multiprocessing. On the separate base-
+  `e3dc33` plus two-file NFscope prototype, root reran those same two scan tests
+  through a guarded file-based entry point without changing source, tests or
+  tolerances: two passed, nine were deselected, in 0.63 seconds. Existing tests
+  assert source/native/worker identity. The eight shadowed checks still need an
+  isolated installed-package run; the full suite remains red and is not full-suite
+  qualification for #237 or main.
+- Direct-NFsim compiled local-function scope #238, merged
+  [PR #238](https://github.com/RuleWorld/BNG3/pull/238)
+  ([root review](https://github.com/RuleWorld/BNG3/pull/238#issuecomment-6113492546)):
+  exact source `4566e38b33ed5536fbd758ef7d976a9f33d51629`, merge
+  `af6afb00279a236031dc50afde452a6bfb913175`, base
+  `e3dc33a4d272d621b2f969f1423253468f884a64`, tested tree
+  `c7f058957666691f76df422404ce41bba9f196b0`. The code binds compiled
+  local-function scopes to the intended molecule occurrences for direct NFsim.
+  Final restored source-mode qualification passed 142 NFsim cases/1,621
+  assertions, XML writer 11/47, ODE options
+  23/132, observable projection 11/93, 36 Python tests, 34 strict CLI tests
+  (37 deselected), and the architecture scan with 41 explicit compatibility
+  files. The scope-inversion mutation produced two failures across 29 assertions
+  while both control cases passed; restoring the candidate returned the focused
+  checks green. The pinned independent native receipt passed four scoped cases
+  (prefix, mapped M1, RP1 M2 and RP2 M2); M2/RP2 M2 also matched six exact
+  seed-17 rows. The original unmapped conditional remains unsupported by native
+  NFsim. The new composite direct test passes, but native NFsim rejects the
+  same-source BNG2 XML with `ObservableRefinComposite` (exit 1), so that case
+  is not an independent parity pass. During the 2026-10-11 20:49:40–20:49:44 UTC
+  exact-head PR check refresh for `4566e38b33ed5536fbd758ef7d976a9f33d51629`,
+  the rollup was 14 successes, 3 in progress, 1 neutral and 1 skipped ([PR checks](https://github.com/RuleWorld/BNG3/pull/238/checks)).
+  The separate main push at merge `af6afb00279a236031dc50afde452a6bfb913175`,
+  checked during the 2026-10-11 20:49:40–20:49:44 UTC refresh, showed CI queued,
+  CodeQL and Cross-tool parity in progress, and Lean semantic kernel passed
+  ([CI](https://github.com/RuleWorld/BNG3/actions/runs/38173018621),
+  [CodeQL](https://github.com/RuleWorld/BNG3/actions/runs/38173018637),
+  [Lean](https://github.com/RuleWorld/BNG3/actions/runs/38173018628),
+  [cross-tool](https://github.com/RuleWorld/BNG3/actions/runs/38173018623)).
+  No installed-package qualification is claimed; strict `-oSteps` final-endpoint
+  rows remain red, and full #146 remains open.
 
 - max_agg #220: exact source `ffd4043a8798dd20d708b26b1e370c6a294b371d`,
   merge `9a1de7ed7fb617df4cf8828748de45fac486e14e`. Root reviewed the five-file
@@ -219,6 +312,39 @@ unauthorized.
   Linux C++, Lean, SSTS and compatibility checks passed at integration. All native
   C++/ASan/parity, Python and corpus checks subsequently passed; release-only
   jobs were skipped. No full #140 completion.
+- Simulation n_steps #140, merged [PR #236](https://github.com/RuleWorld/BNG3/pull/236)
+  ([merge review](https://github.com/RuleWorld/BNG3/pull/236#issuecomment-6113249716)):
+  exact source `ed49cfa3a6dc4144a20b26357f600cbef2b7899c`, merge
+  `eeb22cb4fed34a71f9ef11b904cf3963c2bfc981`, base
+  `bc952d4f76235d4710de9528a76505f99ccb664d`. All five source files matched
+  the restored green identity before the formatting-only commit. Static finite
+  ODE/SSA actions use compiled, validated counts; parameter-backed expressions
+  resolve after argfile merge and earlier
+  protocol mutations; `^` is refused as Safe-Perl XOR. PLA/PSA/NF keep their
+  existing path. Verified source-mode checks: 16 action regressions passed, C++
+  reaction-rule expansion 23 cases/387 assertions, and architecture scan with
+  41 explicit compatibility files; pinned BNG2 and candidate produce eight
+  intervals (nine rows) for `2**3`, while the prior BNG3 baseline produced six
+  intervals.
+  The numeric-literal `2**3` result is the pinned-BNG2 parity case. Separately,
+  a BNG3 execution-time protocol mutation to N=4 yielded 17 rows for `2**N`; this
+  is a BNG3 regression/count result only, not dynamic-action parity against
+  pinned BNG2. The separate dynamic-N probe exposes an unresolved unqualified
+  Safe-Perl identifier boundary: pinned BNG2 leaves `k=1`, while BNG3 evaluates
+  `k=8`; the 17-row result does not validate a 16-row expectation. The
+  inverted-condition
+  mutation failed focused assertions and the restored candidate passed. Pinned
+  Black 26.10.0, Ruff 0.15.1 and the final local formatting checks passed. During
+  the 2026-10-11 20:49:40–20:49:44 UTC exact-head PR check refresh for source
+  `ed49cfa3a6dc4144a20b26357f600cbef2b7899c`, the rollup was 21 successes,
+  14 failures, four in progress, one skipped and one neutral; all 14 failing
+  jobs were Python-platform jobs ([PR checks](https://github.com/RuleWorld/BNG3/pull/236/checks)).
+  The Linux Python 3.12 job in run 38170926789 had exactly the Counter/Fraction
+  failures, with 1,142 passed, 58 skipped and two xfailed ([job](https://github.com/RuleWorld/BNG3/actions/runs/38170926789/job/114565376022)).
+  This pre-#237 hosted snapshot is not full-matrix qualification. This is a
+  partial #140 slice; broader typed
+  protocol values, shared CLI/Python semantics, defaults/invalid-option coverage
+  and installed-package qualification remain open.
 - Parser #128/#204: combined source preview on main `f4adb7b7` passed 68 parsed
   field/text comparisons against baseline on actual pyparsing 3.0.9 and 3.3.2;
   root independently reran 68 round trips and separator/fallback/cardinality
