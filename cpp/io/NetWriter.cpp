@@ -30,6 +30,7 @@
 #include "compile/energy/BarrierTable.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
 #include "ast/BarrierPattern.hpp"
+#include "engine/ObservableProjection.hpp"
 
 namespace bng::io {
 
@@ -853,22 +854,6 @@ BNGcore::PatternGraph parseObservablePattern(const std::string& patternText, ast
         throw std::runtime_error("Could not parse observable pattern: " + patternText);
     }
     return bng::parser::buildPatternGraph(species, model, false);
-}
-
-// Parse an observable pattern and also extract its compartment qualifier (if any)
-std::pair<BNGcore::PatternGraph, std::string> parseObservablePatternWithCompartment(
-    const std::string& patternText, ast::Model& model) {
-    antlr4::ANTLRInputStream input(patternText);
-    BNGLexer lexer(&input);
-    antlr4::CommonTokenStream tokens(&lexer);
-    BNGParser parser(&tokens);
-    auto* species = parser.species_def();
-    if (parser.getNumberOfSyntaxErrors() != 0) {
-        throw std::runtime_error("Could not parse observable pattern: " + patternText);
-    }
-    auto graph = bng::parser::buildPatternGraph(species, model, false);
-    auto compartment = bng::parser::extractSpeciesCompartment(species);
-    return {std::move(graph), std::move(compartment)};
 }
 
 std::string formatSpecies(const ast::Species& species) {
@@ -2740,98 +2725,17 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 
     out << "begin groups\n";
     std::size_t groupIndex = 1;
-
-    struct CachedObservablePattern {
-        BNGcore::PatternGraph graph;
-        std::string compartment;
-    };
-    struct ParsedPatternInfo {
-        const BNGcore::PatternGraph* graph;
-        std::string compartment;
-        bool hasMoleculeCompartment;
-        std::string relation;
-        int quantity;
-    };
-    std::unordered_map<std::string, CachedObservablePattern> parsedObservableCache;
-
-    for (const auto& observable : model.getObservables()) {
-        out << "    " << groupIndex++ << " " << observable.getName() << " ";
+    const compile::CompiledModel compiledModel(model);
+    const engine::ObservableProjection projection(compiledModel);
+    for (std::size_t observableIndex = 0; observableIndex < projection.size();
+         ++observableIndex) {
+        out << "    " << groupIndex++ << " " << projection.name(observableIndex) << " ";
         bool firstEntry = true;
-
-        std::vector<ParsedPatternInfo> parsedPatterns;
-        parsedPatterns.reserve(observable.getPatterns().size());
-        for (const auto& patternText : observable.getPatterns()) {
-            std::string parseError;
-            const auto observablePattern =
-                compile::splitObservablePattern(patternText, parseError);
-            if (!observablePattern.has_value()) {
-                throw std::runtime_error("invalid observable pattern '" + patternText +
-                                         "': " + parseError);
-            }
-
-            const auto& patternSource = observablePattern->pattern;
-            auto cacheIt = parsedObservableCache.find(patternSource);
-            if (cacheIt == parsedObservableCache.end()) {
-                auto parsed = parseObservablePatternWithCompartment(patternSource, model);
-                cacheIt = parsedObservableCache.emplace(
-                    patternSource,
-                    CachedObservablePattern {std::move(parsed.first), std::move(parsed.second)})
-                              .first;
-            }
-
-            const auto& pattern = cacheIt->second.graph;
-            bool hasMoleculeCompartment = false;
-            for (auto it = pattern.begin(); it != pattern.end(); ++it) {
-                if (!(*it)->get_compartment().empty()) {
-                    hasMoleculeCompartment = true;
-                    break;
-                }
-            }
-            parsedPatterns.push_back({&pattern, cacheIt->second.compartment,
-                                      hasMoleculeCompartment,
-                                      observablePattern->relation,
-                                      observablePattern->quantity});
-        }
-
         for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
-            for (const auto& parsedPattern : parsedPatterns) {
-                const auto& pattern = *parsedPattern.graph;
-                const auto& patternCompartment = parsedPattern.compartment;
-
-                // Compartment matching strategy:
-                // 1. Molecule-level compartment (e.g., SARM()@Cyt) -- compartment is
-                //    set on pattern molecule nodes and the Ullmann matcher's
-                //    Node::operator== handles it. No species-level filter needed.
-                // 2. Species-level prefix compartment (e.g., @PM:L) -- no compartment
-                //    on pattern molecule nodes. Need species-level filter.
-                // Detect which case by checking if any pattern molecule node has a compartment.
-                if (!patternCompartment.empty() && !parsedPattern.hasMoleculeCompartment) {
-                    // Species-level prefix compartment -- filter at species level
-                    const auto& speciesCompartment = network.species.get(speciesIndex).getCompartment();
-                    if (speciesCompartment != patternCompartment) {
-                        continue;
-                    }
-                }
-
-                BNGcore::UllmannSGIso matcher(pattern, network.species.get(speciesIndex).getSpeciesGraph().getGraph());
-                BNGcore::List<BNGcore::Map> maps;
-                std::size_t matchCount = matcher.find_maps(maps);
-                if (observable.getType() == "Species") {
-                    if (!parsedPattern.relation.empty()) {
-                        matchCount = compile::observablePatternCountMatches(
-                                         matchCount, parsedPattern.relation,
-                                         parsedPattern.quantity)
-                                         ? 1
-                                         : 0;
-                    } else if (matchCount > 0) {
-                        // Species observables contribute 0 or 1 per pattern.
-                        // Do not clamp the sum across distinct patterns.
-                        matchCount = 1;
-                    }
-                }
-                weight += matchCount;
-            }
+            const auto& species = network.species.get(speciesIndex);
+            const int weight = projection.weight(
+                observableIndex, species.getSpeciesGraph().getGraph(),
+                species.getCompartment());
             if (weight == 0) {
                 continue;
             }

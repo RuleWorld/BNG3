@@ -617,9 +617,10 @@ std::vector<CppExportWriter::ObservableGroup> CppExportWriter::computeObservable
         group.type = compiledModel.observables().at(observableIndex).type;
 
         for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
+            const auto& species = network.species.get(speciesIndex);
             const auto weight = projection.weight(
                 observableIndex,
-                network.species.get(speciesIndex).getSpeciesGraph().getGraph());
+                species.getSpeciesGraph().getGraph(), species.getCompartment());
             if (weight > 0) {
                 group.entries.push_back(
                     {speciesIndex, static_cast<std::size_t>(weight)});

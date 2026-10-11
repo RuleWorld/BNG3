@@ -8,6 +8,11 @@ namespace bng::engine {
 
 ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
     : loweringContext_(model) {
+    for (const auto& compartment : model.compartments()) {
+        if (compartment.id.valid() && model.compartment(compartment.id) != nullptr)
+            compartmentIds_.emplace(compartment.name, compartment.id);
+    }
+
     // Counting modes. BNG2 restricts the value to CountUnique|CountAll and
     // defaults to CountAll when the option is absent; bng::ast::options
     // validates the spelling at setOption time, so an unexpected value here
@@ -35,6 +40,16 @@ ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
             // qualifier. Relations are applied only by the Species branch
             // in weight(), so keep lowering the pattern without rejecting it.
             auto lowered = compile::lowerPatternToBNGcore(term.pattern, loweringContext_);
+            std::optional<compile::CompartmentId> compartmentPrefix;
+            if (term.pattern.compartmentIsPrefix()) {
+                compartmentPrefix = term.pattern.compartmentId();
+                if (!compartmentPrefix.has_value() || !compartmentPrefix->valid() ||
+                    model.compartment(*compartmentPrefix) == nullptr) {
+                    throw std::runtime_error(
+                        "observable '" + source.name +
+                        "': graph compartment prefix has no resolved compartment ID");
+                }
+            }
             // Automorphism count = embeddings of the pattern into itself.
             // Only the Molecules CountUnique mode consumes it, so skip the
             // self-match entirely otherwise; it is pure cost for every other
@@ -54,28 +69,41 @@ ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
                         "count cannot be established for CountUnique");
                 }
             }
-            observable.terms.push_back(Term{
-                std::move(lowered), term.relation, term.quantity, automorphisms});
+            observable.terms.push_back(Term{std::move(lowered), compartmentPrefix,
+                                            term.relation, term.quantity, automorphisms});
         }
         observables_.push_back(std::move(observable));
     }
 }
 
 int ObservableProjection::weight(std::size_t observableIndex,
-                                 const BNGcore::PatternGraph& species) const {
+                                 const BNGcore::PatternGraph& species,
+                                 std::string_view speciesCompartment) const {
     const auto& observable = observables_.at(observableIndex);
     int total = 0;
     for (const auto& term : observable.terms) {
-        const auto count = core::countPatternMatches(term.pattern, species);
+        bool compartmentMatches = true;
+        if (term.compartmentPrefix.has_value()) {
+            const auto candidate = compartmentIds_.find(speciesCompartment);
+            compartmentMatches = candidate != compartmentIds_.end() &&
+                                 candidate->second == *term.compartmentPrefix;
+        }
+        // A prefix mismatch means zero structural matches, but Species
+        // relations still apply to that zero (for example `A()==0`).
+        const std::size_t count = compartmentMatches
+                                      ? core::countPatternMatches(term.pattern, species)
+                                      : 0;
         if (observable.kind == compile::ObservableKind::Species) {
-            if (compile::observablePatternCountMatches(count, term.relation,
-                                                      term.quantity)) {
-                ++total;
-                // CountUnique: a species contributes once regardless of how
-                // many of this observable's patterns it matches. Mirrors
-                // `last if ($mode)` on the Species branch of
-                // legacy/perl/Perl2/Observable.pm.
-                if (speciesMode_ == CountMode::CountUnique) break;
+            const bool matches = compile::observablePatternCountMatches(
+                count, term.relation, term.quantity);
+            if (matches) ++total;
+            // BNG2's Species CountUnique branch places `last if ($mode)`
+            // inside the qualified relation branch, even when false; the
+            // unqualified branch stops only after a positive structural match.
+            // See legacy/perl/Perl2/Observable.pm:260.
+            if (speciesMode_ == CountMode::CountUnique &&
+                (!term.relation.empty() || matches)) {
+                break;
             }
         } else if (observable.kind == compile::ObservableKind::Molecules) {
             if (moleculesMode_ == CountMode::CountUnique) {
@@ -106,10 +134,12 @@ int ObservableProjection::weight(std::size_t observableIndex,
     return total;
 }
 
-std::vector<int> ObservableProjection::weights(const BNGcore::PatternGraph& species) const {
+std::vector<int> ObservableProjection::weights(
+    const BNGcore::PatternGraph& species, std::string_view speciesCompartment) const {
     std::vector<int> result;
     result.reserve(observables_.size());
-    for (std::size_t i = 0; i < observables_.size(); ++i) result.push_back(weight(i, species));
+    for (std::size_t i = 0; i < observables_.size(); ++i)
+        result.push_back(weight(i, species, speciesCompartment));
     return result;
 }
 
