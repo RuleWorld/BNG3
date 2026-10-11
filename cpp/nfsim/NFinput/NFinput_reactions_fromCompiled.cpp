@@ -807,6 +807,48 @@ struct LocalRateOperand {
     const bng::compile::CompiledLocalScope* scope = nullptr;
 };
 
+bool resolveLocalScopeTemplate(
+    const bng::compile::CompiledLocalScope& scope,
+    const std::vector<NFcore::TemplateMolecule*>& roots,
+    const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
+    NFcore::TemplateMolecule*& result,
+    std::string& diagnostic) {
+    result = nullptr;
+    if (scope.patternIndex >= roots.size() || scope.patternIndex >= templates.size()) {
+        diagnostic = "local-function scope is outside the reactant list";
+        return false;
+    }
+
+    auto* root = roots[scope.patternIndex];
+    if (root == nullptr || root->getMoleculeType()->isPopulationType()) {
+        diagnostic = "local functions cannot scope population reactants";
+        return false;
+    }
+
+    switch (scope.kind) {
+    case bng::compile::LocalScopeKind::Species:
+        result = roots[scope.patternIndex];
+        break;
+    case bng::compile::LocalScopeKind::Molecule:
+        if (!scope.moleculeOccurrence.has_value() ||
+            *scope.moleculeOccurrence >= templates[scope.patternIndex].size()) {
+            diagnostic = "molecule-scoped local-function occurrence is outside the reactant pattern";
+            return false;
+        }
+        result = templates[scope.patternIndex][*scope.moleculeOccurrence];
+        break;
+    default:
+        diagnostic = "unsupported local-function scope kind";
+        return false;
+    }
+
+    if (result == nullptr || result->getMoleculeType()->isPopulationType()) {
+        diagnostic = "local functions cannot scope population reactants";
+        return false;
+    }
+    return true;
+}
+
 bool localRateOperand(const CompiledModel& model,
                       const CompiledRuleDirection& direction,
                       const ResolvedExpression& expression,
@@ -828,6 +870,7 @@ bool localRateOperand(const CompiledModel& model,
 
 bool addLocalRateReference(const LocalRateOperand& operand,
                            const std::vector<NFcore::TemplateMolecule*>& roots,
+                           const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
                            NFcore::TransformationSet& transformations,
                            std::string& diagnostic) {
     if (operand.scope == nullptr) {
@@ -838,19 +881,13 @@ bool addLocalRateReference(const LocalRateOperand& operand,
         diagnostic = "product-side local-function scopes are unsupported by direct NFsim";
         return false;
     }
-    if (operand.scope->patternIndex >= roots.size()) {
-        diagnostic = "local-function scope is outside the reactant list";
-        return false;
-    }
-    auto* root = roots[operand.scope->patternIndex];
-    if (root == nullptr || root->getMoleculeType()->isPopulationType()) {
-        diagnostic = "local functions cannot scope population reactants";
-        return false;
-    }
+    NFcore::TemplateMolecule* target = nullptr;
+    if (!resolveLocalScopeTemplate(*operand.scope, roots, templates,
+                                   target, diagnostic)) return false;
     const int scope = operand.scope->kind == bng::compile::LocalScopeKind::Species
                           ? NFcore::LocalFunction::SPECIES
                           : NFcore::LocalFunction::MOLECULE;
-    if (!transformations.addLocalFunctionReference(root, operand.argument, scope)) {
+    if (!transformations.addLocalFunctionReference(target, operand.argument, scope)) {
         diagnostic = "could not add local-function scope reference";
         return false;
     }
@@ -861,6 +898,7 @@ bool addLocalScopeReferences(
     const CompiledRuleDirection& direction,
     const std::set<std::string>& localNames,
     const std::vector<NFcore::TemplateMolecule*>& roots,
+    const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
     NFcore::TransformationSet& transformations,
     std::vector<std::string>& argumentNames,
     std::string& diagnostic) {
@@ -883,15 +921,13 @@ bool addLocalScopeReferences(
             return false;
         }
         commonPattern = scope->patternIndex;
-        auto* root = roots[scope->patternIndex];
-        if (root == nullptr || root->getMoleculeType()->isPopulationType()) {
-            diagnostic = "local functions cannot scope population reactants";
-            return false;
-        }
+        NFcore::TemplateMolecule* target = nullptr;
+        if (!resolveLocalScopeTemplate(*scope, roots, templates,
+                                       target, diagnostic)) return false;
         const int nfScope = scope->kind == bng::compile::LocalScopeKind::Species
                                 ? NFcore::LocalFunction::SPECIES
                                 : NFcore::LocalFunction::MOLECULE;
-        if (!transformations.addLocalFunctionReference(root, name, nfScope)) {
+        if (!transformations.addLocalFunctionReference(target, name, nfScope)) {
             diagnostic = "could not add local-function scope reference '" + name + "'";
             return false;
         }
@@ -914,6 +950,7 @@ bool addDynamicCompiledRateFunction(
     std::size_t ordinal,
     NFcore::TransformationSet& transformations,
     const std::vector<NFcore::TemplateMolecule*>& roots,
+    const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
     NFcore::GlobalFunction*& global,
     NFcore::CompositeFunction*& composite,
     std::vector<std::string>& localArguments,
@@ -994,7 +1031,7 @@ bool addDynamicCompiledRateFunction(
             return false;
         }
     }
-    if (!addLocalScopeReferences(direction, localNames, roots, transformations,
+    if (!addLocalScopeReferences(direction, localNames, roots, templates, transformations,
                                  localArguments, diagnostic)) {
         return false;
     }
@@ -1400,6 +1437,7 @@ NFcore::ReactionClass* makeReactionForRate(
     const std::string& reactionName,
     NFcore::TransformationSet* transformations,
     const std::vector<NFcore::TemplateMolecule*>& roots,
+    const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
     NFcore::System& system,
     const std::filesystem::path& sourcePath,
     std::size_t ordinal,
@@ -1461,8 +1499,10 @@ NFcore::ReactionClass* makeReactionForRate(
             diagnostic = "FunctionProduct refers to an unregistered compiled local function";
             return nullptr;
         }
-        if (!addLocalRateReference(productFirst, roots, *transformations, diagnostic) ||
-            !addLocalRateReference(productSecond, roots, *transformations, diagnostic)) {
+        if (!addLocalRateReference(productFirst, roots, templates,
+                                   *transformations, diagnostic) ||
+            !addLocalRateReference(productSecond, roots, templates,
+                                   *transformations, diagnostic)) {
             return nullptr;
         }
         std::vector<std::string> firstArguments{productFirst.argument};
@@ -1480,7 +1520,8 @@ NFcore::ReactionClass* makeReactionForRate(
             diagnostic = "local-function rate refers to an unregistered compiled function";
             return nullptr;
         }
-        if (!addLocalRateReference(localOperand, roots, *transformations, diagnostic))
+        if (!addLocalRateReference(localOperand, roots, templates,
+                                   *transformations, diagnostic))
             return nullptr;
         std::vector<std::string> arguments{localOperand.argument};
         transformations->finalize();
@@ -1496,7 +1537,8 @@ NFcore::ReactionClass* makeReactionForRate(
     if (prepareScopedCompositeRate(model, direction, expression, system,
                                    scopedRate, diagnostic)) {
         for (const auto& operand : scopedRate.localOperands) {
-            if (!addLocalRateReference(operand, roots, *transformations, diagnostic))
+            if (!addLocalRateReference(operand, roots, templates,
+                                       *transformations, diagnostic))
                 return nullptr;
         }
         std::string compositeName =
@@ -1565,7 +1607,7 @@ NFcore::ReactionClass* makeReactionForRate(
     std::vector<std::string> dynamicLocalArguments;
     if (!addDynamicCompiledRateFunction(
             model, direction, expression, system, sourcePath, ordinal,
-            *transformations, roots, dynamicGlobal, dynamicComposite,
+            *transformations, roots, templates, dynamicGlobal, dynamicComposite,
             dynamicLocalArguments, diagnostic)) {
         return nullptr;
     }
@@ -1769,7 +1811,9 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
             return true;
         }
 
+        std::vector<std::vector<NFcore::TemplateMolecule*>> templates;
         std::vector<NFcore::TemplateMolecule*> roots;
+        templates.reserve(expandedPatterns.size());
         roots.reserve(expandedPatterns.size());
         for (std::size_t index = 0; index < expandedPatterns.size(); ++index) {
             const auto& build = expandedPatterns[index].builds[selected[index]];
@@ -1778,6 +1822,7 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
                 return false;
             }
             roots.push_back(build.front());
+            templates.push_back(build);
         }
         auto* transformations = new NFcore::TransformationSet(roots);
         transformations->setComplexBookkeeping(
@@ -1867,7 +1912,7 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
             (reverse ? "_reverse_sym" : "_sym") +
             std::to_string(reactionOrdinal + 1);
         auto* reaction = makeReactionForRate(
-            model, rule, direction, reactionName, transformations, roots,
+            model, rule, direction, reactionName, transformations, roots, templates,
             system, sourcePath, rateOrdinal, diagnostic);
         if (reaction == nullptr) {
             delete transformations;
@@ -2158,7 +2203,7 @@ bool lowerDirection(const CompiledModel& model,
     }
 
     auto* reaction = makeReactionForRate(model, rule, direction,
-        reverse ? rule.name() + "_reverse" : rule.name(), transformations, roots,
+        reverse ? rule.name() + "_reverse" : rule.name(), transformations, roots, templates,
         system, sourcePath, ordinal, diagnostic);
     if (reaction == nullptr) { delete transformations; return false; }
     reaction->setTotalRateFlag(hasModifier(rule, ModifierKind::TotalRate));
