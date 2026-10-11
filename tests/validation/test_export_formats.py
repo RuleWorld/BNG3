@@ -306,7 +306,10 @@ def _locked_bng2_script() -> Path | None:
     return script
 
 
-def _counting_fixture(molecules_mode: str, species_mode: str) -> str:
+def _counting_fixture(
+    molecules_mode: str, species_mode: str, qualify_molecules: bool = False
+) -> str:
+    molecule_pattern = "A(b!1).A(b!1)>5" if qualify_molecules else "A(b!1).A(b!1)"
     return f"""begin model
 setOption("MoleculesObservables","{molecules_mode}")
 setOption("SpeciesObservables","{species_mode}")
@@ -322,7 +325,7 @@ begin seed species
   A(b) n
 end seed species
 begin observables
-  Molecules Dimer A(b!1).A(b!1)
+  Molecules Dimer {molecule_pattern}
   Species Both A(), A(b!1).A(b!1)
 end observables
 begin reaction rules
@@ -367,10 +370,11 @@ def _cpp_observable_weights(header: str) -> dict[str, dict[int, int]]:
         ("CountUnique", "CountUnique"),
     ],
 )
+@pytest.mark.parametrize("qualify_molecules", (False, True))
 def test_cpp_export_observable_modes_match_locked_bng2(
-    molecules_mode, species_mode, bng_cpp, tmp_path
+    molecules_mode, species_mode, qualify_molecules, bng_cpp, tmp_path
 ):
-    """CVODE observable coefficients preserve BNG2's two independent modes."""
+    """CVODE coefficients preserve BNG2 counting and qualifier semantics."""
     bng2 = _locked_bng2_script()
     require_oracle(
         bng2 is not None,
@@ -382,7 +386,7 @@ def test_cpp_export_observable_modes_match_locked_bng2(
     require_oracle(perl is not None, "Perl is required to run the locked BNG2 oracle")
     assert perl is not None
 
-    model = _counting_fixture(molecules_mode, species_mode)
+    model = _counting_fixture(molecules_mode, species_mode, qualify_molecules)
     source = tmp_path / "observable_counting.bngl"
     source.write_text(
         model + "\ngenerate_network({overwrite=>1})\nwriteCPPfile()\n",

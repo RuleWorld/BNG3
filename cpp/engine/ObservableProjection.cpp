@@ -31,11 +31,9 @@ ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
         observable.kind = source.kind;
         observable.terms.reserve(source.terms.size());
         for (const auto& term : source.terms) {
-            if (source.kind == compile::ObservableKind::Molecules && !term.relation.empty()) {
-                throw std::runtime_error(
-                    "relational Molecules observable '" + source.name +
-                    "' is not representable by the shared observable projector");
-            }
+            // BNG2 treats a relation on a Molecules term as an inert
+            // qualifier. Relations are applied only by the Species branch
+            // in weight(), so keep lowering the pattern without rejecting it.
             auto lowered = compile::lowerPatternToBNGcore(term.pattern, loweringContext_);
             // Automorphism count = embeddings of the pattern into itself.
             // Only the Molecules CountUnique mode consumes it, so skip the
