@@ -818,3 +818,44 @@ end parameters
     CHECK_THAT(parameters.evaluate("kConst", 0.0), Catch::Matchers::WithinAbs(2.0, 1e-12));
     CHECK_THAT(parameters.evaluate("kConst", 100.0), Catch::Matchers::WithinAbs(2.0, 1e-12));
 }
+
+TEST_CASE("finite-network rates distinguish species and molecule local scopes",
+          "[NetWriter][LocalScope]") {
+    const auto localRateFor = [](const std::string& reactant,
+                                 const std::string& product) {
+        auto model = parser::parseModel(R"BNG(
+begin molecule types
+    A(s~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(s~u!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules I_total I()
+end observables
+begin functions
+    f(x) = I_total(x)
+end functions
+begin reaction rules
+)BNG" + reactant + " -> " + product + R"BNG( f(x)
+end reaction rules
+)BNG");
+        REQUIRE(model != nullptr);
+
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE(network.reactions.all().size() == 1);
+        const auto derived = io::NetWriter::buildDerivedRateParams(*model, network);
+        REQUIRE(derived.size() == 1);
+        const auto found = derived.find(model->getReactionRules().front().getRuleName());
+        REQUIRE(found != derived.end());
+        REQUIRE(found->second.perReactionRates.size() == 1);
+        return found->second.perReactionRates.begin()->second.second;
+    };
+
+    CHECK(localRateFor("    %x:A(s~u!1).I(i!1)",
+                       "A(s~p!1).I(i!1)") == 1.0);
+    CHECK(localRateFor("    A%x(s~u!1).I(i!1)",
+                       "A%x(s~p!1).I(i!1)") == 0.0);
+}

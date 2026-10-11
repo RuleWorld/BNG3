@@ -1,6 +1,8 @@
 #include "XmlWriter.hpp"
 
 #include "compile/energy/BarrierCompiler.hpp"
+#include "compile/CompiledRule.hpp"
+#include "compile/SymbolTable.hpp"
 
 #include <sstream>
 #include <iomanip>
@@ -51,7 +53,6 @@ struct ParsedMolecule {
     std::string name;
     std::string compartment;   // per-molecule compartment
     std::string label;
-    bool scopePrefix = false;  // true for the species-scoped %x:: spelling
     std::vector<ParsedComponent> components;
 };
 
@@ -63,6 +64,7 @@ struct ParsedBond {
 
 struct ParsedPattern {
     std::string compartment;  // species-level compartment
+    std::string scopeLabel;   // leading %x: / %x:: species-graph label
     std::vector<ParsedMolecule> molecules;
     std::vector<ParsedBond> bonds;
 };
@@ -225,6 +227,7 @@ bool parseReactionFilterModifier(const std::string& modifier,
 ParsedPattern parsePattern(const std::string& text) {
     ParsedPattern pattern;
     std::string input = text;
+    bool hadLeadingCompartmentPrefix = false;
 
     // Strip leading @Compartment:: prefix
     if (!input.empty() && input[0] == '@') {
@@ -232,6 +235,36 @@ ParsedPattern parsePattern(const std::string& text) {
         if (colonPos != std::string::npos) {
             pattern.compartment = input.substr(1, colonPos - 1);
             input = input.substr(colonPos + 2);
+            hadLeadingCompartmentPrefix = true;
+        }
+    }
+
+    // A single-colon %label: is a SpeciesGraph label only at the raw pattern
+    // start. Do not promote it after the compartment header; that spelling is
+    // outside the source-compatible form handled here.
+    // Keep recognized labels on ParsedPattern so XML puts them on
+    // ReactantPattern or ProductPattern, rather than on the first molecule.
+    const auto leading = input.find_first_not_of(" \t\r\n");
+    if (leading != std::string::npos && input[leading] == '%') {
+        std::size_t labelEnd = leading + 1;
+        if (labelEnd < input.size() &&
+            (std::isalpha(static_cast<unsigned char>(input[labelEnd])) ||
+             input[labelEnd] == '_')) {
+            ++labelEnd;
+            while (labelEnd < input.size() &&
+                   (std::isalnum(static_cast<unsigned char>(input[labelEnd])) ||
+                    input[labelEnd] == '_')) {
+                ++labelEnd;
+            }
+            const bool doubleColon = labelEnd + 1 < input.size() &&
+                                     input[labelEnd + 1] == ':';
+            if (labelEnd < input.size() && input[labelEnd] == ':' &&
+                (!hadLeadingCompartmentPrefix || doubleColon)) {
+                const auto colonEnd = labelEnd +
+                    (doubleColon ? 2 : 1);
+                pattern.scopeLabel = input.substr(leading + 1, labelEnd - leading - 1);
+                input.erase(leading, colonEnd - leading);
+            }
         }
     }
 
@@ -266,14 +299,13 @@ ParsedPattern parsePattern(const std::string& text) {
         std::string namepart = (parenPos != std::string::npos)
             ? remaining.substr(0, parenPos) : remaining;
 
-        // A scoped reaction molecule is written as %scope::Molecule(...).
-        // Keep the scope as the XML label while exposing the actual molecule
-        // type in the name attribute.
+        // Preserve legacy molecule-local %scope::Molecule(...) spellings in
+        // non-leading molecule positions. A leading scope was already
+        // promoted to ParsedPattern::scopeLabel above.
         const auto percentPos = namepart.find('%');
         if (percentPos != std::string::npos) {
             const auto scopePos = namepart.find("::", percentPos + 1);
             if (scopePos != std::string::npos && scopePos > percentPos + 1) {
-                mol.scopePrefix = true;
                 mol.label = namepart.substr(percentPos + 1, scopePos - percentPos - 1);
                 namepart = namepart.substr(0, percentPos) +
                            namepart.substr(scopePos + 2);
@@ -294,7 +326,7 @@ ParsedPattern parsePattern(const std::string& text) {
             mol.name = mol.name.substr(1);
         }
 
-        // Check for %label
+        // Check for legacy suffix molecule labels such as A%scope.
         auto pctPos = mol.name.find('%');
         if (pctPos != std::string::npos) {
             mol.label = mol.name.substr(pctPos + 1);
@@ -1599,49 +1631,55 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         return moleculeId(rrId, product, ref) + "_C" +
                std::to_string(ref.componentIndex + 1);
     };
-    // Find the molecule referenced by a local-function argument.  BNG-XML
-    // stores an object reference, while the AST retains either `%x::A()` or
-    // the older `M%x(...)` label spelling.
-    const auto scopedMoleculeId = [&](const ast::ReactionRule& rule,
-                                      const std::string& rrId,
-                                      const std::string& argument) {
-        const std::string token = "%" + argument + "::";
-        for (std::size_t patternIndex = 0; patternIndex < rule.getReactants().size();
-             ++patternIndex) {
-            const auto parsed = parsePattern(rule.getReactants()[patternIndex]);
-            for (std::size_t moleculeIndex = 0; moleculeIndex < parsed.molecules.size();
-                 ++moleculeIndex) {
-                if (parsed.molecules[moleculeIndex].label == argument) {
-                    if (parsed.molecules[moleculeIndex].scopePrefix) {
-                        return rrId + "_RP" + std::to_string(patternIndex + 1);
-                    }
-                    return rrId + "_RP" + std::to_string(patternIndex + 1) + "_M" +
-                           std::to_string(moleculeIndex + 1);
-                }
-            }
-
-            const auto scopePosition = rule.getReactants()[patternIndex].find(token);
-            if (scopePosition == std::string::npos) continue;
-            std::size_t moleculeIndex = 0;
-            int depth = 0;
-            for (std::size_t i = 0; i < scopePosition; ++i) {
-                if (rule.getReactants()[patternIndex][i] == '(') ++depth;
-                else if (rule.getReactants()[patternIndex][i] == ')') --depth;
-                else if (rule.getReactants()[patternIndex][i] == '.' && depth == 0) {
-                    ++moleculeIndex;
-                }
-            }
-            if (moleculeIndex < parsed.molecules.size()) {
-                return rrId + "_RP" + std::to_string(patternIndex + 1) + "_M" +
-                       std::to_string(moleculeIndex + 1);
-            }
+    const auto symbolTable = compile::SymbolTable::fromModel(model);
+    const auto scopedObjectId = [&](const ast::ReactionRule& rule,
+                                    const std::string& diagnosticRuleName,
+                                    const std::string& rrId,
+                                    const std::string& argument,
+                                    const compile::CompiledRuleDirection& direction,
+                                    const std::vector<compile::Diagnostic>& diagnostics) {
+        const auto ambiguous = std::any_of(
+            diagnostics.begin(), diagnostics.end(), [&](const auto& diagnostic) {
+                return diagnostic.category == compile::ValidationCategory::Rules &&
+                       diagnostic.entity == diagnosticRuleName &&
+                       diagnostic.message == "local scope identifier '" + argument +
+                                                 "' is ambiguous across reactant patterns/molecules";
+            });
+        if (ambiguous) {
+            throw std::runtime_error("dynamic rate argument '" + argument +
+                                     "' has an ambiguous scoped reactant");
         }
-        return std::string();
+
+        const auto* scope = direction.findLocalScope(argument);
+        if (scope == nullptr || scope->side != compile::PatternSide::Reactant ||
+            scope->patternIndex >= rule.getReactants().size()) {
+            throw std::runtime_error("dynamic rate argument '" + argument +
+                                     "' has no scoped reactant");
+        }
+        const auto parsed = parsePattern(rule.getReactants()[scope->patternIndex]);
+        if (scope->kind == compile::LocalScopeKind::Species) {
+            if (parsed.scopeLabel != argument) {
+                throw std::runtime_error("species-scoped rate argument '" + argument +
+                                         "' has no XML species-pattern label");
+            }
+            return rrId + "_RP" + std::to_string(scope->patternIndex + 1);
+        }
+        if (!scope->moleculeOccurrence.has_value() ||
+            *scope->moleculeOccurrence >= parsed.molecules.size() ||
+            parsed.molecules[*scope->moleculeOccurrence].label != argument) {
+            throw std::runtime_error("molecule-scoped rate argument '" + argument +
+                                     "' has no XML molecule anchor");
+        }
+        return rrId + "_RP" + std::to_string(scope->patternIndex + 1) + "_M" +
+               std::to_string(*scope->moleculeOccurrence + 1);
     };
 
     const auto writeRateLaw = [&](const ast::ReactionRule& rule,
+                                  const std::string& diagnosticRuleName,
                                   const std::string& rrId,
-                                  const ast::Expression& rate) {
+                                  const ast::Expression& rate,
+                                  const compile::CompiledRuleDirection& direction,
+                                  const std::vector<compile::Diagnostic>& diagnostics) {
         const bool totalRateFunctionWrapper =
             needsTotalRateFunctionWrapper(model, rule, rate);
         const bool generatedRateFunction =
@@ -1693,11 +1731,8 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             const auto argument2 = writeOperand(rate.args()[1], "name2", "ListOfArguments2");
             xml << ">\n";
             const auto writeArguments = [&](const std::pair<std::string, const char*>& argument) {
-                const auto value = scopedMoleculeId(rule, rrId, argument.first);
-                if (value.empty()) {
-                    throw std::runtime_error(
-                        "FunctionProduct XML argument has no scoped reactant");
-                }
+                const auto value = scopedObjectId(
+                    rule, diagnosticRuleName, rrId, argument.first, direction, diagnostics);
                 xml << "          <" << argument.second << ">\n"
                     << "            <Argument id=\"" << escapeXml(argument.first)
                     << "\" type=\"ObjectReference\" value=\""
@@ -1734,12 +1769,8 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                        : (declaredFunction != nullptr ? declaredFunction->getArgs()
                                                       : generatedArguments));
             for (const auto& argument : arguments) {
-                const auto value = scopedMoleculeId(rule, rrId, argument);
-                if (value.empty()) {
-                    throw std::runtime_error(
-                        "dynamic rate argument '" + argument +
-                        "' has no scoped reactant");
-                }
+                const auto value = scopedObjectId(
+                    rule, diagnosticRuleName, rrId, argument, direction, diagnostics);
                 xml << "            <Argument id=\"" << escapeXml(argument)
                     << "\" type=\"ObjectReference\" value=\""
                     << escapeXml(value) << "\"/>\n";
@@ -1772,8 +1803,11 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
     };
 
     const auto writeRule = [&](const ast::ReactionRule& rule,
+                               const std::string& diagnosticRuleName,
                                const std::string& rrId,
-                               const ast::Expression* rate) {
+                               const ast::Expression* rate,
+                               const compile::CompiledRuleDirection& direction,
+                               const std::vector<compile::Diagnostic>& diagnostics) {
         const bool isArrheniusRate =
             rate != nullptr && rate->kind() == ast::ExpressionKind::Function &&
             lowercase(rate->name()) == "arrhenius" && rate->args().size() >= 2;
@@ -1793,6 +1827,9 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             const auto patternId = rrId + "_RP" + std::to_string(index + 1);
             const auto parsed = parsePattern(rule.getReactants()[index]);
             xml << "          <ReactantPattern id=\"" << patternId << "\"";
+            if (!parsed.scopeLabel.empty()) {
+                xml << " label=\"" << escapeXml(parsed.scopeLabel) << "\"";
+            }
             if (!parsed.compartment.empty()) {
                 xml << " compartment=\"" << escapeXml(parsed.compartment) << "\"";
             }
@@ -1806,6 +1843,9 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             const auto patternId = rrId + "_PP" + std::to_string(index + 1);
             const auto parsed = parsePattern(rule.getProducts()[index]);
             xml << "          <ProductPattern id=\"" << patternId << "\"";
+            if (!parsed.scopeLabel.empty()) {
+                xml << " label=\"" << escapeXml(parsed.scopeLabel) << "\"";
+            }
             if (!parsed.compartment.empty()) {
                 xml << " compartment=\"" << escapeXml(parsed.compartment) << "\"";
             }
@@ -1856,7 +1896,9 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             writeFilters(filter, listId);
         }
 
-        if (rate != nullptr) writeRateLaw(rule, rrId, *rate);
+        if (rate != nullptr) {
+            writeRateLaw(rule, diagnosticRuleName, rrId, *rate, direction, diagnostics);
+        }
 
         xml << "        <Map>\n";
         for (const auto& [product, reactant] : rule.getMoleculeMappings()) {
@@ -2016,10 +2058,18 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
     for (std::size_t i = 0; i < model.getReactionRules().size(); ++i) {
         const auto& rule = model.getReactionRules()[i];
         const auto rrId = "RR" + std::to_string(i + 1);
+        std::vector<compile::Diagnostic> scopeDiagnostics;
+        const auto compiledRule = compile::CompiledRule::compile(
+            rule, model, symbolTable, &scopeDiagnostics);
         const auto* forwardRate = rule.getRates().empty() ? nullptr : &rule.getRates().front();
-        writeRule(rule, rrId, forwardRate);
+        writeRule(rule, rule.getRuleName(), rrId, forwardRate,
+                  compiledRule.forward(), scopeDiagnostics);
 
         if (rule.isBidirectional() && rule.getRates().size() >= 2) {
+            if (!compiledRule.reverse().has_value()) {
+                throw std::runtime_error(
+                    "bidirectional reaction rule has no compiled reverse direction");
+            }
             std::vector<std::string> reverseModifiers;
             for (const auto& modifier : rule.getModifiers()) {
                 std::string transformed = modifier;
@@ -2052,7 +2102,9 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             if (rule.hasDrivingWork()) {
                 reverse.setDrivingWorkExpression(rule.drivingWorkExpression());
             }
-            writeRule(reverse, rrId + "r", &reverse.getRates().front());
+            writeRule(reverse, rule.getRuleName(), rrId + "r",
+                      &reverse.getRates().front(), *compiledRule.reverse(),
+                      scopeDiagnostics);
         }
     }
 

@@ -285,3 +285,110 @@ end model
     // The declared formal stays on the Function definition, not the RateLaw.
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<Function id=\"flipUp\""));
 }
+
+TEST_CASE("XmlWriter distinguishes leading species labels from molecule labels") {
+    const std::string speciesScoped = writeXml(R"(
+begin model
+begin molecule types
+    A(s~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(s~u!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules I_total I()
+end observables
+begin functions
+    f(x) = I_total(x)
+end functions
+begin reaction rules
+    %x:A(s~u!1).I(i!1) -> A(s~p!1).I(i!1) f(x)
+end reaction rules
+end model
+)");
+    CHECK_THAT(speciesScoped, Catch::Matchers::ContainsSubstring(
+        "<ReactantPattern id=\"RR1_RP1\" label=\"x\">"));
+    CHECK_THAT(speciesScoped, Catch::Matchers::ContainsSubstring(
+        "<Argument id=\"x\" type=\"ObjectReference\" value=\"RR1_RP1\"/>"));
+    CHECK(speciesScoped.find("<Molecule id=\"RR1_RP1_M1\" name=\"A\" label=\"x\"") ==
+          std::string::npos);
+
+    const std::string moleculeScoped = writeXml(R"(
+begin model
+begin molecule types
+    A(s~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(s~u!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules I_total I()
+end observables
+begin functions
+    f(x) = I_total(x)
+end functions
+begin reaction rules
+    A%x(s~u!1).I(i!1) -> A%x(s~p!1).I(i!1) f(x)
+end reaction rules
+end model
+)");
+    CHECK_THAT(moleculeScoped, Catch::Matchers::ContainsSubstring(
+        "<ReactantPattern id=\"RR1_RP1\">"));
+    CHECK_THAT(moleculeScoped, Catch::Matchers::ContainsSubstring(
+        "<Molecule id=\"RR1_RP1_M1\" name=\"A\" label=\"x\">"));
+    CHECK_THAT(moleculeScoped, Catch::Matchers::ContainsSubstring(
+        "<Argument id=\"x\" type=\"ObjectReference\" value=\"RR1_RP1_M1\"/>"));
+    CHECK_THAT(moleculeScoped, Catch::Matchers::ContainsSubstring(
+        "<Molecule id=\"RR1_PP1_M1\" name=\"A\" label=\"x\">"));
+    CHECK_THAT(moleculeScoped, Catch::Matchers::ContainsSubstring(
+        "<MapItem sourceID=\"RR1_RP1_M1\" targetID=\"RR1_PP1_M1\"/>"));
+}
+
+TEST_CASE("XmlWriter binds reverse species scopes to reverse reactants") {
+    const std::string xml = writeXml(R"(
+begin model
+begin molecule types
+    A()
+    B()
+end molecule types
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin functions
+    fromA(x) = A_total(x)
+    fromB(x) = B_total(x)
+end functions
+begin reaction rules
+    %x:A() <-> %x:B() fromA(x), fromB(x)
+end reaction rules
+end model
+)");
+
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Argument id=\"x\" type=\"ObjectReference\" value=\"RR1_RP1\"/>"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Argument id=\"x\" type=\"ObjectReference\" value=\"RR1r_RP1\"/>"));
+}
+
+TEST_CASE("XmlWriter refuses ambiguous local scope anchors") {
+    auto model = parser::parseModel(R"(
+begin model
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin functions
+    f(x) = 1
+end functions
+begin reaction rules
+    A%x() + B%x() -> C() f(x)
+end reaction rules
+end model
+)");
+    REQUIRE(model != nullptr);
+    CHECK_THROWS(io::XmlWriter::write(*model));
+}
