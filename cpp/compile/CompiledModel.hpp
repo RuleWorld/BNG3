@@ -75,6 +75,7 @@ struct CompiledCompartment {
     std::size_t index = 0;
     std::string name;
     double volume = 1.0;
+    bool volumeTimeDependent = false;
     int dimension = 3;
     std::string parentName;
     std::optional<CompartmentId> parent;

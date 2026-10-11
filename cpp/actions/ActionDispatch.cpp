@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "ast/Parameter.hpp"
+#include "compile/Capabilities.hpp"
 #include "compile/Document.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
@@ -1742,6 +1743,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // Direct construction is the default.  XML remains an explicit
         // compatibility bridge while the direct adapter is being qualified.
         std::string directUnavailableReason;
+        const bool modelUsesUnits = bng::compile::featuresUsed(model).contains(
+            bng::compile::Feature::Units);
         NFcore::System *nfSystem = NFinput::buildSystemFromAstWithSeedOverrides(
             model,
             useComplex,
@@ -1769,6 +1772,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "; XML fallback disabled "
                     "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
             }
+            if (modelUsesUnits) {
+                throw std::runtime_error(
+                    "NFsim XML fallback cannot preserve physical units; refusing model");
+            }
             if (verbose) {
                 std::cerr << "[bng_cpp] AST adapter declined (" << directUnavailableReason
                           << "); using in-memory XML fallback...\n";
@@ -1782,6 +1789,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (!nfSystem) {
+            if (modelUsesUnits) {
+                throw std::runtime_error(
+                    "NFsim on-disk XML fallback cannot preserve physical units; refusing model");
+            }
             if (verbose) {
                 std::cerr << "[bng_cpp] In-memory XML fallback failed; writing XML fallback...\n";
             }
