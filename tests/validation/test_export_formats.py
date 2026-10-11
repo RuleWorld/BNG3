@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -235,6 +237,237 @@ generate_network({overwrite=>1})
         "Network3 trajectory disagrees with analytic A -> B solution: "
         f"{diff.summary()}"
     )
+
+
+def _locked_bng2_script() -> Path | None:
+    """Return BNG2.pl only when it belongs to the locked checkout in BNGPATH."""
+    script_text = os.environ.get("BNG2_PERL")
+    bngpath_text = os.environ.get("BNGPATH")
+    if not script_text or not bngpath_text:
+        return None
+
+    script = Path(script_text).expanduser().resolve()
+    bngpath = Path(bngpath_text).expanduser().resolve()
+    if script.parent != bngpath or script.name != "BNG2.pl" or not script.is_file():
+        return None
+
+    lock = json.loads(
+        (corpus.REPO / "provenance" / "upstreams.lock.yml").read_text(encoding="utf-8")
+    )
+    oracle_evidence = json.loads(
+        (
+            corpus.REPO
+            / "tests"
+            / "validation"
+            / "evidence"
+            / "bng2-ssa-ensembles"
+            / "manifest.json"
+        ).read_text(encoding="utf-8")
+    )["oracle"]
+    expected_revision = lock["sources"]["bionetgen"]["revision"]
+    checkout_root = bngpath.parent
+    revision = subprocess.run(
+        ["git", "-C", str(checkout_root), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if revision.returncode != 0 or revision.stdout.strip() != expected_revision:
+        return None
+    if oracle_evidence.get("revision") != expected_revision:
+        return None
+    if hashlib.sha256(script.read_bytes()).hexdigest() != oracle_evidence.get(
+        "sha256", {}
+    ).get("BNG2.pl"):
+        return None
+
+    tracked_clean = subprocess.run(
+        ["git", "-C", str(checkout_root), "diff-index", "--quiet", "HEAD", "--"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if tracked_clean.returncode != 0:
+        return None
+    index_flags = subprocess.run(
+        ["git", "-C", str(checkout_root), "ls-files", "-v"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    if index_flags.returncode != 0 or any(
+        line and (line[0] == "S" or line[0].islower())
+        for line in index_flags.stdout.splitlines()
+    ):
+        return None
+    return script
+
+
+def _counting_fixture(molecules_mode: str, species_mode: str) -> str:
+    return f"""begin model
+setOption("MoleculesObservables","{molecules_mode}")
+setOption("SpeciesObservables","{species_mode}")
+begin parameters
+  n 1
+  k 1
+end parameters
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b!1).A(b!1) n
+  A(b) n
+end seed species
+begin observables
+  Molecules Dimer A(b!1).A(b!1)
+  Species Both A(), A(b!1).A(b!1)
+end observables
+begin reaction rules
+  dissociate: A(b!1).A(b!1) -> A(b) + A(b) k
+end reaction rules
+end model
+"""
+
+
+def _cpp_observable_weights(header: str) -> dict[str, dict[int, int]]:
+    """Read emitted species coefficients by observable and 1-based species id."""
+    result: dict[str, dict[int, int]] = {}
+    assignment = re.compile(
+        r"NV_Ith_S\(observables,(\d+)\)\s*=\s*(.*?);\s*/\*\s*([^*]+?)\s*\*/"
+    )
+    term = re.compile(r"(?:(\d+)\s*\*\s*)?NV_Ith_S\(species,(\d+)\)")
+    for _, expression, name in assignment.findall(header):
+        weights: dict[int, int] = {}
+        if expression.strip() != "0":
+            parsed_terms = []
+            for item in expression.split("+"):
+                match = term.fullmatch(item.strip())
+                assert (
+                    match is not None
+                ), f"unexpected C++ observable term for {name}: {item!r}"
+                weight = int(match.group(1) or "1")
+                species_index = int(match.group(2)) + 1
+                weights[species_index] = weights.get(species_index, 0) + weight
+                parsed_terms.append(item)
+            assert parsed_terms, f"no C++ observable terms parsed for {name}"
+        result[name.strip()] = weights
+    return result
+
+
+@pytest.mark.export
+@pytest.mark.parametrize(
+    ("molecules_mode", "species_mode"),
+    [
+        ("CountAll", "CountAll"),
+        ("CountUnique", "CountAll"),
+        ("CountAll", "CountUnique"),
+        ("CountUnique", "CountUnique"),
+    ],
+)
+def test_cpp_export_observable_modes_match_locked_bng2(
+    molecules_mode, species_mode, bng_cpp, tmp_path
+):
+    """CVODE observable coefficients preserve BNG2's two independent modes."""
+    bng2 = _locked_bng2_script()
+    require_oracle(
+        bng2 is not None,
+        "locked BNG2.pl not found at BNG2_PERL/BNGPATH or its source revision "
+        "does not match provenance/upstreams.lock.yml",
+    )
+    assert bng2 is not None
+    perl = shutil.which(os.environ.get("PERL", "perl"))
+    require_oracle(perl is not None, "Perl is required to run the locked BNG2 oracle")
+    assert perl is not None
+
+    model = _counting_fixture(molecules_mode, species_mode)
+    source = tmp_path / "observable_counting.bngl"
+    source.write_text(
+        model + "\ngenerate_network({overwrite=>1})\nwriteCPPfile()\n",
+        encoding="utf-8",
+    )
+    bng3_dir = tmp_path / "bng3"
+    net_path, _, err = runner.run_cli_path(bng_cpp, source, bng3_dir)
+    assert net_path is not None, f"BNG3 C++ export failed: {err}"
+    header_path = bng3_dir / "observable_counting_cvode.h"
+    assert header_path.is_file(), "writeCPPfile produced no CVODE header"
+
+    oracle_source = tmp_path / "observable_counting_bng2.bngl"
+    oracle_source.write_text(
+        model + "\ngenerate_network({overwrite=>1})\n", encoding="utf-8"
+    )
+    bng2_dir = tmp_path / "bng2"
+    bng2_dir.mkdir()
+    oracle_env = os.environ.copy()
+    oracle_env["BNGPATH"] = str(bng2.parent)
+    proc = subprocess.run(
+        [
+            perl,
+            str(bng2),
+            "--outdir",
+            str(bng2_dir),
+            "--check",
+            "--netgen",
+            str(oracle_source),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=oracle_env,
+    )
+    assert proc.returncode == 0, (
+        "locked BNG2 could not generate observable groups:\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    oracle_net = compare.parse_net(bng2_dir / "observable_counting_bng2.net")
+    bng3_net = compare.parse_net(net_path)
+    assert oracle_net is not None, "locked BNG2 produced no parseable .net"
+    assert bng3_net is not None, "BNG3 produced no parseable .net"
+    assert bng3_net.species_by_index == oracle_net.species_by_index, (
+        "simple observable fixture species identities/order differ between "
+        f"BNG3 and locked BNG2: {bng3_net.species_by_index!r} vs "
+        f"{oracle_net.species_by_index!r}"
+    )
+
+    expected = {name: entries for name, entries in oracle_net.groups.values()}
+    emitted = _cpp_observable_weights(header_path.read_text(encoding="utf-8"))
+    assert set(emitted) == {"Dimer", "Both"}
+    assert set(expected) == {"Dimer", "Both"}
+    assert expected == {
+        "Dimer": {1: 2.0 if molecules_mode == "CountAll" else 1.0},
+        "Both": {
+            1: 2.0 if species_mode == "CountAll" else 1.0,
+            2: 1.0,
+        },
+    }, "locked BNG2 did not exercise both observable counting modes"
+    for name in sorted(expected):
+        assert emitted[name] == expected[name], (
+            f"C++ export observable {name} disagrees with locked BNG2 "
+            f"(MoleculesObservables={molecules_mode}, "
+            f"SpeciesObservables={species_mode}): "
+            f"emitted={emitted[name]!r}, expected={expected[name]!r}"
+        )
+
+
+@pytest.mark.export
+@pytest.mark.parametrize("option", ("MoleculesObservables", "SpeciesObservables"))
+def test_cpp_export_rejects_unknown_observable_mode(option, bng_cpp, tmp_path):
+    """An invalid count mode must fail before export instead of defaulting."""
+    molecules_mode = "CountEvery" if option == "MoleculesObservables" else "CountAll"
+    species_mode = "CountEvery" if option == "SpeciesObservables" else "CountAll"
+    source = tmp_path / "invalid_observable_mode.bngl"
+    source.write_text(
+        _counting_fixture(molecules_mode, species_mode)
+        + "\ngenerate_network({overwrite=>1})\nwriteCPPfile()\n",
+        encoding="utf-8",
+    )
+    net_path, _, err = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
+    assert net_path is None, "invalid observable count mode was accepted"
+    assert f"invalid {option} value 'CountEvery'" in err
+    assert "expected 'CountUnique' or 'CountAll'" in err
 
 
 # --------------------------------------------------------------------------- #

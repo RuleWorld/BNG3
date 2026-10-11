@@ -8,14 +8,10 @@
 #include <cctype>
 #include <cmath>
 #include <map>
-#include <set>
 
-#include "parser/antlr_compat.hpp"
-#include <antlr4-runtime.h>
-#include "generated/BNGLexer.h"
-#include "generated/BNGParser.h"
-#include "parser/PatternGraphBuilder.hpp"
-#include "core/Ullmann.hpp"
+#include "ast/Model.hpp"
+#include "compile/CompiledModel.hpp"
+#include "engine/ObservableProjection.hpp"
 
 namespace bng::io {
 
@@ -610,40 +606,23 @@ std::string CppExportWriter::convertRateToCVode(const std::string& rate, const s
 std::vector<CppExportWriter::ObservableGroup> CppExportWriter::computeObservableGroups(
     const ast::Model& model, const engine::GeneratedNetwork& network) {
     std::vector<ObservableGroup> groups;
-    auto& mutableModel = const_cast<ast::Model&>(model);
+    const compile::CompiledModel compiledModel(model);
+    const engine::ObservableProjection projection(compiledModel);
+    groups.reserve(projection.size());
 
-    for (const auto& observable : model.getObservables()) {
+    for (std::size_t observableIndex = 0;
+         observableIndex < projection.size(); ++observableIndex) {
         ObservableGroup group;
-        group.name = observable.getName();
-        group.type = observable.getType();
+        group.name = projection.name(observableIndex);
+        group.type = compiledModel.observables().at(observableIndex).type;
 
         for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
-
-            for (const auto& patternText : observable.getPatterns()) {
-                try {
-                    antlr4::ANTLRInputStream input(patternText);
-                    BNGLexer lexer(&input);
-                    antlr4::CommonTokenStream tokens(&lexer);
-                    BNGParser parser(&tokens);
-                    auto* species = parser.species_def();
-
-                    if (parser.getNumberOfSyntaxErrors() == 0) {
-                        const auto pattern = bng::parser::buildPatternGraph(species, mutableModel);
-                        BNGcore::UllmannSGIso matcher(pattern,
-                            network.species.get(speciesIndex).getSpeciesGraph().getGraph());
-                        BNGcore::List<BNGcore::Map> maps;
-                        weight += matcher.find_maps(maps);
-                    }
-                } catch (...) {}
-            }
-
-            if (observable.getType() == "Species" && weight > 0) {
-                weight = 1;
-            }
-
+            const auto weight = projection.weight(
+                observableIndex,
+                network.species.get(speciesIndex).getSpeciesGraph().getGraph());
             if (weight > 0) {
-                group.entries.push_back({speciesIndex, weight});
+                group.entries.push_back(
+                    {speciesIndex, static_cast<std::size_t>(weight)});
             }
         }
 
