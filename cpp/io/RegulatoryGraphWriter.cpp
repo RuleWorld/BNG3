@@ -37,7 +37,9 @@ RegulatoryGraphWriter::RegulatoryGraph RegulatoryGraphWriter::build(
     const std::size_t nSpecies = network.species.size();
     std::vector<std::map<std::size_t, int>> observableWeights(nObs);
     for (std::size_t s = 0; s < nSpecies; ++s) {
-        const auto weights = projection.weights(network.species.get(s).getSpeciesGraph().getGraph());
+        const auto& species = network.species.get(s);
+        const auto weights = projection.weights(
+            species.getSpeciesGraph().getGraph(), species.getCompartment());
         for (std::size_t o = 0; o < weights.size(); ++o) {
             if (weights[o] != 0) observableWeights[o][s] = weights[o];
         }

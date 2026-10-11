@@ -1,7 +1,11 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
+#include <map>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "compile/CompiledModel.hpp"
@@ -20,12 +24,17 @@ public:
     std::size_t size() const noexcept { return observables_.size(); }
     const std::string& name(std::size_t index) const { return observables_.at(index).name; }
 
-    int weight(std::size_t observableIndex, const BNGcore::PatternGraph& species) const;
-    std::vector<int> weights(const BNGcore::PatternGraph& species) const;
+    int weight(std::size_t observableIndex, const BNGcore::PatternGraph& species,
+               std::string_view speciesCompartment) const;
+    std::vector<int> weights(const BNGcore::PatternGraph& species,
+                             std::string_view speciesCompartment) const;
 
 private:
     struct Term {
         BNGcore::PatternGraph pattern;
+        // A BNGL graph prefix qualifies the species compartment independently
+        // of any molecule-local compartments in `pattern`.
+        std::optional<compile::CompartmentId> compartmentPrefix;
         std::string relation;
         int quantity = 0;
         // Number of automorphisms of `pattern`, i.e. the count of embeddings
@@ -47,10 +56,10 @@ private:
     //   Molecules + CountAll     total += match_count
     //   Molecules + CountUnique  total += match_count / automorphisms
     //   Species   + CountAll     total += 1 for every matching term
-    //   Species   + CountUnique  total += 1, then stop scanning terms
-    //                            (`last if ($mode)`), so a species counts once
-    //                            no matter how many of the observable's
-    //                            patterns it matches
+    //   Species   + CountUnique  an unqualified term adds one and stops only
+    //                            when it matches; a qualified term applies
+    //                            `last if ($mode)` even when its predicate is
+    //                            false
     //
     // Note the asymmetry: symmetry correction is commented out on the Species
     // branch in BNG2, where the flag instead short-circuits the term loop.
@@ -60,6 +69,7 @@ private:
     CountMode speciesMode_ = CountMode::CountAll;
 
     compile::BNGcoreLoweringContext loweringContext_;
+    std::map<std::string, compile::CompartmentId, std::less<>> compartmentIds_;
     std::vector<Observable> observables_;
 };
 

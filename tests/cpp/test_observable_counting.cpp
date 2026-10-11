@@ -12,9 +12,9 @@
 ///   Molecules + CountAll     total += match_count
 ///   Molecules + CountUnique  total += match_count / Automorphisms
 ///   Species   + CountAll     total += 1 per matching pattern
-///   Species   + CountUnique  total += 1, then `last` — a species contributes
-///                            once however many of the observable's patterns
-///                            it matches
+///   Species   + CountUnique  a qualified term applies `last` even when the
+///                            relation is false; an unqualified term applies
+///                            `last` only after a structural match
 ///
 /// Symmetry correction is commented out on the Species branch in BNG2, which
 /// is why the Species flag short-circuits instead of dividing. Confusing the
@@ -25,13 +25,17 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "ast/Model.hpp"
+#include "ast/Observable.hpp"
 #include "compile/CompiledModel.hpp"
 #include "compile/Document.hpp"
 #include "compile/PatternLowering.hpp"
 #include "core/PatternMatching.hpp"
+#include "engine/NetworkGenerator.hpp"
 #include "engine/ObservableProjection.hpp"
+#include "io/RegulatoryGraphWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 namespace {
@@ -98,6 +102,134 @@ end model
 )BNGL";
 }
 
+std::string compartmentPrefixObservableModel() {
+    return R"BNGL(
+begin model
+begin parameters
+  n_pm 5
+  n_cp 7
+end parameters
+begin molecule types
+  L(x)
+  R(y)
+end molecule types
+begin compartments
+  PM 2 1
+  CP 3 1 PM
+end compartments
+begin seed species
+  @PM:L(x!1)@CP.R(y!1) n_pm
+  @CP:L(x!1).R(y!1) n_cp
+end seed species
+begin observables
+  Molecules PrefixAndNode @PM:L(x!1)@CP.R(y!1)
+  Molecules NodeOnly L(x!1)@CP.R(y!1)
+  Molecules MixedTerms @PM:L(x!1)@CP.R(y!1), L(x!1)@CP.R(y!1)
+end observables
+end model
+)BNGL";
+}
+
+std::string allExplicitCompartmentPrefixModel() {
+    return R"BNGL(
+begin model
+begin parameters
+  n 5
+end parameters
+begin molecule types
+  L(x)
+  R(y)
+end molecule types
+begin compartments
+  PM 2 1
+  CP 3 1 PM
+end compartments
+begin seed species
+  @PM:L@CP(x!1).R@PM(y!1) n
+end seed species
+begin observables
+  Molecules AllExplicitPrefix @PM:L@CP(x!1).R@PM(y!1)
+end observables
+end model
+)BNGL";
+}
+
+std::string regulatoryGraphCompartmentPrefixModel() {
+    return R"BNGL(
+begin model
+begin parameters
+  k 1
+  n_pm 5
+  n_cp 7
+end parameters
+begin molecule types
+  L(x)
+  R(y~u~p)
+end molecule types
+begin compartments
+  PM 2 1
+  CP 3 1 PM
+end compartments
+begin seed species
+  @PM:L(x!1)@CP.R(y~u!1) n_pm
+  @CP:L(x!1).R(y~u!1) n_cp
+end seed species
+begin observables
+  Molecules PrefixAndNode @PM:L(x!1)@CP.R(y~u!1)
+  Molecules NodeOnly L(x!1)@CP.R(y~u!1)
+end observables
+begin reaction rules
+  cp_only: @CP:L(x!1).R(y~u!1) -> @CP:L(x!1).R(y~p!1) k
+end reaction rules
+end model
+)BNGL";
+}
+
+std::string qualifiedSpeciesCountUniqueModel() {
+    return R"BNGL(
+begin model
+setOption("SpeciesObservables", "CountUnique")
+begin parameters
+  n 5
+  k 1
+end parameters
+begin molecule types
+  A(s~0~1)
+end molecule types
+begin seed species
+  A(s~0) n
+end seed species
+begin observables
+  Species FalseThenTrue A(s~1)>0, A(s~0)>0
+end observables
+begin reaction rules
+  change: A(s~0) -> A(s~1) k
+end reaction rules
+end model
+)BNGL";
+}
+
+std::string prefixZeroSourceModel() {
+    return R"BNGL(
+begin model
+begin parameters
+  n 5
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin compartments
+  PM 2 1
+  CP 3 1 PM
+end compartments
+begin seed species
+  @CP:A() n
+  @PM:A() n
+end seed species
+end model
+)BNGL";
+}
+
 struct Compiled {
     std::unique_ptr<bng::ast::Model> model;
     std::unique_ptr<bng::compile::Document> document;
@@ -150,7 +282,7 @@ TEST_CASE("Observables: Molecules CountAll counts every match",
         const bng::engine::ObservableProjection projection(compiled.compiled());
         REQUIRE(projection.size() == 1);
         REQUIRE(projection.name(0) == "Dimer");
-        CHECK(projection.weight(0, seedSpeciesGraph(compiled)) == 2);
+        CHECK(projection.weight(0, seedSpeciesGraph(compiled), "") == 2);
     }
 }
 
@@ -164,7 +296,7 @@ TEST_CASE("Observables: Molecules CountUnique divides out pattern automorphisms"
         symmetricDimerModel("setOption(\"MoleculesObservables\",\"CountUnique\")\n"));
     const bng::engine::ObservableProjection projection(compiled.compiled());
     REQUIRE(projection.size() == 1);
-    CHECK(projection.weight(0, seedSpeciesGraph(compiled)) == 1);
+    CHECK(projection.weight(0, seedSpeciesGraph(compiled), "") == 1);
 }
 
 TEST_CASE("Observables: Species CountUnique counts a species once, not per pattern",
@@ -175,13 +307,13 @@ TEST_CASE("Observables: Species CountUnique counts a species once, not per patte
         overlappingSpeciesModel("setOption(\"SpeciesObservables\",\"CountAll\")\n"));
     const bng::engine::ObservableProjection allProjection(all.compiled());
     REQUIRE(allProjection.size() == 1);
-    CHECK(allProjection.weight(0, seedSpeciesGraph(all)) == 2);
+    CHECK(allProjection.weight(0, seedSpeciesGraph(all), "") == 2);
 
     const auto unique = compileModel(
         overlappingSpeciesModel("setOption(\"SpeciesObservables\",\"CountUnique\")\n"));
     const bng::engine::ObservableProjection uniqueProjection(unique.compiled());
     REQUIRE(uniqueProjection.size() == 1);
-    CHECK(uniqueProjection.weight(0, seedSpeciesGraph(unique)) == 1);
+    CHECK(uniqueProjection.weight(0, seedSpeciesGraph(unique), "") == 1);
 }
 
 TEST_CASE("Observables: the two counting options are independent",
@@ -193,7 +325,7 @@ TEST_CASE("Observables: the two counting options are independent",
         symmetricDimerModel("setOption(\"SpeciesObservables\",\"CountUnique\")\n"));
     const bng::engine::ObservableProjection projection(compiled.compiled());
     REQUIRE(projection.size() == 1);
-    CHECK(projection.weight(0, seedSpeciesGraph(compiled)) == 2);
+    CHECK(projection.weight(0, seedSpeciesGraph(compiled), "") == 2);
 }
 
 TEST_CASE("Observables: Molecules qualifiers are inert while Species qualifiers apply",
@@ -205,16 +337,128 @@ TEST_CASE("Observables: Molecules qualifiers are inert while Species qualifiers 
     const bng::engine::ObservableProjection allProjection(all.compiled());
     REQUIRE(allProjection.size() == 3);
     const auto allSpecies = seedSpeciesGraph(all);
-    CHECK(allProjection.weight(0, allSpecies) == 2);
-    CHECK(allProjection.weight(1, allSpecies) == 1);
-    CHECK(allProjection.weight(2, allSpecies) == 0);
+    CHECK(allProjection.weight(0, allSpecies, "") == 2);
+    CHECK(allProjection.weight(1, allSpecies, "") == 1);
+    CHECK(allProjection.weight(2, allSpecies, "") == 0);
 
     const auto unique = compileModel(relationalMoleculesModel(
         "setOption(\"MoleculesObservables\",\"CountUnique\")\n"));
     const bng::engine::ObservableProjection uniqueProjection(unique.compiled());
     REQUIRE(uniqueProjection.size() == 3);
     const auto uniqueSpecies = seedSpeciesGraph(unique);
-    CHECK(uniqueProjection.weight(0, uniqueSpecies) == 1);
-    CHECK(uniqueProjection.weight(1, uniqueSpecies) == 1);
-    CHECK(uniqueProjection.weight(2, uniqueSpecies) == 0);
+    CHECK(uniqueProjection.weight(0, uniqueSpecies, "") == 1);
+    CHECK(uniqueProjection.weight(1, uniqueSpecies, "") == 1);
+    CHECK(uniqueProjection.weight(2, uniqueSpecies, "") == 0);
+}
+
+TEST_CASE("Observables: graph prefixes filter species scope independently of node qualifiers",
+          "[observables][compartments]") {
+    const auto compiled = compileModel(compartmentPrefixObservableModel());
+    const auto& model = compiled.compiled();
+    bng::engine::NetworkGenerator generator(*compiled.document);
+    const auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 2);
+    REQUIRE(network.species.get(0).getCompartment() == "PM");
+    REQUIRE(network.species.get(1).getCompartment() == "CP");
+    const auto& pm = network.species.get(0);
+    const auto& cp = network.species.get(1);
+    const bng::engine::ObservableProjection projection(model);
+
+    REQUIRE(projection.size() == 3);
+    CHECK(projection.weight(0, pm.getSpeciesGraph().getGraph(), pm.getCompartment()) == 1);
+    CHECK(projection.weight(0, cp.getSpeciesGraph().getGraph(), cp.getCompartment()) == 0);
+
+    // BNG2 treats an unspecified target molecule compartment as a wildcard;
+    // the local CP qualifier must not be mistaken for the outer graph prefix.
+    CHECK(projection.weight(1, pm.getSpeciesGraph().getGraph(), pm.getCompartment()) == 1);
+    CHECK(projection.weight(1, cp.getSpeciesGraph().getGraph(), cp.getCompartment()) == 1);
+    CHECK(projection.weight(0, pm.getSpeciesGraph().getGraph(), "") == 0);
+    CHECK(projection.weight(0, pm.getSpeciesGraph().getGraph(), "unknown-compartment") == 0);
+    CHECK(projection.weight(1, pm.getSpeciesGraph().getGraph(), "unknown-compartment") == 1);
+
+    // Prefix semantics are stored per term: the unprefixed second term still
+    // contributes to the CP species after the prefixed first term is filtered.
+    CHECK(projection.weight(2, pm.getSpeciesGraph().getGraph(), pm.getCompartment()) == 2);
+    CHECK(projection.weight(2, cp.getSpeciesGraph().getGraph(), cp.getCompartment()) == 1);
+}
+
+TEST_CASE("Observables: all-explicit node compartments remain valid with a graph prefix",
+          "[observables][compartments]") {
+    const auto compiled = compileModel(allExplicitCompartmentPrefixModel());
+    const auto& model = compiled.compiled();
+    REQUIRE(model.seeds().size() == 1);
+    bng::compile::BNGcoreLoweringContext context(model);
+    const auto species = bng::compile::lowerPatternToBNGcore(
+        model.seeds()[0].pattern, context);
+    const bng::engine::ObservableProjection projection(model);
+
+    REQUIRE(projection.size() == 1);
+    CHECK(projection.weight(0, species, model.seeds()[0].compartment) == 1);
+}
+
+TEST_CASE("Observables: a compartment miss still evaluates a zero-count relation",
+          "[observables][compartments][relations]") {
+    auto source = bng::parser::parseModel(prefixZeroSourceModel());
+    REQUIRE(source != nullptr);
+    source->addObservable(bng::ast::Observable(
+        "PrefixZero", "Species", {"@PM:A()<1"}));
+    const bng::compile::Document document(*source);
+    REQUIRE(document.valid());
+
+    const auto& model = document.model();
+    bng::engine::NetworkGenerator generator(document);
+    const auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 2);
+    const auto& cp = network.species.get(0);
+    const auto& pm = network.species.get(1);
+    const bng::engine::ObservableProjection projection(model);
+
+    REQUIRE(projection.size() == 1);
+    CHECK(projection.weight(0, cp.getSpeciesGraph().getGraph(), cp.getCompartment()) == 1);
+    CHECK(projection.weight(0, pm.getSpeciesGraph().getGraph(), pm.getCompartment()) == 0);
+    CHECK(projection.weight(0, cp.getSpeciesGraph().getGraph(), "") == 1);
+    CHECK(projection.weight(0, cp.getSpeciesGraph().getGraph(), "unknown-compartment") == 1);
+}
+
+TEST_CASE("Observables: CountUnique stops after a false qualified term",
+          "[observables][counting][relations]") {
+    const auto compiled = compileModel(qualifiedSpeciesCountUniqueModel());
+    const auto& model = compiled.compiled();
+    bng::engine::NetworkGenerator generator(*compiled.document);
+    const auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 2);
+
+    const bng::engine::ObservableProjection projection(model);
+    REQUIRE(projection.size() == 1);
+    CHECK(projection.weight(
+              0, network.species.get(0).getSpeciesGraph().getGraph(),
+              network.species.get(0).getCompartment()) == 0);
+    CHECK(projection.weight(
+              0, network.species.get(1).getSpeciesGraph().getGraph(),
+              network.species.get(1).getCompartment()) == 1);
+}
+
+TEST_CASE("Regulatory graph observables use the candidate species compartment",
+          "[observables][compartments]") {
+    auto source = bng::parser::parseModel(regulatoryGraphCompartmentPrefixModel());
+    REQUIRE(source != nullptr);
+    const bng::compile::Document document(*source);
+    REQUIRE(document.valid());
+
+    bng::engine::NetworkGenerator generator(document);
+    const auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 3);
+    REQUIRE(network.reactions.size() == 1);
+
+    const auto graph = bng::io::RegulatoryGraphWriter::build(document.model(), network);
+    REQUIRE(graph.observableNames == std::vector<std::string>{"PrefixAndNode", "NodeOnly"});
+    const auto& reaction = network.reactions.all().front();
+    const auto runtimeRuleName = reaction.getOriginRuleName().empty()
+                                     ? reaction.getLabel()
+                                     : reaction.getOriginRuleName();
+    REQUIRE(graph.ruleNames == std::vector<std::string>{runtimeRuleName});
+    REQUIRE(graph.edges.size() == 1);
+    CHECK(graph.edges.front().ruleIndex == 0);
+    CHECK(graph.edges.front().observableIndex == 1);
+    CHECK(graph.edges.front().effect == -1);
 }

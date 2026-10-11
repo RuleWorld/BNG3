@@ -335,6 +335,257 @@ end model
 """
 
 
+def _compartment_prefix_fixture() -> str:
+    """Graph-scope prefix remains distinct from molecule-local qualifiers."""
+    return """begin model
+begin parameters
+  n_pm 5
+  n_cp 7
+  k 1
+end parameters
+begin molecule types
+  L(x)
+  R(y)
+  Z()
+end molecule types
+begin compartments
+  PM 2 1
+  CP 3 1 PM
+end compartments
+begin seed species
+  @PM:L(x!1)@CP.R(y!1) n_pm
+  @CP:L(x!1).R(y!1) n_cp
+end seed species
+begin observables
+  Molecules PrefixAndNode @PM:L(x!1)@CP.R(y!1)
+  Molecules NodeOnly L(x!1)@CP.R(y!1)
+  Molecules MixedTerms @PM:L(x!1)@CP.R(y!1), L(x!1)@CP.R(y!1)
+end observables
+begin reaction rules
+  source: 0 -> @PM:Z() k
+end reaction rules
+end model
+"""
+
+
+def _all_explicit_compartment_prefix_fixture() -> str:
+    """A valid prefix plus local compartment constraints on every molecule."""
+    return """begin model
+begin parameters
+  n 5
+  k 1
+end parameters
+begin molecule types
+  L(x)
+  R(y)
+  Z()
+end molecule types
+begin compartments
+  PM 2 1
+  CP 3 1 PM
+end compartments
+begin seed species
+  @PM:L@CP(x!1).R@PM(y!1) n
+end seed species
+begin observables
+  Molecules AllExplicitPrefix @PM:L@CP(x!1).R@PM(y!1)
+end observables
+begin reaction rules
+  source: 0 -> @PM:Z() k
+end reaction rules
+end model
+"""
+
+
+def _species_countunique_qualified_fixture() -> str:
+    """CountUnique stops after the first quantified Species term, even false."""
+    return """begin model
+setOption("SpeciesObservables", "CountUnique")
+begin parameters
+  n 5
+  k 1
+end parameters
+begin molecule types
+  A(s~0~1)
+end molecule types
+begin seed species
+  A(s~0) n
+end seed species
+begin observables
+  Species FalseThenTrue A(s~1)>0, A(s~0)>0
+end observables
+begin reaction rules
+  change: A(s~0) -> A(s~1) k
+end reaction rules
+end model
+"""
+
+
+@pytest.mark.export
+@pytest.mark.parametrize(
+    ("fixture", "expected"),
+    [
+        (
+            "mixed",
+            {
+                "PrefixAndNode": {1: 1},
+                "NodeOnly": {1: 1, 2: 1},
+                "MixedTerms": {1: 2, 2: 1},
+            },
+        ),
+        ("all-explicit", {"AllExplicitPrefix": {1: 1}}),
+        ("species-countunique-qualified", {"FalseThenTrue": {2: 1}}),
+    ],
+)
+def test_compartment_prefix_observables_match_locked_bng2(
+    fixture, expected, bng_cpp, tmp_path
+):
+    """The .net groups and C++ weights preserve graph and node compartments."""
+    bng2 = _locked_bng2_script()
+    require_oracle(
+        bng2 is not None,
+        "locked BNG2.pl not found at BNG2_PERL/BNGPATH or its source revision "
+        "does not match provenance/upstreams.lock.yml",
+    )
+    assert bng2 is not None
+    perl = shutil.which(os.environ.get("PERL", "perl"))
+    require_oracle(perl is not None, "Perl is required to run the locked BNG2 oracle")
+    assert perl is not None
+
+    model = {
+        "mixed": _compartment_prefix_fixture,
+        "all-explicit": _all_explicit_compartment_prefix_fixture,
+        "species-countunique-qualified": _species_countunique_qualified_fixture,
+    }[fixture]()
+    source = tmp_path / f"compartment_{fixture}.bngl"
+    source.write_text(
+        model + "\ngenerate_network({overwrite=>1})\nwriteCPPfile()\n",
+        encoding="utf-8",
+    )
+    bng3_dir = tmp_path / "bng3"
+    net_path, _, err = runner.run_cli_path(bng_cpp, source, bng3_dir)
+    assert net_path is not None, f"BNG3 C++ export failed: {err}"
+    header_path = bng3_dir / f"compartment_{fixture}_cvode.h"
+    assert header_path.is_file(), "writeCPPfile produced no CVODE header"
+
+    oracle_source = tmp_path / f"compartment_{fixture}_bng2.bngl"
+    oracle_source.write_text(
+        model + "\ngenerate_network({overwrite=>1})\n", encoding="utf-8"
+    )
+    bng2_dir = tmp_path / "bng2"
+    bng2_dir.mkdir()
+    oracle_env = os.environ.copy()
+    oracle_env["BNGPATH"] = str(bng2.parent)
+    proc = subprocess.run(
+        [
+            perl,
+            str(bng2),
+            "--outdir",
+            str(bng2_dir),
+            "--check",
+            "--netgen",
+            str(oracle_source),
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=oracle_env,
+    )
+    assert proc.returncode == 0, (
+        "locked BNG2 could not generate compartment observable groups:\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+
+    oracle_net = compare.parse_net(bng2_dir / f"compartment_{fixture}_bng2.net")
+    bng3_net = compare.parse_net(net_path)
+    assert oracle_net is not None, "locked BNG2 produced no parseable .net"
+    assert bng3_net is not None, "BNG3 produced no parseable .net"
+    assert bng3_net.species_by_index == oracle_net.species_by_index, (
+        "compartment observable fixture species identities/order differ between "
+        f"BNG3 and locked BNG2: {bng3_net.species_by_index!r} vs "
+        f"{oracle_net.species_by_index!r}"
+    )
+
+    oracle_groups = {name: entries for name, entries in oracle_net.groups.values()}
+    bng3_groups = {name: entries for name, entries in bng3_net.groups.values()}
+    assert oracle_groups == expected, "locked BNG2 did not exercise the expected groups"
+    assert bng3_groups == expected, (
+        f"BNG3 .net groups disagree with locked BNG2 for {fixture}: "
+        f"{bng3_groups!r} vs {expected!r}"
+    )
+    assert (
+        _cpp_observable_weights(header_path.read_text(encoding="utf-8")) == expected
+    ), f"C++ export observable weights disagree with locked BNG2 for {fixture}"
+
+
+@pytest.mark.export
+def test_locked_bng2_prefix_miss_still_evaluates_zero_count_relation(tmp_path):
+    """Pin the BNG2 contract for a prefix miss followed by a zero-count test."""
+    bng2 = _locked_bng2_script()
+    require_oracle(
+        bng2 is not None,
+        "locked BNG2.pl not found at BNG2_PERL/BNGPATH or its source revision "
+        "does not match provenance/upstreams.lock.yml",
+    )
+    assert bng2 is not None
+    perl = shutil.which(os.environ.get("PERL", "perl"))
+    require_oracle(perl is not None, "Perl is required to run the locked BNG2 oracle")
+    assert perl is not None
+
+    model = """begin model
+begin parameters
+  n 1
+end parameters
+begin molecule types
+  A()
+  Z()
+end molecule types
+begin compartments
+  PM 2 1
+  CP 3 1 PM
+end compartments
+begin seed species
+  @CP:A() n
+end seed species
+begin observables
+  Species PrefixZero @PM:A()<1
+end observables
+begin reaction rules
+  source: 0 -> @PM:Z() 1
+end reaction rules
+end model
+generate_network({overwrite=>1})
+"""
+    source = tmp_path / "prefix_zero_bng2.bngl"
+    source.write_text(model, encoding="utf-8")
+    output = tmp_path / "bng2"
+    output.mkdir()
+    oracle_env = os.environ.copy()
+    oracle_env["BNGPATH"] = str(bng2.parent)
+    proc = subprocess.run(
+        [perl, str(bng2), "--outdir", str(output), "--check", "--netgen", str(source)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env=oracle_env,
+    )
+    assert proc.returncode == 0, (
+        "locked BNG2 could not generate the zero-count relation fixture:\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    oracle_net = compare.parse_net(output / "prefix_zero_bng2.net")
+    assert oracle_net is not None, "locked BNG2 produced no parseable .net"
+    assert oracle_net.species_by_index == {
+        1: "@CP::A()",
+        2: "@PM::Z()",
+    }
+    assert {name: entries for name, entries in oracle_net.groups.values()} == {
+        "PrefixZero": {1: 1, 2: 1}
+    }
+
+
 def _cpp_observable_weights(header: str) -> dict[str, dict[int, int]]:
     """Read emitted species coefficients by observable and 1-based species id."""
     result: dict[str, dict[int, int]] = {}
