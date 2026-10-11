@@ -1,7 +1,7 @@
 # BNG3 current progress
 
-**Refreshed:** 2026-10-11 UTC against RuleWorld/BNG3 main
-`4795179ef16ae679d58e03e03444c28fc079b1fd`. Semantic convergence and release
+**Refreshed:** 2026-10-11 against RuleWorld/BNG3 main
+`9bf28a0b0b89d30560f5920339101b2d5ef82de1`. Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
 [#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 44 open and eleven closed
 (#132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183).
@@ -27,7 +27,7 @@ A bounded repair does not close its broader issue.
 | #140 | #207/#220 | Compile-owned numeric max_iter/max_agg, fractional/negative aggregate thresholds and product-only filtering. Broader protocol typing remains open. |
 | #141/#142 | #203/#211/#222/#224 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots have a shared-topology contract; serial scan exceptions restore base/dependent parameters and the original network before successful analytic/fresh-model recovery. Broader invalidation/lifecycle and graph encoding unification remain open. |
 | #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
-| #138/#163 | #196/#197/#228/#230 | Compile-owned units and version-aware SBML units; NET output has an independent Network3 analytic consumer contract; C++ observable coefficients now use the shared projection with BNG2-compatible counting modes and inert Molecules qualifiers; broader runtime migration/export qualification remains open. |
+| #138/#163 | #196/#197/#228/#230/#233 | Compile-owned units and version-aware SBML units; NET has an independent Network3 analytic consumer contract. NET, C++ and regulatory graph observable projection now preserve graph-prefix context, counting modes, inert Molecules qualifiers and qualified Species CountUnique termination; broader runtime migration/export qualification remains open. |
 | #139 | #225 | Compiler-owned direction-specific whole-deletion and typed DeleteMolecules hooks drive compatibility execution; full kernel retirement remains open. |
 | #151 | #231 | Verified static zero-order physical count rates and bound parameter updates in one explicit positive 3D compartment. Physical XML fallback refuses; broader molecularity, unit seeds and dynamic contexts remain unsupported. |
 | #143 | #201 | Typed ODE dependency classification and time/state reevaluation; broader backend scope, propensity and cache-invalidation criteria remain open. |
@@ -40,7 +40,7 @@ A bounded repair does not close its broader issue.
 | #182 | #199/#216 | Required numerical/expression/export and scheduled/manual frozen ensemble CI wiring, exact-source package/native/worker checks and permanent receipts; #182 closed. Scientific stochastic and historical NFsim qualification remain open. |
 | #183 | #206 | Budgeted locked SSTS CI, per-case classifications/digests and permanent receipts. This bounded workflow issue is closed; full #159 qualification remains open. |
 
-Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230 plus ledger refreshes #221/#223/#229 during this continuation.
+Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230, #233 plus ledger refreshes #221/#223/#229/#232 during this continuation.
 PR #205 integrated the Rasi performance port separately. The shared checkout
 remains on perf/nfsim-rasi-translation-port-v2 at `07ea87d3`, with its unrelated
 untracked audit file preserved. Work continues in isolated checkouts. Only root
@@ -49,6 +49,27 @@ unauthorized.
 
 ## Current qualification receipts
 
+- Observable scope/counting #233: exact source `e03a750108330cf0f5434184db05bb741ac7c5e7`,
+  merge `9bf28a0b0b89d30560f5920339101b2d5ef82de1`, tree
+  `ccec8ad7c6ca6d38e8826d9972119601f187e80e`. Root/fresh Luna reviewed
+  required candidate compartment context and per-term typed prefix IDs in the
+  NET, C++ and regulatory graph writers. A prefix miss yields zero before
+  Species predicates; qualified Species CountUnique stops even when false,
+  matching pinned BNG2. NET groups reuse the compile-owned projection.
+  Final clean-head cached Release validation: 11 native cases/93 assertions,
+  count-filter contracts 2/18 and 18 strict exporter/NET round-trip/independent
+  Network3 tests (37 deselected) pass. Architecture check passes with 41 explicit
+  compatibility files. Inverting the prefix-ID comparison caused eight assertions
+  in four cases to fail; restoring source returned all 93 assertions to green.
+  CLI SHA256 `ed2a30a170860e6b74610d13c069de49a9631396b2b607ae464b1ec7f4caf35b`.
+  Independent fixtures use pinned BNG2 `9601746` and locally source-rebuilt
+  Network3 `9f39d22e`; the latter is not the separately locked binary artifact.
+  At merge: five hosted successes, 12 in progress, one neutral and one skip;
+  these are separate from local exact-head evidence. All-explicit-node coverage
+  is a validity guard. Zero-count `<1` coverage uses the AST API; CLI grammar
+  still rejects that form. Full generated solver consumption, installed package
+  qualification and general compartment correspondence remain open. Outer AST
+  dependencies remain; #138/#142/#163 stay open.
 - C++ observable coefficients #230: exact source `bfbeeff497097da76539024b86d7055e0c01a99e`,
   merge `4795179ef16ae679d58e03e03444c28fc079b1fd`. Root/fresh Luna reviewed
   the shared-projection migration and repaired valid Molecules qualifier refusal:
@@ -63,7 +84,8 @@ unauthorized.
   At merge: three hosted successes and eleven pending checks. This is observable
   emission, not full generated CVODE solver consumption or general compartment
   correspondence. Outer AST dependencies remain; #138/#142/#163 stay open.
-  NET groups still bypass CountUnique and need a separately qualified repair.
+  NET groups were not qualified at that checkpoint; #233 supplies the bounded
+  shared-projection repair above.
 - CI wiring #182: root/fresh Luna accepted the existing #199/#216 implementation
   after [manual run 38076443040](https://github.com/RuleWorld/BNG3/actions/runs/38076443040)
   executed exact source `dfc4ba9cdefa62c96617d26ddba93151ef16b2be`.
@@ -80,9 +102,13 @@ unauthorized.
   archive SHA256 `d4313dd1266d71646a0739ad492b461f4ad3af7aad1956f4f3535af8d124c999`.
   Overall workflow FAILED: historical NFsim also has three failures/three errors
   in 74 tests (v17 scoped-rate rejection, v19 parser errors, r21 statistics and
-  empty-reference assertions). #182 closed for wiring with these reds retained;
+  empty-reference assertions). Source/oracle follow-up classifies v17 as a
+  canonical leading `%x:` scope/serialization defect; v19 is malformed source
+  accepted with a warning by BNG2; r42/r43 are missing XML input artifacts in the
+  historical harness; r21 remains unresolved without retained trajectories. No
+  seeds, retries, cohorts or thresholds changed. #182 closed for wiring with these reds retained;
   #146 and broader numerical qualification remain open. Later #231/#230 are
-  excluded from this artifact. #202's 14 provenance approval decisions stay pending.
+  excluded from this artifact, as is #233. #202's 14 provenance approval decisions stay pending.
 - Physical units #231: exact source `4637d8e340c8fdc1004e3a7e8d6ce7de996d4fc1`,
   merge `35af757ae1143d1679d63317859b2b3220f18374`. Root/fresh Luna review
   repaired time/volume, capability/raw-lowering disagreement, aliases/mixed
@@ -120,7 +146,8 @@ unauthorized.
   SHA256 `b7897fcd2d20faf58c9eeefa412fa8f178b4fa32c6bbca4320d967483d6bc552`.
   Worker 1, assignment 32, network 5 and required parity/export 60 tests pass;
   three scheduled ensembles deselected. At merge: 17 successful checks, one
-  scheduled skip and 22 pending platform/Python checks. No full #163 closure.
+  scheduled skip and 22 pending platform/Python checks. Final exact-head snapshot
+  has 41 successes and five skips, no failures or pending checks. No full #163 closure.
 - Assignment/XML #130: exact source `5f2b5c1fd01d1bbeaa3a9bc9aa61a2393e0dae81`,
   merge `7f6b1969d369171064ff01e29ac4d5cb6d266996`; #132 closed after review.
   Local 32 assignment, 71 strict CLI corpus, five live pinned BNG2 network and

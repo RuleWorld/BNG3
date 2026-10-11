@@ -1,8 +1,8 @@
 # BNG3 convergence checklist
 
 **Status:** incomplete; 44 of 55 audit issues are open. #132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
-**Refreshed:** 2026-10-11 UTC against live main
-`4795179ef16ae679d58e03e03444c28fc079b1fd`. See
+**Refreshed:** 2026-10-11 against live main
+`9bf28a0b0b89d30560f5920339101b2d5ef82de1`. See
 [current progress](CURRENT_PROGRESS.md) for scoped integrations, exact evidence
 boundaries and candidates. The original audited qualification baseline was
 `e1836c3274e685996d5e86883761e00e98257e09`.
@@ -73,7 +73,7 @@ an open PR or by filing an issue.
 
 ### C++ semantic and runtime boundaries
 
-- [ ] **B01 · P1 I** — Migrate remaining runtime consumers to the resolved semantic model. [#138](https://github.com/RuleWorld/BNG3/issues/138)
+- [ ] **B01 · P1 I** — Migrate remaining runtime consumers to the resolved semantic model. [#138](https://github.com/RuleWorld/BNG3/issues/138) Merged PR [#233](https://github.com/RuleWorld/BNG3/pull/233) migrates NET observable groups and preserves shared graph-prefix/counting semantics; 41 files remain in the compatibility allowlist; broader migration remains open.
 - [ ] **B02 · P1 I** — Separate network-rule execution from reconstructed AST rules. [#139](https://github.com/RuleWorld/BNG3/issues/139)
 - [ ] **B03 · P1 I** — Type simulation protocol actions and share option semantics. [#140](https://github.com/RuleWorld/BNG3/issues/140)
 - [ ] **B04 · P1 Q** — Qualify compile-once model reuse and independent trajectory state. [#141](https://github.com/RuleWorld/BNG3/issues/141)
