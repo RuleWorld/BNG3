@@ -1,8 +1,8 @@
 # BNG3 convergence checklist
 
-**Status:** incomplete; 45 of 55 audit issues are open. #132/#133/#134/#135/#136/#145/#165/#169/#173/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
-**Refreshed:** 2026-10-10 UTC against live main
-`0bf3a0446f46515b6ab09ed54d90f4e6fac228a4`. See
+**Status:** incomplete; 44 of 55 audit issues are open. #132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
+**Refreshed:** 2026-10-11 UTC against live main
+`4795179ef16ae679d58e03e03444c28fc079b1fd`. See
 [current progress](CURRENT_PROGRESS.md) for scoped integrations, exact evidence
 boundaries and candidates. The original audited qualification baseline was
 `e1836c3274e685996d5e86883761e00e98257e09`.
@@ -57,7 +57,7 @@ not automatic expansion. Estimates and detailed acceptance tests live in issues.
 An unchecked item remains open until its issue has a verified implementation or
 an approved disposition. A03 is the closed review/disposition issue; #128 and its required pyparsing repair
 #204 subsequently landed together after combined source review.
-A01 closed after #130 merged and its scoped regression, installed independent and three-platform corpus gates passed. A04 closed after #187 merged and its issue-linked documentation criteria were reviewed. A02 and G03 closed after the exact-source installed JAX qualification and explicit SSA-unavailable disposition; H05 closed after bounded official-suite CI and durable receipts were reviewed. A05, B08, F01 and F05 closed after their documentation, shared capability, reference-matcher and trust-accounting acceptance criteria were met; broader semantic/proof issues remain open. Other bounded merged runtime and BNGIR repairs are listed in current progress and did not close their broader audit issues.
+A01 closed after #130 merged and its scoped regression, installed independent and three-platform corpus gates passed. A04 closed after #187 merged and its issue-linked documentation criteria were reviewed. A02 and G03 closed after the exact-source installed JAX qualification and explicit SSA-unavailable disposition; H05 closed after bounded official-suite CI and durable receipts were reviewed. A05, B08, F01 and F05 closed after their documentation, shared capability, reference-matcher and trust-accounting acceptance criteria were met; broader semantic/proof issues remain open. H04 closed after the exact-source manual ensemble gate executed and its red results were retained in a permanent receipt; scientific qualification remains open. Other bounded merged runtime and BNGIR repairs are listed in current progress and did not close their broader audit issues.
 The pushed candidate ledger and next dependency order are in
 [current progress](CURRENT_PROGRESS.md); no other item is completed merely by
 an open PR or by filing an issue.
@@ -135,7 +135,7 @@ an open PR or by filing an issue.
 - [ ] **H01 · P1 M** — Resolve strict provenance approvals and enforce the release gate. [#179](https://github.com/RuleWorld/BNG3/issues/179)
 - [ ] **H02 · P1 Q** — Refresh upstream reconciliation and map behavior claims to tests. [#180](https://github.com/RuleWorld/BNG3/issues/180)
 - [ ] **H03 · P1 Q** — Approve complete capability-based corpus tiers and budgets. [#181](https://github.com/RuleWorld/BNG3/issues/181)
-- [ ] **H04 · P1 Q** — Wire numerical, expression and export parity into explicit CI gates. [#182](https://github.com/RuleWorld/BNG3/issues/182)
+- [x] **H04 · P1 Q** — Wire numerical, expression and export parity into explicit CI gates. [#182](https://github.com/RuleWorld/BNG3/issues/182)
 - [x] **H05 · P1 Q** — Add budgeted official SBML conformance CI with durable artifacts. [#183](https://github.com/RuleWorld/BNG3/issues/183)
 - [ ] **H06 · P2 Q** — Complete release-candidate scientific and packaging qualification. [#184](https://github.com/RuleWorld/BNG3/issues/184)
 - [ ] **H07 · P2 M** — Assign scientific, formal and compatibility review ownership. [#185](https://github.com/RuleWorld/BNG3/issues/185)
