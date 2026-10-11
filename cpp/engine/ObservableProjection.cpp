@@ -31,6 +31,11 @@ ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
 
     observables_.reserve(model.observables().size());
     for (const auto& source : model.observables()) {
+        if (source.kind == compile::ObservableKind::Unknown) {
+            throw std::runtime_error("unsupported observable type '" + source.type +
+                                     "' for observable '" + source.name + "'");
+        }
+
         Observable observable;
         observable.name = source.name;
         observable.kind = source.kind;
