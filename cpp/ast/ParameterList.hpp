@@ -25,6 +25,12 @@ public:
     // to be evaluated per timestep. Unknown names are not time dependent.
     bool isTimeDependent(const std::string& name) const;
 
+    // Conservatively classify an expression used to prove a static physical
+    // context. Clock references and transitive timed parameters return true;
+    // calls or constructs whose time independence cannot be established also
+    // return true so callers do not freeze an unknown dynamic value.
+    bool expressionIsTimeDependent(const Expression& expression) const;
+
 private:
     double evaluateIndex(std::size_t index, std::unordered_map<std::string, bool>& visiting, double t) const;
 

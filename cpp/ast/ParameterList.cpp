@@ -1,6 +1,7 @@
 #include "ParameterList.hpp"
 
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
 
 namespace bng::ast {
@@ -46,6 +47,42 @@ bool referencesTime(const Expression& expression) {
 bool ParameterList::isTimeDependent(const std::string& name) const {
     const auto it = indexByName_.find(name);
     return it != indexByName_.end() && isTimeDependent(it->second);
+}
+
+bool ParameterList::expressionIsTimeDependent(const Expression& expression) const {
+    std::unordered_set<std::string> visiting;
+    const auto mayDependOnTime = [&](const auto& self, const Expression& candidate) -> bool {
+        if (referencesTime(candidate)) return true;
+
+        switch (candidate.kind()) {
+        case ExpressionKind::Number:
+            return false;
+        case ExpressionKind::Identifier: {
+            const auto iter = indexByName_.find(candidate.name());
+            if (iter == indexByName_.end()) return true;
+            if (isTimeDependent(iter->second)) return true;
+            if (!visiting.insert(candidate.name()).second) return true;
+            const bool dependent = self(self, parameters_[iter->second].getExpression());
+            visiting.erase(candidate.name());
+            return dependent;
+        }
+        case ExpressionKind::Function:
+        case ExpressionKind::ObservableRef:
+        case ExpressionKind::TableFunction:
+            // A non-clock call can still resolve to a user function or table
+            // lookup with runtime state. The volume bridge has no proof for
+            // those semantics, so leave them outside its static subset.
+            return true;
+        case ExpressionKind::Unary:
+        case ExpressionKind::Binary:
+            for (const auto& child : candidate.args()) {
+                if (self(self, child)) return true;
+            }
+            return false;
+        }
+        return true;
+    };
+    return mayDependOnTime(mayDependOnTime, expression);
 }
 
 

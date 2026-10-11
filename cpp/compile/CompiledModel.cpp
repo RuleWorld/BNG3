@@ -278,6 +278,7 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.index = index;
         compiled.name = compartment.getName();
         compiled.volume = compartment.getVolume();
+        compiled.volumeTimeDependent = compartment.isVolumeTimeDependent();
         compiled.dimension = compartment.getDimension();
         compiled.parentName = compartment.getParent();
         if (compartment.hasUnit()) {

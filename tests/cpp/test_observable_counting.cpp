@@ -78,6 +78,26 @@ end model
 )BNGL";
 }
 
+std::string relationalMoleculesModel(const std::string& option) {
+    return "begin model\n" + option + R"BNGL(
+begin parameters
+  n  100
+end parameters
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b!1).A(b!1)  n
+end seed species
+begin observables
+  Molecules Dimer A(b!1).A(b!1)>5
+  Species MatchCountAboveOne A(b!1).A(b!1)>1
+  Species MatchCountAboveTwo A(b!1).A(b!1)>2
+end observables
+end model
+)BNGL";
+}
+
 struct Compiled {
     std::unique_ptr<bng::ast::Model> model;
     std::unique_ptr<bng::compile::Document> document;
@@ -174,4 +194,27 @@ TEST_CASE("Observables: the two counting options are independent",
     const bng::engine::ObservableProjection projection(compiled.compiled());
     REQUIRE(projection.size() == 1);
     CHECK(projection.weight(0, seedSpeciesGraph(compiled)) == 2);
+}
+
+TEST_CASE("Observables: Molecules qualifiers are inert while Species qualifiers apply",
+          "[observables][counting]") {
+    // BNG2 ignores the relation on Molecules terms, but applies it to the
+    // pattern match count for Species terms. A symmetric dimer has two matches.
+    const auto all = compileModel(
+        relationalMoleculesModel("setOption(\"MoleculesObservables\",\"CountAll\")\n"));
+    const bng::engine::ObservableProjection allProjection(all.compiled());
+    REQUIRE(allProjection.size() == 3);
+    const auto allSpecies = seedSpeciesGraph(all);
+    CHECK(allProjection.weight(0, allSpecies) == 2);
+    CHECK(allProjection.weight(1, allSpecies) == 1);
+    CHECK(allProjection.weight(2, allSpecies) == 0);
+
+    const auto unique = compileModel(relationalMoleculesModel(
+        "setOption(\"MoleculesObservables\",\"CountUnique\")\n"));
+    const bng::engine::ObservableProjection uniqueProjection(unique.compiled());
+    REQUIRE(uniqueProjection.size() == 3);
+    const auto uniqueSpecies = seedSpeciesGraph(unique);
+    CHECK(uniqueProjection.weight(0, uniqueSpecies) == 1);
+    CHECK(uniqueProjection.weight(1, uniqueSpecies) == 1);
+    CHECK(uniqueProjection.weight(2, uniqueSpecies) == 0);
 }
