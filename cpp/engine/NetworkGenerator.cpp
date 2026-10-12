@@ -49,12 +49,15 @@ std::map<std::string, std::size_t> parseMaxStoich(const compile::SimulationProto
         }
 
         std::map<std::string, std::size_t> limits;
-        std::string text = found->second;
-        text.erase(std::remove_if(text.begin(), text.end(), [](unsigned char c) {
-            return std::isspace(c) != 0;
-        }), text.end());
+        const auto trimWhitespace = [](std::string value) {
+            const auto isWhitespace = [](unsigned char c) { return std::isspace(c) != 0; };
+            value.erase(value.begin(), std::find_if_not(value.begin(), value.end(), isWhitespace));
+            value.erase(std::find_if_not(value.rbegin(), value.rend(), isWhitespace).base(), value.end());
+            return value;
+        };
+        std::string text = trimWhitespace(found->second);
         if (text.size() >= 2 && text.front() == '{' && text.back() == '}') {
-            text = text.substr(1, text.size() - 2);
+            text = trimWhitespace(text.substr(1, text.size() - 2));
         }
 
         std::size_t start = 0;
@@ -64,19 +67,27 @@ std::map<std::string, std::size_t> parseMaxStoich(const compile::SimulationProto
             const auto arrow = entry.find("=>");
             if (arrow != std::string::npos) {
                 std::string key = entry.substr(0, arrow);
+                key.erase(std::remove_if(key.begin(), key.end(), [](unsigned char c) {
+                    return std::isspace(c) != 0;
+                }), key.end());
                 // Strip surrounding quotes from key (e.g., 'R' -> R, "R" -> R)
                 if (key.size() >= 2 && ((key.front() == '\'' && key.back() == '\'') ||
                                          (key.front() == '"' && key.back() == '"'))) {
                     key = key.substr(1, key.size() - 2);
                 }
-                const std::string value = entry.substr(arrow + 2);
+                const std::string rawValue = entry.substr(arrow + 2);
+                const std::string value = trimWhitespace(rawValue);
                 // BNG2 treats this sentinel as having no per-molecule limit.
                 // Keep the compatibility runtime's existing numeric parsing
                 // unchanged for every other value.
                 const bool quotedUnlimited =
                     value == "'unlimited'" || value == "\"unlimited\"";
                 if (value != "unlimited" && !quotedUnlimited) {
-                    limits.emplace(key, static_cast<std::size_t>(std::stoull(value)));
+                    std::string numericValue = rawValue;
+                    numericValue.erase(std::remove_if(numericValue.begin(), numericValue.end(), [](unsigned char c) {
+                        return std::isspace(c) != 0;
+                    }), numericValue.end());
+                    limits.emplace(key, static_cast<std::size_t>(std::stoull(numericValue)));
                 }
             }
             if (comma == std::string::npos) {

@@ -897,6 +897,37 @@ generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>)" + sentinel + R"(}}
     }
 }
 
+TEST_CASE("generate_network max_stoich does not trim whitespace inside quoted values") {
+    const auto parseWithValue = [](const std::string& value) {
+        return parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+begin reaction rules
+  bind: A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>)" + value + R"(}})
+)");
+    };
+
+    for (const auto& quote : {"'", "\""}) {
+        for (const auto& contents : {"un limited", " unlimited", "unlimited "}) {
+            const std::string value = std::string(quote) + contents + quote;
+            INFO("quoted max_stoich value: " << value);
+            auto model = parseWithValue(value);
+            REQUIRE(model != nullptr);
+            engine::NetworkGenerator generator(*model);
+            CHECK_THROWS(generator.generate({}));
+        }
+    }
+}
+
 TEST_CASE("generate_network max_stoich combines finite limits with unlimited and retains seeds") {
     auto model = parseModel(R"(
 begin model
