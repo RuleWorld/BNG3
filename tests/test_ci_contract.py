@@ -1066,6 +1066,32 @@ def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
     assert "pytest tests/test_workflow_contract.py" in integration_job
 
 
+def test_python_integration_installs_jsonschema_for_bridge_test_collection():
+    """The integration job must collect tests with their direct imports.
+
+    ``test_bngir_version_bridge.py`` imports jsonschema at module scope, so
+    pytest needs it even when a ``-k`` selector would exclude that test's
+    functions. The package's ``full`` extra intentionally does not include
+    test-only dependencies.
+    """
+
+    integration_job = _workflow_job("python-integration")
+    install_lines = [
+        line
+        for line in integration_job.splitlines()
+        if re.search(r"(?:pip|python\s+-m\s+pip)\s+install", line)
+    ]
+    assert any(
+        re.search(r"\bjsonschema(?:[<>=!~].*)?\b", line)
+        or '".[dev]"' in line
+        or "'.[dev]'" in line
+        for line in install_lines
+    ), (
+        "python-integration must install jsonschema (or the dev extra that "
+        "provides it) before pytest collects tests/python/test_bngir_version_bridge.py"
+    )
+
+
 def test_python_test_jobs_download_the_matching_native_cli_artifact():
     """CLI-backed Python contracts must use the same-head OS binary."""
 
