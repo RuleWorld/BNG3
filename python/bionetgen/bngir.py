@@ -605,13 +605,41 @@ def _parse_document(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
 
 
 def _validate_document_properties(root: Mapping[str, Any]) -> None:
-    """Reject unknown envelope and model properties while allowing provenance."""
+    """Reject unknown document and model properties while allowing provenance."""
     allowed = {"format", "version", "features", "model", "protocol", "provenance"}
     unexpected = sorted(str(key) for key in root if key not in allowed)
     if unexpected:
         raise ValueError(
             f"BNGIR document has unsupported properties: {', '.join(unexpected)}"
         )
+
+    features = _require_mapping(root.get("features"), "features")
+    unexpected_features = sorted(
+        str(key) for key in features if key not in {"required", "used"}
+    )
+    if unexpected_features:
+        raise ValueError(
+            "BNGIR features has unsupported properties: "
+            f"{', '.join(unexpected_features)}"
+        )
+
+    protocol = _require_mapping(root.get("protocol", {}), "protocol")
+    unexpected_protocol = sorted(str(key) for key in protocol if key not in {"actions"})
+    if unexpected_protocol:
+        raise ValueError(
+            "BNGIR protocol has unsupported properties: "
+            f"{', '.join(unexpected_protocol)}"
+        )
+    for index, raw_action in enumerate(protocol.get("actions", [])):
+        action = _require_mapping(raw_action, f"protocol.actions[{index}]")
+        unexpected_action = sorted(
+            str(key) for key in action if key not in {"scope", "name", "arguments"}
+        )
+        if unexpected_action:
+            raise ValueError(
+                f"BNGIR protocol.actions[{index}] has unsupported properties: "
+                f"{', '.join(unexpected_action)}"
+            )
 
     if root["version"] == VERSION:
         model_allowed = {
