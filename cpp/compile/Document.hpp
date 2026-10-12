@@ -36,8 +36,15 @@ struct ProtocolAction {
         // do not invalidate otherwise usable model metadata.
         std::optional<Diagnostic> nStepsDiagnostic;
     };
+    struct SetParameterOptions {
+        std::optional<double> staticValue;
+        // Static action values are validated during compilation, but errors
+        // are deferred until the setter executes.
+        std::optional<Diagnostic> valueDiagnostic;
+    };
     std::optional<GenerateNetworkOptions> generateNetworkOptions;
     std::optional<SimulationOptions> simulationOptions;
+    std::optional<SetParameterOptions> setParameterOptions;
 };
 
 // Execution instructions are intentionally separate from reusable compiled
