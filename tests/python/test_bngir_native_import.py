@@ -54,6 +54,28 @@ def _document(source: str = SOURCE) -> dict:
     return json.loads(source_model.to_bngir(version="0.2"))
 
 
+def _nested_arithmetic_document() -> dict:
+    document = _document()
+    document["model"]["rules"][0]["forward"]["rate"]["expression"] = {
+        "kind": "unary",
+        "operator": "plus",
+        "arguments": [
+            {
+                "kind": "binary",
+                "operator": "add",
+                "arguments": [
+                    {
+                        "kind": "parameter_ref",
+                        "symbol": {"kind": "parameter", "index": 0},
+                    },
+                    {"kind": "number", "value": 0.1},
+                ],
+            }
+        ],
+    }
+    return document
+
+
 def _direct_native_model(document: dict):
     return bionetgen.BioNetGenModel(
         _cpp._model_from_bngir_v02(copy.deepcopy(document["model"]))
@@ -110,6 +132,98 @@ def test_direct_native_builder_rejects_boolean_declaration_ids():
 
     with pytest.raises(RuntimeError):
         _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_boolean_numeric_expression_values():
+    document = _document()
+    document["model"]["parameters"][0]["expression"]["value"] = True
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR expression value must be numeric"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_unknown_expression_properties():
+    document = _document()
+    document["model"]["parameters"][0]["expression"]["future_semantics"] = "stateful"
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR expression has unsupported future_semantics"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_unknown_nested_expression_properties():
+    document = _nested_arithmetic_document()
+    number = document["model"]["rules"][0]["forward"]["rate"]["expression"]
+    number = number["arguments"][0]["arguments"][1]
+    number["future_semantics"] = "stateful"
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR expression has unsupported future_semantics"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_boolean_nested_expression_values():
+    document = _nested_arithmetic_document()
+    number = document["model"]["rules"][0]["forward"]["rate"]["expression"]
+    number = number["arguments"][0]["arguments"][1]
+    number["value"] = True
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR expression value must be numeric"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    ("node_kind", "arguments", "expected"),
+    [
+        ("unary", [], "one argument"),
+        (
+            "unary",
+            [
+                {"kind": "number", "value": 0.1},
+                {"kind": "number", "value": 0.2},
+            ],
+            "one argument",
+        ),
+        ("binary", [], "two arguments"),
+        (
+            "binary",
+            [
+                {"kind": "parameter_ref", "symbol": {"kind": "parameter", "index": 0}},
+                {"kind": "number", "value": 0.1},
+                {"kind": "number", "value": 0.2},
+            ],
+            "two arguments",
+        ),
+    ],
+    ids=["unary-missing", "unary-extra", "binary-missing", "binary-extra"],
+)
+def test_direct_native_builder_rejects_invalid_expression_arity(
+    node_kind, arguments, expected
+):
+    document = _nested_arithmetic_document()
+    expression = document["model"]["rules"][0]["forward"]["rate"]["expression"]
+    node = expression if node_kind == "unary" else expression["arguments"][0]
+    node["arguments"] = arguments
+
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_preserves_nested_arithmetic_and_references():
+    restored = _direct_native_model(_nested_arithmetic_document())
+    network = restored.generate_network()
+    state = [100.0 if name == "A()" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, state)
+    by_species = dict(zip(network.species_names, derivative))
+
+    assert by_species["A()"] == pytest.approx(-20.0)
+    assert by_species["B()"] == pytest.approx(20.0)
 
 
 def test_direct_native_builder_rejects_unknown_parameter_properties():
