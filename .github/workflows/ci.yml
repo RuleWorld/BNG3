@@ -692,7 +692,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y cmake ninja-build
-          pip install scikit-build-core pybind11 numpy pytest
+          # The BNGIR version-bridge test imports jsonschema during pytest collection.
+          pip install scikit-build-core pybind11 numpy pytest jsonschema
           pip install ".[full]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
