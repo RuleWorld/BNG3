@@ -1677,6 +1677,31 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         return &*actions[actionIndex].simulationOptions;
     };
 
+    const auto setParameterOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::SetParameterOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].setParameterOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].setParameterOptions;
+    };
+
+    const auto parseSetParameterValue = [&](std::size_t actionIndex,
+                                            const std::string& valueText) {
+        const auto* options = setParameterOptionsAt(actionIndex);
+        if (options == nullptr) {
+            return parseScalarValue(valueText, model);
+        }
+        if (options->valueDiagnostic.has_value()) {
+            throw std::runtime_error(options->valueDiagnostic->message);
+        }
+        if (options->staticValue.has_value()) {
+            return *options->staticValue;
+        }
+        return parseScalarValue(valueText, model);
+    };
+
     const auto writeNetworkAt = [&](const std::filesystem::path& outputPath,
                                     const io::NetWriterOptions& options = {}) {
         if (loadedNetData.has_value()) {
@@ -2023,8 +2048,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         std::size_t compiledActionIndex = model.getActions().size();
         for (const auto& protoAction : protocol) {
-            const auto* compiledSimulationOptions =
-                simulationOptionsAt(compiledActionIndex++);
+            const auto actionIndex = compiledActionIndex++;
+            const auto* compiledSimulationOptions = simulationOptionsAt(actionIndex);
             const auto protoName = lowercase(protoAction.name);
             if (protoName == "simulate_nf" ||
                 (protoName == "simulate" &&
@@ -2070,7 +2095,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 if (!model.getParameters().contains(target)) {
                     throw std::runtime_error("setParameter: unknown parameter: " + target);
                 }
-                const double value = parseScalarValue(valueText, model);
+                const double value = parseSetParameterValue(actionIndex, valueText);
                 model.getParameters().add(
                     ast::Parameter(target, ast::Expression::number(value)));
                 model.getParameters().evaluateAll();
@@ -2180,8 +2205,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
     std::size_t compiledActionIndex = 0;
     for (const auto& action : model.getActions()) {
-        const auto* compiledSimulationOptions =
-            simulationOptionsAt(compiledActionIndex++);
+        const auto actionIndex = compiledActionIndex++;
+        const auto* compiledSimulationOptions = simulationOptionsAt(actionIndex);
         // Normalize action name to lowercase for case-insensitive matching
         std::string actionName = lowercase(action.name);
 
@@ -2570,7 +2595,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("setParameter requires a target parameter name");
             }
 
-            const double value = parseScalarValue(valueText, model);
+            const double value = parseSetParameterValue(actionIndex, valueText);
             model.getParameters().add(ast::Parameter(target, ast::Expression::number(value)));
             model.getParameters().evaluateAll();
 

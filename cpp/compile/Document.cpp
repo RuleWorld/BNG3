@@ -16,6 +16,7 @@ namespace {
 
 using GenerateNetworkOptions = ProtocolAction::GenerateNetworkOptions;
 using SimulationOptions = ProtocolAction::SimulationOptions;
+using SetParameterOptions = ProtocolAction::SetParameterOptions;
 
 Diagnostic maxIterationsDiagnostic(const std::string& source,
                                    const std::string& reason) {
@@ -46,6 +47,17 @@ Diagnostic nStepsDiagnostic(const std::string& source, const std::string& reason
     diagnostic.category = ValidationCategory::Expressions;
     diagnostic.entity = "simulation.n_steps";
     diagnostic.message = "invalid n_steps '" + source + "': " + reason;
+    return diagnostic;
+}
+
+Diagnostic setParameterValueDiagnostic(const std::string& source,
+                                       const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "setParameter.value";
+    diagnostic.message = "invalid setParameter value '" + source + "': " + reason;
     return diagnostic;
 }
 
@@ -164,6 +176,56 @@ bool supportsStaticActionArithmetic(const ast::Expression& expression,
         return false;
     }
     return false;
+}
+
+SetParameterOptions compileSetParameterOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SetParameterOptions options;
+    const auto found = arguments.find("value");
+    if (found == arguments.end()) {
+        return options;
+    }
+
+    const auto& source = found->second;
+    const auto expressionSource = unquoteActionValue(source);
+    if (expressionSource.find('^') != std::string::npos) {
+        options.valueDiagnostic = setParameterValueDiagnostic(
+            source, "Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
+        return options;
+    }
+    if (!containsOnlyNumericActionSyntax(expressionSource)) {
+        // Parameter-backed values stay raw so execution can resolve them after
+        // preceding actions have updated the model. Caret is refused above
+        // because Safe-Perl uses it for XOR, while BNGL parses it as power.
+        return options;
+    }
+
+    ast::Expression expression;
+    try {
+        expression = parser::parseExpression(expressionSource);
+    } catch (const std::exception& error) {
+        options.valueDiagnostic = setParameterValueDiagnostic(
+            source, std::string("could not be parsed as a numeric expression: ") +
+                        error.what());
+        return options;
+    }
+
+    std::size_t powerOperators = 0;
+    if (!supportsStaticActionArithmetic(expression, powerOperators)) {
+        options.valueDiagnostic = setParameterValueDiagnostic(
+            source,
+            "cannot be translated without changing Safe-Perl arithmetic semantics");
+        return options;
+    }
+
+    double value = 0.0;
+    if (!evaluateFiniteStaticExpression(expression, value)) {
+        options.valueDiagnostic = setParameterValueDiagnostic(
+            source, "must evaluate to a finite number");
+        return options;
+    }
+    options.staticValue = value;
+    return options;
 }
 
 GenerateNetworkOptions compileGenerateNetworkOptions(
@@ -384,6 +446,12 @@ ProtocolAction compileProtocolAction(ActionScope scope, const ast::Action& actio
     compiled.arguments = action.arguments;
     if (action.name == "generate_network") {
         compiled.generateNetworkOptions = compileGenerateNetworkOptions(action.arguments);
+    }
+    std::string actionName = action.name;
+    std::transform(actionName.begin(), actionName.end(), actionName.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (actionName == "setparameter") {
+        compiled.setParameterOptions = compileSetParameterOptions(action.arguments);
     }
     compiled.simulationOptions = compileSimulationOptions(action);
     return compiled;

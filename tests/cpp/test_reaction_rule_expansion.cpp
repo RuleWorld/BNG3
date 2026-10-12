@@ -214,6 +214,71 @@ TEST_CASE("parameter-backed simulation n_steps remain execution-time values") {
     CHECK_FALSE(action.simulationOptions->nStepsDiagnostic.has_value());
 }
 
+TEST_CASE("setParameter compiles static arithmetic while retaining dynamic values") {
+    struct StaticCase {
+        const char* expression;
+        double expected;
+        bool protocol;
+    };
+    const StaticCase staticCases[] = {
+        {"2**3", 8.0, false},
+        {"0", 0.0, false},
+        {"-2", -2.0, true},
+    };
+
+    for (const auto& testCase : staticCases) {
+        INFO("setParameter value: " << testCase.expression);
+        auto model = modelWithSimulationAction(
+            std::string("setParameter(\"N\",") + testCase.expression + ")",
+            testCase.protocol);
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        REQUIRE(document.valid());
+        REQUIRE(document.protocol().actions.size() == 1);
+        const auto& action = document.protocol().actions.front();
+        CHECK(action.scope == (testCase.protocol ? compile::ActionScope::SimulationProtocol
+                                                : compile::ActionScope::Model));
+        REQUIRE(action.setParameterOptions.has_value());
+        CHECK(action.arguments.at("value") == testCase.expression);
+        REQUIRE(action.setParameterOptions->staticValue.has_value());
+        CHECK(*action.setParameterOptions->staticValue == testCase.expected);
+        CHECK_FALSE(action.setParameterOptions->valueDiagnostic.has_value());
+    }
+
+    auto dynamicModel = modelWithSimulationAction("setParameter(\"N\",N)");
+    REQUIRE(dynamicModel != nullptr);
+    const compile::Document dynamicDocument(*dynamicModel);
+    REQUIRE(dynamicDocument.protocol().actions.size() == 1);
+    const auto& dynamicAction = dynamicDocument.protocol().actions.front();
+    REQUIRE(dynamicAction.setParameterOptions.has_value());
+    CHECK_FALSE(dynamicAction.setParameterOptions->staticValue.has_value());
+    CHECK_FALSE(dynamicAction.setParameterOptions->valueDiagnostic.has_value());
+
+    auto dynamicPowerModel = modelWithSimulationAction("setParameter(\"N\",2**N)");
+    REQUIRE(dynamicPowerModel != nullptr);
+    const compile::Document dynamicPowerDocument(*dynamicPowerModel);
+    REQUIRE(dynamicPowerDocument.protocol().actions.size() == 1);
+    const auto& dynamicPowerAction = dynamicPowerDocument.protocol().actions.front();
+    REQUIRE(dynamicPowerAction.setParameterOptions.has_value());
+    CHECK_FALSE(dynamicPowerAction.setParameterOptions->staticValue.has_value());
+    CHECK_FALSE(dynamicPowerAction.setParameterOptions->valueDiagnostic.has_value());
+}
+
+TEST_CASE("unused invalid setParameter values remain deferred in compiled metadata") {
+    auto model = modelWithSimulationAction("setParameter(\"N\",2^N)", true);
+    REQUIRE(model != nullptr);
+    const compile::Document document(*model);
+    CHECK(document.valid());
+    REQUIRE(document.protocol().actions.size() == 1);
+    const auto& action = document.protocol().actions.front();
+    REQUIRE(action.setParameterOptions.has_value());
+    CHECK_FALSE(action.setParameterOptions->staticValue.has_value());
+    REQUIRE(action.setParameterOptions->valueDiagnostic.has_value());
+    CHECK(action.arguments.at("value") == "2^N");
+    CHECK(action.setParameterOptions->valueDiagnostic->message.find(
+              "Safe-Perl '^' is bitwise XOR") != std::string::npos);
+}
+
 TEST_CASE("BNGL network generation uses typed max_iter and explicit native overrides") {
     auto defaultModel = parseModel(R"(
 begin molecule types
