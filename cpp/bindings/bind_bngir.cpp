@@ -196,6 +196,11 @@ BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
     const auto molecules = py::cast<py::list>(pattern["molecules"]);
     for (const auto& rawMolecule : molecules) {
         const auto molecule = py::cast<py::dict>(rawMolecule);
+        const auto sites = py::cast<py::list>(molecule["sites"]);
+        if (!sites.empty()) {
+            throw std::runtime_error(
+                "native BNGIR pattern does not support molecule sites");
+        }
         const auto typeId =
             indexFromBngir(molecule["type_id"], "molecule type reference");
         if (typeId >= model.getMoleculeTypes().size()) {
@@ -222,6 +227,14 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
     requireDenseOrderedIds(moleculeTypes, "molecule type");
     requireDenseOrderedIds(seeds, "seed");
     requireDenseOrderedIds(rules, "rule");
+    for (const auto& rawMoleculeType : moleculeTypes) {
+        const auto moleculeType = py::cast<py::dict>(rawMoleculeType);
+        const auto components = py::cast<py::list>(moleculeType["components"]);
+        if (!components.empty()) {
+            throw std::runtime_error(
+                "native BNGIR molecule type components are unsupported");
+        }
+    }
 
     auto model = std::make_unique<Model>();
     const auto metadata = py::cast<py::dict>(document["metadata"]);

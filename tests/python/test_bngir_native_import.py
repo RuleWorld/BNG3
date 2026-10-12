@@ -48,6 +48,26 @@ end seed species
 end model
 """
 
+SITES_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_sites")
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    A(x~u~p)
+    B(x~u~p)
+end molecule types
+begin seed species
+    A(x~u) 10
+end seed species
+begin reaction rules
+    convert: A(x~u) -> B(x~p) k
+end reaction rules
+end model
+"""
+
 
 def _document(source: str = SOURCE) -> dict:
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
@@ -115,6 +135,38 @@ def test_direct_native_builder_preserves_supported_models_and_executes(
     result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
     assert result.time.tolist() == pytest.approx([0.0, 0.1])
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+def test_direct_native_builder_rejects_molecule_type_components():
+    document = _document()
+    document["model"]["molecule_types"][0]["components"] = [
+        {"index": 0, "name": "x", "states": ["u", "p"]}
+    ]
+
+    with pytest.raises(RuntimeError, match="molecule type components are unsupported"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize("location", ["seed", "reactant", "product"])
+def test_direct_native_builder_rejects_molecule_sites(location):
+    document = _document(SITES_SOURCE)
+    model = document["model"]
+    # Isolate the pattern-site boundary from the earlier molecule-type guard.
+    for molecule_type in model["molecule_types"]:
+        molecule_type["components"] = []
+
+    patterns = {
+        "seed": model["seeds"][0]["pattern"],
+        "reactant": model["rules"][0]["forward"]["reactants"][0],
+        "product": model["rules"][0]["forward"]["products"][0],
+    }
+    selected_sites = copy.deepcopy(patterns[location]["molecules"][0]["sites"])
+    for pattern in patterns.values():
+        pattern["molecules"][0]["sites"] = []
+    patterns[location]["molecules"][0]["sites"] = selected_sites
+
+    with pytest.raises(RuntimeError, match="does not support molecule sites"):
+        _cpp._model_from_bngir_v02(model)
 
 
 @pytest.mark.parametrize(
