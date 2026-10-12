@@ -554,6 +554,73 @@ def test_bngir_rejects_unknown_model_properties_before_source_parse(
 
 
 @pytest.mark.parametrize("version", ["0.1", "0.2"])
+@pytest.mark.parametrize("location", ["features", "protocol", "action"])
+def test_bngir_rejects_unknown_closed_nested_properties_before_source_parse(
+    version, location, monkeypatch
+):
+    _, document = _index_reference_model_and_document(version)
+    if location == "action":
+        document["protocol"]["actions"] = [
+            {
+                "scope": "model",
+                "name": "generate_network",
+                "arguments": {"overwrite": "1"},
+                "future_semantics": "must not be dropped",
+            }
+        ]
+    else:
+        document[location]["future_semantics"] = "must not be dropped"
+
+    schema_path = (
+        Path(__file__).parents[2]
+        / "provenance"
+        / "schemas"
+        / f"bngir-{version}.schema.json"
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    import bionetgen.bngir as bngir_module
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail(
+            f"unknown BNGIR {location} property reached source rendering or parsing"
+        )
+
+    monkeypatch.setattr(bngir_module, "_as_bngl_v01", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    monkeypatch.setattr(bionetgen.model._cpp, "parse_string", forbidden)
+    with pytest.raises(ValueError, match="future_semantics"):
+        bionetgen.from_bngir(document)
+
+
+@pytest.mark.parametrize("version", ["0.1", "0.2"])
+def test_bngir_preserves_arbitrary_string_action_arguments(version):
+    _, document = _index_reference_model_and_document(version)
+    document["protocol"]["actions"] = [
+        {
+            "scope": "model",
+            "name": "generate_network",
+            "arguments": {"overwrite": "1", "vendor_option": "opaque"},
+        }
+    ]
+    schema_path = (
+        Path(__file__).parents[2]
+        / "provenance"
+        / "schemas"
+        / f"bngir-{version}.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    restored = bionetgen.from_bngir(document)
+    round_trip = json.loads(restored.to_bngir(version=version))
+    assert round_trip["protocol"]["actions"][0]["arguments"] == {
+        "overwrite": "1",
+        "vendor_option": "opaque",
+    }
+
+
+@pytest.mark.parametrize("version", ["0.1", "0.2"])
 def test_bngir_optional_provenance_envelope_remains_valid(version):
     model, document = _index_reference_model_and_document(version)
     document["provenance"] = {"source": "fixture"}
