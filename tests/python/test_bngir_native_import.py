@@ -291,6 +291,37 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_indices(value
 
 
 @pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("wrong-kind", "parameter reference symbol kind must be parameter"),
+        ("nonstring-kind", "parameter reference symbol kind must be parameter"),
+        ("missing-kind", "parameter reference symbol is missing kind"),
+        (
+            "extra-property",
+            "parameter reference symbol has unsupported future_semantics",
+        ),
+    ],
+    ids=["wrong-kind", "nonstring-kind", "missing-kind", "extra-property"],
+)
+def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
+    mutation, expected
+):
+    document = _document()
+    symbol = document["model"]["rules"][0]["forward"]["rate"]["expression"]["symbol"]
+    if mutation == "wrong-kind":
+        symbol["kind"] = "observable"
+    elif mutation == "nonstring-kind":
+        symbol["kind"] = 1
+    elif mutation == "missing-kind":
+        del symbol["kind"]
+    else:
+        symbol["future_semantics"] = "stateful"
+
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
     "section",
     [
         "compartments",
