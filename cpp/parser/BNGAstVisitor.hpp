@@ -6,6 +6,8 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include "ast/Model.hpp"
 #include "generated/BNGParserBaseVisitor.h"
@@ -101,5 +103,10 @@ std::unique_ptr<ast::Model> parseModelFromFile(const std::string& filePath);
 /// Parse a standalone expression string (e.g., for stop_if conditions).
 /// Uses the ANTLR grammar's expression rule.
 ast::Expression parseExpression(const std::string& exprText);
+
+/// Parse a brace-delimited action map using the action-value grammar while
+/// retaining each key and value's source spelling and insertion order.
+std::vector<std::pair<std::string, std::string>> parseNestedHashEntries(
+    const std::string& sourceText);
 
 } // namespace bng::parser

@@ -38,64 +38,24 @@ std::size_t maxIterations(const compile::SimulationProtocol& protocol) {
     return 100;
 }
 
-std::map<std::string, std::size_t> parseMaxStoich(const compile::SimulationProtocol& protocol) {
+compile::ProtocolAction::GenerateNetworkOptions::MaxStoichLimits parseMaxStoich(
+    const compile::SimulationProtocol& protocol) {
     for (const auto& action : protocol.actions) {
         if (action.name != "generate_network") {
             continue;
         }
-        const auto found = action.arguments.find("max_stoich");
-        if (found == action.arguments.end()) {
+        if (!action.generateNetworkOptions.has_value()) {
             continue;
         }
-
-        std::map<std::string, std::size_t> limits;
-        const auto trimWhitespace = [](std::string value) {
-            const auto isWhitespace = [](unsigned char c) { return std::isspace(c) != 0; };
-            value.erase(value.begin(), std::find_if_not(value.begin(), value.end(), isWhitespace));
-            value.erase(std::find_if_not(value.rbegin(), value.rend(), isWhitespace).base(), value.end());
-            return value;
-        };
-        std::string text = trimWhitespace(found->second);
-        if (text.size() >= 2 && text.front() == '{' && text.back() == '}') {
-            text = trimWhitespace(text.substr(1, text.size() - 2));
+        const auto& options = *action.generateNetworkOptions;
+        if (options.maxStoichDiagnostic.has_value()) {
+            throw std::runtime_error(options.maxStoichDiagnostic->message);
         }
-
-        std::size_t start = 0;
-        while (start < text.size()) {
-            const auto comma = text.find(',', start);
-            const auto entry = text.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
-            const auto arrow = entry.find("=>");
-            if (arrow != std::string::npos) {
-                std::string key = entry.substr(0, arrow);
-                key.erase(std::remove_if(key.begin(), key.end(), [](unsigned char c) {
-                    return std::isspace(c) != 0;
-                }), key.end());
-                // Strip surrounding quotes from key (e.g., 'R' -> R, "R" -> R)
-                if (key.size() >= 2 && ((key.front() == '\'' && key.back() == '\'') ||
-                                         (key.front() == '"' && key.back() == '"'))) {
-                    key = key.substr(1, key.size() - 2);
-                }
-                const std::string rawValue = entry.substr(arrow + 2);
-                const std::string value = trimWhitespace(rawValue);
-                // BNG2 treats this sentinel as having no per-molecule limit.
-                // Keep the compatibility runtime's existing numeric parsing
-                // unchanged for every other value.
-                const bool quotedUnlimited =
-                    value == "'unlimited'" || value == "\"unlimited\"";
-                if (value != "unlimited" && !quotedUnlimited) {
-                    std::string numericValue = rawValue;
-                    numericValue.erase(std::remove_if(numericValue.begin(), numericValue.end(), [](unsigned char c) {
-                        return std::isspace(c) != 0;
-                    }), numericValue.end());
-                    limits.emplace(key, static_cast<std::size_t>(std::stoull(numericValue)));
-                }
-            }
-            if (comma == std::string::npos) {
-                break;
-            }
-            start = comma + 1;
+        if (options.maxStoich.has_value()) {
+            // Preserve the existing first-action-wins behavior, including an
+            // explicitly empty map.
+            return *options.maxStoich;
         }
-        return limits;
     }
     return {};
 }
@@ -235,14 +195,20 @@ std::map<std::string, std::size_t> countMolecules(const ast::SpeciesGraph& graph
     return counts;
 }
 
-bool withinStoichLimits(const ast::SpeciesGraph& graph, const std::map<std::string, std::size_t>& limits) {
+bool withinStoichLimits(
+    const ast::SpeciesGraph& graph,
+    const compile::ProtocolAction::GenerateNetworkOptions::MaxStoichLimits& limits) {
     if (limits.empty()) {
         return true;
     }
     const auto counts = countMolecules(graph);
-    for (const auto& [name, count] : counts) {
-        const auto found = limits.find(name);
-        if (found != limits.end() && count > found->second) {
+    for (const auto& [name, limit] : limits) {
+        if (!limit.has_value()) {
+            continue;
+        }
+        const auto found = counts.find(name);
+        const auto count = found == counts.end() ? 0.0 : static_cast<double>(found->second);
+        if (count > *limit) {
             return false;
         }
     }

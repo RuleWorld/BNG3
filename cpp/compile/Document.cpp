@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 #include "ast/Model.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -37,6 +38,17 @@ Diagnostic maxAggregateDiagnostic(const std::string& source,
     diagnostic.category = ValidationCategory::Expressions;
     diagnostic.entity = "generate_network.max_agg";
     diagnostic.message = "invalid generate_network max_agg '" + source + "': " + reason;
+    return diagnostic;
+}
+
+Diagnostic maxStoichDiagnostic(const std::string& source,
+                                const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "generate_network.max_stoich";
+    diagnostic.message = "invalid generate_network max_stoich '" + source + "': " + reason;
     return diagnostic;
 }
 
@@ -104,6 +116,21 @@ bool containsOnlyNumericActionSyntax(const std::string& source) {
         return false;
     }
     return true;
+}
+
+bool isMaxStoichMoleculeName(const std::string& name) {
+    const auto isLetter = [](unsigned char character) {
+        return (character >= 'A' && character <= 'Z') ||
+               (character >= 'a' && character <= 'z');
+    };
+    if (name.empty() || (name.front() != '_' &&
+                         !isLetter(static_cast<unsigned char>(name.front())))) {
+        return false;
+    }
+    return std::all_of(name.begin() + 1, name.end(), [&](unsigned char character) {
+        return character == '_' || isLetter(character) ||
+               (character >= '0' && character <= '9');
+    });
 }
 
 double evaluateStaticExpression(const ast::Expression& expression) {
@@ -231,6 +258,70 @@ SetParameterOptions compileSetParameterOptions(
 GenerateNetworkOptions compileGenerateNetworkOptions(
     const std::map<std::string, std::string>& arguments) {
     GenerateNetworkOptions options;
+    const auto maxStoich = arguments.find("max_stoich");
+    if (maxStoich != arguments.end()) {
+        const auto& source = maxStoich->second;
+        try {
+            GenerateNetworkOptions::MaxStoichLimits limits;
+            const auto entries = parser::parseNestedHashEntries(source);
+            for (const auto& [sourceKey, valueSource] : entries) {
+                const auto key = unquoteActionValue(sourceKey);
+                if (!isMaxStoichMoleculeName(key)) {
+                    options.maxStoichDiagnostic = maxStoichDiagnostic(
+                        source, "key '" + sourceKey + "' is not a valid molecule name");
+                    break;
+                }
+                if (valueSource == "unlimited" || valueSource == "'unlimited'" ||
+                    valueSource == "\"unlimited\"") {
+                    limits.insert_or_assign(key, std::nullopt);
+                    continue;
+                }
+
+                if (!containsOnlyNumericActionSyntax(valueSource)) {
+                    options.maxStoichDiagnostic = maxStoichDiagnostic(
+                        source, "names, functions, and non-numeric syntax are not supported");
+                    break;
+                }
+
+                ast::Expression expression;
+                try {
+                    expression = parser::parseExpression(valueSource);
+                } catch (const std::exception& error) {
+                    options.maxStoichDiagnostic = maxStoichDiagnostic(
+                        source,
+                        std::string("could not parse value '") + valueSource + "': " +
+                            error.what());
+                    break;
+                }
+
+                std::size_t powerOperators = 0;
+                if (!supportsStaticActionArithmetic(expression, powerOperators)) {
+                    options.maxStoichDiagnostic = maxStoichDiagnostic(
+                        source,
+                        std::string("value '") + valueSource +
+                            "' cannot be translated without changing Safe-Perl arithmetic semantics");
+                    break;
+                }
+
+                double value = 0.0;
+                if (!evaluateFiniteStaticExpression(expression, value)) {
+                    options.maxStoichDiagnostic = maxStoichDiagnostic(
+                        source, std::string("value '") + valueSource +
+                                    "' must evaluate to a finite number");
+                    break;
+                }
+                // Perl hash assignment keeps the last value for a repeated key.
+                limits.insert_or_assign(key, value);
+            }
+            if (!options.maxStoichDiagnostic.has_value()) {
+                options.maxStoich = std::move(limits);
+            }
+        } catch (const std::exception& error) {
+            options.maxStoichDiagnostic = maxStoichDiagnostic(
+                source, std::string("could not be parsed as a nested map: ") + error.what());
+        }
+    }
+
     const auto maxAggregate = arguments.find("max_agg");
     if (maxAggregate != arguments.end()) {
         const auto& source = maxAggregate->second;

@@ -353,6 +353,72 @@ generate_network({{overwrite=>1,max_iter=>3,max_agg=>{max_agg}}})
         assert network.num_species == expected_species
         assert network.num_reactions == expected_reactions
 
+    @pytest.mark.parametrize(
+        "max_stoich, expected_species, expected_reactions",
+        [
+            ("{A=>1+1}", 2, 1),
+            ("{A=>1}", 1, 0),
+            ("{A=>2.5}", 2, 1),
+            ("{A=>-1}", 1, 0),
+        ],
+    )
+    def test_python_generate_network_uses_typed_bngl_max_stoich(
+        self, tmp_path, max_stoich, expected_species, expected_reactions
+    ):
+        bngl = tmp_path / "python_max_stoich.bngl"
+        bngl.write_text(
+            f"""
+begin model
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 1
+end seed species
+begin reaction rules
+    bind: A(b) + A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+generate_network({{overwrite=>1,max_iter=>3,max_stoich=>{max_stoich}}})
+""",
+            encoding="utf-8",
+        )
+        model = _cpp.parse_file(str(bngl))
+
+        # Network generation through the Python binding must compile the
+        # model's BNGL max_stoich action with the same typed limits.
+        network = _cpp.generate_network(model)
+        assert network.num_species == expected_species
+        assert network.num_reactions == expected_reactions
+
+    @pytest.mark.parametrize("entry", ["A=>2^3", "A=>1e309", 'A=>"2"'])
+    def test_python_generate_network_defers_unsupported_max_stoich(
+        self, tmp_path, entry
+    ):
+        bngl = tmp_path / "python_invalid_max_stoich.bngl"
+        bngl.write_text(
+            f"""
+begin model
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 1
+end seed species
+end model
+
+generate_network({{max_stoich=>{{{entry}}}}})
+""",
+            encoding="utf-8",
+        )
+        model = _cpp.parse_file(str(bngl))
+
+        with pytest.raises(RuntimeError) as error:
+            _cpp.generate_network(model)
+        assert "max_stoich" in str(error.value)
+        assert entry in str(error.value)
+
     def test_python_generate_network_defers_invalid_max_agg_diagnostic(self, tmp_path):
         bngl = tmp_path / "python_invalid_max_agg.bngl"
         bngl.write_text(

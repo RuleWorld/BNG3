@@ -2146,4 +2146,58 @@ ast::Expression parseExpression(const std::string& exprText) {
     return parseExpressionImpl(exprText);
 }
 
+std::vector<std::pair<std::string, std::string>> parseNestedHashEntries(
+    const std::string& sourceText) {
+    antlr4::ANTLRInputStream input(sourceText);
+    BNGLexer lexer(&input);
+    class LexerErrorFlag final : public antlr4::BaseErrorListener {
+    public:
+        void syntaxError(antlr4::Recognizer*, antlr4::Token*, std::size_t,
+                         std::size_t, const std::string&,
+                         std::exception_ptr) override {
+            hadError_ = true;
+        }
+
+        bool hadError() const noexcept { return hadError_; }
+
+    private:
+        bool hadError_ = false;
+    } lexerErrors;
+    lexer.removeErrorListeners();
+    lexer.addErrorListener(&lexerErrors);
+    antlr4::CommonTokenStream tokens(&lexer);
+    tokens.fill();
+    BNGParser parser(&tokens);
+
+    auto* value = parser.action_arg_value();
+    if (lexerErrors.hadError() || parser.getNumberOfSyntaxErrors() != 0 || value == nullptr ||
+        value->LBRACKET() == nullptr || value->RBRACKET() == nullptr ||
+        parser.getCurrentToken() == nullptr ||
+        parser.getCurrentToken()->getType() != antlr4::Token::EOF) {
+        throw std::runtime_error("Failed to parse nested action map: " + sourceText);
+    }
+
+    std::vector<std::pair<std::string, std::string>> entries;
+    auto* hash = value->nested_hash_list();
+    if (hash == nullptr) {
+        return entries;
+    }
+
+    entries.reserve(hash->nested_hash_item().size());
+    for (auto* item : hash->nested_hash_item()) {
+        std::string key;
+        if (item->STRING() != nullptr) {
+            key = item->STRING()->getText();
+        } else if (item->quoted_string() != nullptr) {
+            key = item->quoted_string()->getText();
+        } else if (item->arg_name() != nullptr) {
+            key = item->arg_name()->getText();
+        } else {
+            throw std::runtime_error("Failed to parse nested action map key: " + sourceText);
+        }
+        entries.emplace_back(key, item->action_arg_value()->getText());
+    }
+    return entries;
+}
+
 } // namespace bng::parser

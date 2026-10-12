@@ -29,6 +29,11 @@ struct ProtocolAction {
         std::optional<Diagnostic> maxIterationsDiagnostic;
         std::optional<double> maxAggregate;
         std::optional<Diagnostic> maxAggregateDiagnostic;
+        using MaxStoichLimits = std::map<std::string, std::optional<double>>;
+        // A null per-molecule limit represents the exact `unlimited` sentinel.
+        // The optional distinguishes an omitted option from an explicitly empty map.
+        std::optional<MaxStoichLimits> maxStoich;
+        std::optional<Diagnostic> maxStoichDiagnostic;
     };
     struct SimulationOptions {
         std::optional<std::size_t> nSteps;
