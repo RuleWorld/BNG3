@@ -383,6 +383,25 @@ authorized.
   [CodeQL](https://github.com/RuleWorld/BNG3/actions/runs/38195519576),
   [Cross-tool](https://github.com/RuleWorld/BNG3/actions/runs/38195519562)).
   Those are hosted workflow states, not installed-wheel qualification.
+- BNGIR unknown model properties #242, merged [PR #242](https://github.com/RuleWorld/BNG3/pull/242)
+  ([root review](https://github.com/RuleWorld/BNG3/pull/242#issuecomment-6116694392)):
+  exact source `49f8f396dc82e6c709d7616142e89df563352938`, merge
+  `749dc464ad6e3430cc4f3c76c7a4b88a43fc7d9e`, base
+  `ce44139985582e53ee4b8191efdbcf0aa9e64340`, tested tree
+  `a9138bfed259b386d269f3b74e4fe309cc1e0acf`. This Python-only slice makes
+  default-route reconstruction refuse unknown model properties before rendering
+  or parsing; the allowed model key sets match the published v0.1 and v0.2
+  schemas, and optional provenance remains accepted. The two focused regressions
+  first failed on unchanged source, then passed; inverted model-key validation
+  failed both, and restoration returned 88 BNGIR/native-import tests to green.
+  Black and diff checks pass. The reused native module SHA256 is
+  `b8e355152b68be34e15c48e1732f87a76dcbbc6298d102fd336a45e8bc03768b`; its C++
+  subtree is identical to the compiled source from #241, so no rebuild was
+  needed. Python module paths were asserted from the candidate checkout; this is
+  source-mode evidence, not installed-wheel qualification. At root review, 14
+  hosted checks were queued and one was in progress. Deeper nested action/object
+  validation and broad scope/unit/energy/population/protocol round trips remain
+  open; #154 and #155 remain open.
 - Parser #128/#204: combined source preview on main `f4adb7b7` passed 68 parsed
   field/text comparisons against baseline on actual pyparsing 3.0.9 and 3.3.2;
   root independently reran 68 round trips and separator/fallback/cardinality
