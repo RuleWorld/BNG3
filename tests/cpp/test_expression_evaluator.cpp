@@ -58,6 +58,19 @@ TEST_CASE("Legacy expression operators remain accepted", "[Expression][issue-54]
     CHECK(evaluate("~1") == 0.0);
 }
 
+TEST_CASE(
+    "Standalone expression parsing rejects lexer errors and trailing tokens",
+    "[Expression]") {
+    CHECK_THROWS(bng::parser::parseExpression("2^3 trailing"));
+    CHECK_THROWS(bng::parser::parseExpression("2`^3"));
+
+    const auto ordinary = bng::parser::parseExpression("2^3 + 1");
+    CHECK(ordinary.evaluate(noResolver) == 9.0);
+
+    const auto table = bng::parser::parseExpression("TFUN([0, 1], [2, 4], time)");
+    CHECK(table.kind() == ExpressionKind::TableFunction);
+}
+
 TEST_CASE("Expression: built-in functions", "[Expression]") {
     SECTION("sin") {
         auto expr = Expression::function("sin", {Expression::number(0.0)});

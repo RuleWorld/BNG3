@@ -1443,14 +1443,34 @@ ast::Action buildActionFromArgs(const std::string& name, BNGParser::Action_argsC
     return action;
 }
 
+class LexerErrorFlag final : public antlr4::BaseErrorListener {
+public:
+    void syntaxError(antlr4::Recognizer*, antlr4::Token*, std::size_t,
+                     std::size_t, const std::string&,
+                     std::exception_ptr) override {
+        hadError_ = true;
+    }
+
+    bool hadError() const noexcept { return hadError_; }
+
+private:
+    bool hadError_ = false;
+};
+
 ast::Expression parseExpressionImpl(const std::string& exprText) {
     antlr4::ANTLRInputStream input(normalizeTfunSyntax(exprText));
     BNGLexer lexer(&input);
+    LexerErrorFlag lexerErrors;
+    lexer.removeErrorListeners();
+    lexer.addErrorListener(&lexerErrors);
     antlr4::CommonTokenStream tokens(&lexer);
     BNGParser parser(&tokens);
 
     auto* exprCtx = parser.expression();
-    if (parser.getNumberOfSyntaxErrors() != 0) {
+    const auto* currentToken = parser.getCurrentToken();
+    if (lexerErrors.hadError() || parser.getNumberOfSyntaxErrors() != 0 ||
+        exprCtx == nullptr || currentToken == nullptr ||
+        currentToken->getType() != antlr4::Token::EOF) {
         throw std::runtime_error("Failed to parse expression: " + exprText);
     }
 
@@ -2150,19 +2170,7 @@ std::vector<std::pair<std::string, std::string>> parseNestedHashEntries(
     const std::string& sourceText) {
     antlr4::ANTLRInputStream input(sourceText);
     BNGLexer lexer(&input);
-    class LexerErrorFlag final : public antlr4::BaseErrorListener {
-    public:
-        void syntaxError(antlr4::Recognizer*, antlr4::Token*, std::size_t,
-                         std::size_t, const std::string&,
-                         std::exception_ptr) override {
-            hadError_ = true;
-        }
-
-        bool hadError() const noexcept { return hadError_; }
-
-    private:
-        bool hadError_ = false;
-    } lexerErrors;
+    LexerErrorFlag lexerErrors;
     lexer.removeErrorListeners();
     lexer.addErrorListener(&lexerErrors);
     antlr4::CommonTokenStream tokens(&lexer);
