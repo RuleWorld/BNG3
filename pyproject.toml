@@ -86,6 +86,7 @@ dev = [
     "sympy",
     "pytest>=7.0",
     "pytest-cov",
+    "jsonschema",
 ]
 
 [project.scripts]
