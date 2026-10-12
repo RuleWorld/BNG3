@@ -527,6 +527,33 @@ def test_bngir_rejects_unknown_envelope_properties_before_source_parse(
 
 
 @pytest.mark.parametrize("version", ["0.1", "0.2"])
+def test_bngir_rejects_unknown_model_properties_before_source_parse(
+    version, monkeypatch
+):
+    _, document = _index_reference_model_and_document(version)
+    document["model"]["future_semantics"] = {"reaction_order": "reverse"}
+    schema_path = (
+        Path(__file__).parents[2]
+        / "provenance"
+        / "schemas"
+        / f"bngir-{version}.schema.json"
+    )
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    import bionetgen.bngir as bngir_module
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("unknown BNGIR model property reached source rendering or parsing")
+
+    monkeypatch.setattr(bngir_module, "_as_bngl_v01", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    monkeypatch.setattr(bionetgen.model._cpp, "parse_string", forbidden)
+    with pytest.raises(ValueError, match="future_semantics"):
+        bionetgen.from_bngir(document)
+
+
+@pytest.mark.parametrize("version", ["0.1", "0.2"])
 def test_bngir_optional_provenance_envelope_remains_valid(version):
     model, document = _index_reference_model_and_document(version)
     document["provenance"] = {"source": "fixture"}
