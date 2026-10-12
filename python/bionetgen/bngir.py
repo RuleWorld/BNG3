@@ -604,14 +604,52 @@ def _parse_document(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     return root
 
 
-def _validate_envelope_properties(root: Mapping[str, Any]) -> None:
-    """Reject unknown top-level properties while allowing schema provenance."""
+def _validate_document_properties(root: Mapping[str, Any]) -> None:
+    """Reject unknown envelope and model properties while allowing provenance."""
     allowed = {"format", "version", "features", "model", "protocol", "provenance"}
     unexpected = sorted(str(key) for key in root if key not in allowed)
     if unexpected:
         raise ValueError(
             f"BNGIR document has unsupported properties: {', '.join(unexpected)}"
         )
+
+    if root["version"] == VERSION:
+        model_allowed = {
+            "name",
+            "version",
+            "substance_units",
+            "options",
+            "parameters",
+            "molecule_types",
+            "compartments",
+            "seeds",
+            "observables",
+            "functions",
+            "energy_patterns",
+            "barrier_patterns",
+            "population_maps",
+            "rules",
+        }
+    else:
+        model_allowed = {
+            "metadata",
+            "parameters",
+            "molecule_types",
+            "compartments",
+            "seeds",
+            "observables",
+            "functions",
+            "energy_patterns",
+            "barrier_patterns",
+            "population_types",
+            "population_maps",
+            "rules",
+        }
+    model = _require_mapping(root.get("model"), "model")
+    unexpected_model = sorted(str(key) for key in model if key not in model_allowed)
+    if unexpected_model:
+        properties = ", ".join(unexpected_model)
+        raise ValueError(f"BNGIR model has unsupported properties: {properties}")
 
 
 def _validate_actions(root: Mapping[str, Any]) -> None:
@@ -2193,13 +2231,13 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
 
     if root["version"] == VERSION:
         root = _load_document_v01(root)
-        _validate_envelope_properties(root)
+        _validate_document_properties(root)
         source = _as_bngl_v01(root)
         model_data = _require_mapping(root["model"], "model")
         name = model_data.get("name")
     else:
         root = _load_document_v02(root)
-        _validate_envelope_properties(root)
+        _validate_document_properties(root)
         source = _as_bngl_v02(root)
         model_data = _require_mapping(root["model"], "model")
         name = _require_mapping(model_data.get("metadata", {}), "model.metadata").get(
