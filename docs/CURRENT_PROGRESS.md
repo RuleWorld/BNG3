@@ -1,7 +1,8 @@
 # BNG3 current progress
 
-**Refreshed:** 2026-10-11 against RuleWorld/BNG3 main
-`af6afb00279a236031dc50afde452a6bfb913175`. Semantic convergence and release
+**Refreshed:** 2026-10-12 against RuleWorld/BNG3 main
+`ce44139985582e53ee4b8191efdbcf0aa9e64340` (tree
+`08c4c5825c6b3c4e71d0d974b8e5fb6936eeff10`). Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
 [#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 44 open and eleven closed
 (#132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183).
@@ -24,7 +25,7 @@ A bounded repair does not close its broader issue.
 | #133/#173 | #190/#191 | Native-compiled static mass-action JAX ODE, fixed-step RK4; public JAX SSA explicitly unavailable. Installed CPU qualification satisfies these scoped issues; functional/time-dependent rates and adaptive integration remain unsupported. |
 | #134 | #128/#204 | Combined parser grammar reuse, cardinality guards and pyparsing 3.0.9 fallback. Source-only shape/fallback checks pass; same-cardinality equality asymmetry remains pre-existing. |
 | #135/#136 | #187/#189 | Current issue-linked ledger and corrected architecture/validation claims. Closed after review; historical reports remain historical. |
-| #140 | #207/#220/#236 | Compile-owned numeric max_iter/max_agg and product filtering; merged PR [#236](https://github.com/RuleWorld/BNG3/pull/236) adds validated finite ODE/SSA n_steps expressions. Broader protocol typing and shared CLI/Python semantics remain open. |
+| #140 | #207/#220/#236/#241 | Compile-owned numeric max_iter/max_agg, product filtering, finite ODE/SSA n_steps expressions and static numeric setParameter expressions. PR [#241](https://github.com/RuleWorld/BNG3/pull/241) qualifies literal arithmetic in top-level and protocol actions; dynamic parameter-backed arithmetic and broader protocol typing/shared CLI/Python semantics remain open. |
 | #141/#142 | #203/#211/#222/#224 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots have a shared-topology contract; serial scan exceptions restore base/dependent parameters and the original network before successful analytic/fresh-model recovery. Broader invalidation/lifecycle and graph encoding unification remain open. |
 | #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
 | #138/#163 | #196/#197/#228/#230/#233/#237 | Compile-owned units and version-aware SBML units; NET has an independent Network3 analytic consumer contract. Observable projection preserves graph-prefix context, counting modes, inert Molecules qualifiers and qualified Species CountUnique termination; #237 explicitly rejects unsupported Counter/Fraction kinds before opening the NET destination, without adding runtime support. Broader runtime migration/export qualification remains open. |
@@ -40,11 +41,11 @@ A bounded repair does not close its broader issue.
 | #182 | #199/#216 | Required numerical/expression/export and scheduled/manual frozen ensemble CI wiring, exact-source package/native/worker checks and permanent receipts; #182 closed. Scientific stochastic and historical NFsim qualification remain open. |
 | #183 | #206 | Budgeted locked SSTS CI, per-case classifications/digests and permanent receipts. This bounded workflow issue is closed; full #159 qualification remains open. |
 
-Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230, #233, #235, #236, #237, #238 plus ledger refreshes #221/#223/#229/#232 during this continuation.
+Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230, #233, #235, #236, #237, #238, static setter #241 and ledger refreshes #221/#223/#229/#232/#239 during this continuation.
 PR #205 integrated the Rasi performance port separately. The shared checkout
 remains on perf/nfsim-rasi-translation-port-v2 at `07ea87d3`, with its unrelated
-untracked audit file preserved. PR #236 is a merged, bounded #140 slice; the
-umbrella issue remains open. Work continues in isolated checkouts. Only root may
+untracked audit file preserved. PRs #236 and #241 are merged, bounded #140
+slices; the umbrella issue remains open. Work continues in isolated checkouts. Only root may
 merge reviewed changes or close satisfied issues; no release publication is
 authorized.
 
@@ -96,7 +97,11 @@ authorized.
   patch, Lean semantic kernel, CodeQL and Cross-tool parity passed. Its CI run
   reported nine successes and 22 queued jobs, no failures, and remained queued
   overall ([run 38171605273](https://github.com/RuleWorld/BNG3/actions/runs/38171605273)).
-  No full hosted matrix or #138 closure is claimed.
+  A 2026-10-12 exact-run refresh showed this e3 push completed with 39 successful jobs
+  and one skipped job. That run predates PRs #238 and #241 and is not exact-current-main
+  qualification. The #241 merge-push workflows are tracked separately below.
+  This reports only the configured CI workflow on e3; it does not establish
+  current-main qualification after #238/#241 or close #138.
 - Local-function XML scope #235: exact source
   `b54ed0076166003b9f1a5c0af241b512a71e136d`, merge
   `bc952d4f76235d4710de9528a76505f99ccb664d`. The canonical leading `%label:`
@@ -291,6 +296,9 @@ authorized.
   is not an independent parity pass. During the 2026-10-11 20:49:40–20:49:44 UTC
   exact-head PR check refresh for `4566e38b33ed5536fbd758ef7d976a9f33d51629`,
   the rollup was 14 successes, 3 in progress, 1 neutral and 1 skipped ([PR checks](https://github.com/RuleWorld/BNG3/pull/238/checks)).
+  A 2026-10-12 refresh of the same PR head showed 41 successes, five skips and
+  one neutral check; the earlier in-progress snapshot is historical. This PR-head
+  rollup remains separate from the later `ce441399` merge-push workflows.
   The separate main push at merge `af6afb00279a236031dc50afde452a6bfb913175`,
   checked during the 2026-10-11 20:49:40–20:49:44 UTC refresh, showed CI queued,
   CodeQL and Cross-tool parity in progress, and Lean semantic kernel passed
@@ -345,6 +353,36 @@ authorized.
   partial #140 slice; broader typed
   protocol values, shared CLI/Python semantics, defaults/invalid-option coverage
   and installed-package qualification remain open.
+- Static numeric `setParameter` #140, merged [PR #241](https://github.com/RuleWorld/BNG3/pull/241)
+  ([root review](https://github.com/RuleWorld/BNG3/pull/241#issuecomment-6116610037)):
+  exact source `e16c159d34d9a756e8ca39ab468bc160807b998e`, merge
+  `ce44139985582e53ee4b8191efdbcf0aa9e64340`, base
+  `fd64bbc60c60f7e4bca498a900e774396571f20e`, tested tree
+  `08c4c5825c6b3c4e71d0d974b8e5fb6936eeff10`. Compile-owned static numeric
+  expressions now feed top-level and protocol action execution; `setParameter("k",2**3)`
+  yields `k=8` in both. Cached Release, BNGsim adapter OFF: three focused CTests,
+  rule expansion 25 cases/432 assertions, ODE 23/132, NFsim adapter 142/1,621,
+  XML 11/47 and 84 selected Python tests passed. Independent pinned BNG2
+  `9601746f8884ed19ab2acea49fe87fc4660ace46` agrees in both scopes on exact
+  unique columns, all nine timestamps and observables; maximum absolute delta
+  was `1.0009354456386177e-15` under the unchanged `2e-6` bound, and the analytic
+  endpoint passes. Inverting the numeric gate reproduced `k=6` and failed the
+  focused regression; restoration passed. CLI SHA256
+  `827ecf921e788d03ce59db158d5dba150f33601387397f3f5a494c436dd210ad`; native
+  SHA256 `b8e355152b68be34e15c48e1732f87a76dcbbc6298d102fd336a45e8bc03768b`.
+  A normal source-mode Python float setter passed with package/native identity
+  verified. This is not installed-wheel qualification: the premerge exact-head
+  hosted snapshot had four successes, 13 in progress, one skipped and one
+  neutral; pending checks were not validation. Dynamic parameter-backed
+  arithmetic (including dynamic `2**N`), full typed dispatch, shared CLI/Python
+  defaults and broad #140 acceptance remain open.
+  In the 2026-10-12 02:29:17–02:29:23 UTC refresh, the current `ce441399`
+  merge-push had Lean semantic kernel passed; CI, CodeQL and Cross-tool parity
+  remained in progress ([CI](https://github.com/RuleWorld/BNG3/actions/runs/38195519567),
+  [Lean](https://github.com/RuleWorld/BNG3/actions/runs/38195519559),
+  [CodeQL](https://github.com/RuleWorld/BNG3/actions/runs/38195519576),
+  [Cross-tool](https://github.com/RuleWorld/BNG3/actions/runs/38195519562)).
+  Those are hosted workflow states, not installed-wheel qualification.
 - Parser #128/#204: combined source preview on main `f4adb7b7` passed 68 parsed
   field/text comparisons against baseline on actual pyparsing 3.0.9 and 3.3.2;
   root independently reran 68 round trips and separator/fallback/cardinality
