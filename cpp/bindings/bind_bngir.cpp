@@ -267,6 +267,10 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         const auto direction = py::cast<py::dict>(rule["forward"]);
         const auto reactants = py::cast<py::list>(direction["reactants"]);
         const auto products = py::cast<py::list>(direction["products"]);
+        if (reactants.size() != 1 || products.size() != 1) {
+            throw std::runtime_error(
+                "native BNGIR rule direction requires exactly one reactant and product pattern");
+        }
         std::vector<SpeciesGraph> reactantGraphs;
         std::vector<SpeciesGraph> productGraphs;
         reactantGraphs.emplace_back(patternFromBngir(*model, py::cast<py::dict>(reactants[0])));
