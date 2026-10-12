@@ -39,6 +39,14 @@ add_test(
 )
 
 add_test(
+    NAME bng_cpp_setparameter_identifier_spelling
+    COMMAND ${CMAKE_COMMAND}
+        -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/setparameter_identifier_spelling
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_bng_cpp_setparameter_identifier_spelling.cmake
+)
+
+add_test(
     NAME bng_cpp_expression_strictness
     COMMAND ${CMAKE_COMMAND}
         -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
