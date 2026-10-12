@@ -118,6 +118,30 @@ def test_direct_native_builder_preserves_supported_models_and_executes(
 
 
 @pytest.mark.parametrize(
+    ("side", "pattern_count"),
+    [
+        ("reactants", 0),
+        ("reactants", 2),
+        ("products", 0),
+        ("products", 2),
+    ],
+    ids=["no-reactants", "extra-reactant", "no-products", "extra-product"],
+)
+def test_direct_native_builder_rejects_invalid_rule_pattern_counts(side, pattern_count):
+    document = _document()
+    direction = document["model"]["rules"][0]["forward"]
+    if pattern_count == 0:
+        direction[side].clear()
+    else:
+        direction[side].append(copy.deepcopy(direction[side][0]))
+
+    with pytest.raises(
+        RuntimeError, match="requires exactly one reactant and product pattern"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
     ("section", "index", "value"),
     [
         ("parameters", 0, 1),
