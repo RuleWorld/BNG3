@@ -73,6 +73,20 @@ void requireParameterKeys(const py::dict& parameter) {
     }
 }
 
+void requireExpressionProperties(const py::dict& expression,
+                                 const std::vector<std::string>& allowed) {
+    for (const auto& entry : expression) {
+        if (!py::isinstance<py::str>(entry.first)) {
+            throw std::runtime_error("native BNGIR expression has a non-string key");
+        }
+        const auto key = py::cast<std::string>(entry.first);
+        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
+            throw std::runtime_error(
+                "native BNGIR expression has unsupported " + key);
+        }
+    }
+}
+
 void rejectUnsupportedModelSections(const py::dict& document) {
     static const std::vector<std::string> sections = {
         "compartments", "observables", "functions", "energy_patterns",
@@ -93,9 +107,16 @@ Expression expressionFromBngir(const py::dict& value,
                                const std::vector<std::string>& parameterNames) {
     const auto kind = py::cast<std::string>(value["kind"]);
     if (kind == "number") {
-        return Expression::number(py::cast<double>(value["value"]));
+        requireExpressionProperties(value, {"kind", "value"});
+        const auto number = value["value"];
+        if (PyBool_Check(number.ptr())) {
+            throw std::runtime_error(
+                "native BNGIR expression value must be numeric, not boolean");
+        }
+        return Expression::number(py::cast<double>(number));
     }
     if (kind == "parameter_ref") {
+        requireExpressionProperties(value, {"kind", "symbol"});
         const auto symbol = py::cast<py::dict>(value["symbol"]);
         const auto index = indexFromBngir(symbol["index"], "parameter reference");
         if (index >= parameterNames.size()) {
@@ -104,14 +125,25 @@ Expression expressionFromBngir(const py::dict& value,
         return Expression::identifier(parameterNames[index]);
     }
 
-    const auto arguments = py::cast<py::list>(value["arguments"]);
     if (kind == "unary") {
+        requireExpressionProperties(value, {"kind", "operator", "arguments"});
+        const auto arguments = py::cast<py::list>(value["arguments"]);
+        if (arguments.size() != 1) {
+            throw std::runtime_error(
+                "native BNGIR unary expression must have one argument");
+        }
         const auto op = py::cast<std::string>(value["operator"]);
         if (op == "plus") return Expression::unary("+", expressionFromBngir(arguments[0], parameterNames));
         if (op == "negate") return Expression::unary("-", expressionFromBngir(arguments[0], parameterNames));
         throw std::runtime_error("unsupported native BNGIR unary operator");
     }
     if (kind == "binary") {
+        requireExpressionProperties(value, {"kind", "operator", "arguments"});
+        const auto arguments = py::cast<py::list>(value["arguments"]);
+        if (arguments.size() != 2) {
+            throw std::runtime_error(
+                "native BNGIR binary expression must have two arguments");
+        }
         const auto op = py::cast<std::string>(value["operator"]);
         static const std::map<std::string, std::string> operators = {
             {"add", "+"}, {"subtract", "-"}, {"multiply", "*"},
