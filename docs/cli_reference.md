@@ -191,5 +191,5 @@ bionetgen export model.bngl -f latex -o model.tex
 
 | Variable | Description |
 | --- | --- |
-| `BIONETGEN_USE_PERL` | Set to `1` to use the legacy Perl BNG2.pl path |
-| `BNGPATH` | Path to a legacy BNG2.pl installation for compatibility mode |
+| `BIONETGEN_USE_PERL` | Set to `1` for the Perl compatibility path in Python API calls `bionetgen.run(path)` and `bionetgen.load(path).execute()`. The `bionetgen run MODEL` CLI command is unavailable in this mode. |
+| `BNGPATH` | Path to the BNG2.pl installation used by the Python API's explicit Perl compatibility mode |
