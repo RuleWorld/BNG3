@@ -1706,10 +1706,13 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
             updateGroups(emptyState.data(), result.observables.back());
             updateFunctions(result.observables.back(), time,
                             result.functions.back());
-            if (step > 0 &&
-                ((options.steadyState && steadyStateReached(options, time, emptyState)) ||
-                 (stopIfExpr.has_value() &&
-                  stopConditionMet(*stopIfExpr, time, emptyState)))) {
+            if (step > 0 && options.steadyState &&
+                steadyStateReached(options, time, emptyState)) {
+                break;
+            }
+            if (stopIfExpr.has_value() &&
+                (step > 0 || options.sampleTimes.empty()) &&
+                stopConditionMet(*stopIfExpr, time, emptyState)) {
                 break;
             }
         }
@@ -1806,7 +1809,8 @@ OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
         if (step > 0 && steadyStateReached(opts, targetTime, y)) {
             break;
         }
-        if (step > 0 && stopIfExpr.has_value() &&
+        if (stopIfExpr.has_value() &&
+            (step > 0 || opts.sampleTimes.empty()) &&
             stopConditionMet(*stopIfExpr, targetTime, y)) {
             break;
         }
@@ -1896,7 +1900,8 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
         if (outputStep > 0 && steadyStateReached(opts, targetT, y)) {
             break;
         }
-        if (outputStep > 0 && stopIfExpr.has_value() &&
+        if (stopIfExpr.has_value() &&
+            (outputStep > 0 || opts.sampleTimes.empty()) &&
             stopConditionMet(*stopIfExpr, targetT, y)) {
             break;
         }
@@ -2741,9 +2746,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         if (step > 0 && steadyStateReached(opts, tOut, conc)) {
             break;
         }
-        if (step > 0 && stopIfExpr.has_value() &&
-            stopConditionMet(*stopIfExpr, tOut, conc)) {
-            break;
+        if (stopIfExpr.has_value() &&
+            (step > 0 || opts.sampleTimes.empty())) {
+            // CVODE integrates a scaled vector. At the initial point, use the
+            // original model state for stop_if so a scale/unscale round trip
+            // cannot change a threshold comparison by one ULP.
+            const auto& stopState = step == 0 ? initialState : conc;
+            if (stopConditionMet(*stopIfExpr, tOut, stopState)) {
+                break;
+            }
         }
     }
 
@@ -3079,8 +3090,16 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         result.concentrations.push_back(y);
     }
 
+    // Match the native ODE methods' initial-state check on the default output
+    // grid. Preserve the existing explicit sample_times scheduling and
+    // event-based stop checks.
+    if (opts.sampleTimes.empty() && stopIfExpr.has_value() &&
+        stopConditionMet(*stopIfExpr, t, y)) {
+        stoppedEarly = true;
+    }
+
     // Main SSA loop
-    while (t < opts.tEnd) {
+    while (t < opts.tEnd && !stoppedEarly) {
         // Record scheduled output points as events advance the trajectory.
         if (opts.outputStepInterval == 0 || explicitTimes) {
             appendScheduledThrough(t);

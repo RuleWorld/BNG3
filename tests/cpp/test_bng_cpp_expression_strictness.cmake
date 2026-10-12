@@ -69,9 +69,9 @@ function(run_case case_name stop_if_expression expect_success)
             list(APPEND data_rows "${line}")
         endforeach()
         list(LENGTH data_rows row_count)
-        if(NOT row_count EQUAL 2)
+        if(NOT row_count EQUAL 1)
             message(SEND_ERROR
-                "${case_name} valid stop_if should stop after the first step, got "
+                "${case_name} initially true stop_if should keep only the initial row, got "
                 "${row_count} rows.\nTrajectory:\n${gdat_text}")
         endif()
         return()
