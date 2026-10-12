@@ -82,6 +82,20 @@ def _direct_native_model(document: dict):
     )
 
 
+def _set_numeric_expression(document: dict, location: str, value: float) -> None:
+    model = document["model"]
+    if location == "parameter":
+        expression = model["parameters"][0]["expression"]
+    elif location == "rate":
+        expression = model["rules"][0]["forward"]["rate"]["expression"]
+    elif location == "seed":
+        expression = model["seeds"][0]["amount"]
+    else:
+        raise ValueError(f"unknown expression location: {location}")
+    expression.clear()
+    expression.update({"kind": "number", "value": value})
+
+
 @pytest.mark.parametrize(
     ("source", "species_count", "reaction_count"),
     [(SOURCE, 2, 1), (SEED_ONLY_SOURCE, 1, 0)],
@@ -140,6 +154,119 @@ def test_direct_native_builder_rejects_boolean_numeric_expression_values():
 
     with pytest.raises(
         RuntimeError, match="native BNGIR expression value must be numeric"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize("location", ["parameter", "rate", "seed"])
+@pytest.mark.parametrize(
+    "value",
+    [float("nan"), float("inf"), float("-inf")],
+    ids=["nan", "positive-infinity", "negative-infinity"],
+)
+def test_direct_native_builder_rejects_non_finite_numeric_expressions(location, value):
+    document = _document()
+    _set_numeric_expression(document, location, value)
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR expression value must be finite"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    ("location", "value"),
+    [
+        ("parameter", 0.25),
+        ("parameter", 0.0),
+        ("parameter", -0.25),
+        ("rate", 0.25),
+        ("rate", 0.0),
+        ("seed", 10.0),
+        ("seed", 0.0),
+    ],
+    ids=[
+        "parameter-positive",
+        "parameter-zero",
+        "parameter-negative",
+        "rate-positive",
+        "rate-zero",
+        "seed-positive",
+        "seed-zero",
+    ],
+)
+def test_direct_native_builder_accepts_finite_numeric_expressions(location, value):
+    document = _document()
+    _set_numeric_expression(document, location, value)
+
+    _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_accepts_integer_parameter_expression():
+    document = _document()
+    _set_numeric_expression(document, "parameter", 1)
+
+    _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_reports_oversized_parameter_expression():
+    document = _document()
+    _set_numeric_expression(document, "parameter", 10**400)
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR expression value must be finite"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (float("nan"), "must be finite"),
+        (float("inf"), "must be finite"),
+        (float("-inf"), "must be finite"),
+        (True, "must be numeric, not boolean"),
+        ("0.1", "must be numeric"),
+    ],
+    ids=["nan", "positive-infinity", "negative-infinity", "boolean", "string"],
+)
+def test_direct_native_builder_rejects_invalid_optional_constant_values(
+    value, expected
+):
+    document = _document()
+    document["model"]["parameters"][0]["constant_value"] = value
+
+    with pytest.raises(
+        RuntimeError,
+        match=f"native BNGIR parameter constant_value {expected}",
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    "value", [0.25, 0.0, -0.25], ids=["positive", "zero", "negative"]
+)
+def test_direct_native_builder_accepts_finite_optional_constant_values(value):
+    document = _document()
+    _set_numeric_expression(document, "parameter", value)
+    document["model"]["parameters"][0]["constant_value"] = value
+
+    _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_accepts_integer_optional_constant_value():
+    document = _document()
+    document["model"]["parameters"][0]["constant_value"] = 1
+
+    _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_oversized_optional_constant_value():
+    document = _document()
+    document["model"]["parameters"][0]["constant_value"] = 10**400
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR parameter constant_value must be finite"
     ):
         _cpp._model_from_bngir_v02(document["model"])
 
