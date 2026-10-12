@@ -973,6 +973,258 @@ generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>1,B=>unlimited}})
     CHECK(generatedUnlimitedBProduct);
 }
 
+TEST_CASE("generate_network max_stoich evaluates static numeric expressions and last duplicate") {
+    const auto generateDimer = [](const std::string& limits) {
+        auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+begin reaction rules
+  bind: A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>)" + limits + R"(})
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        return generator.generate({});
+    };
+
+    const auto sumLimit = generateDimer("{A=>1+1}");
+    CHECK(sumLimit.reactions.size() == 1);
+
+    const auto fractionalLimit = generateDimer("{A=>2.5}");
+    CHECK(fractionalLimit.reactions.size() == 1);
+
+    const auto negativeLimit = generateDimer("{A=>-1}");
+    CHECK(negativeLimit.reactions.size() == 0);
+
+    const auto lastDuplicateWins = generateDimer("{A=>1,A=>2}");
+    CHECK(lastDuplicateWins.reactions.size() == 1);
+
+    const auto reversedDuplicateWins = generateDimer("{A=>2,A=>1}");
+    CHECK(reversedDuplicateWins.reactions.size() == 0);
+
+    auto trimerModel = parseModel(R"(
+begin model
+begin molecule types
+  A(b,c)
+  C(x)
+end molecule types
+begin seed species
+  C(x) 1
+end seed species
+begin reaction rules
+  synthesize: C(x) -> A(b!1,c!2).A(b!1,c).A(b,c!2) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>2**3}})
+)");
+    REQUIRE(trimerModel != nullptr);
+    engine::NetworkGenerator trimerGenerator(*trimerModel);
+    const auto trimer = trimerGenerator.generate({});
+    CHECK(trimer.reactions.size() == 1);
+}
+
+TEST_CASE("nested action-map parser preserves ordered entries and rejects trailing tokens") {
+    const auto entries = parser::parseNestedHashEntries(
+        "{A=>2.5,'B'=>unlimited,A=>1+1}");
+
+    REQUIRE(entries.size() == 3);
+    CHECK(entries[0].first == "A");
+    CHECK(entries[0].second == "2.5");
+    CHECK(entries[1].first == "'B'");
+    CHECK(entries[1].second == "unlimited");
+    CHECK(entries[2].first == "A");
+    CHECK(entries[2].second == "1+1");
+    const auto quotedKeys = parser::parseNestedHashEntries("{'A B'=>1,\"A-B\"=>2}");
+    REQUIRE(quotedKeys.size() == 2);
+    CHECK(quotedKeys[0].first == "'A B'");
+    CHECK(quotedKeys[1].first == "\"A-B\"");
+    CHECK(parser::parseNestedHashEntries("{}").empty());
+    CHECK_THROWS(parser::parseNestedHashEntries("{A=>1} trailing"));
+    CHECK_THROWS(parser::parseNestedHashEntries("{A=>1`+1}"));
+}
+
+TEST_CASE("max_stoich compiler handles programmatically constructed actions") {
+    ast::Model model;
+    ast::Action action;
+    action.name = "generate_network";
+    action.arguments.emplace("max_stoich", "{A=>2.5,A=>1+1}");
+    model.addAction(action);
+
+    const compile::Document document(model);
+    REQUIRE(document.protocol().actions.size() == 1);
+    const auto& compiledAction = document.protocol().actions.front();
+    REQUIRE(compiledAction.generateNetworkOptions.has_value());
+    const auto& options = *compiledAction.generateNetworkOptions;
+    REQUIRE(options.maxStoich.has_value());
+    REQUIRE(options.maxStoich->size() == 1);
+    CHECK(options.maxStoich->at("A") == 2.0);
+    CHECK(compiledAction.arguments.at("max_stoich") == "{A=>2.5,A=>1+1}");
+}
+
+TEST_CASE("generate_network max_stoich rejects quoted non-identifier keys without aliasing") {
+    const auto diagnosticForKey = [](const std::string& key) {
+        auto model = parseModel(R"(
+begin model
+begin molecule types
+  AB(b)
+end molecule types
+begin seed species
+  AB(b) 1
+end seed species
+begin reaction rules
+  bind: AB(b) -> AB(b!1).AB(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{)" + key + R"(=>1}})
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        std::string errorMessage;
+        try {
+            (void)generator.generate({});
+        } catch (const std::runtime_error& error) {
+            errorMessage = error.what();
+        }
+        return errorMessage;
+    };
+
+    for (const auto& key : {"'A B'", "\"A B\"", "'A-B'", "\"A-B\""}) {
+        const auto errorMessage = diagnosticForKey(key);
+        CHECK(errorMessage.find("max_stoich") != std::string::npos);
+        CHECK(errorMessage.find(key) != std::string::npos);
+    }
+
+    auto validQuotedKey = parseModel(R"(
+begin model
+begin molecule types
+  AB(b)
+end molecule types
+begin seed species
+  AB(b) 1
+end seed species
+begin reaction rules
+  bind: AB(b) -> AB(b!1).AB(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{'AB'=>2}})
+)");
+    REQUIRE(validQuotedKey != nullptr);
+    engine::NetworkGenerator validGenerator(*validQuotedKey);
+    CHECK(validGenerator.generate({}).reactions.size() == 1);
+}
+
+TEST_CASE("generate_network max_stoich applies negative limits to absent product types only") {
+    const auto generateWithALimit = [](const std::string& limit) {
+        auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+  B(b)
+  C(b)
+end molecule types
+begin seed species
+  A(b) 1
+  B(b) 1
+end seed species
+begin reaction rules
+  B_to_C: B(b) -> C(b) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>)" + limit + R"(}})
+)");
+        REQUIRE(model != nullptr);
+
+        engine::NetworkGenerator generator(*model);
+        return generator.generate({});
+    };
+
+    const auto negative = generateWithALimit("-1");
+
+    CHECK(negative.species.size() == 2);
+    CHECK(negative.reactions.size() == 0);
+
+    bool retainedASeed = false;
+    bool retainedBSeed = false;
+    for (const auto& species : negative.species.all()) {
+        const auto& graph = species.getSpeciesGraph().toString();
+        retainedASeed = retainedASeed || graph == "A(b)";
+        retainedBSeed = retainedBSeed || graph == "B(b)";
+    }
+    CHECK(retainedASeed);
+    CHECK(retainedBSeed);
+
+    const auto zero = generateWithALimit("0");
+    CHECK(zero.reactions.size() == 1);
+}
+
+TEST_CASE("generate_network max_stoich defers unsupported numeric diagnostics") {
+    auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+begin reaction rules
+  bind: A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>1/0}})
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    CHECK(generator.document().valid());
+    std::string errorMessage;
+    try {
+        (void)generator.generateNative(3);
+    } catch (const std::runtime_error& error) {
+        errorMessage = error.what();
+    }
+    CHECK(errorMessage.find("max_stoich") != std::string::npos);
+    CHECK(errorMessage.find("1/0") != std::string::npos);
+}
+
+TEST_CASE("generate_network max_stoich uses the first action that supplies the option") {
+    auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+begin reaction rules
+  bind: A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+begin actions
+  generate_network({overwrite=>1,max_iter=>1,max_stoich=>{}})
+  generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>1}})
+end actions
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generate({});
+    CHECK(network.reactions.size() == 1);
+}
+
 TEST_CASE("generate_network max_agg compiles finite numeric expressions and defers diagnostics") {
     const auto compileMaxAgg = [](const std::string& source) {
         auto model = parseModel(R"(
