@@ -860,6 +860,88 @@ generate_network({overwrite=>1,max_iter=>3,max_agg=>2})
     CHECK(allowedOtherProduct);
 }
 
+TEST_CASE("generate_network max_stoich accepts unlimited as an unbounded molecule type") {
+    const auto generateWithSentinel = [](const std::string& sentinel) {
+        auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 1
+end seed species
+begin reaction rules
+  bind: A(b) -> A(b!1).A(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>)" + sentinel + R"(}})
+)");
+        REQUIRE(model != nullptr);
+
+        engine::NetworkGenerator generator(*model);
+        return generator.generate({});
+    };
+
+    for (const auto& sentinel : {"unlimited", "'unlimited'", "\"unlimited\""}) {
+        INFO("max_stoich sentinel: " << sentinel);
+        const auto network = generateWithSentinel(sentinel);
+        CHECK(network.species.size() == 2);
+        REQUIRE(network.reactions.size() == 1);
+        const auto& reaction = network.reactions.all().front();
+        REQUIRE(reaction.getReactants().size() == 1);
+        REQUIRE(reaction.getProducts().size() == 1);
+        CHECK(network.species.get(reaction.getReactants().front()).getSpeciesGraph().toString() == "A(b)");
+        CHECK(network.species.get(reaction.getProducts().front()).getSpeciesGraph().toString() ==
+              "A(b!1).A(b!1)");
+    }
+}
+
+TEST_CASE("generate_network max_stoich combines finite limits with unlimited and retains seeds") {
+    auto model = parseModel(R"(
+begin model
+begin molecule types
+  A(b)
+  B(b)
+end molecule types
+begin seed species
+  A(b) 1
+  A(b!1).A(b!1) 1
+  B(b) 1
+end seed species
+begin reaction rules
+  A_dimerize: A(b) -> A(b!1).A(b!1) 1
+  B_dimerize: B(b) -> B(b!1).B(b!1) 1
+end reaction rules
+end model
+
+generate_network({overwrite=>1,max_iter=>1,max_stoich=>{A=>1,B=>unlimited}})
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generate({});
+
+    REQUIRE(network.species.size() == 4);
+    REQUIRE(network.reactions.size() == 1);
+    const auto& reaction = network.reactions.all().front();
+    REQUIRE(reaction.getReactants().size() == 1);
+    REQUIRE(reaction.getProducts().size() == 1);
+    CHECK(network.species.get(reaction.getReactants().front()).getSpeciesGraph().toString() == "B(b)");
+    CHECK(network.species.get(reaction.getProducts().front()).getSpeciesGraph().toString() ==
+          "B(b!1).B(b!1)");
+
+    bool retainedOverLimitASeed = false;
+    bool generatedUnlimitedBProduct = false;
+    for (const auto& species : network.species.all()) {
+        const auto& graph = species.getSpeciesGraph().toString();
+        retainedOverLimitASeed = retainedOverLimitASeed || graph == "A(b!1).A(b!1)";
+        generatedUnlimitedBProduct = generatedUnlimitedBProduct || graph == "B(b!1).B(b!1)";
+    }
+    CHECK(retainedOverLimitASeed);
+    CHECK(generatedUnlimitedBProduct);
+}
+
 TEST_CASE("generate_network max_agg compiles finite numeric expressions and defers diagnostics") {
     const auto compileMaxAgg = [](const std::string& source) {
         auto model = parseModel(R"(

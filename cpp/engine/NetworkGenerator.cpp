@@ -69,7 +69,15 @@ std::map<std::string, std::size_t> parseMaxStoich(const compile::SimulationProto
                                          (key.front() == '"' && key.back() == '"'))) {
                     key = key.substr(1, key.size() - 2);
                 }
-                limits.emplace(key, static_cast<std::size_t>(std::stoull(entry.substr(arrow + 2))));
+                const std::string value = entry.substr(arrow + 2);
+                // BNG2 treats this sentinel as having no per-molecule limit.
+                // Keep the compatibility runtime's existing numeric parsing
+                // unchanged for every other value.
+                const bool quotedUnlimited =
+                    value == "'unlimited'" || value == "\"unlimited\"";
+                if (value != "unlimited" && !quotedUnlimited) {
+                    limits.emplace(key, static_cast<std::size_t>(std::stoull(value)));
+                }
             }
             if (comma == std::string::npos) {
                 break;
