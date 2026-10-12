@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <memory>
@@ -40,6 +41,26 @@ std::size_t indexFromBngir(const py::handle& value, const std::string& where) {
     return static_cast<std::size_t>(raw);
 }
 
+double finiteNumberFromBngir(const py::handle& value, const std::string& where) {
+    if (PyBool_Check(value.ptr())) {
+        throw std::runtime_error(
+            "native BNGIR " + where + " must be numeric, not boolean");
+    }
+    if (!PyLong_Check(value.ptr()) && !PyFloat_Check(value.ptr())) {
+        throw std::runtime_error("native BNGIR " + where + " must be numeric");
+    }
+
+    const auto number = PyFloat_AsDouble(value.ptr());
+    if (PyErr_Occurred()) {
+        PyErr_Clear();
+        throw std::runtime_error("native BNGIR " + where + " must be finite");
+    }
+    if (!std::isfinite(number)) {
+        throw std::runtime_error("native BNGIR " + where + " must be finite");
+    }
+    return number;
+}
+
 void requireDenseOrderedIds(const py::list& entries, const std::string& section) {
     for (std::size_t index = 0; index < entries.size(); ++index) {
         const auto entry = py::cast<py::dict>(entries[index]);
@@ -78,6 +99,10 @@ void requireParameterKeys(const py::dict& parameter) {
         "id", "name", "expression", "constant_value",
     };
     requireObjectKeys(parameter, required, allowed, "parameter");
+    const py::str constantValueKey("constant_value");
+    if (parameter.contains(constantValueKey)) {
+        finiteNumberFromBngir(parameter[constantValueKey], "parameter constant_value");
+    }
 }
 
 void requireParameterReferenceSymbol(const py::dict& symbol) {
@@ -116,12 +141,8 @@ Expression expressionFromBngir(const py::dict& value,
     const auto kind = py::cast<std::string>(value["kind"]);
     if (kind == "number") {
         requireExpressionProperties(value, {"kind", "value"});
-        const auto number = value["value"];
-        if (PyBool_Check(number.ptr())) {
-            throw std::runtime_error(
-                "native BNGIR expression value must be numeric, not boolean");
-        }
-        return Expression::number(py::cast<double>(number));
+        return Expression::number(
+            finiteNumberFromBngir(value["value"], "expression value"));
     }
     if (kind == "parameter_ref") {
         requireExpressionProperties(value, {"kind", "symbol"});
