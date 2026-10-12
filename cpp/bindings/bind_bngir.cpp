@@ -51,40 +51,48 @@ void requireDenseOrderedIds(const py::list& entries, const std::string& section)
     }
 }
 
+void requireObjectKeys(const py::dict& object,
+                       const std::vector<std::string>& required,
+                       const std::vector<std::string>& allowed,
+                       const std::string& where) {
+    for (const auto& key : required) {
+        if (!object.contains(py::str(key))) {
+            throw std::runtime_error("native BNGIR " + where + " is missing " + key);
+        }
+    }
+    for (const auto& entry : object) {
+        if (!py::isinstance<py::str>(entry.first)) {
+            throw std::runtime_error("native BNGIR " + where + " has a non-string key");
+        }
+        const auto key = py::cast<std::string>(entry.first);
+        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
+            throw std::runtime_error(
+                "native BNGIR " + where + " has unsupported " + key);
+        }
+    }
+}
+
 void requireParameterKeys(const py::dict& parameter) {
     static const std::vector<std::string> required = {"id", "name", "expression"};
     static const std::vector<std::string> allowed = {
         "id", "name", "expression", "constant_value",
     };
-    for (const auto& key : required) {
-        if (!parameter.contains(py::str(key))) {
-            throw std::runtime_error("native BNGIR parameter is missing " + key);
-        }
-    }
-    for (const auto& entry : parameter) {
-        if (!py::isinstance<py::str>(entry.first)) {
-            throw std::runtime_error("native BNGIR parameter has a non-string key");
-        }
-        const auto key = py::cast<std::string>(entry.first);
-        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
-            throw std::runtime_error(
-                "native BNGIR parameter has unsupported " + key);
-        }
+    requireObjectKeys(parameter, required, allowed, "parameter");
+}
+
+void requireParameterReferenceSymbol(const py::dict& symbol) {
+    static const std::vector<std::string> keys = {"kind", "index"};
+    requireObjectKeys(symbol, keys, keys, "parameter reference symbol");
+    if (!py::isinstance<py::str>(symbol["kind"]) ||
+        py::cast<std::string>(symbol["kind"]) != "parameter") {
+        throw std::runtime_error(
+            "native BNGIR parameter reference symbol kind must be parameter");
     }
 }
 
 void requireExpressionProperties(const py::dict& expression,
                                  const std::vector<std::string>& allowed) {
-    for (const auto& entry : expression) {
-        if (!py::isinstance<py::str>(entry.first)) {
-            throw std::runtime_error("native BNGIR expression has a non-string key");
-        }
-        const auto key = py::cast<std::string>(entry.first);
-        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
-            throw std::runtime_error(
-                "native BNGIR expression has unsupported " + key);
-        }
-    }
+    requireObjectKeys(expression, {}, allowed, "expression");
 }
 
 void rejectUnsupportedModelSections(const py::dict& document) {
@@ -118,6 +126,7 @@ Expression expressionFromBngir(const py::dict& value,
     if (kind == "parameter_ref") {
         requireExpressionProperties(value, {"kind", "symbol"});
         const auto symbol = py::cast<py::dict>(value["symbol"]);
+        requireParameterReferenceSymbol(symbol);
         const auto index = indexFromBngir(symbol["index"], "parameter reference");
         if (index >= parameterNames.size()) {
             throw std::runtime_error("native BNGIR parameter reference is out of range");
