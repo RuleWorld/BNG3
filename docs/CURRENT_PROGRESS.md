@@ -1,8 +1,8 @@
 # BNG3 current progress
 
 **Refreshed:** 2026-10-12 against RuleWorld/BNG3 main
-`ce44139985582e53ee4b8191efdbcf0aa9e64340` (tree
-`08c4c5825c6b3c4e71d0d974b8e5fb6936eeff10`). Semantic convergence and release
+`cca53cd254aadec4dc39f52a0d76ece463425d45` (tree
+`8182a167e4f44075171a137826322a5724c3407f`). Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
 [#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 44 open and eleven closed
 (#132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183).
@@ -25,7 +25,7 @@ A bounded repair does not close its broader issue.
 | #133/#173 | #190/#191 | Native-compiled static mass-action JAX ODE, fixed-step RK4; public JAX SSA explicitly unavailable. Installed CPU qualification satisfies these scoped issues; functional/time-dependent rates and adaptive integration remain unsupported. |
 | #134 | #128/#204 | Combined parser grammar reuse, cardinality guards and pyparsing 3.0.9 fallback. Source-only shape/fallback checks pass; same-cardinality equality asymmetry remains pre-existing. |
 | #135/#136 | #187/#189 | Current issue-linked ledger and corrected architecture/validation claims. Closed after review; historical reports remain historical. |
-| #140 | #207/#220/#236/#241 | Compile-owned numeric max_iter/max_agg, product filtering, finite ODE/SSA n_steps expressions and static numeric setParameter expressions. PR [#241](https://github.com/RuleWorld/BNG3/pull/241) qualifies literal arithmetic in top-level and protocol actions; dynamic parameter-backed arithmetic and broader protocol typing/shared CLI/Python semantics remain open. |
+| #140 | #207/#220/#236/#241/#244 | Compile-owned numeric max_iter/max_agg, product filtering, finite ODE/SSA n_steps expressions, static numeric setParameter expressions, and a bounded unlimited-stoichiometry correction. PR [#241](https://github.com/RuleWorld/BNG3/pull/241) qualifies literal arithmetic in top-level and protocol actions; [#244](https://github.com/RuleWorld/BNG3/pull/244) qualifies one-generation mixed finite/unlimited seed and reaction-channel behavior. Dynamic parameter-backed arithmetic, typed expression-prefix/negative-wrap behavior, and broader protocol typing/shared CLI/Python semantics remain open. |
 | #141/#142 | #203/#211/#222/#224 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots have a shared-topology contract; serial scan exceptions restore base/dependent parameters and the original network before successful analytic/fresh-model recovery. Broader invalidation/lifecycle and graph encoding unification remain open. |
 | #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
 | #138/#163 | #196/#197/#228/#230/#233/#237 | Compile-owned units and version-aware SBML units; NET has an independent Network3 analytic consumer contract. Observable projection preserves graph-prefix context, counting modes, inert Molecules qualifiers and qualified Species CountUnique termination; #237 explicitly rejects unsupported Counter/Fraction kinds before opening the NET destination, without adding runtime support. Broader runtime migration/export qualification remains open. |
@@ -34,17 +34,17 @@ A bounded repair does not close its broader issue.
 | #143 | #201 | Typed ODE dependency classification and time/state reevaluation; broader backend scope, propensity and cache-invalidation criteria remain open. |
 | #146 | #210/#215/#235/#238 | Deletion scope, pending waits, output clocks, canonical leading %label: XML scope and direct-NFsim compiled local-function binding. Independent native checks now cover four scoped cases; the original unmapped conditional remains unsupported, composite XML is not native parity, and strict native -oSteps final-endpoint rows remain red. |
 | #147/#148 | #219 | Whole-species DestroyComplex, same-complex matcher constraints and native index-width refusal. Runtime tests use an action adapter; production ActionIR execution and formal correspondence remain open. |
-| #153–#155 | #209/#212/#213/#217/#226/#227 | Narrow parser-free BNGIR v0.2 import, strict envelopes and boolean-reference rejection; seed-only zero-reaction models execute static ODE/SSA. Direct-builder malformed dense IDs, boolean references and nonempty known unsupported top-level sections now reject; broader structural round trips and nested validation remain open. |
+| #153–#155 | #209/#212/#213/#217/#226/#227/#242/#246 | Narrow parser-free BNGIR v0.2 import, strict model/action envelopes and boolean-reference rejection; seed-only zero-reaction models execute static ODE/SSA. Unknown model keys and unknown feature/protocol/action keys now reject, while string-valued action arguments and optional provenance remain accepted. Direct-builder malformed dense IDs, boolean references and nonempty known unsupported top-level sections also reject; broader structural round trips, direct-native nested validation and independent C++ reader validation remain open. |
 | #165/#166 | #194/#198 | All-input Lean reference matcher and bounded packing/native guards; #165 closed, production lowering correspondence remains open. |
 | #169 | #192 | Proof trust accounting and harness qualification. Closed after review. |
-| #171/#172 | #193/#208 | Legacy positional run compatibility and defaults/version without optional Cement. Broader public matrix and legacy retirement remain open. |
+| #171/#172 | #193/#208/#245 | Legacy positional run compatibility and defaults/version without optional Cement. PR [#245](https://github.com/RuleWorld/BNG3/pull/245) documents that `BIONETGEN_USE_PERL=1` selects the Perl path for Python API `bionetgen.run(path)` and `bionetgen.load(path).execute()`; the `bionetgen run MODEL` CLI is unavailable in this mode. The broad public matrix and legacy retirement remain open. |
 | #182 | #199/#216 | Required numerical/expression/export and scheduled/manual frozen ensemble CI wiring, exact-source package/native/worker checks and permanent receipts; #182 closed. Scientific stochastic and historical NFsim qualification remain open. |
 | #183 | #206 | Budgeted locked SSTS CI, per-case classifications/digests and permanent receipts. This bounded workflow issue is closed; full #159 qualification remains open. |
 
-Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230, #233, #235, #236, #237, #238, static setter #241 and ledger refreshes #221/#223/#229/#232/#239 during this continuation.
+Root merged #187, #219, #206, #193, #208, #190, #191, the combined #128/#204 stack, and #220, #201, #222, #188, #224, #226, #227, #130, #228, #225, #231, #230, #233, #235, #236, #237, #238, static setter #241, BNGIR model-key guard #242, unlimited-stoichiometry slice #244, Perl API/CLI documentation #245, BNGIR action-envelope guard #246, and ledger refreshes #221/#223/#229/#232/#239 during this continuation.
 PR #205 integrated the Rasi performance port separately. The shared checkout
 remains on perf/nfsim-rasi-translation-port-v2 at `07ea87d3`, with its unrelated
-untracked audit file preserved. PRs #236 and #241 are merged, bounded #140
+untracked audit file preserved. PRs #236, #241 and #244 are merged, bounded #140
 slices; the umbrella issue remains open. Work continues in isolated checkouts. Only root may
 merge reviewed changes or close satisfied issues; no release publication is
 authorized.
@@ -402,6 +402,77 @@ authorized.
   hosted checks were queued and one was in progress. Deeper nested action/object
   validation and broad scope/unit/energy/population/protocol round trips remain
   open; #154 and #155 remain open.
+- Unlimited stoichiometry bounds #140, merged [PR #244](https://github.com/RuleWorld/BNG3/pull/244)
+  ([root review](https://github.com/RuleWorld/BNG3/pull/244#issuecomment-6117118067)):
+  exact source `73f517526956b6f9a8b00bb110d40fd5fcab08d6`, merge
+  `cca53cd254aadec4dc39f52a0d76ece463425d45`, base
+  `8b12e7e5ca7bc8970310635620c1eeb3595db7fe`, tested tree
+  `8182a167e4f44075171a137826322a5724c3407f`. The unlimited sentinel skips
+  only that molecule-type bound after outer trimming; a mixed finite A / unlimited
+  B case preserves an over-limit A seed, filters A's channel, and generates B's
+  channel. Four fresh controlled one-generation network cases match pinned BNG2
+  `9601746f8884ed19ab2acea49fe87fc4660ace46` in species graphs, seed amounts,
+  channels and numeric rates; final-head CLI reruns reproduce the same NET bytes.
+  Six padded/internal-space quoted sentinel values are refused like pinned BNG2.
+  Final source/native checks: 121 selected Python tests, reaction expansion
+  28 cases/474 assertions, network 5/40 and three focused CTests; earlier affected
+  ODE 23/132, NFsim 142/1,621, XML 11/47 and compartment 13/129 checks passed.
+  The sentinel and whitespace mutations failed their expected regressions, and
+  restoration returned checks green. CLI SHA256
+  `ddcbb3b4e0026b582d6f9d22150d2a0da098a01f1c6be95dc4af999d11568a6e`; native
+  SHA256 `3aba9bf257b2b59fc7e94df4efb0e6d4ddab315c5bff860ba71f5946f40ce66b`.
+  Release source/native, adapter OFF; no installed-wheel claim. At root review,
+  14 PR-head checks were queued at the 2026-10-12 03:18 UTC root review. At
+  2026-10-12 03:19 UTC, the separate merge-push
+  had four workflows queued ([CI](https://github.com/RuleWorld/BNG3/actions/runs/38199225815),
+  [Lean](https://github.com/RuleWorld/BNG3/actions/runs/38199225796),
+  [CodeQL](https://github.com/RuleWorld/BNG3/actions/runs/38199225787),
+  [Cross-tool](https://github.com/RuleWorld/BNG3/actions/runs/38199225786)); pending
+  jobs are not validation. This is bounded one-generation parity, not unrestricted
+  growth. Numeric expression-prefix/negative-wrap defects remain assigned; broader
+  typed-protocol/default/API criteria and #140 remain open.
+- Perl API/CLI boundary #171, merged documentation-only [PR #245](https://github.com/RuleWorld/BNG3/pull/245)
+  ([root review](https://github.com/RuleWorld/BNG3/pull/245#issuecomment-6116911488)):
+  exact source `662987b66c7fbb3bf4d0705c881d0ba4a8f2fe26`, merge
+  `1f20e1cac12dcf11cc6bd38404ce947c1b7f1a5f`, based on
+  `749dc464ad6e3430cc4f3c76c7a4b88a43fc7d9e`. The reference now limits
+  `BIONETGEN_USE_PERL=1` to Python API calls `bionetgen.run(path)` and
+  `bionetgen.load(path).execute()` and states that `bionetgen run MODEL` is
+  unavailable in this mode. Source-mode reproduction at the base used pinned BNG2
+  `9601746f8884ed19ab2acea49fe87fc4660ace46`, an XML-only fixture, and asserted
+  package/legacy-runner paths: the API produced XML and preserved verbose output
+  and nonzero Perl stderr; the CLI exited 1 without XML or invoking Perl. A larger
+  fixture requires unavailable `run_network`; no NET/ODE or installed-package
+  qualification is claimed. At 2026-10-12 02:55 UTC root review, 13 hosted jobs
+  were queued; they are not validation. The broader #171 API/installed-CLI matrix
+  remains open.
+- BNGIR feature/protocol/action envelope #154/#155, merged [PR #246](https://github.com/RuleWorld/BNG3/pull/246)
+  ([root review](https://github.com/RuleWorld/BNG3/pull/246#issuecomment-6117020055)):
+  exact source `a3c0243bef3eb448b67c755de94cad3d246a8bbf`, merge
+  `8b12e7e5ca7bc8970310635620c1eeb3595db7fe`, base
+  `1f20e1cac12dcf11cc6bd38404ce947c1b7f1a5f`, tree
+  `bf08aee93e3b4b769a770222e39f49bb738aaa61`. In two Python files, the default
+  route now rejects feature/protocol/action properties outside the v0.1/v0.2
+  contracts while preserving arbitrary string-valued action arguments and optional
+  provenance. Root reproduced six tests RED on unchanged source, then GREEN96
+  BNGIR/native-import tests; each guard mutation failed its focused cases and
+  restoration passed 96 again. Black/diff checks and fresh independent Luna review
+  passed. Package paths and the reused native module were asserted; its SHA256
+  `b8e355152b68be34e15c48e1732f87a76dcbbc6298d102fd336a45e8bc03768b` is from
+  #241's identical C++ subtree. No rebuild or installed-wheel qualification is
+  claimed. The separate native route still refuses nonempty protocol actions.
+  At the 2026-10-12 03:07 UTC premerge root review, the PR-head snapshot had five
+  successes, three in progress, ten queued, one skip and one neutral. At
+  2026-10-12 03:19 UTC, its merge-push had
+  Formatting passed, CodeQL in progress, and CI, Lean and Cross-tool queued
+  ([Formatting](https://github.com/RuleWorld/BNG3/actions/runs/38198505877),
+  [CodeQL](https://github.com/RuleWorld/BNG3/actions/runs/38198505879),
+  [Lean](https://github.com/RuleWorld/BNG3/actions/runs/38198505903),
+  [Cross-tool](https://github.com/RuleWorld/BNG3/actions/runs/38198505880),
+  [CI](https://github.com/RuleWorld/BNG3/actions/runs/38198505912)). These snapshots
+  are not a complete matrix. Deeper node properties, direct-native nested
+  validation, independent C++ reader validation and broad semantic round trips
+  remain open; #154 and #155 remain open.
 - Parser #128/#204: combined source preview on main `f4adb7b7` passed 68 parsed
   field/text comparisons against baseline on actual pyparsing 3.0.9 and 3.3.2;
   root independently reran 68 round trips and separator/fallback/cardinality
