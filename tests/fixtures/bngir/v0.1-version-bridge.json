@@ -1,0 +1,73 @@
+{
+  "features": {
+    "required": [],
+    "used": [
+      "rules",
+      "seeds"
+    ]
+  },
+  "format": "BNGIR",
+  "model": {
+    "barrier_patterns": [],
+    "compartments": [],
+    "energy_patterns": [],
+    "functions": [],
+    "molecule_types": [
+      {
+        "components": [
+          {
+            "allowed_states": [
+              "u",
+              "p"
+            ],
+            "name": "x"
+          }
+        ],
+        "name": "A",
+        "population": false
+      }
+    ],
+    "name": "bngir_version_bridge",
+    "observables": [],
+    "options": {},
+    "parameters": [
+      {
+        "expression": "0.1",
+        "name": "k"
+      }
+    ],
+    "population_maps": [],
+    "rules": [
+      {
+        "bidirectional": false,
+        "driving_work": "",
+        "label": "convert",
+        "modifiers": [],
+        "name": "convert",
+        "products": [
+          "A(x~p)"
+        ],
+        "rates": [
+          "k"
+        ],
+        "reactants": [
+          "A(x~u)"
+        ]
+      }
+    ],
+    "seeds": [
+      {
+        "amount": "10",
+        "compartment": "",
+        "constant": false,
+        "pattern": "A(x~u)"
+      }
+    ],
+    "substance_units": "",
+    "version": "2.2"
+  },
+  "protocol": {
+    "actions": []
+  },
+  "version": "0.1"
+}
