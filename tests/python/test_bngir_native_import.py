@@ -112,6 +112,42 @@ def test_direct_native_builder_rejects_boolean_declaration_ids():
         _cpp._model_from_bngir_v02(document["model"])
 
 
+def test_direct_native_builder_rejects_unknown_parameter_properties():
+    document = _document()
+    document["model"]["parameters"][0]["future_semantics"] = {
+        "rate_units": "molecules/s"
+    }
+
+    with pytest.raises(
+        RuntimeError, match=r"native BNGIR parameter has unsupported future_semantics"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_missing_required_parameter_properties():
+    document = _document()
+    del document["model"]["parameters"][0]["expression"]
+
+    with pytest.raises(
+        RuntimeError, match=r"native BNGIR parameter is missing expression"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_accepts_optional_parameter_constant_value():
+    document = _document()
+    document["model"]["parameters"][0]["constant_value"] = 0.1
+
+    _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_accepts_parameter_without_optional_constant_value():
+    document = _document()
+    document["model"]["parameters"][0].pop("constant_value")
+
+    _cpp._model_from_bngir_v02(document["model"])
+
+
 @pytest.mark.parametrize(
     "value",
     [True, 0.0, -1, 99, 10**100],

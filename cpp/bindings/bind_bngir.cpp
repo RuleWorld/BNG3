@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <map>
 #include <memory>
@@ -46,6 +47,28 @@ void requireDenseOrderedIds(const py::list& entries, const std::string& section)
         if (id != index) {
             throw std::runtime_error(
                 "native BNGIR " + section + " ids must be dense and ordered");
+        }
+    }
+}
+
+void requireParameterKeys(const py::dict& parameter) {
+    static const std::vector<std::string> required = {"id", "name", "expression"};
+    static const std::vector<std::string> allowed = {
+        "id", "name", "expression", "constant_value",
+    };
+    for (const auto& key : required) {
+        if (!parameter.contains(py::str(key))) {
+            throw std::runtime_error("native BNGIR parameter is missing " + key);
+        }
+    }
+    for (const auto& entry : parameter) {
+        if (!py::isinstance<py::str>(entry.first)) {
+            throw std::runtime_error("native BNGIR parameter has a non-string key");
+        }
+        const auto key = py::cast<std::string>(entry.first);
+        if (std::find(allowed.begin(), allowed.end(), key) == allowed.end()) {
+            throw std::runtime_error(
+                "native BNGIR parameter has unsupported " + key);
         }
     }
 }
@@ -130,6 +153,9 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
     const auto moleculeTypes = py::cast<py::list>(document["molecule_types"]);
     const auto seeds = py::cast<py::list>(document["seeds"]);
     const auto rules = py::cast<py::list>(document["rules"]);
+    for (const auto& rawParameter : parameters) {
+        requireParameterKeys(py::cast<py::dict>(rawParameter));
+    }
     requireDenseOrderedIds(parameters, "parameter");
     requireDenseOrderedIds(moleculeTypes, "molecule type");
     requireDenseOrderedIds(seeds, "seed");
