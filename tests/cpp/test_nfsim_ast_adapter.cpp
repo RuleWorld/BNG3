@@ -2722,6 +2722,69 @@ end model
     delete xml;
 }
 
+TEST_CASE("NFsim rejects rates that reference time-dependent named parameters") {
+    for (const std::string rateExpression : {"k", "rate()"}) {
+        const std::string functions = rateExpression == "rate()"
+            ? "begin functions\n    rate() = k\nend functions\n"
+            : "";
+        auto model = bng::parser::parseModel(
+            "begin model\n"
+            "begin parameters\n"
+            "    clock_rate time()+1\n"
+            "    k 2*clock_rate\n"
+            "    static_k 0.5\n"
+            "end parameters\n"
+            "begin molecule types\n"
+            "    A()\n    B()\n"
+            "end molecule types\n"
+            "begin seed species\n"
+            "    A() 10\n"
+            "end seed species\n" +
+            functions +
+            "begin reaction rules\n"
+            "    R: A() -> B() " + rateExpression + "\n"
+            "end reaction rules\n"
+            "end model\n");
+        REQUIRE(model != nullptr);
+
+        const bng::compile::CompiledModel compiled(*model);
+        REQUIRE(compiled.valid());
+        REQUIRE(compiled.parameters().size() == 3);
+        CHECK(compiled.parameters()[0].timeDependent);
+        CHECK(compiled.parameters()[1].timeDependent);
+        CHECK_FALSE(compiled.parameters()[2].timeDependent);
+        const auto rejection =
+            bng::compile::nfSimTimeDependentRateParameterRejection(compiled);
+        REQUIRE(rejection.has_value());
+        CHECK(rejection->find("time-dependent") != std::string::npos);
+        CHECK(rejection->find("would be frozen at t=0") != std::string::npos);
+        const auto capability = bng::compile::capabilitiesFor(
+            *model, bng::compile::BackendKind::NFsim);
+        CHECK_FALSE(capability.isSupported());
+        REQUIRE_FALSE(capability.diagnostics().empty());
+        CHECK(capability.diagnostics().back().message.find("time-dependent") !=
+              std::string::npos);
+
+        int traversalLimit = 0;
+        std::string unavailableReason;
+        bool semanticsUnsupported = false;
+        auto* direct = NFinput::buildSystemFromAst(
+            *model, false, 100, false, traversalLimit, {},
+            &unavailableReason, &semanticsUnsupported);
+        CHECK(direct == nullptr);
+        CHECK(semanticsUnsupported);
+        CHECK(unavailableReason.find("time-dependent") != std::string::npos);
+        delete direct;
+
+        NFcore::System rawSystem("timed-rate raw-lowering guard", false, 100);
+        std::string rawReason;
+        traversalLimit = 0;
+        CHECK_FALSE(NFinput::addReactionRulesFromCompiled(
+            compiled, &rawSystem, false, false, traversalLimit, {}, &rawReason));
+        CHECK(rawReason.find("time-dependent") != std::string::npos);
+    }
+}
+
 TEST_CASE("NFsim raw physical-rate lowering requires a 3D product volume for count rates") {
     auto model = bng::parser::parseModel(R"BNGL(
 begin model

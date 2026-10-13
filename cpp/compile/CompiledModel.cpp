@@ -226,6 +226,8 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.name = parameter.getName();
         compiled.sourceExpression = parameter.getExpression().toString();
         compiled.expression = expression.resolvedExpression();
+        compiled.timeDependent =
+            model.getParameters().isTimeDependent(parameter.getName());
         try {
             compiled.constantValue = model.getParameters().evaluate(parameter.getName(), 0.0);
         } catch (const std::exception&) {

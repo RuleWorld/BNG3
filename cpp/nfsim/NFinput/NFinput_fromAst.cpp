@@ -89,6 +89,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <set>
 #include <unordered_set>
 #include <utility>
@@ -5892,7 +5893,8 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            bool verbose,
                            int& suggestedTraversalLimit,
                            const std::filesystem::path& sourcePath,
-                           std::string* unavailableReason) {
+                           std::string* unavailableReason,
+                           bool* semanticsUnsupported) {
     // Preserve the historical API contract: before the direct adapter grew a
     // separate complex-bookkeeping flag, this argument controlled both the
     // System constructor and same-complex binding checks.
@@ -5900,7 +5902,7 @@ System* buildSystemFromAst(const bng::ast::Model& model,
     return buildSystemFromAstWithSeedOverrides(
         model, blockSameComplexBinding, blockSameComplexBinding,
         globalMoleculeLimit, verbose, suggestedTraversalLimit, sourcePath,
-        noOverrides, unavailableReason);
+        noOverrides, unavailableReason, semanticsUnsupported);
 }
 
 System* buildSystemFromAst(const bng::ast::Model& model,
@@ -5910,12 +5912,13 @@ System* buildSystemFromAst(const bng::ast::Model& model,
                            bool verbose,
                            int& suggestedTraversalLimit,
                            const std::filesystem::path& sourcePath,
-                           std::string* unavailableReason) {
+                           std::string* unavailableReason,
+                           bool* semanticsUnsupported) {
     static const SeedAmountOverrides noOverrides;
     return buildSystemFromAstWithSeedOverrides(
         model, useComplex, blockSameComplexBinding, globalMoleculeLimit,
         verbose, suggestedTraversalLimit, sourcePath, noOverrides,
-        unavailableReason);
+        unavailableReason, semanticsUnsupported);
 }
 
 System* buildSystemFromAstWithSeedOverrides(
@@ -5927,7 +5930,8 @@ System* buildSystemFromAstWithSeedOverrides(
     int& suggestedTraversalLimit,
     const std::filesystem::path& sourcePath,
     const SeedAmountOverrides& seedAmountOverrides,
-    std::string* unavailableReason) {
+    std::string* unavailableReason,
+    bool* semanticsUnsupported) {
     // Every `return nullptr` below records why. Callers previously received a
     // bare nullptr and reported "direct AST initialization unavailable" with
     // no cause, even though the individual builders already wrote precise
@@ -5939,20 +5943,22 @@ System* buildSystemFromAstWithSeedOverrides(
         return nullptr;
     };
     if (unavailableReason != nullptr) unavailableReason->clear();
+    if (semanticsUnsupported != nullptr) *semanticsUnsupported = false;
+
+    bng::compile::Document compiledDocument(model);
+    const auto& compiledModel = compiledDocument.model();
+    if (const auto rejection =
+            bng::compile::nfSimTimeDependentRateParameterRejection(compiledModel)) {
+        if (semanticsUnsupported != nullptr) *semanticsUnsupported = true;
+        return fail(*rejection);
+    }
 
     if (model.getEventFormatVersion().has_value()) {
         return fail(bng::ast::kUnsupportedEventExecutionMessage);
     }
 
-    // Migration escape hatch used by the parity gate: force the XML path.
-    if (std::getenv("BNG_NFSIM_FORCE_XML")) {
-        if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
-        // Not a capability limit: the operator asked for the XML path.
-        return fail("BNG_NFSIM_FORCE_XML is set; the XML path was requested explicitly");
-    }
-
     const auto capability = bng::compile::capabilitiesFor(
-        model, bng::compile::BackendKind::NFsim);
+        model, bng::compile::BackendKind::NFsim, &compiledModel);
     if (!capability.isSupported()) {
         std::string joined;
         for (const auto& diagnostic : capability.diagnostics()) {
@@ -5964,14 +5970,20 @@ System* buildSystemFromAstWithSeedOverrides(
                     (joined.empty() ? std::string("no diagnostic reported") : joined));
     }
 
-    bng::compile::Document compiledDocument(model);
     if (!compiledDocument.valid()) {
         if (verbose) std::cerr << "[nfsim/compiled] semantic compilation failed\n";
         return fail("semantic compilation of the model failed before NFsim "
                     "construction began");
     }
-    const auto& compiledModel = compiledDocument.model();
     const std::string& name = compiledModel.metadata().name;
+
+    // Migration escape hatch used by the parity gate: force the XML path.
+    // Semantic rejections above apply to both direct and compatibility paths.
+    if (std::getenv("BNG_NFSIM_FORCE_XML")) {
+        if (verbose) std::cerr << "[nfsim/ast] BNG_NFSIM_FORCE_XML set -> XML path\n";
+        return fail("BNG_NFSIM_FORCE_XML is set; the XML path was requested explicitly");
+    }
+
     System* s = new System(name.empty() ? "model" : name,
                            useComplex, globalMoleculeLimit);
     // The CLI enables complex-scoped local functions by default.  The direct
@@ -5981,6 +5993,7 @@ System* buildSystemFromAstWithSeedOverrides(
 
     std::map<std::string, double> parameters;
     std::map<std::string, int> allowedStates;
+    std::string unsupportedRateReason;
     suggestedTraversalLimit = 0;
 
     // Run the builders in dependency order, naming each one so a failure can
@@ -6015,7 +6028,7 @@ System* buildSystemFromAstWithSeedOverrides(
         {"reaction rules", [&] {
             return addReactionRulesFromCompiled(compiledModel, s, blockSameComplexBinding,
                                                 verbose, suggestedTraversalLimit,
-                                                sourcePath);
+                                                sourcePath, &unsupportedRateReason);
         }},
     }};
 
@@ -6033,9 +6046,15 @@ System* buildSystemFromAstWithSeedOverrides(
             break;
         }
         if (!stageOk) {
-            failure = std::string("stage '") + stageName +
-                      "' could not be constructed directly (see preceding "
-                      "[nfsim/*] diagnostics for the specific construct)";
+            if (std::string_view(stageName) == "reaction rules" &&
+                !unsupportedRateReason.empty()) {
+                failure = unsupportedRateReason;
+                if (semanticsUnsupported != nullptr) *semanticsUnsupported = true;
+            } else {
+                failure = std::string("stage '") + stageName +
+                          "' could not be constructed directly (see preceding "
+                          "[nfsim/*] diagnostics for the specific construct)";
+            }
             break;
         }
     }

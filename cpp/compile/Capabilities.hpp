@@ -122,11 +122,18 @@ private:
 // Report support before a backend allocates mutable runtime state.  A
 // CompatibilityOnly feature is supported through the existing compatibility
 // bridge; Unsupported is a hard fail and must never be silently ignored.
-CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend);
+CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend,
+                                const CompiledModel* compiledModel = nullptr);
 
 // Returns the first semantic boundary that prevents a compiled unit-bearing
 // model from entering NFsim's narrow static zero-order count-rate bridge.
 std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
+    const CompiledModel& model);
+
+// NFsim stores named parameters as static values. Reject rate expressions
+// that reach a clock-dependent named parameter, while leaving direct clock
+// expressions available to NFsim's runtime rate functions.
+std::optional<std::string> nfSimTimeDependentRateParameterRejection(
     const CompiledModel& model);
 
 } // namespace bng::compile

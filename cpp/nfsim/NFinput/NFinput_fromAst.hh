@@ -61,7 +61,8 @@ NFcore::System* buildSystemFromAst(
         bool   verbose,
         int&   suggestedTraversalLimit,
         const std::filesystem::path& sourcePath = {},
-        std::string* unavailableReason = nullptr);
+        std::string* unavailableReason = nullptr,
+        bool* semanticsUnsupported = nullptr);
 
 /// Build an NFcore::System with the native NFsim complex flags separated.
 ///
@@ -77,7 +78,8 @@ NFcore::System* buildSystemFromAst(
         bool   verbose,
         int&   suggestedTraversalLimit,
         const std::filesystem::path& sourcePath = {},
-        std::string* unavailableReason = nullptr);
+        std::string* unavailableReason = nullptr,
+        bool* semanticsUnsupported = nullptr);
 
 /// Build directly while replacing matching seed amounts with current action
 /// state.  Action dispatch uses this for setConcentration/addConcentration
@@ -91,7 +93,8 @@ NFcore::System* buildSystemFromAstWithSeedOverrides(
         int&   suggestedTraversalLimit,
         const std::filesystem::path& sourcePath,
         const SeedAmountOverrides& seedAmountOverrides,
-        std::string* unavailableReason = nullptr);
+        std::string* unavailableReason = nullptr,
+        bool* semanticsUnsupported = nullptr);
 
 // --- Per-section direct builders (mirror the TiXml-based init* functions) ---
 // Each returns false on error. Implement incrementally; until a builder is

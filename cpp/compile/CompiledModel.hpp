@@ -43,6 +43,9 @@ struct CompiledParameter {
     std::string sourceExpression;
     ResolvedExpression expression;
     std::optional<double> constantValue;
+    // True when the source parameter reads the simulation clock, directly or
+    // through another named parameter.  constantValue remains its t=0 value.
+    bool timeDependent = false;
     // Compile-time physical-basis value.  Existing consumers continue to use
     // constantValue until a backend conversion context is available.
     std::optional<double> normalizedValue;
