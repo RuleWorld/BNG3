@@ -315,8 +315,6 @@ def obtainSCT(fileName, reactionDefinitions, useID, namingConventions):
     return database.prunnedDependencyGraph, database, document
 
 
-
-
 def writeSBML(document, fileName):
     writer = libsbml.SBMLWriter()
     writer.writeSBMLToFile(document, fileName)
