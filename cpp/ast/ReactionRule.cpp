@@ -2209,6 +2209,56 @@ bool ReactionRule::buildReaction(
     // Map from product pattern nodes to aggregate graph clones (populated by AddMolecule)
     std::unordered_map<BNGcore::Node*, BNGcore::Node*> productCloneMaps;
 
+    const auto deleteAggregateMolecule = [&](BNGcore::Node* molecule) {
+        std::vector<BNGcore::Node*> components;
+        for (auto edge = molecule->edges_out_begin(); edge != molecule->edges_out_end(); ++edge) {
+            components.push_back(*edge);
+        }
+        for (auto* component : components) {
+            std::vector<BNGcore::Node*> bondNodes;
+            for (auto edge = component->edges_out_begin(); edge != component->edges_out_end(); ++edge) {
+                bondNodes.push_back(*edge);
+            }
+            for (auto* bondNode : bondNodes) {
+                safeDeleteNode(*graph, bondNode, true, molecule);
+            }
+            safeDeleteNode(*graph, component);
+        }
+        safeDeleteNode(*graph, molecule);
+    };
+
+    const bool deleteMoleculesModifier = deleteMoleculesEnabled(modifiers_, hooks);
+    std::vector<BNGcore::Node*> wholePatternContextMolecules;
+    if (!deleteMoleculesModifier) {
+        for (std::size_t pi = 0; pi < reactantPatterns_.size() && pi < matchSet.size(); ++pi) {
+            if (!deletesWholeReactantPattern(pi)) {
+                continue;
+            }
+
+            std::unordered_set<BNGcore::Node*> matchedPatternMolecules;
+            for (const auto& molecule : reactantInfo[pi].molecules) {
+                auto* targetMolecule = matchSet[pi].map.mapf(molecule.node);
+                if (targetMolecule != nullptr) {
+                    matchedPatternMolecules.insert(targetMolecule);
+                }
+            }
+
+            const auto& speciesGraph =
+                speciesList.get(matchSet[pi].speciesIndex).getSpeciesGraph().getGraph();
+            for (auto nodeIter = speciesGraph.begin(); nodeIter != speciesGraph.end(); ++nodeIter) {
+                auto* speciesMolecule = *nodeIter;
+                if (!isMoleculeNode(*speciesMolecule) ||
+                    matchedPatternMolecules.find(speciesMolecule) != matchedPatternMolecules.end()) {
+                    continue;
+                }
+                const auto cloneIt = cloneMaps[pi].find(speciesMolecule);
+                if (cloneIt != cloneMaps[pi].end()) {
+                    wholePatternContextMolecules.push_back(cloneIt->second);
+                }
+            }
+        }
+    }
+
     for (const auto& operation : operations_) {
         switch (operation.type) {
         case TransformOp::Type::AddBond: {
@@ -2278,23 +2328,22 @@ bool ReactionRule::buildReaction(
                 if (mappedMolecule == nullptr) {
                     return false;
                 }
-                std::vector<BNGcore::Node*> components;
-                for (auto edge = mappedMolecule->edges_out_begin(); edge != mappedMolecule->edges_out_end(); ++edge) {
-                    components.push_back(*edge);
-                }
-                for (auto* component : components) {
-                    std::vector<BNGcore::Node*> bondNodes;
-                    for (auto edge = component->edges_out_begin(); edge != component->edges_out_end(); ++edge) {
-                        bondNodes.push_back(*edge);
-                    }
-                    for (auto* bondNode : bondNodes) {
-                        safeDeleteNode(*graph, bondNode, true, mappedMolecule);
-                    }
-                    safeDeleteNode(*graph, component);
-                }
-                safeDeleteNode(*graph, mappedMolecule);
+                deleteAggregateMolecule(mappedMolecule);
             }
             break;
+        }
+    }
+
+    // BNG2 records a whole-pattern MolDel when every molecule in a reactant
+    // pattern is removed.  The matched species' unmentioned context then dies
+    // with that whole pattern, even when a replacement molecule is added.  A
+    // partial-pattern deletion retains that context and must pass the orphan
+    // check below.  DeleteMolecules is an execution hook in compiled rules, so
+    // its effective value must suppress this whole-pattern cleanup.
+    for (auto* contextMolecule : wholePatternContextMolecules) {
+        if (std::find(aggregateGraph.begin(), aggregateGraph.end(), contextMolecule) !=
+            aggregateGraph.end()) {
+            deleteAggregateMolecule(contextMolecule);
         }
     }
 
@@ -2675,7 +2724,6 @@ bool ReactionRule::buildReaction(
         }
     }
 
-    const bool deleteMoleculesModifier = deleteMoleculesEnabled(modifiers_, hooks);
     if (productPatterns_.empty() && !reactantPatterns_.empty()) {
         if (deleteMoleculesModifier) {
             // DeleteMolecules rule applied to a complex: delete the matched
@@ -2842,24 +2890,9 @@ bool ReactionRule::buildReaction(
 
             // More product components than product patterns.  Match each product
             // pattern to a product graph; unmatched graphs are orphan fragments.
-            //
-            // Three sub-cases determine what happens to orphans:
-            //  (a) deleteMolecules modifier is set:
-            //      The user explicitly requested DeleteMolecules — only the matched
-            //      molecule is deleted, orphans are valid released molecules.
-            //  (b) hasMoleculeTypeMismatch_ (and !deleteMolecules):
-            //      The rule replaces one molecule with a different type (e.g.,
-            //      FGFR(s~P)->Internalized_Rec()) or the product has extra
-            //      components (e.g., BetaR(l,g,loc~cyt)->BetaR(l,g,loc~mem,s~U)).
-            //      Bonded partners of the replaced/transformed molecule become
-            //      orphans that should be DISCARDED (Perl behavior: they do not
-            //      appear as products).
-            //  (c) Rule has DeleteMolecule operations (unmatched reactant molecules
-            //      mapped to null/0 product, e.g., RevErb(b)+Bmal1()->RevErb(b)+0)
-            //      WITHOUT the DeleteMolecules modifier.  In Perl BNG2, -> 0 means
-            //      the entire connected component containing the deleted molecule is
-            //      destroyed.  Orphans should be DISCARDED (not kept as products).
-            //      Only bond-breaking (no molecule deletion) should keep orphans.
+            // DeleteMolecules explicitly allows those extra graphs to be emitted.
+            // Replacements and plain molecule deletions cannot silently discard
+            // connected context; reject them below when extra graphs remain.
             bool hasDeleteMoleculeOps = false;
             for (const auto& op : operations_) {
                 if (op.type == TransformOp::Type::DeleteMolecule) {
@@ -2875,19 +2908,14 @@ bool ReactionRule::buildReaction(
             if (hasModifier(modifiers_, "MoveConnected") && !deleteMolecules) {
                 return false;
             }
-            // BNG2 build_reaction (RxnRule.pm) rejects a reaction whose
-            // transformation yields more product subgraphs than product
-            // patterns unless the DeleteMolecules modifier is set.  A plain
-            // molecule deletion (e.g. A(b!1).B(a!1) -> A(b)) that would split
-            // the target into several fragments therefore produces no
-            // reaction; only DeleteMolecules releases the extra fragments.
-            // Molecule-type replacement rules keep their historical
-            // discard-orphans behavior below.
-            if (hasDeleteMoleculeOps && !deleteMolecules && !hasMoleculeTypeMismatch_) {
+            // Plain molecule deletions and molecule-pattern replacements can
+            // detach connected context. BNG2 rejects the reaction when those
+            // extra graphs exceed the declared products unless DeleteMolecules
+            // explicitly allows them to be released.
+            if ((hasDeleteMoleculeOps || hasMoleculeTypeMismatch_) &&
+                !deleteMolecules) {
                 return false;
             }
-            const bool keepOrphans = deleteMolecules
-                || (!hasMoleculeTypeMismatch_ && !hasDeleteMoleculeOps);
             std::vector<SpeciesGraph> orderedProducts;
             std::vector<bool> used(productGraphs.size(), false);
             for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
@@ -2910,19 +2938,16 @@ bool ReactionRule::buildReaction(
                     return false;
                 }
             }
-            if (keepOrphans) {
-                // Append orphan fragments (released molecules) after the matched products
-                for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
-                    if (!used[gi]) {
-                        orderedProducts.push_back(std::move(productGraphs[gi]));
-                        // Orphans don't correspond to any product pattern; use
-                        // productPatterns_.size() as sentinel so compartment
-                        // inference below falls through to molecule-level logic.
-                        productPatternIndices.push_back(productPatterns_.size());
-                    }
+            // Append allowed orphan fragments after the matched products.
+            for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
+                if (!used[gi]) {
+                    orderedProducts.push_back(std::move(productGraphs[gi]));
+                    // Orphans don't correspond to any product pattern; use
+                    // productPatterns_.size() as sentinel so compartment
+                    // inference below falls through to molecule-level logic.
+                    productPatternIndices.push_back(productPatterns_.size());
                 }
             }
-            // else: hasMoleculeTypeMismatch_ — orphans are silently discarded
             productGraphs = std::move(orderedProducts);
         } else if (productGraphs.size() < productPatterns_.size() && !deleteMolecules) {
             // Reject: fewer products than patterns (unexpected).

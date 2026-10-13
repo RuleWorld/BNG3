@@ -525,6 +525,145 @@ end actions
     REQUIRE(network.reactions.size() == 1);
 }
 
+TEST_CASE("Rule expansion: unmatched product molecules cannot discard connected context",
+          "[ReactionRule][issue139]") {
+    const auto generate = [](const std::string& moleculeTypes,
+                             const std::string& seedSpecies,
+                             const std::string& reactionRule) {
+        auto model = parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+)" + moleculeTypes + R"(
+end molecule types
+begin seed species
+)" + seedSpecies + R"(
+end seed species
+begin reaction rules
+)" + reactionRule + R"(
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        return generator.generateNative(5);
+    };
+
+    const auto wholePatternReplacement = generate(
+        "    A(x,y)\n    C(x)",
+        "    A(x!1,y).C(x!1) 1",
+        "    r: A(x!+) -> A(x,y) k");
+    REQUIRE(wholePatternReplacement.reactions.size() == 1);
+    REQUIRE(wholePatternReplacement.species.size() == 2);
+    CHECK(wholePatternReplacement.species.get(1).getSpeciesGraph().toString() == "A(x,y)");
+
+    const auto partialDifferentTypeReplacement = generate(
+        "    A(x,c)\n    B(x)\n    C(c)\n    D(x)",
+        "    A(x!1,c!2).B(x!1).C(c!2) 1",
+        "    r: A(x!1,c!+).B(x!1) -> D(x!1).B(x!1) k");
+    CHECK(partialDifferentTypeReplacement.reactions.size() == 0);
+    CHECK(partialDifferentTypeReplacement.species.size() == 1);
+
+    const auto wholeAndPartialPatterns = generate(
+        "    A(x,y)\n    C(x)\n    B(z,c)\n    D(z)\n    E(c)\n    F(z)",
+        "    A(x!1,y).C(x!1) 1\n"
+        "    B(z!1,c!2).D(z!1).E(c!2) 1",
+        "    whole: A(x!+) -> A(x,y) k\n"
+        "    partial: B(z!1,c!+).D(z!1) -> F(z!1).D(z!1) k");
+    REQUIRE(wholeAndPartialPatterns.reactions.size() == 1);
+    CHECK(wholeAndPartialPatterns.species.size() == 3);
+    bool sawWholeProduct = false;
+    bool sawPartialReplacement = false;
+    for (std::size_t i = 0; i < wholeAndPartialPatterns.species.size(); ++i) {
+        const auto graph = wholeAndPartialPatterns.species.get(i).getSpeciesGraph().toString();
+        sawWholeProduct = sawWholeProduct || graph == "A(x,y)";
+        sawPartialReplacement = sawPartialReplacement || graph.find("F(") != std::string::npos;
+    }
+    CHECK(sawWholeProduct);
+    CHECK_FALSE(sawPartialReplacement);
+
+    const auto explicitDeleteMoleculesWholePattern = generate(
+        "    A(x)\n    B(x)\n    C(x)",
+        "    A(x!1).C(x!1) 1",
+        "    r: A(x!+) -> B(x) k DeleteMolecules");
+    REQUIRE(explicitDeleteMoleculesWholePattern.reactions.size() == 1);
+    REQUIRE(explicitDeleteMoleculesWholePattern.reactions.all().front().getProducts().size() == 2);
+    bool sawReplacementProduct = false;
+    bool sawWholePatternReleasedPartner = false;
+    for (const auto productIndex :
+         explicitDeleteMoleculesWholePattern.reactions.all().front().getProducts()) {
+        const auto graph = explicitDeleteMoleculesWholePattern.species.get(productIndex)
+                               .getSpeciesGraph().toString();
+        sawReplacementProduct = sawReplacementProduct || graph == "B(x)";
+        sawWholePatternReleasedPartner = sawWholePatternReleasedPartner || graph == "C(x)";
+    }
+    CHECK(sawReplacementProduct);
+    CHECK(sawWholePatternReleasedPartner);
+
+    const auto externalPartner = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(externalPartner.reactions.size() == 0);
+    CHECK(externalPartner.species.size() == 1);
+
+    const auto twoExternalPartners = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)\n    D(y)",
+        "    A(x!1,y!2!3,s~u).B(x!1).C(y!2).D(y!3) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(twoExternalPartners.reactions.size() == 0);
+    CHECK(twoExternalPartners.species.size() == 1);
+
+    const auto mixedFreeAndBoundSites = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)\n    D(y)",
+        "    A(x!1,y,s~u).B(x!1) 1\n"
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1\n"
+        "    A(x!1,y!2!3,s~u).B(x!1).C(y!2).D(y!3) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(mixedFreeAndBoundSites.reactions.size() == 1);
+
+    const auto freeProductSite = generate(
+        "    A(x,y,s~u~p)\n    B(x)",
+        "    A(x!1,y,s~u).B(x!1) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(freeProductSite.reactions.size() == 1);
+
+    const auto explicitBondBreak = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,y!2,s~u).B(x!1).C(y!2) -> "
+        "A(x!1,y,s~p).B(x!1) + C(y) k");
+    CHECK(explicitBondBreak.reactions.size() == 1);
+
+    const auto retainedBoundSite = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,y!2,s~u).B(x!1).C(y!2) -> "
+        "A(x!1,y!2,s~p).B(x!1).C(y!2) k");
+    CHECK(retainedBoundSite.reactions.size() == 1);
+
+    const auto explicitDeleteMolecules = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k DeleteMolecules");
+    REQUIRE(explicitDeleteMolecules.reactions.size() == 1);
+    const auto& products = explicitDeleteMolecules.reactions.all().front().getProducts();
+    REQUIRE(products.size() == 2);
+    bool sawRetainedPair = false;
+    bool sawReleasedPartner = false;
+    for (const auto productIndex : products) {
+        const auto& graph = explicitDeleteMolecules.species.get(productIndex)
+                                .getSpeciesGraph().toString();
+        sawRetainedPair = sawRetainedPair ||
+            (graph.find("A(") != std::string::npos &&
+             graph.find("B(") != std::string::npos &&
+             graph.find("s~p") != std::string::npos);
+        sawReleasedPartner = sawReleasedPartner || graph == "C(y)";
+    }
+    CHECK(sawRetainedPair);
+    CHECK(sawReleasedPartner);
+}
+
 TEST_CASE("Rule expansion: plain deletion splitting a complex yields no reaction", "[ReactionRule]") {
     // BNG2 build_reaction returns undef when a molecule deletion without the
     // DeleteMolecules modifier would leave more fragments than product
