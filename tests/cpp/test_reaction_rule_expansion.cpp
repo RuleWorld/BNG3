@@ -261,7 +261,140 @@ TEST_CASE("setParameter compiles static arithmetic while retaining dynamic value
     const auto& dynamicPowerAction = dynamicPowerDocument.protocol().actions.front();
     REQUIRE(dynamicPowerAction.setParameterOptions.has_value());
     CHECK_FALSE(dynamicPowerAction.setParameterOptions->staticValue.has_value());
-    CHECK_FALSE(dynamicPowerAction.setParameterOptions->valueDiagnostic.has_value());
+    REQUIRE(dynamicPowerAction.setParameterOptions->valueDiagnostic.has_value());
+    CHECK(dynamicPowerAction.setParameterOptions->valueDiagnostic->message.find(
+              "unquoted named arithmetic") != std::string::npos);
+}
+
+TEST_CASE("setParameter preserves quoted BNGL arithmetic and refuses unquoted named arithmetic") {
+    auto quotedStaticModel = modelWithSimulationAction(
+        "setParameter(\"N\",\"2^3\")");
+    REQUIRE(quotedStaticModel != nullptr);
+    const compile::Document quotedStaticDocument(*quotedStaticModel);
+    REQUIRE(quotedStaticDocument.protocol().actions.size() == 1);
+    const auto& quotedStaticAction = quotedStaticDocument.protocol().actions.front();
+    REQUIRE(quotedStaticAction.setParameterOptions.has_value());
+    CHECK(quotedStaticAction.arguments.at("value") == "\"2^3\"");
+    REQUIRE(quotedStaticAction.setParameterOptions->staticValue.has_value());
+    CHECK(*quotedStaticAction.setParameterOptions->staticValue == 8.0);
+    CHECK_FALSE(quotedStaticAction.setParameterOptions->valueDiagnostic.has_value());
+
+    auto quotedDynamicModel = modelWithSimulationAction(
+        "setParameter(\"N\",\"2^N\")");
+    REQUIRE(quotedDynamicModel != nullptr);
+    const compile::Document quotedDynamicDocument(*quotedDynamicModel);
+    REQUIRE(quotedDynamicDocument.protocol().actions.size() == 1);
+    const auto& quotedDynamicAction = quotedDynamicDocument.protocol().actions.front();
+    REQUIRE(quotedDynamicAction.setParameterOptions.has_value());
+    CHECK(quotedDynamicAction.arguments.at("value") == "\"2^N\"");
+    CHECK_FALSE(quotedDynamicAction.setParameterOptions->staticValue.has_value());
+    CHECK_FALSE(quotedDynamicAction.setParameterOptions->valueDiagnostic.has_value());
+
+    auto quotedChainedCaretModel = modelWithSimulationAction(
+        "setParameter(\"N\",\"2^N^2\")");
+    REQUIRE(quotedChainedCaretModel != nullptr);
+    const compile::Document quotedChainedCaretDocument(*quotedChainedCaretModel);
+    REQUIRE(quotedChainedCaretDocument.protocol().actions.size() == 1);
+    const auto& quotedChainedCaretAction =
+        quotedChainedCaretDocument.protocol().actions.front();
+    REQUIRE(quotedChainedCaretAction.setParameterOptions.has_value());
+    CHECK(quotedChainedCaretAction.arguments.at("value") == "\"2^N^2\"");
+    CHECK_FALSE(quotedChainedCaretAction.setParameterOptions->staticValue.has_value());
+    CHECK_FALSE(quotedChainedCaretAction.setParameterOptions->valueDiagnostic.has_value());
+
+    auto quotedDynamicParameterBaseModel = modelWithSimulationAction(
+        "setParameter(\"N\",\"-N^2\")");
+    REQUIRE(quotedDynamicParameterBaseModel != nullptr);
+    const compile::Document quotedDynamicParameterBaseDocument(
+        *quotedDynamicParameterBaseModel);
+    REQUIRE(quotedDynamicParameterBaseDocument.protocol().actions.size() == 1);
+    const auto& quotedDynamicParameterBaseAction =
+        quotedDynamicParameterBaseDocument.protocol().actions.front();
+    REQUIRE(quotedDynamicParameterBaseAction.setParameterOptions.has_value());
+    CHECK_FALSE(quotedDynamicParameterBaseAction.setParameterOptions->staticValue.has_value());
+    CHECK_FALSE(
+        quotedDynamicParameterBaseAction.setParameterOptions->valueDiagnostic.has_value());
+
+    auto bareIdentifierModel = modelWithSimulationAction("setParameter(\"N\",N)");
+    REQUIRE(bareIdentifierModel != nullptr);
+    const compile::Document bareIdentifierDocument(*bareIdentifierModel);
+    REQUIRE(bareIdentifierDocument.protocol().actions.size() == 1);
+    const auto& bareIdentifierAction = bareIdentifierDocument.protocol().actions.front();
+    REQUIRE(bareIdentifierAction.setParameterOptions.has_value());
+    CHECK_FALSE(bareIdentifierAction.setParameterOptions->staticValue.has_value());
+    CHECK_FALSE(bareIdentifierAction.setParameterOptions->valueDiagnostic.has_value());
+
+    for (const auto& expression : {"2*N", "N+1", "2**N"}) {
+        INFO("unquoted setParameter expression: " << expression);
+        auto model = modelWithSimulationAction(
+            std::string("setParameter(\"N\",") + expression + ")");
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        CHECK(document.valid());
+        REQUIRE(document.protocol().actions.size() == 1);
+        const auto& action = document.protocol().actions.front();
+        REQUIRE(action.setParameterOptions.has_value());
+        CHECK_FALSE(action.setParameterOptions->staticValue.has_value());
+        REQUIRE(action.setParameterOptions->valueDiagnostic.has_value());
+        CHECK(action.setParameterOptions->valueDiagnostic->message.find(
+                  "unquoted named arithmetic") != std::string::npos);
+    }
+}
+
+TEST_CASE("setParameter refuses quoted negative power bases and mixed power spellings") {
+    for (const auto& testCase : {
+             std::pair{"-2^N", "statically negative base"},
+             std::pair{"(-2)^N", "statically negative base"},
+             std::pair{"2**N^2", "mixing '^' and '**' power operators"}}) {
+        INFO("quoted setParameter value: " << testCase.first);
+        auto model = modelWithSimulationAction(
+            std::string("setParameter(\"N\",\"") + testCase.first + "\")");
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        REQUIRE(document.protocol().actions.size() == 1);
+        const auto& action = document.protocol().actions.front();
+        REQUIRE(action.setParameterOptions.has_value());
+        REQUIRE(action.setParameterOptions->valueDiagnostic.has_value());
+        CHECK(action.setParameterOptions->valueDiagnostic->message.find(
+                  testCase.second) != std::string::npos);
+    }
+}
+
+TEST_CASE("setParameter refuses quoted double-star expressions unsupported at runtime") {
+    for (const auto& expression : {"2**N", "2**3"}) {
+        INFO("quoted setParameter value: " << expression);
+        auto model = modelWithSimulationAction(
+            std::string("setParameter(\"N\",\"") + expression + "\")");
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        REQUIRE(document.protocol().actions.size() == 1);
+        const auto& action = document.protocol().actions.front();
+        REQUIRE(action.setParameterOptions.has_value());
+        REQUIRE(action.setParameterOptions->valueDiagnostic.has_value());
+        CHECK(action.setParameterOptions->valueDiagnostic->message.find(
+                  "quoted '**' power expressions") != std::string::npos);
+    }
+}
+
+TEST_CASE("setParameter refuses quoted caret expressions outside parameter arithmetic") {
+    for (const auto& expression : {
+             "time^2", "t^2", "time()^2", "sqrt(N)^2",
+             "TFUN([0,1],[2,4],N)^2", "N % 2^2"}) {
+        INFO("quoted setParameter value: " << expression);
+        auto model = modelWithSimulationAction(
+            std::string("setParameter(\"N\",\"") + expression + "\")");
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        CHECK(document.valid());
+        REQUIRE(document.protocol().actions.size() == 1);
+        const auto& action = document.protocol().actions.front();
+        REQUIRE(action.setParameterOptions.has_value());
+        CHECK_FALSE(action.setParameterOptions->staticValue.has_value());
+        REQUIRE(action.setParameterOptions->valueDiagnostic.has_value());
+        CHECK(action.setParameterOptions->valueDiagnostic->message.find(
+                  "quoted caret expressions require simple parameter arithmetic") !=
+              std::string::npos);
+    }
 }
 
 TEST_CASE("unused invalid setParameter values remain deferred in compiled metadata") {

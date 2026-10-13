@@ -73,10 +73,14 @@ Diagnostic setParameterValueDiagnostic(const std::string& source,
     return diagnostic;
 }
 
+bool isQuotedActionValue(const std::string& value) {
+    return value.size() >= 2 &&
+           ((value.front() == '"' && value.back() == '"') ||
+            (value.front() == '\'' && value.back() == '\''));
+}
+
 std::string unquoteActionValue(std::string value) {
-    if (value.size() >= 2 &&
-        ((value.front() == '"' && value.back() == '"') ||
-         (value.front() == '\'' && value.back() == '\''))) {
+    if (isQuotedActionValue(value)) {
         value = value.substr(1, value.size() - 2);
     }
     return value;
@@ -149,7 +153,8 @@ bool evaluateFiniteStaticExpression(const ast::Expression& expression, double& v
 }
 
 bool supportsStaticActionArithmetic(const ast::Expression& expression,
-                                    std::size_t& powerOperators) {
+                                    std::size_t& powerOperators,
+                                    bool allowCaret = false) {
     using ast::ExpressionKind;
     switch (expression.kind()) {
     case ExpressionKind::Number:
@@ -159,7 +164,8 @@ bool supportsStaticActionArithmetic(const ast::Expression& expression,
             expression.args().size() != 1) {
             return false;
         }
-        if (!supportsStaticActionArithmetic(expression.args().front(), powerOperators)) {
+        if (!supportsStaticActionArithmetic(
+                expression.args().front(), powerOperators, allowCaret)) {
             return false;
         }
         double value = 0.0;
@@ -167,15 +173,17 @@ bool supportsStaticActionArithmetic(const ast::Expression& expression,
     }
     case ExpressionKind::Binary: {
         const auto& op = expression.name();
-        if (op != "+" && op != "-" && op != "*" && op != "/" && op != "**") {
-            // In Safe Perl, ^ is bitwise XOR, not exponentiation; modulo also
-            // differs for non-integral values. Do not inherit BNGL's evaluator
-            // semantics for those operators.
+        if (op != "+" && op != "-" && op != "*" && op != "/" && op != "**" &&
+            !(allowCaret && op == "^")) {
+            // Unquoted Safe Perl uses ^ for XOR; modulo also differs for
+            // non-integral values. Keep those operators out of that path.
             return false;
         }
         if (expression.args().size() != 2 ||
-            !supportsStaticActionArithmetic(expression.args()[0], powerOperators) ||
-            !supportsStaticActionArithmetic(expression.args()[1], powerOperators)) {
+            !supportsStaticActionArithmetic(
+                expression.args()[0], powerOperators, allowCaret) ||
+            !supportsStaticActionArithmetic(
+                expression.args()[1], powerOperators, allowCaret)) {
             return false;
         }
         double rhs = 0.0;
@@ -183,10 +191,9 @@ bool supportsStaticActionArithmetic(const ast::Expression& expression,
             (!evaluateFiniteStaticExpression(expression.args()[1], rhs) || rhs == 0.0)) {
             return false;
         }
-        if (op == "**") {
-            // Safe Perl exponentiation is right-associative, while the current
-            // BNGL expression builder is left-associative. A single exponent
-            // with a non-negative base has the same value in both evaluators.
+        if (op == "**" || op == "^") {
+            // Keep the existing conservative static limit for both exponent
+            // spellings: one power node with a non-negative base.
             double base = 0.0;
             if (++powerOperators > 1 ||
                 !evaluateFiniteStaticExpression(expression.args()[0], base) || base < 0.0) {
@@ -205,6 +212,83 @@ bool supportsStaticActionArithmetic(const ast::Expression& expression,
     return false;
 }
 
+bool isParameterArithmeticExpression(const ast::Expression& expression,
+                                     bool& hasIdentifier,
+                                     bool& hasOperator,
+                                     bool quotedCaretScope = false) {
+    using ast::ExpressionKind;
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        return true;
+    case ExpressionKind::Identifier:
+        if (quotedCaretScope &&
+            (expression.name() == "time" || expression.name() == "t")) {
+            return false;
+        }
+        hasIdentifier = true;
+        return true;
+    case ExpressionKind::Unary:
+        if ((expression.name() != "+" && expression.name() != "-") ||
+            expression.args().size() != 1) {
+            return false;
+        }
+        hasOperator = true;
+        return isParameterArithmeticExpression(
+            expression.args().front(), hasIdentifier, hasOperator, quotedCaretScope);
+    case ExpressionKind::Binary: {
+        const auto& op = expression.name();
+        if ((op != "+" && op != "-" && op != "*" && op != "/" &&
+             op != "**" && op != "^" &&
+             !(op == "%" && !quotedCaretScope)) ||
+            expression.args().size() != 2) {
+            return false;
+        }
+        hasOperator = true;
+        return isParameterArithmeticExpression(
+                   expression.args()[0], hasIdentifier, hasOperator,
+                   quotedCaretScope) &&
+               isParameterArithmeticExpression(
+                   expression.args()[1], hasIdentifier, hasOperator,
+                   quotedCaretScope);
+    }
+    case ExpressionKind::Function:
+    case ExpressionKind::ObservableRef:
+    case ExpressionKind::TableFunction:
+        return false;
+    }
+    return false;
+}
+
+bool containsPowerOperator(const ast::Expression& expression,
+                           const std::string& op) {
+    if (expression.kind() == ast::ExpressionKind::Binary &&
+        expression.name() == op) {
+        return true;
+    }
+    for (const auto& argument : expression.args()) {
+        if (containsPowerOperator(argument, op)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool containsStaticallyNegativeCaretBase(const ast::Expression& expression) {
+    if (expression.kind() == ast::ExpressionKind::Binary &&
+        expression.name() == "^" && expression.args().size() == 2) {
+        double base = 0.0;
+        if (evaluateFiniteStaticExpression(expression.args().front(), base) && base < 0.0) {
+            return true;
+        }
+    }
+    for (const auto& argument : expression.args()) {
+        if (containsStaticallyNegativeCaretBase(argument)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 SetParameterOptions compileSetParameterOptions(
     const std::map<std::string, std::string>& arguments) {
     SetParameterOptions options;
@@ -214,31 +298,101 @@ SetParameterOptions compileSetParameterOptions(
     }
 
     const auto& source = found->second;
+    const bool valueWasQuoted = isQuotedActionValue(source);
     const auto expressionSource = unquoteActionValue(source);
-    if (expressionSource.find('^') != std::string::npos) {
+    if (!valueWasQuoted && expressionSource.find('^') != std::string::npos) {
         options.valueDiagnostic = setParameterValueDiagnostic(
             source, "Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
         return options;
     }
+
+    ast::Expression expression;
+    bool expressionParsed = false;
+    if (valueWasQuoted &&
+        (expressionSource.find('^') != std::string::npos ||
+         expressionSource.find("**") != std::string::npos)) {
+        try {
+            expression = parser::parseExpression(expressionSource);
+            expressionParsed = true;
+        } catch (const std::exception& error) {
+            options.valueDiagnostic = setParameterValueDiagnostic(
+                source, std::string("could not be parsed as a numeric expression: ") +
+                           error.what());
+            return options;
+        }
+
+        if (containsPowerOperator(expression, "^") &&
+            containsPowerOperator(expression, "**")) {
+            options.valueDiagnostic = setParameterValueDiagnostic(
+                source, "mixing '^' and '**' power operators is unsupported");
+            return options;
+        }
+        if (containsStaticallyNegativeCaretBase(expression)) {
+            options.valueDiagnostic = setParameterValueDiagnostic(
+                source, "quoted caret power with a statically negative base is unsupported");
+            return options;
+        }
+        if (containsPowerOperator(expression, "**")) {
+            options.valueDiagnostic = setParameterValueDiagnostic(
+                source,
+                "quoted '**' power expressions are unsupported by the current runtime evaluator");
+            return options;
+        }
+        if (containsPowerOperator(expression, "^") &&
+            !containsOnlyNumericActionSyntax(expressionSource)) {
+            bool hasIdentifier = false;
+            bool hasOperator = false;
+            if (!isParameterArithmeticExpression(
+                    expression, hasIdentifier, hasOperator, true) ||
+                !hasIdentifier || !hasOperator) {
+                options.valueDiagnostic = setParameterValueDiagnostic(
+                    source,
+                    "quoted caret expressions require simple parameter arithmetic; "
+                    "clock aliases, functions, TFUN, and modulo are unsupported");
+                return options;
+            }
+        }
+    }
+
     if (!containsOnlyNumericActionSyntax(expressionSource)) {
+        if (!valueWasQuoted) {
+            try {
+                const auto expression = parser::parseExpression(expressionSource);
+                bool hasIdentifier = false;
+                bool hasOperator = false;
+                if (isParameterArithmeticExpression(
+                        expression, hasIdentifier, hasOperator) &&
+                    hasIdentifier && hasOperator) {
+                    options.valueDiagnostic = setParameterValueDiagnostic(
+                        source,
+                        "unquoted named arithmetic uses Safe-Perl semantics and "
+                        "cannot be translated without changing results");
+                }
+            } catch (const std::exception&) {
+                // Leave unsupported or otherwise dynamic values for the existing
+                // execution-time path, which reports failures when the setter runs.
+            }
+        }
         // Parameter-backed values stay raw so execution can resolve them after
-        // preceding actions have updated the model. Caret is refused above
-        // because Safe-Perl uses it for XOR, while BNGL parses it as power.
+        // preceding actions have updated the model. Quoted values use BNGL
+        // expression semantics, including '^' for exponentiation; quoted '**'
+        // is rejected above because the current runtime evaluator mishandles it.
         return options;
     }
 
-    ast::Expression expression;
-    try {
-        expression = parser::parseExpression(expressionSource);
-    } catch (const std::exception& error) {
-        options.valueDiagnostic = setParameterValueDiagnostic(
-            source, std::string("could not be parsed as a numeric expression: ") +
-                        error.what());
-        return options;
+    if (!expressionParsed) {
+        try {
+            expression = parser::parseExpression(expressionSource);
+        } catch (const std::exception& error) {
+            options.valueDiagnostic = setParameterValueDiagnostic(
+                source, std::string("could not be parsed as a numeric expression: ") +
+                            error.what());
+            return options;
+        }
     }
 
     std::size_t powerOperators = 0;
-    if (!supportsStaticActionArithmetic(expression, powerOperators)) {
+    if (!supportsStaticActionArithmetic(expression, powerOperators, valueWasQuoted)) {
         options.valueDiagnostic = setParameterValueDiagnostic(
             source,
             "cannot be translated without changing Safe-Perl arithmetic semantics");
