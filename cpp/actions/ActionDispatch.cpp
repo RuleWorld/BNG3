@@ -1647,6 +1647,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
     // Store loaded .net data for passthrough writing (readFile)
     std::optional<io::NetReader::ParseResult> loadedNetData;
+    std::set<std::string> retainedSetParameterTargets;
 
     const auto ensureNetwork = [&]() {
         if (!network.has_value()) {
@@ -1682,18 +1683,101 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     };
 
     const auto parseSetParameterValue = [&](std::size_t actionIndex,
+                                            const std::string& target,
                                             const std::string& valueText) {
         const auto* options = setParameterOptionsAt(actionIndex);
-        if (options == nullptr) {
-            return parseScalarValue(valueText, model);
-        }
-        if (options->valueDiagnostic.has_value()) {
+        if (options != nullptr && options->valueDiagnostic.has_value()) {
             throw std::runtime_error(options->valueDiagnostic->message);
         }
-        if (options->staticValue.has_value()) {
-            return *options->staticValue;
+        if (options != nullptr && options->staticValue.has_value()) {
+            return ast::Expression::number(*options->staticValue);
         }
-        return parseScalarValue(valueText, model);
+
+        const auto trimmedValue = trim(valueText);
+        const bool quotedValue = trimmedValue.size() >= 2 &&
+                                 ((trimmedValue.front() == '"' &&
+                                   trimmedValue.back() == '"') ||
+                                  (trimmedValue.front() == '\'' &&
+                                   trimmedValue.back() == '\''));
+        const auto expressionSource = stripQuotes(trimmedValue);
+        if (quotedValue && expressionSource.find('^') != std::string::npos) {
+            auto expression = parser::parseExpression(expressionSource);
+            const auto dependencies = expression.getDependencies();
+            if (dependencies.find(target) != dependencies.end()) {
+                throw std::runtime_error(
+                    "setParameter: quoted caret value cannot reference its own target "
+                    "parameter '" + target + "' (self-reference)");
+            }
+            auto& parameters = model.getParameters();
+            for (const auto& dependency : dependencies) {
+                if (parameters.contains(dependency) &&
+                    parameters.expressionIsTimeDependent(
+                        ast::Expression::identifier(dependency))) {
+                    throw std::runtime_error(
+                        "setParameter: quoted caret value depends on time-dependent "
+                        "parameter '" + dependency + "'");
+                }
+            }
+            if (parameters.expressionIsTimeDependent(expression)) {
+                throw std::runtime_error(
+                    "setParameter: quoted caret value has an unknown or unsupported "
+                    "dynamic dependency");
+            }
+            retainedSetParameterTargets.insert(target);
+            return expression;
+        }
+        return ast::Expression::number(parseScalarValue(valueText, model));
+    };
+
+    const auto setParameterValue = [&](std::size_t actionIndex,
+                                       const std::string& target,
+                                       const std::string& valueText) {
+        auto& parameters = model.getParameters();
+        retainedSetParameterTargets.erase(target);
+        ast::Parameter replacement(
+            target, parseSetParameterValue(actionIndex, target, valueText));
+        if (parameters.contains(target)) {
+            const auto& previous = parameters.get(target);
+            if (previous.hasUnit()) {
+                replacement.setUnit(*previous.getUnit(), previous.getUnitName());
+            }
+        }
+        parameters.add(std::move(replacement));
+
+        // A later setter can change a retained expression's dependency from a
+        // finite literal to a clock-bearing expression. Recheck the retained
+        // ASTs against the current parameter list before evaluating them.
+        for (const auto& retainedTarget : retainedSetParameterTargets) {
+            if (parameters.expressionIsTimeDependent(
+                    parameters.get(retainedTarget).getExpression())) {
+                throw std::runtime_error(
+                    "setParameter: retained quoted caret expression for parameter '" +
+                    retainedTarget + "' acquired an unsupported dynamic dependency");
+            }
+        }
+        parameters.evaluateAll();
+        std::set<std::string> retainedDependencyClosure;
+        const auto collectRetainedDependencies = [&](const auto& self,
+                                                     const std::string& name) -> void {
+            if (!parameters.contains(name) ||
+                !retainedDependencyClosure.insert(name).second) {
+                return;
+            }
+            for (const auto& dependency :
+                 parameters.get(name).getExpression().getDependencies()) {
+                self(self, dependency);
+            }
+        };
+        for (const auto& retainedTarget : retainedSetParameterTargets) {
+            collectRetainedDependencies(collectRetainedDependencies, retainedTarget);
+        }
+        for (const auto& name : retainedDependencyClosure) {
+            if (!std::isfinite(parameters.evaluate(name))) {
+                throw std::runtime_error(
+                    "setParameter: retained parameter dependency '" + name +
+                    "' evaluated to a non-finite value");
+            }
+        }
     };
 
     const auto writeNetworkAt = [&](const std::filesystem::path& outputPath,
@@ -2089,10 +2173,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 if (!model.getParameters().contains(target)) {
                     throw std::runtime_error("setParameter: unknown parameter: " + target);
                 }
-                const double value = parseSetParameterValue(actionIndex, valueText);
-                model.getParameters().add(
-                    ast::Parameter(target, ast::Expression::number(value)));
-                model.getParameters().evaluateAll();
+                setParameterValue(actionIndex, target, valueText);
                 if (network.has_value()) {
                     const auto savedAmounts = snapshotConcentrations(*network);
                     network = generator.generate(sourcePath);
@@ -2589,9 +2670,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("setParameter requires a target parameter name");
             }
 
-            const double value = parseSetParameterValue(actionIndex, valueText);
-            model.getParameters().add(ast::Parameter(target, ast::Expression::number(value)));
-            model.getParameters().evaluateAll();
+            setParameterValue(actionIndex, target, valueText);
 
             if (network.has_value()) {
                 // Preserve species amounts before regeneration so that
