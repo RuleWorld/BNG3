@@ -8,7 +8,7 @@ Created on Sun Mar 25 21:26:49 2012
 from __future__ import division
 import json
 from functools import partial
-import marshal, colorlog
+import marshal
 from bionetgen.core.utils.logging import BNGLogger
 
 from pyparsing import (
@@ -20,7 +20,6 @@ from pyparsing import (
     Optional,
     ZeroOrMore,
     Forward,
-    nums,
     alphas,
     oneOf,
     alphanums,

@@ -171,7 +171,7 @@ def _gof(counts, pmf, batch):
     assert (
         exp.min() >= MIN_EXPECTED
     ), f"pooled tail holds only {exp[-1]:.1f} expected counts; raise BATCH"
-    chi2, p = scipy_stats.chisquare(obs, exp, sum_check=False)
+    chi2, p = scipy_stats.chisquare(obs, exp)
     return chi2, len(exp) - 1, p, exp.min()
 
 
@@ -483,7 +483,7 @@ end model
         # hand-derived one was mis-indexed here and rejected a correct engine
         # at z = -123, where this gives z = -1.42. Row 0 of exp(Q t) is
         # P(j firings by t) for j = 0, 1, 2.
-        chi2, p = scipy_stats.chisquare(observed, expected, sum_check=False)
+        chi2, p = scipy_stats.chisquare(observed, expected)
         if label == "k*C(n,2)":
             assert (
                 p > GOF_ALPHA

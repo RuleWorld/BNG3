@@ -1,0 +1,3 @@
+## 2023-10-27 - Molecule initialization bottleneck and copy.copy() overhead
+**Learning:** `Molecule.__init__` in the atomizer module generates a random SHA1 hash via numpy on every creation. Using `copy.copy(self)` triggers implicit shallow copies of class dictionaries, which is slow in tight loops.
+**Action:** When manually writing `.copy()` methods in Python to avoid `copy.deepcopy` and `copy.copy()`, bypass `__init__` by using `Molecule.__new__(Molecule)`. You must manually assign dynamically bound attributes (like `trueName`, which isn't always defined in `__init__`) using `getattr(self, 'attr', default)` to avoid regressions.
