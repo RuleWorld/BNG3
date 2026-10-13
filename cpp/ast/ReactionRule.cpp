@@ -2842,24 +2842,9 @@ bool ReactionRule::buildReaction(
 
             // More product components than product patterns.  Match each product
             // pattern to a product graph; unmatched graphs are orphan fragments.
-            //
-            // Three sub-cases determine what happens to orphans:
-            //  (a) deleteMolecules modifier is set:
-            //      The user explicitly requested DeleteMolecules — only the matched
-            //      molecule is deleted, orphans are valid released molecules.
-            //  (b) hasMoleculeTypeMismatch_ (and !deleteMolecules):
-            //      The rule replaces one molecule with a different type (e.g.,
-            //      FGFR(s~P)->Internalized_Rec()) or the product has extra
-            //      components (e.g., BetaR(l,g,loc~cyt)->BetaR(l,g,loc~mem,s~U)).
-            //      Bonded partners of the replaced/transformed molecule become
-            //      orphans that should be DISCARDED (Perl behavior: they do not
-            //      appear as products).
-            //  (c) Rule has DeleteMolecule operations (unmatched reactant molecules
-            //      mapped to null/0 product, e.g., RevErb(b)+Bmal1()->RevErb(b)+0)
-            //      WITHOUT the DeleteMolecules modifier.  In Perl BNG2, -> 0 means
-            //      the entire connected component containing the deleted molecule is
-            //      destroyed.  Orphans should be DISCARDED (not kept as products).
-            //      Only bond-breaking (no molecule deletion) should keep orphans.
+            // DeleteMolecules explicitly allows those extra graphs to be emitted.
+            // Replacements and plain molecule deletions cannot silently discard
+            // connected context; reject them below when extra graphs remain.
             bool hasDeleteMoleculeOps = false;
             for (const auto& op : operations_) {
                 if (op.type == TransformOp::Type::DeleteMolecule) {
@@ -2875,19 +2860,14 @@ bool ReactionRule::buildReaction(
             if (hasModifier(modifiers_, "MoveConnected") && !deleteMolecules) {
                 return false;
             }
-            // BNG2 build_reaction (RxnRule.pm) rejects a reaction whose
-            // transformation yields more product subgraphs than product
-            // patterns unless the DeleteMolecules modifier is set.  A plain
-            // molecule deletion (e.g. A(b!1).B(a!1) -> A(b)) that would split
-            // the target into several fragments therefore produces no
-            // reaction; only DeleteMolecules releases the extra fragments.
-            // Molecule-type replacement rules keep their historical
-            // discard-orphans behavior below.
-            if (hasDeleteMoleculeOps && !deleteMolecules && !hasMoleculeTypeMismatch_) {
+            // Plain molecule deletions and molecule-pattern replacements can
+            // detach connected context. BNG2 rejects the reaction when those
+            // extra graphs exceed the declared products unless DeleteMolecules
+            // explicitly allows them to be released.
+            if ((hasDeleteMoleculeOps || hasMoleculeTypeMismatch_) &&
+                !deleteMolecules) {
                 return false;
             }
-            const bool keepOrphans = deleteMolecules
-                || (!hasMoleculeTypeMismatch_ && !hasDeleteMoleculeOps);
             std::vector<SpeciesGraph> orderedProducts;
             std::vector<bool> used(productGraphs.size(), false);
             for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
@@ -2910,19 +2890,16 @@ bool ReactionRule::buildReaction(
                     return false;
                 }
             }
-            if (keepOrphans) {
-                // Append orphan fragments (released molecules) after the matched products
-                for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
-                    if (!used[gi]) {
-                        orderedProducts.push_back(std::move(productGraphs[gi]));
-                        // Orphans don't correspond to any product pattern; use
-                        // productPatterns_.size() as sentinel so compartment
-                        // inference below falls through to molecule-level logic.
-                        productPatternIndices.push_back(productPatterns_.size());
-                    }
+            // Append allowed orphan fragments after the matched products.
+            for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
+                if (!used[gi]) {
+                    orderedProducts.push_back(std::move(productGraphs[gi]));
+                    // Orphans don't correspond to any product pattern; use
+                    // productPatterns_.size() as sentinel so compartment
+                    // inference below falls through to molecule-level logic.
+                    productPatternIndices.push_back(productPatterns_.size());
                 }
             }
-            // else: hasMoleculeTypeMismatch_ — orphans are silently discarded
             productGraphs = std::move(orderedProducts);
         } else if (productGraphs.size() < productPatterns_.size() && !deleteMolecules) {
             // Reject: fewer products than patterns (unexpected).

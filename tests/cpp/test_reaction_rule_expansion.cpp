@@ -525,6 +525,94 @@ end actions
     REQUIRE(network.reactions.size() == 1);
 }
 
+TEST_CASE("Rule expansion: unmatched product molecules cannot discard connected context",
+          "[ReactionRule][issue139]") {
+    const auto generate = [](const std::string& moleculeTypes,
+                             const std::string& seedSpecies,
+                             const std::string& reactionRule) {
+        auto model = parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+)" + moleculeTypes + R"(
+end molecule types
+begin seed species
+)" + seedSpecies + R"(
+end seed species
+begin reaction rules
+)" + reactionRule + R"(
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        return generator.generateNative(5);
+    };
+
+    const auto externalPartner = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(externalPartner.reactions.size() == 0);
+    CHECK(externalPartner.species.size() == 1);
+
+    const auto twoExternalPartners = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)\n    D(y)",
+        "    A(x!1,y!2!3,s~u).B(x!1).C(y!2).D(y!3) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(twoExternalPartners.reactions.size() == 0);
+    CHECK(twoExternalPartners.species.size() == 1);
+
+    const auto mixedFreeAndBoundSites = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)\n    D(y)",
+        "    A(x!1,y,s~u).B(x!1) 1\n"
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1\n"
+        "    A(x!1,y!2!3,s~u).B(x!1).C(y!2).D(y!3) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(mixedFreeAndBoundSites.reactions.size() == 1);
+
+    const auto freeProductSite = generate(
+        "    A(x,y,s~u~p)\n    B(x)",
+        "    A(x!1,y,s~u).B(x!1) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k");
+    CHECK(freeProductSite.reactions.size() == 1);
+
+    const auto explicitBondBreak = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,y!2,s~u).B(x!1).C(y!2) -> "
+        "A(x!1,y,s~p).B(x!1) + C(y) k");
+    CHECK(explicitBondBreak.reactions.size() == 1);
+
+    const auto retainedBoundSite = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,y!2,s~u).B(x!1).C(y!2) -> "
+        "A(x!1,y!2,s~p).B(x!1).C(y!2) k");
+    CHECK(retainedBoundSite.reactions.size() == 1);
+
+    const auto explicitDeleteMolecules = generate(
+        "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
+        "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",
+        "    r: A(x!1,s~u).B(x!1) -> A(x!1,y,s~p).B(x!1) k DeleteMolecules");
+    REQUIRE(explicitDeleteMolecules.reactions.size() == 1);
+    const auto& products = explicitDeleteMolecules.reactions.all().front().getProducts();
+    REQUIRE(products.size() == 2);
+    bool sawRetainedPair = false;
+    bool sawReleasedPartner = false;
+    for (const auto productIndex : products) {
+        const auto& graph = explicitDeleteMolecules.species.get(productIndex)
+                                .getSpeciesGraph().toString();
+        sawRetainedPair = sawRetainedPair ||
+            (graph.find("A(") != std::string::npos &&
+             graph.find("B(") != std::string::npos &&
+             graph.find("s~p") != std::string::npos);
+        sawReleasedPartner = sawReleasedPartner || graph == "C(y)";
+    }
+    CHECK(sawRetainedPair);
+    CHECK(sawReleasedPartner);
+}
+
 TEST_CASE("Rule expansion: plain deletion splitting a complex yields no reaction", "[ReactionRule]") {
     // BNG2 build_reaction returns undef when a molecule deletion without the
     // DeleteMolecules modifier would leave more fragments than product
