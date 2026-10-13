@@ -60,9 +60,10 @@ function(assert_initial_row case_name initial_row expected_time expected_a expec
     set(initial_time "${CMAKE_MATCH_1}")
     set(initial_a "${CMAKE_MATCH_2}")
     set(initial_b "${CMAKE_MATCH_3}")
-    if(NOT initial_time STREQUAL expected_time OR
-       NOT initial_a STREQUAL expected_a OR
-       NOT initial_b STREQUAL expected_b)
+    if((NOT expected_time STREQUAL "*" AND
+        NOT initial_time STREQUAL expected_time) OR
+       (NOT expected_a STREQUAL "*" AND NOT initial_a STREQUAL expected_a) OR
+       (NOT expected_b STREQUAL "*" AND NOT initial_b STREQUAL expected_b))
         message(SEND_ERROR
             "${case_name} initial row was (${initial_time}, ${initial_a}, ${initial_b}), "
             "expected (${expected_time}, ${expected_a}, ${expected_b}).\n"
@@ -119,10 +120,16 @@ function(run_case case_name method rate stop_if_expression expected_rows sample_
     endif()
 endfunction()
 
-function(run_zero_species_case)
-    set(case_dir "${WORK_DIR}/cvode_zero_species_initial_true")
+function(run_zero_species_case case_name sample_times t_start t_end expected_time)
+    set(case_dir "${WORK_DIR}/${case_name}")
     file(MAKE_DIRECTORY "${case_dir}")
     set(model_path "${case_dir}/stop_if.bngl")
+    set(n_steps_option "n_steps=>2,")
+    set(sample_times_option "")
+    if(NOT "${sample_times}" STREQUAL "")
+        set(n_steps_option "")
+        set(sample_times_option ",sample_times=>${sample_times}")
+    endif()
     file(WRITE "${model_path}"
 "begin model
 begin parameters
@@ -131,7 +138,7 @@ end parameters
 begin molecule types
   A()
 end molecule types
-simulate({method=>\"cvode\",t_start=>0,t_end=>1,n_steps=>2,stop_if=>\"2^N\"})
+simulate({method=>\"cvode\",t_start=>${t_start},t_end=>${t_end},${n_steps_option}stop_if=>\"2^N\"${sample_times_option}})
 end model
 ")
 
@@ -144,14 +151,14 @@ end model
     )
     if(NOT result EQUAL 0)
         message(SEND_ERROR
-            "zero-species initial stop_if failed (exit ${result}).\n"
+            "${case_name} failed (exit ${result}).\n"
             "stdout:\n${stdout_text}\nstderr:\n${stderr_text}")
         return()
     endif()
 
     set(gdat_path "${case_dir}/stop_if.gdat")
     if(NOT EXISTS "${gdat_path}")
-        message(SEND_ERROR "zero-species initial stop_if wrote no trajectory")
+        message(SEND_ERROR "${case_name} wrote no trajectory")
         return()
     endif()
     file(READ "${gdat_path}" gdat_text)
@@ -167,7 +174,7 @@ end model
     list(LENGTH data_rows row_count)
     if(NOT row_count EQUAL 1)
         message(SEND_ERROR
-            "zero-species initially true stop_if should keep only the initial row, got ${row_count}.\n"
+            "${case_name} should keep only the initial row, got ${row_count}.\n"
             "Trajectory:\n${gdat_text}")
         return()
     endif()
@@ -175,14 +182,14 @@ end model
     string(REGEX MATCH "^([0-9.eE+-]+)" initial_match "${initial_row}")
     if(initial_match STREQUAL "")
         message(SEND_ERROR
-            "zero-species stop_if could not read the initial time from row '${initial_row}'.\n"
+            "${case_name} could not read the initial time from row '${initial_row}'.\n"
             "Trajectory:\n${gdat_text}")
         return()
     endif()
     set(initial_time "${CMAKE_MATCH_1}")
-    if(NOT initial_time STREQUAL "0.000000000000e+00")
+    if(NOT initial_time STREQUAL expected_time)
         message(SEND_ERROR
-            "zero-species initially true stop_if should retain t=0, got t=${initial_time}.\n"
+            "${case_name} should retain t=${expected_time}, got t=${initial_time}.\n"
             "Trajectory:\n${gdat_text}")
     endif()
 endfunction()
@@ -220,8 +227,61 @@ run_case("cvode_scaled_initial_state_false" "cvode" "31.41592653589793"
     "A_count < 0.1" 2 "" "0.1" "0" "1"
     "0.000000000000e+00" "1.000000000000e-01" "0.000000000000e+00")
 
-# Keep the new initial-state check scoped to the default grid. This explicit
-# ODE sample_times fixture retains its existing stop check at t=0.25.
-run_case("cvode_explicit_sample_times" "cvode" "1" "2^N" 2 "[0,0.25,1]"
-    "10" "0" "1" "0.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
-run_zero_species_case()
+# An already-true stop_if is checked at t_start even when explicit sample
+# times are requested. When the condition is false, explicit output remains
+# exactly the requested schedule.
+foreach(method IN ITEMS cvode euler rk4)
+    run_case("${method}_explicit_true_includes_start" "${method}" "1"
+        "A_count > 9" 1 "[2,2.25,2.5,2.75]"
+        "10" "2" "3" "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+    run_case("${method}_explicit_true_excludes_start" "${method}" "1"
+        "A_count > 9" 1 "[2.25,2.5,2.75]"
+        "10" "2" "3" "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+    run_case("${method}_explicit_false_includes_start" "${method}" "0"
+        "A_count < 0" 5 "[2,2.25,2.5,2.75]"
+        "10" "2" "3" "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+    run_case("${method}_explicit_false_excludes_start" "${method}" "0"
+        "A_count < 0" 4 "[2.25,2.5,2.75]"
+        "10" "2" "3" "2.250000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+endforeach()
+
+run_case("ssa_explicit_true_includes_start" "ssa" "1e9" "A_count > 9" 1
+    "[2,2.25,2.5,2.75]" "10" "2" "3"
+    "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+run_case("ssa_explicit_true_excludes_start" "ssa" "1e9" "A_count > 9" 1
+    "[2.25,2.5,2.75]" "10" "2" "3"
+    "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+run_case("ssa_explicit_false_includes_start" "ssa" "0" "A_count < 0" 5
+    "[2,2.25,2.5,2.75]" "10" "2" "3"
+    "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+run_case("ssa_explicit_false_excludes_start" "ssa" "0" "A_count < 0" 4
+    "[2.25,2.5,2.75]" "10" "2" "3"
+    "2.250000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+
+# Equality at the initial threshold is false. The CVODE scale/unscale path
+# must not turn the exact raw value 0.1 into a value below the threshold, and
+# the first later sample must check its integrated state rather than the raw
+# initial state.
+run_case("cvode_explicit_sample_times_scaled_initial_state_false" "cvode"
+    "31.41592653589793" "A_count < 0.1" 1 "[2.25,2.5,2.75]"
+    "0.1" "2" "3" "2.250000000000e+00" "*" "*")
+
+# A false initial condition can become true at the first requested output.
+# The test also guards Euler and RK4, whose explicit-grid loops must check the
+# state at the first sample when t_start was omitted.
+foreach(method IN ITEMS cvode euler rk4)
+    run_case("${method}_explicit_first_sample_true" "${method}" "1"
+        "A_count < 9.9" 1 "[2.25,2.5,2.75]"
+        "10" "2" "3" "2.250000000000e+00" "*" "*")
+endforeach()
+
+# SSA evaluates the predicate on its rounded molecule-count state before any
+# reaction draw. A fractional seed distinguishes that state from the raw 0.6.
+run_case("ssa_fractional_seed_initial_true" "ssa" "1e9" "A_count > 0.9" 1
+    "[2.25,2.5,2.75]" "0.6" "2" "3"
+    "2.000000000000e+00" "1.000000000000e+00" "0.000000000000e+00")
+
+run_zero_species_case("cvode_zero_species_initial_true" "" "0" "1"
+    "0.000000000000e+00")
+run_zero_species_case("cvode_zero_species_explicit_initial_true"
+    "[2.25,2.5,2.75]" "2" "3" "2.000000000000e+00")

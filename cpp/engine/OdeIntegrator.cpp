@@ -1681,6 +1681,10 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         throw std::runtime_error(
             "max_sim_steps and output_step_interval are supported only for SSA");
     }
+    if (options.method == "ssa" && options.batchSize > 0 &&
+        !options.stopIf.empty()) {
+        throw std::runtime_error("batch SSA does not support stop_if");
+    }
     if (nSpecies_ == 0 &&
         (options.method == "euler" || options.method == "rk4" ||
          options.method == "cvode" || options.method == "ssa")) {
@@ -1689,9 +1693,14 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         // have a well-defined output grid and may expose time/parameter-only
         // functions. Evaluate those outputs without entering a numerical
         // solver.
-        const auto times = outputTimes(options);
+        auto times = outputTimes(options);
         const auto stopIfExpr = parseStopIf(options);
         const std::vector<double> emptyState;
+        if (stopIfExpr.has_value() &&
+            stopConditionMet(*stopIfExpr, options.tStart, emptyState) &&
+            times.front() != options.tStart) {
+            times.insert(times.begin(), options.tStart);
+        }
         OdeResult result;
         result.timePoints.reserve(times.size());
         result.concentrations.reserve(times.size());
@@ -1711,7 +1720,6 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
                 break;
             }
             if (stopIfExpr.has_value() &&
-                (step > 0 || options.sampleTimes.empty()) &&
                 stopConditionMet(*stopIfExpr, time, emptyState)) {
                 break;
             }
@@ -1776,13 +1784,17 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
 }
 
 OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
-    const auto times = outputTimes(opts);
+    auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     std::vector<double> y(nSpecies_);
 
     // Initialize from species amounts
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         y[i] = network_.species.get(i).getAmount();
+    }
+    if (stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y) &&
+        times.front() != opts.tStart) {
+        times.insert(times.begin(), opts.tStart);
     }
 
     OdeResult result;
@@ -1810,7 +1822,6 @@ OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
             break;
         }
         if (stopIfExpr.has_value() &&
-            (step > 0 || opts.sampleTimes.empty()) &&
             stopConditionMet(*stopIfExpr, targetTime, y)) {
             break;
         }
@@ -1831,7 +1842,7 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     // Use internal sub-stepping for stability
     // For stiff systems, we need many more steps than the output points
     const std::size_t internalStepsPerOutput = 1000;  // Subdivide each output interval
-    const auto times = outputTimes(opts);
+    auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
 
     std::vector<double> y(nSpecies_);
@@ -1839,6 +1850,10 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     // Initialize from species amounts
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         y[i] = network_.species.get(i).getAmount();
+    }
+    if (stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y) &&
+        times.front() != opts.tStart) {
+        times.insert(times.begin(), opts.tStart);
     }
 
     OdeResult result;
@@ -1901,7 +1916,6 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
             break;
         }
         if (stopIfExpr.has_value() &&
-            (outputStep > 0 || opts.sampleTimes.empty()) &&
             stopConditionMet(*stopIfExpr, targetT, y)) {
             break;
         }
@@ -2483,7 +2497,7 @@ static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* 
 }
 
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
-    const auto times = outputTimes(opts);
+    auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
 
     // SUNDIALS v7: Create context (required for all SUNDIALS objects)
@@ -2504,6 +2518,11 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     std::vector<double> initialDerivatives(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         initialState[i] = network_.species.get(i).getAmount();
+    }
+    if (stopIfExpr.has_value() &&
+        stopConditionMet(*stopIfExpr, opts.tStart, initialState) &&
+        times.front() != opts.tStart) {
+        times.insert(times.begin(), opts.tStart);
     }
     // Converted SBML models can legitimately combine sub-molecular amounts
     // with molecule-number rate constants.  Integrating those raw values
@@ -2746,12 +2765,11 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         if (step > 0 && steadyStateReached(opts, tOut, conc)) {
             break;
         }
-        if (stopIfExpr.has_value() &&
-            (step > 0 || opts.sampleTimes.empty())) {
+        if (stopIfExpr.has_value()) {
             // CVODE integrates a scaled vector. At the initial point, use the
             // original model state for stop_if so a scale/unscale round trip
             // cannot change a threshold comparison by one ULP.
-            const auto& stopState = step == 0 ? initialState : conc;
+            const auto& stopState = tOut == opts.tStart ? initialState : conc;
             if (stopConditionMet(*stopIfExpr, tOut, stopState)) {
                 break;
             }
@@ -2872,7 +2890,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 "SSA does not support explicitly time-dependent rate laws");
         }
     }
-    const auto times = outputTimes(opts);
+    auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     const bool explicitTimes = !opts.sampleTimes.empty();
     // Constructing with the value seeds the engine once.  Declaring the engine
@@ -2893,6 +2911,11 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     y.resize(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         y[i] = std::round(network_.species.get(i).getAmount());
+    }
+    const bool stopAtInitial =
+        stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y);
+    if (stopAtInitial && times.front() != opts.tStart) {
+        times.insert(times.begin(), opts.tStart);
     }
 
     OdeResult result;
@@ -3090,13 +3113,10 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         result.concentrations.push_back(y);
     }
 
-    // Match the native ODE methods' initial-state check on the default output
-    // grid. Preserve the existing explicit sample_times scheduling and
-    // event-based stop checks.
-    if (opts.sampleTimes.empty() && stopIfExpr.has_value() &&
-        stopConditionMet(*stopIfExpr, t, y)) {
-        stoppedEarly = true;
-    }
+    // Initial-state checks use the rounded molecule-count state and run before
+    // any RNG draws. The initial row was scheduled above when explicit times
+    // omitted t_start.
+    stoppedEarly = stopAtInitial;
 
     // Main SSA loop
     while (t < opts.tEnd && !stoppedEarly) {
