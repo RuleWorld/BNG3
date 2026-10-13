@@ -64,6 +64,24 @@ replace_once() {
     ' "$path"
 }
 
+# Replace every expected regex match in a scratch file. This preserves the
+# original `sed s///g` behavior for mutations that intentionally rename a
+# token at every use site, while rejecting stale or unexpectedly broad edits.
+replace_all() {
+  local path="$1" pattern="$2" replacement="$3" expected="$4"
+  REPLACE_PATTERN="$pattern" REPLACE_TEXT="$replacement" \
+    EXPECTED_MATCHES="$expected" \
+    perl -0pi -e '
+      my $pattern = $ENV{REPLACE_PATTERN};
+      my $replacement = $ENV{REPLACE_TEXT};
+      my $expected = $ENV{EXPECTED_MATCHES};
+      my $matches = () = $_ =~ /$pattern/gm;
+      die "expected $expected matches, found $matches\n" if $matches != $expected;
+      my $count = s/$pattern/$replacement/gm;
+      die "expected $expected replacements, found $count\n" if $count != $expected;
+    ' "$path"
+}
+
 gate_rejection_matches() {
   local runner="$1"
   local out="$2"
@@ -249,6 +267,7 @@ expect_accept() {
 # no-op search pattern and a replacement that changed the wrong text.
 test_portable_replacement() {
   local test_dir file expected missing_out ambiguous ambiguous_expected
+  local global_file global_expected regex_file regex_expected
   mkdir -p "$SCRATCH"
   test_dir="$(mktemp -d "$SCRATCH/portable-replacement.XXXXXX")" || {
     echo "FAIL  helper-portable-replace  (could not create scratch directory)"
@@ -260,10 +279,40 @@ test_portable_replacement() {
   missing_out="$test_dir/missing.out"
   ambiguous="$test_dir/ambiguous.txt"
   ambiguous_expected="$test_dir/ambiguous.expected.txt"
+  global_file="$test_dir/global.txt"
+  global_expected="$test_dir/global.expected.txt"
+  regex_file="$test_dir/regex-metacharacters.txt"
+  regex_expected="$test_dir/regex-metacharacters.expected.txt"
   printf 'before\nconnected_to\nafter\n' >"$file"
   printf 'before\nconnectedTo\nafter\n' >"$expected"
   printf 'connected_to\nconnected_to\n' >"$ambiguous"
   cp "$ambiguous" "$ambiguous_expected"
+  printf 'connected_to\nconnected_to\n' >"$global_file"
+  printf 'connectedTo\nconnectedTo\n' >"$global_expected"
+  cat >"$regex_file" <<'EOF'
+      | some got => got == wanted
+      | some got => allowed.contains got
+  | .legacyUnsupported _ _ => none
+  | .simulate request => some state
+    | .bound => false)
+    | .free => true
+  | .counter => none
+  | .custom _ => none
+  | .exact s => component.hasState s
+  | .oneOf states => states.all component.hasState
+EOF
+  cat >"$regex_expected" <<'EOF'
+      | some got => true
+      | some got => allowed.contains got
+  | .legacyUnsupported _ _ => some state
+  | .simulate request => some state
+    | .bound => true)
+    | .free => true
+  | .counter => some 0
+  | .custom _ => none
+  | .exact _ => true
+  | .oneOf states => states.all component.hasState
+EOF
 
   if ! replace_once "$file" '^connected_to$' 'connectedTo'; then
     echo "FAIL  helper-portable-replace  (scratch replacement failed)"
@@ -285,6 +334,30 @@ test_portable_replacement() {
     fail=$((fail + 1))
   else
     echo "PASS  helper-portable-replace  (exact scratch edit; missing and ambiguous tokens rejected)"
+    pass=$((pass + 1))
+  fi
+
+  if replace_once "$regex_file" '^      \| some got => got == wanted$' '      | some got => true' &&
+      replace_once "$regex_file" '^  \| .legacyUnsupported _ _ => none$' '  | .legacyUnsupported _ _ => some state' &&
+      replace_once "$regex_file" '\| .bound => false\)' '| .bound => true)' &&
+      replace_once "$regex_file" '^  \| .counter => none$' '  | .counter => some 0' &&
+      replace_once "$regex_file" '^  \| \.exact s => component.hasState s$' '  | .exact _ => true' &&
+      cmp -s "$regex_file" "$regex_expected"; then
+    echo "PASS  helper-portable-replace-regex  (literal pipes and parentheses preserve each intended mutation)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL  helper-portable-replace-regex  (metacharacter mutation did not produce exact expected file)"
+    fail=$((fail + 1))
+  fi
+
+  if ! replace_all "$global_file" 'connected_to' 'connectedTo' 2; then
+    echo "FAIL  helper-portable-replace-global  (multi-match scratch replacement failed)"
+    fail=$((fail + 1))
+  elif ! cmp -s "$global_file" "$global_expected"; then
+    echo "FAIL  helper-portable-replace-global  (not all expected tokens were replaced)"
+    fail=$((fail + 1))
+  else
+    echo "PASS  helper-portable-replace-global  (all expected matches replaced)"
     pass=$((pass + 1))
   fi
   rm -rf "$test_dir"
@@ -430,10 +503,9 @@ if want header-token-in-comment; then
 fi
 
 if want header-rename-predicate; then
-  # `connected_to` is a PatternIR field. Rename its declaration while leaving
-  # the method use in place; the contract must check the field, not a substring.
+  # Preserve the original global rename mutation across the field and its use.
   expect_reject header-rename-predicate run_header \
-    "replace_once 'cpp/nfnext/include/nfnext/nfir.hpp' '^    std::vector.* connected_to;$' '    std::vector<std::pair<std::size_t, std::size_t>> connectedTo;'"
+    "replace_all 'cpp/nfnext/include/nfnext/nfir.hpp' 'connected_to' 'connectedTo' 2"
 fi
 
 if want header-missing-bridge; then
@@ -457,7 +529,7 @@ if want coverage-matcher-too-permissive; then
   # Weaken the matcher so `A(x~u)` also matches `A(x~p)`.  The negative
   # instance in Coverage.lean is the only thing that catches this.
   expect_reject coverage-matcher-too-permissive run_coverage \
-    "replace_once 'formal/lean/BNG/Operational.lean' '^      | some got => got == wanted$' '      | some got => true'"
+    "replace_once 'formal/lean/BNG/Operational.lean' '^      \\| some got => got == wanted$' '      | some got => true'"
 fi
 
 if want coverage-species-bond-blind; then
@@ -486,14 +558,14 @@ if want coverage-protocol-legacy-allowed; then
   # Let the legacy escape hatch execute, so a protocol with an unsupported
   # action silently succeeds.
   expect_reject coverage-protocol-legacy-allowed run_coverage \
-    "replace_once 'formal/lean/BNG/Protocol.lean' '^  | .legacyUnsupported _ _ => none$' '  | .legacyUnsupported _ _ => some state'"
+    "replace_once 'formal/lean/BNG/Protocol.lean' '^  \\| .legacyUnsupported _ _ => none$' '  | .legacyUnsupported _ _ => some state'"
 fi
 
 if want coverage-seed-too-permissive; then
   # Let seed construction accept an ambiguous `!+` bond requirement, i.e. accept
   # a SET of possible graphs where one concrete seed state is required.
   expect_reject coverage-seed-too-permissive run_coverage \
-    "replace_once 'formal/lean/BNG/Seeds.lean' '^    | .bound => false)$' '    | .bound => true)'"
+    "replace_once 'formal/lean/BNG/Seeds.lean' '\\| .bound => false\\)' '| .bound => true)'"
 fi
 
 if want coverage-lowering-divergence; then
@@ -520,7 +592,7 @@ fi
 if want coverage-observables-counter-guessed; then
   # Make the unsupported `counter` observable return a number instead of `none`.
   expect_reject coverage-observables-counter-guessed run_coverage \
-    "replace_once 'formal/lean/BNG/Observables.lean' '^  | .counter => none$' '  | .counter => some 0'"
+    "replace_once 'formal/lean/BNG/Observables.lean' '^  \\| .counter => none$' '  | .counter => some 0'"
 fi
 
 # ---------------------------------------------------------------------------
@@ -539,7 +611,7 @@ if want smoke-badpattern-accepted; then
   # thing that catches this is Coverage.lean's negative instance; Smoke.lean's
   # own assertions do not, which is why both files exist.
   expect_reject smoke-badpattern-accepted run_coverage \
-    "replace_once 'formal/lean/BNG/Pattern.lean' '^  | .exact s => component[.]hasState s$' '  | .exact _ => true'"
+    "replace_once 'formal/lean/BNG/Pattern.lean' '^  \\| \\.exact s => component.hasState s$' '  | .exact _ => true'"
 fi
 
 # ---------------------------------------------------------------------------
