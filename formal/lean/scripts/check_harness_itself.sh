@@ -47,6 +47,23 @@ tree_digest() {
   (cd "$1" && find . -type f -exec shasum -a 256 {} + | LC_ALL=C sort | shasum -a 256 | awk '{print $1}')
 }
 
+# Replace exactly one regex match in a scratch file. Perl's in-place editing
+# uses the same invocation on BSD and GNU systems, unlike `sed -i` which has
+# incompatible backup-extension syntax. A missing or ambiguous match fails
+# before a gate can receive an unchanged tree and accidentally count it.
+replace_once() {
+  local path="$1" pattern="$2" replacement="$3"
+  REPLACE_PATTERN="$pattern" REPLACE_TEXT="$replacement" \
+    perl -0pi -e '
+      my $pattern = $ENV{REPLACE_PATTERN};
+      my $replacement = $ENV{REPLACE_TEXT};
+      my $matches = () = $_ =~ /$pattern/gm;
+      die "expected exactly one match, found $matches\n" if $matches != 1;
+      my $count = s/$pattern/$replacement/m;
+      die "expected exactly one replacement, found $count\n" if $count != 1;
+    ' "$path"
+}
+
 gate_rejection_matches() {
   local runner="$1"
   local out="$2"
@@ -228,6 +245,51 @@ expect_accept() {
   rm -rf "$tree"
 }
 
+# Exercise replacement on a tiny real file so the self-test can detect both a
+# no-op search pattern and a replacement that changed the wrong text.
+test_portable_replacement() {
+  local test_dir file expected missing_out ambiguous ambiguous_expected
+  mkdir -p "$SCRATCH"
+  test_dir="$(mktemp -d "$SCRATCH/portable-replacement.XXXXXX")" || {
+    echo "FAIL  helper-portable-replace  (could not create scratch directory)"
+    fail=$((fail + 1))
+    return
+  }
+  file="$test_dir/input.txt"
+  expected="$test_dir/expected.txt"
+  missing_out="$test_dir/missing.out"
+  ambiguous="$test_dir/ambiguous.txt"
+  ambiguous_expected="$test_dir/ambiguous.expected.txt"
+  printf 'before\nconnected_to\nafter\n' >"$file"
+  printf 'before\nconnectedTo\nafter\n' >"$expected"
+  printf 'connected_to\nconnected_to\n' >"$ambiguous"
+  cp "$ambiguous" "$ambiguous_expected"
+
+  if ! replace_once "$file" '^connected_to$' 'connectedTo'; then
+    echo "FAIL  helper-portable-replace  (scratch replacement failed)"
+    fail=$((fail + 1))
+  elif ! cmp -s "$file" "$expected"; then
+    echo "FAIL  helper-portable-replace  (scratch file did not contain the exact replacement)"
+    fail=$((fail + 1))
+  elif replace_once "$file" '^missing-token$' 'unused' >"$missing_out" 2>&1; then
+    echo "FAIL  helper-portable-replace  (missing source token was accepted)"
+    fail=$((fail + 1))
+  elif ! cmp -s "$file" "$expected"; then
+    echo "FAIL  helper-portable-replace  (failed search changed the scratch file)"
+    fail=$((fail + 1))
+  elif replace_once "$ambiguous" '^connected_to$' 'connectedTo' >"$missing_out" 2>&1; then
+    echo "FAIL  helper-portable-replace  (ambiguous source token was accepted)"
+    fail=$((fail + 1))
+  elif ! cmp -s "$ambiguous" "$ambiguous_expected"; then
+    echo "FAIL  helper-portable-replace  (ambiguous search changed the scratch file)"
+    fail=$((fail + 1))
+  else
+    echo "PASS  helper-portable-replace  (exact scratch edit; missing and ambiguous tokens rejected)"
+    pass=$((pass + 1))
+  fi
+  rm -rf "$test_dir"
+}
+
 CASES="${*:-all}"
 want() { [ "$CASES" = all ] || case " $CASES " in *" $1 "*) return 0;; *) return 1;; esac; }
 
@@ -368,17 +430,16 @@ if want header-token-in-comment; then
 fi
 
 if want header-rename-predicate; then
-  # `connected_to` is a PatternIR FIELD.  Renaming it breaks every call site
-  # that the old substring check could not see, because `requireConnectedTo`
-  # (the method) still contains a similar-looking token.
+  # `connected_to` is a PatternIR field. Rename its declaration while leaving
+  # the method use in place; the contract must check the field, not a substring.
   expect_reject header-rename-predicate run_header \
-    "sed -i '' 's/connected_to/connectedTo/g' cpp/nfnext/include/nfnext/nfir.hpp"
+    "replace_once 'cpp/nfnext/include/nfnext/nfir.hpp' '^    std::vector.* connected_to;$' '    std::vector<std::pair<std::size_t, std::size_t>> connectedTo;'"
 fi
 
 if want header-missing-bridge; then
   # The Lean bridge contract token disappearing must be caught.
   expect_reject header-missing-bridge run_header \
-    "sed -i '' 's/nfnextBridgeContract_holds/nfnextBridgeContract_RENAMED/' formal/lean/BNG/Examples.lean"
+    "replace_once 'formal/lean/BNG/Examples.lean' 'nfnextBridgeContract_holds' 'nfnextBridgeContract_RENAMED'"
 fi
 
 # ---------------------------------------------------------------------------
@@ -389,14 +450,14 @@ if want coverage-semantic-flip; then
   # A plausible wrong edit to the worked rule fixture. Its library
   # native_decide theorem should fail during lake build before Coverage runs.
   expect_reject coverage-semantic-flip run_coverage \
-    "sed -i '' 's/^      .changeState rx sP,$/      .changeState rx sU,/' formal/lean/BNG/Examples.lean"
+    "replace_once 'formal/lean/BNG/Examples.lean' '^      .changeState rx sP,$' '      .changeState rx sU,'"
 fi
 
 if want coverage-matcher-too-permissive; then
   # Weaken the matcher so `A(x~u)` also matches `A(x~p)`.  The negative
   # instance in Coverage.lean is the only thing that catches this.
   expect_reject coverage-matcher-too-permissive run_coverage \
-    "sed -i '' 's/^      | some got => got == wanted$/      | some got => true/' formal/lean/BNG/Operational.lean"
+    "replace_once 'formal/lean/BNG/Operational.lean' '^      | some got => got == wanted$' '      | some got => true'"
 fi
 
 if want coverage-species-bond-blind; then
@@ -425,14 +486,14 @@ if want coverage-protocol-legacy-allowed; then
   # Let the legacy escape hatch execute, so a protocol with an unsupported
   # action silently succeeds.
   expect_reject coverage-protocol-legacy-allowed run_coverage \
-    "sed -i '' 's/^  | .legacyUnsupported _ _ => none$/  | .legacyUnsupported _ _ => some state/' formal/lean/BNG/Protocol.lean"
+    "replace_once 'formal/lean/BNG/Protocol.lean' '^  | .legacyUnsupported _ _ => none$' '  | .legacyUnsupported _ _ => some state'"
 fi
 
 if want coverage-seed-too-permissive; then
   # Let seed construction accept an ambiguous `!+` bond requirement, i.e. accept
   # a SET of possible graphs where one concrete seed state is required.
   expect_reject coverage-seed-too-permissive run_coverage \
-    "sed -i '' 's/| .bound => false)/| .bound => true)/' formal/lean/BNG/Seeds.lean"
+    "replace_once 'formal/lean/BNG/Seeds.lean' '^    | .bound => false)$' '    | .bound => true)'"
 fi
 
 if want coverage-lowering-divergence; then
@@ -453,13 +514,13 @@ fi
 if want coverage-name-resolution-guess; then
   # Make name resolution fall back to a default ID instead of failing closed.
   expect_reject coverage-name-resolution-guess run_coverage \
-    "sed -i '' 's/^  (resolveNamedExpr model source)\\.isSome$/  true/' formal/lean/BNG/NameResolution.lean"
+    "replace_once 'formal/lean/BNG/NameResolution.lean' '^  [(]resolveNamedExpr model source[)][.]isSome$' '  true'"
 fi
 
 if want coverage-observables-counter-guessed; then
   # Make the unsupported `counter` observable return a number instead of `none`.
   expect_reject coverage-observables-counter-guessed run_coverage \
-    "sed -i '' 's/^  | .counter => none$/  | .counter => some 0/' formal/lean/BNG/Observables.lean"
+    "replace_once 'formal/lean/BNG/Observables.lean' '^  | .counter => none$' '  | .counter => some 0'"
 fi
 
 # ---------------------------------------------------------------------------
@@ -470,7 +531,7 @@ if want smoke-semantic-flip; then
   # The worked fixture's library theorem catches this wrong state before the
   # explicitly invoked Smoke test can run.
   expect_reject smoke-semantic-flip run_smoke \
-    "sed -i '' 's/^      .changeState rx sP,$/      .changeState rx sU,/' formal/lean/BNG/Examples.lean"
+    "replace_once 'formal/lean/BNG/Examples.lean' '^      .changeState rx sP,$' '      .changeState rx sU,'"
 fi
 
 if want smoke-badpattern-accepted; then
@@ -478,7 +539,7 @@ if want smoke-badpattern-accepted; then
   # thing that catches this is Coverage.lean's negative instance; Smoke.lean's
   # own assertions do not, which is why both files exist.
   expect_reject smoke-badpattern-accepted run_coverage \
-    "sed -i '' 's/^  | \\.exact s => component.hasState s$/  | .exact _ => true/' formal/lean/BNG/Pattern.lean"
+    "replace_once 'formal/lean/BNG/Pattern.lean' '^  | .exact s => component[.]hasState s$' '  | .exact _ => true'"
 fi
 
 # ---------------------------------------------------------------------------
@@ -495,6 +556,10 @@ fi
 
 if want harness-malformed-mutation; then
   expect_malformed_lean_rejected
+fi
+
+if want helper-portable-replace; then
+  test_portable_replacement
 fi
 
 echo
