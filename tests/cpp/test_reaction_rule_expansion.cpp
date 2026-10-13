@@ -549,6 +549,57 @@ end reaction rules
         return generator.generateNative(5);
     };
 
+    const auto wholePatternReplacement = generate(
+        "    A(x,y)\n    C(x)",
+        "    A(x!1,y).C(x!1) 1",
+        "    r: A(x!+) -> A(x,y) k");
+    REQUIRE(wholePatternReplacement.reactions.size() == 1);
+    REQUIRE(wholePatternReplacement.species.size() == 2);
+    CHECK(wholePatternReplacement.species.get(1).getSpeciesGraph().toString() == "A(x,y)");
+
+    const auto partialDifferentTypeReplacement = generate(
+        "    A(x,c)\n    B(x)\n    C(c)\n    D(x)",
+        "    A(x!1,c!2).B(x!1).C(c!2) 1",
+        "    r: A(x!1,c!+).B(x!1) -> D(x!1).B(x!1) k");
+    CHECK(partialDifferentTypeReplacement.reactions.size() == 0);
+    CHECK(partialDifferentTypeReplacement.species.size() == 1);
+
+    const auto wholeAndPartialPatterns = generate(
+        "    A(x,y)\n    C(x)\n    B(z,c)\n    D(z)\n    E(c)\n    F(z)",
+        "    A(x!1,y).C(x!1) 1\n"
+        "    B(z!1,c!2).D(z!1).E(c!2) 1",
+        "    whole: A(x!+) -> A(x,y) k\n"
+        "    partial: B(z!1,c!+).D(z!1) -> F(z!1).D(z!1) k");
+    REQUIRE(wholeAndPartialPatterns.reactions.size() == 1);
+    CHECK(wholeAndPartialPatterns.species.size() == 3);
+    bool sawWholeProduct = false;
+    bool sawPartialReplacement = false;
+    for (std::size_t i = 0; i < wholeAndPartialPatterns.species.size(); ++i) {
+        const auto graph = wholeAndPartialPatterns.species.get(i).getSpeciesGraph().toString();
+        sawWholeProduct = sawWholeProduct || graph == "A(x,y)";
+        sawPartialReplacement = sawPartialReplacement || graph.find("F(") != std::string::npos;
+    }
+    CHECK(sawWholeProduct);
+    CHECK_FALSE(sawPartialReplacement);
+
+    const auto explicitDeleteMoleculesWholePattern = generate(
+        "    A(x)\n    B(x)\n    C(x)",
+        "    A(x!1).C(x!1) 1",
+        "    r: A(x!+) -> B(x) k DeleteMolecules");
+    REQUIRE(explicitDeleteMoleculesWholePattern.reactions.size() == 1);
+    REQUIRE(explicitDeleteMoleculesWholePattern.reactions.all().front().getProducts().size() == 2);
+    bool sawReplacementProduct = false;
+    bool sawWholePatternReleasedPartner = false;
+    for (const auto productIndex :
+         explicitDeleteMoleculesWholePattern.reactions.all().front().getProducts()) {
+        const auto graph = explicitDeleteMoleculesWholePattern.species.get(productIndex)
+                               .getSpeciesGraph().toString();
+        sawReplacementProduct = sawReplacementProduct || graph == "B(x)";
+        sawWholePatternReleasedPartner = sawWholePatternReleasedPartner || graph == "C(x)";
+    }
+    CHECK(sawReplacementProduct);
+    CHECK(sawWholePatternReleasedPartner);
+
     const auto externalPartner = generate(
         "    A(x,y,s~u~p)\n    B(x)\n    C(y)",
         "    A(x!1,y!2,s~u).B(x!1).C(y!2) 1",

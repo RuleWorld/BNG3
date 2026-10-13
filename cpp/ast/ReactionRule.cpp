@@ -2209,6 +2209,56 @@ bool ReactionRule::buildReaction(
     // Map from product pattern nodes to aggregate graph clones (populated by AddMolecule)
     std::unordered_map<BNGcore::Node*, BNGcore::Node*> productCloneMaps;
 
+    const auto deleteAggregateMolecule = [&](BNGcore::Node* molecule) {
+        std::vector<BNGcore::Node*> components;
+        for (auto edge = molecule->edges_out_begin(); edge != molecule->edges_out_end(); ++edge) {
+            components.push_back(*edge);
+        }
+        for (auto* component : components) {
+            std::vector<BNGcore::Node*> bondNodes;
+            for (auto edge = component->edges_out_begin(); edge != component->edges_out_end(); ++edge) {
+                bondNodes.push_back(*edge);
+            }
+            for (auto* bondNode : bondNodes) {
+                safeDeleteNode(*graph, bondNode, true, molecule);
+            }
+            safeDeleteNode(*graph, component);
+        }
+        safeDeleteNode(*graph, molecule);
+    };
+
+    const bool deleteMoleculesModifier = deleteMoleculesEnabled(modifiers_, hooks);
+    std::vector<BNGcore::Node*> wholePatternContextMolecules;
+    if (!deleteMoleculesModifier) {
+        for (std::size_t pi = 0; pi < reactantPatterns_.size() && pi < matchSet.size(); ++pi) {
+            if (!deletesWholeReactantPattern(pi)) {
+                continue;
+            }
+
+            std::unordered_set<BNGcore::Node*> matchedPatternMolecules;
+            for (const auto& molecule : reactantInfo[pi].molecules) {
+                auto* targetMolecule = matchSet[pi].map.mapf(molecule.node);
+                if (targetMolecule != nullptr) {
+                    matchedPatternMolecules.insert(targetMolecule);
+                }
+            }
+
+            const auto& speciesGraph =
+                speciesList.get(matchSet[pi].speciesIndex).getSpeciesGraph().getGraph();
+            for (auto nodeIter = speciesGraph.begin(); nodeIter != speciesGraph.end(); ++nodeIter) {
+                auto* speciesMolecule = *nodeIter;
+                if (!isMoleculeNode(*speciesMolecule) ||
+                    matchedPatternMolecules.find(speciesMolecule) != matchedPatternMolecules.end()) {
+                    continue;
+                }
+                const auto cloneIt = cloneMaps[pi].find(speciesMolecule);
+                if (cloneIt != cloneMaps[pi].end()) {
+                    wholePatternContextMolecules.push_back(cloneIt->second);
+                }
+            }
+        }
+    }
+
     for (const auto& operation : operations_) {
         switch (operation.type) {
         case TransformOp::Type::AddBond: {
@@ -2278,23 +2328,22 @@ bool ReactionRule::buildReaction(
                 if (mappedMolecule == nullptr) {
                     return false;
                 }
-                std::vector<BNGcore::Node*> components;
-                for (auto edge = mappedMolecule->edges_out_begin(); edge != mappedMolecule->edges_out_end(); ++edge) {
-                    components.push_back(*edge);
-                }
-                for (auto* component : components) {
-                    std::vector<BNGcore::Node*> bondNodes;
-                    for (auto edge = component->edges_out_begin(); edge != component->edges_out_end(); ++edge) {
-                        bondNodes.push_back(*edge);
-                    }
-                    for (auto* bondNode : bondNodes) {
-                        safeDeleteNode(*graph, bondNode, true, mappedMolecule);
-                    }
-                    safeDeleteNode(*graph, component);
-                }
-                safeDeleteNode(*graph, mappedMolecule);
+                deleteAggregateMolecule(mappedMolecule);
             }
             break;
+        }
+    }
+
+    // BNG2 records a whole-pattern MolDel when every molecule in a reactant
+    // pattern is removed.  The matched species' unmentioned context then dies
+    // with that whole pattern, even when a replacement molecule is added.  A
+    // partial-pattern deletion retains that context and must pass the orphan
+    // check below.  DeleteMolecules is an execution hook in compiled rules, so
+    // its effective value must suppress this whole-pattern cleanup.
+    for (auto* contextMolecule : wholePatternContextMolecules) {
+        if (std::find(aggregateGraph.begin(), aggregateGraph.end(), contextMolecule) !=
+            aggregateGraph.end()) {
+            deleteAggregateMolecule(contextMolecule);
         }
     }
 
@@ -2675,7 +2724,6 @@ bool ReactionRule::buildReaction(
         }
     }
 
-    const bool deleteMoleculesModifier = deleteMoleculesEnabled(modifiers_, hooks);
     if (productPatterns_.empty() && !reactantPatterns_.empty()) {
         if (deleteMoleculesModifier) {
             // DeleteMolecules rule applied to a complex: delete the matched
