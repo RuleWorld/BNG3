@@ -1330,6 +1330,20 @@ end actions
     )
 
 
+def test_cross_validation_retains_top_level_option_declarations():
+    staged = _network_only_text(
+        'setOption("SpeciesLabel","HNauty")\nbegin model\nend model\n'
+    )
+    assert staged.startswith('setOption("SpeciesLabel","HNauty")\n')
+    assert staged.count("setOption") == 1
+    assert staged.index("setOption") < staged.index("begin actions")
+
+
+def test_cross_validation_collects_top_level_runtime_setup_in_actions():
+    staged = _network_only_text('begin model\nend model\nsetConcentration("A()",2)\n')
+    assert staged.index("setConcentration") > staged.index("begin actions")
+
+
 def test_cross_validation_drops_runtime_and_continuation_actions():
     """Network-only staging must not retain simulations or state resets."""
 
