@@ -62,6 +62,7 @@ class Network:
     # Names of zero-argument user functions. Their call suffix is present in
     # function definitions but omitted from reaction rate fields.
     rate_functions: set[str] = field(default_factory=set)
+    initial_amounts: dict[int, str] = field(default_factory=dict)
 
     @property
     def n_species(self) -> int:
@@ -133,7 +134,9 @@ def _resolve_rate(
     # by evaluating them as expressions directly rather than just single symbol names.
     val, expr = _eval_expr(tok, rate_defs, set(), rate_functions or set())
     if val is not None:
-        return repr(round(val, 12))
+        # Normalize serialization noise by significant digits. Decimal-place
+        # rounding erased every rate below 5e-13, even equating it with zero.
+        return repr(float(format(val, ".12g")))
     # Non-constant (references observables/time): compare the substituted,
     # canonicalized expression rather than the generated name.
     return f"expr:{_canon_expr(expr)}"
@@ -975,6 +978,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         return None
 
     species: dict[int, str] = {}
+    initial_amounts: dict[int, str] = {}
     raw_reactions: list[tuple[list[int], list[int], str]] = []
     rate_defs: dict[str, str] = {}
     rate_functions: set[str] = set()
@@ -1010,6 +1014,8 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
             # display, but they cannot represent graph identity: bond numbers,
             # site order, and (critically) site states are independent fields.
             species[idx] = parts[1]
+            if len(parts) >= 3:
+                initial_amounts[idx] = " ".join(parts[2:])
 
         elif section == "reactions":
             parts = _norm(stripped).split(" ")
@@ -1093,6 +1099,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         rate_mode=rate_mode,
         groups=groups,
         rate_functions=rate_functions,
+        initial_amounts=initial_amounts,
     )
     _rekey(net, rate_mode)
     return net
@@ -1128,6 +1135,7 @@ class NetDiff:
     groups_only_test: set[int] = field(default_factory=set)
     groups_changed: set[int] = field(default_factory=set)
     groups_renamed: set[int] = field(default_factory=set)
+    initial_amounts_changed: set[str] = field(default_factory=set)
 
     def summary(self) -> str:
         lines = [
@@ -1175,6 +1183,11 @@ class NetDiff:
             lines.append(
                 f"  observable group labels differ ({len(self.groups_renamed)}): "
                 + ", ".join(str(i) for i in sorted(self.groups_renamed)[:5])
+            )
+        if self.initial_amounts_changed:
+            lines.append(
+                "  initial species amounts changed: "
+                + ", ".join(sorted(self.initial_amounts_changed)[:5])
             )
         return "\n".join(lines)
 
@@ -1228,6 +1241,8 @@ def _species_index_mapping(
     ref: Network,
     test: Network,
     molecule_name_aliases: tuple[tuple[str, str], ...] = (),
+    *,
+    match_amounts: bool = False,
 ) -> dict[int, int]:
     """Find a one-to-one structural mapping from reference to test species."""
 
@@ -1259,6 +1274,21 @@ def _species_index_mapping(
                 ref.species_by_index[ref_index],
                 test.species_by_index[test_index],
                 molecule_name_aliases,
+            )
+            and (
+                not match_amounts
+                or _resolve_rate(
+                    ref.initial_amounts.get(ref_index, ""),
+                    ref.rate_defs,
+                    "value",
+                    ref.rate_functions,
+                )
+                == _resolve_rate(
+                    test.initial_amounts.get(test_index, ""),
+                    test.rate_defs,
+                    "value",
+                    test.rate_functions,
+                )
             )
         ]
         for ref_index in reference_indices
@@ -1349,6 +1379,7 @@ def compare_net(
     test: Network,
     *,
     compare_rates: bool = True,
+    compare_initial_amounts: bool = False,
     molecule_name_aliases: dict[str, str] | None = None,
 ) -> NetDiff:
     """Compare networks by graph identity and reaction multiset.
@@ -1364,6 +1395,12 @@ def compare_net(
         raise ValueError("molecule name aliases must map to unique generated names")
     alias_items = tuple(sorted(aliases.items()))
     mapping = _species_index_mapping(ref, test, alias_items)
+    if compare_initial_amounts:
+        amount_mapping = _species_index_mapping(
+            ref, test, alias_items, match_amounts=True
+        )
+        if len(amount_mapping) == len(mapping):
+            mapping = amount_mapping
     matched_test = set(mapping.values())
     ref_identity = {
         index: ("species", mapping[index]) if index in mapping else ("ref", index)
@@ -1381,6 +1418,18 @@ def compare_net(
     )
     groups_ref = _group_view(ref, ref_identity)
     groups_test = _group_view(test, test_identity)
+    amounts_changed = set()
+    if compare_initial_amounts:
+        for left, right in mapping.items():
+            a = ref.initial_amounts.get(left)
+            b = test.initial_amounts.get(right)
+            if (
+                a is None
+                or b is None
+                or _resolve_rate(a, ref.rate_defs, "value", ref.rate_functions)
+                != _resolve_rate(b, test.rate_defs, "value", test.rate_functions)
+            ):
+                amounts_changed.add(ref.species_by_index[left])
     only_ref = rxn_ref - rxn_test
     only_test = rxn_test - rxn_ref
     groups_only_ref = set(groups_ref) - set(groups_test)
@@ -1421,6 +1470,7 @@ def compare_net(
         and not groups_only_ref
         and not groups_only_test
         and not groups_changed
+        and not amounts_changed
     )
     return NetDiff(
         ok=ok,
@@ -1436,6 +1486,7 @@ def compare_net(
         groups_only_test=groups_only_test,
         groups_changed=groups_changed,
         groups_renamed=groups_renamed,
+        initial_amounts_changed=amounts_changed,
     )
 
 
@@ -1542,6 +1593,15 @@ def compare_trajectories(
     modes reject duplicate column names because those values cannot be aligned
     unambiguously.
     """
+    for side, data, names in (("ref", ref, ref_cols), ("test", test, test_cols)):
+        if data.ndim != 2 or data.shape[1] != len(names):
+            return TrajDiff(
+                False, np.inf, "", np.inf, f"invalid trajectory shape in {side}"
+            )
+        if not np.all(np.isfinite(data)):
+            return TrajDiff(
+                False, np.inf, "", np.inf, f"non-finite trajectory in {side}"
+            )
     note = _column_mismatch_note(ref_cols, test_cols, columns)
     if note:
         return TrajDiff(False, np.inf, "", np.inf, note)
@@ -1666,7 +1726,25 @@ def compare_stochastic(
         )
 
     for side, runs in (("ref", ref_runs), ("test", test_runs)):
-        for index, (_, run_cols) in enumerate(runs):
+        for index, (data, run_cols) in enumerate(runs):
+            if data.ndim != 2 or data.shape[1] != len(run_cols):
+                return EnsembleDiff(
+                    False,
+                    0,
+                    0,
+                    np.inf,
+                    "",
+                    note=f"invalid trajectory shape in {side} ensemble run {index + 1}",
+                )
+            if not np.all(np.isfinite(data)):
+                return EnsembleDiff(
+                    False,
+                    0,
+                    0,
+                    np.inf,
+                    "",
+                    note=f"non-finite trajectory in {side} ensemble run {index + 1}",
+                )
             duplicates = _duplicate_columns(run_cols)
             if duplicates:
                 return EnsembleDiff(
