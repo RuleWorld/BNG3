@@ -5,7 +5,6 @@ Created on Wed May 30 11:44:17 2012
 @author: proto
 """
 
-from copy import copy as shallow_copy
 import difflib
 import hashlib
 import numpy
@@ -262,7 +261,9 @@ class Molecule:
         self.hash = hashlib.sha1(a).digest()
 
     def copy(self):
-        molecule = shallow_copy(self)
+        # ⚡ Bolt: Fast object instantiation bypassing __init__ overhead (which generates random numpy arrays) and avoiding copy.copy() overhead
+        molecule = self.__class__.__new__(self.__class__)
+        molecule.__dict__ = self.__dict__.copy()
         molecule.components = [element.copy() for element in self.components]
         return molecule
 

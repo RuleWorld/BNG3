@@ -6,7 +6,6 @@ Created on Wed May 30 11:44:17 2012
 """
 
 from collections import Counter
-from copy import copy as shallow_copy
 import re
 from random import randint
 from pyparsing import Word, Suppress, Optional, alphanums, Group, ZeroOrMore
@@ -488,7 +487,9 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        molecule = shallow_copy(self)
+        # ⚡ Bolt: Fast object instantiation bypassing __init__ and copy.copy() overhead
+        molecule = self.__class__.__new__(self.__class__)
+        molecule.__dict__ = self.__dict__.copy()
         molecule.components = [element.copy() for element in self.components]
         return molecule
 

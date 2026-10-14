@@ -135,7 +135,7 @@ def resolveAnnotationHelper(annotation):
             return annotation, ""
             # assert(False)
             finalAnnotation = ""
-    except (IOError, KeyError) as e:
+    except (IOError, KeyError):
         return annotation, ""
     return annotation, finalAnnotation
 

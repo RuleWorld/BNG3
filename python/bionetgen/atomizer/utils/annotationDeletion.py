@@ -13,13 +13,8 @@ from sbml2bngl import SBML2BNGL as SBML2BNGL
 import structures
 import atomizer.moleculeCreation as mc
 import os
-from subprocess import call
-import tempfile
-import sys
 
 # sys.path.insert(0, '../utils/')
-import consoleCommands
-import readBNGXML
 import argparse
 
 bioqual = [
@@ -320,7 +315,6 @@ def obtainSCT(fileName, reactionDefinitions, useID, namingConventions):
     return database.prunnedDependencyGraph, database, document
 
 
-import tempfile
 
 
 def writeSBML(document, fileName):
