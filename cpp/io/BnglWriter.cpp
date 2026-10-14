@@ -77,7 +77,7 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     // Compartments
     if (!model.getCompartments().empty()) {
-        bngl << writeCompartments(model);
+        bngl << writeCompartments(model, options);
     }
 
     // Molecule types
@@ -149,14 +149,20 @@ std::string BnglWriter::writeParameters(const ast::Model& model, const Options& 
     return bngl.str();
 }
 
-std::string BnglWriter::writeCompartments(const ast::Model& model) {
+std::string BnglWriter::writeCompartments(const ast::Model& model,
+                                           const Options& opts) {
     std::ostringstream bngl;
     bngl << "begin compartments\n";
 
     for (const auto& comp : model.getCompartments()) {
         bngl << "  " << comp.getName()
-             << " " << comp.getDimension()
-             << " " << formatNumber(comp.getVolume());
+             << " " << comp.getDimension() << " ";
+
+        if (!opts.evaluateExpressions && comp.getVolumeExpression().has_value()) {
+            bngl << comp.getVolumeExpression()->toString();
+        } else {
+            bngl << formatNumber(comp.getVolume());
+        }
 
         if (!comp.getParent().empty()) {
             bngl << " " << comp.getParent();

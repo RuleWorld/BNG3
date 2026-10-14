@@ -281,6 +281,38 @@ std::vector<Compartment>& Model::getCompartments() {
     return compartments;
 }
 
+void Model::refreshParameterDependentCompartments() {
+    updateParameters(parameters_);
+}
+
+void Model::updateParameters(ParameterList parameters) {
+    parameters.evaluateAll();
+
+    struct RefreshedVolume {
+        std::size_t index;
+        double volume;
+        bool timeDependent;
+    };
+
+    std::vector<RefreshedVolume> refreshed;
+    refreshed.reserve(compartments.size());
+    for (std::size_t index = 0; index < compartments.size(); ++index) {
+        const auto& expression = compartments[index].getVolumeExpression();
+        if (!expression.has_value()) continue;
+
+        const double volume = expression->evaluate(
+            [&parameters](const std::string& name) { return parameters.evaluate(name); });
+        const bool timeDependent = parameters.expressionIsTimeDependent(*expression);
+        refreshed.push_back({index, volume, timeDependent});
+    }
+
+    parameters_ = std::move(parameters);
+    for (const auto& update : refreshed) {
+        compartments[update.index].setEvaluatedVolume(update.volume);
+        compartments[update.index].setVolumeTimeDependent(update.timeDependent);
+    }
+}
+
 const std::vector<Molecule>& Model::getMolecules() const {
     return molecules;
 }

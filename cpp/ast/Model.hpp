@@ -85,6 +85,13 @@ public:
 
     const std::vector<Compartment>& getCompartments() const;
     std::vector<Compartment>& getCompartments();
+    // Call after a successful ParameterList::evaluateAll() when parameters may
+    // have changed; direct mutations through mutable getParameters() do not
+    // refresh compartment volumes automatically.
+    void refreshParameterDependentCompartments();
+    // Evaluate a candidate parameter list and all parameter-backed compartment
+    // volumes before replacing either part of the model state.
+    void updateParameters(ParameterList parameters);
     const std::vector<Molecule>& getMolecules() const;
     const ParameterList& getParameters() const;
     ParameterList& getParameters();

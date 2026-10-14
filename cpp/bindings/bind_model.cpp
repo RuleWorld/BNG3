@@ -219,7 +219,7 @@ void bind_model(py::module_& m) {
         .def("set_unit_default", &Model::setUnitDefault,
              py::arg("role"), py::arg("unit"))
         .def("set_parameter", [](Model& model, const std::string& name, double value) {
-            auto& params = model.getParameters();
+            auto params = model.getParameters();
             if (!params.contains(name)) {
                 throw py::key_error("Parameter '" + name + "' not found");
             }
@@ -232,7 +232,7 @@ void bind_model(py::module_& m) {
                 replacement.setUnit(*previous.getUnit(), previous.getUnitName());
             }
             params.add(std::move(replacement));
-            params.evaluateAll();
+            model.updateParameters(std::move(params));
         })
         .def("get_parameter", [](const Model& m, const std::string& name) -> const Parameter& {
             return m.getParameters().get(name);

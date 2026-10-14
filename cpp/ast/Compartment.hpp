@@ -3,6 +3,7 @@
 #include <optional>
 #include <vector>
 
+#include "Expression.hpp"
 #include "units/Unit.hpp"
 
 namespace bng {
@@ -15,6 +16,8 @@ public:
     std::string getName() const;
     double getVolume() const;
     void setVolume(double volume);
+    const std::optional<Expression>& getVolumeExpression() const;
+    void setVolumeExpression(Expression expression);
     bool isVolumeTimeDependent() const { return volumeTimeDependent_; }
     void setVolumeTimeDependent(bool value) { volumeTimeDependent_ = value; }
     int getDimension() const;
@@ -34,11 +37,16 @@ public:
     int adjacency(const std::string& other, const std::vector<Compartment>& all) const;
 
 private:
+    friend class Model;
+
+    void setEvaluatedVolume(double volume);
+
     std::string name_;
     double volume_;
     int dimension_;
     std::string parent_;
     bool volumeTimeDependent_ = false;
+    std::optional<Expression> volumeExpression_;
     std::optional<units::Unit> unit_;
     std::string unitName_;
 };
