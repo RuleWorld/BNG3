@@ -1506,7 +1506,7 @@ std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
     seedUnitIndex_ = 0;
     predeclareMoleculeTypes(ctx);
     visitChildren(ctx);
-    currentModel_->getParameters().evaluateAll();
+    currentModel_->refreshParameterDependentCompartments();
     return {};
 }
 
@@ -1710,6 +1710,7 @@ std::any BNGAstVisitor::visitCompartment_def(BNGParser::Compartment_defContext* 
         std::stoi(ctx->INT()->getText()),
         names.size() > 1 ? names.back()->getText() : std::string {}));
     auto& compartment = currentModel_->getCompartments().back();
+    compartment.setVolumeExpression(expr);
     compartment.setVolumeTimeDependent(
         currentModel_->getParameters().expressionIsTimeDependent(expr));
     std::string inferredUnitName;

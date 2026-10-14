@@ -40,7 +40,7 @@ public:
 private:
     static std::string formatNumber(double value);
     static std::string writeParameters(const ast::Model& model, const Options& opts);
-    static std::string writeCompartments(const ast::Model& model);
+    static std::string writeCompartments(const ast::Model& model, const Options& opts);
     static std::string writeMoleculeTypes(const ast::Model& model);
     static std::string writeSeedSpecies(const ast::Model& model);
     static std::string writeObservables(const ast::Model& model);

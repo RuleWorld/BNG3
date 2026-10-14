@@ -795,7 +795,8 @@ std::string formatScalar(double value) {
 }
 
 void applySbmlUnitMetadata(const io::NetReader::ParseResult& parsed,
-                           ast::Model& model) {
+                           ast::Model& model,
+                           ast::ParameterList& parameters) {
     for (const auto& [id, expression] : parsed.unitDefinitions) {
         if (model.getUnitSystem().find(id) == nullptr) {
             model.defineUnit(id, expression);
@@ -816,7 +817,7 @@ void applySbmlUnitMetadata(const io::NetReader::ParseResult& parsed,
         if (role == "substanceUnits") model.setSubstanceUnits(unit);
     }
     for (const auto& [name, unitName] : parsed.parameterUnits) {
-        if (!model.getParameters().contains(name)) continue;
+        if (!parameters.contains(name)) continue;
         const auto parameterName = name;
         const auto parsedUnit = model.getUnitSystem().parse(unitName);
         if (!parsedUnit) {
@@ -824,7 +825,7 @@ void applySbmlUnitMetadata(const io::NetReader::ParseResult& parsed,
                 "SBML parameter '" + name + "' has invalid units: " + parsedUnit.error);
         }
         auto& parameter = *std::find_if(
-            model.getParameters().all().begin(), model.getParameters().all().end(),
+            parameters.all().begin(), parameters.all().end(),
             [&](const auto& candidate) { return candidate.getName() == parameterName; });
         parameter.setUnit(*parsedUnit.unit, unitName);
     }
@@ -1657,6 +1658,62 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     // Store loaded .net data for passthrough writing (readFile)
     std::optional<io::NetReader::ParseResult> loadedNetData;
     std::set<std::string> retainedSetParameterTargets;
+    std::optional<ast::ParameterList> stagedParameters;
+
+    const auto parameterCandidate = [&]() -> ast::ParameterList& {
+        if (!stagedParameters.has_value()) {
+            stagedParameters = model.getParameters();
+        }
+        return *stagedParameters;
+    };
+
+    const auto replaceParameterIn = [](ast::ParameterList& parameters,
+                                       ast::Parameter replacement) {
+        const auto& name = replacement.getName();
+        if (parameters.contains(name) && !replacement.hasUnit()) {
+            const auto& previous = parameters.get(name);
+            if (previous.hasUnit()) {
+                replacement.setUnit(*previous.getUnit(), previous.getUnitName());
+            }
+        }
+        parameters.add(std::move(replacement));
+    };
+
+    const auto replaceParameter = [&](ast::Parameter replacement) {
+        replaceParameterIn(parameterCandidate(), std::move(replacement));
+    };
+
+    const auto evaluateParametersAndRefresh = [&]() {
+        if (stagedParameters.has_value()) {
+            model.updateParameters(std::move(*stagedParameters));
+            stagedParameters.reset();
+        } else {
+            model.updateParameters(model.getParameters());
+        }
+    };
+
+    const auto mergeModelAndRefresh = [&](ast::Model& incoming) {
+        auto candidateParameters = model.getParameters();
+        for (const auto& parameter : incoming.getParameters().all()) {
+            candidateParameters.add(parameter);
+        }
+        candidateParameters.evaluateAll();
+
+        const auto validateCompartmentVolumes = [&](const auto& compartments) {
+            for (const auto& compartment : compartments) {
+                const auto& expression = compartment.getVolumeExpression();
+                if (!expression.has_value()) continue;
+                expression->evaluate([&candidateParameters](const std::string& name) {
+                    return candidateParameters.evaluate(name);
+                });
+            }
+        };
+        validateCompartmentVolumes(model.getCompartments());
+        validateCompartmentVolumes(incoming.getCompartments());
+
+        model.merge(incoming);
+        evaluateParametersAndRefresh();
+    };
 
     const auto ensureNetwork = [&]() {
         if (!network.has_value()) {
@@ -1693,7 +1750,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
     const auto parseSetParameterValue = [&](std::size_t actionIndex,
                                             const std::string& target,
-                                            const std::string& valueText) {
+                                            const std::string& valueText,
+                                            const ast::ParameterList& parameters,
+                                            std::set<std::string>& retainedTargets) {
         const auto* options = setParameterOptionsAt(actionIndex);
         if (options != nullptr && options->valueDiagnostic.has_value()) {
             throw std::runtime_error(options->valueDiagnostic->message);
@@ -1717,7 +1776,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "setParameter: quoted caret value cannot reference its own target "
                     "parameter '" + target + "' (self-reference)");
             }
-            auto& parameters = model.getParameters();
             for (const auto& dependency : dependencies) {
                 if (parameters.contains(dependency) &&
                     parameters.expressionIsTimeDependent(
@@ -1732,7 +1790,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "setParameter: quoted caret value has an unknown or unsupported "
                     "dynamic dependency");
             }
-            retainedSetParameterTargets.insert(target);
+            retainedTargets.insert(target);
             return expression;
         }
         return ast::Expression::number(parseScalarValue(valueText, model));
@@ -1741,22 +1799,18 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     const auto setParameterValue = [&](std::size_t actionIndex,
                                        const std::string& target,
                                        const std::string& valueText) {
-        auto& parameters = model.getParameters();
-        retainedSetParameterTargets.erase(target);
+        auto parameters = model.getParameters();
+        auto retainedTargets = retainedSetParameterTargets;
+        retainedTargets.erase(target);
         ast::Parameter replacement(
-            target, parseSetParameterValue(actionIndex, target, valueText));
-        if (parameters.contains(target)) {
-            const auto& previous = parameters.get(target);
-            if (previous.hasUnit()) {
-                replacement.setUnit(*previous.getUnit(), previous.getUnitName());
-            }
-        }
-        parameters.add(std::move(replacement));
+            target, parseSetParameterValue(
+                        actionIndex, target, valueText, parameters, retainedTargets));
+        replaceParameterIn(parameters, std::move(replacement));
 
         // A later setter can change a retained expression's dependency from a
         // finite literal to a clock-bearing expression. Recheck the retained
         // ASTs against the current parameter list before evaluating them.
-        for (const auto& retainedTarget : retainedSetParameterTargets) {
+        for (const auto& retainedTarget : retainedTargets) {
             if (parameters.expressionIsTimeDependent(
                     parameters.get(retainedTarget).getExpression())) {
                 throw std::runtime_error(
@@ -1777,7 +1831,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 self(self, dependency);
             }
         };
-        for (const auto& retainedTarget : retainedSetParameterTargets) {
+        for (const auto& retainedTarget : retainedTargets) {
             collectRetainedDependencies(collectRetainedDependencies, retainedTarget);
         }
         for (const auto& name : retainedDependencyClosure) {
@@ -1787,6 +1841,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "' evaluated to a non-finite value");
             }
         }
+        model.updateParameters(std::move(parameters));
+        retainedSetParameterTargets = std::move(retainedTargets);
     };
 
     const auto writeNetworkAt = [&](const std::filesystem::path& outputPath,
@@ -2242,10 +2298,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     throw std::runtime_error("resetParameters label not found: " + label);
                 }
                 for (const auto& [name, value] : found->second) {
-                    model.getParameters().add(
+                    replaceParameter(
                         ast::Parameter(name, ast::Expression::number(value)));
                 }
-                model.getParameters().evaluateAll();
+                evaluateParametersAndRefresh();
                 if (network.has_value()) {
                     const auto savedAmounts = snapshotConcentrations(*network);
                     network = generator.generate(sourcePath);
@@ -2330,9 +2386,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
                 // Merge parsed parameters into current model
                 for (const auto& [name, value] : parseResult.parameters) {
-                    model.getParameters().add(ast::Parameter(name, ast::Expression::number(value)));
+                    replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
                 }
-                model.getParameters().evaluateAll();
+                evaluateParametersAndRefresh();
 
                 // Reconstruct network from parsed species and reactions
                 engine::GeneratedNetwork loadedNetwork;
@@ -2415,8 +2471,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 }
             } else if (extension == ".bngl") {
                 auto includedModel = bng::parser::parseModelFromFile(path.string());
-                model.merge(*includedModel);
-                model.getParameters().evaluateAll();
+                mergeModelAndRefresh(*includedModel);
                 if (verbose) {
                     std::cerr << "[bng_cpp] Read .bngl file: " << path << "\n";
                     std::cerr << "[bng_cpp]   Parameters: " << includedModel->getParameters().size() << "\n";
@@ -2437,15 +2492,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                         "Failed to read SBML file: " + parseResult.error);
                 }
                 for (const auto& [name, value] : parseResult.parameters) {
-                    model.getParameters().add(
+                    replaceParameter(
                         ast::Parameter(name, ast::Expression::number(value)));
                 }
-                applySbmlUnitMetadata(parseResult, model);
+                applySbmlUnitMetadata(parseResult, model, parameterCandidate());
                 for (const auto& [name, expression] : parseResult.functions) {
                     model.addFunction(ast::Function(
                         name, {}, bng::parser::parseExpression(expression)));
                 }
-                model.getParameters().evaluateAll();
+                evaluateParametersAndRefresh();
                 network = networkFromParsedData(parseResult, model);
                 loadedNetData = std::move(parseResult);
                 if (verbose) {
@@ -2473,8 +2528,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 incPath = sourcePath.parent_path() / filepath;
             }
             auto includedModel = bng::parser::parseModelFromFile(incPath.string());
-            model.merge(*includedModel);
-            model.getParameters().evaluateAll();
+            mergeModelAndRefresh(*includedModel);
             if (verbose) {
                 std::cerr << "[bng_cpp] include_model: " << incPath << "\n";
                 std::cerr << "[bng_cpp]   Merged parameters: " << includedModel->getParameters().size()
@@ -2502,9 +2556,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("Failed to read .net file for include_network: " + parseResult.error);
             }
             for (const auto& [name, value] : parseResult.parameters) {
-                model.getParameters().add(ast::Parameter(name, ast::Expression::number(value)));
+                replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
             }
-            model.getParameters().evaluateAll();
+            evaluateParametersAndRefresh();
             engine::GeneratedNetwork loadedNetwork;
             for (const auto& [pattern, concStr] : parseResult.species) {
                 bool isConstant = false;
@@ -2577,9 +2631,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     if (parseResult.success) {
                         // Merge parsed parameters into current model
                         for (const auto& [name, value] : parseResult.parameters) {
-                            model.getParameters().add(ast::Parameter(name, ast::Expression::number(value)));
+                            replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
                         }
-                        model.getParameters().evaluateAll();
+                        evaluateParametersAndRefresh();
 
                         // Reconstruct network from parsed species and reactions
                         engine::GeneratedNetwork loadedNetwork;
@@ -2819,9 +2873,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("resetParameters label not found: " + label);
             }
             for (const auto& [name, value] : found->second) {
-                model.getParameters().add(ast::Parameter(name, ast::Expression::number(value)));
+                replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
             }
-            model.getParameters().evaluateAll();
+            evaluateParametersAndRefresh();
             if (network.has_value()) {
                 std::vector<double> savedAmounts;
                 if (!lastSimulationState.empty()) {
@@ -3163,9 +3217,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             const auto restoreScanContext = [&]() {
                 for (const auto& parameter : originalParameters) {
-                    model.getParameters().add(parameter);
+                    replaceParameter(parameter);
                 }
-                model.getParameters().evaluateAll();
+                evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
                 restoreConcentrations(*network, scanInitialConcentrations);
                 lastSimulationState = originalLastState;
@@ -3176,9 +3230,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             const auto runScanPoint = [&](std::size_t index) {
                 const auto priorConcentrations = snapshotConcentrations(*network);
-                model.getParameters().add(ast::Parameter(
+                replaceParameter(ast::Parameter(
                     parameterName, ast::Expression::number(scanValues[index])));
-                model.getParameters().evaluateAll();
+                evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
                 restoreConcentrations(
                     *network,
@@ -3415,8 +3469,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 restoreConcentrations(*network, initialConc);
 
                 // Bump the parameter
-                model.getParameters().add(ast::Parameter(paramName, ast::Expression::number(newValue)));
-                model.getParameters().evaluateAll();
+                replaceParameter(ast::Parameter(paramName, ast::Expression::number(newValue)));
+                evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
 
                 // Re-equilibrate if requested
@@ -3447,14 +3501,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 }
 
                 // Restore the parameter
-                model.getParameters().add(ast::Parameter(paramName, ast::Expression::number(paramValue)));
+                replaceParameter(ast::Parameter(paramName, ast::Expression::number(paramValue)));
             }
 
             // Restore all parameters and regenerate network
             for (const auto& [paramName, paramValue] : originalParamValues) {
-                model.getParameters().add(ast::Parameter(paramName, ast::Expression::number(paramValue)));
+                replaceParameter(ast::Parameter(paramName, ast::Expression::number(paramValue)));
             }
-            model.getParameters().evaluateAll();
+            evaluateParametersAndRefresh();
             network = generator.generate(sourcePath);
             restoreConcentrations(*network, initialConc);
 
@@ -3511,8 +3565,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             for (std::size_t i = 0; i < points; ++i) {
                 const double value = computeParamValue(i, minValue, maxValue);
 
-                model.getParameters().add(ast::Parameter(parameterName, ast::Expression::number(value)));
-                model.getParameters().evaluateAll();
+                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
+                evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
                 writeCurrentNetwork();
 
@@ -3535,8 +3589,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 // Backward: scan from max to min
                 const double value = computeParamValue(i, maxValue, minValue);
 
-                model.getParameters().add(ast::Parameter(parameterName, ast::Expression::number(value)));
-                model.getParameters().evaluateAll();
+                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
+                evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
                 writeCurrentNetwork();
 

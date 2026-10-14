@@ -17,6 +17,20 @@ double Compartment::getVolume() const {
 
 void Compartment::setVolume(double volume) {
     volume_ = volume;
+    volumeExpression_.reset();
+    volumeTimeDependent_ = false;
+}
+
+void Compartment::setEvaluatedVolume(double volume) {
+    volume_ = volume;
+}
+
+const std::optional<Expression>& Compartment::getVolumeExpression() const {
+    return volumeExpression_;
+}
+
+void Compartment::setVolumeExpression(Expression expression) {
+    volumeExpression_ = std::move(expression);
 }
 
 int Compartment::getDimension() const {
