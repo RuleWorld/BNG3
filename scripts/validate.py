@@ -366,6 +366,13 @@ def write_validation_summary(
 
 
 def main():
+    if any(
+        arg.split("=", 1)[0] in {"--tier", "--inventory-only", "--report-dir"}
+        for arg in sys.argv[1:]
+    ):
+        from tests.validation.conformance import main as conformance_main
+
+        raise SystemExit(conformance_main())
     parser = argparse.ArgumentParser(
         description="Validate bng_cpp against reference .net files"
     )

@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "policy": "reporting-only; does not change locked corpus, approvals, tolerances or existing gates",
+  "related_issues": [
+    137,
+    180,
+    181,
+    161,
+    171
+  ],
+  "related_prs": [
+    195
+  ],
+  "suites": [
+    {
+      "id": "harness",
+      "kind": "pytest",
+      "tiers": [
+        "smoke"
+      ],
+      "timeout": 90,
+      "tests": [
+        "tests/validation/test_inventory.py",
+        "tests/validation/test_campaign.py",
+        "tests/validation/test_reporting.py",
+        "tests/validation/test_campaign_mutations.py",
+        "tests/validation/test_compare_net.py",
+        "tests/validation/test_compare_trajectories.py",
+        "tests/validation/test_stochastic_comparator.py",
+        "tests/validation/test_conformance_cli.py",
+        "tests/validation/test_external_lanes.py",
+        "tests/validation/test_minimize.py",
+        "tests/validation/test_conformance_ci_wiring.py"
+      ],
+      "question": "harness-self-test"
+    },
+    {
+      "id": "native",
+      "kind": "ctest",
+      "tiers": [
+        "integration",
+        "platform"
+      ],
+      "timeout": 900,
+      "question": "mathematical-contract"
+    },
+    {
+      "id": "python",
+      "kind": "pytest",
+      "tiers": [
+        "integration"
+      ],
+      "timeout": 300,
+      "tests": [],
+      "question": "functional-contract",
+      "selection": "capability-mapped"
+    },
+    {
+      "id": "bng2-parity",
+      "kind": "pytest",
+      "tiers": [
+        "full"
+      ],
+      "timeout": 3600,
+      "tests": [
+        "tests/validation/test_parity_net.py",
+        "tests/validation/test_parity_ode.py",
+        "tests/validation/test_parity_rhs.py",
+        "tests/validation/test_parity_expressions.py"
+      ],
+      "reference": "bionetgen",
+      "question": "legacy-agreement"
+    },
+    {
+      "id": "nfsim-parity",
+      "kind": "pytest",
+      "tiers": [
+        "full"
+      ],
+      "timeout": 3600,
+      "tests": [
+        "tests/validation/test_parity_nfsim.py",
+        "tests/validation/test_parity_nfsim_seed.py"
+      ],
+      "reference": "nfsim",
+      "question": "legacy-agreement"
+    },
+    {
+      "id": "stochastic",
+      "kind": "pytest",
+      "tiers": [
+        "full"
+      ],
+      "timeout": 7200,
+      "tests": [
+        "tests/validation/test_parity_stochastic.py"
+      ],
+      "reference": "bionetgen",
+      "question": "statistical-reliability"
+    },
+    {
+      "id": "legacy-python",
+      "kind": "pytest",
+      "tiers": [
+        "full"
+      ],
+      "timeout": 300,
+      "tests": [
+        "tests/python"
+      ],
+      "question": "functional-contract"
+    }
+  ],
+  "existing_lanes": {
+    "official-sbml": ".github/workflows/sbml-conformance.yml",
+    "platform": ".github/workflows/weekly.yml",
+    "performance": "benchmarks/run_benchmarks.py",
+    "formal": ".github/workflows/formal.yml",
+    "atomizer-biomodels": "scripts/ci/validate_published_biomodels.py",
+    "legacy-atomizer": "benchmarks/benchmark_legacy_atomizer.py",
+    "pybionetgen": "scripts/ci/check_pybionetgen_compat.py"
+  },
+  "capability_inventory": "provenance/capability-matrix.yml"
+}

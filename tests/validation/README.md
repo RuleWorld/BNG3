@@ -10,6 +10,99 @@ action-only fixtures use explicit output contracts from
 
 Differential testing against the originals. Nothing merges until it matches.
 
+## Integrated capability campaign
+
+The existing entry point also orchestrates discovery, component tests and live
+bounded differential validation. Its original reference-fixture invocation
+remains available unchanged. Install the normal development dependencies
+(discovery/smoke requires `pytest`, `numpy`, and `pyyaml`), build BNG3, then run:
+
+```bash
+python scripts/validate.py --tier smoke \
+  --models simple_system michment blbr \
+  --bng-cpp build/cpp/bng_cpp \
+  --bng2-root /absolute/path/to/locked/bionetgen \
+  --report-dir /tmp/bng3-smoke
+```
+
+Use a new/empty output directory each time. `report.json`, `inventory.json`,
+`report.md`, and `artifacts.json` retain outcomes, source/model/tool hashes,
+commands, logs, intermediate networks, and pytest scratch artifacts. Binary and
+package identities are observations of the actual run, not source-build or
+release approval. Existing source-lock approvals remain unchanged.
+
+`provenance/capability-matrix.yml` remains the inventory source: its original
+policy rows are retained, and `validation_capabilities` maps semantic families
+to implementation, tests, references and issues. `provenance/validation-plan.json`
+defines execution suites. Source discovery additionally inventories C++/GPU
+units, public Python symbols, bindings, grammar rules, action handlers, compiler
+features/backends and Lean declarations. New/unmapped entries are **unverified /
+NOT_TESTED**, even when adjacent code has tests. One passing test establishes
+only partial evidence for a mapped capability. Discovery cannot prove the
+absence of further semantic distinctions.
+
+```bash
+# Discovery and coverage gaps only; no execution or compatibility qualification.
+python scripts/validate.py --inventory-only --report-dir /tmp/bng3-inventory
+
+# Native contracts and the Python tests mapped by the capability inventory.
+python scripts/validate.py --tier integration --package-mode source \
+  --report-dir /tmp/bng3-integration
+
+# Existing parse/generation benchmark, five fresh repetitions, separate results.
+python scripts/validate.py --tier performance --report-dir /tmp/bng3-performance
+```
+
+Repeat `--tier` to combine tiers; `--suite NAME` restricts execution to named
+suites. `full` adds existing BNG2/NFsim/stochastic/legacy-Python lanes and the
+existing official SBML runner (`--sbml-suite PATH`). Finite BNG2 suites also
+require `--bng2-network-sha256` for the built `bng2/bin/run_network`; NFsim requires
+`--nfsim-root`, `--nfsim-binary`, and `--nfsim-sha256`. Checkouts must match the
+locked commit/repository and have no modified tracked inputs, hidden index
+flags or untracked inputs. Embedded NFsim binaries are rejected. Source/oracle
+approval and scientific qualification remain separate from these identity
+checks. `--pybionetgen-root` and `--rulehub-root` add verified external corpus
+discovery without adding models to any gate.
+
+Model execution uses the existing frozen selection. `--corpus-tier p` selects
+the locked parity IDs for stage checks; `--shard-count N --shard-index I` shards
+them deterministically. Discovery retains duplicate stems by path. Lexical
+capability hints and file size do not establish support or runtime cost.
+Parsing uses the original model; network comparison uses the existing
+network-only staging helper with explicit `--network-iterations` (default 4),
+`--max-aggregate` (default 8), and `--case-timeout` (default 30 seconds). These
+results qualify bounded expansion only. Models outside the approved selection
+are discovered without executing their action blocks.
+
+`PASS`, `FAIL`, `UNSUPPORTED`, `NOT_TESTED`, `INVALID_INPUT`, `TIMEOUT` and
+`HARNESS_ERROR` stay distinct. Missing references/outputs and skipped selected
+compatibility cases cannot qualify compatibility. A successful invocation with
+NOT_TESTED entries is not a compatibility pass. `--report-only` preserves every
+result while returning zero for new, nonblocking CI coverage. Existing gates
+are not replaced. The existing parity workflow runs nightly; existing weekly
+performance/platform and dedicated SBML/formal workflows retain their own scope.
+
+`--baseline /path/to/report.json` compares case outcomes only when corpus,
+configuration, tests/comparators, goldens, references and runtime fingerprints
+match. Deselecting a failure never counts as resolving it. Failure clusters are
+signature hypotheses, not confirmed shared causes. Official SBML conformance,
+round trips and libRoadRunner agreement remain separate report rows.
+
+For an actual recorded network mismatch, an opt-in reducer removes complete
+single-line reaction rules, retaining only candidates for which both engines
+emit valid networks with the same observed mismatch category:
+
+```bash
+python -m tests.validation.minimize /tmp/bng3-smoke/report.json \
+  --case MODEL_ID --output /tmp/bng3-reproducer --attempts 24
+```
+
+It preserves attempts and a smaller BNGL reproducer; it does not claim global
+minimality or a root cause. Controlled-mutation self-tests cover wrong networks,
+rates, initial amounts, observable weights, nonfinite/missing trajectory data,
+shared/incorrect references, stale digests, missing output and incomplete test
+reports. Golden references are never regenerated by the campaign.
+
 ## Oracles
 - **Perl** — `legacy/perl/BNG2.pl`. Truth for `.net` and ODE/SSA `.gdat`. Cached as golden so Perl is off the hot path.
 - **NFsim** — independently built native binary from the pinned pre-convergence

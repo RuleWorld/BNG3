@@ -82,6 +82,30 @@ jobs:
       - name: Run CI contract tests
         run: python -m pytest tests/test_ci_contract.py -q
 
+      - name: Verify conformance harness with controlled mutations
+        run: |
+          python -m pytest -q \
+            tests/validation/test_inventory.py \
+            tests/validation/test_campaign.py \
+            tests/validation/test_campaign_mutations.py \
+            tests/validation/test_reporting.py \
+            tests/validation/test_external_lanes.py \
+            tests/validation/test_minimize.py \
+            tests/validation/test_conformance_cli.py \
+            tests/validation/test_conformance_ci_wiring.py
+
+      - name: Discover capability inventory without qualification claims
+        run: python scripts/validate.py --inventory-only --report-dir "$RUNNER_TEMP/bng3-inventory"
+
+      - name: Publish capability inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bng3-capability-inventory-${{ github.sha }}
+          path: ${{ runner.temp }}/bng3-inventory/
+          if-no-files-found: error
+          retention-days: 30
+
   # ═══════════════════════════════════════════════════════════════════════════
   # C++ Build & Test (BNG engine with embedded NFsim library)
   # ═══════════════════════════════════════════════════════════════════════════

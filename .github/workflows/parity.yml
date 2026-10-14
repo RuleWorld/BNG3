@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "17 4 * * 0"
+    - cron: "17 4 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -131,6 +131,28 @@ jobs:
         run: |
           .venv/bin/python -m pytest -c tests/validation/pytest.ini \
             tests/validation/test_worker_package_identity.py -q -ra
+
+      - name: Publish capability-linked bounded conformance evidence
+        shell: bash
+        run: |
+          corpus_tier=s
+          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+            corpus_tier=p
+          fi
+          .venv/bin/python scripts/validate.py --tier smoke \
+            --corpus-tier "$corpus_tier" --report-only \
+            --bng-cpp build/cpp/bng_cpp \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --report-dir "$RUNNER_TEMP/bng3-conformance"
+
+      - name: Upload conformance diagnostics and inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bng3-conformance-${{ github.event_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-conformance/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Check constant and dynamic assignment-rate contracts
         run: |
