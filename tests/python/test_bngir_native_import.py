@@ -5,7 +5,9 @@ from __future__ import annotations
 import copy
 import importlib
 import json
+from pathlib import Path
 
+import jsonschema
 import pytest
 
 import bionetgen
@@ -68,10 +70,72 @@ end reaction rules
 end model
 """
 
+POPULATION_SOURCE = r"""
+begin model
+begin molecule types
+    A()
+    P() population
+end molecule types
+begin seed species
+    A() 1
+end seed species
+end model
+"""
+
 
 def _document(source: str = SOURCE) -> dict:
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
     return json.loads(source_model.to_bngir(version="0.2"))
+
+
+def test_direct_native_builder_refuses_schema_valid_population_type():
+    document = _document(POPULATION_SOURCE)
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+    population_type = next(
+        item for item in document["model"]["molecule_types"] if item["name"] == "P"
+    )
+    assert population_type["population"] is True
+
+    with pytest.raises(RuntimeError, match="population molecule types are unsupported"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("missing", "molecule type is missing population"),
+        ("integer", "molecule type population must be boolean"),
+        ("string", "molecule type population must be boolean"),
+        ("null", "molecule type population must be boolean"),
+    ],
+    ids=["missing", "integer", "string", "null"],
+)
+def test_direct_native_builder_rejects_malformed_population_flag(mutation, expected):
+    document = _document()
+    molecule_type = document["model"]["molecule_types"][0]
+    if mutation == "missing":
+        del molecule_type["population"]
+    elif mutation == "integer":
+        molecule_type["population"] = 1
+    elif mutation == "string":
+        molecule_type["population"] = "false"
+    else:
+        molecule_type["population"] = None
+
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_preserves_ordinary_population_false():
+    document = _document()
+    assert document["model"]["molecule_types"][0]["population"] is False
+
+    restored = _cpp._model_from_bngir_v02(document["model"])
+
+    assert restored.molecule_types[0].is_population is False
 
 
 def _nested_arithmetic_document() -> dict:

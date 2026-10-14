@@ -112,7 +112,8 @@ High-level wrapper around the parsed C++ model.
 
 #### `get_parameter(name)`
 
-Return a single parameter object by name.
+Return a read-only parameter object by name. Use `set_parameter(name, value)`
+to update a parameter; dependent parameter expressions are reevaluated.
 
 #### `set_parameter(name, value)`
 

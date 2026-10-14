@@ -228,8 +228,8 @@ run_case("cvode_scaled_initial_state_false" "cvode" "31.41592653589793"
     "0.000000000000e+00" "1.000000000000e-01" "0.000000000000e+00")
 
 # An already-true stop_if is checked at t_start even when explicit sample
-# times are requested. When the condition is false, explicit output remains
-# exactly the requested schedule.
+# times are requested. BNGL actions include t_start in the output even when an
+# explicit sample grid omits it; the low-level API keeps its exact grid.
 foreach(method IN ITEMS cvode euler rk4)
     run_case("${method}_explicit_true_includes_start" "${method}" "1"
         "A_count > 9" 1 "[2,2.25,2.5,2.75]"
@@ -241,8 +241,8 @@ foreach(method IN ITEMS cvode euler rk4)
         "A_count < 0" 5 "[2,2.25,2.5,2.75]"
         "10" "2" "3" "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
     run_case("${method}_explicit_false_excludes_start" "${method}" "0"
-        "A_count < 0" 4 "[2.25,2.5,2.75]"
-        "10" "2" "3" "2.250000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+        "A_count < 0" 5 "[2.25,2.5,2.75]"
+        "10" "2" "3" "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
 endforeach()
 
 run_case("ssa_explicit_true_includes_start" "ssa" "1e9" "A_count > 9" 1
@@ -254,25 +254,27 @@ run_case("ssa_explicit_true_excludes_start" "ssa" "1e9" "A_count > 9" 1
 run_case("ssa_explicit_false_includes_start" "ssa" "0" "A_count < 0" 5
     "[2,2.25,2.5,2.75]" "10" "2" "3"
     "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
-run_case("ssa_explicit_false_excludes_start" "ssa" "0" "A_count < 0" 4
+run_case("ssa_explicit_false_excludes_start" "ssa" "0" "A_count < 0" 5
     "[2.25,2.5,2.75]" "10" "2" "3"
-    "2.250000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
+    "2.000000000000e+00" "1.000000000000e+01" "0.000000000000e+00")
 
 # Equality at the initial threshold is false. The CVODE scale/unscale path
 # must not turn the exact raw value 0.1 into a value below the threshold, and
 # the first later sample must check its integrated state rather than the raw
 # initial state.
 run_case("cvode_explicit_sample_times_scaled_initial_state_false" "cvode"
-    "31.41592653589793" "A_count < 0.1" 1 "[2.25,2.5,2.75]"
-    "0.1" "2" "3" "2.250000000000e+00" "*" "*")
+    "31.41592653589793" "A_count < 0.1" 2 "[2.25,2.5,2.75]"
+    "0.1" "2" "3" "2.000000000000e+00"
+    "1.000000000000e-01" "0.000000000000e+00")
 
 # A false initial condition can become true at the first requested output.
 # The test also guards Euler and RK4, whose explicit-grid loops must check the
 # state at the first sample when t_start was omitted.
 foreach(method IN ITEMS cvode euler rk4)
     run_case("${method}_explicit_first_sample_true" "${method}" "1"
-        "A_count < 9.9" 1 "[2.25,2.5,2.75]"
-        "10" "2" "3" "2.250000000000e+00" "*" "*")
+        "A_count < 9.9" 2 "[2.25,2.5,2.75]"
+        "10" "2" "3" "2.000000000000e+00"
+        "1.000000000000e+01" "0.000000000000e+00")
 endforeach()
 
 # SSA evaluates the predicate on its rounded molecule-count state before any

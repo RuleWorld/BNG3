@@ -229,6 +229,20 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
     requireDenseOrderedIds(rules, "rule");
     for (const auto& rawMoleculeType : moleculeTypes) {
         const auto moleculeType = py::cast<py::dict>(rawMoleculeType);
+        const py::str populationKey("population");
+        if (!moleculeType.contains(populationKey)) {
+            throw std::runtime_error(
+                "native BNGIR molecule type is missing population");
+        }
+        const py::handle population = moleculeType[populationKey];
+        if (!PyBool_Check(population.ptr())) {
+            throw std::runtime_error(
+                "native BNGIR molecule type population must be boolean");
+        }
+        if (py::cast<bool>(population)) {
+            throw std::runtime_error(
+                "native BNGIR population molecule types are unsupported");
+        }
         const auto components = py::cast<py::list>(moleculeType["components"]);
         if (!components.empty()) {
             throw std::runtime_error(

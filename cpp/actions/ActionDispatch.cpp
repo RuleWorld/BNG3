@@ -1494,6 +1494,15 @@ void runSimulation(
             "check_product_scale requires an ODE or PSA simulation method");
     }
 
+    // BNGL actions emit the initial state at t_start even when an explicit
+    // output grid begins later. Keep this adjustment in the action layer so
+    // direct API sample_times remain exact; resolve continue=1 first because
+    // its actual start may differ from the default.
+    if (!opts.sampleTimes.empty() && opts.sampleTimes.front() > opts.tStart) {
+        opts.sampleTimes.insert(opts.sampleTimes.begin(), opts.tStart);
+        opts.nSteps = opts.sampleTimes.size() - 1;
+    }
+
     if (verbose) {
         std::cerr << "[bng_cpp] Simulating with method=" << opts.method
                   << " t_end=" << opts.tEnd
