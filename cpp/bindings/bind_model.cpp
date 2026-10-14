@@ -1,6 +1,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <utility>
+
 #include "ast/Model.hpp"
 #include "ast/Parameter.hpp"
 #include "ast/ParameterList.hpp"
@@ -224,7 +226,12 @@ void bind_model(py::module_& m) {
             // Replace the parameter with a literal-value expression so that
             // evaluateAll() picks up the new value instead of re-evaluating
             // the original parsed expression.
-            params.add(Parameter(name, Expression::number(value)));
+            Parameter replacement(name, Expression::number(value));
+            const auto& previous = params.get(name);
+            if (previous.hasUnit()) {
+                replacement.setUnit(*previous.getUnit(), previous.getUnitName());
+            }
+            params.add(std::move(replacement));
             params.evaluateAll();
         })
         .def("get_parameter", [](const Model& m, const std::string& name) -> const Parameter& {
