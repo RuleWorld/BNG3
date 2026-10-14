@@ -29,12 +29,11 @@ void bind_model(py::module_& m) {
         .def_property_readonly("unit", &Parameter::getUnitName)
         .def_property_readonly("expression", &Parameter::getExpression,
                                py::return_value_policy::reference_internal)
-        .def_property("value",
+        .def_property_readonly("value",
             [](const Parameter& p) -> py::object {
                 if (p.hasValue()) return py::cast(p.getValue());
                 return py::none();
-            },
-            &Parameter::setValue)
+            })
         .def("__repr__", [](const Parameter& p) {
             return "<Parameter '" + p.getName() + "'>";
         });

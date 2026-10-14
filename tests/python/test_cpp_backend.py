@@ -1822,6 +1822,55 @@ end model
         model = bionetgen.load(str(bngl))
         model.set_parameter("k", 0.5)
 
+    def test_parameter_value_is_read_only_and_refreshes_dependents(self, tmp_path):
+        bngl = tmp_path / "derived_params.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    base 2
+    derived 3*base
+    transitive 2*derived
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() transitive
+end seed species
+end model
+""")
+        model = bionetgen.load(str(bngl))
+
+        with pytest.raises(AttributeError):
+            model.get_parameter("base").value = 5.0
+
+        model.set_parameter("base", 5.0)
+        assert model.get_parameter("base").value == pytest.approx(5.0)
+        assert model.get_parameter("derived").value == pytest.approx(15.0)
+        assert model.get_parameter("transitive").value == pytest.approx(30.0)
+
+        fresh = bionetgen.load(str(bngl))
+        fresh.set_parameter("base", 5.0)
+        snapshot = _cpp._compiled_snapshot(model._model)
+        fresh_snapshot = _cpp._compiled_snapshot(fresh._model)
+        values = {
+            parameter["name"]: parameter["constant_value"]
+            for parameter in snapshot["parameters"]
+        }
+        fresh_values = {
+            parameter["name"]: parameter["constant_value"]
+            for parameter in fresh_snapshot["parameters"]
+        }
+        assert (
+            values
+            == fresh_values
+            == {
+                "base": pytest.approx(5.0),
+                "derived": pytest.approx(15.0),
+                "transitive": pytest.approx(30.0),
+            }
+        )
+
     def test_action_simulation_honors_sample_times(self, tmp_path):
         bngl = tmp_path / "action_controls.bngl"
         bngl.write_text("""
