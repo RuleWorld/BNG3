@@ -705,6 +705,32 @@ end model
         )
         assert ssa["time"].tolist() == sample_times
 
+        # Explicit grids stay exact through the direct API when they omit
+        # t_start, including when an initial stop_if check is false.
+        omitted_start_times = [2.25, 2.5, 2.75]
+        ode = _cpp.simulate_ode(
+            model,
+            network,
+            t_start=2.0,
+            t_end=2.75,
+            n_steps=0,
+            sample_times=omitted_start_times,
+            stop_if="Xtot < 0",
+        )
+        assert ode["time"].tolist() == omitted_start_times
+
+        ssa = _cpp.simulate_ssa(
+            model,
+            network,
+            t_start=2.0,
+            t_end=2.75,
+            n_steps=0,
+            sample_times=omitted_start_times,
+            seed=42,
+            stop_if="Xtot < 0",
+        )
+        assert ssa["time"].tolist() == omitted_start_times
+
         with pytest.raises(RuntimeError, match="batch SSA does not support stop_if"):
             _cpp.simulate_ssa(
                 model,
@@ -1829,6 +1855,49 @@ end model
             if line and not line.startswith("#")
         ]
         assert [float(row[0]) for row in rows] == [0.0, 0.25, 1.5, 2.0]
+
+    def test_action_sample_times_precedence_and_continue_start(self, tmp_path):
+        bngl = tmp_path / "action_sample_times_boundaries.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k 0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+begin actions
+    simulate_ode({prefix=>"precedence",t_start=>2,t_end=>3,n_steps=>2,sample_times=>[2.25,2.5,2.75]})
+    simulate_ode({prefix=>"continue",t_start=>2,t_end=>3,n_steps=>1})
+    simulate_ode({prefix=>"continue",continue=>1,t_end=>4,sample_times=>[3.5]})
+end actions
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+
+        def times(prefix):
+            return [
+                float(line.split()[0])
+                for line in (tmp_path / f"{prefix}.gdat").read_text().splitlines()
+                if line and not line.startswith("#")
+            ]
+
+        # n_steps wins and leaves the requested sample_times inactive.
+        assert times("precedence") == [2.0, 2.5, 3.0]
+        # The continued action starts at t=3 (the previous run's end), so its
+        # grid is [3, 3.5, 4] before the duplicate t=3 row is appended away.
+        assert times("continue") == [2.0, 3.0, 3.5, 4.0]
 
     def test_continue_t_end_is_a_duration_when_t_start_is_omitted(self, tmp_path):
         bngl = tmp_path / "continue_duration.bngl"
