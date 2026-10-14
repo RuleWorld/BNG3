@@ -98,6 +98,7 @@ void bind_nfsim(py::module_& m) {
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
         std::string construction_path = "direct";
+        bool direct_semantics_unsupported = false;
         const bool model_uses_units =
             bng::compile::featuresUsed(model).contains(bng::compile::Feature::Units);
         // Carries the precise reason the direct adapter declined, so the
@@ -114,7 +115,8 @@ void bind_nfsim(py::module_& m) {
                 verbose,
                 suggestedTraversalLimit,
                 fs::path(source_path),
-                &direct_unavailable_reason
+                &direct_unavailable_reason,
+                &direct_semantics_unsupported
             ));
 
             if (!system) {
@@ -122,6 +124,11 @@ void bind_nfsim(py::module_& m) {
                     direct_unavailable_reason.empty()
                         ? std::string()
                         : ": " + direct_unavailable_reason;
+                if (direct_semantics_unsupported) {
+                    throw std::runtime_error(
+                        "NFsim cannot preserve the requested reaction-rate semantics" +
+                        because);
+                }
                 if (require_direct ||
                     std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
                     throw std::runtime_error(

@@ -53,7 +53,8 @@ bool addReactionRulesFromCompiled(
     bool blockSameComplexBinding,
     bool verbose,
     int& suggestedTraversalLimit,
-    const std::filesystem::path& sourcePath = {});
+    const std::filesystem::path& sourcePath = {},
+    std::string* unsupportedReason = nullptr);
 
 bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
                               NFcore::System* system, bool verbose,

@@ -1984,6 +1984,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // Direct construction is the default.  XML remains an explicit
         // compatibility bridge while the direct adapter is being qualified.
         std::string directUnavailableReason;
+        bool directSemanticsUnsupported = false;
         const bool modelUsesUnits = bng::compile::featuresUsed(model).contains(
             bng::compile::Feature::Units);
         NFcore::System *nfSystem = NFinput::buildSystemFromAstWithSeedOverrides(
@@ -1995,13 +1996,19 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             suggestedTraversalLimit,
             sourcePath,
             seedAmountOverrides,
-            &directUnavailableReason);
+            &directUnavailableReason,
+            &directSemanticsUnsupported);
 
         if (!nfSystem) {
             const std::string because =
                 directUnavailableReason.empty()
                     ? std::string()
                     : ": " + directUnavailableReason;
+            if (directSemanticsUnsupported) {
+                throw std::runtime_error(
+                    "NFsim cannot preserve the requested reaction-rate semantics" +
+                    because);
+            }
             if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
                 throw std::runtime_error(
                     "NFsim direct AST initialization required but unavailable" +

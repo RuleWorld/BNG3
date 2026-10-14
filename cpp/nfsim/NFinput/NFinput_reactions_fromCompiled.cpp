@@ -2303,8 +2303,16 @@ bool addReactionRulesFromCompiled(const CompiledModel& model,
                                   bool blockSameComplexBinding,
                                   bool verbose,
                                   int& suggestedTraversalLimit,
-                                  const std::filesystem::path& sourcePath) {
+                                  const std::filesystem::path& sourcePath,
+                                  std::string* unsupportedReason) {
     if (system == nullptr) return false;
+    if (unsupportedReason != nullptr) unsupportedReason->clear();
+    if (const auto rejection =
+            bng::compile::nfSimTimeDependentRateParameterRejection(model)) {
+        if (unsupportedReason != nullptr) *unsupportedReason = *rejection;
+        std::cerr << "[nfsim/compiled] " << *rejection << "\n";
+        return false;
+    }
     if (const auto rejection = bng::compile::nfSimPhysicalUnitBridgeRejection(model)) {
         std::cerr << "[nfsim/compiled] physical-unit model requires compatibility lowering: "
                   << *rejection << "\n";

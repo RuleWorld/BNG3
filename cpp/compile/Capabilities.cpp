@@ -97,6 +97,37 @@ bool expressionDependsOnTime(const CompiledModel& model,
                        });
 }
 
+std::optional<std::string> timeDependentParameterReference(
+    const CompiledModel& model,
+    const ResolvedExpression& expression,
+    std::unordered_set<std::size_t>& activeFunctions) {
+    if (expression.kind == ResolvedExpressionKind::ParameterRef) {
+        if (!expression.symbol.has_value()) return std::nullopt;
+        const auto* parameter = model.parameter(
+            ParameterId::fromDenseIndex(expression.symbol->index));
+        if (parameter != nullptr && parameter->timeDependent)
+            return parameter->name;
+        return std::nullopt;
+    }
+    if (expression.kind == ResolvedExpressionKind::FunctionRef &&
+        expression.symbol.has_value()) {
+        const auto index = expression.symbol->index;
+        const auto* function = model.function(FunctionId::fromDenseIndex(index));
+        if (function == nullptr || !activeFunctions.insert(index).second)
+            return std::nullopt;
+        const auto name = timeDependentParameterReference(
+            model, function->expression, activeFunctions);
+        activeFunctions.erase(index);
+        if (name.has_value()) return name;
+    }
+    for (const auto& argument : expression.arguments) {
+        if (const auto name = timeDependentParameterReference(
+                model, argument, activeFunctions))
+            return name;
+    }
+    return std::nullopt;
+}
+
 std::optional<std::string> nonsecondTimeBasisRejection(const CompiledModel& model) {
     const auto declaredTime = model.metadata().unitDefaults.find("timeUnits");
     if (declaredTime == model.metadata().unitDefaults.end()) return std::nullopt;
@@ -248,6 +279,34 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
     return std::nullopt;
 }
 
+std::optional<std::string> nfSimTimeDependentRateParameterRejection(
+    const CompiledModel& model) {
+    const auto checkDirection = [&](const CompiledRule& rule,
+                                    const CompiledRuleDirection& direction)
+        -> std::optional<std::string> {
+        if (!direction.rateLaw.has_value()) return std::nullopt;
+        std::unordered_set<std::size_t> activeFunctions;
+        const auto parameter = timeDependentParameterReference(
+            model, direction.rateLaw->resolvedExpression(), activeFunctions);
+        if (!parameter.has_value()) return std::nullopt;
+        const std::string rateDescription = direction.rateLaw->unit.has_value()
+                                                ? "physical-unit rate" : "rate";
+        return "NFsim cannot preserve the " + rateDescription + " for reaction rule '" + rule.name() +
+               "': named parameter '" + *parameter +
+               "' is time-dependent and would be frozen at t=0";
+    };
+
+    for (const auto& rule : model.rules()) {
+        if (const auto rejection = checkDirection(rule, rule.forward()))
+            return rejection;
+        if (rule.reverse().has_value()) {
+            if (const auto rejection = checkDirection(rule, *rule.reverse()))
+                return rejection;
+        }
+    }
+    return std::nullopt;
+}
+
 FeatureSet::FeatureSet(std::initializer_list<Feature> features) {
     for (const auto feature : features) add(feature);
 }
@@ -355,13 +414,23 @@ void CapabilityReport::addDiagnostic(Diagnostic diagnostic) {
     diagnostics_.push_back(std::move(diagnostic));
 }
 
-CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend) {
+CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend,
+                                 const CompiledModel* compiledModel) {
     CapabilityReport report;
     const auto features = featuresUsed(model);
     std::optional<std::string> unitBridgeRejection;
-    if (backend == BackendKind::NFsim && features.contains(Feature::Units)) {
-        const CompiledModel compiledModel(model);
-        unitBridgeRejection = nfSimPhysicalUnitBridgeRejection(compiledModel);
+    std::optional<std::string> timedRateParameterRejection;
+    std::optional<CompiledModel> ownedCompiledModel;
+    const CompiledModel* semanticModel = compiledModel;
+    if (backend == BackendKind::NFsim && semanticModel == nullptr) {
+        ownedCompiledModel.emplace(model);
+        semanticModel = &*ownedCompiledModel;
+    }
+    if (backend == BackendKind::NFsim && semanticModel != nullptr) {
+        if (features.contains(Feature::Units))
+            unitBridgeRejection = nfSimPhysicalUnitBridgeRejection(*semanticModel);
+        timedRateParameterRejection =
+            nfSimTimeDependentRateParameterRejection(*semanticModel);
     }
     for (const auto feature : features.toVector()) {
         // The native network compiler and the NFsim adapter both have an
@@ -434,6 +503,16 @@ CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend) {
     if (backend == BackendKind::NFsim && unitBridgeRejection.has_value()) {
         addUnsupported(report, Feature::Units, "NFsim",
                        "physical-unit annotations: " + *unitBridgeRejection);
+    }
+
+    if (backend == BackendKind::NFsim && timedRateParameterRejection.has_value()) {
+        Diagnostic diagnostic;
+        diagnostic.code = DiagnosticCode::UnsupportedFeature;
+        diagnostic.severity = Severity::Error;
+        diagnostic.category = ValidationCategory::BackendCapability;
+        diagnostic.entity = "reaction rates";
+        diagnostic.message = *timedRateParameterRejection;
+        report.addDiagnostic(std::move(diagnostic));
     }
 
     if (backend == BackendKind::NFsim &&

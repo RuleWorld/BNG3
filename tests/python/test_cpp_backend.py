@@ -705,6 +705,55 @@ end model
         )
         assert ssa["time"].tolist() == sample_times
 
+        with pytest.raises(RuntimeError, match="batch SSA does not support stop_if"):
+            _cpp.simulate_ssa(
+                model,
+                network,
+                t_end=3.0,
+                t_start=2.0,
+                sample_times=[2.25, 2.5, 2.75],
+                batch_size=2,
+                batch_gpu_preferred=False,
+                stop_if="Xtot > 99",
+            )
+
+        zero_species = tmp_path / "zero_species.bngl"
+        zero_species.write_text("""
+begin model
+begin parameters
+    N 4
+end parameters
+begin molecule types
+    X()
+end molecule types
+end model
+""")
+        zero_model = _cpp.parse_file(str(zero_species))
+        zero_network = _cpp.generate_network(zero_model)
+        with pytest.raises(RuntimeError, match="batch SSA does not support stop_if"):
+            _cpp.simulate_ssa(
+                zero_model,
+                zero_network,
+                t_start=2.0,
+                t_end=3.0,
+                sample_times=[2.25, 2.5, 2.75],
+                batch_size=2,
+                batch_gpu_preferred=False,
+                stop_if="time > 1",
+            )
+
+        stopped = _cpp.simulate_ode(
+            model,
+            network,
+            t_start=2.0,
+            t_end=3.0,
+            n_steps=0,
+            sample_times=[2.25, 2.5, 2.75],
+            stop_if="Xtot > 99",
+        )
+        assert stopped["time"].tolist() == [2.0]
+        assert stopped["observables"]["Xtot"].tolist() == [100.0]
+
         with pytest.raises(RuntimeError, match="stop_if"):
             _cpp.simulate_ode(model, network, t_end=1.0, n_steps=1, stop_if="Xtot <")
 
