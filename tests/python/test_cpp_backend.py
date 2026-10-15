@@ -1644,7 +1644,8 @@ writeNetwork()
 
     def test_set_add_concentration_survives_network_regeneration_in_net(self, tmp_path):
         bngl = tmp_path / "set_add_initial.bngl"
-        bngl.write_text("""
+        bngl.write_text(
+            """
 begin model
 begin parameters
     S0 100
@@ -1669,15 +1670,19 @@ begin actions
     addConcentration("S(c~R)","S0")
     generate_network({overwrite=>1})
 end actions
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
 
         bionetgen.load(str(bngl)).execute()
 
         net = tmp_path / "set_add_initial.net"
         assert net.exists()
-        species_block = net.read_text(encoding="utf-8").split(
-            "begin species", 1
-        )[1].split("end species", 1)[0]
+        species_block = (
+            net.read_text(encoding="utf-8")
+            .split("begin species", 1)[1]
+            .split("end species", 1)[0]
+        )
         species_rows = [
             line.split() for line in species_block.splitlines() if line.strip()
         ]
@@ -1688,15 +1693,20 @@ end actions
             for row in species_rows
         )
 
-    @pytest.mark.parametrize("route", ["readFile", "include_network", "generate_network"])
+    @pytest.mark.parametrize(
+        "route", ["readFile", "include_network", "generate_network"]
+    )
     def test_net_reload_preserves_compartmented_constant_species(self, tmp_path, route):
         net_path = tmp_path / "constant_compartment.net"
-        net_path.write_text("""begin species
+        net_path.write_text(
+            """begin species
     1 @cell::$A() 7
 end species
 begin reactions
 end reactions
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         bngl = tmp_path / "constant_compartment_roundtrip.bngl"
         if route == "readFile":
             load_action = 'readFile({file=>"constant_compartment.net"})'
@@ -1707,7 +1717,8 @@ end reactions
                 net_path.read_text(encoding="utf-8"), encoding="utf-8"
             )
             load_action = "generate_network({overwrite=>0})"
-        bngl.write_text("""
+        bngl.write_text(
+            """
 begin model
 begin compartments
     cell 3 1
@@ -1720,7 +1731,9 @@ begin actions
     __LOAD_ACTION__
     writeNetwork({prefix=>"constant_compartment_roundtrip",overwrite=>1})
 end actions
-""".replace("__LOAD_ACTION__", load_action), encoding="utf-8")
+""".replace("__LOAD_ACTION__", load_action),
+            encoding="utf-8",
+        )
 
         bionetgen.load(str(bngl)).execute()
 
@@ -1728,10 +1741,15 @@ end actions
         assert output.exists()
         assert "@cell::$A() 7" in output.read_text(encoding="utf-8")
 
-    @pytest.mark.parametrize("route", ["readFile", "include_network", "generate_network"])
-    def test_net_reload_preserves_dynamic_rate_function_and_observable(self, tmp_path, route):
+    @pytest.mark.parametrize(
+        "route", ["readFile", "include_network", "generate_network"]
+    )
+    def test_net_reload_preserves_dynamic_rate_function_and_observable(
+        self, tmp_path, route
+    ):
         source = tmp_path / "dynamic_source.bngl"
-        source.write_text("""
+        source.write_text(
+            """
 begin model
 begin molecule types
     A()
@@ -1752,7 +1770,9 @@ end model
 begin actions
     generate_network({overwrite=>1})
 end actions
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
         bionetgen.load(str(source)).execute()
         net_path = tmp_path / "dynamic_source.net"
         assert net_path.exists()
@@ -1766,11 +1786,10 @@ end actions
         elif route == "include_network":
             load_action = 'include_network({file=>"dynamic_source.net"})'
         else:
-            (tmp_path / "dynamic_reload.net").write_text(
-                net_text, encoding="utf-8"
-            )
+            (tmp_path / "dynamic_reload.net").write_text(net_text, encoding="utf-8")
             load_action = "generate_network({overwrite=>0})"
-        reload.write_text("""
+        reload.write_text(
+            """
 begin model
 begin molecule types
     A()
@@ -1784,16 +1803,16 @@ begin actions
     __LOAD_ACTION__
     simulate({method=>"ode",t_end=>1,n_steps=>10,prefix=>"dynamic_reload"})
 end actions
-""".replace("__LOAD_ACTION__", load_action), encoding="utf-8")
+""".replace("__LOAD_ACTION__", load_action),
+            encoding="utf-8",
+        )
         bionetgen.load(str(reload)).execute()
 
         gdat = tmp_path / "dynamic_reload.gdat"
         assert gdat.exists()
         lines = gdat.read_text(encoding="utf-8").splitlines()
         header = next(
-            line.lstrip("# ").split()
-            for line in lines
-            if line.startswith("#")
+            line.lstrip("# ").split() for line in lines if line.startswith("#")
         )
         assert header == ["time", "A_free"]
         rows = [
