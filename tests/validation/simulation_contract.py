@@ -15,13 +15,36 @@ import numpy as np
 from . import campaign, contracts
 
 
-def simulation_text(setup, args):
-    action = f'simulate_ode({{prefix=>"trajectory",t_start=>0,t_end=>{args.simulation_end},n_steps=>{args.simulation_steps},rtol=>1e-8,atol=>1e-12,print_CDAT=>1}})'
+def simulation_text(setup, args, *, netfile=None):
+    netfile_option = f',netfile=>"{netfile}"' if netfile else ""
+    action = f'simulate_ode({{prefix=>"trajectory"{netfile_option},t_start=>0,t_end=>{args.simulation_end},n_steps=>{args.simulation_steps},rtol=>1e-8,atol=>1e-12,print_CDAT=>1}})'
     if re.search(r"(?m)^\s*end actions\s*$", setup):
         return re.sub(
             r"(?m)^(\s*end actions\s*)$", lambda m: action + "\n" + m[1], setup, count=1
         )
     return setup + "\n" + action + "\n"
+
+
+def net_reload_context(source):
+    """Keep model declarations needed to interpret a NET, without its actions."""
+    lines = Path(source).read_text(encoding="utf-8").splitlines()
+    context = []
+    active_block = None
+    for line in lines:
+        if active_block is not None:
+            context.append(line)
+            if re.match(rf"^\s*end\s+{active_block}\s*$", line, re.IGNORECASE):
+                active_block = None
+            continue
+
+        start = re.match(r"^\s*begin\s+(parameters|compartments)\s*$", line, re.IGNORECASE)
+        if start:
+            active_block = start.group(1).lower()
+            context.append(line)
+
+    if active_block is not None:
+        raise ValueError(f"unterminated {active_block} block in NET reload source")
+    return "begin model\n" + "\n".join(context) + "\nend model\n"
 
 
 def run_simulation(name, work, reference, args, env, network_rows, *, route="bngl"):
@@ -72,7 +95,14 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
         shutil.copy2(net, directory / "input.net")
         action = directory / "protocol.bngl"
         if route == "net-reload":
-            setup = 'readFile({file=>"input.net"})\n'
+            source = work / "input" / (name + ".bngl")
+            (directory / "context.bngl").write_text(
+                net_reload_context(source), encoding="utf-8"
+            )
+            setup = (
+                'readFile({file=>"context.bngl"})\n'
+                'readFile({file=>"input.net"})\n'
+            )
         elif route == "bngl":
             for item in (work / "input").iterdir():
                 if item.is_dir():
@@ -82,7 +112,9 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
             setup = (work / "input" / (name + ".bngl")).read_text() + "\n"
         else:
             raise ValueError("unknown simulation route")
-        action.write_text(simulation_text(setup, args))
+        action.write_text(
+            simulation_text(setup, args, netfile="input.net" if route == "net-reload" else None)
+        )
         command = (
             [
                 reference["interpreter"],

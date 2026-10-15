@@ -2,6 +2,10 @@
 
 from argparse import Namespace
 from pathlib import Path
+import shutil
+
+import numpy as np
+import pytest
 
 from tests.validation.simulation_contract import run_simulation
 
@@ -61,3 +65,291 @@ def test_blocked_routes_have_distinct_case_ids(tmp_path):
         "x", tmp_path, None, arguments(), {}, blocker, route="net-reload"
     )
     assert not {r["id"] for r in a} & {r["id"] for r in b}
+
+
+def test_net_reload_loads_source_context_without_replaying_model_actions(
+    tmp_path, monkeypatch
+):
+    from tests.validation import simulation_contract
+
+    work = tmp_path / "model"
+    source_dir = work / "input"
+    source_dir.mkdir(parents=True)
+    source_dir.joinpath("x.bngl").write_text(
+        """begin model
+begin parameters
+    volume 2
+end parameters
+begin compartments
+    cell 3 volume
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+end model
+begin actions
+    generate_network()
+end actions
+""",
+        encoding="utf-8",
+    )
+    for side in ("reference", "subject"):
+        output_dir = work / side
+        output_dir.mkdir()
+        output_dir.joinpath("x.net").write_text(
+            """begin parameters
+    1 volume 2
+end parameters
+begin species
+    1 @cell::A() 1
+end species
+begin reactions
+end reactions
+""",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        simulation_contract.campaign, "verify_digest", lambda *args: None
+    )
+    protocols = []
+
+    def stop_after_recording(command, cwd, timeout, **kwargs):
+        protocols.append(Path(command[-1]).read_text(encoding="utf-8"))
+        return {"status": "FAIL", "detail": "intentional test stop"}
+
+    monkeypatch.setattr(
+        simulation_contract.campaign, "run_command", stop_after_recording
+    )
+    reference = {
+        "interpreter": "perl",
+        "script": "BNG2.pl",
+        "network_binary": str(tmp_path / "run_network"),
+        "network_binary_sha256": "verified",
+    }
+    rows = run_simulation("x", work, reference, arguments(), {}, [], route="net-reload")
+
+    context = (work / "simulation-net-reload" / "reference" / "context.bngl").read_text(
+        encoding="utf-8"
+    )
+    assert "begin parameters" in context
+    assert "begin compartments" in context
+    assert "begin molecule types" not in context
+    assert "begin seed species" not in context
+    assert "generate_network" not in context
+    assert len(protocols) == 1
+    assert protocols[0].index('readFile({file=>"context.bngl"})') < protocols[0].index(
+        'readFile({file=>"input.net"})'
+    )
+    assert "simulate_ode(" in protocols[0]
+    assert 'netfile=>"input.net"' in protocols[0]
+    assert rows[0]["status"] == "HARNESS_ERROR"
+
+
+def _assert_compartment_net_reload_matches_source(
+    bng_cpp, tmp_path, method, rate_expression, function_block=""
+):
+    from tests.validation import runner
+    from tests.validation.simulation_contract import net_reload_context
+
+    if method == "ode":
+        source_action = 'simulate_ode({prefix=>"trajectory",t_start=>0,t_end=>1.0,n_steps=>10,rtol=>1e-8,atol=>1e-12,print_CDAT=>1})'
+        reload_action = 'simulate_ode({prefix=>"trajectory",netfile=>"input.net",t_start=>0,t_end=>1.0,n_steps=>10,rtol=>1e-8,atol=>1e-12,print_CDAT=>1})'
+    elif method == "ssa":
+        source_action = 'simulate_ssa({prefix=>"trajectory",t_start=>0,t_end=>1.0,n_steps=>10,seed=>31415,print_CDAT=>1})'
+        reload_action = 'simulate_ssa({prefix=>"trajectory",netfile=>"input.net",t_start=>0,t_end=>1.0,n_steps=>10,seed=>31415,print_CDAT=>1})'
+    else:
+        source_action = 'simulate_psa({prefix=>"trajectory",t_start=>0,t_end=>1.0,n_steps=>10,seed=>31415,poplevel=>0})'
+        reload_action = source_action
+
+    source = tmp_path / "source.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+    cell_volume 20
+    k_bind 0.1
+    A0 100
+    B0 20
+end parameters
+"""
+        + function_block
+        + """begin compartments
+    cell 3 cell_volume
+end compartments
+begin molecule types
+    A(x)
+    B(y)
+end molecule types
+begin seed species
+    A(x)@cell A0
+    B(y)@cell B0
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+    Species AB_total @cell:A(x!1).B(y!1)
+end observables
+begin reaction rules
+"""
+        + "    A(x)@cell + B(y)@cell -> A(x!1)@cell.B(y!1)@cell "
+        + rate_expression
+        + "\nend reaction rules\n"
+        + """end model
+begin actions
+    generate_network({overwrite=>1})
+"""
+        + "    "
+        + source_action
+        + "\nend actions\n",
+        encoding="utf-8",
+    )
+
+    source_run = tmp_path / "source-run"
+    source_net, _, source_error = runner.run_cli_path(bng_cpp, source, source_run)
+    assert source_net is not None, f"source network generation failed: {source_error}"
+    net_text = source_net.read_text(encoding="utf-8")
+    if function_block:
+        assert "nested_multiplier(1)" in net_text
+    source_traces = {
+        kind: np.loadtxt(source_run / f"trajectory.{kind}", comments="#")
+        for kind in ("cdat", "gdat")
+    }
+
+    reload_run = tmp_path / "net-reload"
+    reload_run.mkdir()
+    shutil.copy2(source_net, reload_run / "input.net")
+    (reload_run / "context.bngl").write_text(
+        net_reload_context(source), encoding="utf-8"
+    )
+    reload_source = reload_run / "reload.bngl"
+    reload_source.write_text(
+        'readFile({file=>"context.bngl"})\n'
+        'readFile({file=>"input.net"})\n'
+        + reload_action
+        + "\n",
+        encoding="utf-8",
+    )
+    _, _, reload_error = runner.run_cli_path(bng_cpp, reload_source, reload_run)
+    assert not reload_error, f"NET reload simulation failed: {reload_error}"
+
+    for kind, expected in source_traces.items():
+        actual = np.loadtxt(reload_run / f"trajectory.{kind}", comments="#")
+        np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
+
+
+@pytest.mark.parametrize("method", ["ode", "ssa", "psa"])
+def test_compartment_net_reload_matches_source_network(bng_cpp, tmp_path, method):
+    _assert_compartment_net_reload_matches_source(
+        bng_cpp, tmp_path, method, "k_bind"
+    )
+
+
+@pytest.mark.parametrize("method", ["ode", "ssa", "psa"])
+def test_compartment_net_reload_preserves_nested_numeric_function_arguments(
+    bng_cpp, tmp_path, method
+):
+    functions = """begin functions
+    bind_multiplier(x) x * (1 + x)
+    nested_multiplier(x) max(bind_multiplier(x), 1)
+end functions
+"""
+    _assert_compartment_net_reload_matches_source(
+        bng_cpp, tmp_path, method, "k_bind * nested_multiplier(1)", functions
+    )
+
+
+def test_compartment_net_reload_preserves_psa_indexed_observables(
+    bng_cpp, tmp_path
+):
+    _assert_compartment_net_reload_matches_source(
+        bng_cpp, tmp_path, "psa", "k_bind"
+    )
+
+
+@pytest.mark.parametrize("method", ["ode", "ssa", "psa"])
+def test_net_reload_preserves_mixed_scope_and_numeric_function_arguments(
+    bng_cpp, tmp_path, method
+):
+    from tests.validation import runner
+    from tests.validation.simulation_contract import net_reload_context
+
+    if method == "ode":
+        source_action = 'simulate_ode({prefix=>"trajectory",t_start=>0,t_end=>1,n_steps=>10,rtol=>1e-8,atol=>1e-12,print_CDAT=>1})'
+        reload_action = 'simulate_ode({prefix=>"trajectory",netfile=>"input.net",t_start=>0,t_end=>1,n_steps=>10,rtol=>1e-8,atol=>1e-12,print_CDAT=>1})'
+    elif method == "ssa":
+        source_action = 'simulate_ssa({prefix=>"trajectory",t_start=>0,t_end=>1,n_steps=>10,seed=>31415,print_CDAT=>1})'
+        reload_action = 'simulate_ssa({prefix=>"trajectory",netfile=>"input.net",t_start=>0,t_end=>1,n_steps=>10,seed=>31415,print_CDAT=>1})'
+    else:
+        source_action = 'simulate_psa({prefix=>"trajectory",t_start=>0,t_end=>1,n_steps=>10,seed=>31415,poplevel=>0})'
+        reload_action = source_action
+
+    source = tmp_path / "source.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+    k 2
+end parameters
+begin molecule types
+    A(s~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(s~u!1).I(i!1) 1
+    A(s~p!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules A_total A()
+end observables
+begin functions
+    gate(x,k) = if(A_total(x)>0,0,k)
+    scale_value(n) = n*2
+    rate_adjust(n) = scale_value(n)
+end functions
+begin reaction rules
+    A%x(s~u!1).I(i!1) -> A%x(s~p!1).I(i!1) gate(x,k)
+    A%x(s~p!1).I(i!1) -> A%x(s~u!1).I(i!1) rate_adjust(A_total(x))
+end reaction rules
+end model
+begin actions
+    generate_network({overwrite=>1})
+"""
+        + "    "
+        + source_action
+        + "\nend actions\n",
+        encoding="utf-8",
+    )
+
+    source_run = tmp_path / "source-run"
+    source_net, _, source_error = runner.run_cli_path(bng_cpp, source, source_run)
+    assert source_net is not None, f"source network generation failed: {source_error}"
+    net_text = source_net.read_text(encoding="utf-8")
+    assert "__R1_local1 0  # ConstantExpression" in net_text
+    assert "__R2_local1 2  # ConstantExpression" in net_text
+    source_traces = {
+        kind: np.loadtxt(source_run / f"trajectory.{kind}", comments="#")
+        for kind in ("cdat", "gdat")
+    }
+
+    reload_run = tmp_path / "net-reload"
+    reload_run.mkdir()
+    shutil.copy2(source_net, reload_run / "input.net")
+    (reload_run / "context.bngl").write_text(
+        net_reload_context(source), encoding="utf-8"
+    )
+    reload_source = reload_run / "reload.bngl"
+    reload_source.write_text(
+        'readFile({file=>"context.bngl"})\n'
+        'readFile({file=>"input.net"})\n'
+        + reload_action
+        + "\n",
+        encoding="utf-8",
+    )
+    _, _, reload_error = runner.run_cli_path(bng_cpp, reload_source, reload_run)
+    assert not reload_error, f"NET reload simulation failed: {reload_error}"
+
+    for kind, expected in source_traces.items():
+        actual = np.loadtxt(reload_run / f"trajectory.{kind}", comments="#")
+        np.testing.assert_allclose(actual, expected, rtol=1e-10, atol=1e-10)
