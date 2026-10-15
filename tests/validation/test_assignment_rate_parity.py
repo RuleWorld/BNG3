@@ -1,8 +1,11 @@
 """Independent BNG2 contracts for constant local and live conditional rates."""
 
-from pathlib import Path
 import math
+import os
+import subprocess
+from pathlib import Path
 
+import numpy as np
 import pytest
 
 from scripts.cross_validate import _stage_model
@@ -690,3 +693,198 @@ def test_assignment_reversible_conditional_rates(tmp_path, bng_cpp, rates, expec
     for network in (reference, generated):
         assert network.n_reactions == 2
         assert sorted(key[2] for key in network.reaction_multiset) == expected
+
+
+def test_numeric_function_argument_matches_bng2_inline_rate_and_net_reload(
+    tmp_path, bng_cpp
+):
+    def source_model(rate_expression, method="ode", include_function=True):
+        if method == "ode":
+            simulation = (
+                "simulate_ode({t_start=>0,t_end=>0.1,n_steps=>4,"
+                "atol=>1e-12,rtol=>1e-10})"
+            )
+        else:
+            simulation = "simulate_ssa({t_start=>0,t_end=>0.1,n_steps=>4," "seed=>42})"
+        function_block = (
+            "begin functions\n    rate_adjust(k) = k*2\nend functions\n"
+            if include_function
+            else ""
+        )
+        return f"""begin model
+begin parameters
+    k1 2
+    k2 3
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 100
+end seed species
+begin observables
+    Molecules A_total A()
+end observables
+{function_block}begin reaction rules
+    A() -> 0 {rate_expression}
+end reaction rules
+end model
+begin actions
+    generate_network({{overwrite=>1}})
+    {simulation}
+end actions
+"""
+
+    function_call_source = source_model("rate_adjust(k1+k2)")
+    source_path = tmp_path / "function-call.bngl"
+    source_path.write_text(function_call_source, encoding="utf-8")
+    _, source_gdat, source_error = runner.run_cli_path(
+        bng_cpp, source_path, tmp_path / "bng3-source"
+    )
+    assert source_gdat is not None, source_error
+
+    source_net = tmp_path / "bng3-source" / "function-call.net"
+    assert source_net.is_file()
+
+    reload_dir = tmp_path / "bng3-net-reload"
+    reload_dir.mkdir()
+    reload_net = reload_dir / "input.net"
+    reload_net.write_bytes(source_net.read_bytes())
+    reload_source = reload_dir / "reload.bngl"
+    reload_source.write_text(
+        'readFile({file=>"input.net"})\n'
+        'simulate_ode({prefix=>"reload",netfile=>"input.net",t_start=>0,'
+        "t_end=>0.1,n_steps=>4,atol=>1e-12,rtol=>1e-10})\n",
+        encoding="utf-8",
+    )
+    _, reload_gdat, reload_error = runner.run_cli_path(
+        bng_cpp, reload_source, reload_dir
+    )
+    assert reload_gdat is not None, reload_error
+
+    # BNG2 does not import argument-taking functions from NET. Generate its
+    # reference from the mathematically equivalent inlined rate, 2*(2+3) = 10.
+    bng2_source = tmp_path / "bng2-inline-rate.bngl"
+    bng2_source.write_text(
+        source_model("2*(k1+k2)", include_function=False), encoding="utf-8"
+    )
+    bng2_work = tmp_path / "bng2-inline-rate"
+    bng2_net, bng2_source_kind = oracle_perl.net(
+        bng2_source.stem,
+        bng2_work,
+        network_only=True,
+        source_path=bng2_source,
+    )
+    require_oracle(
+        bng2_net is not None,
+        f"BNG2 inline-rate network unavailable: {bng2_source_kind}",
+    )
+    for net_path in (source_net, bng2_net):
+        network = compare.parse_net(net_path)
+        assert network is not None and network.n_reactions == 1
+        assert next(iter(network.reaction_multiset))[2] == "10.0"
+
+    bngpath = os.environ.get("BNGPATH")
+    require_oracle(bool(bngpath), "BNG2 inline-rate simulation requires BNGPATH")
+    run_network = Path(bngpath) / "bin" / "run_network"
+    require_oracle(run_network.is_file(), f"BNG2 run_network not found: {run_network}")
+    bng2_prefix = bng2_work / "bng2-inline-rate-output"
+    bng2_result = subprocess.run(
+        [
+            str(run_network),
+            "-o",
+            str(bng2_prefix),
+            "-p",
+            "cvode",
+            "-a",
+            "1e-12",
+            "-r",
+            "1e-10",
+            "--cdat",
+            "1",
+            "--fdat",
+            "0",
+            str(bng2_net),
+            "0",
+            "0.025",
+            "0.05",
+            "0.075",
+            "0.1",
+        ],
+        cwd=bng2_work,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert bng2_result.returncode == 0, (
+        "BNG2 run_network failed on the equivalent inlined rate:\n"
+        f"stdout:\n{bng2_result.stdout}\nstderr:\n{bng2_result.stderr}"
+    )
+    bng2_cdat = bng2_prefix.with_suffix(".cdat")
+    assert bng2_cdat.is_file(), f"BNG2 produced no CDAT at {bng2_cdat}"
+
+    bng2_data, bng2_columns = compare.parse_gdat(bng2_cdat)
+    assert bng2_data is not None and bng2_columns is not None
+    bng2_species_column = next(
+        (column for column in bng2_columns if column != "time"), None
+    )
+    assert bng2_species_column is not None
+    bng2_times = bng2_data[:, bng2_columns.index("time")]
+    bng2_values = bng2_data[:, bng2_columns.index(bng2_species_column)]
+
+    trajectories = []
+    for gdat in (source_gdat, reload_gdat):
+        data, columns = compare.parse_gdat(gdat)
+        assert data is not None and columns is not None
+        assert "A_total" in columns
+        trajectories.append(
+            (data[:, columns.index("time")], data[:, columns.index("A_total")])
+        )
+
+    for times, values in trajectories:
+        assert times == pytest.approx(bng2_times, abs=1e-12)
+        assert values == pytest.approx(bng2_values, rel=1e-9, abs=1e-10)
+        assert values[-1] == pytest.approx(100.0 * math.exp(-1.0), rel=1e-8)
+
+    # The same rate must survive the stochastic source and imported-NET paths.
+    ssa_source = tmp_path / "function-call-ssa.bngl"
+    ssa_source.write_text(
+        source_model("rate_adjust(k1+k2)", method="ssa"), encoding="utf-8"
+    )
+    ssa_source_dir = tmp_path / "bng3-ssa-source"
+    _, ssa_source_gdat, ssa_source_error = runner.run_cli_path(
+        bng_cpp, ssa_source, ssa_source_dir
+    )
+    assert ssa_source_gdat is not None, ssa_source_error
+    ssa_reload_dir = tmp_path / "bng3-ssa-net-reload"
+    ssa_reload_dir.mkdir()
+    ssa_reload_net = ssa_reload_dir / "input.net"
+    ssa_reload_net.write_bytes((ssa_source_dir / "function-call-ssa.net").read_bytes())
+    ssa_reload_source = ssa_reload_dir / "reload.bngl"
+    ssa_reload_source.write_text(
+        'readFile({file=>"input.net"})\n'
+        'simulate_ssa({prefix=>"ssa-reload",netfile=>"input.net",t_start=>0,'
+        "t_end=>0.1,n_steps=>4,seed=>42})\n",
+        encoding="utf-8",
+    )
+    _, ssa_reload_gdat, ssa_reload_error = runner.run_cli_path(
+        bng_cpp, ssa_reload_source, ssa_reload_dir
+    )
+    assert ssa_reload_gdat is not None, ssa_reload_error
+
+    ssa_source_data, ssa_source_columns = compare.parse_gdat(ssa_source_gdat)
+    ssa_reload_data, ssa_reload_columns = compare.parse_gdat(ssa_reload_gdat)
+    assert ssa_source_data is not None and ssa_source_columns is not None
+    assert ssa_reload_data is not None and ssa_reload_columns is not None
+    assert "A_total" in ssa_source_columns and "A_total" in ssa_reload_columns
+    np.testing.assert_allclose(
+        ssa_source_data[
+            :, [ssa_source_columns.index("time"), ssa_source_columns.index("A_total")]
+        ],
+        ssa_reload_data[
+            :, [ssa_reload_columns.index("time"), ssa_reload_columns.index("A_total")]
+        ],
+        rtol=0.0,
+        atol=0.0,
+    )

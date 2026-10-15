@@ -1648,6 +1648,17 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     break;
                 }
             }
+            const bool hasLocalScopeArgs = [&] {
+                const auto typedFunction = std::find_if(
+                    compiledModel.functions().begin(),
+                    compiledModel.functions().end(),
+                    [&](const auto& function) { return function.name == exprName; });
+                return typedFunction != compiledModel.functions().end() &&
+                       std::find(typedFunction->argumentKinds.begin(),
+                                 typedFunction->argumentKinds.end(),
+                                 compile::FunctionArgumentKind::LocalScope) !=
+                           typedFunction->argumentKinds.end();
+            }();
             if (isModelFunction && hasLocalArgs && (rule.hasScopePrefix() ||
                 !model.getEnergyPatterns().empty() || hasLocalRateContext(ruleName) ||
                 hasLocalRateContext(reverseRuleName))) {
@@ -1958,9 +1969,11 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 derived.emplace(ruleName, std::move(info));
                 continue;
             }
-            // Local function with %x molecule tag but no scope prefix/energy patterns:
-            // write symbolic expression (Perl convention __R{N}_local{M})
-            if (isModelFunction && hasLocalArgs) {
+            // Local-scope function with %x molecule tags but no scope
+            // prefix/energy patterns: write the symbolic local expression
+            // (Perl convention __R{N}_local{M}). Numeric argument functions
+            // remain function calls so their actual arguments are preserved.
+            if (isModelFunction && hasLocalArgs && hasLocalScopeArgs) {
                 int ruleIndex = 0;
                 for (const auto& r : model.getReactionRules()) {
                     ++ruleIndex;
@@ -1989,10 +2002,10 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 continue;
             }
             if (isModelFunction) {
-                // No-arg model function — write directly as function name.
-                // A model-function forward rate can still be reversible; do
-                // not skip derivation of a complex reverse rate when taking
-                // this early path.
+                // Keep numeric model functions out of local-rate parameter
+                // synthesis; normal rate serialization preserves the call's
+                // arguments. A forward function rate can still be reversible;
+                // do not skip a complex reverse-rate derivation here.
                 if (rule.isBidirectional() && rule.getRates().size() > 1) {
                     const auto& reverseRateExprObj = rule.getRates()[1];
                     const std::string reverseRateExpr = reverseRateExprObj.toString();
