@@ -1433,7 +1433,8 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             continue;
         }
 
-        const auto& rateExprObj = rule.getRates()[0];
+        const auto rateExprObj =
+            ast::partialEvaluate(rule.getRates()[0], model.getFunctions());
         const std::string rateExpr = rateExprObj.toString();
 
     const auto hasLocalRateContext = [&](const std::string &directionName) {
@@ -1571,8 +1572,9 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         derived[ruleName] = buildPerReactionRateInfo(ruleName, rateExprObj);
       }
       if (rule.isBidirectional()) {
-        const auto &reverseRate =
-            rule.getRates().size() > 1 ? rule.getRates()[1] : rateExprObj;
+        const auto reverseRate = ast::partialEvaluate(
+            rule.getRates().size() > 1 ? rule.getRates()[1] : rateExprObj,
+            model.getFunctions());
         functionScan.clear();
         if (hasReverseScopedFunction ||
             containsFunctionProduct(reverseRate, model, functionScan)) {
@@ -1776,7 +1778,8 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 if (rule.getRates().size() > 1) {
                 const std::string reverseRuleName = "_reverse__" + ruleName;
                 if (derived.find(reverseRuleName) == derived.end()) {
-                    const auto& reverseRateExprObj = rule.getRates()[1];
+                    const auto reverseRateExprObj = ast::partialEvaluate(
+                        rule.getRates()[1], model.getFunctions());
                     const std::string reverseRateExpr = reverseRateExprObj.toString();
                     const ast::Function* reverseMatchedFunc = nullptr;
                     for (const auto& func : model.getFunctions()) {
@@ -1951,7 +1954,8 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 // not skip derivation of a complex reverse rate when taking
                 // this early path.
                 if (rule.isBidirectional() && rule.getRates().size() > 1) {
-                    const auto& reverseRateExprObj = rule.getRates()[1];
+                    const auto reverseRateExprObj = ast::partialEvaluate(
+                        rule.getRates()[1], model.getFunctions());
                     const std::string reverseRateExpr = reverseRateExprObj.toString();
                     bool reverseIsModelFunction = false;
                     if (reverseRateExprObj.kind() == ast::ExpressionKind::Function ||
@@ -2023,11 +2027,13 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         // Handle bidirectional rules (reverse rate)
         if (rule.isBidirectional() && rule.getRates().size() > 1) {
             const std::string reverseRuleName = "_reverse__" + ruleName;
-            const std::string reverseRateExpr = rule.getRates()[1].toString();
+            const auto reverseRateExprObj = ast::partialEvaluate(
+                rule.getRates()[1], model.getFunctions());
+            const std::string reverseRateExpr = reverseRateExprObj.toString();
 
             if (!isSimpleExpression(reverseRateExpr)) {
                 bool reverseAsFunction = isDynamicRateExpression(
-                    reverseRateExpr, rule.getRates()[1]);
+                    reverseRateExpr, reverseRateExprObj);
                 std::string reverseParamName = (reverseAsFunction ? "_rateLaw" : "rateLaw") + std::to_string(rateLawCounter++);
 
                 derived.emplace(
@@ -2035,7 +2041,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     DerivedRateInfo {
                         reverseParamName,
                         reverseRateExpr,
-                        rule.getRates()[1],  // Store actual expression
+                        reverseRateExprObj,
                         true,  // reverseDirection
                         reverseAsFunction
                     });
@@ -2451,7 +2457,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 if (i > 0) out << ",";
                 out << args[i];
             }
-            out << ") " << func.getExpression().toString() << '\n';
+            out << ") " << ast::partialEvaluate(
+                func.getExpression(), model.getFunctions()).toString() << '\n';
         }
         // Write derived rate law functions
         for (const auto& rule : model.getReactionRules()) {

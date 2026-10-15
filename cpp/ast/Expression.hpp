@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -67,5 +68,22 @@ private:
     std::string tableFilePath_;
     std::string tableMethod_;
 };
+
+class Function;
+
+// Fold expression subtrees that are provably constant while retaining symbol
+// references. The resolver may expand a user-defined call; recursive calls
+// are left symbolic rather than expanded indefinitely.
+using FunctionExpander = std::function<std::optional<Expression>(
+    const std::string&, const std::vector<Expression>&)>;
+
+Expression partialEvaluate(const Expression& expression,
+                           const FunctionExpander& expandFunction = {});
+
+// Model-aware overload. Zero-argument model functions can be expanded; the
+// bodies of functions with formal arguments are still simplified when their
+// definitions are compiled or exported.
+Expression partialEvaluate(const Expression& expression,
+                           const std::vector<Function>& functions);
 
 } // namespace bng::ast

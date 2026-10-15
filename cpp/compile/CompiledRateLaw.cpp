@@ -1,5 +1,6 @@
 #include "CompiledRateLaw.hpp"
 #include "ast/Expression.hpp"
+#include "ast/Function.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -351,12 +352,13 @@ bool ResolvedExpression::fullyResolved() const noexcept {
 }
 
 CompiledRateLaw CompiledRateLaw::compile(const ast::Expression& expression) {
+    const auto simplified = ast::partialEvaluate(expression);
     CompiledRateLaw compiled;
     compiled.sourceExpression = expression.toString();
-    if (expression.kind() == ast::ExpressionKind::Function ||
-        expression.kind() == ast::ExpressionKind::ObservableRef) {
-        compiled.kind = classifyFunction(expression.name());
-        compiled.arguments = expression.args();
+    if (simplified.kind() == ast::ExpressionKind::Function ||
+        simplified.kind() == ast::ExpressionKind::ObservableRef) {
+        compiled.kind = classifyFunction(simplified.name());
+        compiled.arguments = simplified.args();
     }
     // This overload has no symbol table, so it cannot make a dependency
     // summary safe for backend classification.
@@ -373,12 +375,23 @@ CompiledRateLaw CompiledRateLaw::compile(
     const ast::Expression& expression,
     const SymbolTable& symbols,
     const std::vector<std::string>& localNames) {
-    auto compiled = compile(expression);
+    return compile(expression, symbols, localNames,
+                   std::vector<ast::Function>{});
+}
+
+CompiledRateLaw CompiledRateLaw::compile(
+    const ast::Expression& expression,
+    const SymbolTable& symbols,
+    const std::vector<std::string>& localNames,
+    const std::vector<ast::Function>& functions) {
+    const auto simplified = ast::partialEvaluate(expression, functions);
+    auto compiled = compile(simplified);
+    compiled.sourceExpression = expression.toString();
     compiled.dependencies_ = {};
     const std::unordered_set<std::string> lexicalNames(
         localNames.begin(), localNames.end());
     compiled.resolved_ = resolveExpression(
-        expression, symbols, compiled.references_, compiled.diagnostics_, lexicalNames);
+        simplified, symbols, compiled.references_, compiled.diagnostics_, lexicalNames);
     collectDependencies(compiled.resolved_, compiled.dependencies_);
     compiled.dependencies_.unresolved =
         compiled.dependencies_.unresolved || !compiled.resolved_.fullyResolved();

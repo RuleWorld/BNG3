@@ -229,6 +229,10 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
         if (localPos != std::string::npos) {
             cleanRate = cleanRate.substr(0, localPos);
         }
+        if (rxn.getRateExpression().has_value()) {
+            cleanRate = ast::partialEvaluate(
+                *rxn.getRateExpression(), model.getFunctions()).toString();
+        }
 
         double statFactor = rxn.getFactor();
 

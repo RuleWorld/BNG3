@@ -12,6 +12,7 @@
 
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
+#include "io/MatlabWriter.hpp"
 #include "io/NetWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -58,6 +59,62 @@ TEST_CASE("OdeIntegrator honors explicit nonuniform sample times", "[OdeOptions]
     REQUIRE(result.timePoints == options.sampleTimes);
     REQUIRE(result.concentrations.size() == options.sampleTimes.size());
     REQUIRE(result.observables.size() == options.sampleTimes.size());
+}
+
+TEST_CASE("constant rate branches are folded for network and writer outputs",
+          "[Expression][PartialEvaluation][NetWriter][MatlabWriter]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k1 2
+    k2 3
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin functions
+    choose() = if(2*3==6,k1+0,k2)
+    wrapper() = choose()
+end functions
+begin reaction rules
+    X() -> 0 wrapper()
+end reaction rules
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+
+    REQUIRE(network.reactions.size() == 1);
+    const auto& rateExpression = network.reactions.all().front().getRateExpression();
+    REQUIRE(rateExpression.has_value());
+    CHECK(rateExpression->toString() == "k1");
+    CHECK(io::NetWriter::buildDerivedRateParams(*model, network).empty());
+
+    const auto netPath = std::filesystem::temp_directory_path() /
+        ("bng3_partial_eval_" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()) + ".net");
+    io::NetWriter::write(netPath, *model, network);
+    std::ifstream netFile(netPath);
+    REQUIRE(netFile.good());
+    const std::string netText((std::istreambuf_iterator<char>(netFile)),
+                              std::istreambuf_iterator<char>());
+    std::filesystem::remove(netPath);
+    CHECK(netText.find("if(") == std::string::npos);
+    CHECK(netText.find("choose() k1") != std::string::npos);
+    CHECK(netText.find("wrapper() k1") != std::string::npos);
+
+    // Keep the source rate AST unsimplified here so this assertion exercises
+    // the MATLAB writer's shared simplification path, independently of the
+    // simplification already performed during network compilation.
+    engine::GeneratedNetwork matlabNetwork;
+    matlabNetwork.species = network.species;
+    REQUIRE(matlabNetwork.reactions.add(ast::Rxn(
+        "matlab_fold", {0}, {}, "if(2*3==6,k1+0,k2)", 1.0,
+        "matlab_fold", parser::parseExpression("if(2*3==6,k1+0,k2)"))).second);
+    const auto matlab = io::MatlabWriter::write(*model, matlabNetwork);
+    CHECK(matlab.find("expressions(1)*species(1)") != std::string::npos);
+    CHECK(matlab.find("if(") == std::string::npos);
 }
 
 TEST_CASE("OdeIntegrator default tolerances preserve an analytic decay trajectory",

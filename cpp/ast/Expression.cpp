@@ -1,6 +1,7 @@
 #include "Expression.hpp"
 
 #include "ExpressionBuiltins.hpp"
+#include "Function.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -14,6 +15,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace bng::ast {
 
@@ -202,6 +204,179 @@ double interpolateTable(const std::vector<double>& xs,
 
     const double fraction = (x - xs[left]) / (xs[right] - xs[left]);
     return ys[left] + fraction * (ys[right] - ys[left]);
+}
+
+bool numericValue(const Expression& expression, double& value) {
+    if (expression.kind() != ExpressionKind::Number) return false;
+    value = expression.numberValue();
+    return true;
+}
+
+bool isSpecialFunction(const std::string& name) {
+    return name == "time" || name == "t" || name == "TFUN" ||
+           name == "tfun" || name == "_pi" || name == "_e";
+}
+
+Expression partialEvaluateImpl(const Expression& expression,
+                                const FunctionExpander& expandFunction,
+                                std::unordered_set<std::string>& expanding) {
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+    case ExpressionKind::Identifier:
+        return expression;
+    case ExpressionKind::Unary: {
+        const auto operand = partialEvaluateImpl(
+            expression.args().front(), expandFunction, expanding);
+        double value = 0.0;
+        if (numericValue(operand, value)) {
+            try {
+                const auto folded = Expression::unary(expression.name(), operand)
+                                        .evaluate([](const std::string& name) -> double {
+                                            throw std::runtime_error(
+                                                "Cannot resolve symbol '" + name + "'");
+                                        });
+                if (std::isfinite(folded)) return Expression::number(folded);
+            } catch (const std::exception&) {
+                // Keep expressions whose constant evaluation is undefined or
+                // outside the evaluator's supported domain intact.
+            }
+        }
+        if (expression.name() == "+") return operand;
+        return Expression::unary(expression.name(), operand);
+    }
+    case ExpressionKind::Binary: {
+        const auto lhs = partialEvaluateImpl(
+            expression.args()[0], expandFunction, expanding);
+        double left = 0.0;
+        const bool leftIsNumber = numericValue(lhs, left);
+        if (leftIsNumber && expression.name() == "&&" && left == 0.0)
+            return Expression::number(0.0);
+        if (leftIsNumber && expression.name() == "||" && left != 0.0)
+            return Expression::number(1.0);
+
+        const auto rhs = partialEvaluateImpl(
+            expression.args()[1], expandFunction, expanding);
+        double right = 0.0;
+        const bool rightIsNumber = numericValue(rhs, right);
+
+        if (leftIsNumber && rightIsNumber) {
+            try {
+                const auto folded = Expression::binary(expression.name(), lhs, rhs)
+                                        .evaluate([](const std::string& name) -> double {
+                                            throw std::runtime_error(
+                                                "Cannot resolve symbol '" + name + "'");
+                                        });
+                if (std::isfinite(folded)) return Expression::number(folded);
+            } catch (const std::exception&) {
+                // Preserve invalid or unsupported constant operations for the
+                // normal expression validator/evaluator to diagnose.
+            }
+        }
+
+        if ((expression.name() == "+" || expression.name() == "-") &&
+            rightIsNumber && right == 0.0)
+            return lhs;
+        if (expression.name() == "+" && leftIsNumber && left == 0.0)
+            return rhs;
+        if ((expression.name() == "*" || expression.name() == "/") &&
+            rightIsNumber && right == 1.0)
+            return lhs;
+        if (expression.name() == "*" && leftIsNumber && left == 1.0)
+            return rhs;
+        if ((expression.name() == "^" || expression.name() == "**") &&
+            rightIsNumber && right == 1.0)
+            return lhs;
+        return Expression::binary(expression.name(), lhs, rhs);
+    }
+    case ExpressionKind::Function: {
+        if (expression.name() == "if" && expression.args().size() == 3) {
+            const auto condition = partialEvaluateImpl(
+                expression.args()[0], expandFunction, expanding);
+            double value = 0.0;
+            if (numericValue(condition, value)) {
+                const auto branch = value != 0.0 ? 1u : 2u;
+                return partialEvaluateImpl(expression.args()[branch],
+                                           expandFunction, expanding);
+            }
+            return Expression::function(
+                expression.name(),
+                {condition,
+                 partialEvaluateImpl(expression.args()[1], expandFunction, expanding),
+                 partialEvaluateImpl(expression.args()[2], expandFunction, expanding)});
+        }
+
+        std::vector<Expression> arguments;
+        arguments.reserve(expression.args().size());
+        bool allNumeric = true;
+        for (const auto& argument : expression.args()) {
+            arguments.push_back(
+                partialEvaluateImpl(argument, expandFunction, expanding));
+            double unused = 0.0;
+            allNumeric = allNumeric && numericValue(arguments.back(), unused);
+        }
+        const auto rebuilt = Expression::function(expression.name(), arguments);
+
+        if (allNumeric && !isSpecialFunction(expression.name()) &&
+            builtins::isSharedEvaluable(expression.name()) &&
+            builtins::acceptsArgumentCount(expression.name(), arguments.size())) {
+            try {
+                const auto folded = rebuilt.evaluate(
+                    [](const std::string& name) -> double {
+                        throw std::runtime_error("Cannot resolve symbol '" + name + "'");
+                    });
+                if (std::isfinite(folded)) return Expression::number(folded);
+            } catch (...) {
+                // Keep domain errors (for example sqrt(-1)) in the expression.
+            }
+        }
+
+        if (expandFunction && !builtins::isBuiltin(expression.name()) &&
+            !isSpecialFunction(expression.name()) &&
+            expanding.count(expression.name()) == 0) {
+            const auto expanded = expandFunction(expression.name(), arguments);
+            if (expanded.has_value()) {
+                expanding.insert(expression.name());
+                const auto result = partialEvaluateImpl(
+                    *expanded, expandFunction, expanding);
+                expanding.erase(expression.name());
+                return result;
+            }
+        }
+        return rebuilt;
+    }
+    case ExpressionKind::ObservableRef: {
+        std::vector<Expression> arguments;
+        arguments.reserve(expression.args().size());
+        for (const auto& argument : expression.args()) {
+            arguments.push_back(
+                partialEvaluateImpl(argument, expandFunction, expanding));
+        }
+        const auto rebuilt =
+            Expression::observableRef(expression.name(), arguments);
+        if (expandFunction && !builtins::isBuiltin(expression.name()) &&
+            !isSpecialFunction(expression.name()) &&
+            expanding.count(expression.name()) == 0) {
+            const auto expanded = expandFunction(expression.name(), arguments);
+            if (expanded.has_value()) {
+                expanding.insert(expression.name());
+                const auto result = partialEvaluateImpl(
+                    *expanded, expandFunction, expanding);
+                expanding.erase(expression.name());
+                return result;
+            }
+        }
+        return rebuilt;
+    }
+    case ExpressionKind::TableFunction: {
+        if (expression.args().size() != 1) return expression;
+        const auto counter = partialEvaluateImpl(
+            expression.args().front(), expandFunction, expanding);
+        return Expression::tableFunction(
+            expression.tableXValues(), expression.tableYValues(),
+            expression.tableFilePath(), counter, expression.tableMethod());
+    }
+    }
+    return expression;
 }
 
 } // namespace
@@ -654,6 +829,28 @@ std::string Expression::toString() const {
     }
 
     return {};
+}
+
+Expression partialEvaluate(const Expression& expression,
+                           const FunctionExpander& expandFunction) {
+    std::unordered_set<std::string> expanding;
+    return partialEvaluateImpl(expression, expandFunction, expanding);
+}
+
+Expression partialEvaluate(const Expression& expression,
+                           const std::vector<Function>& functions) {
+    const FunctionExpander expandFunction = [&functions](
+        const std::string& name,
+        const std::vector<Expression>& arguments) -> std::optional<Expression> {
+        if (!arguments.empty()) return std::nullopt;
+        const auto function = std::find_if(
+            functions.begin(), functions.end(), [&](const auto& candidate) {
+                return candidate.getName() == name && candidate.getArgs().empty();
+            });
+        if (function == functions.end()) return std::nullopt;
+        return function->getExpression();
+    };
+    return partialEvaluate(expression, expandFunction);
 }
 
 } // namespace bng::ast

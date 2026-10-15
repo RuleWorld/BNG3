@@ -7,6 +7,7 @@
 #include "ast/Expression.hpp"
 #include "ast/ExpressionBuiltins.hpp"
 #include "ast/ExpressionEval.hpp"
+#include "ast/Function.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 using namespace bng::ast;
@@ -40,6 +41,52 @@ TEST_CASE("Expression: nested arithmetic", "[Expression]") {
     auto sum = Expression::binary("+", Expression::number(2.0), Expression::number(3.0));
     auto expr = Expression::binary("*", std::move(sum), Expression::number(4.0));
     REQUIRE_THAT(expr.evaluate(noResolver), WithinRel(20.0, 1e-10));
+}
+
+TEST_CASE("Expression partial evaluation folds constants and preserves symbols",
+          "[Expression][PartialEvaluation]") {
+    const auto simplify = [](const std::string& source) {
+        return partialEvaluate(bng::parser::parseExpression(source));
+    };
+
+    CHECK(simplify("if(1>0,k1,k2)").toString() == "k1");
+    CHECK(simplify("if(2*3==6,k1+0,k2)").toString() == "k1");
+    CHECK(simplify("if(!0 && 4>2,k1,k2)").toString() == "k1");
+
+    const auto symbolic = simplify("if(kConstant>0,k1,k2)");
+    CHECK(symbolic.kind() == ExpressionKind::Function);
+    CHECK(symbolic.name() == "if");
+    CHECK(symbolic.toString() == "if((kConstant > 0), k1, k2)");
+}
+
+TEST_CASE("Expression partial evaluation does not inspect an unreachable branch",
+          "[Expression][PartialEvaluation]") {
+    const auto expression = bng::parser::parseExpression("if(1,7,1/0)");
+    CHECK(partialEvaluate(expression).toString() == "7");
+}
+
+TEST_CASE("Expression partial evaluation preserves scoped observable references",
+          "[Expression][PartialEvaluation]") {
+    const auto expression = Expression::function(
+        "if", {Expression::observableRef("C_local", {Expression::identifier("x")}),
+               Expression::binary("+", Expression::identifier("k1"),
+                                  Expression::number(0.0)),
+               Expression::number(0.0)});
+
+    CHECK(partialEvaluate(expression).toString() ==
+          "if(C_local(x), k1, 0)");
+}
+
+TEST_CASE("Expression partial evaluation follows nested zero-argument functions",
+          "[Expression][PartialEvaluation]") {
+    const Function choose("choose", {},
+                          bng::parser::parseExpression("if(2*3==6,k1+0,k2)"));
+    const Function wrapper("wrapper", {},
+                           bng::parser::parseExpression("choose()"));
+    const std::vector<Function> functions{choose, wrapper};
+
+    const auto expression = bng::parser::parseExpression("wrapper()");
+    CHECK(partialEvaluate(expression, functions).toString() == "k1");
 }
 
 TEST_CASE("Expression: power operator", "[Expression]") {

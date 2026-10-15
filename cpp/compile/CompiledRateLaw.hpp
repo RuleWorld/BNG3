@@ -175,6 +175,10 @@ struct CompiledRateLaw {
     static CompiledRateLaw compile(const ast::Expression& expression,
                                    const SymbolTable& symbols,
                                    const std::vector<std::string>& localNames);
+    static CompiledRateLaw compile(
+        const ast::Expression& expression, const SymbolTable& symbols,
+        const std::vector<std::string>& localNames,
+        const std::vector<ast::Function>& functions);
 
 private:
     std::vector<SymbolRef> references_;
