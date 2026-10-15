@@ -108,10 +108,13 @@ end reaction rules
     // the MATLAB writer's shared simplification path, independently of the
     // simplification already performed during network compilation.
     engine::GeneratedNetwork matlabNetwork;
-    matlabNetwork.species = network.species;
+    const auto& sourceSpecies = network.species.get(0);
+    matlabNetwork.species.add(ast::Species(
+        sourceSpecies.getSpeciesGraph(), sourceSpecies.getAmount(),
+        sourceSpecies.isConstant(), sourceSpecies.getCompartment()));
     REQUIRE(matlabNetwork.reactions.add(ast::Rxn(
         "matlab_fold", {0}, {}, "if(2*3==6,k1+0,k2)", 1.0,
-        "matlab_fold", parser::parseExpression("if(2*3==6,k1+0,k2)"))).second);
+        "matlab_fold", parser::parseExpression("if(2*3==6,k1+0,k2)"))));
     const auto matlab = io::MatlabWriter::write(*model, matlabNetwork);
     CHECK(matlab.find("expressions(1)*species(1)") != std::string::npos);
     CHECK(matlab.find("if(") == std::string::npos);
