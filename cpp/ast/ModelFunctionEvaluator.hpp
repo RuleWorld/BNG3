@@ -7,9 +7,9 @@
 #include <unordered_map>
 #include <vector>
 
-#include "ast/Model.hpp"
+#include "Model.hpp"
 
-namespace bng::engine {
+namespace bng::ast {
 
 // Evaluates AST expressions with the model's declared user functions. The
 // expression parser can represent a user function call as either Function or
@@ -105,4 +105,4 @@ private:
     std::unordered_map<std::string, std::size_t> functionIndex_;
 };
 
-} // namespace bng::engine
+} // namespace bng::ast

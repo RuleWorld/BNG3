@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "ast/Model.hpp"
-#include "ModelFunctionEvaluator.hpp"
+#include "ast/ModelFunctionEvaluator.hpp"
 #include "NetworkGenerator.hpp"
 #include "OdeIntegrator.hpp"
 
@@ -142,7 +142,7 @@ private:
 
     const ast::Model& model_;
     const GeneratedNetwork& network_;
-    ModelFunctionEvaluator functionEvaluator_;
+    ast::ModelFunctionEvaluator functionEvaluator_;
     std::vector<CompiledReaction> compiledRxns_;
     std::vector<CompiledGroup> compiledGroups_;
     std::vector<bool> fixedSpecies_;

@@ -149,6 +149,57 @@ end reactions
     assert rows[0]["status"] == "HARNESS_ERROR"
 
 
+def test_net_reload_ssa_rejects_time_through_nested_user_function_argument(
+    bng_cpp, tmp_path
+):
+    from tests.validation import runner
+
+    (tmp_path / "input.net").write_text(
+        """begin functions
+    1 rate_adjust(x) (x * 2)
+    2 nested_adjust(x) rate_adjust(x)
+    3 rate_at_time() time
+end functions
+begin species
+    1 X() 100
+    2 Y() 100
+end species
+begin reactions
+    1 1 0 nested_adjust(rate_at_time())
+    2 2 0 rate_at_time()
+end reactions
+begin groups
+    1 X_total 1
+    2 Y_total 2
+end groups
+""",
+        encoding="utf-8",
+    )
+    (tmp_path / "ode.bngl").write_text(
+        'readFile({file=>"input.net"})\n'
+        'simulate_ode({prefix=>"ode",netfile=>"input.net",t_start=>0,'
+        "t_end=>1,n_steps=>10,rtol=>1e-8,atol=>1e-12,print_CDAT=>1})\n",
+        encoding="utf-8",
+    )
+    _, _, ode_error = runner.run_cli_path(bng_cpp, tmp_path / "ode.bngl", tmp_path)
+    assert not ode_error, f"time-dependent NET ODE failed: {ode_error}"
+    ode_cdat = np.loadtxt(tmp_path / "ode.cdat", comments="#")
+    np.testing.assert_allclose(
+        ode_cdat[-1, 1:],
+        [100.0 * np.exp(-1.0), 100.0 * np.exp(-0.5)],
+        rtol=1e-6,
+    )
+
+    (tmp_path / "ssa.bngl").write_text(
+        'readFile({file=>"input.net"})\n'
+        'simulate_ssa({prefix=>"ssa",netfile=>"input.net",t_start=>0,'
+        "t_end=>1,n_steps=>2,seed=>42,print_CDAT=>1})\n",
+        encoding="utf-8",
+    )
+    _, _, ssa_error = runner.run_cli_path(bng_cpp, tmp_path / "ssa.bngl", tmp_path)
+    assert "SSA does not support explicitly time-dependent rate laws" in ssa_error
+
+
 def _assert_compartment_net_reload_matches_source(
     bng_cpp, tmp_path, method, rate_expression, function_block=""
 ):
@@ -227,9 +278,7 @@ begin actions
     reload_source = reload_run / "reload.bngl"
     reload_source.write_text(
         'readFile({file=>"context.bngl"})\n'
-        'readFile({file=>"input.net"})\n'
-        + reload_action
-        + "\n",
+        'readFile({file=>"input.net"})\n' + reload_action + "\n",
         encoding="utf-8",
     )
     _, _, reload_error = runner.run_cli_path(bng_cpp, reload_source, reload_run)
@@ -242,9 +291,7 @@ begin actions
 
 @pytest.mark.parametrize("method", ["ode", "ssa", "psa"])
 def test_compartment_net_reload_matches_source_network(bng_cpp, tmp_path, method):
-    _assert_compartment_net_reload_matches_source(
-        bng_cpp, tmp_path, method, "k_bind"
-    )
+    _assert_compartment_net_reload_matches_source(bng_cpp, tmp_path, method, "k_bind")
 
 
 @pytest.mark.parametrize("method", ["ode", "ssa", "psa"])
@@ -261,12 +308,8 @@ end functions
     )
 
 
-def test_compartment_net_reload_preserves_psa_indexed_observables(
-    bng_cpp, tmp_path
-):
-    _assert_compartment_net_reload_matches_source(
-        bng_cpp, tmp_path, "psa", "k_bind"
-    )
+def test_compartment_net_reload_preserves_psa_indexed_observables(bng_cpp, tmp_path):
+    _assert_compartment_net_reload_matches_source(bng_cpp, tmp_path, "psa", "k_bind")
 
 
 @pytest.mark.parametrize("method", ["ode", "ssa", "psa"])
@@ -315,10 +358,7 @@ end reaction rules
 end model
 begin actions
     generate_network({overwrite=>1})
-"""
-        + "    "
-        + source_action
-        + "\nend actions\n",
+""" + "    " + source_action + "\nend actions\n",
         encoding="utf-8",
     )
 
@@ -342,9 +382,7 @@ begin actions
     reload_source = reload_run / "reload.bngl"
     reload_source.write_text(
         'readFile({file=>"context.bngl"})\n'
-        'readFile({file=>"input.net"})\n'
-        + reload_action
-        + "\n",
+        'readFile({file=>"input.net"})\n' + reload_action + "\n",
         encoding="utf-8",
     )
     _, _, reload_error = runner.run_cli_path(bng_cpp, reload_source, reload_run)

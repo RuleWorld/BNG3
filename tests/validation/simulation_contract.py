@@ -37,7 +37,9 @@ def net_reload_context(source):
                 active_block = None
             continue
 
-        start = re.match(r"^\s*begin\s+(parameters|compartments)\s*$", line, re.IGNORECASE)
+        start = re.match(
+            r"^\s*begin\s+(parameters|compartments)\s*$", line, re.IGNORECASE
+        )
         if start:
             active_block = start.group(1).lower()
             context.append(line)
@@ -100,8 +102,7 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
                 net_reload_context(source), encoding="utf-8"
             )
             setup = (
-                'readFile({file=>"context.bngl"})\n'
-                'readFile({file=>"input.net"})\n'
+                'readFile({file=>"context.bngl"})\n' 'readFile({file=>"input.net"})\n'
             )
         elif route == "bngl":
             for item in (work / "input").iterdir():
@@ -113,7 +114,9 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
         else:
             raise ValueError("unknown simulation route")
         action.write_text(
-            simulation_text(setup, args, netfile="input.net" if route == "net-reload" else None)
+            simulation_text(
+                setup, args, netfile="input.net" if route == "net-reload" else None
+            )
         )
         command = (
             [

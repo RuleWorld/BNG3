@@ -384,8 +384,26 @@ void OdeIntegrator::compile() {
                 }
             }
             return false;
+        case ast::ExpressionKind::ObservableRef: {
+            // Imported .net rates are parsed without the typed lowering that
+            // rewrites model-function references to Function nodes. Keep
+            // walking their arguments and declarations so time dependence is
+            // not lost at this representation boundary.
+            for (const auto& arg : expression.args()) {
+                if (expressionReadsTime(arg, visitedFunctions)) {
+                    return true;
+                }
+            }
+            for (const auto& function : model_.getFunctions()) {
+                if (function.getName() == expression.name() &&
+                    visitedFunctions.insert(expression.name()).second &&
+                    expressionReadsTime(function.getExpression(), visitedFunctions)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         case ast::ExpressionKind::Number:
-        case ast::ExpressionKind::ObservableRef:
             return false;
         }
         return false;

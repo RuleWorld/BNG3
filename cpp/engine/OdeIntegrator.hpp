@@ -7,7 +7,7 @@
 
 #include "ast/Model.hpp"
 #include "io/TfunReader.hpp"
-#include "ModelFunctionEvaluator.hpp"
+#include "ast/ModelFunctionEvaluator.hpp"
 #include "NetworkGenerator.hpp"
 
 namespace bng::engine {
@@ -105,7 +105,7 @@ public:
 private:
     const ast::Model& model_;
     const GeneratedNetwork& network_;
-    ModelFunctionEvaluator functionEvaluator_;
+    ast::ModelFunctionEvaluator functionEvaluator_;
 
     struct CompiledConstantReaction {
         std::size_t reactantOffset = 0;
