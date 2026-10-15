@@ -1,5 +1,6 @@
 #include "engine/NetworkRulePlan.hpp"
 
+#include "ast/RateCandidateContext.hpp"
 #include "ast/SpeciesGraph.hpp"
 
 

@@ -6,10 +6,13 @@
 #include <string>
 #include <vector>
 
-#include "ast/RateCandidateContext.hpp"
-
 namespace BNGcore { class Node; class PatternGraph; }
-namespace bng::ast { class SpeciesGraph; class SpeciesList; class RxnList; }
+namespace bng::ast {
+class SpeciesGraph;
+class SpeciesList;
+class RxnList;
+struct RateCandidateContext;
+}
 namespace bng::compile {
 class CompiledModel;
 class CompiledRule;
