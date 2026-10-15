@@ -260,3 +260,32 @@ def test_api_fixture_fails_in_strict_ci_and_skips_locally(monkeypatch):
         )
     else:
         pytest.fail("the api fixture returned without raising for have_api=False")
+
+
+def test_missing_explicit_cli_never_falls_back_to_available_default(
+    tmp_path, monkeypatch
+):
+    from tests.validation import conftest
+
+    default = tmp_path / "build/cpp/bng_cpp"
+    default.parent.mkdir(parents=True)
+    default.write_text("candidate")
+    monkeypatch.setattr(conftest.corpus, "REPO", tmp_path)
+    monkeypatch.delenv("BNG_CPP", raising=False)
+    assert conftest._discover_bng_cpp(None) == default.resolve()
+    assert (
+        conftest._discover_bng_cpp(str(tmp_path / "missing-requested-binary")) is None
+    )
+
+
+def test_missing_environment_cli_never_falls_back_to_available_default(
+    tmp_path, monkeypatch
+):
+    from tests.validation import conftest
+
+    default = tmp_path / "build/cpp/bng_cpp"
+    default.parent.mkdir(parents=True)
+    default.write_text("candidate")
+    monkeypatch.setattr(conftest.corpus, "REPO", tmp_path)
+    monkeypatch.setenv("BNG_CPP", str(tmp_path / "missing-requested-binary"))
+    assert conftest._discover_bng_cpp(None) is None

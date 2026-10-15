@@ -133,6 +133,85 @@ def test_net_roundtrip_idempotent(model_name, bng_cpp, work_dir):
     assert diff.ok, f"net not idempotent [{model_name}]:\n{diff.summary()}"
 
 
+@pytest.mark.export
+def test_net_reload_preserves_outer_species_compartment(bng_cpp, work_dir):
+    """A canonical @comp:: NET species keeps its compartment on rewrite."""
+    net_input = work_dir / "compartmented.net"
+    net_input.write_text(
+        """begin species
+    1 @cyto::A() 7
+end species
+begin reactions
+end reactions
+""",
+        encoding="utf-8",
+    )
+    source = work_dir / "compartment_roundtrip.bngl"
+    source.write_text(
+        f"""begin compartments
+    cyto 3 1.0
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin actions
+    readFile({{file=>\"{net_input.as_posix()}\"}})
+    writeNetwork({{overwrite=>1}})
+end actions
+""",
+        encoding="utf-8",
+    )
+
+    net, _, err = runner.run_cli_path(bng_cpp, source, work_dir / "roundtrip")
+    assert net is not None, f"NET compartment reload failed: {err}"
+    parsed = compare.parse_net(net)
+    assert parsed.species_by_index == {1: "@cyto::A()"}
+
+
+@pytest.mark.export
+def test_net_reload_indexes_group_weights_by_species_row(bng_cpp, work_dir):
+    """A numeric NET group selects its exact species row, not graph matches."""
+    net_input = work_dir / "indexed_group.net"
+    net_input.write_text(
+        """begin species
+    1 A() 3
+    2 A().B() 5
+end species
+begin reactions
+end reactions
+begin groups
+    1 only_singleton 2*1
+end groups
+""",
+        encoding="utf-8",
+    )
+    source = work_dir / "indexed_group_roundtrip.bngl"
+    source.write_text(
+        f"""begin molecule types
+    A()
+    B()
+end molecule types
+begin actions
+    readFile({{file=>\"{net_input.as_posix()}\"}})
+    simulate({{method=>\"ode\",t_end=>1,n_steps=>1,prefix=>\"trajectory\"}})
+    writeNetwork({{overwrite=>1}})
+end actions
+""",
+        encoding="utf-8",
+    )
+
+    net, _, err = runner.run_cli_path(bng_cpp, source, work_dir / "roundtrip")
+    assert net is not None, f"NET indexed-group simulation failed: {err}"
+    gdat = work_dir / "roundtrip" / "trajectory.gdat"
+    assert gdat.is_file(), f"NET indexed-group simulation produced no gdat: {err}"
+    lines = [line.strip() for line in gdat.read_text(encoding="utf-8").splitlines()]
+    header = next(line.lstrip("# ").split() for line in lines if line.startswith("#"))
+    assert header == ["time", "only_singleton"]
+    rows = [line.split() for line in lines if line and not line.startswith("#")]
+    assert rows, "NET indexed-group simulation produced no data rows"
+    assert float(rows[0][1]) == pytest.approx(6.0)
+
+
 def _network3_executable() -> Path | None:
     """Return only the Network3 executable rooted at the pinned BNG2 checkout.
 

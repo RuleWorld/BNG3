@@ -89,7 +89,17 @@ def _network_only_text(source: str) -> str:
             continue
         if section == "actions" or (section is None and match):
             if match and match.group(1) not in _SKIP_ACTIONS:
-                kept_actions.append(line)
+                # Declarations such as setOption are legal at top level but
+                # not inside BNG3's action grammar. Preserve their scope.
+                if section is None and match.group(1) in {
+                    "setOption",
+                    "setModelName",
+                    "substanceUnits",
+                    "version",
+                }:
+                    kept_lines.append(line)
+                else:
+                    kept_actions.append(line)
             continue
         kept_lines.append(line)
 

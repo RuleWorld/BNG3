@@ -414,3 +414,29 @@ def test_network_comparison_rejects_changed_observable_group_weight(tmp_path):
     assert reference is not None
     assert generated is not None
     assert not compare_net(reference, generated).ok
+
+
+def test_dynamic_rate_expansion_preserves_sum_grouping(tmp_path):
+    from tests.validation.compare import _resolve_rate
+
+    original = _resolve_rate("2*f", {"f": "A+B"}, "value", {"f"})
+    changed = _resolve_rate("2*A+B", {}, "value")
+    assert original != changed
+    assert original == _resolve_rate("2*(A+B)", {}, "value")
+
+
+@pytest.mark.parametrize(
+    "original,changed", [("-(A*B+C)", "-A*B+C"), ("X/-(A*B)", "X/-A*B")]
+)
+def test_dynamic_rate_canonicalization_preserves_operator_precedence(original, changed):
+    assert _canon_expr(original) != _canon_expr(changed)
+
+
+@pytest.mark.parametrize("law", ["Sat", "MM", "Hill"])
+def test_network_rate_law_arguments_are_not_discarded(tmp_path, law):
+    reference = _net(tmp_path / "reference.net", "1")
+    text = reference.read_text().replace("1 1 2 kd", f"1 1 2 {law} 2 3")
+    reference.write_text(text)
+    subject = tmp_path / "subject.net"
+    subject.write_text(text.replace(f"{law} 2 3", f"{law} 200 3"))
+    assert not compare_net(parse_net(reference), parse_net(subject)).ok

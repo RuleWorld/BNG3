@@ -1,0 +1,27 @@
+begin model
+begin parameters
+  k 0.5
+end parameters
+begin compartments
+  outside 3 2
+  inside 3 1
+end compartments
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  @outside:A() 10
+  @inside:A() 3
+end seed species
+begin observables
+  Molecules A_total A()
+end observables
+begin reaction rules
+  @outside:A() -> @outside:B() k
+  @inside:A() -> @inside:B() k
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+end actions

@@ -1,0 +1,24 @@
+begin model
+begin parameters
+  S0 100
+  kRT 2
+  kTR 1
+end parameters
+begin molecule types
+  S(c~R~T)
+end molecule types
+begin seed species
+  S(c~R) S0
+end seed species
+begin observables
+  Molecules Total S()
+end observables
+begin reaction rules
+  S(c~R) <-> S(c~T) kRT,kTR
+end reaction rules
+end model
+begin actions
+  setConcentration("S(c~R)","S0")
+  addConcentration("S(c~R)","S0")
+  generate_network({overwrite=>1})
+end actions

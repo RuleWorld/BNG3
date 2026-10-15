@@ -1,0 +1,22 @@
+begin model
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A()
+  Sink()
+end molecule types
+begin seed species
+  A() 10
+  $Sink() 0
+end seed species
+begin observables
+  Molecules A_free A()
+end observables
+begin reaction rules
+  A() -> Sink() k
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+end actions

@@ -1,0 +1,21 @@
+begin model
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A(s~u~p)
+end molecule types
+begin seed species
+  A(s~u) 10
+end seed species
+begin observables
+  Molecules Total A()
+  Molecules Never A(s~p)
+end observables
+begin reaction rules
+  A(s~u) -> 0 k
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+end actions
