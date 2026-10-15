@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "ast/RateCandidateContext.hpp"
+
 namespace BNGcore { class Node; class PatternGraph; }
 namespace bng::ast { class SpeciesGraph; class SpeciesList; class RxnList; }
 namespace bng::compile {
@@ -31,6 +33,7 @@ struct LegacyNetworkRuleHooks {
   std::function<std::string(const std::vector<ast::SpeciesGraph> &,
                             const std::vector<std::size_t> &)>
       productLocalRateFingerprint;
+  std::function<bool(const ast::RateCandidateContext &)> rejectZeroRate;
 };
 
 class LegacyNetworkRuleKernel {

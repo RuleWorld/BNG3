@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "SpeciesGraph.hpp"
+#include "RateCandidateContext.hpp"
 #include <unordered_map>
 #include "SpeciesList.hpp"
 #include "RxnList.hpp"
@@ -37,6 +38,10 @@ public:
     std::function<std::string(const std::vector<SpeciesGraph> &,
                               const std::vector<std::size_t> &)>
         productLocalRateFingerprint;
+        // Compiled plans may reject a candidate only when its rate is proven
+        // structurally zero from candidate graph structure. The hook runs
+        // before product species are inserted.
+        std::function<bool(const RateCandidateContext &)> rejectZeroRate;
 
         // Compiled network plans supply deletion decisions here so the
         // compatibility expansion code does not need to reconstruct them
