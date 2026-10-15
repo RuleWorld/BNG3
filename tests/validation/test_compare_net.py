@@ -601,3 +601,27 @@ def test_network_rate_law_arguments_are_not_discarded(tmp_path, law):
     subject = tmp_path / "subject.net"
     subject.write_text(text.replace(f"{law} 2 3", f"{law} 200 3"))
     assert not compare_net(parse_net(reference), parse_net(subject)).ok
+
+
+@pytest.mark.parametrize(
+    ("reference", "generated"),
+    [
+        ("0.3*x", "0.29999999999999999*x"),
+        ("1e-6*x", "9.9999999999999995e-7*x"),
+        (
+            "tfun([0.001,0.02,0.3],[150,250,350],time)",
+            "tfun([0.001,0.02,0.29999999999999999],[150,250,350],time)",
+        ),
+    ],
+)
+def test_dynamic_rate_literals_compare_by_exact_binary64_value(reference, generated):
+    assert _canon_expr(reference) == _canon_expr(generated)
+
+
+def test_dynamic_rate_literals_keep_adjacent_binary64_values_distinct():
+    assert _canon_expr("0.3*x") != _canon_expr("0.30000000000000004*x")
+
+
+def test_dynamic_rate_constant_arithmetic_matches_binary64_evaluation():
+    assert _canon_expr("(0.19*6.022e23)*1e-21+x") == _canon_expr("114.41799999999999+x")
+    assert _canon_expr("(153.0*6.022e23)*1e-21*x") == _canon_expr("92136.59999999999*x")

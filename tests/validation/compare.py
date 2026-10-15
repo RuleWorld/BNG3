@@ -518,6 +518,20 @@ def _canon_expr(expr: str) -> str:
     source = result.replace("^", "**").replace("&&", " and ").replace("||", " or ")
     source = re.sub(r"\bif\s*(?=\()", "_bng_if", source)
 
+    def binary64_fraction(value: Fraction) -> Fraction:
+        """Round representable numeric operations as the NET engines do.
+
+        Retain out-of-range nonzero rationals rather than silently accepting
+        underflow as zero or overflow as infinity.
+        """
+        try:
+            rounded = float(value)
+        except OverflowError:
+            return value
+        if math.isfinite(rounded) and (rounded != 0.0 or value == 0):
+            return Fraction(rounded)
+        return value
+
     def literal_fraction(node: ast.Constant) -> Fraction | None:
         literal = ast.get_source_segment(source, node)
         if literal is None or len(literal) > _MAX_CANON_NUMERIC_LITERAL_CHARS:
@@ -534,7 +548,7 @@ def _canon_expr(expr: str) -> str:
             if abs(int(exponent_text)) > _MAX_CANON_NUMERIC_EXPONENT:
                 return None
         try:
-            value = Fraction(literal)
+            value = binary64_fraction(Fraction(literal))
         except (OverflowError, ValueError, ZeroDivisionError):
             return None
         if (
@@ -545,7 +559,7 @@ def _canon_expr(expr: str) -> str:
         return value
 
     def numeric_value(node: ast.AST) -> Fraction | None:
-        """Return an exact rational for a numeric-only arithmetic subtree."""
+        """Evaluate a numeric subtree with binary64 rounding at each operation."""
         folded = getattr(node, "_canonical_fraction", None)
         if folded is not None:
             return folded
@@ -564,13 +578,13 @@ def _canon_expr(expr: str) -> str:
             return None
         try:
             if isinstance(node.op, ast.Add):
-                return left + right
+                return binary64_fraction(left + right)
             if isinstance(node.op, ast.Sub):
-                return left - right
+                return binary64_fraction(left - right)
             if isinstance(node.op, ast.Mult):
-                return left * right
+                return binary64_fraction(left * right)
             if isinstance(node.op, ast.Div):
-                return left / right
+                return binary64_fraction(left / right)
             if isinstance(node.op, ast.Pow) and right.denominator == 1:
                 # Avoid pathological work from malformed or adversarial NETs.
                 exponent = right.numerator
@@ -578,7 +592,7 @@ def _canon_expr(expr: str) -> str:
                     left.numerator.bit_length(), left.denominator.bit_length()
                 )
                 if abs(exponent) <= 10000 and operand_bits * abs(exponent) <= 4096:
-                    return left**exponent
+                    return binary64_fraction(left**exponent)
         except (OverflowError, ZeroDivisionError, ValueError):
             return None
         return None
@@ -660,7 +674,7 @@ def _canon_expr(expr: str) -> str:
             return self.generic_visit(node)
 
     class FoldNumericSubtrees(ast.NodeTransformer):
-        """Use exact rational markers for numeric terms in dynamic rates."""
+        """Use exact value markers for numeric terms in dynamic rates."""
 
         @staticmethod
         def _marker(value: Fraction, location: ast.AST) -> ast.Constant:

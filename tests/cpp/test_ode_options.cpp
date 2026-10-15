@@ -1112,3 +1112,34 @@ end reaction rules
     CHECK(localRateFor("    A%x(s~u!1).I(i!1)",
                        "A%x(s~p!1).I(i!1)") == 0.0);
 }
+
+TEST_CASE("NetWriter evaluated parameters round trip binary64 values",
+          "[NetWriter][Precision]") {
+    auto model = parseDecayModel();
+    const double expected = -9.221848749616356;
+    model->getParameters().add(ast::Parameter("precise", ast::Expression::number(expected)));
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-parameter-precision-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         ".net");
+    io::NetWriter::write(outputPath, *model, network);
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    std::string line;
+    bool found = false;
+    while (std::getline(input, line)) {
+        std::istringstream fields(line);
+        std::size_t index;
+        std::string name;
+        double value;
+        if (fields >> index >> name >> value && name == "precise") {
+            found = true;
+            CHECK(value == expected);
+        }
+    }
+    input.close();
+    std::filesystem::remove(outputPath);
+    CHECK(found);
+}

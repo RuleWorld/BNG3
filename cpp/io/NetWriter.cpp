@@ -2355,7 +2355,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 << parameterCommentSuffix(parameter.getName()) << '\n';
         } else {
             std::ostringstream valStr;
-            valStr << std::setprecision(15) << parameter.getValue();
+            valStr << std::setprecision(std::numeric_limits<double>::max_digits10) << parameter.getValue();
             out << "    " << parameterIndex++ << " " << parameter.getName() << " "
                 << valStr.str() << parameterCommentSuffix(parameter.getName()) << '\n';
         }
@@ -2379,7 +2379,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                     return 0.0;
                 });
             std::ostringstream voss;
-            voss << std::setprecision(15) << val;
+            voss << std::setprecision(std::numeric_limits<double>::max_digits10) << val;
             return voss.str();
         } catch (...) {
             return compactExpression(info.expression);
@@ -2403,7 +2403,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 std::sort(sorted.begin(), sorted.end());
                 for (const auto& [specIdx, paramPair] : sorted) {
                     std::ostringstream voss;
-                    voss << std::setprecision(15) << paramPair.second;
+                    voss << std::setprecision(std::numeric_limits<double>::max_digits10) << paramPair.second;
                     out << "    " << parameterIndex++ << " " << paramPair.first << " "
                         << voss.str() << '\n';
                 }
@@ -2447,7 +2447,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             for (const auto& [rxnIdx, pp] : allParams) {
                 if (writtenParams.insert(pp.first).second) {
                     std::ostringstream voss;
-                    voss << std::setprecision(15) << pp.second;
+                    voss << std::setprecision(std::numeric_limits<double>::max_digits10) << pp.second;
                     out << "    " << parameterIndex++ << " " << pp.first << " "
                         << voss.str() << "  # ConstantExpression\n";
                 }
