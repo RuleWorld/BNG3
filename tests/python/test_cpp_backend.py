@@ -465,19 +465,19 @@ end model
         assert has_complex(pruned, ("A", "B"), ("C",))
         assert has_complex(pruned, ("A", "C"), ("B",))
         assert any(
-            reaction.startswith("bind_B|") for reaction in pruned.reaction_strings
+            reaction.startswith("bind_B:|") for reaction in pruned.reaction_strings
         )
         assert any(
-            reaction.startswith("bind_C|") for reaction in pruned.reaction_strings
+            reaction.startswith("bind_C:|") for reaction in pruned.reaction_strings
         )
         # The parameterized reverse rates remain unknown to the proof and are
         # retained independently of the structurally-zero forward direction.
         assert any(
-            reaction.startswith("_reverse__bind_B|")
+            reaction.startswith("_reverse__bind_B:|")
             for reaction in pruned.reaction_strings
         )
         assert any(
-            reaction.startswith("_reverse__bind_C|")
+            reaction.startswith("_reverse__bind_C:|")
             for reaction in pruned.reaction_strings
         )
 
