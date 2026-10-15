@@ -15,6 +15,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace bng::ast {
@@ -215,6 +216,49 @@ bool numericValue(const Expression& expression, double& value) {
 bool isSpecialFunction(const std::string& name) {
     return name == "time" || name == "t" || name == "TFUN" ||
            name == "tfun" || name == "_pi" || name == "_e";
+}
+
+Expression substituteIdentifiers(
+    const Expression& expression,
+    const std::unordered_map<std::string, Expression>& substitutions) {
+    switch (expression.kind()) {
+    case ExpressionKind::Number:
+        return expression;
+    case ExpressionKind::Identifier: {
+        const auto replacement = substitutions.find(expression.name());
+        return replacement == substitutions.end() ? expression
+                                                  : replacement->second;
+    }
+    case ExpressionKind::Unary:
+        return Expression::unary(
+            expression.name(),
+            substituteIdentifiers(expression.args().front(), substitutions));
+    case ExpressionKind::Binary:
+        return Expression::binary(
+            expression.name(),
+            substituteIdentifiers(expression.args()[0], substitutions),
+            substituteIdentifiers(expression.args()[1], substitutions));
+    case ExpressionKind::Function:
+    case ExpressionKind::ObservableRef: {
+        std::vector<Expression> arguments;
+        arguments.reserve(expression.args().size());
+        for (const auto& argument : expression.args()) {
+            arguments.push_back(substituteIdentifiers(argument, substitutions));
+        }
+        return expression.kind() == ExpressionKind::Function
+                   ? Expression::function(expression.name(), std::move(arguments))
+                   : Expression::observableRef(expression.name(),
+                                               std::move(arguments));
+    }
+    case ExpressionKind::TableFunction:
+        if (expression.args().size() != 1) return expression;
+        return Expression::tableFunction(
+            expression.tableXValues(), expression.tableYValues(),
+            expression.tableFilePath(),
+            substituteIdentifiers(expression.args().front(), substitutions),
+            expression.tableMethod());
+    }
+    return expression;
 }
 
 Expression partialEvaluateImpl(const Expression& expression,
@@ -883,13 +927,18 @@ Expression partialEvaluate(const Expression& expression,
     const FunctionExpander expandFunction = [&functions](
         const std::string& name,
         const std::vector<Expression>& arguments) -> std::optional<Expression> {
-        if (!arguments.empty()) return std::nullopt;
         const auto function = std::find_if(
             functions.begin(), functions.end(), [&](const auto& candidate) {
-                return candidate.getName() == name && candidate.getArgs().empty();
+                return candidate.getName() == name &&
+                       candidate.getArgs().size() == arguments.size();
             });
         if (function == functions.end()) return std::nullopt;
-        return function->getExpression();
+
+        std::unordered_map<std::string, Expression> substitutions;
+        for (std::size_t i = 0; i < arguments.size(); ++i) {
+            substitutions.emplace(function->getArgs()[i], arguments[i]);
+        }
+        return substituteIdentifiers(function->getExpression(), substitutions);
     };
     return partialEvaluate(expression, expandFunction);
 }

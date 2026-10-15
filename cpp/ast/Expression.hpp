@@ -80,9 +80,8 @@ using FunctionExpander = std::function<std::optional<Expression>(
 Expression partialEvaluate(const Expression& expression,
                            const FunctionExpander& expandFunction = {});
 
-// Model-aware overload. Zero-argument model functions can be expanded; the
-// bodies of functions with formal arguments are still simplified when their
-// definitions are compiled or exported.
+// Model-aware overload. User-defined calls are expanded only when simplifying
+// their bodies enables a fold; otherwise the call identity is preserved.
 Expression partialEvaluate(const Expression& expression,
                            const std::vector<Function>& functions);
 

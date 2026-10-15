@@ -89,6 +89,20 @@ TEST_CASE("Expression partial evaluation follows nested zero-argument functions"
     CHECK(partialEvaluate(expression, functions).toString() == "k1");
 }
 
+TEST_CASE("Expression partial evaluation folds numeric user-function arguments",
+          "[Expression][PartialEvaluation]") {
+    const Function rateAdjust(
+        "rate_adjust", {"k"},
+        Expression::binary("*", Expression::identifier("k"),
+                           Expression::number(2.0)));
+    const std::vector<Function> functions{rateAdjust};
+    const auto expression = Expression::function(
+        "rate_adjust", {Expression::binary("+", Expression::number(2.0),
+                                            Expression::number(3.0))});
+
+    CHECK(partialEvaluate(expression, functions).toString() == "10");
+}
+
 TEST_CASE("Expression partial evaluation preserves dynamic function dependencies",
           "[Expression][PartialEvaluation]") {
     const Function base("base", {},
@@ -99,6 +113,26 @@ TEST_CASE("Expression partial evaluation preserves dynamic function dependencies
 
     CHECK(partialEvaluate(bng::parser::parseExpression("rate()"), functions)
               .toString() == "rate()");
+}
+
+TEST_CASE("Expression partial evaluation preserves dynamic functions with arguments",
+          "[Expression][PartialEvaluation]") {
+    const Function base("base", {},
+                        Expression::binary(
+                            "+", Expression::identifier("k"),
+                            Expression::function("atotal", {})));
+    const Function rateAdjust(
+        "rate_adjust", {"k"},
+        Expression::binary(
+            "+", Expression::binary("*", Expression::identifier("k"),
+                                    Expression::number(2.0)),
+            Expression::function("base", {})));
+    const std::vector<Function> functions{base, rateAdjust};
+    const auto expression =
+        Expression::function("rate_adjust", {Expression::identifier("k1")});
+
+    CHECK(partialEvaluate(expression, functions).toString() ==
+          "rate_adjust(k1)");
 }
 
 TEST_CASE("Expression: power operator", "[Expression]") {
