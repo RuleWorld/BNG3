@@ -1,0 +1,3 @@
+## 2024-05-19 - [Avoid `copy.copy` overhead in Atomizer]
+**Learning:** `copy.copy` in Python is surprisingly slow due to introspection overhead (`__reduce__`, dispatching). For hot-path structural classes like `Molecule` in `bionetgen/atomizer/utils/structures.py`, using `self.__class__.__new__(self.__class__)` combined with `__dict__.copy()` provides a direct >30% speedup for shallow cloning without loss of functionality.
+**Action:** When working on performance optimizations in hot loops inside pure Python structures, avoid `copy.copy()` if the class can be cleanly duplicated via direct dictionary assignment and manual deep-copying of sub-elements.

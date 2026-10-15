@@ -488,7 +488,11 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        molecule = shallow_copy(self)
+        # ⚡ Bolt: Bypass copy.copy overhead by using __new__ directly
+        molecule = self.__class__.__new__(self.__class__)
+        # ⚡ Bolt: Use direct dictionary copy to preserve all shallow attributes
+        molecule.__dict__ = self.__dict__.copy()
+        # ⚡ Bolt: Deep copy components manually
         molecule.components = [element.copy() for element in self.components]
         return molecule
 
