@@ -1642,6 +1642,171 @@ writeNetwork()
         assert output.exists()
         assert "X() 7" in output.read_text()
 
+    def test_set_add_concentration_survives_network_regeneration_in_net(self, tmp_path):
+        bngl = tmp_path / "set_add_initial.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    S0 100
+    kRT 2
+    kTR 1
+end parameters
+begin molecule types
+    S(c~R~T)
+end molecule types
+begin seed species
+    S(c~R) S0
+end seed species
+begin observables
+    Molecules Total S()
+end observables
+begin reaction rules
+    S(c~R) <-> S(c~T) kRT,kTR
+end reaction rules
+end model
+begin actions
+    setConcentration("S(c~R)","S0")
+    addConcentration("S(c~R)","S0")
+    generate_network({overwrite=>1})
+end actions
+""", encoding="utf-8")
+
+        bionetgen.load(str(bngl)).execute()
+
+        net = tmp_path / "set_add_initial.net"
+        assert net.exists()
+        species_block = net.read_text(encoding="utf-8").split(
+            "begin species", 1
+        )[1].split("end species", 1)[0]
+        species_rows = [
+            line.split() for line in species_block.splitlines() if line.strip()
+        ]
+        assert any(
+            len(row) >= 3
+            and row[1] == "S(c~R)"
+            and float(row[2]) == pytest.approx(200.0)
+            for row in species_rows
+        )
+
+    @pytest.mark.parametrize("route", ["readFile", "include_network", "generate_network"])
+    def test_net_reload_preserves_compartmented_constant_species(self, tmp_path, route):
+        net_path = tmp_path / "constant_compartment.net"
+        net_path.write_text("""begin species
+    1 @cell::$A() 7
+end species
+begin reactions
+end reactions
+""", encoding="utf-8")
+        bngl = tmp_path / "constant_compartment_roundtrip.bngl"
+        if route == "readFile":
+            load_action = 'readFile({file=>"constant_compartment.net"})'
+        elif route == "include_network":
+            load_action = 'include_network({file=>"constant_compartment.net"})'
+        else:
+            (tmp_path / "constant_compartment_roundtrip.net").write_text(
+                net_path.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            load_action = "generate_network({overwrite=>0})"
+        bngl.write_text("""
+begin model
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+end model
+begin actions
+    __LOAD_ACTION__
+    writeNetwork({prefix=>"constant_compartment_roundtrip",overwrite=>1})
+end actions
+""".replace("__LOAD_ACTION__", load_action), encoding="utf-8")
+
+        bionetgen.load(str(bngl)).execute()
+
+        output = tmp_path / "constant_compartment_roundtrip.net"
+        assert output.exists()
+        assert "@cell::$A() 7" in output.read_text(encoding="utf-8")
+
+    @pytest.mark.parametrize("route", ["readFile", "include_network", "generate_network"])
+    def test_net_reload_preserves_dynamic_rate_function_and_observable(self, tmp_path, route):
+        source = tmp_path / "dynamic_source.bngl"
+        source.write_text("""
+begin model
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules A_free A()
+end observables
+begin functions
+    rate() A_free
+end functions
+begin reaction rules
+    A() -> 0 rate()
+end reaction rules
+end model
+begin actions
+    generate_network({overwrite=>1})
+end actions
+""", encoding="utf-8")
+        bionetgen.load(str(source)).execute()
+        net_path = tmp_path / "dynamic_source.net"
+        assert net_path.exists()
+        net_text = net_path.read_text(encoding="utf-8")
+        assert "A_free" in net_text
+        assert "rate() A_free" in net_text
+
+        reload = tmp_path / "dynamic_reload.bngl"
+        if route == "readFile":
+            load_action = 'readFile({file=>"dynamic_source.net"})'
+        elif route == "include_network":
+            load_action = 'include_network({file=>"dynamic_source.net"})'
+        else:
+            (tmp_path / "dynamic_reload.net").write_text(
+                net_text, encoding="utf-8"
+            )
+            load_action = "generate_network({overwrite=>0})"
+        reload.write_text("""
+begin model
+begin molecule types
+    A()
+    B()
+end molecule types
+begin observables
+    Molecules A_free B()
+end observables
+end model
+begin actions
+    __LOAD_ACTION__
+    simulate({method=>"ode",t_end=>1,n_steps=>10,prefix=>"dynamic_reload"})
+end actions
+""".replace("__LOAD_ACTION__", load_action), encoding="utf-8")
+        bionetgen.load(str(reload)).execute()
+
+        gdat = tmp_path / "dynamic_reload.gdat"
+        assert gdat.exists()
+        lines = gdat.read_text(encoding="utf-8").splitlines()
+        header = next(
+            line.lstrip("# ").split()
+            for line in lines
+            if line.startswith("#")
+        )
+        assert header == ["time", "A_free"]
+        rows = [
+            [float(value) for value in line.split()]
+            for line in lines
+            if line and not line.startswith("#")
+        ]
+        assert rows
+        assert rows[0][1] == pytest.approx(10.0)
+        for row in rows:
+            expected = 10.0 / (1.0 + 10.0 * row[0])
+            assert row[1] == pytest.approx(expected, rel=2e-3, abs=1e-4)
+
     def test_readnetwork_alias_rejects_missing_file(self, tmp_path):
         bngl = tmp_path / "missing_readnetwork.bngl"
         bngl.write_text("""

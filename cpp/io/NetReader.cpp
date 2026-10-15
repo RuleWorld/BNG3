@@ -197,13 +197,16 @@ void NetReader::parseGroupLine(const std::string& line, ParseResult& result) {
         if (!trim(t).empty()) filtered.push_back(trim(t));
     }
 
-    if (filtered.size() < 3) {
+    if (filtered.size() < 2) {
         throw std::runtime_error("Invalid observable format: " + line);
     }
 
     std::string name = filtered[1];
 
-    if (filtered.size() >= 4) {
+    if (filtered.size() == 2) {
+        // Empty observables have a name but no species weights in .net files.
+        result.observables.emplace_back(name, std::vector<std::string>{});
+    } else if (filtered.size() >= 4) {
         // Format A: <index> <name> <type> <patterns...>
         std::vector<std::string> patterns;
         for (std::size_t i = 3; i < filtered.size(); ++i) {

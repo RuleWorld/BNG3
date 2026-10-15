@@ -59,6 +59,7 @@ public:
     // Barrier patterns are move-only because they own a ReactionRule.
     void addBarrierPattern(BarrierPattern barrierPattern);
     void addObservable(Observable observable);
+    void upsertObservable(Observable observable);
     void addMoleculeType(MoleculeType moleculeType);
     void addSeedSpecies(SeedSpecies seedSpecies);
     void addReactionRule(ReactionRule reactionRule);
