@@ -6,6 +6,7 @@
 #include <fstream>
 #include <functional>
 #include <iomanip>
+#include <limits>
 #include <map>
 #include <optional>
 #include <regex>
@@ -29,6 +30,7 @@
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/energy/BarrierTable.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
+#include "engine/NetworkGenerator.hpp"
 #include "ast/BarrierPattern.hpp"
 #include "engine/ObservableProjection.hpp"
 
@@ -953,21 +955,35 @@ std::string formatInitialAmountName(std::size_t index) {
     return "_InitialConc" + std::to_string(index + 1);
 }
 
-std::string formatSpeciesAmount(const ast::Species& species, const ast::Model& model) {
+std::string formatSpeciesAmount(const ast::Species& species,
+                                const ast::Model& model,
+                                const compile::CompiledModel& compiledModel) {
     const auto speciesLabel = species.getSpeciesGraph().canonicalLabel();
     for (std::size_t i = 0; i < model.getSeedSpecies().size(); ++i) {
         const auto& seed = model.getSeedSpecies()[i];
         if (std::abs(species.getAmount()) > 1e-12 &&
             seed.getCanonicalLabel() == speciesLabel &&
+            seed.isConstant() == species.isConstant() &&
             seed.getCompartment() == species.getCompartment() &&
             species.getSpeciesGraph().graphIsomorphicTo(seed.getGraph())) {
-            // Use the original seed species amount expression (parameter name or value)
-            return seed.getAmount().toString();
+            try {
+                const double initialAmount = engine::NetworkGenerator::normalizeSeedAmount(
+                    compiledModel, compiledModel.seeds().at(i));
+                if (species.getAmount() == initialAmount) {
+                    // Keep the source expression only while the live network
+                    // still has that seed's initial amount.
+                    return seed.getAmount().toString();
+                }
+            } catch (const std::exception&) {
+                // Dynamic or otherwise unnormalizable seeds are emitted from
+                // the current network state below.
+            }
         }
     }
 
     std::ostringstream out;
-    out << std::setprecision(12) << species.getAmount();
+    out << std::setprecision(std::numeric_limits<double>::max_digits10)
+        << species.getAmount();
     return out.str();
 }
 
@@ -2483,7 +2499,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     out << "begin species\n";
     for (const auto& species : network.species.all()) {
         out << "    " << (species.getIndex() + 1) << " " << formatSpecies(species) << " "
-            << formatSpeciesAmount(species, model) << '\n';
+            << formatSpeciesAmount(species, model, compiledModel) << '\n';
     }
     out << "end species\n";
 
@@ -2730,13 +2746,47 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     std::size_t groupIndex = 1;
     for (std::size_t observableIndex = 0; observableIndex < projection.size();
          ++observableIndex) {
+        const auto& sourceObservable = model.getObservables().at(observableIndex);
+        const auto& indexedWeights = sourceObservable.getIndexedSpeciesWeights();
+        std::vector<int> directWeights;
+        if (indexedWeights.has_value()) {
+            directWeights.resize(network.species.size(), 0);
+            for (const auto& [speciesIndex, weight] : *indexedWeights) {
+                if (speciesIndex >= network.species.size()) {
+                    throw std::runtime_error(
+                        "Indexed observable '" + sourceObservable.getName() +
+                        "' references species index " + std::to_string(speciesIndex) +
+                        " outside the network being written");
+                }
+                if (!std::isfinite(weight) || weight < 0.0 ||
+                    std::floor(weight) != weight ||
+                    weight > static_cast<double>(std::numeric_limits<int>::max())) {
+                    throw std::runtime_error(
+                        "Indexed observable '" + sourceObservable.getName() +
+                        "' has a NET weight that is not a nonnegative integer");
+                }
+                const auto integerWeight = static_cast<int>(weight);
+                if (integerWeight > std::numeric_limits<int>::max() -
+                                        directWeights[speciesIndex]) {
+                    throw std::runtime_error(
+                        "Indexed observable '" + sourceObservable.getName() +
+                        "' has a combined NET weight outside the supported range");
+                }
+                directWeights[speciesIndex] += integerWeight;
+            }
+        }
         out << "    " << groupIndex++ << " " << projection.name(observableIndex) << " ";
         bool firstEntry = true;
         for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
             const auto& species = network.species.get(speciesIndex);
-            const int weight = projection.weight(
-                observableIndex, species.getSpeciesGraph().getGraph(),
-                species.getCompartment());
+            int weight = 0;
+            if (indexedWeights.has_value()) {
+                weight = directWeights[speciesIndex];
+            } else {
+                weight = projection.weight(
+                    observableIndex, species.getSpeciesGraph().getGraph(),
+                    species.getCompartment());
+            }
             if (weight == 0) {
                 continue;
             }

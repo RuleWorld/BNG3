@@ -17,6 +17,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -28,8 +29,10 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
+#include "ast/Observable.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -156,6 +159,36 @@ std::string expectedRows(const std::vector<double>& values) {
     return out;
 }
 
+std::string cdatHeaderFor(const std::string& modelText,
+                          bool clearOuterSpeciesCompartment = false) {
+    auto model = parser::parseModel(modelText);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    if (clearOuterSpeciesCompartment) {
+        for (std::size_t i = 0; i < network.species.size(); ++i) {
+            auto& species = network.species.get(i);
+            species.setCompartment("");
+            species.getSpeciesGraph().setCompartment("");
+        }
+    }
+    engine::OdeIntegrator integrator(*model, network);
+
+    engine::OdeResult result;
+    result.timePoints = {0.0};
+    result.concentrations.emplace_back(network.species.size(), 0.0);
+    result.observables.emplace_back();
+
+    const TempDirectoryGuard tempDir{createUniqueTempDirectory()};
+    const auto prefix = (tempDir.path / "output").string();
+    integrator.writeOutputFiles(prefix, result, /*printCDAT=*/true,
+                                /*printFunctions=*/false);
+
+    std::ifstream cdat(prefix + ".cdat");
+    std::string header;
+    std::getline(cdat, header);
+    return header;
+}
+
 } // namespace
 
 TEST_CASE("gdat numeric fields keep the %.12e byte format", "[OdeOutput][format]") {
@@ -214,4 +247,148 @@ TEST_CASE("gdat rows pad to 18 columns and separate fields with one space",
     }
     CHECK(lineCount == 3u);
     CHECK(rows.size() == (37u + expectedTextNewline().size()) * 3u);
+}
+
+TEST_CASE("cdat columns retain constant-species identity",
+          "[OdeOutput][cdat][identity]") {
+    const auto header = cdatHeaderFor(R"(
+begin molecule types
+    A()
+    Sink()
+end molecule types
+begin seed species
+    A() 1
+    $Sink() 2
+end seed species
+)");
+
+    CHECK(header.find(" A()") != std::string::npos);
+    CHECK(header.find(" $Sink()") != std::string::npos);
+}
+
+TEST_CASE("cdat columns distinguish same graph in different compartments",
+          "[OdeOutput][cdat][identity]") {
+    const auto header = cdatHeaderFor(R"(
+begin compartments
+    outside 3 1
+    inside 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @outside:A() 10
+    @inside:A() 3
+end seed species
+)");
+
+    CHECK(header.find("@outside::A()") != std::string::npos);
+    CHECK(header.find("@inside::A()") != std::string::npos);
+}
+
+TEST_CASE("cdat columns retain molecule compartments without an outer species compartment",
+          "[OdeOutput][cdat][identity]") {
+    const auto header = cdatHeaderFor(R"(
+begin compartments
+    cyt 3 1
+    mem 2 1
+    nuc 3 1
+end compartments
+begin molecule types
+    A(x)
+    B(x)
+end molecule types
+begin seed species
+    A(x!1)@cyt.B(x!1)@nuc 10
+    A(x!1)@mem.B(x!1)@nuc 3
+end seed species
+)", /*clearOuterSpeciesCompartment=*/true);
+
+    CHECK(header.find("A(x!1).B(x!1)||cyt,nuc") != std::string::npos);
+    CHECK(header.find("A(x!1).B(x!1)||mem,nuc") != std::string::npos);
+}
+
+TEST_CASE("indexed NET observables use explicit weighted species references",
+          "[OdeOutput][observables][net]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 2
+    A().B() 7
+end seed species
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 2);
+
+    const auto aSpecies = std::find_if(
+        network.species.all().begin(), network.species.all().end(),
+        [](const ast::Species& species) {
+            return species.getSpeciesGraph().toString() == "A()";
+        });
+    REQUIRE(aSpecies != network.species.all().end());
+    const auto aSpeciesIndex = static_cast<std::size_t>(
+        std::distance(network.species.all().begin(), aSpecies));
+
+    // Pattern observables intentionally match A() inside both species. An
+    // indexed NET group instead names exact species rows and must not count
+    // the larger A().B() species just because it contains A().
+    model->addObservable(ast::Observable("pattern_A", "Molecules", {"A()"}));
+    ast::Observable indexedA("indexed_A", "Molecules", {});
+    indexedA.setIndexedSpeciesWeights({{aSpeciesIndex, 2.0},
+                                       {aSpeciesIndex, 0.5}});
+    model->addObservable(std::move(indexedA));
+    ast::Observable emptyIndexed("empty_indexed", "Molecules", {});
+    emptyIndexed.setIndexedSpeciesWeights({});
+    model->addObservable(std::move(emptyIndexed));
+
+    const auto& indexedWeights = model->getObservables()[1].getIndexedSpeciesWeights();
+    REQUIRE(indexedWeights.has_value());
+    REQUIRE(indexedWeights->size() == 2);
+    const auto& emptyWeights = model->getObservables()[2].getIndexedSpeciesWeights();
+    REQUIRE(emptyWeights.has_value());
+    CHECK(emptyWeights->empty());
+
+    engine::OdeIntegrator integrator(*model, network);
+    const auto& compiled = integrator.getCompiledGroups();
+    REQUIRE(compiled.size() == 3);
+    REQUIRE(compiled[1].entries.size() == 1);
+    CHECK(compiled[1].entries.front().first == aSpeciesIndex);
+    CHECK(compiled[1].entries.front().second == 2.5);
+    CHECK(compiled[2].entries.empty());
+
+    engine::OdeOptions options;
+    options.method = "euler";
+    options.tStart = 0.0;
+    options.tEnd = 1.0;
+    options.nSteps = 2;
+    const auto result = integrator.integrate(options);
+    REQUIRE_FALSE(result.observables.empty());
+    REQUIRE(result.observables.front().size() == 3);
+    CHECK(result.observables.front()[0] == 9.0);
+    CHECK(result.observables.front()[1] == 5.0);
+    CHECK(result.observables.front()[2] == 0.0);
+}
+
+TEST_CASE("indexed NET observables reject an out-of-range species reference",
+          "[OdeOutput][observables][net]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+
+    ast::Observable invalid("invalid", "Molecules", {});
+    invalid.setIndexedSpeciesWeights({{network.species.size(), 1.0}});
+    model->addObservable(std::move(invalid));
+
+    CHECK_THROWS(engine::OdeIntegrator(*model, network));
 }

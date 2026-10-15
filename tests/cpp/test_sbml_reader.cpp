@@ -101,6 +101,29 @@ end reactions
     CHECK(parsed.reactions.front() == "1 1 2 kcat/(Km + S1)");
 }
 
+TEST_CASE("NET reader accepts a declared observable with no species weights",
+          "[NetReader][issue-274]") {
+    const auto path = std::filesystem::temp_directory_path() /
+        "bng3_net_reader_empty_observable.net";
+    {
+        std::ofstream out(path);
+        out << "begin groups\n"
+            << "    1 Total 1\n"
+            << "    2 Never \n"
+            << "end groups\n";
+    }
+
+    const auto parsed = bng::io::NetReader::parse(path);
+    std::filesystem::remove(path);
+
+    REQUIRE(parsed.success);
+    REQUIRE(parsed.observables.size() == 2);
+    CHECK(parsed.observables[0].first == "Total");
+    CHECK(parsed.observables[0].second == std::vector<std::string>{"1"});
+    CHECK(parsed.observables[1].first == "Never");
+    CHECK(parsed.observables[1].second.empty());
+}
+
 TEST_CASE("SBML reader rejects atomized conversion requests", "[SbmlReader]") {
     const auto path = std::filesystem::temp_directory_path() / "bng3_sbml_reader_atomize.xml";
     std::ofstream out(path);

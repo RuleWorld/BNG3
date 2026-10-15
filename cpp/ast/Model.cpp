@@ -46,6 +46,19 @@ void Model::addObservable(Observable observable) {
     observables_.push_back(std::move(observable));
 }
 
+void Model::upsertObservable(Observable observable) {
+    const auto existing = std::find_if(
+        observables_.begin(), observables_.end(),
+        [&](const auto& candidate) {
+            return candidate.getName() == observable.getName();
+        });
+    if (existing == observables_.end()) {
+        observables_.push_back(std::move(observable));
+    } else {
+        *existing = std::move(observable);
+    }
+}
+
 void Model::addMoleculeType(MoleculeType moleculeType) {
     moleculeTypes_.push_back(std::move(moleculeType));
 }

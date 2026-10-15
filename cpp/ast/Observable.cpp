@@ -19,4 +19,13 @@ const std::vector<std::string>& Observable::getPatterns() const {
     return patterns_;
 }
 
+void Observable::setIndexedSpeciesWeights(IndexedSpeciesWeights weights) {
+    indexedSpeciesWeights_ = std::move(weights);
+}
+
+const std::optional<Observable::IndexedSpeciesWeights>&
+Observable::getIndexedSpeciesWeights() const {
+    return indexedSpeciesWeights_;
+}
+
 } // namespace bng::ast
