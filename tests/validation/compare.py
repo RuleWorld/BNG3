@@ -156,6 +156,12 @@ def _resolve_rate(
         rate_observables or set(),
     )
     if val is not None:
+        # Rational rates are exact quantities. Keep their bounded source-level
+        # canonical form so a nonzero coefficient such as 1e-999 cannot
+        # underflow to the same float key as zero. Transcendental constants
+        # retain the established numeric normalization below.
+        if val == 0.0 and _has_underflowing_nonzero_literal(expr):
+            return f"expr:{_canon_expr(expr)}"
         # Normalize serialization noise by significant digits. Decimal-place
         # rounding erased every rate below 5e-13, even equating it with zero.
         return repr(float(format(val, ".12g")))
@@ -170,6 +176,51 @@ _CANON_NUMERIC_LITERAL = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?
 _MAX_CANON_NUMERIC_LITERAL_CHARS = 128
 _MAX_CANON_NUMERIC_EXPONENT = 1000
 _MAX_CANON_NUMERIC_BITS = 4096
+
+
+def _is_rational_arithmetic(expr: str) -> bool:
+    """Whether an expression contains only numeric literals and rational ops."""
+    source = re.sub(r"\s+", "", expr).replace("^", "**")
+    if not source or re.fullmatch(r"[\d.eE+*/^()\-]+", source) is None:
+        return False
+    try:
+        tree = ast.parse(source, mode="eval")
+    except SyntaxError:
+        return False
+
+    def supported(node: ast.AST) -> bool:
+        if isinstance(node, ast.Expression):
+            return supported(node.body)
+        if isinstance(node, ast.Constant):
+            return type(node.value) in (int, float)
+        if isinstance(node, ast.UnaryOp):
+            return isinstance(node.op, (ast.UAdd, ast.USub)) and supported(node.operand)
+        if isinstance(node, ast.BinOp):
+            return isinstance(
+                node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+            ) and (supported(node.left) and supported(node.right))
+        return False
+
+    return supported(tree)
+
+
+def _has_underflowing_nonzero_literal(expr: str) -> bool:
+    """Detect source literals that float evaluation would silently turn to 0."""
+    literals = re.findall(
+        r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?", expr
+    )
+    for literal in literals:
+        if len(literal) > _MAX_CANON_NUMERIC_LITERAL_CHARS:
+            continue
+        mantissa = re.split(r"[eE]", literal, maxsplit=1)[0]
+        if not any(character.isdigit() and character != "0" for character in mantissa):
+            continue
+        try:
+            if float(literal) == 0.0:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _eval_symbol(
@@ -221,6 +272,13 @@ def _eval_expr(
                 if v is None:
                     constant = False
                     sub_parts.append(f"({sub})" if t in defs and sub != t else sub)
+                elif t in defs and (
+                    _is_rational_arithmetic(sub)
+                    or (v == 0.0 and _has_underflowing_nonzero_literal(sub))
+                ):
+                    # Preserve exact numeric source for rational parameters
+                    # and functions whose nonzero result underflows to zero.
+                    sub_parts.append(f"({sub})")
                 else:
                     sub_parts.append(repr(v))
             index += 1
@@ -265,11 +323,11 @@ class _ConditionalToIfExp(ast.NodeTransformer):
 
 def _safe_arith(expr: str) -> float:
     """Evaluate a pure-numeric arithmetic expression with safe math functions."""
-    e = expr.replace("^", "**")
+    e = expr.replace("^", "**").replace("&&", " and ").replace("||", " or ")
 
     # Check that all alphabetical tokens are allowed math functions
     for word in re.findall(r"\b[A-Za-z_]\w*\b", e):
-        if word not in _SAFE_NAMES and word != "if":
+        if word not in _SAFE_NAMES and word not in {"if", "and", "or", "True", "False"}:
             raise ValueError(f"unknown function or symbol {word!r}")
 
     ns = {
@@ -374,8 +432,28 @@ def _canon_expr(expr: str) -> str:
     def supported(node: ast.AST) -> bool:
         if isinstance(node, (ast.Expression, ast.Name, ast.Constant)):
             return True
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        if isinstance(node, ast.UnaryOp) and isinstance(
+            node.op, (ast.UAdd, ast.USub, ast.Not)
+        ):
             return supported(node.operand)
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+            return all(supported(value) for value in node.values)
+        if isinstance(node, ast.Compare):
+            return (
+                all(
+                    isinstance(
+                        operator,
+                        (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE),
+                    )
+                    for operator in node.ops
+                )
+                and supported(node.left)
+                and all(supported(value) for value in node.comparators)
+            )
+        if isinstance(node, ast.IfExp):
+            return (
+                supported(node.test) and supported(node.body) and supported(node.orelse)
+            )
         if isinstance(node, ast.BinOp) and isinstance(
             node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
         ):
@@ -437,7 +515,8 @@ def _canon_expr(expr: str) -> str:
                 )
             return node
 
-    source = result.replace("^", "**")
+    source = result.replace("^", "**").replace("&&", " and ").replace("||", " or ")
+    source = re.sub(r"\bif\s*(?=\()", "_bng_if", source)
 
     def literal_fraction(node: ast.Constant) -> Fraction | None:
         literal = ast.get_source_segment(source, node)
@@ -504,6 +583,82 @@ def _canon_expr(expr: str) -> str:
             return None
         return None
 
+    def constant_truth(node: ast.AST) -> bool | None:
+        """Prove only bounded, short-circuit-safe constant conditions."""
+        if isinstance(node, ast.Constant) and type(node.value) is bool:
+            return node.value
+        number = numeric_value(node)
+        if number is not None:
+            return bool(number)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            value = constant_truth(node.operand)
+            return None if value is None else not value
+        if isinstance(node, ast.BoolOp):
+            unknown = False
+            for value_node in node.values:
+                value = constant_truth(value_node)
+                if isinstance(node.op, ast.And):
+                    if value is False:
+                        return False
+                    if value is None:
+                        unknown = True
+                elif isinstance(node.op, ast.Or):
+                    if value is True:
+                        return True
+                    if value is None:
+                        unknown = True
+                else:
+                    return None
+            return None if unknown else isinstance(node.op, ast.And)
+        if isinstance(node, ast.Compare):
+            left = numeric_value(node.left)
+            if left is None:
+                return None
+            for operator, comparator in zip(node.ops, node.comparators):
+                right = numeric_value(comparator)
+                if right is None:
+                    return None
+                if isinstance(operator, ast.Eq):
+                    result = left == right
+                elif isinstance(operator, ast.NotEq):
+                    result = left != right
+                elif isinstance(operator, ast.Lt):
+                    result = left < right
+                elif isinstance(operator, ast.LtE):
+                    result = left <= right
+                elif isinstance(operator, ast.Gt):
+                    result = left > right
+                elif isinstance(operator, ast.GtE):
+                    result = left >= right
+                else:
+                    return None
+                if not result:
+                    return False
+                left = right
+            return True
+        return None
+
+    class SimplifyConstantConditionals(ast.NodeTransformer):
+        """Fold known if conditions without visiting the discarded branch."""
+
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            if isinstance(node.func, ast.Name) and node.func.id == "_bng_if":
+                if len(node.args) != 3 or node.keywords:
+                    raise ValueError("if expects three arguments")
+                test = self.visit(node.args[0])
+                selected = constant_truth(test)
+                if selected is not None:
+                    return self.visit(node.args[1] if selected else node.args[2])
+                return ast.copy_location(
+                    ast.IfExp(
+                        test=test,
+                        body=self.visit(node.args[1]),
+                        orelse=self.visit(node.args[2]),
+                    ),
+                    node,
+                )
+            return self.generic_visit(node)
+
     class FoldNumericSubtrees(ast.NodeTransformer):
         """Use exact rational markers for numeric terms in dynamic rates."""
 
@@ -538,6 +693,8 @@ def _canon_expr(expr: str) -> str:
 
     try:
         tree = ast.parse(source, mode="eval")
+        tree = SimplifyConstantConditionals().visit(tree)
+        ast.fix_missing_locations(tree)
         numeric_literals_are_bounded = all(
             literal_fraction(node) is not None
             for node in ast.walk(tree)
