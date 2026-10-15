@@ -536,6 +536,34 @@ generate_network({overwrite=>1,prune_zero_rates=>1})
         assert any(name.startswith("B(") for name in network.species_names)
         assert any(name.startswith("D(") for name in network.species_names)
 
+    def test_zero_rate_pruning_preserves_rate_with_undefined_operand(self, tmp_path):
+        bngl = tmp_path / "zero_rate_undefined_operand.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    undefined_rate: A() -> B() 0 * sqrt(-1)
+end reaction rules
+end model
+generate_network({overwrite=>1,prune_zero_rates=>1})
+""",
+            encoding="utf-8",
+        )
+
+        network = _cpp.generate_network(_cpp.parse_file(str(bngl)))
+
+        # sqrt(-1) has no finite value, so the rate is not proven to be zero.
+        # Pruning must retain the possible B product instead of treating the
+        # left-hand zero as an algebraic short circuit.
+        assert any(name.startswith("B(") for name in network.species_names)
+
     @pytest.mark.parametrize("entry", ["A=>2^3", "A=>1e309", 'A=>"2"'])
     def test_python_generate_network_defers_unsupported_max_stoich(
         self, tmp_path, entry

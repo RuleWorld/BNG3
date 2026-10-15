@@ -514,11 +514,6 @@ std::optional<double> evaluateStructuralExpression(
             if (lhs.has_value() && rhs.has_value()) return 0.0;
             return std::nullopt;
         }
-        if (op == BinaryOp::Multiply &&
-            ((lhs.has_value() && *lhs == 0.0) ||
-             (rhs.has_value() && *rhs == 0.0))) {
-            return 0.0;
-        }
         if (!lhs.has_value() || !rhs.has_value()) return std::nullopt;
         switch (op) {
         case BinaryOp::Add: return finiteValue(*lhs + *rhs);
