@@ -1472,6 +1472,19 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
               }
             }
           }
+          if (current.kind() == ast::ExpressionKind::ObservableRef &&
+              current.args().size() == 1 &&
+              current.args().front().kind() == ast::ExpressionKind::Identifier) {
+            const auto observable = std::find_if(
+                model.getObservables().begin(), model.getObservables().end(),
+                [&](const auto &candidate) {
+                  return candidate.getName() == current.name();
+                });
+            if (observable != model.getObservables().end()) {
+              scopeName = current.args().front().name();
+              return;
+            }
+          }
         }
         for (const auto &argument : current.args()) visit(argument);
       };

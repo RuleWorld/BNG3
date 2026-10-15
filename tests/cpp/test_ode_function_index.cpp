@@ -404,16 +404,18 @@ begin molecule types
 end molecule types
 begin seed species
     A(s~u!1).I(i!1) 1
+    A(s~p!1).I(i!1) 1
 end seed species
 begin observables
-    Molecules I_total I()
+    Molecules A_total A()
 end observables
 begin functions
-    gate(x,k) = if(I_total(x)>0,0,k)
+    gate(x,k) = if(A_total(x)>0,0,k)
     rate_adjust(n) = n*2
 end functions
 begin reaction rules
-    A%x(s~u!1).I(i!1) -> A%x(s~p!1).I(i!1) gate(x,k)+rate_adjust(I_total(x))
+    A%x(s~u!1).I(i!1) -> A%x(s~p!1).I(i!1) gate(x,k)
+    A%x(s~p!1).I(i!1) -> A%x(s~u!1).I(i!1) rate_adjust(A_total(x))
 end reaction rules
 )");
     REQUIRE(model != nullptr);
@@ -429,25 +431,32 @@ end reaction rules
 
     engine::NetworkGenerator generator(*model);
     const auto network = generator.generateNative();
-    REQUIRE(network.reactions.all().size() == 1);
+    REQUIRE(network.reactions.all().size() == 2);
     CHECK(network.reactions.all().front().getRateLaw().find("|local:") !=
+          std::string::npos);
+    CHECK(network.reactions.all()[1].getRateLaw().find("|local:") !=
           std::string::npos);
 
     const auto derived = io::NetWriter::buildDerivedRateParams(*model, network);
-    const auto ruleName = model->getReactionRules().front().getRuleName();
-    const auto found = derived.find(ruleName);
-    REQUIRE(found != derived.end());
-    REQUIRE(found->second.perReactionRates.size() == 1);
-    CHECK(found->second.perReactionRates.begin()->second.second == 2.0);
+    const auto gateRuleName = model->getReactionRules()[0].getRuleName();
+    const auto gateDerived = derived.find(gateRuleName);
+    REQUIRE(gateDerived != derived.end());
+    REQUIRE(gateDerived->second.perReactionRates.size() == 1);
+    CHECK(gateDerived->second.perReactionRates.begin()->second.second == 0.0);
+    const auto scaledRuleName = model->getReactionRules()[1].getRuleName();
+    const auto scaledDerived = derived.find(scaledRuleName);
+    REQUIRE(scaledDerived != derived.end());
+    REQUIRE(scaledDerived->second.perReactionRates.size() == 1);
+    CHECK(scaledDerived->second.perReactionRates.begin()->second.second == 2.0);
 
     engine::OdeIntegrator integrator(*model, network);
     std::vector<double> concentrations(network.species.size(), 0.0);
     std::vector<double> derivatives(network.species.size(), 0.0);
-    for (const auto reactant : network.reactions.all().front().getReactants()) {
+    for (const auto reactant : network.reactions.all()[1].getReactants()) {
         concentrations[reactant] = 1.0;
     }
     integrator.derivs(0.0, concentrations.data(), derivatives.data());
-    CHECK_THAT(derivatives[network.reactions.all().front().getReactants().front()],
+    CHECK_THAT(derivatives[network.reactions.all()[1].getReactants().front()],
                Catch::Matchers::WithinAbs(-2.0, 1e-12));
 
     const auto outputPath = std::filesystem::temp_directory_path() /
@@ -459,7 +468,9 @@ end reaction rules
                              std::istreambuf_iterator<char>());
     input.close();
     std::filesystem::remove(outputPath);
-    CHECK(output.find("__R1_local1 2  # ConstantExpression\n") !=
+    CHECK(output.find("__R1_local1 0  # ConstantExpression\n") !=
+          std::string::npos);
+    CHECK(output.find("__R2_local1 2  # ConstantExpression\n") !=
           std::string::npos);
 }
 
