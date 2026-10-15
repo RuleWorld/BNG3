@@ -223,6 +223,28 @@ def _trajectory(path):
     return data, columns
 
 
+def species_columns(columns, network):
+    """Map serialized cdat columns to generated-network indices unambiguously."""
+    found = {}
+    for name in columns[1:]:
+        match = re.fullmatch(r"(?:S|s)?(\d+)", name)
+        candidates = (
+            [int(match[1])]
+            if match
+            else [
+                i
+                for i, graph in network.species_by_index.items()
+                if compare.species_isomorphic(graph, name)
+            ]
+        )
+        if len(candidates) != 1 or candidates[0] in found:
+            raise ValueError("ambiguous cdat species column " + name)
+        found[candidates[0]] = name
+    if set(found) != set(network.species_by_index):
+        raise ValueError("cdat columns do not cover every generated species")
+    return found
+
+
 def trajectory_contracts(
     reference,
     subject,
@@ -282,29 +304,7 @@ def trajectory_contracts(
             if len(mapping) != rn.n_species or len(mapping) != tn.n_species:
                 raise ValueError("cdat requires complete species graph bijection")
 
-            def indices(columns, network):
-                found = {}
-                for name in columns[1:]:
-                    match = re.fullmatch(r"(?:S|s)?(\d+)", name)
-                    candidates = (
-                        [int(match[1])]
-                        if match
-                        else [
-                            i
-                            for i, graph in network.species_by_index.items()
-                            if compare.species_isomorphic(graph, name)
-                        ]
-                    )
-                    if len(candidates) != 1 or candidates[0] in found:
-                        raise ValueError("ambiguous cdat species column " + name)
-                    found[candidates[0]] = name
-                if set(found) != set(network.species_by_index):
-                    raise ValueError(
-                        "cdat columns do not cover every generated species"
-                    )
-                return found
-
-            rnames, tnames = indices(rc, rn), indices(tc, tn)
+            rnames, tnames = species_columns(rc, rn), species_columns(tc, tn)
             paired = [(rnames[i], tnames[j]) for i, j in sorted(mapping.items())]
         except (ValueError, OSError) as exc:
             rows.append(_row(kind + ".columns", False, str(exc)))
