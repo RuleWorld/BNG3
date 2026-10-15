@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.validation import compare, corpus, runner
+from tests.validation import compare, contracts, corpus, runner
 from tests.validation.strict import require_oracle
 
 EXPORT_MODELS = [
@@ -166,6 +166,51 @@ end actions
     assert net is not None, f"NET compartment reload failed: {err}"
     parsed = compare.parse_net(net)
     assert parsed.species_by_index == {1: "@cyto::A()"}
+
+
+@pytest.mark.export
+def test_net_reload_cdat_preserves_sparse_molecule_compartments(bng_cpp, tmp_path):
+    """NET species labels retain each molecule's explicitly serialized compartment."""
+    net_input = tmp_path / "sparse_molecule_compartments.net"
+    net_input.write_text(
+        """begin species
+    1 @PM::L(d!1,r!2)@EC.L(d!1,r!3)@EC.R(l!3,tf~Y).R(l!2,tf~pY!4).TF(d~Y,dna,im,r!4)@CP 1
+end species
+begin reactions
+end reactions
+""",
+        encoding="utf-8",
+    )
+    reload_dir = tmp_path / "reload"
+    reload_dir.mkdir()
+    shutil.copy2(net_input, reload_dir / "input.net")
+    source = tmp_path / "reload.bngl"
+    source.write_text(
+        """begin compartments
+    EC 3 20
+    PM 2 0.4 EC
+    CP 3 4 PM
+end compartments
+begin molecule types
+    L(d,r)
+    R(l,tf~Y~pY)
+    TF(r,d~Y~pY,dna,im)
+end molecule types
+begin actions
+    readFile({file=>"input.net"})
+    simulate_ode({prefix=>"trajectory",netfile=>"input.net",t_end=>1,n_steps=>1,print_CDAT=>1})
+end actions
+""",
+        encoding="utf-8",
+    )
+
+    _, _, err = runner.run_cli_path(bng_cpp, source, reload_dir)
+    cdat = reload_dir / "trajectory.cdat"
+    assert cdat.is_file(), f"NET reload produced no CDAT: {err}"
+    network = compare.parse_net(net_input)
+    assert network is not None
+    _, columns = compare.parse_gdat(cdat)
+    contracts.species_columns(columns, network)
 
 
 @pytest.mark.export
