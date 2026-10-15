@@ -213,6 +213,15 @@ bool numericValue(const Expression& expression, double& value) {
     return true;
 }
 
+bool containsScopedObservableRef(const Expression& expression) {
+    if (expression.kind() == ExpressionKind::ObservableRef &&
+        !expression.args().empty()) {
+        return true;
+    }
+    return std::any_of(expression.args().begin(), expression.args().end(),
+                       containsScopedObservableRef);
+}
+
 bool isSpecialFunction(const std::string& name) {
     return name == "time" || name == "t" || name == "TFUN" ||
            name == "tfun" || name == "_pi" || name == "_e";
@@ -415,7 +424,8 @@ Expression partialEvaluateImpl(const Expression& expression,
                 double constantValue = 0.0;
                 // Keep dynamic function identity for downstream consumers;
                 // expand only when it enables an actual fold.
-                if (expansionFolded || numericValue(result, constantValue)) {
+                if ((expansionFolded || numericValue(result, constantValue)) &&
+                    !containsScopedObservableRef(result)) {
                     folded = true;
                     return result;
                 }
@@ -443,7 +453,8 @@ Expression partialEvaluateImpl(const Expression& expression,
                     *expanded, expandFunction, expanding, expansionFolded);
                 expanding.erase(expression.name());
                 double constantValue = 0.0;
-                if (expansionFolded || numericValue(result, constantValue)) {
+                if ((expansionFolded || numericValue(result, constantValue)) &&
+                    !containsScopedObservableRef(result)) {
                     folded = true;
                     return result;
                 }

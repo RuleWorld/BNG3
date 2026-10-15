@@ -135,6 +135,22 @@ TEST_CASE("Expression partial evaluation preserves dynamic functions with argume
           "rate_adjust(k1)");
 }
 
+TEST_CASE("Expression partial evaluation preserves dynamic scoped functions",
+          "[Expression][PartialEvaluation]") {
+    const Function methLevel(
+        "MethLevel", {"x"},
+        bng::parser::parseExpression("1*R1(x)+2*R2(x)"));
+    const Function constantBranch(
+        "ConstantBranch", {"x"},
+        bng::parser::parseExpression("if(1,7,R1(x))"));
+    const std::vector<Function> functions{methLevel, constantBranch};
+    const auto expression = bng::parser::parseExpression("MethLevel(y)");
+
+    CHECK(partialEvaluate(expression, functions).toString() == "MethLevel(y)");
+    CHECK(partialEvaluate(bng::parser::parseExpression("ConstantBranch(y)"),
+                          functions).toString() == "7");
+}
+
 TEST_CASE("Expression: power operator", "[Expression]") {
     auto expr = Expression::binary("^", Expression::number(2.0), Expression::number(10.0));
     REQUIRE_THAT(expr.evaluate(noResolver), WithinRel(1024.0, 1e-10));

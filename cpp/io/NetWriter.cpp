@@ -1433,9 +1433,23 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             continue;
         }
 
+        const auto& sourceRateExprObj = rule.getRates()[0];
         const auto rateExprObj =
-            ast::partialEvaluate(rule.getRates()[0], model.getFunctions());
+            ast::partialEvaluate(sourceRateExprObj, model.getFunctions());
         const std::string rateExpr = rateExprObj.toString();
+        const bool sourceRateIsModelFunction =
+            (sourceRateExprObj.kind() == ast::ExpressionKind::Function ||
+             sourceRateExprObj.kind() == ast::ExpressionKind::ObservableRef) &&
+            std::any_of(model.getFunctions().begin(), model.getFunctions().end(),
+                        [&](const auto& function) {
+                            return function.getName() == sourceRateExprObj.name();
+                        });
+        // Keep the top-level model-function identity for writer routing even
+        // when partial evaluation reduces its body to a constant.  In
+        // particular, the model-function branch must still derive a complex
+        // reverse rate for reversible rules.
+        const auto& functionRateExprObj =
+            sourceRateIsModelFunction ? sourceRateExprObj : rateExprObj;
 
     const auto hasLocalRateContext = [&](const std::string &directionName) {
       return std::any_of(
@@ -1594,11 +1608,11 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
 
         // Handle model-defined functions (kPlus, kMinus, func, etc.)
         // Parser may store them as Function or ObservableRef kind
-        if (rateExprObj.kind() == ast::ExpressionKind::Function ||
-            rateExprObj.kind() == ast::ExpressionKind::ObservableRef) {
+        if (functionRateExprObj.kind() == ast::ExpressionKind::Function ||
+            functionRateExprObj.kind() == ast::ExpressionKind::ObservableRef) {
             bool isModelFunction = false;
-            bool hasLocalArgs = !rateExprObj.args().empty();
-            const auto& exprName = rateExprObj.name();
+            bool hasLocalArgs = !functionRateExprObj.args().empty();
+            const auto& exprName = functionRateExprObj.name();
             const ast::Function* matchedFunc = nullptr;
             for (const auto& func : model.getFunctions()) {
                 if (func.getName() == exprName) {
