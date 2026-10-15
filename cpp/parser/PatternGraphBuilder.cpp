@@ -96,9 +96,10 @@ BNGcore::PatternGraph buildPatternGraph(
     BNGcore::PatternGraph graph;
     std::unordered_map<std::string, BNGcore::Node*> bondNodesById;
 
-    // Collect per-molecule compartments from the species_def level
-    // Grammar: (AT STRING COLON)? mol mol_comp? (DOT mol mol_comp?)* (AT STRING)?
-    // molecule_compartment children of species_def are the suffix compartments between molecules
+    // Collect per-molecule compartments from the species_def level. These are
+    // sparse direct children: molecules without suffix compartments do not
+    // contribute a placeholder, so their vector position is not the molecule
+    // index.
     const auto& speciesMolComps = ctx->molecule_compartment();
     const auto& moleculePatterns = ctx->molecule_pattern();
 
@@ -119,9 +120,24 @@ BNGcore::PatternGraph buildPatternGraph(
         if (moleculePattern->molecule_compartment() != nullptr) {
             // Compartment inside molecule_pattern (e.g., A@CYT(...))
             molComp = moleculePattern->molecule_compartment()->STRING()->getText();
-        } else if (mi < speciesMolComps.size() && speciesMolComps[mi] != nullptr) {
+        } else {
             // Compartment at species_def level after this molecule (e.g., A(...)@CYT)
-            molComp = speciesMolComps[mi]->STRING()->getText();
+            const auto moleculeEnd = moleculePattern->getStop()->getTokenIndex();
+            const auto nextMoleculeStart = mi + 1 < moleculePatterns.size()
+                ? moleculePatterns[mi + 1]->getStart()->getTokenIndex()
+                : ctx->getStop()->getTokenIndex() + 1;
+            const auto suffixCompartment = std::find_if(
+                speciesMolComps.begin(), speciesMolComps.end(),
+                [&](const auto* candidate) {
+                    const auto* start = candidate->getStart();
+                    return start != nullptr &&
+                           start->getTokenIndex() > moleculeEnd &&
+                           start->getTokenIndex() < nextMoleculeStart;
+                });
+            if (suffixCompartment != speciesMolComps.end() &&
+                *suffixCompartment != nullptr) {
+                molComp = (*suffixCompartment)->STRING()->getText();
+            }
         }
         if (!molComp.empty()) {
             moleculeNode->set_compartment(molComp);
