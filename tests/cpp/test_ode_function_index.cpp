@@ -18,16 +18,23 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 #include "ast/Expression.hpp"
 #include "ast/Function.hpp"
 #include "ast/Model.hpp"
+#include "compile/CompiledModel.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
+#include "io/MatlabWriter.hpp"
+#include "io/NetWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 using namespace bng;
@@ -296,4 +303,227 @@ end reaction rules
     // The changed helper must actually change the observable, so this test can
     // fail if the index ever returned a stale definition.
     REQUIRE(withFastRate < withSlowRate);
+}
+
+TEST_CASE("OdeIntegrator evaluates numeric and nested user-function arguments",
+          "[OdeIntegrator][functions]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k1 0.25
+    k2 0.75
+    k3 1.5
+end parameters
+begin molecule types
+    X1()
+    X2()
+    X3()
+    X4()
+end molecule types
+begin seed species
+    X1() 100
+    X2() 100
+    X3() 100
+    X4() 100
+end seed species
+begin observables
+    Molecules X1_total X1()
+    Molecules X2_total X2()
+    Molecules X3_total X3()
+    Molecules X4_total X4()
+end observables
+begin functions
+    rate_adjust(x) = x*2
+    nested_adjust(x) = rate_adjust(x)
+end functions
+begin reaction rules
+    X1() -> 0 rate_adjust(k1)
+    X2() -> 0 rate_adjust(k2)
+    X3() -> 0 rate_adjust(k3)
+    X4() -> 0 nested_adjust(k1+k2)
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const compile::CompiledModel typedModel(*model);
+    REQUIRE(typedModel.valid());
+    REQUIRE(typedModel.rules().size() == 4);
+    const auto expandedRate = typedModel.expandFunctions(
+        typedModel.rules().front().forward().rateLaw->resolvedExpression());
+    REQUIRE(expandedRate.kind == compile::ResolvedExpressionKind::Binary);
+    REQUIRE(expandedRate.arguments.size() == 2);
+    CHECK(expandedRate.arguments[0].kind ==
+          compile::ResolvedExpressionKind::ParameterRef);
+
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tStart = 0.0;
+    options.tEnd = 1.0;
+    options.nSteps = 2;
+    options.rtol = 1e-10;
+    options.atol = 1e-12;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+
+    REQUIRE(result.observables.back().size() == 4);
+    CHECK_THAT(result.observables.back()[0],
+               Catch::Matchers::WithinAbs(100.0 * std::exp(-0.5), 1e-6));
+    CHECK_THAT(result.observables.back()[1],
+               Catch::Matchers::WithinAbs(100.0 * std::exp(-1.5), 1e-6));
+    CHECK_THAT(result.observables.back()[2],
+               Catch::Matchers::WithinAbs(100.0 * std::exp(-3.0), 1e-6));
+    CHECK_THAT(result.observables.back()[3],
+               Catch::Matchers::WithinAbs(100.0 * std::exp(-2.0), 1e-6));
+
+    engine::OdeOptions ssaOptions;
+    ssaOptions.method = "ssa";
+    ssaOptions.tStart = 0.0;
+    ssaOptions.tEnd = 0.25;
+    ssaOptions.nSteps = 1;
+    ssaOptions.seed = 42;
+    const auto ssaResult = engine::OdeIntegrator(*model, network).integrate(ssaOptions);
+    REQUIRE(ssaResult.observables.back().size() == 4);
+    for (const auto value : ssaResult.observables.back()) CHECK(value < 100.0);
+
+    const auto matlab = io::MatlabWriter::write(*model, network);
+    CHECK(matlab.find("(expressions(1) * 2)") != std::string::npos);
+    CHECK(matlab.find("(expressions(2) * 2)") != std::string::npos);
+    CHECK(matlab.find("((expressions(1) + expressions(2)) * 2)") !=
+          std::string::npos);
+}
+
+TEST_CASE("mixed local-scope and numeric function arguments reach network and export",
+          "[NetworkGenerator][OdeIntegrator][NetWriter][functions]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k 2
+end parameters
+begin molecule types
+    A(s~u~p)
+    I(i)
+end molecule types
+begin seed species
+    A(s~u!1).I(i!1) 1
+end seed species
+begin observables
+    Molecules I_total I()
+end observables
+begin functions
+    gate(x,k) = if(I_total(x)>0,0,k)
+    rate_adjust(n) = n*2
+end functions
+begin reaction rules
+    A%x(s~u!1).I(i!1) -> A%x(s~p!1).I(i!1) gate(x,k)+rate_adjust(I_total(x))
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const compile::CompiledModel typedModel(*model);
+    REQUIRE(typedModel.valid());
+    REQUIRE(typedModel.functions().size() == 2);
+    REQUIRE(typedModel.functions().front().argumentKinds.size() == 2);
+    CHECK(typedModel.functions().front().argumentKinds[0] ==
+          compile::FunctionArgumentKind::LocalScope);
+    CHECK(typedModel.functions().front().argumentKinds[1] ==
+          compile::FunctionArgumentKind::Numeric);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.reactions.all().size() == 1);
+    CHECK(network.reactions.all().front().getRateLaw().find("|local:") !=
+          std::string::npos);
+
+    const auto derived = io::NetWriter::buildDerivedRateParams(*model, network);
+    const auto ruleName = model->getReactionRules().front().getRuleName();
+    const auto found = derived.find(ruleName);
+    REQUIRE(found != derived.end());
+    REQUIRE(found->second.perReactionRates.size() == 1);
+    CHECK(found->second.perReactionRates.begin()->second.second == 2.0);
+
+    engine::OdeIntegrator integrator(*model, network);
+    std::vector<double> concentrations(network.species.size(), 0.0);
+    std::vector<double> derivatives(network.species.size(), 0.0);
+    for (const auto reactant : network.reactions.all().front().getReactants()) {
+        concentrations[reactant] = 1.0;
+    }
+    integrator.derivs(0.0, concentrations.data(), derivatives.data());
+    CHECK_THAT(derivatives[network.reactions.all().front().getReactants().front()],
+               Catch::Matchers::WithinAbs(-2.0, 1e-12));
+
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        "bng3-function-arguments.net";
+    io::NetWriter::write(outputPath, *model, network);
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    input.close();
+    std::filesystem::remove(outputPath);
+    CHECK(output.find("__R1_local1 2  # ConstantExpression\n") !=
+          std::string::npos);
+}
+
+TEST_CASE("compiled functions reject invalid arity scope usage and recursion",
+          "[CompiledModel][functions]") {
+    const auto compileModel = [](const std::string& functionBlock,
+                                 const std::string& rate) {
+        auto model = parser::parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin observables
+    Molecules X_total X()
+end observables
+begin functions
+)" + functionBlock + R"(
+end functions
+begin reaction rules
+    %x:X() -> 0 )" + rate + R"(
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        return compile::CompiledModel(*model);
+    };
+
+    const auto wrongArity = compileModel("    twice(x) = x*2", "twice(k,k)");
+    CHECK_FALSE(wrongArity.valid());
+    CHECK(std::any_of(wrongArity.diagnostics().begin(),
+                      wrongArity.diagnostics().end(), [](const auto& diagnostic) {
+                          return diagnostic.message.find("incompatible arity") !=
+                                 std::string::npos;
+                      }));
+
+    const auto invalidScope = compileModel(
+        "    local(x) = X_total(x)", "local(k)");
+    CHECK_FALSE(invalidScope.valid());
+    CHECK(std::any_of(invalidScope.diagnostics().begin(),
+                      invalidScope.diagnostics().end(), [](const auto& diagnostic) {
+                          return diagnostic.message.find("local-scope argument") !=
+                                 std::string::npos;
+                      }));
+
+    const auto bareScopeAsNumber = compileModel(
+        "    numeric(x) = x*2", "numeric(x)");
+    CHECK_FALSE(bareScopeAsNumber.valid());
+    CHECK(std::any_of(bareScopeAsNumber.diagnostics().begin(),
+                      bareScopeAsNumber.diagnostics().end(), [](const auto& diagnostic) {
+                          return diagnostic.message.find("numeric argument") !=
+                                 std::string::npos;
+                      }));
+
+    const auto recursive = compileModel(
+        "    first(x) = second(x)\n    second(x) = first(x)",
+        "first(k)");
+    CHECK_FALSE(recursive.valid());
+    CHECK(std::any_of(recursive.diagnostics().begin(),
+                      recursive.diagnostics().end(), [](const auto& diagnostic) {
+                          return diagnostic.message.find("recursive function dependency") !=
+                                 std::string::npos;
+                      }));
 }
