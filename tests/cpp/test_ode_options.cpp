@@ -99,6 +99,7 @@ end reaction rules
     REQUIRE(netFile.good());
     const std::string netText((std::istreambuf_iterator<char>(netFile)),
                               std::istreambuf_iterator<char>());
+    netFile.close();
     std::filesystem::remove(netPath);
     CHECK(netText.find("if(") == std::string::npos);
     CHECK(netText.find("choose() k1") != std::string::npos);

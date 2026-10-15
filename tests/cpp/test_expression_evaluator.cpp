@@ -89,6 +89,18 @@ TEST_CASE("Expression partial evaluation follows nested zero-argument functions"
     CHECK(partialEvaluate(expression, functions).toString() == "k1");
 }
 
+TEST_CASE("Expression partial evaluation preserves dynamic function dependencies",
+          "[Expression][PartialEvaluation]") {
+    const Function base("base", {},
+                        bng::parser::parseExpression("k + atotal()"));
+    const Function rate("rate", {},
+                        bng::parser::parseExpression("base() + 1"));
+    const std::vector<Function> functions{base, rate};
+
+    CHECK(partialEvaluate(bng::parser::parseExpression("rate()"), functions)
+              .toString() == "rate()");
+}
+
 TEST_CASE("Expression: power operator", "[Expression]") {
     auto expr = Expression::binary("^", Expression::number(2.0), Expression::number(10.0));
     REQUIRE_THAT(expr.evaluate(noResolver), WithinRel(1024.0, 1e-10));
