@@ -537,4 +537,34 @@ end reaction rules
                           return diagnostic.message.find("recursive function dependency") !=
                                  std::string::npos;
                       }));
+
+    auto mixedUnusedArgument = parser::parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 1
+    Y() 1
+end seed species
+begin functions
+    constant_value(x) = k
+end functions
+begin reaction rules
+    %x::X() -> 0 constant_value(x)
+    Y() -> 0 constant_value(k)
+end reaction rules
+)");
+    REQUIRE(mixedUnusedArgument != nullptr);
+    const compile::CompiledModel mixedCompiled(*mixedUnusedArgument);
+    CHECK_FALSE(mixedCompiled.valid());
+    CHECK(std::any_of(mixedCompiled.diagnostics().begin(),
+                      mixedCompiled.diagnostics().end(), [](const auto& diagnostic) {
+                          return diagnostic.message.find(
+                                     "function argument is used as both") !=
+                                 std::string::npos;
+                      }));
 }

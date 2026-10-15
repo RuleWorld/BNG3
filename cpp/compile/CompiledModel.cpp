@@ -145,11 +145,19 @@ void validateFunctionExpressions(
             const auto count = std::min(functions[targetIndex].arguments.size(),
                                         expression.arguments.size());
             for (std::size_t index = 0; index < count; ++index) {
-                auto& constraint = inferredConstraints[targetIndex][index];
-                if (!constraint.has_value()) {
-                    constraint = expression.arguments[index].kind == ExpressionKind::LocalRef
-                        ? ArgumentKind::LocalScope
-                        : ArgumentKind::Numeric;
+                if (!directConstraints[targetIndex][index].has_value()) {
+                    const auto actualKind =
+                        expression.arguments[index].kind == ExpressionKind::LocalRef
+                            ? ArgumentKind::LocalScope
+                            : ArgumentKind::Numeric;
+                    auto& constraint = inferredConstraints[targetIndex][index];
+                    if (!constraint.has_value()) {
+                        constraint = actualKind;
+                    } else if (*constraint != actualKind) {
+                        conflictingFormals.insert(
+                            functions[targetIndex].name + "." +
+                            functions[targetIndex].arguments[index]);
+                    }
                 }
             }
         }
