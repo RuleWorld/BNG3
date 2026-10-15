@@ -33,9 +33,27 @@
         "tests/validation/test_conformance_ci_wiring.py",
         "tests/validation/test_contracts.py",
         "tests/validation/test_simulation_contract.py",
-        "tests/validation/test_ci_report.py"
+        "tests/validation/test_ci_report.py",
+        "tests/validation/test_scientific_contracts.py",
+        "tests/validation/test_harness_paths.py::test_missing_explicit_cli_never_falls_back_to_available_default",
+        "tests/validation/test_harness_paths.py::test_missing_environment_cli_never_falls_back_to_available_default"
       ],
       "question": "harness-self-test"
+    },
+    {
+      "id": "diagnostic-probes",
+      "kind": "pytest",
+      "tiers": [
+        "smoke",
+        "full"
+      ],
+      "timeout": 120,
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py"
+      ],
+      "reference": "bionetgen",
+      "question": "independent-semantic-probes",
+      "requires_native_api": false
     },
     {
       "id": "native",

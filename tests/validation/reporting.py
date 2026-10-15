@@ -19,17 +19,27 @@ def attach_coverage(capabilities: list[dict], results: list[dict]) -> None:
         matched = []
         for result in results:
             explicit = capability["id"] in result.get("capabilities", [])
-            mapped = any(
-                test.replace("/", ".").removesuffix(".py") in result["id"]
-                or (
+
+            def matches(test):
+                path, _, node = test.partition("::")
+                file_match = path.replace("/", ".").removesuffix(".py") in result[
+                    "id"
+                ] or (
                     result.get("test_file")
                     and (
-                        result["test_file"] == test
-                        or result["test_file"].startswith(test.rstrip("/") + "/")
+                        result["test_file"] == path
+                        or result["test_file"].startswith(path.rstrip("/") + "/")
                     )
                 )
-                for test in capability["existing_tests"]
-            )
+                name = result.get("name", result["id"])
+                node_match = (
+                    not node
+                    or ("::" + node) in name
+                    and (name.endswith("::" + node) or ("::" + node + "[") in name)
+                )
+                return file_match and node_match
+
+            mapped = any(matches(test) for test in capability["existing_tests"])
             if explicit or mapped:
                 matched.append(result)
         executed = [r for r in matched if r["status"] != "NOT_TESTED"]
@@ -171,10 +181,33 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
                     "--simulation-steps",
                     str(config["simulation_protocol"]["n_steps"]),
                 ]
-        elif row.get("test_file") and row.get("name"):
-            command = [sys.executable, "-m", "pytest", row["name"], "-q"]
+        elif row.get("test_file", "").endswith(".py") and row.get("name"):
+            node = row["test_file"] + (
+                "::" + row["name"].split("::", 1)[1] if "::" in row["name"] else ""
+            )
+            command = [sys.executable, "-m", "pytest", node, "-q"]
             if row["test_file"].startswith("tests/validation/"):
                 command[3:3] = ["-c", "tests/validation/pytest.ini"]
+                command += ["--bng-cpp", report["subject"]["binary"]]
+        elif row.get("command"):
+            command = row["command"]
+        replay_env = {"BNG3_CI_STRICT_ORACLES": "1"}
+        replay_env.update(
+            {
+                key: value
+                for key, value in report["configuration"].get("environment", {}).items()
+                if value is not None
+            }
+        )
+        reference = report["references"].get("bionetgen", {})
+        if reference:
+            replay_env.update(
+                BNG2_PERL=reference["script"],
+                BNGPATH=str(Path(reference["script"]).parent),
+                PERL=reference.get("interpreter", "perl"),
+            )
+            if reference.get("network_binary_sha256"):
+                replay_env["BNG2_NETWORK_SHA256"] = reference["network_binary_sha256"]
         receipts = row.get("receipts", []) + (
             [row["receipt"]] if row.get("receipt") else []
         )
@@ -196,6 +229,8 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             receipts=receipts,
             recorded_commands=recorded,
             reproduce_command=command,
+            reproduce_environment=replay_env,
+            reproduce_cwd=str(Path(__file__).resolve().parents[2]),
             source_locations=row.get("source_locations", []),
             related_issues=row.get("related_issues", []),
             acceptance_criteria=[

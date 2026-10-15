@@ -79,7 +79,9 @@ def discover_capabilities(root: Path, claims: list[dict]) -> list[dict]:
                 "candidate_claims": [c["id"] for c in related],
                 "missing_tests": ["Independent semantic evidence required"],
                 "issues": sorted(
-                    {issue for c in related for issue in c.get("issues", [])}
+                    claim.get("issues", [])
+                    if claim
+                    else {issue for c in related for issue in c.get("issues", [])}
                 ),
                 "notes": (
                     claim.get("notes", "")

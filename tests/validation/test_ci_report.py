@@ -85,3 +85,11 @@ def test_missing_or_duplicate_contract_cannot_silently_pass(tmp_path):
     d["expected_contract_ids"] = ["m:network:rates"]
     d["results"] *= 2
     assert publish(d, tmp_path / "b", strict=True, revision="abc") == 1
+
+
+def test_summary_replay_includes_recorded_repository_cwd(tmp_path):
+    d = report()
+    d["investigation_tasks"][0]["reproduce_cwd"] = "/workspace/BNG3 source"
+    assert publish(d, tmp_path / "summary", strict=False, revision="abc") == 0
+    text = (tmp_path / "summary").read_text()
+    assert "cd '/workspace/BNG3 source'" in text

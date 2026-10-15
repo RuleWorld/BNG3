@@ -140,9 +140,11 @@ def pytest_addoption(parser):
 
 
 def _discover_bng_cpp(explicit: str | None) -> Path | None:
+    selected = explicit if explicit is not None else os.environ.get("BNG_CPP")
+    if selected is not None:
+        path = Path(selected).expanduser()
+        return path.resolve() if path.is_file() else None
     candidates = [
-        explicit,
-        os.environ.get("BNG_CPP"),
         corpus.REPO / "build" / "bng_cpp",
         corpus.REPO / "build" / "bng_cpp.exe",
         corpus.REPO / "build" / "cpp" / "bng_cpp",
@@ -150,7 +152,7 @@ def _discover_bng_cpp(explicit: str | None) -> Path | None:
     for c in candidates:
         if c:
             path = Path(c).expanduser()
-            if path.exists():
+            if path.is_file():
                 return path.resolve()
     return None
 

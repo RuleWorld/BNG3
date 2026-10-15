@@ -631,6 +631,7 @@ def main(argv=None):
                             network_binary=str(binary),
                             network_binary_sha256=inventory.sha256(binary),
                         )
+                        env["BNG2_NETWORK_SHA256"] = identity["network_binary_sha256"]
                 references[name] = identity
                 results.append(
                     _result(
@@ -663,7 +664,12 @@ def main(argv=None):
             mapped_suite(s, plan["capabilities"]) for s in selected_suites
         ]
         needs_api = (
-            any(s["kind"] == "pytest" and s["id"] != "harness" for s in selected_suites)
+            any(
+                s["kind"] == "pytest"
+                and s["id"] != "harness"
+                and s.get("requires_native_api", True)
+                for s in selected_suites
+            )
             or "performance" in args.tier
             or "full" in args.tier
         )
@@ -709,6 +715,7 @@ def main(argv=None):
                 if (
                     suite["kind"] == "pytest"
                     and suite["id"] != "harness"
+                    and suite.get("requires_native_api", True)
                     and api_identity is None
                     and (not suite.get("reference") or suite["reference"] in references)
                 ):

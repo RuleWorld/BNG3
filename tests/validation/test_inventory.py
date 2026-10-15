@@ -92,3 +92,22 @@ def test_bindings_and_lean_declarations_are_unverified_discovery_units(tmp_path)
     rows = inventory.discover_capabilities(tmp_path, [])
     assert {"binding", "lean-declaration"} <= {r["kind"] for r in rows}
     assert all(r["support"] == "unverified" for r in rows)
+
+
+def test_semantic_claim_keeps_its_own_issues_when_source_file_is_shared(tmp_path):
+    p = tmp_path / "cpp/engine/Shared.cpp"
+    p.parent.mkdir(parents=True)
+    p.write_text("// two independent capabilities")
+    claims = [
+        {
+            "id": name,
+            "sources": ["cpp/engine/Shared.cpp"],
+            "tests": [],
+            "issues": [issue],
+            "support": "partial",
+        }
+        for name, issue in [("one", 1), ("two", 2)]
+    ]
+    rows = inventory.discover_capabilities(tmp_path, claims)
+    one = next(r for r in rows if r["id"] == "one")
+    assert one["issues"] == [1]

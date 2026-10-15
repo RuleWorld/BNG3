@@ -91,7 +91,21 @@ def publish(report, summary, *, strict=False, revision=None):
             + ", ".join("`" + p + "`" for p in task.get("source_locations", [])),
             "",
             "```sh",
-            shlex.join(task.get("reproduce_command", [])),
+            (
+                "cd " + shlex.quote(task["reproduce_cwd"])
+                if task.get("reproduce_cwd")
+                else "# Run from the repository root"
+            ),
+            shlex.join(
+                [
+                    "env",
+                    *[
+                        f"{key}={value}"
+                        for key, value in task.get("reproduce_environment", {}).items()
+                    ],
+                    *task.get("reproduce_command", []),
+                ]
+            ),
             "```",
             "",
         ]

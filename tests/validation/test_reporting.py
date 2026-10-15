@@ -84,3 +84,64 @@ def test_task_packets_are_leaf_failures_with_replay_and_bounded_acceptance(tmp_p
     assert "m" in task["reproduce_command"]
     assert task["related_issues"] == [140]
     assert task["evidence"] == ["reference.net", "subject.net"]
+
+
+def test_node_specific_mapping_never_attributes_neighbor_failure_to_capability():
+    cap = {
+        "id": "actions.amounts",
+        "existing_tests": [
+            "tests/validation/test_diagnostic_probes.py::test_set_then_add_is_visible_in_exported_seed_amount"
+        ],
+        "missing_tests": [],
+    }
+    rows = [
+        {
+            "id": "probes:test_diagnostic_probes.py::test_set_then_add_is_visible_in_exported_seed_amount",
+            "name": "test_diagnostic_probes.py::test_set_then_add_is_visible_in_exported_seed_amount",
+            "test_file": "tests/validation/test_diagnostic_probes.py",
+            "status": "FAIL",
+        },
+        {
+            "id": "probes:test_diagnostic_probes.py::test_net_reload_preserves_all_declared_observable_columns",
+            "name": "test_diagnostic_probes.py::test_net_reload_preserves_all_declared_observable_columns",
+            "test_file": "tests/validation/test_diagnostic_probes.py",
+            "status": "FAIL",
+        },
+    ]
+    reporting.attach_coverage([cap], rows)
+    assert cap["result_counts"] == {"FAIL": 1}
+    assert rows[0]["mapped_capabilities"] == ["actions.amounts"]
+    assert "mapped_capabilities" not in rows[1]
+
+
+def test_named_pytest_task_uses_repository_path_and_pinned_oracle_environment(tmp_path):
+    report = {
+        "source": {"revision": "abc"},
+        "subject": {"binary": "/engine"},
+        "configuration": {},
+        "references": {
+            "bionetgen": {
+                "path": "/oracle",
+                "script": "/oracle/bng2/BNG2.pl",
+                "interpreter": "/usr/bin/perl",
+                "network_binary_sha256": "digest",
+            }
+        },
+        "results": [
+            {
+                "id": "probes:test_diagnostic_probes.py::test_one",
+                "name": "test_diagnostic_probes.py::test_one",
+                "test_file": "tests/validation/test_diagnostic_probes.py",
+                "stage": "test",
+                "status": "FAIL",
+                "detail": "rate mismatch",
+            }
+        ],
+    }
+    task = reporting.investigation_tasks(report, tmp_path)[0]
+    assert (
+        "tests/validation/test_diagnostic_probes.py::test_one"
+        in task["reproduce_command"]
+    )
+    assert task["reproduce_environment"]["BNG2_PERL"] == "/oracle/bng2/BNG2.pl"
+    assert task["reproduce_environment"]["BNG2_NETWORK_SHA256"] == "digest"
