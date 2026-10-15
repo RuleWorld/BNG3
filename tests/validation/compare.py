@@ -141,9 +141,7 @@ def _resolve_rate(
     fields = tok.split()
     if len(fields) > 1 and fields[0] in {"Sat", "MM", "Hill", "Ele"}:
         arguments = [
-            _resolve_rate(
-                arg, rate_defs, rate_mode, rate_functions, rate_observables
-            )
+            _resolve_rate(arg, rate_defs, rate_mode, rate_functions, rate_observables)
             for arg in fields[1:]
         ]
         return f"law:{fields[0]}({','.join(arguments)})"
@@ -218,9 +216,7 @@ def _eval_expr(
             if t in _SAFE_NAMES or t == "if":
                 sub_parts.append(t)
             else:
-                v, sub = _eval_symbol(
-                    t, defs, seen, rate_functions, rate_observables
-                )
+                v, sub = _eval_symbol(t, defs, seen, rate_functions, rate_observables)
                 if v is None:
                     constant = False
                     sub_parts.append(f"({sub})" if t in defs and sub != t else sub)
@@ -231,10 +227,10 @@ def _eval_expr(
             # while its expanded body is just an expression. Consume only the
             # empty call of known zero-argument functions; non-empty calls such
             # as TFUN(path, value) stay structural and fail closed.
-            if (
-                t in rate_functions | rate_observables
-                and toks[index : index + 2] == ["(", ")"]
-            ):
+            if t in rate_functions | rate_observables and toks[index : index + 2] == [
+                "(",
+                ")",
+            ]:
                 index += 2
         else:
             sub_parts.append(t)
@@ -482,10 +478,7 @@ def _canon_expr(expr: str) -> str:
                 operand_bits = max(
                     left.numerator.bit_length(), left.denominator.bit_length()
                 )
-                if (
-                    abs(exponent) <= 10000
-                    and operand_bits * abs(exponent) <= 4096
-                ):
+                if abs(exponent) <= 10000 and operand_bits * abs(exponent) <= 4096:
                     return left**exponent
         except (OverflowError, ZeroDivisionError, ValueError):
             return None

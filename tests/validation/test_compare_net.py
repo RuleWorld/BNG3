@@ -219,9 +219,7 @@ def test_motor_rate_comparison_accepts_equivalent_numeric_and_observable_syntax(
     tmp_path,
 ):
     def write(path: Path, half: str, micro: str, observable_call: str) -> Path:
-        scaled_observable = (
-            f"{observable_call}/(cellVolume*_Na*{micro})"
-        )
+        scaled_observable = f"{observable_call}/(cellVolume*_Na*{micro})"
         common = (
             "w*exp((g1/2)*("
             f"{half}-({scaled_observable})/(Kd+({scaled_observable}))"
@@ -260,15 +258,9 @@ def test_motor_rate_comparison_accepts_equivalent_numeric_and_observable_syntax(
         )
         return path
 
-    reference = parse_net(
-        write(tmp_path / "reference.net", "1/2", "10**(-6)", "CheYp")
-    )
-    generated = parse_net(
-        write(tmp_path / "generated.net", "0.5", "1e-06", "CheYp()")
-    )
-    changed = parse_net(
-        write(tmp_path / "changed.net", "0.6", "1e-06", "CheYp()")
-    )
+    reference = parse_net(write(tmp_path / "reference.net", "1/2", "10**(-6)", "CheYp"))
+    generated = parse_net(write(tmp_path / "generated.net", "0.5", "1e-06", "CheYp()"))
+    changed = parse_net(write(tmp_path / "changed.net", "0.6", "1e-06", "CheYp()"))
     assert reference is not None
     assert generated is not None
     assert changed is not None
