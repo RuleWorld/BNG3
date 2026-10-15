@@ -102,6 +102,24 @@ def test_equivalent_built_in_rate_expressions_compare_equal(tmp_path):
     assert compare_net(reference, generated).ok
 
 
+def test_dynamic_tiny_rates_do_not_collapse_to_zero(tmp_path):
+    zero = parse_net(_net(tmp_path / "zero.net", "0*x"))
+    scientific = parse_net(_net(tmp_path / "scientific.net", "1e-6*x"))
+    decimal = parse_net(_net(tmp_path / "decimal.net", "0.000001*x"))
+    tiny_rates = [
+        parse_net(_net(tmp_path / "tiny-999.net", "1e-999*x")),
+        parse_net(_net(tmp_path / "tiny-400.net", "1e-400*x")),
+        parse_net(_net(tmp_path / "pathological-exponent.net", "1e-10000*x")),
+    ]
+    assert zero is not None
+    assert scientific is not None
+    assert decimal is not None
+    assert all(rate is not None for rate in tiny_rates)
+
+    assert all(not compare_net(rate, zero).ok for rate in tiny_rates)
+    assert compare_net(scientific, decimal).ok
+
+
 def test_net_rate_comparison_preserves_natural_log_semantics(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "ln(2)/120"))
     generated = parse_net(_net(tmp_path / "generated.net", repr(math.log(2) / 120)))

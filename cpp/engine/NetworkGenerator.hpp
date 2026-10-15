@@ -17,6 +17,10 @@ struct GeneratedNetwork {
     ast::SpeciesList species;
     ast::RxnList reactions;
 
+    // Imported NET reaction rates already include compartment-unit conversion.
+    // Keep this distinct from generated networks so consumers do not apply it twice.
+    bool ratesIncludeUnitConversion = false;
+
     // Species and reaction graphs retain pointers to the BNGcore node/state
     // types created during compiled lowering. Keep that storage alive for the
     // lifetime of the generated network rather than the generator call.

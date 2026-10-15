@@ -166,9 +166,10 @@ def _resolve_rate(
 
 # Tokenizer for simple rate arithmetic: numbers, identifiers, operators, parens.
 _TOKEN = re.compile(r"[A-Za-z_]\w*|\d+\.?\d*(?:[eE][+-]?\d+)?|[()+\-*/^,]|\S")
-_NUMBER_TOKEN = re.compile(
-    r"(?<![A-Za-z_])(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z_])"
-)
+_CANON_NUMERIC_LITERAL = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?\Z")
+_MAX_CANON_NUMERIC_LITERAL_CHARS = 128
+_MAX_CANON_NUMERIC_EXPONENT = 1000
+_MAX_CANON_NUMERIC_BITS = 4096
 
 
 def _eval_symbol(
@@ -366,12 +367,6 @@ def _canon_expr(expr: str) -> str:
         if not changed:
             break
 
-    def normalize_number(match: re.Match[str]) -> str:
-        normalized = format(float(match.group(0)), ".15g")
-        return "0" if normalized in {"-0", "-0.0"} else normalized
-
-    result = _NUMBER_TOKEN.sub(normalize_number, result)
-
     # BNG2 and BNG3 can serialize the same unary-minus product with different
     # redundant parentheses, e.g. ``(-(g/2))*x`` vs ``-(g/2)*x``.  Normalize
     # only the safe arithmetic subset; unsupported rate syntax keeps the
@@ -442,16 +437,41 @@ def _canon_expr(expr: str) -> str:
                 )
             return node
 
+    source = result.replace("^", "**")
+
+    def literal_fraction(node: ast.Constant) -> Fraction | None:
+        literal = ast.get_source_segment(source, node)
+        if literal is None or len(literal) > _MAX_CANON_NUMERIC_LITERAL_CHARS:
+            return None
+        match = _CANON_NUMERIC_LITERAL.fullmatch(literal)
+        if match is None:
+            return None
+        exponent_text = match.group(1)
+        if exponent_text is not None:
+            # Bound before converting to int or constructing a large Fraction.
+            exponent_digits = exponent_text.lstrip("+-")
+            if len(exponent_digits) > 4:
+                return None
+            if abs(int(exponent_text)) > _MAX_CANON_NUMERIC_EXPONENT:
+                return None
+        try:
+            value = Fraction(literal)
+        except (OverflowError, ValueError, ZeroDivisionError):
+            return None
+        if (
+            max(value.numerator.bit_length(), value.denominator.bit_length())
+            > _MAX_CANON_NUMERIC_BITS
+        ):
+            return None
+        return value
+
     def numeric_value(node: ast.AST) -> Fraction | None:
         """Return an exact rational for a numeric-only arithmetic subtree."""
         folded = getattr(node, "_canonical_fraction", None)
         if folded is not None:
             return folded
         if isinstance(node, ast.Constant) and type(node.value) in (int, float):
-            try:
-                return Fraction(str(node.value))
-            except (ValueError, ZeroDivisionError):
-                return None
+            return literal_fraction(node)
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = numeric_value(node.operand)
             if value is not None:
@@ -517,8 +537,13 @@ def _canon_expr(expr: str) -> str:
             return self._fold(node)
 
     try:
-        tree = ast.parse(result.replace("^", "**"), mode="eval")
-        if supported(tree):
+        tree = ast.parse(source, mode="eval")
+        numeric_literals_are_bounded = all(
+            literal_fraction(node) is not None
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and type(node.value) in (int, float)
+        )
+        if supported(tree) and numeric_literals_are_bounded:
             normalized = NormalizeNegativeProduct().visit(tree)
             normalized = StripUnitMultiplications().visit(normalized)
             normalized = NormalizeProductOfQuotient().visit(normalized)
