@@ -1066,6 +1066,44 @@ void OdeIntegrator::compileGroups() {
         CompiledGroup group;
         group.name = observable.getName();
 
+        if (const auto& indexedWeights = observable.getIndexedSpeciesWeights();
+            indexedWeights.has_value()) {
+            std::unordered_map<std::size_t, std::size_t> entryPositions;
+            for (const auto& [speciesIndex, weight] : *indexedWeights) {
+                if (speciesIndex >= network_.species.size()) {
+                    throw std::runtime_error(
+                        "Indexed observable " + observable.getName() +
+                        " references species index " + std::to_string(speciesIndex) +
+                        " outside the generated network");
+                }
+                if (!std::isfinite(weight)) {
+                    throw std::runtime_error(
+                        "Indexed observable " + observable.getName() +
+                        " has a non-finite species weight");
+                }
+
+                const auto [position, inserted] = entryPositions.emplace(
+                    speciesIndex, group.entries.size());
+                if (inserted) {
+                    group.entries.emplace_back(speciesIndex, weight);
+                } else {
+                    auto& combinedWeight = group.entries[position->second].second;
+                    combinedWeight += weight;
+                    if (!std::isfinite(combinedWeight)) {
+                        throw std::runtime_error(
+                            "Indexed observable " + observable.getName() +
+                            " has a non-finite combined species weight");
+                    }
+                }
+            }
+
+            // NET groups name exact generated species indices. Do not treat
+            // those rows as graph patterns, and preserve an explicitly empty
+            // indexed group as an empty observable.
+            compiledGroups_.push_back(std::move(group));
+            continue;
+        }
+
         std::vector<ParsedPatternInfo> parsedPatterns;
         parsedPatterns.reserve(observable.getPatterns().size());
 
@@ -2091,6 +2129,24 @@ std::size_t textFileBytes(std::size_t fieldsPerRow, std::size_t rows) {
     return kMaxFieldBytes * (fieldsPerRow + 2) * rows;
 }
 
+std::string cdatSpeciesColumnName(const ast::Species& species) {
+    // SpeciesGraph::toString() is a display serialization of the graph alone:
+    // it omits both the outer compartment and the constant-species marker.
+    // CDAT needs a stable identity for each network column, including the
+    // compartment-aware graph spelling used by species deduplication.
+    std::string name = species.getSpeciesGraph().toStringForDedup();
+    if (species.isConstant()) {
+        const auto compartmentEnd = !name.empty() && name.front() == '@'
+            ? name.find("::")
+            : std::string::npos;
+        const auto markerPosition = compartmentEnd == std::string::npos
+            ? 0
+            : compartmentEnd + 2;
+        name.insert(markerPosition, "$");
+    }
+    return name;
+}
+
 } // namespace
 
 void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT, bool printFunctions, bool append) const {
@@ -2112,7 +2168,7 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             cdat << std::setw(17) << "time";
             for (std::size_t i = 0; i < network_.species.size(); ++i) {
                 cdat << " " << std::setw(18)
-                     << network_.species.get(i).getSpeciesGraph().toString();
+                     << cdatSpeciesColumnName(network_.species.get(i));
             }
             cdat << "\n";
         }

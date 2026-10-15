@@ -170,14 +170,14 @@ std::string SpeciesGraph::toStringForDedup() const {
     // and per-molecule compartments only when they differ from species-level.
     // This matches Perl's SpeciesGraph::toString(1,0) which passes $sg->Compartment
     // to Molecule::toString, which conditionally appends @comp.
+    // With no outer species compartment, retain the graph helper's explicit
+    // per-molecule compartment identity instead of returning the display form.
+    if (compartment_.empty()) {
+        return graph_.get_BNG2_string_with_compartments();
+    }
+
     std::vector<std::string> molComps;
     std::string base = graph_.get_BNG2_string(molComps);
-
-    // Unscoped species: the result is exactly the base serialization, so hand
-    // it back directly instead of copying it through an empty accumulator.
-    if (compartment_.empty()) {
-        return base;
-    }
     std::string result = "@" + compartment_ + "::";
 
     // Annotate molecules with compartments that differ from species-level

@@ -2,6 +2,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -404,6 +405,197 @@ end seed species
 
     CHECK(output.find("@cyto::A(x) 2") != std::string::npos);
     CHECK(output.find("@nuc::A(x) 7") != std::string::npos);
+}
+
+TEST_CASE("NetWriter emits the live amount after seed species mutation",
+          "[NetWriter][issue-272]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    S0 100
+end parameters
+begin molecule types
+    S(c~R)
+end molecule types
+begin seed species
+    S(c~R) S0
+end seed species
+)");
+
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 1);
+    network.species.get(0).setAmount(200.0);
+
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-live-seed-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    input.close();
+    std::filesystem::remove(outputPath);
+
+    CHECK(output.find("S(c~R) 200\n") != std::string::npos);
+    CHECK(output.find("S(c~R) S0\n") == std::string::npos);
+}
+
+TEST_CASE("NetWriter does not reuse a seed expression after a sub-tolerance mutation",
+          "[NetWriter][issue-272]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    S0 1
+end parameters
+begin molecule types
+    S(c~R)
+end molecule types
+begin seed species
+    S(c~R) S0
+end seed species
+)");
+
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 1);
+    network.species.get(0).setAmount(1.0 + 5e-13);
+
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-sub-tolerance-seed-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    input.close();
+    std::filesystem::remove(outputPath);
+
+    const auto speciesStart = output.find("begin species\n");
+    REQUIRE(speciesStart != std::string::npos);
+    const auto speciesEnd = output.find("end species", speciesStart);
+    REQUIRE(speciesEnd != std::string::npos);
+    std::istringstream speciesLines(
+        output.substr(speciesStart, speciesEnd - speciesStart));
+    std::string line;
+    double exportedAmount = -1.0;
+    while (std::getline(speciesLines, line)) {
+        std::istringstream row(line);
+        std::size_t index = 0;
+        std::string pattern;
+        double amount = 0.0;
+        if (row >> index >> pattern >> amount && pattern == "S(c~R)") {
+            exportedAmount = amount;
+            break;
+        }
+    }
+    REQUIRE(exportedAmount > 0.0);
+    CHECK(exportedAmount == network.species.get(0).getAmount());
+    CHECK(exportedAmount != 1.0);
+    CHECK(output.find("S(c~R) S0\n") == std::string::npos);
+}
+
+TEST_CASE("NetWriter matches seed amount expressions by constant identity",
+          "[NetWriter][issue-272]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    dynamicAmount 1
+    constantAmount 1
+end parameters
+begin molecule types
+    S(c~R)
+end molecule types
+begin seed species
+    S(c~R) dynamicAmount
+    $S(c~R) constantAmount
+end seed species
+)");
+
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 1);
+    auto constantGraph = network.species.get(0).getSpeciesGraph();
+    network.species.setCheckIso(false);
+    network.species.add(ast::Species(std::move(constantGraph), 1.0, true));
+
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-constant-seed-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    input.close();
+    std::filesystem::remove(outputPath);
+
+    CHECK(output.find("S(c~R) dynamicAmount\n") != std::string::npos);
+    CHECK(output.find("$S(c~R) constantAmount\n") != std::string::npos);
+}
+
+TEST_CASE("NetWriter preserves indexed and empty NET observable groups",
+          "[NetWriter][issue-273]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 2
+    A().B() 7
+end seed species
+)");
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.species.size() == 2);
+    const auto exactASpecies = std::find_if(
+        network.species.all().begin(), network.species.all().end(),
+        [](const ast::Species& species) {
+            return species.getSpeciesGraph().toString() == "A()";
+        });
+    REQUIRE(exactASpecies != network.species.all().end());
+    const auto exactAIndex = static_cast<std::size_t>(
+        std::distance(network.species.all().begin(), exactASpecies));
+    const auto otherSpeciesIndex = 1 - exactAIndex;
+
+    ast::Observable indexed("selected", "Species", {});
+    indexed.setIndexedSpeciesWeights(
+        {{exactAIndex, 2.0}, {otherSpeciesIndex, 3.0}});
+    model->addObservable(std::move(indexed));
+    ast::Observable empty("absent", "Species", {});
+    empty.setIndexedSpeciesWeights({});
+    model->addObservable(std::move(empty));
+
+    const auto outputPath = std::filesystem::temp_directory_path() /
+        ("bng3-net-writer-indexed-groups-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+         ".net");
+    io::NetWriter::write(outputPath, *model, network);
+
+    std::ifstream input(outputPath);
+    REQUIRE(input.good());
+    const std::string output((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+    input.close();
+    std::filesystem::remove(outputPath);
+
+    std::ostringstream expectedGroup;
+    expectedGroup << "    1 selected ";
+    for (std::size_t speciesIndex = 0; speciesIndex < network.species.size();
+         ++speciesIndex) {
+        if (speciesIndex != 0) expectedGroup << ',';
+        expectedGroup << (speciesIndex == exactAIndex ? 2 : 3) << '*'
+                      << speciesIndex + 1;
+    }
+    CHECK(output.find(expectedGroup.str()) != std::string::npos);
+    CHECK(output.find("    2 absent \n") != std::string::npos);
 }
 
 TEST_CASE("NetWriter does not apply pattern symmetry factor to TotalRate", "[NetWriter]") {

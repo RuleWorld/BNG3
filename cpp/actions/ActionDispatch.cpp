@@ -9,12 +9,15 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
+#include <memory>
 #include <optional>
 #include <iomanip>
 #include <set>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
 
@@ -48,6 +51,11 @@
 #include "io/ProcessGraphWriter.hpp"
 #include "io/RuleInfluenceGraphWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
+#include "parser/PatternGraphBuilder.hpp"
+#include "parser/antlr_compat.hpp"
+#include <antlr4-runtime.h>
+#include "generated/BNGLexer.h"
+#include "generated/BNGParser.h"
 
 // NFsim in-process invocation
 #include "nfsim/NFinput/NFinput.hh"
@@ -84,6 +92,245 @@ std::string stripQuotes(const std::string& text) {
         return text.substr(1, text.size() - 2);
     }
     return text;
+}
+
+std::string lowercase(std::string value);
+
+ast::SpeciesGraph parseNetSpeciesGraph(const std::string& pattern,
+                                       ast::Model& model) {
+    auto cleanPattern = trim(pattern);
+    // NET uses a double colon for the outer species compartment, while the
+    // BNGL species_def grammar accepts one colon in that position. Normalize
+    // only the leading outer prefix; molecule-local compartments stay intact.
+    if (!cleanPattern.empty() && cleanPattern.front() == '@') {
+        const auto separator = cleanPattern.find("::");
+        const auto firstMoleculeToken = cleanPattern.find_first_of(".(", 1);
+        if (separator != std::string::npos && separator > 1 &&
+            (firstMoleculeToken == std::string::npos ||
+             separator < firstMoleculeToken)) {
+            cleanPattern.replace(separator, 2, ":");
+        }
+    }
+    antlr4::ANTLRInputStream input(cleanPattern);
+    BNGLexer lexer(&input);
+    antlr4::CommonTokenStream tokens(&lexer);
+    BNGParser parser(&tokens);
+    auto* species = parser.species_def();
+    if (species == nullptr || parser.getNumberOfSyntaxErrors() != 0) {
+        throw std::runtime_error("Could not parse .net species pattern: " +
+                                 cleanPattern);
+    }
+
+    auto graph = bng::parser::buildPatternGraph(species, model, false);
+    auto compartment = bng::parser::extractSpeciesCompartment(species);
+    return ast::SpeciesGraph(std::move(graph), std::move(compartment));
+}
+
+std::vector<std::string> splitCommaSeparated(const std::string& text) {
+    std::vector<std::string> result;
+    std::istringstream input(text);
+    std::string item;
+    while (std::getline(input, item, ',')) {
+        item = trim(std::move(item));
+        if (!item.empty()) result.push_back(std::move(item));
+    }
+    return result;
+}
+
+void addNetObservables(const io::NetReader::ParseResult& netData,
+                       ast::Model& model) {
+    std::set<std::string> importedNames;
+
+    for (const auto& line : netData.rawGroupLines) {
+        std::istringstream input(line);
+        std::vector<std::string> fields;
+        std::string field;
+        while (input >> field) fields.push_back(std::move(field));
+        if (fields.size() < 2) continue;
+
+        const auto& name = fields[1];
+        if (!importedNames.insert(name).second) {
+            throw std::runtime_error(
+                "Duplicate observable name in .net groups: " + name);
+        }
+
+        std::vector<std::string> patterns;
+        std::string type = "Species";
+        if (fields.size() == 2) {
+            // An engaged empty weight list is distinct from an ordinary
+            // pattern observable with no terms: it records the empty NET group.
+            ast::Observable observable(name, type, std::move(patterns));
+            observable.setIndexedSpeciesWeights({});
+            model.upsertObservable(std::move(observable));
+            continue;
+        }
+        if (fields.size() >= 3 &&
+            (lowercase(fields[2]) == "molecules" ||
+             lowercase(fields[2]) == "species")) {
+            type = fields[2];
+            patterns.assign(fields.begin() + 3, fields.end());
+            model.upsertObservable(
+                ast::Observable(name, type, std::move(patterns)));
+        } else {
+            std::vector<std::pair<std::size_t, double>> indexedWeights;
+            for (std::size_t fieldIndex = 2; fieldIndex < fields.size(); ++fieldIndex) {
+                for (const auto& entry : splitCommaSeparated(fields[fieldIndex])) {
+                    const auto star = entry.find('*');
+                    const auto weightText = star == std::string::npos
+                        ? std::string("1") : entry.substr(0, star);
+                    const auto speciesIndexText = star == std::string::npos
+                        ? entry : entry.substr(star + 1);
+
+                    const auto isUnsignedInteger = [](const std::string& value) {
+                        return !value.empty() && std::all_of(
+                            value.begin(), value.end(), [](unsigned char c) {
+                                return std::isdigit(c) != 0;
+                            });
+                    };
+                    if (!isUnsignedInteger(weightText) ||
+                        !isUnsignedInteger(speciesIndexText)) {
+                        throw std::runtime_error(
+                            "Invalid weighted species reference in .net group '" +
+                            name + "': " + entry);
+                    }
+
+                    std::size_t weightConsumed = 0;
+                    const auto weight = std::stoull(weightText, &weightConsumed);
+                    std::size_t indexConsumed = 0;
+                    const auto speciesIndex = std::stoull(
+                        speciesIndexText, &indexConsumed);
+                    if (weightConsumed != weightText.size() || weight == 0 ||
+                        weight > static_cast<unsigned long long>(
+                                     std::numeric_limits<int>::max()) ||
+                        indexConsumed != speciesIndexText.size() ||
+                        speciesIndex == 0 || speciesIndex > netData.species.size()) {
+                        throw std::runtime_error(
+                            "Invalid weighted species reference in .net group '" +
+                            name + "': " + entry);
+                    }
+                    indexedWeights.emplace_back(
+                        speciesIndex - 1, static_cast<double>(weight));
+                }
+            }
+            ast::Observable observable(name, type, std::move(patterns));
+            observable.setIndexedSpeciesWeights(std::move(indexedWeights));
+            model.upsertObservable(std::move(observable));
+        }
+    }
+}
+
+void addNetFunctions(const io::NetReader::ParseResult& netData,
+                     ast::Model& model) {
+    for (const auto& [signature, expressionText] : netData.functions) {
+        const auto open = signature.find('(');
+        const auto close = signature.rfind(')');
+        if (open == std::string::npos || close == std::string::npos ||
+            close < open || !trim(signature.substr(close + 1)).empty()) {
+            throw std::runtime_error("Invalid function signature in .net file: " +
+                                     signature);
+        }
+
+        const auto name = trim(signature.substr(0, open));
+        if (name.empty()) {
+            throw std::runtime_error("Invalid function signature in .net file: " +
+                                     signature);
+        }
+        std::vector<std::string> arguments;
+        const auto argumentsText = trim(signature.substr(open + 1, close - open - 1));
+        if (!argumentsText.empty()) {
+            arguments = splitCommaSeparated(argumentsText);
+        }
+        const auto expression = bng::parser::parseExpression(expressionText);
+
+        const auto existing = std::find_if(
+            model.getFunctions().begin(), model.getFunctions().end(),
+            [&](const auto& function) { return function.getName() == name; });
+        if (existing != model.getFunctions().end()) {
+            if (existing->getArgs() != arguments ||
+                existing->getExpression().toString() != expression.toString()) {
+                throw std::runtime_error(
+                    "Conflicting function definition while reading .net file: " + name);
+            }
+            continue;
+        }
+
+        model.addFunction(ast::Function(name, std::move(arguments), expression));
+    }
+}
+
+engine::GeneratedNetwork networkFromNetData(
+    const io::NetReader::ParseResult& netData, ast::Model& model) {
+    engine::GeneratedNetwork network;
+    // NET reaction and group references use stable 1-based species rows.
+    // Preserve duplicate rows while rebuilding the imported network.
+    network.species.setCheckIso(false);
+
+    for (const auto& [pattern, amountText] : netData.species) {
+        bool isConstant = false;
+        std::string cleanPattern = pattern;
+        if (!cleanPattern.empty() && cleanPattern.front() == '@') {
+            const auto separator = cleanPattern.find("::");
+            const auto firstMoleculeToken = cleanPattern.find_first_of(".(", 1);
+            if (separator != std::string::npos && separator > 1 &&
+                (firstMoleculeToken == std::string::npos ||
+                 separator < firstMoleculeToken) &&
+                separator + 2 < cleanPattern.size() &&
+                cleanPattern[separator + 2] == '$') {
+                isConstant = true;
+                cleanPattern.erase(separator + 2, 1);
+            }
+        }
+        if (!cleanPattern.empty() && cleanPattern.front() == '$') {
+            isConstant = true;
+            cleanPattern.erase(cleanPattern.begin());
+        }
+
+        auto graph = parseNetSpeciesGraph(cleanPattern, model);
+        double amount = 0.0;
+        try {
+            amount = std::stod(amountText);
+        } catch (...) {
+            try {
+                amount = model.getParameters().evaluate(amountText);
+            } catch (...) {
+                amount = 0.0;
+            }
+        }
+        const auto speciesCompartment = graph.getCompartment();
+        network.species.add(ast::Species(
+            std::move(graph), amount, isConstant, speciesCompartment));
+    }
+
+    for (const auto& line : netData.reactions) {
+        std::istringstream input(line);
+        std::string index, reactantsText, productsText, rate;
+        input >> index >> reactantsText >> productsText;
+        std::getline(input, rate);
+        const auto rateStart = rate.find_first_not_of(" \t");
+        if (rateStart != std::string::npos) rate = rate.substr(rateStart);
+        const auto comment = rate.find('#');
+        if (comment != std::string::npos) rate = rate.substr(0, comment);
+        while (!rate.empty() && std::isspace(rate.back())) rate.pop_back();
+
+        const auto parseSpeciesIndices = [](const std::string& text) {
+            std::vector<std::size_t> indices;
+            if (text != "0") {
+                std::istringstream items(text);
+                std::string item;
+                while (std::getline(items, item, ',')) {
+                    indices.push_back(std::stoul(item) - 1);
+                }
+            }
+            return indices;
+        };
+        network.reactions.add(ast::Rxn(
+            index, parseSpeciesIndices(reactantsText),
+            parseSpeciesIndices(productsText), rate));
+    }
+
+    addNetObservables(netData, model);
+    addNetFunctions(netData, model);
+    return network;
 }
 
 std::vector<std::string> parseQuotedStringList(const std::string& text,
@@ -1122,6 +1369,66 @@ void restoreConcentrations(engine::GeneratedNetwork& network, const std::vector<
     const auto count = std::min(network.species.size(), values.size());
     for (std::size_t i = 0; i < count; ++i) {
         network.species.get(i).setAmount(values[i]);
+    }
+}
+
+using SpeciesAmountBucketKey =
+    std::tuple<std::string, std::string, std::string, bool>;
+
+struct SpeciesAmountSnapshot {
+    ast::SpeciesGraph graph;
+    double amount = 0.0;
+    bool restored = false;
+};
+
+struct SpeciesAmountBuckets {
+    // SpeciesGraph copies retain BNGcore type pointers owned by the generated
+    // network's lowering context. Keep that context alive until restoration
+    // has compared every copied graph against the regenerated network.
+    std::shared_ptr<compile::BNGcoreLoweringContext> loweringContext;
+    std::map<SpeciesAmountBucketKey, std::vector<SpeciesAmountSnapshot>> byKey;
+
+    bool empty() const noexcept { return byKey.empty(); }
+};
+
+SpeciesAmountBucketKey speciesAmountBucketKey(const ast::Species& species) {
+    const auto& graph = species.getSpeciesGraph();
+    // The fingerprint includes node compartments and structural labels. Keep
+    // the outer graph/species compartments and constant flag in the bucket as
+    // well; graph isomorphism below remains the final identity check.
+    return {graph.fingerprint(), graph.getCompartment(),
+            species.getCompartment(), species.isConstant()};
+}
+
+SpeciesAmountBuckets snapshotAmountsBySpecies(
+    const engine::GeneratedNetwork& network) {
+    SpeciesAmountBuckets result;
+    result.loweringContext = network.loweringContext;
+    for (const auto& species : network.species.all()) {
+        const auto& graph = species.getSpeciesGraph();
+        // PatternGraph's copy constructor deep-copies molecule nodes, states,
+        // bonds, and per-molecule compartments for identity matching later.
+        result.byKey[speciesAmountBucketKey(species)].push_back(
+            {graph, species.getAmount(), false});
+    }
+    return result;
+}
+
+void restoreAmountsBySpecies(engine::GeneratedNetwork& network,
+                             SpeciesAmountBuckets& saved) {
+    for (std::size_t i = 0; i < network.species.size(); ++i) {
+        auto& species = network.species.get(i);
+        const auto& graph = species.getSpeciesGraph();
+        const auto bucket = saved.byKey.find(speciesAmountBucketKey(species));
+        if (bucket == saved.byKey.end()) continue;
+        for (auto& candidate : bucket->second) {
+            if (!candidate.restored &&
+                graph.graphIsomorphicTo(candidate.graph.getGraph())) {
+                species.setAmount(candidate.amount);
+                candidate.restored = true;
+                break;
+            }
+        }
     }
 }
 
@@ -2390,77 +2697,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 }
                 evaluateParametersAndRefresh();
 
-                // Reconstruct network from parsed species and reactions
-                engine::GeneratedNetwork loadedNetwork;
-                for (const auto& [pattern, concStr] : parseResult.species) {
-                    // Check for constant species ($ prefix)
-                    bool isConstant = false;
-                    std::string cleanPattern = pattern;
-                    if (!cleanPattern.empty() && cleanPattern[0] == '$') {
-                        isConstant = true;
-                        cleanPattern = cleanPattern.substr(1);
-                    }
-                    // Create a PatternGraph with raw string (no full graph construction needed)
-                    BNGcore::PatternGraph pg;
-                    pg.set_raw_string(cleanPattern);
-                    ast::SpeciesGraph sg(std::move(pg));
-                    // Resolve concentration: can be a number or a parameter name
-                    double concentration = 0.0;
-                    try {
-                        concentration = std::stod(concStr);
-                    } catch (...) {
-                        // Try resolving as parameter name
-                        try {
-                            concentration = model.getParameters().evaluate(concStr);
-                        } catch (...) {
-                            concentration = 0.0;
-                        }
-                    }
-                    ast::Species sp(std::move(sg), concentration, isConstant);
-                    loadedNetwork.species.add(std::move(sp));
-                }
-
-                // Store reactions as-is (raw lines for passthrough writing)
-                // Also create Rxn objects for ODE integration
-                for (const auto& rxnLine : parseResult.reactions) {
-                    // Parse reaction line: <index> <reactants> <products> <rate>
-                    std::istringstream iss(rxnLine);
-                    std::string idxStr, reactantsStr, productsStr, rateStr;
-                    iss >> idxStr >> reactantsStr >> productsStr;
-                    std::getline(iss, rateStr);
-                    // Trim leading whitespace from rate
-                    auto rateStart = rateStr.find_first_not_of(" \t");
-                    if (rateStart != std::string::npos) rateStr = rateStr.substr(rateStart);
-                    // Strip #comment from rate
-                    auto commentPos = rateStr.find('#');
-                    if (commentPos != std::string::npos) rateStr = rateStr.substr(0, commentPos);
-                    // Trim trailing whitespace
-                    while (!rateStr.empty() && std::isspace(rateStr.back())) rateStr.pop_back();
-
-                    // Parse reactant indices (comma-separated, 1-based)
-                    std::vector<std::size_t> reactants;
-                    if (reactantsStr != "0") {
-                        std::istringstream rss(reactantsStr);
-                        std::string tok;
-                        while (std::getline(rss, tok, ',')) {
-                            reactants.push_back(std::stoul(tok) - 1);
-                        }
-                    }
-                    // Parse product indices
-                    std::vector<std::size_t> products;
-                    if (productsStr != "0") {
-                        std::istringstream pss(productsStr);
-                        std::string tok;
-                        while (std::getline(pss, tok, ',')) {
-                            products.push_back(std::stoul(tok) - 1);
-                        }
-                    }
-
-                    loadedNetwork.reactions.add(ast::Rxn(
-                        idxStr, reactants, products, rateStr));
-                }
-
-                network = std::move(loadedNetwork);
+                network = networkFromNetData(parseResult, model);
                 loadedNetData = std::move(parseResult);
 
                 if (verbose) {
@@ -2559,51 +2796,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
             }
             evaluateParametersAndRefresh();
-            engine::GeneratedNetwork loadedNetwork;
-            for (const auto& [pattern, concStr] : parseResult.species) {
-                bool isConstant = false;
-                std::string cleanPattern = pattern;
-                if (!cleanPattern.empty() && cleanPattern[0] == '$') {
-                    isConstant = true;
-                    cleanPattern = cleanPattern.substr(1);
-                }
-                BNGcore::PatternGraph pg;
-                pg.set_raw_string(cleanPattern);
-                ast::SpeciesGraph sg(std::move(pg));
-                double concentration = 0.0;
-                try { concentration = std::stod(concStr); }
-                catch (...) {
-                    try { concentration = model.getParameters().evaluate(concStr); }
-                    catch (...) { concentration = 0.0; }
-                }
-                ast::Species sp(std::move(sg), concentration, isConstant);
-                loadedNetwork.species.add(std::move(sp));
-            }
-            for (const auto& rxnLine : parseResult.reactions) {
-                std::istringstream iss(rxnLine);
-                std::string idxStr, reactantsStr, productsStr, rateStr;
-                iss >> idxStr >> reactantsStr >> productsStr;
-                std::getline(iss, rateStr);
-                auto rateStart = rateStr.find_first_not_of(" \t");
-                if (rateStart != std::string::npos) rateStr = rateStr.substr(rateStart);
-                auto commentPos = rateStr.find('#');
-                if (commentPos != std::string::npos) rateStr = rateStr.substr(0, commentPos);
-                while (!rateStr.empty() && std::isspace(rateStr.back())) rateStr.pop_back();
-                std::vector<std::size_t> reactants;
-                if (reactantsStr != "0") {
-                    std::istringstream rss(reactantsStr);
-                    std::string tok;
-                    while (std::getline(rss, tok, ',')) reactants.push_back(std::stoul(tok) - 1);
-                }
-                std::vector<std::size_t> products;
-                if (productsStr != "0") {
-                    std::istringstream pss(productsStr);
-                    std::string tok;
-                    while (std::getline(pss, tok, ',')) products.push_back(std::stoul(tok) - 1);
-                }
-                loadedNetwork.reactions.add(ast::Rxn(idxStr, reactants, products, rateStr));
-            }
-            network = std::move(loadedNetwork);
+            network = networkFromNetData(parseResult, model);
             loadedNetData = std::move(parseResult);
             if (verbose) {
                 std::cerr << "[bng_cpp] include_network: " << incPath << "\n";
@@ -2635,65 +2828,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                         }
                         evaluateParametersAndRefresh();
 
-                        // Reconstruct network from parsed species and reactions
-                        engine::GeneratedNetwork loadedNetwork;
-                        for (const auto& [pattern, concStr] : parseResult.species) {
-                            bool isConstant = false;
-                            std::string cleanPattern = pattern;
-                            if (!cleanPattern.empty() && cleanPattern[0] == '$') {
-                                isConstant = true;
-                                cleanPattern = cleanPattern.substr(1);
-                            }
-                            BNGcore::PatternGraph pg;
-                            pg.set_raw_string(cleanPattern);
-                            ast::SpeciesGraph sg(std::move(pg));
-                            double concentration = 0.0;
-                            try {
-                                concentration = std::stod(concStr);
-                            } catch (...) {
-                                try {
-                                    concentration = model.getParameters().evaluate(concStr);
-                                } catch (...) {
-                                    concentration = 0.0;
-                                }
-                            }
-                            ast::Species sp(std::move(sg), concentration, isConstant);
-                            loadedNetwork.species.add(std::move(sp));
-                        }
-
-                        for (const auto& rxnLine : parseResult.reactions) {
-                            std::istringstream iss(rxnLine);
-                            std::string idxStr, reactantsStr, productsStr, rateStr;
-                            iss >> idxStr >> reactantsStr >> productsStr;
-                            std::getline(iss, rateStr);
-                            auto rateStart = rateStr.find_first_not_of(" \t");
-                            if (rateStart != std::string::npos) rateStr = rateStr.substr(rateStart);
-                            auto commentPos = rateStr.find('#');
-                            if (commentPos != std::string::npos) rateStr = rateStr.substr(0, commentPos);
-                            while (!rateStr.empty() && std::isspace(rateStr.back())) rateStr.pop_back();
-
-                            std::vector<std::size_t> reactants;
-                            if (reactantsStr != "0") {
-                                std::istringstream rss(reactantsStr);
-                                std::string tok;
-                                while (std::getline(rss, tok, ',')) {
-                                    reactants.push_back(std::stoul(tok) - 1);
-                                }
-                            }
-                            std::vector<std::size_t> products;
-                            if (productsStr != "0") {
-                                std::istringstream pss(productsStr);
-                                std::string tok;
-                                while (std::getline(pss, tok, ',')) {
-                                    products.push_back(std::stoul(tok) - 1);
-                                }
-                            }
-
-                            loadedNetwork.reactions.add(ast::Rxn(
-                                idxStr, reactants, products, rateStr));
-                        }
-
-                        network = std::move(loadedNetwork);
+                        network = networkFromNetData(parseResult, model);
                         loadedNetData = std::move(parseResult);
 
                         if (verbose) {
@@ -2728,7 +2863,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             // path with the options-aware pass (honouring
             // writerOptions.evaluateExpressions).  Passing sourcePath here ran
             // the network through NetWriter twice.
+            auto savedAmounts = network.has_value()
+                ? snapshotAmountsBySpecies(*network)
+                : SpeciesAmountBuckets{};
             network = generator.generate({});
+            if (!savedAmounts.empty()) {
+                restoreAmountsBySpecies(*network, savedAmounts);
+            }
             writeCurrentNetwork(writerOptions);  // Triggers NetWriter::buildDerivedRateParams
             continue;
         }
