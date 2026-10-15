@@ -474,6 +474,42 @@ end reaction rules
           std::string::npos);
 }
 
+TEST_CASE("NetWriter preserves distinct local scopes in a multi-scope function rate",
+          "[NetWriter][functions]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A(s~u~p)
+    B(t~u~p)
+end molecule types
+begin seed species
+    A(s~u) 1
+    B(t~u) 1
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin functions
+    sum_scoped(x,y) = A_total(x) + B_total(y)
+end functions
+begin reaction rules
+    A%x(s~u) + B%y(t~u) -> A%x(s~p) + B%y(t~p) sum_scoped(x,y)
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.reactions.all().size() == 1);
+
+    const auto derived = io::NetWriter::buildDerivedRateParams(*model, network);
+    const auto ruleName = model->getReactionRules().front().getRuleName();
+    const auto rateInfo = derived.find(ruleName);
+    REQUIRE(rateInfo != derived.end());
+    REQUIRE(rateInfo->second.perReactionRates.size() == 1);
+    CHECK(rateInfo->second.perReactionRates.begin()->second.second == 2.0);
+}
+
 TEST_CASE("compiled functions reject invalid arity scope usage and recursion",
           "[CompiledModel][functions]") {
     const auto compileModel = [](const std::string& functionBlock,
