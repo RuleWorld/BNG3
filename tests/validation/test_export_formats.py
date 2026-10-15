@@ -210,7 +210,7 @@ end actions
     shutil.copy2(net, reload_dir / "input.net")
     reload = tmp_path / f"reload-{load_action}.bngl"
     reload.write_text(
-        f'''begin model
+        f"""begin model
 begin parameters
     k 0.1
 end parameters
@@ -223,19 +223,19 @@ begin actions
     simulate_ode({{prefix=>"reload",t_start=>0,t_end=>1,n_steps=>10}})
     writeNetwork({{prefix=>"rewritten",overwrite=>1}})
 end actions
-''',
+""",
         encoding="utf-8",
     )
     _, reload_gdat, err = runner.run_cli_path(bng_cpp, reload, reload_dir)
     assert reload_gdat is not None, f"{load_action} NET simulation failed: {err}"
     rewritten = reload_dir / "rewritten.net"
-    assert rewritten.is_file(), f"{load_action} failed to rewrite the imported NET: {err}"
+    assert (
+        rewritten.is_file()
+    ), f"{load_action} failed to rewrite the imported NET: {err}"
     source_net = compare.parse_net(net)
     rewritten_net = compare.parse_net(rewritten)
     assert source_net is not None and rewritten_net is not None
-    net_diff = compare.compare_net(
-        source_net, rewritten_net
-    )
+    net_diff = compare.compare_net(source_net, rewritten_net)
     assert net_diff.ok, (
         f"{load_action} changed compartment-scaled imported NET rates: "
         f"{net_diff.summary()}"
