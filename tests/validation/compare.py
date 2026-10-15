@@ -130,6 +130,17 @@ def _resolve_rate(
     if rate_mode == "string":
         return tok
 
+    # NET kinetic-law fields contain positional arguments, not one arithmetic
+    # token. Keep each resolved argument separate so Sat kcat Km cannot silently
+    # lose both parameters or conflate adjacent numeric spellings.
+    fields = tok.split()
+    if len(fields) > 1 and fields[0] in {"Sat", "MM", "Hill", "Ele"}:
+        arguments = [
+            _resolve_rate(arg, rate_defs, rate_mode, rate_functions)
+            for arg in fields[1:]
+        ]
+        return f"law:{fields[0]}({','.join(arguments)})"
+
     # Resolve complex top-level expressions (e.g. "2*rateLaw4" or "rateLaw1*2")
     # by evaluating them as expressions directly rather than just single symbol names.
     val, expr = _eval_expr(tok, rate_defs, set(), rate_functions or set())
@@ -191,7 +202,7 @@ def _eval_expr(
                 v, sub = _eval_symbol(t, defs, seen, rate_functions)
                 if v is None:
                     constant = False
-                    sub_parts.append(sub)
+                    sub_parts.append(f"({sub})" if t in defs and sub != t else sub)
                 else:
                     sub_parts.append(repr(v))
             index += 1
@@ -302,40 +313,6 @@ def _canon_expr(expr: str) -> str:
     # with different numbers of redundant parentheses.
     result = strip_outer_parentheses(result)
 
-    def strip_negative_product_parentheses(value: str) -> str:
-        while True:
-            changed = False
-            for index in range(len(value) - 1):
-                if value[index : index + 2] != "-(":
-                    continue
-                depth = 0
-                has_top_level_product = False
-                matching = None
-                for end in range(index + 1, len(value)):
-                    char = value[end]
-                    if char == "(":
-                        depth += 1
-                    elif char == ")":
-                        depth -= 1
-                        if depth == 0:
-                            matching = end
-                            break
-                    elif char == "*" and depth == 1:
-                        has_top_level_product = True
-                if matching is not None and has_top_level_product:
-                    value = (
-                        value[:index]
-                        + "-"
-                        + value[index + 2 : matching]
-                        + value[matching + 1 :]
-                    )
-                    changed = True
-                    break
-            if not changed:
-                return value
-
-    result = strip_negative_product_parentheses(result)
-
     # BNG3 may wrap a compartment-scaled observable in a no-argument call,
     # e.g. ``(A/cell)()``; BNG2 writes the same term as ``A/cell()``. Remove
     # only the redundant outer call around a simple identifier quotient.
@@ -396,6 +373,23 @@ def _canon_expr(expr: str) -> str:
             )
         return False
 
+    class NormalizeNegativeProduct(ast.NodeTransformer):
+        def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.AST:
+            node = self.generic_visit(node)
+            if (
+                isinstance(node.op, ast.USub)
+                and isinstance(node.operand, ast.BinOp)
+                and isinstance(node.operand.op, (ast.Mult, ast.Div))
+            ):
+                return ast.BinOp(
+                    left=self.visit(
+                        ast.UnaryOp(op=ast.USub(), operand=node.operand.left)
+                    ),
+                    op=node.operand.op,
+                    right=node.operand.right,
+                )
+            return node
+
     class StripUnitMultiplications(ast.NodeTransformer):
         def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
             node = self.generic_visit(node)
@@ -431,7 +425,8 @@ def _canon_expr(expr: str) -> str:
     try:
         tree = ast.parse(result.replace("^", "**"), mode="eval")
         if supported(tree):
-            normalized = StripUnitMultiplications().visit(tree)
+            normalized = NormalizeNegativeProduct().visit(tree)
+            normalized = StripUnitMultiplications().visit(normalized)
             normalized = NormalizeProductOfQuotient().visit(normalized)
             result = re.sub(r"\s+", "", ast.unparse(normalized))
     except (SyntaxError, ValueError):
@@ -1026,7 +1021,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
                 products = [int(x) for x in parts[2].split(",") if x and x != "0"]
             except ValueError:
                 continue
-            rate = parts[3]
+            rate = " ".join(parts[3:])
             raw_reactions.append((reactants, products, rate))
 
         elif section in ("parameters", "functions"):

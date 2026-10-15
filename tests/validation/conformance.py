@@ -300,6 +300,7 @@ def _models(args, selection):
 def _model(name, source, args, directory, reference, env):
     from scripts.cross_validate import _stage_model
     from .compare import compare_net, parse_net
+    from .contracts import network_contracts
 
     work = directory / "models" / name
     source_root = source.parent
@@ -428,9 +429,53 @@ def _model(name, source, args, directory, reference, env):
                 "bounded-network",
                 "PASS" if diff.ok else "FAIL",
                 diff.summary(),
-                **common,
+                aggregate=True,
+                **{**common, "capabilities": []},
             )
         )
+        caps = {
+            "artifact-validity": ["export.net"],
+            "species-count": ["network.expansion"],
+            "species-identity": ["core.graph-identity", "network.compartments"],
+            "initial-amounts": ["interface.cli-actions", "export.net"],
+            "reaction-count": ["network.expansion"],
+            "reaction-stoichiometry": ["network.expansion"],
+            "reaction-multiplicity": ["network.rule-multiplicity"],
+            "reaction-rates": ["compiler.rate-laws"],
+            "observable-names": ["network.observables"],
+            "observable-weights": ["observables.counting-modes"],
+        }
+        contracts = network_contracts(
+            work / "reference" / (source.stem + ".net"),
+            work / "subject" / (source.stem + ".net"),
+        )
+        for contract in contracts:
+            rows.append(
+                dict(
+                    id=name + ":network:" + contract["check"],
+                    stage="network." + contract["check"],
+                    model=name,
+                    reference="bionetgen",
+                    question="legacy-agreement",
+                    capabilities=caps[contract["check"]],
+                    evidence=[
+                        str(work / side / (source.stem + ".net"))
+                        for side in ("reference", "subject")
+                    ],
+                    receipts=[
+                        str(work / side / "command.json")
+                        for side in ("reference", "subject")
+                    ],
+                    **contract,
+                )
+            )
+        first = next(
+            (r["id"] for r in rows if r.get("check") and r["status"] in reporting.BAD),
+            None,
+        )
+        rows[-len(contracts) - 1]["first_observed_divergence"] = first
+        if any(r["status"] in reporting.BAD for r in contracts):
+            rows[-len(contracts) - 1]["status"] = "FAIL"
     return rows
 
 
@@ -466,6 +511,18 @@ def main(argv=None):
     parser.add_argument("--corpus-tier", choices=("s", "p", "nf", "expr", "x", "b"))
     parser.add_argument("--suite", action="append", default=[])
     parser.add_argument("--models", nargs="+")
+    parser.add_argument(
+        "--simulate",
+        action="store_true",
+        help="compare bounded deterministic cdat/gdat from matching generated networks; requires verified run_network",
+    )
+    parser.add_argument(
+        "--net-reload",
+        action="store_true",
+        help="also simulate each generated NET through readFile; requires --simulate",
+    )
+    parser.add_argument("--simulation-end", type=float, default=1.0)
+    parser.add_argument("--simulation-steps", type=int, default=50)
     parser.add_argument("--case-timeout", type=float, default=30)
     parser.add_argument("--network-iterations", type=int, default=4)
     parser.add_argument("--max-aggregate", type=int, default=8)
@@ -477,12 +534,16 @@ def main(argv=None):
         help="preserve unsuccessful results but return zero (new CI coverage only)",
     )
     args = parser.parse_args(argv)
+    if args.net_reload and not args.simulate:
+        parser.error("--net-reload requires --simulate")
     if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
         parser.error("invalid shard index/count")
     if (
         args.case_timeout <= 0
         or args.network_iterations <= 0
         or args.max_aggregate <= 0
+        or not 0 < args.simulation_end < float("inf")
+        or args.simulation_steps < 1
     ):
         parser.error("budgets must be positive")
     directory = args.report_dir.resolve()
@@ -519,6 +580,7 @@ def main(argv=None):
     evidence_snapshot = evidence_inputs(ROOT)
     subject_digest = inventory.sha256(args.bng_cpp) if args.bng_cpp.is_file() else None
     references, results = {}, []
+    expected_contract_ids = []
     if not args.inventory_only:
         args.tier = args.tier or ["smoke"]
         performance_only = set(args.tier) == {"performance"} and not args.suite
@@ -685,16 +747,50 @@ def main(argv=None):
             try:
                 for name, source in _models(args, selection):
                     print("Checking model:", name, flush=True)
-                    results.extend(
-                        _model(
-                            name,
-                            source,
-                            args,
-                            directory,
-                            references.get("bionetgen"),
-                            env,
+                    expected_contract_ids += [name + ":parse"] + [
+                        name + ":network:" + check
+                        for check in (
+                            "artifact-validity",
+                            "species-count",
+                            "species-identity",
+                            "initial-amounts",
+                            "reaction-count",
+                            "reaction-stoichiometry",
+                            "reaction-multiplicity",
+                            "reaction-rates",
+                            "observable-names",
+                            "observable-weights",
                         )
+                    ]
+                    if args.simulate:
+                        expected_contract_ids += [
+                            name + ":simulation-" + route + ":" + kind
+                            for route in (
+                                ["bngl", "net-reload"] if args.net_reload else ["bngl"]
+                            )
+                            for kind in ("cdat", "gdat")
+                        ]
+                    model_rows = _model(
+                        name, source, args, directory, references.get("bionetgen"), env
                     )
+                    results.extend(model_rows)
+                    if args.simulate:
+                        from .simulation_contract import run_simulation
+
+                        for route in (
+                            ["bngl", "net-reload"] if args.net_reload else ["bngl"]
+                        ):
+                            results.extend(
+                                run_simulation(
+                                    name,
+                                    directory / "models" / name,
+                                    references.get("bionetgen"),
+                                    args,
+                                    env,
+                                    [r for r in model_rows if not r.get("aggregate")],
+                                    route=route,
+                                )
+                            )
             except (ValueError, OSError, KeyError) as exc:
                 results.append(
                     _result("corpus", "selection", "HARNESS_ERROR", str(exc))
@@ -753,6 +849,15 @@ def main(argv=None):
         "suites": args.suite,
         "package_mode": args.package_mode,
         "corpus_tier": args.corpus_tier,
+        "simulate": args.simulate,
+        "net_reload": args.net_reload,
+        "simulation_protocol": {
+            "t_start": 0,
+            "t_end": args.simulation_end,
+            "n_steps": args.simulation_steps,
+            "rtol": 1e-8,
+            "atol": 1e-12,
+        },
         "case_timeout": args.case_timeout,
         "network_iterations": args.network_iterations,
         "max_aggregate": args.max_aggregate,
@@ -801,6 +906,7 @@ def main(argv=None):
         "capabilities": capabilities,
         "corpus": inventory.discover_models(ROOT),
         "results": results,
+        "expected_contract_ids": expected_contract_ids,
         "source_policy_rows": matrix["rows"],
         "reconciliation": {
             p.stem: json.loads(p.read_text())
@@ -829,6 +935,8 @@ def main(argv=None):
         report["python_identity"] = api_identity
     previous = json.loads(args.baseline.read_text()) if args.baseline else None
     report["history"] = reporting.history(report, previous)
+    report["investigation_tasks"] = reporting.investigation_tasks(report, directory)
+    _json(directory / "investigation-tasks.json", report["investigation_tasks"])
     _json(directory / "report.json", report)
     _json(
         directory / "inventory.json",

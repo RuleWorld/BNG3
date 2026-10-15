@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import sys
+from pathlib import Path
 import re
 from collections import Counter
 
@@ -51,7 +54,7 @@ def attach_coverage(capabilities: list[dict], results: list[dict]) -> None:
 def cluster_failures(results: list[dict]) -> list[dict]:
     groups = {}
     for row in results:
-        if row["status"] not in BAD:
+        if row["status"] not in BAD or row.get("aggregate"):
             continue
         signature = re.sub(r"\b\d+(?:\.\d+)?\b", "#", row.get("detail", "")[:1000])
         key = hashlib.sha256(
@@ -109,6 +112,103 @@ def history(current: dict, previous: dict | None) -> dict:
     }
 
 
+def investigation_tasks(report: dict, directory: Path) -> list[dict]:
+    """One bounded work packet per observed leaf failure; no inferred diagnosis."""
+    tasks = []
+    for row in report["results"]:
+        if row["status"] not in BAD or row.get("aggregate"):
+            continue
+        # A suite exit duplicates its named failing cases. Preserve the receipt
+        # on those cases rather than asking a second agent to diagnose exit=1.
+        if row["id"].endswith(":process") and any(
+            r is not row
+            and r["status"] in BAD
+            and r.get("receipt") == row.get("receipt")
+            for r in report["results"]
+        ):
+            continue
+        check = row.get("check", row["stage"])
+        command = []
+        if row.get("model"):
+            root = Path(__file__).resolve().parents[2]
+            command = [
+                sys.executable,
+                str(root / "scripts/validate.py"),
+                "--tier",
+                "smoke",
+                "--suite",
+                "harness",
+                "--models",
+                row["model"],
+                "--bng-cpp",
+                report["subject"]["binary"],
+                "--report-dir",
+                str(
+                    directory.parent
+                    / ("replay-" + hashlib.sha256(row["id"].encode()).hexdigest()[:12])
+                ),
+            ]
+            config = report["configuration"]
+            for option, key in (
+                ("--network-iterations", "network_iterations"),
+                ("--max-aggregate", "max_aggregate"),
+                ("--case-timeout", "case_timeout"),
+            ):
+                if key in config:
+                    command += [option, str(config[key])]
+            ref = report["references"].get("bionetgen", {})
+            if ref:
+                command += ["--bng2-root", ref["path"]]
+                if ref.get("network_binary_sha256"):
+                    command += ["--bng2-network-sha256", ref["network_binary_sha256"]]
+            if config.get("net_reload"):
+                command += ["--net-reload"]
+            if config.get("simulate"):
+                command += [
+                    "--simulate",
+                    "--simulation-end",
+                    str(config["simulation_protocol"]["t_end"]),
+                    "--simulation-steps",
+                    str(config["simulation_protocol"]["n_steps"]),
+                ]
+        elif row.get("test_file") and row.get("name"):
+            command = [sys.executable, "-m", "pytest", row["name"], "-q"]
+            if row["test_file"].startswith("tests/validation/"):
+                command[3:3] = ["-c", "tests/validation/pytest.ini"]
+        receipts = row.get("receipts", []) + (
+            [row["receipt"]] if row.get("receipt") else []
+        )
+        recorded = [
+            json.loads(Path(p).read_text()) for p in receipts if Path(p).is_file()
+        ]
+        task = dict(
+            id=hashlib.sha256(row["id"].encode()).hexdigest()[:16],
+            case_id=row["id"],
+            check=check,
+            stage=row["stage"],
+            status=row["status"],
+            model=row.get("model"),
+            source_revision=report["source"]["revision"],
+            diagnosis_confidence="observed-contract-failure",
+            confirmed_root_cause=None,
+            observation=row.get("first_difference", row.get("detail", "")),
+            evidence=row.get("evidence", []),
+            receipts=receipts,
+            recorded_commands=recorded,
+            reproduce_command=command,
+            source_locations=row.get("source_locations", []),
+            related_issues=row.get("related_issues", []),
+            acceptance_criteria=[
+                f"Reproduce and pass {row['id']} ({check}) against the same independent reference and declared configuration.",
+                "Retain a focused regression plus its controlled mutation; run neighboring contracts without changing tolerances, goldens, budgets or unsupported guards.",
+                "Confirm the first divergent artifact before proposing a product fix; similar signatures are hypotheses only.",
+            ],
+            scope="Investigate this named contract and its direct prerequisites; do not modify unrelated capabilities.",
+        )
+        tasks.append(task)
+    return tasks
+
+
 def markdown(report: dict) -> str:
     counts = Counter(r["status"] for r in report["results"])
     claims = [c for c in report["capabilities"] if c["kind"] == "semantic-claim"]
@@ -159,6 +259,10 @@ def markdown(report: dict) -> str:
         "Signatures suggest similar symptoms; they do not establish shared causes.",
         "",
     ]
+    for task in report.get("investigation_tasks", [])[:50]:
+        lines += [
+            f"- **{safe(task['case_id'])} / {task['status']}**: {safe(task['observation'])[:600]}. Packet `{task['id']}` in `investigation-tasks.json`; inspect {', '.join('`'+p+'`' for p in task['source_locations']) or 'recorded source/test location'}. Pass this exact check against its pinned reference; preserve neighboring checks."
+        ]
     for group in report["failure_clusters"][:25]:
         lines += [
             f"- **{group['status']} / {group['first_observed_stage']}**, {len(group['cases'])} cases: {safe(group['signature'])[:400]}. {group['next_action']}."

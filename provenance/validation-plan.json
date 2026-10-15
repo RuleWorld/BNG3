@@ -30,7 +30,10 @@
         "tests/validation/test_conformance_cli.py",
         "tests/validation/test_external_lanes.py",
         "tests/validation/test_minimize.py",
-        "tests/validation/test_conformance_ci_wiring.py"
+        "tests/validation/test_conformance_ci_wiring.py",
+        "tests/validation/test_contracts.py",
+        "tests/validation/test_simulation_contract.py",
+        "tests/validation/test_ci_report.py"
       ],
       "question": "harness-self-test"
     },

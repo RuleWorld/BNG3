@@ -140,10 +140,19 @@ jobs:
             corpus_tier=p
           fi
           .venv/bin/python scripts/validate.py --tier smoke \
-            --corpus-tier "$corpus_tier" --report-only \
+            --corpus-tier "$corpus_tier" --report-only --simulate --net-reload \
             --bng-cpp build/cpp/bng_cpp \
             --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --bng2-network-sha256 "$(sha256sum "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/run_network" | cut -d ' ' -f 1)" \
             --report-dir "$RUNNER_TEMP/bng3-conformance"
+
+      - name: Summarize named conformance failures and investigation packets
+        if: always()
+        run: |
+          .venv/bin/python -m tests.validation.ci_report \
+            "$RUNNER_TEMP/bng3-conformance/report.json" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}"
 
       - name: Upload conformance diagnostics and inventory
         if: always()
@@ -284,6 +293,29 @@ jobs:
               for label, outcome, detail in rows:
                   summary.write(f"| {label} | {outcome} | {detail} |\n")
               summary.write("\n`pytest -ra` records individual skip reasons in the log; JUnit reports are attached as an Issue 182 workflow artifact.\n")
+
+  conformance-findings:
+    name: Conformance findings (network, cdat, gdat)
+    needs: bng2-parity
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: bng3-conformance-${{ github.event_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-conformance
+      - name: Require every selected applicable diagnostic contract
+        run: |
+          python -m tests.validation.ci_report \
+            "$RUNNER_TEMP/bng3-conformance/report.json" \
+            --strict --summary "$GITHUB_STEP_SUMMARY" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}"
 
   nfsim-parity:
     name: BNG3 vs independent NFsim

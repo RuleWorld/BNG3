@@ -28,3 +28,30 @@ def test_differential_reporting_is_additive_and_nightly():
     assert "--report-only" in report["run"]
     assert "--bng2-root" in report["run"]
     assert "--corpus-tier" in report["run"]
+
+
+def test_ci_checks_cdat_gdat_and_publishes_a_distinct_red_diagnostic_check():
+    workflow = parse_workflow(ROOT / ".github/workflows/parity.yml")
+    jobs = workflow["jobs"]
+    steps = jobs["bng2-parity"]["steps"]
+    run = next(
+        s["run"]
+        for s in steps
+        if "scripts/validate.py --tier smoke" in s.get("run", "")
+    )
+    assert "--simulate" in run and "--net-reload" in run
+    assert "--bng2-network-sha256" in run
+    assert any(
+        "tests.validation.ci_report" in s.get("run", "") and s.get("if") == "always()"
+        for s in steps
+    )
+    gate = jobs["conformance-findings"]
+    assert gate["needs"] == "bng2-parity"
+    assert gate["if"] == "always()"
+    assert any(
+        "tests.validation.ci_report" in s.get("run", "")
+        and "--strict" in s["run"]
+        and "--revision" in s["run"]
+        for s in gate["steps"]
+    )
+    assert "continue-on-error" not in gate

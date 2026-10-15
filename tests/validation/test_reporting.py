@@ -45,3 +45,42 @@ def test_one_passing_test_never_qualifies_whole_capability():
     assert cap["coverage"] == "PARTIAL"
     assert cap["missing_tests"] == ["semantic oracle"]
     assert cap["result_counts"]["PASS"] == 1
+
+
+def test_task_packets_are_leaf_failures_with_replay_and_bounded_acceptance(tmp_path):
+    report = {
+        "source": {"revision": "abc"},
+        "subject": {"binary": "/bng_cpp"},
+        "configuration": {},
+        "references": {},
+        "results": [
+            {
+                "id": "m:network",
+                "stage": "bounded-network",
+                "status": "FAIL",
+                "aggregate": True,
+            },
+            {
+                "id": "m:network:initial-amounts",
+                "model": "m",
+                "check": "initial-amounts",
+                "stage": "network.initial-amounts",
+                "status": "FAIL",
+                "detail": "S 100 versus 200",
+                "related_issues": [140],
+                "source_locations": ["cpp/actions/ActionDispatch.cpp"],
+                "evidence": ["reference.net", "subject.net"],
+            },
+        ],
+    }
+    tasks = reporting.investigation_tasks(report, tmp_path)
+    assert len(tasks) == 1
+    task = tasks[0]
+    assert task["case_id"] == "m:network:initial-amounts"
+    assert task["confirmed_root_cause"] is None
+    assert task["source_revision"] == "abc"
+    assert "initial-amounts" in task["acceptance_criteria"][0]
+    assert "--models" in task["reproduce_command"]
+    assert "m" in task["reproduce_command"]
+    assert task["related_issues"] == [140]
+    assert task["evidence"] == ["reference.net", "subject.net"]
