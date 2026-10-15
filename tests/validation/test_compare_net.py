@@ -215,6 +215,80 @@ def test_function_rate_comparison_keeps_nonempty_calls_structural():
     assert bng2_stub != bng3_call
 
 
+def test_motor_rate_comparison_accepts_equivalent_numeric_and_observable_syntax(
+    tmp_path,
+):
+    def write(path: Path, half: str, micro: str, observable_call: str) -> Path:
+        scaled_observable = (
+            f"{observable_call}/(cellVolume*_Na*{micro})"
+        )
+        common = (
+            "w*exp((g1/2)*("
+            f"{half}-({scaled_observable})/(Kd+({scaled_observable}))"
+            "))"
+        )
+        path.write_text(
+            "\n".join(
+                [
+                    "begin parameters",
+                    "    1 w 1.02",
+                    "    2 g1 35",
+                    "    3 cellVolume 1.41e-15",
+                    "    4 _Na 6.02e23",
+                    "    5 Kd 3.06",
+                    "end parameters",
+                    "begin functions",
+                    f"    1 kPlus() {common}",
+                    f"    2 kMinus() {common.replace('(g1/2)', '-(g1/2)')}",
+                    "end functions",
+                    "begin species",
+                    "    1 Motor(state~CW) 10000",
+                    "    2 Motor(state~CCW) 0",
+                    "    3 CheY(p~PHOS) 2200",
+                    "end species",
+                    "begin reactions",
+                    "    1 1 2 kPlus",
+                    "    2 2 1 kMinus",
+                    "end reactions",
+                    "begin groups",
+                    "    1 CheYp 3",
+                    "end groups",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    reference = parse_net(
+        write(tmp_path / "reference.net", "1/2", "10**(-6)", "CheYp")
+    )
+    generated = parse_net(
+        write(tmp_path / "generated.net", "0.5", "1e-06", "CheYp()")
+    )
+    changed = parse_net(
+        write(tmp_path / "changed.net", "0.6", "1e-06", "CheYp()")
+    )
+    assert reference is not None
+    assert generated is not None
+    assert changed is not None
+
+    assert compare_net(reference, generated).ok
+    assert not compare_net(reference, changed).ok
+
+
+def test_only_net_observable_names_normalize_zero_argument_calls():
+    from tests.validation.compare import _resolve_rate
+
+    observables = {"CheYp"}
+    assert _resolve_rate(
+        "CheYp()", {}, "value", rate_observables=observables
+    ) == _resolve_rate("CheYp", {}, "value", rate_observables=observables)
+    assert _resolve_rate(
+        "Unknown()", {}, "value", rate_observables=observables
+    ) != _resolve_rate("Unknown", {}, "value", rate_observables=observables)
+
+
 def test_same_counts_with_different_rate_values_fail(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "0.5"))
     generated = parse_net(_net(tmp_path / "generated.net", "1.0"))

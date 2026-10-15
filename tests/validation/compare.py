@@ -15,6 +15,7 @@ import ast
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 
@@ -62,6 +63,9 @@ class Network:
     # Names of zero-argument user functions. Their call suffix is present in
     # function definitions but omitted from reaction rate fields.
     rate_functions: set[str] = field(default_factory=set)
+    # Names of observables from the NET groups block. Some writers serialize a
+    # zero-argument observable as ``CheYp()`` while others use ``CheYp``.
+    rate_observables: set[str] = field(default_factory=set)
     initial_amounts: dict[int, str] = field(default_factory=dict)
 
     @property
@@ -113,6 +117,7 @@ def _resolve_rate(
     rate_defs: dict[str, str],
     rate_mode: str,
     rate_functions: set[str] | None = None,
+    rate_observables: set[str] | None = None,
 ) -> str:
     """Turn a reaction's 4th-field rate token into a comparison key.
 
@@ -136,14 +141,22 @@ def _resolve_rate(
     fields = tok.split()
     if len(fields) > 1 and fields[0] in {"Sat", "MM", "Hill", "Ele"}:
         arguments = [
-            _resolve_rate(arg, rate_defs, rate_mode, rate_functions)
+            _resolve_rate(
+                arg, rate_defs, rate_mode, rate_functions, rate_observables
+            )
             for arg in fields[1:]
         ]
         return f"law:{fields[0]}({','.join(arguments)})"
 
     # Resolve complex top-level expressions (e.g. "2*rateLaw4" or "rateLaw1*2")
     # by evaluating them as expressions directly rather than just single symbol names.
-    val, expr = _eval_expr(tok, rate_defs, set(), rate_functions or set())
+    val, expr = _eval_expr(
+        tok,
+        rate_defs,
+        set(),
+        rate_functions or set(),
+        rate_observables or set(),
+    )
     if val is not None:
         # Normalize serialization noise by significant digits. Decimal-place
         # rounding erased every rate below 5e-13, even equating it with zero.
@@ -161,7 +174,11 @@ _NUMBER_TOKEN = re.compile(
 
 
 def _eval_symbol(
-    name: str, defs: dict[str, str], seen: set[str], rate_functions: set[str]
+    name: str,
+    defs: dict[str, str],
+    seen: set[str],
+    rate_functions: set[str],
+    rate_observables: set[str],
 ):
     """Resolve a symbol to (value|None, substituted_expression_string).
 
@@ -177,7 +194,7 @@ def _eval_symbol(
         except ValueError:
             return None, name
     seen = seen | {name}
-    return _eval_expr(defs[name], defs, seen, rate_functions)
+    return _eval_expr(defs[name], defs, seen, rate_functions, rate_observables)
 
 
 def _eval_expr(
@@ -185,10 +202,12 @@ def _eval_expr(
     defs: dict[str, str],
     seen: set[str],
     rate_functions: set[str] | None = None,
+    rate_observables: set[str] | None = None,
 ):
     """Evaluate a rate expression. (value|None, substituted_expr_string)."""
     toks = _TOKEN.findall(expr)
     rate_functions = rate_functions or set()
+    rate_observables = rate_observables or set()
     # Substitute identifiers (that are defined parameters) for the structural form.
     sub_parts = []
     constant = True
@@ -199,7 +218,9 @@ def _eval_expr(
             if t in _SAFE_NAMES or t == "if":
                 sub_parts.append(t)
             else:
-                v, sub = _eval_symbol(t, defs, seen, rate_functions)
+                v, sub = _eval_symbol(
+                    t, defs, seen, rate_functions, rate_observables
+                )
                 if v is None:
                     constant = False
                     sub_parts.append(f"({sub})" if t in defs and sub != t else sub)
@@ -210,7 +231,10 @@ def _eval_expr(
             # while its expanded body is just an expression. Consume only the
             # empty call of known zero-argument functions; non-empty calls such
             # as TFUN(path, value) stay structural and fail closed.
-            if t in rate_functions and toks[index : index + 2] == ["(", ")"]:
+            if (
+                t in rate_functions | rate_observables
+                and toks[index : index + 2] == ["(", ")"]
+            ):
                 index += 2
         else:
             sub_parts.append(t)
@@ -289,7 +313,7 @@ def _safe_arith(expr: str) -> float:
 
 
 def _canon_expr(expr: str) -> str:
-    """Canonicalize harmless numeric and parenthesis serialization differences."""
+    """Canonicalize arithmetic spelling while preserving dynamic structure."""
     result = re.sub(r"\s+", "", expr)
 
     def strip_outer_parentheses(value: str) -> str:
@@ -422,12 +446,90 @@ def _canon_expr(expr: str) -> str:
                 )
             return node
 
+    def numeric_value(node: ast.AST) -> Fraction | None:
+        """Return an exact rational for a numeric-only arithmetic subtree."""
+        folded = getattr(node, "_canonical_fraction", None)
+        if folded is not None:
+            return folded
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            try:
+                return Fraction(str(node.value))
+            except (ValueError, ZeroDivisionError):
+                return None
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = numeric_value(node.operand)
+            if value is not None:
+                return value if isinstance(node.op, ast.UAdd) else -value
+            return None
+        if not isinstance(node, ast.BinOp):
+            return None
+        left = numeric_value(node.left)
+        right = numeric_value(node.right)
+        if left is None or right is None:
+            return None
+        try:
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                return left / right
+            if isinstance(node.op, ast.Pow) and right.denominator == 1:
+                # Avoid pathological work from malformed or adversarial NETs.
+                exponent = right.numerator
+                operand_bits = max(
+                    left.numerator.bit_length(), left.denominator.bit_length()
+                )
+                if (
+                    abs(exponent) <= 10000
+                    and operand_bits * abs(exponent) <= 4096
+                ):
+                    return left**exponent
+        except (OverflowError, ZeroDivisionError, ValueError):
+            return None
+        return None
+
+    class FoldNumericSubtrees(ast.NodeTransformer):
+        """Use exact rational markers for numeric terms in dynamic rates."""
+
+        @staticmethod
+        def _marker(value: Fraction, location: ast.AST) -> ast.Constant:
+            marker = ast.Constant(
+                value=f"__rational_{value.numerator}_{value.denominator}__"
+            )
+            marker._canonical_fraction = value
+            return ast.copy_location(marker, location)
+
+        def visit_Constant(self, node: ast.Constant) -> ast.AST:
+            if type(node.value) in (int, float):
+                value = numeric_value(node)
+                if value is not None:
+                    return self._marker(value, node)
+            return node
+
+        def _fold(self, node: ast.AST) -> ast.AST:
+            node = self.generic_visit(node)
+            if isinstance(node, (ast.UnaryOp, ast.BinOp)):
+                value = numeric_value(node)
+                if value is not None:
+                    return self._marker(value, node)
+            return node
+
+        def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.AST:
+            return self._fold(node)
+
+        def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+            return self._fold(node)
+
     try:
         tree = ast.parse(result.replace("^", "**"), mode="eval")
         if supported(tree):
             normalized = NormalizeNegativeProduct().visit(tree)
             normalized = StripUnitMultiplications().visit(normalized)
             normalized = NormalizeProductOfQuotient().visit(normalized)
+            normalized = FoldNumericSubtrees().visit(normalized)
             result = re.sub(r"\s+", "", ast.unparse(normalized))
     except (SyntaxError, ValueError):
         pass
@@ -977,7 +1079,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
     raw_reactions: list[tuple[list[int], list[int], str]] = []
     rate_defs: dict[str, str] = {}
     rate_functions: set[str] = set()
-    groups: dict[str, dict[int, float]] = {}
+    groups: dict[int, tuple[str, dict[int, float]]] = {}
     section = None
     has_species_block = False
     has_reactions_block = False
@@ -1094,6 +1196,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         rate_mode=rate_mode,
         groups=groups,
         rate_functions=rate_functions,
+        rate_observables={name for name, _entries in groups.values()},
         initial_amounts=initial_amounts,
     )
     _rekey(net, rate_mode)
@@ -1110,7 +1213,13 @@ def _rekey(net: Network, rate_mode: str) -> None:
         except KeyError:
             r_strs = tuple(f"?{i}" for i in sorted(reactants))
             p_strs = tuple(f"?{i}" for i in sorted(products))
-        rate_key = _resolve_rate(rate, net.rate_defs, rate_mode, net.rate_functions)
+        rate_key = _resolve_rate(
+            rate,
+            net.rate_defs,
+            rate_mode,
+            net.rate_functions,
+            net.rate_observables,
+        )
         multiset[(r_strs, p_strs, rate_key)] += 1
     net.reaction_multiset = multiset
 
@@ -1277,12 +1386,14 @@ def _species_index_mapping(
                     ref.rate_defs,
                     "value",
                     ref.rate_functions,
+                    ref.rate_observables,
                 )
                 == _resolve_rate(
                     test.initial_amounts.get(test_index, ""),
                     test.rate_defs,
                     "value",
                     test.rate_functions,
+                    test.rate_observables,
                 )
             )
         ]
@@ -1330,7 +1441,13 @@ def _reaction_view(
             )
         )
         rate_key = (
-            _resolve_rate(rate, net.rate_defs, net.rate_mode, net.rate_functions)
+            _resolve_rate(
+                rate,
+                net.rate_defs,
+                net.rate_mode,
+                net.rate_functions,
+                net.rate_observables,
+            )
             if compare_rates
             else ""
         )
@@ -1421,8 +1538,20 @@ def compare_net(
             if (
                 a is None
                 or b is None
-                or _resolve_rate(a, ref.rate_defs, "value", ref.rate_functions)
-                != _resolve_rate(b, test.rate_defs, "value", test.rate_functions)
+                or _resolve_rate(
+                    a,
+                    ref.rate_defs,
+                    "value",
+                    ref.rate_functions,
+                    ref.rate_observables,
+                )
+                != _resolve_rate(
+                    b,
+                    test.rate_defs,
+                    "value",
+                    test.rate_functions,
+                    test.rate_observables,
+                )
             ):
                 amounts_changed.add(ref.species_by_index[left])
     only_ref = rxn_ref - rxn_test
