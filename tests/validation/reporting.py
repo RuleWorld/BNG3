@@ -66,7 +66,11 @@ def cluster_failures(results: list[dict]) -> list[dict]:
     for row in results:
         if row["status"] not in BAD or row.get("aggregate"):
             continue
-        signature = re.sub(r"\b\d+(?:\.\d+)?\b", "#", row.get("detail", "")[:1000])
+        signature = re.sub(
+            r"\b\d+(?:\.\d+)?\b",
+            "#",
+            (row.get("failure_summary") or row.get("detail", ""))[:1000],
+        )
         key = hashlib.sha256(
             (row["status"] + row["stage"] + signature).encode()
         ).hexdigest()[:16]
@@ -224,7 +228,9 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             source_revision=report["source"]["revision"],
             diagnosis_confidence="observed-contract-failure",
             confirmed_root_cause=None,
-            observation=row.get("first_difference", row.get("detail", "")),
+            observation=row.get(
+                "first_difference", row.get("failure_summary") or row.get("detail", "")
+            ),
             evidence=row.get("evidence", []),
             receipts=receipts,
             recorded_commands=recorded,

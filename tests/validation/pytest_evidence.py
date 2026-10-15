@@ -36,6 +36,11 @@ def pytest_runtest_logreport(report):
             "outcome": report.outcome,
             "duration": report.duration,
             "detail": report.longreprtext,
+            "summary": getattr(
+                getattr(report.longrepr, "reprcrash", None),
+                "message",
+                report.longreprtext,
+            ),
             "xfail": getattr(report, "wasxfail", None),
         }
     )

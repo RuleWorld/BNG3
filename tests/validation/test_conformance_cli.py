@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -171,3 +172,33 @@ def test_missing_full_tier_oracles_are_errors_with_a_report(tmp_path):
         r["status"] == "HARNESS_ERROR" and r["stage"] == "reference-preflight"
         for r in report["results"]
     )
+
+
+def test_named_pytest_failure_retains_summary_and_does_not_create_duplicate_task(
+    tmp_path,
+):
+    from argparse import Namespace
+    from tests.validation.conformance import _suite
+
+    test = tmp_path / "test_injected_rate.py"
+    test.write_text(
+        'def test_rate():\n    assert False, "expected rate 0.5, actual 1.0"\n'
+    )
+    rows = _suite(
+        {
+            "id": "harness",
+            "kind": "pytest",
+            "tests": [str(test)],
+            "timeout": 15,
+            "question": "harness-self-test",
+        },
+        Namespace(bng_cpp=Path(sys.executable)),
+        tmp_path / "evidence",
+        {},
+        dict(os.environ),
+    )
+    failure = next(r for r in rows if r["stage"] == "test")
+    process = next(r for r in rows if r["id"] == "harness:process")
+    assert failure["status"] == "FAIL"
+    assert "expected rate 0.5" in failure["failure_summary"]
+    assert process["aggregate"] is True

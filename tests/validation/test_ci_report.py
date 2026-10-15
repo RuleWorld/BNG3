@@ -93,3 +93,13 @@ def test_summary_replay_includes_recorded_repository_cwd(tmp_path):
     assert publish(d, tmp_path / "summary", strict=False, revision="abc") == 0
     text = (tmp_path / "summary").read_text()
     assert "cd '/workspace/BNG3 source'" in text
+
+
+def test_annotation_shows_actual_failure_before_traceback_context(tmp_path, capsys):
+    d = report()
+    d["results"][0]["detail"] = "irrelevant setup context " * 200
+    d["results"][0]["failure_summary"] = "initial amount: expected 200, actual 100"
+    publish(d, tmp_path / "summary", strict=True, revision="abc")
+    output = capsys.readouterr().out
+    assert "expected 200" in output
+    assert "irrelevant setup" not in output

@@ -151,3 +151,29 @@ def test_reference_source_checks_revision_remote_and_dirty_tree(tmp_path):
     (tmp_path / "BNG2.pl").write_text("mutated")
     with pytest.raises(ValueError, match="dirty"):
         campaign.verify_source(tmp_path, source)
+
+
+def test_streamed_failure_keeps_concise_assertion_separate_from_full_traceback(
+    tmp_path,
+):
+    path = tmp_path / "events.jsonl"
+    events = [
+        {
+            "event": "collection",
+            "cases": [{"nodeid": "test_x.py::test_rate", "file": "test_x.py"}],
+        },
+        {
+            "event": "case",
+            "nodeid": "test_x.py::test_rate",
+            "file": "test_x.py",
+            "when": "call",
+            "outcome": "failed",
+            "duration": 0.1,
+            "detail": "full traceback with setup context",
+            "summary": "A(t=0.05): expected 9.97, actual 10.0",
+        },
+    ]
+    path.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    row = campaign.read_pytest_events(path, "probes")[0]
+    assert row["failure_summary"] == "A(t=0.05): expected 9.97, actual 10.0"
+    assert row["detail"] == "full traceback with setup context"

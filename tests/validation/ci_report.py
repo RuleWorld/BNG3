@@ -60,7 +60,7 @@ def publish(report, summary, *, strict=False, revision=None):
         print(f"::{severity} title=Conformance evidence invalid::{_escape(message)}")
     for row in bad[:50]:
         print(
-            f'::{severity} title={_escape(row["id"])}::{_escape(row["status"]+": "+row.get("detail", "")[:1000])}; inspect investigation-tasks.json and recorded receipts'
+            f'::{severity} title={_escape(row["id"])}::{_escape(row["status"]+": "+(row.get("failure_summary") or row.get("detail", ""))[:1000])}; inspect investigation-tasks.json and recorded receipts'
         )
     counts = Counter(r["status"] for r in rows if not r.get("aggregate"))
     lines = [
@@ -85,7 +85,11 @@ def publish(report, summary, *, strict=False, revision=None):
             "",
             observation[:1600],
             "",
-            f"Task packet `{task['id']}` in `investigation-tasks.json`.",
+            f"Task packet `{task['id']}` in `investigation-tasks.json`. "
+            + " ".join(
+                f"[#{issue}](https://github.com/RuleWorld/BNG3/issues/{issue})"
+                for issue in task.get("related_issues", [])
+            ),
             "",
             "Inspect: "
             + ", ".join("`" + p + "`" for p in task.get("source_locations", [])),

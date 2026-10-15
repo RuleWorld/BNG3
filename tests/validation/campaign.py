@@ -240,6 +240,9 @@ def read_pytest_events(path: Path, suite: str) -> list[dict]:
                 "stage": "test",
                 "status": status,
                 "detail": detail,
+                "failure_summary": "\n".join(
+                    p.get("summary", p["detail"]) for p in failed
+                ),
                 "test_file": case["file"],
                 "elapsed_seconds": sum(p["duration"] for p in phases),
             }

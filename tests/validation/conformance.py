@@ -236,6 +236,7 @@ def _suite(suite, args, directory, references, env):
                 receipt["status"],
                 receipt["detail"]
                 or "test process failed; inspect stdout.log and stderr.log",
+                aggregate=any(r["status"] in reporting.BAD for r in results),
             )
         )
     if reference and any(r["status"] == "NOT_TESTED" for r in results):
