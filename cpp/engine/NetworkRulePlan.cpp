@@ -1,9 +1,11 @@
 #include "engine/NetworkRulePlan.hpp"
 
+#include "ast/RateCandidateContext.hpp"
 #include "ast/SpeciesGraph.hpp"
 
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -159,6 +161,7 @@ struct RuntimeFilter {
 
 struct RuntimeObservable {
     std::string name;
+    std::size_t observableIndex = 0;
     std::string localScopeName;
   compile::PatternSide side = compile::PatternSide::Reactant;
   std::size_t patternIndex = 0;
@@ -211,6 +214,7 @@ std::vector<RuntimeObservable> lowerLocalObservableDependencies(
 
         RuntimeObservable runtime;
         runtime.name = observable->name;
+        runtime.observableIndex = key.observableIndex;
         runtime.localScopeName = key.localScopeName;
     runtime.side = key.side;
     runtime.patternIndex = key.patternIndex;
@@ -280,9 +284,337 @@ bool passesFilterPatterns(const RuntimeFilter& filter, const ast::SpeciesGraph& 
     return filter.include ? anyMatch : !anyMatch;
 }
 
+using ExpressionSubstitutions = std::map<std::string, compile::ResolvedExpression>;
+
+compile::ResolvedExpression substituteFunctionArguments(
+    const compile::ResolvedExpression& expression,
+    const ExpressionSubstitutions& substitutions) {
+    if (expression.kind == compile::ResolvedExpressionKind::LocalRef) {
+        const auto found = substitutions.find(expression.localName);
+        if (found != substitutions.end()) return found->second;
+    }
+
+    auto result = expression;
+    for (auto& argument : result.arguments) {
+        argument = substituteFunctionArguments(argument, substitutions);
+    }
+    return result;
+}
+
+std::optional<double> finiteValue(double value) {
+    if (!std::isfinite(value)) return std::nullopt;
+    return value;
+}
+
+std::optional<double> evaluateStructuralExpression(
+    const compile::ResolvedExpression& expression,
+    const compile::CompiledModel& model,
+    const compile::CompiledRuleDirection& direction,
+    const std::vector<RuntimeObservable>& localObservables,
+    const ast::RateCandidateContext& candidate,
+    std::set<std::size_t>& activeFunctions);
+
+std::optional<double> evaluateLocalObservable(
+    const compile::ResolvedExpression& expression,
+    const compile::CompiledRuleDirection& direction,
+    const std::vector<RuntimeObservable>& localObservables,
+    const ast::RateCandidateContext& candidate) {
+    if (!expression.symbol.has_value() || expression.arguments.size() != 1) {
+        return std::nullopt;
+    }
+    const auto scope = resolveScopeArgument(
+        expression.arguments.front(), direction, {});
+    if (!scope.has_value()) return std::nullopt;
+
+    const auto observable = std::find_if(
+        localObservables.begin(), localObservables.end(), [&](const auto& value) {
+            return value.observableIndex == expression.symbol->index &&
+                   value.localScopeName == scope->localName &&
+                   value.side == scope->side &&
+                   value.patternIndex == scope->patternIndex &&
+                   value.scopeKind == scope->kind &&
+                   value.moleculeOccurrence == scope->moleculeOccurrence;
+        });
+    if (observable == localObservables.end()) return std::nullopt;
+
+    std::size_t count = 0;
+    if (scope->side == compile::PatternSide::Reactant) {
+        if (scope->patternIndex >= candidate.speciesGraphs.size() ||
+            candidate.speciesGraphs[scope->patternIndex] == nullptr) {
+            return std::nullopt;
+        }
+        const BNGcore::Node* scopedMolecule = nullptr;
+        if (scope->kind == compile::LocalScopeKind::Molecule) {
+            if (!scope->moleculeOccurrence.has_value() ||
+                scope->patternIndex >= candidate.mappedMolecules.size() ||
+                *scope->moleculeOccurrence >=
+                    candidate.mappedMolecules[scope->patternIndex].size()) {
+                return std::nullopt;
+            }
+            scopedMolecule = candidate.mappedMolecules[scope->patternIndex]
+                [*scope->moleculeOccurrence];
+            if (scopedMolecule == nullptr) return std::nullopt;
+        }
+        for (const auto& pattern : observable->patterns) {
+            if (scope->kind == compile::LocalScopeKind::Species) {
+                count += core::countPatternMatches(
+                    pattern.getGraph(), *candidate.speciesGraphs[scope->patternIndex]);
+            } else {
+                count += core::countPatternMatchesForScopedMolecule(
+                    pattern, *candidate.speciesGraphs[scope->patternIndex], scopedMolecule);
+            }
+        }
+        return static_cast<double>(count);
+    }
+
+    if (candidate.productSpeciesGraphs.size() !=
+        candidate.productPatternIndices.size()) {
+        return std::nullopt;
+    }
+    const BNGcore::Node* scopePatternMolecule = nullptr;
+    if (scope->kind == compile::LocalScopeKind::Molecule) {
+        if (!observable->scopePattern.has_value() ||
+            !scope->moleculeOccurrence.has_value()) {
+            return std::nullopt;
+        }
+        std::size_t moleculeIndex = 0;
+        for (auto node = observable->scopePattern->getGraph().begin();
+             node != observable->scopePattern->getGraph().end(); ++node) {
+            if (!isPatternMoleculeNode(**node)) continue;
+            if (moleculeIndex++ == *scope->moleculeOccurrence) {
+                scopePatternMolecule = *node;
+                break;
+            }
+        }
+        if (scopePatternMolecule == nullptr) return std::nullopt;
+    }
+
+    bool foundProduct = false;
+    for (std::size_t productIndex = 0;
+         productIndex < candidate.productSpeciesGraphs.size(); ++productIndex) {
+        if (candidate.productPatternIndices[productIndex] != scope->patternIndex ||
+            candidate.productSpeciesGraphs[productIndex] == nullptr) {
+            continue;
+        }
+        foundProduct = true;
+        const auto* productGraph = candidate.productSpeciesGraphs[productIndex];
+        if (scope->kind == compile::LocalScopeKind::Molecule) {
+            BNGcore::UllmannSGIso matcher(
+                observable->scopePattern->getGraph(), *productGraph);
+            BNGcore::List<BNGcore::Map> maps;
+            matcher.find_maps(maps);
+            if (maps.begin() == maps.end()) return std::nullopt;
+
+            // A molecule-local scope may map onto more than one product
+            // molecule. Only use its count when every embedding agrees.
+            std::optional<std::size_t> commonMappedCount;
+            for (auto map = maps.begin(); map != maps.end(); ++map) {
+                const auto* scopedMolecule = map->mapf(
+                    const_cast<BNGcore::Node*>(scopePatternMolecule));
+                if (scopedMolecule == nullptr) return std::nullopt;
+                std::size_t mappedCount = 0;
+                for (const auto& pattern : observable->patterns) {
+                    mappedCount += core::countPatternMatchesForScopedMolecule(
+                        pattern, *productGraph, scopedMolecule);
+                }
+                if (commonMappedCount.has_value() &&
+                    *commonMappedCount != mappedCount) {
+                    return std::nullopt;
+                }
+                commonMappedCount = mappedCount;
+            }
+            if (!commonMappedCount.has_value()) return std::nullopt;
+            count += *commonMappedCount;
+            continue;
+        }
+        for (const auto& pattern : observable->patterns) {
+            count += core::countPatternMatches(pattern.getGraph(), *productGraph);
+        }
+    }
+    if (!foundProduct) return std::nullopt;
+    return static_cast<double>(count);
+}
+
+std::optional<double> evaluateStructuralExpression(
+    const compile::ResolvedExpression& expression,
+    const compile::CompiledModel& model,
+    const compile::CompiledRuleDirection& direction,
+    const std::vector<RuntimeObservable>& localObservables,
+    const ast::RateCandidateContext& candidate,
+    std::set<std::size_t>& activeFunctions) {
+    using ExpressionKind = compile::ResolvedExpressionKind;
+    using UnaryOp = compile::UnaryOp;
+    using BinaryOp = compile::BinaryOp;
+    using Builtin = compile::BuiltinFunction;
+
+    switch (expression.kind) {
+    case ExpressionKind::Number:
+        return finiteValue(expression.numberValue);
+    case ExpressionKind::ObservableRef:
+        return evaluateLocalObservable(
+            expression, direction, localObservables, candidate);
+    case ExpressionKind::FunctionRef: {
+        if (!expression.symbol.has_value()) return std::nullopt;
+        const auto functionIndex = expression.symbol->index;
+        if (!activeFunctions.insert(functionIndex).second) return std::nullopt;
+        const auto* function = model.function(
+            compile::FunctionId::fromDenseIndex(functionIndex));
+        if (function == nullptr ||
+            function->arguments.size() != expression.arguments.size()) {
+            activeFunctions.erase(functionIndex);
+            return std::nullopt;
+        }
+        ExpressionSubstitutions substitutions;
+        for (std::size_t index = 0; index < function->arguments.size(); ++index) {
+            substitutions.emplace(function->arguments[index], expression.arguments[index]);
+        }
+        const auto body = substituteFunctionArguments(
+            function->expression, substitutions);
+        const auto value = evaluateStructuralExpression(
+            body, model, direction, localObservables, candidate, activeFunctions);
+        activeFunctions.erase(functionIndex);
+        return value;
+    }
+    case ExpressionKind::Unary: {
+        if (expression.arguments.size() != 1 || !expression.unaryOp.has_value()) {
+            return std::nullopt;
+        }
+        const auto value = evaluateStructuralExpression(
+            expression.arguments.front(), model, direction,
+            localObservables, candidate, activeFunctions);
+        if (!value.has_value()) return std::nullopt;
+        switch (*expression.unaryOp) {
+        case UnaryOp::Plus: return value;
+        case UnaryOp::Negate: return finiteValue(-*value);
+        case UnaryOp::LogicalNot: return *value == 0.0 ? 1.0 : 0.0;
+        case UnaryOp::Unknown: return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    case ExpressionKind::Binary: {
+        if (expression.arguments.size() != 2 || !expression.binaryOp.has_value()) {
+            return std::nullopt;
+        }
+        const auto op = *expression.binaryOp;
+        const auto lhs = evaluateStructuralExpression(
+            expression.arguments[0], model, direction,
+            localObservables, candidate, activeFunctions);
+        if (op == BinaryOp::LogicalAnd && lhs.has_value() && *lhs == 0.0) return 0.0;
+        if (op == BinaryOp::LogicalOr && lhs.has_value() && *lhs != 0.0) return 1.0;
+        const auto rhs = evaluateStructuralExpression(
+            expression.arguments[1], model, direction,
+            localObservables, candidate, activeFunctions);
+        if (op == BinaryOp::LogicalAnd) {
+            if (rhs.has_value() && *rhs == 0.0) return 0.0;
+            if (lhs.has_value() && rhs.has_value()) return 1.0;
+            return std::nullopt;
+        }
+        if (op == BinaryOp::LogicalOr) {
+            if (rhs.has_value() && *rhs != 0.0) return 1.0;
+            if (lhs.has_value() && rhs.has_value()) return 0.0;
+            return std::nullopt;
+        }
+        if (!lhs.has_value() || !rhs.has_value()) return std::nullopt;
+        switch (op) {
+        case BinaryOp::Add: return finiteValue(*lhs + *rhs);
+        case BinaryOp::Subtract: return finiteValue(*lhs - *rhs);
+        case BinaryOp::Multiply: return finiteValue(*lhs * *rhs);
+        case BinaryOp::Divide:
+            return *rhs == 0.0 ? std::nullopt : finiteValue(*lhs / *rhs);
+        case BinaryOp::Power: return finiteValue(std::pow(*lhs, *rhs));
+        case BinaryOp::Less: return *lhs < *rhs ? 1.0 : 0.0;
+        case BinaryOp::LessEqual: return *lhs <= *rhs ? 1.0 : 0.0;
+        case BinaryOp::Greater: return *lhs > *rhs ? 1.0 : 0.0;
+        case BinaryOp::GreaterEqual: return *lhs >= *rhs ? 1.0 : 0.0;
+        case BinaryOp::Equal: return *lhs == *rhs ? 1.0 : 0.0;
+        case BinaryOp::NotEqual: return *lhs != *rhs ? 1.0 : 0.0;
+        case BinaryOp::LogicalAnd:
+        case BinaryOp::LogicalOr:
+        case BinaryOp::Unknown: return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    case ExpressionKind::BuiltinCall: {
+        if (!expression.builtin.has_value()) return std::nullopt;
+        if (*expression.builtin == Builtin::If) {
+            if (expression.arguments.size() != 3) return std::nullopt;
+            const auto condition = evaluateStructuralExpression(
+                expression.arguments[0], model, direction,
+                localObservables, candidate, activeFunctions);
+            if (condition.has_value()) {
+                return evaluateStructuralExpression(
+                    expression.arguments[*condition == 0.0 ? 2 : 1], model,
+                    direction, localObservables, candidate, activeFunctions);
+            }
+            const auto whenTrue = evaluateStructuralExpression(
+                expression.arguments[1], model, direction,
+                localObservables, candidate, activeFunctions);
+            const auto whenFalse = evaluateStructuralExpression(
+                expression.arguments[2], model, direction,
+                localObservables, candidate, activeFunctions);
+            if (whenTrue.has_value() && whenFalse.has_value() &&
+                *whenTrue == *whenFalse) {
+                return whenTrue;
+            }
+            return std::nullopt;
+        }
+
+        std::vector<double> values;
+        values.reserve(expression.arguments.size());
+        for (const auto& argument : expression.arguments) {
+            const auto value = evaluateStructuralExpression(
+                argument, model, direction, localObservables,
+                candidate, activeFunctions);
+            if (!value.has_value()) return std::nullopt;
+            values.push_back(*value);
+        }
+        const auto unary = [&](auto function) -> std::optional<double> {
+            if (values.size() != 1) return std::nullopt;
+            return finiteValue(function(values.front()));
+        };
+        switch (*expression.builtin) {
+        case Builtin::Abs: return unary(static_cast<double (*)(double)>(std::fabs));
+        case Builtin::Ceil: return unary(static_cast<double (*)(double)>(std::ceil));
+        case Builtin::Cos: return unary(static_cast<double (*)(double)>(std::cos));
+        case Builtin::Cosh: return unary(static_cast<double (*)(double)>(std::cosh));
+        case Builtin::Exp: return unary(static_cast<double (*)(double)>(std::exp));
+        case Builtin::Floor: return unary(static_cast<double (*)(double)>(std::floor));
+        case Builtin::Ln: return unary(static_cast<double (*)(double)>(std::log));
+        case Builtin::Log10: return unary(static_cast<double (*)(double)>(std::log10));
+        case Builtin::Log2: return unary(static_cast<double (*)(double)>(std::log2));
+        case Builtin::Sin: return unary(static_cast<double (*)(double)>(std::sin));
+        case Builtin::Sqrt: return unary(static_cast<double (*)(double)>(std::sqrt));
+        case Builtin::Tan: return unary(static_cast<double (*)(double)>(std::tan));
+        case Builtin::E:
+            if (values.empty()) return 2.7182818284590452354;
+            return std::nullopt;
+        case Builtin::Pi:
+            if (values.empty()) return std::acos(-1.0);
+            return std::nullopt;
+        case Builtin::Min:
+            return values.empty() ? std::nullopt : finiteValue(*std::min_element(values.begin(), values.end()));
+        case Builtin::Max:
+            return values.empty() ? std::nullopt : finiteValue(*std::max_element(values.begin(), values.end()));
+        default: return std::nullopt;
+        }
+    }
+    case ExpressionKind::ParameterRef:
+    case ExpressionKind::LocalRef:
+    case ExpressionKind::ReactantCountRef:
+    case ExpressionKind::TimeRef:
+    case ExpressionKind::TableFunction:
+    case ExpressionKind::Unresolved:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 struct NetworkRulePlan::Impl {
+    const compile::CompiledRuleDirection& direction;
+    const compile::CompiledModel& model;
+    bool pruneZeroRates = false;
     std::unique_ptr<LegacyNetworkRuleKernel> kernel;
     std::vector<RuntimeFilter> filters;
     std::vector<RuntimeObservable> localObservables;
@@ -293,8 +625,12 @@ struct NetworkRulePlan::Impl {
          const compile::CompiledRuleDirection& direction,
          const compile::CompiledModel& model,
          compile::BNGcoreLoweringContext& context,
-         bool reverseDirection)
-        : kernel(std::make_unique<LegacyNetworkRuleKernel>(
+         bool reverseDirection,
+         bool pruneZeroRates)
+        : direction(direction),
+          model(model),
+          pruneZeroRates(pruneZeroRates),
+          kernel(std::make_unique<LegacyNetworkRuleKernel>(
               compiledRule, direction, model, context, reverseDirection)),
           filters(lowerFilters(direction, context)),
           localObservables(lowerLocalObservableDependencies(
@@ -469,6 +805,15 @@ struct NetworkRulePlan::Impl {
             };
       }
     }
+        if (pruneZeroRates && direction.rateLaw.has_value()) {
+            hooks.rejectZeroRate = [this](const ast::RateCandidateContext& candidate) {
+                std::set<std::size_t> activeFunctions;
+                const auto value = evaluateStructuralExpression(
+                    this->direction.rateLaw->resolvedExpression(), this->model,
+                    this->direction, localObservables, candidate, activeFunctions);
+                return value.has_value() && *value == 0.0;
+            };
+        }
         kernel->setHooks(hooks);
     }
 };
@@ -478,9 +823,11 @@ NetworkRulePlan::NetworkRulePlan(
     const compile::CompiledRuleDirection& direction,
     const compile::CompiledModel& model,
     compile::BNGcoreLoweringContext& loweringContext,
-    bool reverseDirection)
+    bool reverseDirection,
+    bool pruneZeroRates)
     : impl_(std::make_unique<Impl>(
-          rule, direction, model, loweringContext, reverseDirection)) {}
+          rule, direction, model, loweringContext, reverseDirection,
+          pruneZeroRates)) {}
 
 NetworkRulePlan::~NetworkRulePlan() = default;
 NetworkRulePlan::NetworkRulePlan(NetworkRulePlan&&) noexcept = default;
@@ -504,16 +851,19 @@ std::size_t NetworkRulePlan::expand(
 
 std::vector<NetworkRulePlan> lowerNetworkRules(
     const compile::CompiledModel& model,
-    compile::BNGcoreLoweringContext& loweringContext) {
+    compile::BNGcoreLoweringContext& loweringContext,
+    bool pruneZeroRates) {
     std::vector<NetworkRulePlan> result;
     for (const auto& rule : model.rules()) {
         // The compatibility execution object derives its internal edit caches
         // from the already-resolved reactant/product graphs. Therefore a
         // conservative/incomplete compiler mutation summary does not require
         // falling back to the original AST rule.
-        result.emplace_back(rule, rule.forward(), model, loweringContext, false);
+        result.emplace_back(rule, rule.forward(), model, loweringContext, false,
+                            pruneZeroRates);
         if (rule.reverse().has_value())
-            result.emplace_back(rule, *rule.reverse(), model, loweringContext, true);
+            result.emplace_back(rule, *rule.reverse(), model, loweringContext, true,
+                                pruneZeroRates);
     }
     return result;
 }

@@ -1814,14 +1814,38 @@ std::size_t ReactionRule::expandRule(
             // Build product species from product patterns
             std::vector<std::size_t> productIndices;
             std::vector<std::string> productLabels;
-            for (const auto& productPattern : productPatterns_) {
+            std::vector<SpeciesGraph> productGraphs;
+            std::vector<std::size_t> productPatternIndices;
+            productGraphs.reserve(productPatterns_.size());
+            productPatternIndices.reserve(productPatterns_.size());
+            for (std::size_t patternIndex = 0;
+                 patternIndex < productPatterns_.size(); ++patternIndex) {
+                const auto& productPattern = productPatterns_[patternIndex];
                 BNGcore::PatternGraph productGraph;
                 auto clones = cloneGraphIntoTarget(productPattern.getGraph(), productGraph);
                 SpeciesGraph sg(productGraph, productPattern.getCompartment());
                 if (productFilter && !productFilter(sg)) {
                     return 0;
                 }
-                auto product = Species(std::move(sg), 0.0, false, productPattern.getCompartment());
+                productGraphs.push_back(std::move(sg));
+                productPatternIndices.push_back(patternIndex);
+            }
+            if (hooks != nullptr && hooks->rejectZeroRate) {
+                RateCandidateContext candidate;
+                candidate.productSpeciesGraphs.reserve(productGraphs.size());
+                for (const auto& productGraph : productGraphs) {
+                    candidate.productSpeciesGraphs.push_back(&productGraph.getGraph());
+                }
+                candidate.productPatternIndices = productPatternIndices;
+                if (hooks->rejectZeroRate(candidate)) return 0;
+            }
+            for (std::size_t productIndex = 0;
+                 productIndex < productGraphs.size(); ++productIndex) {
+                const auto& productPattern =
+                    productPatterns_[productPatternIndices[productIndex]];
+                auto product = Species(
+                    std::move(productGraphs[productIndex]), 0.0, false,
+                    productPattern.getCompartment());
                 std::string exact;
                 const auto exactIndex = speciesList.findExact(product, exact);
                 std::size_t index;
@@ -2102,6 +2126,29 @@ bool ReactionRule::buildReaction(
     const bool debug = std::getenv("BNG_DEBUG_BUILD_RXN") != nullptr;
     const auto& reactantInfo = patternCache_->reactantInfo;
     const auto& productInfo = patternCache_->productInfo;
+    RateCandidateContext candidate;
+    if (hooks != nullptr && hooks->rejectZeroRate) {
+        candidate.speciesGraphs.reserve(matchSet.size());
+        candidate.mappedMolecules.reserve(matchSet.size());
+        for (std::size_t patternIndex = 0;
+             patternIndex < matchSet.size() && patternIndex < reactantInfo.size();
+             ++patternIndex) {
+            const auto& speciesGraph =
+                speciesList.get(matchSet[patternIndex].speciesIndex)
+                    .getSpeciesGraph().getGraph();
+            candidate.speciesGraphs.push_back(&speciesGraph);
+            candidate.mappedMolecules.emplace_back();
+            auto& mappedMolecules = candidate.mappedMolecules.back();
+            mappedMolecules.reserve(reactantInfo[patternIndex].molecules.size());
+            for (const auto& molecule : reactantInfo[patternIndex].molecules) {
+                mappedMolecules.push_back(
+                    matchSet[patternIndex].map.mapf(molecule.node));
+            }
+        }
+        if (hooks->rejectZeroRate(candidate)) {
+            return false;
+        }
+    }
     std::vector<std::size_t> reactantIndices;
     reactantIndices.reserve(matchSet.size());
     std::string inferredCompartment;
@@ -2971,6 +3018,15 @@ bool ReactionRule::buildReaction(
             : passesProductFilters(productGraphs);
         if (!passesCompiledProductFilters) {
             return false;
+        }
+
+        if (hooks != nullptr && hooks->rejectZeroRate) {
+            candidate.productSpeciesGraphs.reserve(productGraphs.size());
+            for (const auto& productGraph : productGraphs) {
+                candidate.productSpeciesGraphs.push_back(&productGraph.getGraph());
+            }
+            candidate.productPatternIndices = productPatternIndices;
+            if (hooks->rejectZeroRate(candidate)) return false;
         }
 
     if (hooks != nullptr && hooks->productLocalRateFingerprint) {

@@ -22,7 +22,8 @@ public:
                     const compile::CompiledRuleDirection& direction,
                     const compile::CompiledModel& model,
                     compile::BNGcoreLoweringContext& loweringContext,
-                    bool reverseDirection = false);
+                    bool reverseDirection = false,
+                    bool pruneZeroRates = false);
     ~NetworkRulePlan();
     NetworkRulePlan(NetworkRulePlan&&) noexcept;
     NetworkRulePlan& operator=(NetworkRulePlan&&) noexcept;
@@ -46,6 +47,7 @@ private:
 
 std::vector<NetworkRulePlan> lowerNetworkRules(
     const compile::CompiledModel& model,
-    compile::BNGcoreLoweringContext& loweringContext);
+    compile::BNGcoreLoweringContext& loweringContext,
+    bool pruneZeroRates = false);
 
 } // namespace bng::engine

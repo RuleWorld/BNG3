@@ -392,6 +392,178 @@ generate_network({{overwrite=>1,max_iter=>3,max_stoich=>{max_stoich}}})
         assert network.num_species == expected_species
         assert network.num_reactions == expected_reactions
 
+    def test_generate_network_can_prune_structurally_zero_local_rate_products(
+        self, tmp_path
+    ):
+        model_template = """
+begin model
+begin parameters
+    kOn 1
+    kOff 1
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(a)
+end molecule types
+begin seed species
+    A(b,c) 100
+    B(a) 100
+    C(a) 100
+end seed species
+begin observables
+    Molecules B_local B()
+    Molecules C_local C()
+end observables
+begin functions
+    B_rate_on(x) = if(C_local(x)>0,0,kOn)
+    C_rate_on(x) = if(B_local(x)>0,0,kOn)
+end functions
+begin reaction rules
+    bind_B: %x:A(b) + B(a) <-> %x:A(b!1).B(a!1) B_rate_on(x),kOff
+    bind_C: %x:A(c) + C(a) <-> %x:A(c!1).C(a!1) C_rate_on(x),kOff
+end reaction rules
+end model
+"""
+
+        def generate(filename, option=""):
+            bngl = tmp_path / filename
+            bngl.write_text(
+                model_template
+                + "\ngenerate_network({overwrite=>1,max_iter=>8"
+                + option
+                + "})\n",
+                encoding="utf-8",
+            )
+            return _cpp.generate_network(_cpp.parse_file(str(bngl)))
+
+        unpruned = generate("zero_rate_unpruned.bngl")
+        pruned = generate("zero_rate_pruned.bngl", ",prune_zero_rates=>1")
+
+        def has_ternary_complex(network):
+            return any(
+                all(name.count(f"{molecule}(") == 1 for molecule in ("A", "B", "C"))
+                for name in network.species_names
+            )
+
+        def has_complex(network, present, absent=()):
+            return any(
+                all(name.count(f"{molecule}(") == 1 for molecule in present)
+                and all(name.count(f"{molecule}(") == 0 for molecule in absent)
+                for name in network.species_names
+            )
+
+        assert has_ternary_complex(unpruned)
+        # The absent ternary species also proves that zero-rate candidates are
+        # rejected before their product species are inserted.
+        assert not has_ternary_complex(pruned)
+        # Seed species remain present even when a zero-rate candidate would
+        # otherwise reach a structurally matching product.
+        assert any(name.startswith("A(") for name in pruned.species_names)
+        assert any(name.startswith("B(") for name in pruned.species_names)
+        assert any(name.startswith("C(") for name in pruned.species_names)
+        assert has_complex(pruned, ("A", "B"), ("C",))
+        assert has_complex(pruned, ("A", "C"), ("B",))
+        assert any(
+            reaction.startswith("bind_B:|") for reaction in pruned.reaction_strings
+        )
+        assert any(
+            reaction.startswith("bind_C:|") for reaction in pruned.reaction_strings
+        )
+        # The parameterized reverse rates remain unknown to the proof and are
+        # retained independently of the structurally-zero forward direction.
+        assert any(
+            reaction.startswith("_reverse__bind_B:|")
+            for reaction in pruned.reaction_strings
+        )
+        assert any(
+            reaction.startswith("_reverse__bind_C:|")
+            for reaction in pruned.reaction_strings
+        )
+
+        seeded_template = model_template.replace(
+            "    C(a) 100\nend seed species",
+            "    C(a) 100\n    A(b!1,c!2).B(a!1).C(a!2) 1\nend seed species",
+        )
+        seeded_path = tmp_path / "zero_rate_seeded_product.bngl"
+        seeded_path.write_text(
+            seeded_template
+            + "\ngenerate_network({overwrite=>1,max_iter=>8,prune_zero_rates=>1})\n",
+            encoding="utf-8",
+        )
+        seeded_network = _cpp.generate_network(_cpp.parse_file(str(seeded_path)))
+        assert has_ternary_complex(seeded_network)
+
+    def test_zero_rate_pruning_preserves_global_and_symbolic_parameter_rates(
+        self, tmp_path
+    ):
+        bngl = tmp_path / "zero_rate_unknowns.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    kZero 0
+    kOn 1
+end parameters
+begin molecule types
+    A()
+    B()
+    C()
+    D()
+end molecule types
+begin seed species
+    A() 1
+    C() 1
+end seed species
+begin observables
+    Molecules C_total C()
+end observables
+begin functions
+    global_gate() = if(C_total>0,0,kOn)
+end functions
+begin reaction rules
+    A() -> B() kZero
+    A() -> D() global_gate()
+end reaction rules
+end model
+generate_network({overwrite=>1,prune_zero_rates=>1})
+""",
+            encoding="utf-8",
+        )
+
+        network = _cpp.generate_network(_cpp.parse_file(str(bngl)))
+
+        assert any(name.startswith("B(") for name in network.species_names)
+        assert any(name.startswith("D(") for name in network.species_names)
+
+    def test_zero_rate_pruning_preserves_rate_with_undefined_operand(self, tmp_path):
+        bngl = tmp_path / "zero_rate_undefined_operand.bngl"
+        bngl.write_text(
+            """
+begin model
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    undefined_rate: A() -> B() 0 * sqrt(-1)
+end reaction rules
+end model
+generate_network({overwrite=>1,prune_zero_rates=>1})
+""",
+            encoding="utf-8",
+        )
+
+        network = _cpp.generate_network(_cpp.parse_file(str(bngl)))
+
+        # sqrt(-1) has no finite value, so the rate is not proven to be zero.
+        # Pruning must retain the possible B product instead of treating the
+        # left-hand zero as an algebraic short circuit.
+        assert any(name.startswith("B(") for name in network.species_names)
+
     @pytest.mark.parametrize("entry", ["A=>2^3", "A=>1e309", 'A=>"2"'])
     def test_python_generate_network_defers_unsupported_max_stoich(
         self, tmp_path, entry
