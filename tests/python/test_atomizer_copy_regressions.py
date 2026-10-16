@@ -86,3 +86,23 @@ def test_smallstructures_molecule_copy_preserves_metadata_without_new_identifier
     assert copied.components[0].bonds == ["1"]
     assert copied.components[0].states == ["P"]
     assert copied.components[0].activeState == "P"
+
+
+@pytest.mark.parametrize(
+    ("molecule_type", "args"),
+    [(structures.Molecule, ("M",)), (smallStructures.Molecule, ("M", 3))],
+)
+def test_molecule_copy_preserves_subclass_slots_and_dynamic_metadata(
+    molecule_type, args
+):
+    class SpecializedMolecule(molecule_type):
+        __slots__ = ("tag",)
+
+    molecule = SpecializedMolecule(*args)
+    molecule.tag = "specialized"
+    molecule.metadata = {"source": "input"}
+    copied = molecule.copy()
+    assert type(copied) is SpecializedMolecule
+    assert copied.tag == "specialized"
+    assert copied.metadata is molecule.metadata
+    assert copied.components is not molecule.components

@@ -262,11 +262,12 @@ class Molecule:
         self.hash = hashlib.sha1(a).digest()
 
     def copy(self):
-        # ⚡ Bolt: Bypass copy.copy overhead by using __new__ directly
-        molecule = self.__class__.__new__(self.__class__)
-        # ⚡ Bolt: Use direct dictionary copy to preserve all shallow attributes
-        molecule.__dict__ = self.__dict__.copy()
-        # ⚡ Bolt: Deep copy components manually
+        if type(self) is Molecule:
+            molecule = Molecule.__new__(Molecule)
+            molecule.__dict__ = self.__dict__.copy()
+        else:
+            # Subclasses may carry slots or implement their own copy protocol.
+            molecule = shallow_copy(self)
         molecule.components = [element.copy() for element in self.components]
         return molecule
 

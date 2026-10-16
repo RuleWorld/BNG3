@@ -62,3 +62,7 @@ legacy/perl/bin/
 # directory is still an archive candidate (pyproject.toml sdist.exclude is the
 # other guard; .gitignore closes it at the source for every backend).
 bng3-offline-bundle/
+
+# Local agent notes and throwaway diagnostics
+.jules/
+scratch/
