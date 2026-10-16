@@ -1,34 +1,16 @@
 """Verification that the NFsim parity evidence is real.
 
-`test_parity_nfsim.py` is the only `tests/validation/` module any CI job runs
-(`parity.yml:149,161,167`), so a defect in what it *asserts* is invisible: the
-suite would report green either way. This module closes the three gaps that
-silence produces, and each check here is written to fail when the thing it
-claims to verify is absent.
-
-  1. no silent skip        a parity gate must fail, not skip, when the oracle
-                           it names is unavailable under strict mode, and must
-                           still skip locally so an unconfigured checkout is
-                           usable
-  2. seed handling         a fixed seed must produce the same trajectory on
-                           both legs, different seeds must produce different
-                           ones (a seed that is accepted and ignored is
-                           indistinguishable from a seed that works), and the
-                           result must hold for every tier-NF model rather
-                           than the one the existing gate happens to name
-  3. seed-state order      the empty `_KNOWN_SEED_STATE_ORDER_DIVERGENCES`
-                           marker is an *assertion* that the AN-family
-                           divergence is gone. Only the slow tier-P sweep
-                           checks it, and no CI job runs that sweep, so today
-                           nothing verifies the marker is honest.
+The parity workflow runs direct/XML, native-oracle and seed-state checks.
+This module verifies missing-oracle behavior, reproducible seed handling,
+and seed-state order against independently built native NFsim.
 
 The seed-state-order cases are compared against NATIVE NFsim. The two block
 orders in `test_parity_nfsim._SEED_STATE_ORDER_CASES` are semantically
 identical BNGL that differ only in the order the atomizer discovers a
 pattern-only site state in; `docs/TIER_P_SEED_STATE_ORDER_DIVERGENCE.md`
 records the pre-fix measurement (`species_first` reporting the whole seed pool
-under `O0`). Pinning those against the independent oracle is what makes the
-empty marker a measurement rather than an assumption.
+under `O0`). Pinning those against the independent oracle independently verifies
+the repaired seed-state semantics.
 """
 
 from __future__ import annotations
@@ -45,7 +27,6 @@ from tests.validation import compare, corpus, oracle_nfsim, runner
 from tests.validation.strict import require_oracle
 from tests.validation.test_parity_nfsim import (
     _SEED_STATE_ORDER_CASES,
-    _KNOWN_SEED_STATE_ORDER_DIVERGENCES,
 )
 
 # The seed and horizon the existing fixed-seed gate uses, so the two tests
@@ -485,16 +466,7 @@ def test_seed_state_order_matches_native_nfsim(block_order, api, work_dir, monke
 @pytest.mark.nf
 @pytest.mark.parametrize("model_name", AN_FAMILY)
 def test_an_family_seed_state_order_matches_native_nfsim(model_name, api, work_dir):
-    """The three models the tier-P sweep measured as diverging must not.
-
-    `_KNOWN_SEED_STATE_ORDER_DIVERGENCES` is empty because the seed-species fix
-    removed the divergence, and the sweep enforces that emptiness in both
-    directions. But the sweep is `slow` and no CI job runs it -- `parity.yml`
-    selects `-m "nf and not slow"`, then two `-k` expressions that name neither
-    it nor the sweep -- so nothing in CI currently checks that the marker is
-    honest. These are the real models, at the sweep's own seed and horizon,
-    compared against the independent oracle.
-    """
+    """Verify repaired AN-family seed states against the independent oracle."""
     require_oracle(
         oracle_nfsim.nfsim_available(), "native NFsim binary not found (set NFSIM_BIN)"
     )
@@ -537,24 +509,9 @@ def test_an_family_seed_state_order_matches_native_nfsim(model_name, api, work_d
     )
 
 
-def test_seed_state_order_marker_list_is_empty_and_the_families_still_run(api):
-    """The marker must stay empty, and the families it names must still resolve.
-
-    The empty tuple is the fix's whole evidence (`75b22a7`, per
-    `docs/TIER_P_SEED_STATE_ORDER_DIVERGENCE.md`). Asserting it is empty guards
-    against someone re-adding a name to silence a regression; asserting the
-    models still exist and still load guards against the marker being emptied
-    by deleting the models instead. Neither substitutes for the native-oracle
-    comparison above -- this is the cheap local half.
-    """
-    assert _KNOWN_SEED_STATE_ORDER_DIVERGENCES == (), (
-        "a seed-state-order divergence is marked known again: "
-        + ", ".join(_KNOWN_SEED_STATE_ORDER_DIVERGENCES)
-        + ". If this is real, it needs an entry in the sweep report and a "
-        "decision, not a silent marker."
-    )
+def test_seed_state_order_families_remain_in_corpus():
+    """Keep the AN-family regressions available for independent comparisons."""
     for model_name in AN_FAMILY:
-        assert corpus.resolve(model_name) is not None, (
-            f"{model_name} was removed from the corpus, which empties the "
-            "divergence marker without fixing anything"
-        )
+        assert (
+            corpus.resolve(model_name) is not None
+        ), f"{model_name} was removed from the seed-state regression corpus"

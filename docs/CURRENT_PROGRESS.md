@@ -1,8 +1,8 @@
 # BNG3 current progress
 
-**Refreshed:** 2026-10-12 against RuleWorld/BNG3 main
-`3ec99904afed69631808556c5646fed99328bb26` (tree
-`cd18d2682d8c62216e247e74045f415252d74421`). Semantic convergence and release
+**Audit refreshed:** 2026-10-16 against RuleWorld/BNG3 main
+`2f7200a279767bcc4a78a33775224e30f3d65521`. This is an issue/CI scope audit,
+not full qualification of that revision. Semantic convergence and release
 qualification remain incomplete. The authoritative backlog is issues
 [#132–#186](BNG3_CONVERGENCE_DONE_CHECKLIST.md): 44 open and eleven closed
 (#132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183). #146 and #154 remain
@@ -15,6 +15,29 @@ unassigned work has no implied review owner. The
 Historical [progress](https://github.com/RuleWorld/BNG3/blob/e1836c3274e685996d5e86883761e00e98257e09/docs/CURRENT_PROGRESS.md)
 and [checklist](https://github.com/RuleWorld/BNG3/blob/e1836c3274e685996d5e86883761e00e98257e09/docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md)
 retain the earlier reports.
+
+## CI scope audit (2026-10-16)
+
+For the revision above, push CI and push cross-tool parity passed, but scheduled
+cross-tool parity [run 38878018998](https://github.com/RuleWorld/BNG3/actions/runs/38878018998)
+failed. Its historical NFsim lane reported three failures and two errors; the
+broader conformance lane also reported parser/oracle failures and downstream
+`NOT_TESTED` results. Those findings require case-by-case diagnosis; neither
+all-product-failure nor all-harness-failure is an established conclusion.
+
+Green CI establishes only its selected contracts. Current limitations include:
+
+- PyBioNetGen qualification checks upstream exports/signatures and BNG3
+  compatibility contracts; it does not execute the upstream package as an
+  independent differential oracle.
+- Official SBML PR qualification selects 32 locked semantic cases. It does not
+  establish complete SBML, structural Atomizer or SBML Multi execution support.
+- Native event-bearing ODE execution explicitly rejects in `OdeIntegrator.cpp`;
+  #157/#158 require implementation, not just longer qualification jobs.
+- BNGIR and NFnext have executable tests, but those do not establish all of
+  #153–#155 or a complete production model-to-NFnext boundary (#147/#148).
+- CUDA hardware evidence, maintenance policy, scientific ownership and release
+  approvals cannot be replaced by CPU CI success.
 
 ## Integrated acceptance slices
 
@@ -30,10 +53,10 @@ A bounded repair does not close its broader issue.
 | #141/#142 | #203/#211/#222/#224 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots have a shared-topology contract; serial scan exceptions restore base/dependent parameters and the original network before successful analytic/fresh-model recovery. Broader invalidation/lifecycle and graph encoding unification remain open. |
 | #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
 | #138/#163 | #196/#197/#228/#230/#233/#237 | Compile-owned units and version-aware SBML units; NET has an independent Network3 analytic consumer contract. Observable projection preserves graph-prefix context, counting modes, inert Molecules qualifiers and qualified Species CountUnique termination; #237 explicitly rejects unsupported Counter/Fraction kinds before opening the NET destination, without adding runtime support. Broader runtime migration/export qualification remains open. |
-| #139 | #225 | Compiler-owned direction-specific whole-deletion and typed DeleteMolecules hooks drive compatibility execution; full kernel retirement remains open. A read-only check with the exact-source #260 CLI artifact (SHA256 `5d8dad626b1ee715bbf91e0b0d51868f23739b77e7939660d96fefba8c2a8e69`; its source tree equals main) demonstrates a product graph mismatch: seed `A(x!1,y!2).B(x!1).C(y!2)` with rule `A(x!1).B(x!1) -> A(x!1,y).B(x!1) k` yields one BNG3 reaction whose product drops connected `C`, while pinned BNG2 `9601746f8884ed19ab2acea49fe87fc4660ace46` 2.9.3 (`BNG2.pl` SHA256 `cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4`) yields zero reactions and refuses to write the resulting zero-reaction NET (expected exit 1). Main `cpp/ast/ReactionRule.cpp` explicitly leaves this product unbound-site constraint check for future work; this is a bounded graph-parity defect within #139, not a closure of its broader criteria. |
+| #139 | #225; commits `c5ca62df` / `5a5bf0ba` | Compiler-owned direction-specific whole-deletion and typed DeleteMolecules hooks drive compatibility execution; full kernel retirement remains open. The previously recorded connected-context deletion discrepancy was repaired. The current `[issue139]` native regression passes 36 assertions, including rejection of bound product-only sites, preservation of free-site/state-change behavior, explicit bond breaks and DeleteMolecules partner release. This local regression is not a fresh independent BNG2 campaign or proof of broader graph equivalence. |
 | #151 | #231 | Verified static zero-order physical count rates and bound parameter updates in one explicit positive 3D compartment. Physical XML fallback refuses; broader molecularity, unit seeds and dynamic contexts remain unsupported. |
 | #143 | #201 | Typed ODE dependency classification and time/state reevaluation; broader backend scope, propensity and cache-invalidation criteria remain open. |
-| #146 | #210/#215/#235/#238 | Deletion scope, pending waits, output clocks, canonical leading %label: XML scope and direct-NFsim compiled local-function binding. Independent native checks now cover four scoped cases; the original unmapped conditional remains unsupported, composite XML is not native parity, and strict native -oSteps final-endpoint rows remain red. |
+| #146 | #210/#215/#235/#238 | Deletion scope, pending waits, output clocks, canonical leading %label: XML scope and direct-NFsim compiled local-function binding. Independent native checks now cover four scoped cases; the original unmapped conditional remains unsupported, composite XML is not native parity, and the previously recorded strict native -oSteps final-endpoint failure is no longer current: the required endpoint step passed in push parity run [38852202284](https://github.com/RuleWorld/BNG3/actions/runs/38852202284) at the audited revision. This does not establish endpoint parity for every model. |
 | #147/#148 | #219 | Whole-species DestroyComplex, same-complex matcher constraints and native index-width refusal. Runtime tests use an action adapter; production ActionIR execution and formal correspondence remain open. |
 | #153–#155 | #209/#212/#213/#217/#226/#227/#242/#246/#247/#249/#250/#251/#252/#255/#256/#258 | Narrow parser-free BNGIR v0.2 import, strict model/action envelopes and boolean-reference rejection; seed-only zero-reaction models execute static ODE/SSA. Unknown model keys and unknown feature/protocol/action keys now reject, while string-valued action arguments and optional provenance remain accepted. Direct-builder malformed dense IDs, boolean references, unsupported top-level sections, unknown/non-string parameter properties, unsupported per-kind expression properties, boolean numeric nodes, wrong unary/binary arity, invalid `parameter_ref` symbol envelopes/kinds, non-finite numeric values, unsupported multi-pattern rules, and nonempty component/site payloads that would otherwise be discarded also reject; required parameter keys are diagnosed and optional `constant_value` remains accepted when finite. #251 adds one frozen v0.1-to-v0.2 migration fixture on the default Python route with pinned deterministic v0.2 output and schema/semantic checks. #255 repairs the Python integration test environment's missing `jsonschema` dependency after the #251/#252 bridge test failed during collection. #258 adds a narrow direct-native refusal guard for components and sites; it does not add site, bond, or population lowering. The generic expression/symbol schema remains broader than the direct-native subset. Broad structural round trips, deeper direct-native validation and independent C++ reader validation remain open. |
 | #165/#166 | #194/#198 | All-input Lean reference matcher and bounded packing/native guards; #165 closed, production lowering correspondence remains open. |
