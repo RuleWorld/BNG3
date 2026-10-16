@@ -1316,9 +1316,11 @@ end reaction rules
 }
 
 TEST_CASE("native NFcore2 reader refuses a local function mixing global and local observables") {
-    // ruleworld/nfsim#104: defense in depth for a hand-built System that
-    // already contains a mixed local function. The native reader must throw
-    // instead of silently falling back to the stale legacy evaluation.
+    // ruleworld/nfsim#104: defense in depth. The native append paths fail
+    // closed via requireNoMixedLocalGlobalScopes instead of silently falling
+    // back to the stale legacy evaluation. Exercise the check directly on a
+    // minimal System (no hand-built reactions/composites, which own shared
+    // NFcore objects and corrupt the heap under ASan).
     auto system = std::make_unique<NFcore::System>("mixed local global refusal");
     system->addParameter("k", 0.1);
 
@@ -1346,23 +1348,18 @@ TEST_CASE("native NFcore2 reader refuses a local function mixing global and loca
         args, refNames, refObsNames, refObs, scopes, params);
     system->addLocalFunction(local);
 
-    std::vector<std::string> called{"loc"};
-    std::vector<std::string> wrapperArgs{"x"};
-    std::vector<std::string> wrapperParams;
-    auto* composite = new NFcore::CompositeFunction(
-        system.get(), "loc", "loc(x)", called, wrapperArgs, wrapperParams);
-    REQUIRE(system->addCompositeFunction(composite));
-
-    auto* reactant = new NFcore::TemplateMolecule(aType);
-    std::vector<NFcore::TemplateMolecule*> reactants{reactant};
-    auto* transformations = new NFcore::TransformationSet(reactants);
-    REQUIRE(transformations->addLocalFunctionReference(
-        reactant, "x", NFcore::LocalFunction::MOLECULE));
-    transformations->finalize();
-    std::vector<std::string> pointerNames{"x"};
-    system->addReaction(new NFcore::DORRxnClass(
-        "r1", 1.0, "", transformations, composite, pointerNames, system.get()));
-
-    CHECK_THROWS_WITH(NFcore2::snapshotLegacyNFsim(*system),
+    CHECK_THROWS_WITH(NFcore2::requireNoMixedLocalGlobalScopes(local),
                       Catch::Matchers::ContainsSubstring("nfsim#104"));
+
+    // Control: pure-local function with the same shape does not throw.
+    std::vector<std::string> pureRefNames{"Ctot_1"};
+    std::vector<std::string> pureRefObsNames{"Ctot"};
+    std::vector<NFcore::Observable*> localOnlyRefs{localObs->clone()};
+    std::vector<int> pureScopes{0};
+    auto* pureLocal = new NFcore::LocalFunction(
+        system.get(), "locPure", "k*Ctot(x)", "k*Ctot_1",
+        args, pureRefNames, pureRefObsNames, localOnlyRefs,
+        pureScopes, params);
+    system->addLocalFunction(pureLocal);
+    CHECK_NOTHROW(NFcore2::requireNoMixedLocalGlobalScopes(pureLocal));
 }

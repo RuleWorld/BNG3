@@ -776,6 +776,27 @@ bool appendCompositeGlobalFunction(System& system, CompositeFunction* composite,
 }
 }
 
+// ruleworld/nfsim#104: public, testable alias of the anonymous check above.
+// Both native append paths fail closed through it (via the internal helper).
+void requireNoMixedLocalGlobalScopes(LocalFunction* local) {
+    if (!local) return;
+    bool hasLocalScope = false;
+    std::string globalObservable;
+    for (int i = 0; i < local->getNumOfVarRefs(); ++i) {
+        if (local->getVarRefScope(i) == -1) {
+            if (globalObservable.empty())
+                globalObservable = local->getVarObservableName(i);
+        } else {
+            hasLocalScope = true;
+        }
+    }
+    if (hasLocalScope && !globalObservable.empty())
+        throw std::runtime_error(
+            "local function '" + local->getName() + "' reads global observable '" +
+            globalObservable +
+            "' outside its argument: unsupported, would go stale (nfsim#104)");
+}
+
 std::size_t NativeNFsimSystemReader::moleculeTypeCount() const{return static_cast<std::size_t>(system_.getNumOfMoleculeTypes());}
 NativeMoleculeTypeSnapshot NativeNFsimSystemReader::moleculeType(std::size_t i) const{
     MoleculeType* mt=system_.getMoleculeType(static_cast<int>(i));NativeMoleculeTypeSnapshot o;o.name=mt->getName();o.component_count=static_cast<std::uint32_t>(mt->getNumOfComponents());o.population=mt->isPopulationType();return o;
