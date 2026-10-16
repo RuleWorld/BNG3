@@ -1,0 +1,34 @@
+{
+  "checked_at": "2026-10-08",
+  "platform": "macOS arm64",
+  "compiler": "AppleClang 21.0.0.21000334",
+  "scope": "clean pinned-source build and one analytic ODE/native NFsim input-output smoke; not full parity or NFsim conformance",
+  "oracles": {
+    "bng2": {
+      "source_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+      "source_clean": true,
+      "build_recipe": "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin make -C bng2/Network3 -f Makefile.cmake --jobs=1",
+      "artifact": "sha256:9f39d22ebdad7aefc38f8ceddf287799f0f262ed0e914b42b1f7cb640a7ffa39"
+    },
+    "nfsim": {
+      "source_revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+      "source_clean": true,
+      "build_recipe": "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNFSIM_BUILD_EXECUTABLE=ON -DNFSIM_BUILD_LIBRARY=OFF; cmake --build build --target NFsim --parallel 1",
+      "artifact": "sha256:7621bb850efc6cf203ec2c42004c2cffcc0115af7e3ce03d62aabab100bf31a1"
+    }
+  },
+  "smoke": {
+    "decay.bngl": {
+      "sha256": "122eef2a01bbb73f76db523744e646654e1488ffc267df9308547f7a198beeeb"
+    },
+    "decay.xml": {
+      "sha256": "f82574fe48803b5e311d637a1926c16fa37fbad4323ec0a98924e508fdda1b2e"
+    },
+    "decay.gdat": {
+      "sha256": "27a7746fe3e539598432c4c2c0c7da5c95413255924207db832e502aeed04255"
+    },
+    "decay_nf.gdat": {
+      "sha256": "6fa2158f256f29722aad61254c7fd9904c315fe042b8fa6a896bbc6015081040"
+    }
+  }
+}
