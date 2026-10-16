@@ -71,6 +71,7 @@ public:
     // CVODE integrates a scaled state to keep very small SBML amounts and
     // very large converted rate constants numerically well-conditioned.
     void cvodeDerivs(double t, const double* y, double* dydt) const;
+    double cvodeEventRoot(double time, const double* scaledState) const;
 
     void loadTfun(const std::string& name,
                   const std::string& filePath,
@@ -138,6 +139,12 @@ private:
     mutable std::vector<double> cvodePhysicalDerivatives_;
     std::vector<std::size_t> resultFunctionIndices_;                // zero-argument, user-visible, declaration order
 
+    void validateEventTargets();
+    double eventValue(const ast::Expression& expression, double time, const double* state) const;
+    void applyEvent(double time, std::vector<double>& state) const;
+    std::vector<std::size_t> eventTargets_;
+    std::optional<ast::Event> nativeEvent_;
+    void validateEventRootSurface();
     void compile();
     void compileGroups();
     void evaluateFunctionalRateCoefficients(double t,

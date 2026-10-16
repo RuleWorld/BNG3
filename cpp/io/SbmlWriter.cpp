@@ -207,6 +207,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
     requireNoEnergySemantics(model, "SBML");
+    compile::requireNoNativeEvents(model, "SBML export");
     const compile::CompiledModel compiled(model);
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default

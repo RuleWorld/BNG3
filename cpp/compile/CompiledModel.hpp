@@ -16,6 +16,10 @@ namespace bng::ast { class Model; }
 
 namespace bng::compile {
 
+// Refuse consumers that cannot preserve native event semantics.
+void requireNoNativeEvents(const ast::Model& model, const std::string& consumer);
+
+
 struct ResolvedUnitReference {
     units::Unit unit;
     // True when the authored key names a unit-system entry. False for a
@@ -34,6 +38,7 @@ struct ModelMetadata {
     // an authored spelling as a lookup key, but must use this typed value and
     // identity bit rather than parse the string again.
     std::map<std::string, ResolvedUnitReference> resolvedUnitReferences;
+    bool hasNativeEvents = false;
 };
 
 struct CompiledParameter {
@@ -221,6 +226,22 @@ struct CompiledPopulationMap {
     std::vector<std::string> arguments;
 };
 
+struct CompiledEventAssignment {
+    std::string target;
+    ResolvedExpression value;
+};
+
+struct CompiledEvent {
+    std::string id;
+    ResolvedExpression trigger;
+    bool initialValue = false;
+    bool persistent = true;
+    bool useValuesFromTriggerTime = true;
+    std::optional<ResolvedExpression> delay;
+    std::optional<ResolvedExpression> priority;
+    std::vector<CompiledEventAssignment> assignments;
+};
+
 // Immutable, backend-independent semantic compilation of ast::Model. This is
 // the sole model contract intended for execution backends. It deliberately
 // contains no mutable matcher, solver, trajectory, generated-network, or NFsim
@@ -230,6 +251,7 @@ public:
     explicit CompiledModel(const ast::Model& model);
 
     const ModelMetadata& metadata() const noexcept { return metadata_; }
+    const std::vector<CompiledEvent>& events() const noexcept { return events_; }
     const std::vector<CompiledParameter>& parameters() const noexcept { return parameters_; }
     const std::vector<CompiledMoleculeType>& moleculeTypes() const noexcept { return moleculeTypes_; }
     const std::vector<CompiledCompartment>& compartments() const noexcept { return compartments_; }
@@ -264,6 +286,7 @@ public:
 
 private:
     ModelMetadata metadata_;
+    std::vector<CompiledEvent> events_;
     FeatureSet features_;
     SymbolTable symbols_;
     std::vector<Diagnostic> diagnostics_;

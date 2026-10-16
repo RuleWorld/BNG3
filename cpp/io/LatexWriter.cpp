@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include "LatexWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
@@ -41,6 +42,7 @@ std::string LatexWriter::escapeLatex(const std::string& text) {
 
 std::string LatexWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
     requireNoEnergySemantics(model, "LaTeX");
+    compile::requireNoNativeEvents(model, "LaTeX export");
     std::ostringstream out;
 
     const std::string modelName = model.getModelName();

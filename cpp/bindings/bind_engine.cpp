@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
@@ -410,6 +411,7 @@ void bind_engine(py::module_& m) {
        "Generate the reaction network from a model");
 
     m.def("jax_ode_flatten", [](Model& model, GeneratedNetwork& network) {
+        bng::compile::requireNoNativeEvents(model, "JAX ODE flattening");
         std::vector<double> initialState;
         std::vector<uint8_t> fixedSpecies;
         std::vector<double> rateConstants;

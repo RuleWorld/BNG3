@@ -375,6 +375,7 @@ py::dict directionSnapshot(const CompiledRuleDirection& direction,
 }
 
 py::dict compiledSnapshot(const bng::ast::Model& astModel) {
+    bng::compile::requireNoNativeEvents(astModel, "BNGIR v0.2 structural snapshot");
     Document document(astModel);
     const auto& model = document.model();
     if (!document.valid()) {
