@@ -1206,9 +1206,13 @@ end model
         assert result.time[-1] == pytest.approx(1.0)
         assert result.observables["A_total"][0] == pytest.approx(1.0)
 
-    def test_nf_direct_local_function_accepts_bare_global_observable(
+    def test_nf_local_function_mixing_global_and_local_observable_is_refused(
         self, tmp_path, monkeypatch
     ):
+        # ruleworld/nfsim#104: a local function reading both a global
+        # observable (outside its argument) and a locally-scoped observable
+        # goes stale, so both loaders must refuse it instead of returning
+        # silently wrong propensities.
         bngl = tmp_path / "local_global_observable.bngl"
         bngl.write_text("""
 begin model
@@ -1237,18 +1241,18 @@ end model
 """)
 
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
-        model = bionetgen.load(str(bngl))
-        direct = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=1)
+        with pytest.raises(RuntimeError, match="direct AST initialization required"):
+            bionetgen.load(str(bngl)).simulate(
+                method="nf", t_end=1.0, n_steps=2, seed=1
+            )
 
         monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT")
         monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
         monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
-        xml = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=1)
-
-        assert direct.time.tolist() == xml.time.tolist()
-        assert direct.observable_names == xml.observable_names
-        for name in direct.observable_names:
-            assert direct.observables[name].tolist() == xml.observables[name].tolist()
+        with pytest.raises(RuntimeError, match="Failed to initialize NFSim system"):
+            bionetgen.load(str(bngl)).simulate(
+                method="nf", t_end=1.0, n_steps=2, seed=1
+            )
 
     def test_nf_direct_dynamic_rate_wraps_scoped_local_function(
         self, tmp_path, monkeypatch
