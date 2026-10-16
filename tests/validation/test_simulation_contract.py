@@ -298,9 +298,23 @@ begin actions
     source_run = tmp_path / "source-run"
     source_net, _, source_error = runner.run_cli_path(bng_cpp, source, source_run)
     assert source_net is not None, f"source network generation failed: {source_error}"
-    net_text = source_net.read_text(encoding="utf-8")
     if function_block:
-        assert "nested_multiplier(1)" in net_text
+        from tests.validation import compare
+
+        # Static nested calls may be folded during export. Check their value,
+        # including the bimolecular compartment factor, rather than spelling.
+        network = compare.parse_net(source_net)
+        assert network is not None and network.n_reactions == 1
+        rate = network._raw[0][2]
+        assert float(
+            compare._resolve_rate(
+                rate,
+                network.rate_defs,
+                "value",
+                network.rate_functions,
+                network.rate_observables,
+            )
+        ) == pytest.approx(0.1 * 2 / 20)
     source_traces = {
         kind: np.loadtxt(source_run / f"trajectory.{kind}", comments="#")
         for kind in ("cdat", "gdat")
