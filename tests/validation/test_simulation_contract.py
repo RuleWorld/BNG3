@@ -3,7 +3,7 @@
 from argparse import Namespace
 from pathlib import Path
 
-from tests.validation.simulation_contract import net_reload_text, run_simulation
+from tests.validation.simulation_contract import net_reload_context, run_simulation
 
 
 def arguments():
@@ -54,7 +54,7 @@ def test_diagnostic_action_is_inside_existing_action_block():
     assert text.count("end actions") == 1
 
 
-def test_net_reload_protocol_preloads_only_parameters_and_compartments():
+def test_net_reload_context_preloads_only_parameters_and_compartments(tmp_path):
     source = """
 begin model
 begin parameters
@@ -78,7 +78,9 @@ begin actions
 end actions
 """
 
-    text = net_reload_text(source, arguments())
+    source_path = tmp_path / "source.bngl"
+    source_path.write_text(source, encoding="utf-8")
+    text = net_reload_context(source_path)
 
     assert "begin parameters\n    k 0.1\nend parameters" in text
     assert "begin compartments\n    cell 3 1\nend compartments" in text
@@ -86,9 +88,7 @@ end actions
     assert "begin seed species" not in text
     assert "begin reaction rules" not in text
     assert "generate_network" not in text
-    assert 'readFile({file=>"input.net"})' in text
-    assert 'simulate_ode({netfile=>"input.net"' in text
-    assert text.index('readFile({file=>"input.net"})') < text.index("simulate_ode(")
+    assert "simulate_ode(" not in text
 
 
 def test_blocked_routes_have_distinct_case_ids(tmp_path):
