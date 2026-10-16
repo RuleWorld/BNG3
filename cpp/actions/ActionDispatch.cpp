@@ -261,7 +261,7 @@ void addNetFunctions(const io::NetReader::ParseResult& netData,
 engine::GeneratedNetwork networkFromNetData(
     const io::NetReader::ParseResult& netData, ast::Model& model) {
     engine::GeneratedNetwork network;
-    network.ratesAlreadyUnitConverted = true;
+    network.ratesIncludeUnitConversion = true;
     // NET reaction and group references use stable 1-based species rows.
     // Preserve duplicate rows while rebuilding the imported network.
     network.species.setCheckIso(false);

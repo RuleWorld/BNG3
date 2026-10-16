@@ -95,6 +95,7 @@ struct LegacyNetworkRuleKernel::Impl {
         publicHooks.productScopeMatchSignature;
     astHooks.productLocalRateFingerprint =
         publicHooks.productLocalRateFingerprint;
+    astHooks.rejectZeroRate = publicHooks.rejectZeroRate;
   }
 };
 
