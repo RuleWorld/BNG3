@@ -7112,3 +7112,76 @@ end reaction rules
     CHECK(direct->getReaction(1)->get_a() == Catch::Approx(1.0));
     delete direct;
 }
+
+TEST_CASE("NFsim legacy XML honors species-level pattern compartments") {
+    // ruleworld/nfsim#106: `@EC:A()` patterns reach the legacy XML loader with
+    // a species-level Pattern/ReactantPattern/ProductPattern @compartment
+    // attribute, which the loader ignored (it only read Molecule/@compartment),
+    // so compartment-constrained observables and rules matched everywhere.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    kdeg 0.1
+end parameters
+begin compartments
+    EC 3 1.0
+    CP 3 1.0 EC
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @EC:A() 10
+    @CP:A() 5
+end seed species
+begin observables
+    Molecules A_EC @EC:A()
+    Molecules A_CP @CP:A()
+end observables
+begin reaction rules
+    R1: @EC:A() -> 0 kdeg
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const auto checkCompartmentConstrainedCounts = [](NFcore::System* system) {
+        auto* obsEC = system->getObservableByName("A_EC");
+        REQUIRE(obsEC != nullptr);
+        int nEC = 0;
+        NFcore::TemplateMolecule** tmEC = nullptr;
+        obsEC->getTemplateMoleculeList(nEC, tmEC);
+        REQUIRE(nEC >= 1);
+        REQUIRE(tmEC[0]->getCompartment() != nullptr);
+        CHECK(tmEC[0]->getCompartment()->getId() == "EC");
+
+        auto* obsCP = system->getObservableByName("A_CP");
+        REQUIRE(obsCP != nullptr);
+        int nCP = 0;
+        NFcore::TemplateMolecule** tmCP = nullptr;
+        obsCP->getTemplateMoleculeList(nCP, tmCP);
+        REQUIRE(nCP >= 1);
+        REQUIRE(tmCP[0]->getCompartment() != nullptr);
+        CHECK(tmCP[0]->getCompartment()->getId() == "CP");
+
+        system->prepareForSimulation();
+        CHECK(obsEC->getCount() == 10);
+        CHECK(obsCP->getCount() == 5);
+
+        REQUIRE(system->getAllReactions().size() == 1);
+        // The `@EC:A()` reactant must only match the 10 EC molecules.
+        CHECK(system->getAllReactions()[0]->getReactantCount(0) == 10);
+    };
+
+    int xmlTraversal = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, xmlTraversal);
+    REQUIRE(xml != nullptr);
+    checkCompartmentConstrainedCounts(xml);
+    delete xml;
+
+    int directTraversal = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, directTraversal);
+    REQUIRE(direct != nullptr);
+    checkCompartmentConstrainedCounts(direct);
+    delete direct;
+}
