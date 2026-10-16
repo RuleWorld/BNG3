@@ -61,3 +61,85 @@ def test_blocked_routes_have_distinct_case_ids(tmp_path):
         "x", tmp_path, None, arguments(), {}, blocker, route="net-reload"
     )
     assert not {r["id"] for r in a} & {r["id"] for r in b}
+
+
+def test_net_reload_loads_source_context_without_replaying_model_actions(
+    tmp_path, monkeypatch
+):
+    from tests.validation import simulation_contract
+
+    work = tmp_path / "model"
+    source_dir = work / "input"
+    source_dir.mkdir(parents=True)
+    source_dir.joinpath("x.bngl").write_text(
+        """begin model
+begin parameters
+    volume 2
+end parameters
+begin compartments
+    cell 3 volume
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+end model
+begin actions
+    generate_network()
+end actions
+""",
+        encoding="utf-8",
+    )
+    for side in ("reference", "subject"):
+        output_dir = work / side
+        output_dir.mkdir()
+        output_dir.joinpath("x.net").write_text(
+            """begin parameters
+    1 volume 2
+end parameters
+begin species
+    1 @cell::A() 1
+end species
+begin reactions
+end reactions
+""",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(
+        simulation_contract.campaign, "verify_digest", lambda *args: None
+    )
+    protocols = []
+
+    def stop_after_recording(command, cwd, timeout, **kwargs):
+        protocols.append(Path(command[-1]).read_text(encoding="utf-8"))
+        return {"status": "FAIL", "detail": "intentional test stop"}
+
+    monkeypatch.setattr(
+        simulation_contract.campaign, "run_command", stop_after_recording
+    )
+    reference = {
+        "interpreter": "perl",
+        "script": "BNG2.pl",
+        "network_binary": str(tmp_path / "run_network"),
+        "network_binary_sha256": "verified",
+    }
+    rows = run_simulation("x", work, reference, arguments(), {}, [], route="net-reload")
+
+    context = (work / "simulation-net-reload" / "reference" / "context.bngl").read_text(
+        encoding="utf-8"
+    )
+    assert "begin parameters" in context
+    assert "begin compartments" in context
+    assert "begin molecule types" not in context
+    assert "begin seed species" not in context
+    assert "generate_network" not in context
+    assert len(protocols) == 1
+    assert protocols[0].index('readFile({file=>"context.bngl"})') < protocols[0].index(
+        'readFile({file=>"input.net"})'
+    )
+    assert "simulate_ode(" in protocols[0]
+    assert 'netfile=>"input.net"' in protocols[0]
+    assert rows[0]["status"] == "HARNESS_ERROR"

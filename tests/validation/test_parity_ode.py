@@ -62,6 +62,108 @@ def test_ode_parity(model_name, bng_cpp, work_dir):
 
 
 @pytest.mark.expressions
+def test_zero_rate_pruning_trajectory_matches_locked_bng2(bng_cpp, tmp_path):
+    """Pruning may omit zero-rate products while retaining BNG2 trajectories."""
+    model_template = """begin model
+begin parameters
+    kOn 1
+    kOff 1
+end parameters
+begin molecule types
+    A(b,c)
+    B(a)
+    C(a)
+end molecule types
+begin seed species
+    A(b,c) 100
+    B(a) 100
+    C(a) 100
+end seed species
+begin observables
+    Molecules B_local B()
+    Molecules C_local C()
+    Molecules A_total A()
+    Molecules B_total B()
+    Molecules C_total C()
+    Molecules AB A(b!1).B(a!1)
+    Molecules AC A(c!1).C(a!1)
+    Molecules ABC A(b!1,c!2).B(a!1).C(a!2)
+end observables
+begin functions
+    B_rate_on(x) = if(C_local(x)>0,0,kOn)
+    C_rate_on(x) = if(B_local(x)>0,0,kOn)
+end functions
+begin reaction rules
+    bind_B: %x:A(b) + B(a) <-> %x:A(b!1).B(a!1) B_rate_on(x),kOff
+    bind_C: %x:A(c) + C(a) <-> %x:A(c!1).C(a!1) C_rate_on(x),kOff
+end reaction rules
+end model
+begin actions
+    generate_network({overwrite=>1,max_iter=>8{prune_option}})
+    simulate_ode({prefix=>"trajectory",t_start=>0,t_end=>10,n_steps=>100,rtol=>1e-10,atol=>1e-12})
+end actions
+"""
+
+    reference_source = tmp_path / "zero_rate_pruning_reference.bngl"
+    reference_source.write_text(
+        model_template.replace("{prune_option}", ""), encoding="utf-8"
+    )
+    subject_source = tmp_path / "zero_rate_pruning_subject.bngl"
+    subject_source.write_text(
+        model_template.replace("{prune_option}", ",prune_zero_rates=>1"),
+        encoding="utf-8",
+    )
+
+    reference_net_path, reference_gdat_path, reference_source_name = (
+        oracle_perl.run_perl(
+            "zero_rate_pruning",
+            tmp_path / "bng2",
+            source_path=reference_source,
+            timeout=60,
+        )
+    )
+    require_oracle(
+        reference_net_path is not None and reference_gdat_path is not None,
+        f"locked BNG2 pruning reference unavailable: {reference_source_name}",
+    )
+    subject_net_path, subject_gdat_path, error = runner.run_cli_path(
+        bng_cpp, subject_source, tmp_path / "bng3"
+    )
+    assert subject_net_path is not None, f"BNG3 pruned network failed: {error}"
+    assert subject_gdat_path is not None, f"BNG3 pruned simulation failed: {error}"
+
+    reference_net = compare.parse_net(reference_net_path)
+    subject_net = compare.parse_net(subject_net_path)
+    assert reference_net is not None and subject_net is not None
+
+    def has_ternary_complex(network):
+        return any(
+            all(name.count(f"{molecule}(") == 1 for molecule in ("A", "B", "C"))
+            for name in network.species_by_index.values()
+        )
+
+    assert has_ternary_complex(reference_net)
+    assert not has_ternary_complex(subject_net)
+
+    reference_data, reference_columns = compare.parse_gdat(reference_gdat_path)
+    subject_data, subject_columns = compare.parse_gdat(subject_gdat_path)
+    assert reference_data is not None and subject_data is not None
+    diff = compare.compare_trajectories(
+        reference_data,
+        reference_columns,
+        subject_data,
+        subject_columns,
+        rtol=1e-6,
+        atol=1e-12,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert diff.ok, (
+        "pruned reachable trajectory differs from locked BNG2 despite the "
+        f"omitted zero-rate product: {diff.summary()}"
+    )
+
+
+@pytest.mark.expressions
 @pytest.mark.parametrize(
     "model_name,t_end,n_steps,solver_rtol,solver_atol,sparse", API_ODE_CASES
 )
