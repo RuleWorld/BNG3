@@ -291,7 +291,28 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
 
     for (const auto& rawRule : rules) {
         const auto rule = py::cast<py::dict>(rawRule);
+        static const std::vector<std::string> ruleKeys = {
+            "id", "name", "label", "bidirectional", "modifiers", "forward",
+            "molecule_mappings", "component_mappings",
+        };
+        requireObjectKeys(rule, ruleKeys, ruleKeys, "rule");
+        const py::handle bidirectional = rule["bidirectional"];
+        if (!PyBool_Check(bidirectional.ptr()) || py::cast<bool>(bidirectional) ||
+            !py::cast<py::list>(rule["modifiers"]).empty()) {
+            throw std::runtime_error(
+                "native BNGIR requires a forward ordinary rule");
+        }
         const auto direction = py::cast<py::dict>(rule["forward"]);
+        static const std::vector<std::string> directionKeys = {
+            "reactants", "products", "rate", "filters", "local_scopes",
+            "mutations", "transformations_complete",
+        };
+        requireObjectKeys(direction, directionKeys, directionKeys, "rule direction");
+        if (!py::cast<py::list>(direction["filters"]).empty() ||
+            !py::cast<py::list>(direction["local_scopes"]).empty()) {
+            throw std::runtime_error(
+                "native BNGIR does not support filters or local scopes");
+        }
         const auto reactants = py::cast<py::list>(direction["reactants"]);
         const auto products = py::cast<py::list>(direction["products"]);
         if (reactants.size() != 1 || products.size() != 1) {

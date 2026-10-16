@@ -975,3 +975,38 @@ def test_native_import_rejects_unknown_fields_and_provenance():
     document["model"]["metadata"]["substance_units"] = "mole"
     with pytest.raises(ValueError, match="substance-unit metadata"):
         bionetgen.from_bngir(document, native=True)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("bidirectional", True, "forward ordinary rule"),
+        ("bidirectional", 0, "forward ordinary rule"),
+        ("modifiers", ["DeleteMolecules"], "forward ordinary rule"),
+        ("reverse", {}, "unsupported reverse"),
+    ],
+)
+def test_direct_native_builder_refuses_unrepresented_rule_semantics(
+    field, value, expected
+):
+    document = _document()
+    document["model"]["rules"][0][field] = value
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize("field", ["filters", "local_scopes"])
+def test_direct_native_builder_refuses_unrepresented_direction_semantics(field):
+    document = _document()
+    document["model"]["rules"][0]["forward"][field] = [{}]
+    with pytest.raises(RuntimeError, match="filters or local scopes"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_refuses_unknown_direction_semantics():
+    document = _document()
+    document["model"]["rules"][0]["forward"]["future_semantics"] = True
+    with pytest.raises(
+        RuntimeError, match="rule direction has unsupported future_semantics"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
