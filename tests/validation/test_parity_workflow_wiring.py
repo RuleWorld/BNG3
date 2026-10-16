@@ -36,6 +36,7 @@ it also refuses duplicate keys explicitly.
 from __future__ import annotations
 
 import re
+import shlex
 from pathlib import Path
 
 import pytest
@@ -233,3 +234,57 @@ def test_orchestrated_steps_keep_their_shell_before_their_run():
                 "'shell:'; a new '- name:' inserted between them would split "
                 "the step in two"
             )
+
+
+@pytest.mark.parametrize(
+    "step_name,node,report",
+    [
+        (
+            "Run all Tier-NF native ensembles (scheduled)",
+            "test_nf_vs_native",
+            "nfsim-tier-nf.xml",
+        ),
+        (
+            "Measure Tier-P direct/XML outcomes (scheduled)",
+            "test_tierp_direct_path_outcome_is_measured_and_attributed",
+            "nfsim-tier-p.xml",
+        ),
+    ],
+)
+def test_scheduled_nfsim_steps_select_complete_contracts(step_name, node, report):
+    steps = _parse_workflow()["jobs"]["nfsim-parity"]["steps"]
+    step = next((item for item in steps if item.get("name") == step_name), None)
+    assert step is not None, f"missing scheduled NFsim contract: {node}"
+    assert step["if"] == (
+        "(success() || failure()) && "
+        "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')"
+    )
+    # Check the executed pytest arguments, not a comment or a step label.
+    commands = step["run"].replace("\\\n", " ").splitlines()
+    pytest_commands = [shlex.split(line) for line in commands if "pytest " in line]
+    assert len(pytest_commands) == 1
+    arguments = pytest_commands[0]
+    assert f"tests/validation/test_parity_nfsim.py::{node}" in arguments
+    assert not {"-k", "-m", "--deselect"} & set(arguments)
+    assert "--runxfail" not in arguments
+    assert any(arg.endswith(report) for arg in arguments)
+    assert step.get("continue-on-error", False) is False
+    assert "set -euo pipefail" in step["run"]
+
+
+def test_scheduled_nfsim_reports_are_retained_on_failure():
+    steps = _parse_workflow()["jobs"]["nfsim-parity"]["steps"]
+    upload = next(
+        (
+            step
+            for step in steps
+            if step.get("name") == "Upload NFsim qualification evidence"
+        ),
+        None,
+    )
+    assert upload is not None
+    assert upload["if"] == "always()"
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    paths = upload["with"]["path"]
+    assert "nfsim-tier-*.xml" in paths
+    assert "build/validation/direct_path_sweep.json" in paths

@@ -50,6 +50,8 @@ jobs:
         run: |
           python -m pytest \
             tests/test_ci_contract.py \
+            tests/validation/test_parity_workflow_wiring.py \
+            tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
             -q -ra
@@ -321,6 +323,7 @@ jobs:
     name: BNG3 vs independent NFsim
     needs: oracle-lock
     runs-on: ubuntu-22.04
+    timeout-minutes: 180
     env:
       BNG3_PYTHON_TEST_MODE: installed
     steps:
@@ -420,6 +423,59 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Run all Tier-NF native ensembles (scheduled)
+        if: (success() || failure()) && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        timeout-minutes: 45
+        shell: bash
+        run: |
+          set -euo pipefail
+          NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            BNG_ENSEMBLE_WORKERS=2 \
+            pytest -c tests/validation/pytest.ini \
+              tests/validation/test_parity_nfsim.py::test_nf_vs_native \
+              -q -ra --junitxml="$RUNNER_TEMP/nfsim-tier-nf.xml"
+
+      - name: Measure Tier-P direct/XML outcomes (scheduled)
+        if: (success() || failure()) && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        timeout-minutes: 90
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest -c tests/validation/pytest.ini \
+            tests/validation/test_parity_nfsim.py::test_tierp_direct_path_outcome_is_measured_and_attributed \
+            -q -ra --junitxml="$RUNNER_TEMP/nfsim-tier-p.xml"
+
+      - name: Upload NFsim qualification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfsim-qualification-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nfsim-tier-*.xml
+            build/validation/direct_path_sweep.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Summarize NFsim qualification scope
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          report = Path('build/validation/direct_path_sweep.json')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('### NFsim qualification scope\n\n')
+              summary.write('PR checks retain bounded native coverage. Scheduled/manual runs select every Tier-NF native ensemble and the Tier-P direct/XML sweep.\n\n')
+              summary.write('Direct/XML comparisons share embedded engine code; they supplement independent native checks. Declined, not-loadable, incomplete, and uncomparable models are not equivalence evidence.\n\n')
+              summary.write('Tier-P trajectory mismatches fail this gate after retaining their classification report.\n\n')
+              if report.exists():
+                  counts = json.loads(report.read_text())
+                  summary.write('Tier-P measured categories: ' + json.dumps({key: value for key, value in counts.items() if isinstance(value, int)}) + '\n')
+              else:
+                  summary.write('No Tier-P classification report produced; no Tier-P parity claim. Inspect step outcomes and attached JUnit reports.\n')
+          PY
 
   nfsim-source-validation:
     name: NFsim historical validation (scheduled)

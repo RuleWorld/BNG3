@@ -79,28 +79,6 @@ TIER_P_MODELS = list(corpus.tier_p())
 _DECLINE_PREFIX = "NFsim direct AST initialization unavailable: "
 _DECLINE_SUFFIX = "; XML fallback disabled"
 
-# Known seed-state-order divergences, tracked as a strict xfail.
-#
-# BUG (fixed in cpp/nfsim/NFinput/NFinput_fromCompiled.cpp, seed-species
-# stage): the seed builder used `PatternStateConstraint::exact->index` -- an
-# offset into the atomizer's *discovery order* for a component's allowed
-# states -- directly as the NFsim state value.  NFsim's value is an offset
-# into the molecule type's own state table, which addMoleculeTypesFromCompiled
-# renumbers to 0..max for an all-integer component (the XML loader does the
-# same, NFinput.cpp:585-591).  ANx declares `RD(...,m~2)` in its species
-# block before any observable mentions `m~0`, so '2' is discovery index 0 and
-# every seed receptor was created in NFsim state 0.  The observables were
-# right all along; they were reporting a population that had been built in
-# the wrong state, which is why `R0 RD(m~0)` returned the whole seed pool and
-# `RD_R`/`RD_B` (which read that state through MethLevel) also diverged.
-#
-# These three models share the AN family and therefore the defect.  The
-# marker is deliberately strict in both directions: a *new* divergence still
-# fails the suite, and a listed model that stops diverging fails it too,
-# because an xfail that quietly starts passing is exactly the failure this
-# harness exists to prevent -- remove the name from this tuple instead.
-_KNOWN_SEED_STATE_ORDER_DIVERGENCES: tuple = ()
-
 # The child program. Kept as source text so the probe needs no file of its own.
 _SWEEP_CHILD = """
 import json, os, sys
@@ -729,33 +707,13 @@ def test_tierp_direct_path_outcome_is_measured_and_attributed(api):
         f"{r['model']} ({r.get('error', r.get('status'))})" for r in unattributed
     )
 
-    # ADR 0001 gates direct lowering on the parity matrix being green.  The
-    # remaining divergences are the AN family's seed-state-order defect
-    # (_KNOWN_SEED_STATE_ORDER_DIVERGENCES), so the sweep xfails rather than
-    # absorbing them into a pass.  The marker is strict in both directions and
-    # the report above is already on disk by the time either check runs.
-    diverged_names = {r["model"] for r in diverged}
-    by_name = {r["model"]: r for r in diverged}
-    unexpected = sorted(diverged_names - set(_KNOWN_SEED_STATE_ORDER_DIVERGENCES))
-    assert not unexpected, (
-        f"{len(unexpected)} untracked tier-P model(s) accepted by the direct "
-        f"path diverge from in-memory-XML at rtol=atol=0: "
+    # Report every mismatch as an ordinary failure after retaining the artifact.
+    assert not diverged, (
+        f"{len(diverged)} tier-P model(s) accepted by the direct path "
+        "diverge from in-memory-XML at rtol=atol=0: "
         + ", ".join(
-            f"{name} (max_rel_err={by_name[name]['max_rel_err']} on "
-            f"{by_name[name]['max_rel_col']!r})"
-            for name in unexpected
+            f"{record['model']} (max_rel_err={record['max_rel_err']} on "
+            f"{record['max_rel_col']!r})"
+            for record in diverged
         )
     )
-    stale = sorted(set(_KNOWN_SEED_STATE_ORDER_DIVERGENCES) - diverged_names)
-    assert not stale, (
-        "the seed-state-order xfail is stale: "
-        + ", ".join(stale)
-        + " no longer diverge, so the marker is hiding a passing model. "
-        "Remove the name from _KNOWN_SEED_STATE_ORDER_DIVERGENCES."
-    )
-    if diverged:
-        pytest.xfail(
-            "known seed-state-order divergence in the direct path: "
-            + ", ".join(sorted(diverged_names))
-            + " (cpp/nfsim/NFinput/NFinput_fromCompiled.cpp, seed-species stage)"
-        )
