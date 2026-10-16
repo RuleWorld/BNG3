@@ -147,6 +147,15 @@ bool parseCheckIso(const compile::SimulationProtocol& protocol) {
     return true;  // default: isomorphism checking enabled
 }
 
+bool parseZeroRatePruning(const compile::SimulationProtocol& protocol) {
+    for (const auto& action : protocol.actions) {
+        if (action.name != "generate_network") continue;
+        const auto found = action.arguments.find("prune_zero_rates");
+        if (found != action.arguments.end()) return parseBooleanLike(found->second);
+    }
+    return false;
+}
+
 bool parsePrintRules(const compile::SimulationProtocol& protocol) {
     const char* envFlag = std::getenv("BNG_CPP_PROGRESS_RULES");
     if (envFlag != nullptr && *envFlag != '\0') {
@@ -333,6 +342,7 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
     const bool logProgress = parsePrintIter(document_.protocol());
     const bool logRules = parsePrintRules(document_.protocol());
     const bool checkIso = parseCheckIso(document_.protocol());
+    const bool pruneZeroRates = parseZeroRatePruning(document_.protocol());
 
     // Rule expansion reads compartment metadata from its compatibility
     // helpers. Keep that context isolated to this thread and restore it on
@@ -358,7 +368,7 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
     auto ngMark = clock::now();
     if (ngTiming) { tContext = us(ngT0, ngMark); }
 
-    auto rulePlans = lowerNetworkRules(compiled, loweringContext);
+    auto rulePlans = lowerNetworkRules(compiled, loweringContext, pruneZeroRates);
     for (auto& plan : rulePlans) plan.clearPatternMatchCache();
 
     // TEMP timing: end of phase 2 (plan lowering + cache clear)

@@ -1256,6 +1256,11 @@ units::ConversionContext unitConversionContext(const ast::Rxn& reaction,
 // For bimolecular+ reactions: divide by remaining compartment sizes after anchor.
 // For zero-order synthesis: multiply by product compartment size.
 std::optional<double> unitConversionFactor(const ast::Rxn& reaction, const ast::Model& model, const engine::GeneratedNetwork& network) {
+    // NET reaction rate strings already include this conversion. Imported
+    // networks must keep the serialized rate as-is across simulation and
+    // subsequent writers, even when the caller supplies compartment context.
+    if (network.ratesIncludeUnitConversion) return std::nullopt;
+
     if (compile::unitMode(model) != compile::UnitMode::Off) {
         if (const auto rateUnit = annotatedRateUnit(reaction, model)) {
             const auto context = unitConversionContext(reaction, model, network);

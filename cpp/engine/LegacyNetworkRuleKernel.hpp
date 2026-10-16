@@ -7,7 +7,12 @@
 #include <vector>
 
 namespace BNGcore { class Node; class PatternGraph; }
-namespace bng::ast { class SpeciesGraph; class SpeciesList; class RxnList; }
+namespace bng::ast {
+class SpeciesGraph;
+class SpeciesList;
+class RxnList;
+struct RateCandidateContext;
+}
 namespace bng::compile {
 class CompiledModel;
 class CompiledRule;
@@ -31,6 +36,7 @@ struct LegacyNetworkRuleHooks {
   std::function<std::string(const std::vector<ast::SpeciesGraph> &,
                             const std::vector<std::size_t> &)>
       productLocalRateFingerprint;
+  std::function<bool(const ast::RateCandidateContext &)> rejectZeroRate;
 };
 
 class LegacyNetworkRuleKernel {

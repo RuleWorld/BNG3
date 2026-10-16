@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.validation import compare, corpus, runner
+from tests.validation import compare, contracts, corpus, runner
 from tests.validation.strict import require_oracle
 
 EXPORT_MODELS = [
@@ -166,6 +166,142 @@ end actions
     assert net is not None, f"NET compartment reload failed: {err}"
     parsed = compare.parse_net(net)
     assert parsed.species_by_index == {1: "@cyto::A()"}
+
+
+@pytest.mark.export
+def test_net_reload_cdat_preserves_sparse_molecule_compartments(bng_cpp, tmp_path):
+    """NET species labels retain each molecule's explicitly serialized compartment."""
+    net_input = tmp_path / "sparse_molecule_compartments.net"
+    net_input.write_text(
+        """begin species
+    1 @PM::L(d!1,r!2)@EC.L(d!1,r!3)@EC.R(l!3,tf~Y).R(l!2,tf~pY!4).TF(d~Y,dna,im,r!4)@CP 1
+end species
+begin reactions
+end reactions
+""",
+        encoding="utf-8",
+    )
+    reload_dir = tmp_path / "reload"
+    reload_dir.mkdir()
+    shutil.copy2(net_input, reload_dir / "input.net")
+    source = tmp_path / "reload.bngl"
+    source.write_text(
+        """begin compartments
+    EC 3 20
+    PM 2 0.4 EC
+    CP 3 4 PM
+end compartments
+begin molecule types
+    L(d,r)
+    R(l,tf~Y~pY)
+    TF(r,d~Y~pY,dna,im)
+end molecule types
+begin actions
+    readFile({file=>"input.net"})
+    simulate_ode({prefix=>"trajectory",netfile=>"input.net",t_end=>1,n_steps=>1,print_CDAT=>1})
+end actions
+""",
+        encoding="utf-8",
+    )
+
+    _, _, err = runner.run_cli_path(bng_cpp, source, reload_dir)
+    cdat = reload_dir / "trajectory.cdat"
+    assert cdat.is_file(), f"NET reload produced no CDAT: {err}"
+    network = compare.parse_net(net_input)
+    assert network is not None
+    _, columns = compare.parse_gdat(cdat)
+    contracts.species_columns(columns, network)
+
+
+@pytest.mark.export
+@pytest.mark.parametrize("load_action", ["readFile", "include_network"])
+def test_imported_net_simulation_preserves_compartment_rate_conversion(
+    bng_cpp, tmp_path, load_action
+):
+    """Imported NET rates already contain the source compartment conversion."""
+    source = tmp_path / "compartment_synthesis.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+    k 0.1
+end parameters
+begin compartments
+    cell 3 2
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin observables
+    Molecules A_total A@cell()
+end observables
+begin reaction rules
+    synthesis: 0 -> A@cell() k
+end reaction rules
+end model
+begin actions
+    generate_network({overwrite=>1})
+    simulate_ode({prefix=>"source",t_start=>0,t_end=>1,n_steps=>10})
+end actions
+""",
+        encoding="utf-8",
+    )
+    source_dir = tmp_path / "source-run"
+    net, source_gdat, err = runner.run_cli_path(bng_cpp, source, source_dir)
+    assert net is not None, f"source network generation failed: {err}"
+    assert source_gdat is not None, f"source simulation failed: {err}"
+
+    reload_dir = tmp_path / f"reload-{load_action}"
+    reload_dir.mkdir()
+    shutil.copy2(net, reload_dir / "input.net")
+    reload = tmp_path / f"reload-{load_action}.bngl"
+    reload.write_text(
+        f"""begin model
+begin parameters
+    k 0.1
+end parameters
+begin compartments
+    cell 3 2
+end compartments
+end model
+begin actions
+    {load_action}({{file=>"input.net"}})
+    simulate_ode({{prefix=>"reload",t_start=>0,t_end=>1,n_steps=>10}})
+    writeNetwork({{prefix=>"rewritten",overwrite=>1}})
+end actions
+""",
+        encoding="utf-8",
+    )
+    _, reload_gdat, err = runner.run_cli_path(bng_cpp, reload, reload_dir)
+    assert reload_gdat is not None, f"{load_action} NET simulation failed: {err}"
+    rewritten = reload_dir / "rewritten.net"
+    assert (
+        rewritten.is_file()
+    ), f"{load_action} failed to rewrite the imported NET: {err}"
+    source_net = compare.parse_net(net)
+    rewritten_net = compare.parse_net(rewritten)
+    assert source_net is not None and rewritten_net is not None
+    net_diff = compare.compare_net(source_net, rewritten_net)
+    assert net_diff.ok, (
+        f"{load_action} changed compartment-scaled imported NET rates: "
+        f"{net_diff.summary()}"
+    )
+
+    source_data, source_columns = compare.parse_gdat(source_gdat)
+    reload_data, reload_columns = compare.parse_gdat(reload_gdat)
+    assert source_data is not None and reload_data is not None
+    diff = compare.compare_trajectories(
+        source_data,
+        source_columns,
+        reload_data,
+        reload_columns,
+        rtol=1e-10,
+        atol=1e-12,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert diff.ok, (
+        f"{load_action} changed compartment-scaled imported NET dynamics: "
+        f"{diff.summary()}"
+    )
 
 
 @pytest.mark.export
