@@ -7,7 +7,7 @@ import shutil
 import numpy as np
 import pytest
 
-from tests.validation.simulation_contract import run_simulation
+from tests.validation.simulation_contract import net_reload_context, run_simulation
 
 
 def arguments():
@@ -56,6 +56,43 @@ def test_diagnostic_action_is_inside_existing_action_block():
         < text.index("end actions")
     )
     assert text.count("end actions") == 1
+
+
+def test_net_reload_context_preloads_only_parameters_and_compartments(tmp_path):
+    source = """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+end model
+begin actions
+    generate_network({overwrite=>1})
+end actions
+"""
+
+    source_path = tmp_path / "source.bngl"
+    source_path.write_text(source, encoding="utf-8")
+    text = net_reload_context(source_path)
+
+    assert "begin parameters\n    k 0.1\nend parameters" in text
+    assert "begin compartments\n    cell 3 1\nend compartments" in text
+    assert "begin molecule types" not in text
+    assert "begin seed species" not in text
+    assert "begin reaction rules" not in text
+    assert "generate_network" not in text
+    assert "simulate_ode(" not in text
 
 
 def test_blocked_routes_have_distinct_case_ids(tmp_path):

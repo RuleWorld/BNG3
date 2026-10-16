@@ -49,7 +49,11 @@ def _reaction_rate_buckets(net, species_to_reference):
             tuple(sorted(species_to_reference[species] for species in reactants)),
             tuple(sorted(species_to_reference[species] for species in products)),
             compare._resolve_rate(
-                rate, net.rate_defs, net.rate_mode, net.rate_functions
+                rate,
+                net.rate_defs,
+                net.rate_mode,
+                net.rate_functions,
+                net.rate_observables,
             ),
         )
         buckets.setdefault(key, []).append(index)

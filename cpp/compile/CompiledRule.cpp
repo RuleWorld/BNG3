@@ -411,9 +411,16 @@ public:
         const auto rateLocalScopeNames = localScopeNames(compiled.forward_.localScopes);
         compiled.rateLaws_.reserve(rule.getRates().size());
         for (const auto& rate : rule.getRates()) {
-            CompiledRateLaw compiledRate = symbols == nullptr
-                ? CompiledRateLaw::compile(rate)
-                : CompiledRateLaw::compile(rate, *symbols, rateLocalScopeNames);
+            CompiledRateLaw compiledRate;
+            if (symbols == nullptr) {
+                compiledRate = CompiledRateLaw::compile(rate);
+            } else if (model != nullptr) {
+                compiledRate = CompiledRateLaw::compile(
+                    rate, *symbols, rateLocalScopeNames, model->getFunctions());
+            } else {
+                compiledRate = CompiledRateLaw::compile(
+                    rate, *symbols, rateLocalScopeNames);
+            }
             if (diagnostics != nullptr) {
                 diagnostics->insert(diagnostics->end(),
                                     compiledRate.diagnostics().begin(),

@@ -102,6 +102,89 @@ def test_equivalent_built_in_rate_expressions_compare_equal(tmp_path):
     assert compare_net(reference, generated).ok
 
 
+def test_dynamic_tiny_rates_do_not_collapse_to_zero(tmp_path):
+    zero = parse_net(_net(tmp_path / "zero.net", "0*x"))
+    scientific = parse_net(_net(tmp_path / "scientific.net", "1e-6*x"))
+    decimal = parse_net(_net(tmp_path / "decimal.net", "0.000001*x"))
+    tiny_rates = [
+        parse_net(_net(tmp_path / "tiny-999.net", "1e-999*x")),
+        parse_net(_net(tmp_path / "tiny-400.net", "1e-400*x")),
+        parse_net(_net(tmp_path / "pathological-exponent.net", "1e-10000*x")),
+    ]
+    assert zero is not None
+    assert scientific is not None
+    assert decimal is not None
+    assert all(rate is not None for rate in tiny_rates)
+
+    assert all(not compare_net(rate, zero).ok for rate in tiny_rates)
+    assert compare_net(scientific, decimal).ok
+
+
+def test_parameter_substitution_preserves_tiny_dynamic_rate_coefficients(tmp_path):
+    def write(path: Path, coefficient: str, rate_body: str) -> Path:
+        path.write_text(
+            "\n".join(
+                [
+                    "begin parameters",
+                    f"    1 k {coefficient}",
+                    "end parameters",
+                    "begin functions",
+                    f"    1 rate() {rate_body}",
+                    "end functions",
+                    "begin species",
+                    "    1 A() 1",
+                    "    2 B() 0",
+                    "end species",
+                    "begin reactions",
+                    "    1 1 2 rate",
+                    "end reactions",
+                    "begin groups",
+                    "    1 x 1",
+                    "end groups",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    tiny_dynamic = parse_net(write(tmp_path / "tiny-dynamic.net", "1e-999", "k*x"))
+    zero_dynamic = parse_net(write(tmp_path / "zero-dynamic.net", "0", "k*x"))
+    tiny_constant = parse_net(write(tmp_path / "tiny-constant.net", "1e-999", "k"))
+    zero_constant = parse_net(write(tmp_path / "zero-constant.net", "0", "k"))
+    tiny_math = parse_net(write(tmp_path / "tiny-math.net", "1e-999", "k*sqrt(1)"))
+    zero_math = parse_net(write(tmp_path / "zero-math.net", "0", "k*sqrt(1)"))
+
+    assert tiny_dynamic is not None
+    assert zero_dynamic is not None
+    assert tiny_constant is not None
+    assert zero_constant is not None
+    assert tiny_math is not None
+    assert zero_math is not None
+    assert not compare_net(tiny_dynamic, zero_dynamic).ok
+    assert not compare_net(tiny_constant, zero_constant).ok
+    assert not compare_net(tiny_math, zero_math).ok
+
+
+def test_dynamic_if_folds_constant_boolean_conditions_lazily():
+    from tests.validation.compare import _resolve_rate
+
+    observable = _resolve_rate("x", {}, "value", rate_observables={"x"})
+    conjunction = _resolve_rate(
+        "if((1<2)&&(3>2),x,1/0)", {}, "value", rate_observables={"x"}
+    )
+    disjunction = _resolve_rate(
+        "if((1<2)||(3<2),x,1/0)", {}, "value", rate_observables={"x"}
+    )
+    dynamic_condition = _resolve_rate(
+        "if(x>0,x,1/0)", {}, "value", rate_observables={"x"}
+    )
+
+    assert conjunction == observable
+    assert disjunction == observable
+    assert dynamic_condition != observable
+
+
 def test_net_rate_comparison_preserves_natural_log_semantics(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "ln(2)/120"))
     generated = parse_net(_net(tmp_path / "generated.net", repr(math.log(2) / 120)))
@@ -215,6 +298,72 @@ def test_function_rate_comparison_keeps_nonempty_calls_structural():
     assert bng2_stub != bng3_call
 
 
+def test_motor_rate_comparison_accepts_equivalent_numeric_and_observable_syntax(
+    tmp_path,
+):
+    def write(path: Path, half: str, micro: str, observable_call: str) -> Path:
+        scaled_observable = f"{observable_call}/(cellVolume*_Na*{micro})"
+        common = (
+            "w*exp((g1/2)*("
+            f"{half}-({scaled_observable})/(Kd+({scaled_observable}))"
+            "))"
+        )
+        path.write_text(
+            "\n".join(
+                [
+                    "begin parameters",
+                    "    1 w 1.02",
+                    "    2 g1 35",
+                    "    3 cellVolume 1.41e-15",
+                    "    4 _Na 6.02e23",
+                    "    5 Kd 3.06",
+                    "end parameters",
+                    "begin functions",
+                    f"    1 kPlus() {common}",
+                    f"    2 kMinus() {common.replace('(g1/2)', '-(g1/2)')}",
+                    "end functions",
+                    "begin species",
+                    "    1 Motor(state~CW) 10000",
+                    "    2 Motor(state~CCW) 0",
+                    "    3 CheY(p~PHOS) 2200",
+                    "end species",
+                    "begin reactions",
+                    "    1 1 2 kPlus",
+                    "    2 2 1 kMinus",
+                    "end reactions",
+                    "begin groups",
+                    "    1 CheYp 3",
+                    "end groups",
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    reference = parse_net(write(tmp_path / "reference.net", "1/2", "10**(-6)", "CheYp"))
+    generated = parse_net(write(tmp_path / "generated.net", "0.5", "1e-06", "CheYp()"))
+    changed = parse_net(write(tmp_path / "changed.net", "0.6", "1e-06", "CheYp()"))
+    assert reference is not None
+    assert generated is not None
+    assert changed is not None
+
+    assert compare_net(reference, generated).ok
+    assert not compare_net(reference, changed).ok
+
+
+def test_only_net_observable_names_normalize_zero_argument_calls():
+    from tests.validation.compare import _resolve_rate
+
+    observables = {"CheYp"}
+    assert _resolve_rate(
+        "CheYp()", {}, "value", rate_observables=observables
+    ) == _resolve_rate("CheYp", {}, "value", rate_observables=observables)
+    assert _resolve_rate(
+        "Unknown()", {}, "value", rate_observables=observables
+    ) != _resolve_rate("Unknown", {}, "value", rate_observables=observables)
+
+
 def test_same_counts_with_different_rate_values_fail(tmp_path):
     reference = parse_net(_net(tmp_path / "reference.net", "0.5"))
     generated = parse_net(_net(tmp_path / "generated.net", "1.0"))
@@ -226,11 +375,23 @@ def test_same_counts_with_different_rate_values_fail(tmp_path):
     assert diff.reactions_only_test
 
 
+def test_rate_comparison_keeps_changes_near_numeric_normalization(tmp_path):
+    reference = parse_net(_net(tmp_path / "reference.net", "1"))
+    changed = parse_net(_net(tmp_path / "changed.net", "1.000000000006"))
+    assert reference is not None
+    assert changed is not None
+
+    # The existing 12-significant-digit normalization rounds within about
+    # 5e-12 near one; a 6e-12 rate change must remain distinguishable.
+    assert not compare_net(reference, changed).ok
+
+
 @pytest.mark.parametrize(
     ("expression", "value"),
     [
         ("if((0==1),1,if((0>0),2,if((0>0),3,0)))", "0"),
         ("if(1==1,2,3)", "2"),
+        ("if((1<2)&&(3>2),7,1/0)", "7"),
         ("if(-1,2,3)", "2"),
         ("2*if(0,3,if(2>1,4,5))", "8"),
         ("if(1,2,1/0)", "2"),
@@ -440,3 +601,27 @@ def test_network_rate_law_arguments_are_not_discarded(tmp_path, law):
     subject = tmp_path / "subject.net"
     subject.write_text(text.replace(f"{law} 2 3", f"{law} 200 3"))
     assert not compare_net(parse_net(reference), parse_net(subject)).ok
+
+
+@pytest.mark.parametrize(
+    ("reference", "generated"),
+    [
+        ("0.3*x", "0.29999999999999999*x"),
+        ("1e-6*x", "9.9999999999999995e-7*x"),
+        (
+            "tfun([0.001,0.02,0.3],[150,250,350],time)",
+            "tfun([0.001,0.02,0.29999999999999999],[150,250,350],time)",
+        ),
+    ],
+)
+def test_dynamic_rate_literals_compare_by_exact_binary64_value(reference, generated):
+    assert _canon_expr(reference) == _canon_expr(generated)
+
+
+def test_dynamic_rate_literals_keep_adjacent_binary64_values_distinct():
+    assert _canon_expr("0.3*x") != _canon_expr("0.30000000000000004*x")
+
+
+def test_dynamic_rate_constant_arithmetic_matches_binary64_evaluation():
+    assert _canon_expr("(0.19*6.022e23)*1e-21+x") == _canon_expr("114.41799999999999+x")
+    assert _canon_expr("(153.0*6.022e23)*1e-21*x") == _canon_expr("92136.59999999999*x")

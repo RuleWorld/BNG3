@@ -205,7 +205,15 @@ def test_identical_reactant_symmetry_has_one_half_statistical_factor(probe):
         reactants, products, rate = net._raw[0]
         assert len(reactants) == 2 and len(products) == 1
         assert (
-            float(_resolve_rate(rate, net.rate_defs, "value", net.rate_functions))
+            float(
+                _resolve_rate(
+                    rate,
+                    net.rate_defs,
+                    "value",
+                    net.rate_functions,
+                    net.rate_observables,
+                )
+            )
             == 0.05
         ), f"{side}: k=0.1 with identical-reactant symmetry must give k/2, not k/4 or k"
 

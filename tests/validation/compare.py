@@ -15,6 +15,7 @@ import ast
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 
@@ -62,6 +63,9 @@ class Network:
     # Names of zero-argument user functions. Their call suffix is present in
     # function definitions but omitted from reaction rate fields.
     rate_functions: set[str] = field(default_factory=set)
+    # Names of observables from the NET groups block. Some writers serialize a
+    # zero-argument observable as ``CheYp()`` while others use ``CheYp``.
+    rate_observables: set[str] = field(default_factory=set)
     initial_amounts: dict[int, str] = field(default_factory=dict)
 
     @property
@@ -113,6 +117,7 @@ def _resolve_rate(
     rate_defs: dict[str, str],
     rate_mode: str,
     rate_functions: set[str] | None = None,
+    rate_observables: set[str] | None = None,
 ) -> str:
     """Turn a reaction's 4th-field rate token into a comparison key.
 
@@ -136,15 +141,27 @@ def _resolve_rate(
     fields = tok.split()
     if len(fields) > 1 and fields[0] in {"Sat", "MM", "Hill", "Ele"}:
         arguments = [
-            _resolve_rate(arg, rate_defs, rate_mode, rate_functions)
+            _resolve_rate(arg, rate_defs, rate_mode, rate_functions, rate_observables)
             for arg in fields[1:]
         ]
         return f"law:{fields[0]}({','.join(arguments)})"
 
     # Resolve complex top-level expressions (e.g. "2*rateLaw4" or "rateLaw1*2")
     # by evaluating them as expressions directly rather than just single symbol names.
-    val, expr = _eval_expr(tok, rate_defs, set(), rate_functions or set())
+    val, expr = _eval_expr(
+        tok,
+        rate_defs,
+        set(),
+        rate_functions or set(),
+        rate_observables or set(),
+    )
     if val is not None:
+        # Rational rates are exact quantities. Keep their bounded source-level
+        # canonical form so a nonzero coefficient such as 1e-999 cannot
+        # underflow to the same float key as zero. Transcendental constants
+        # retain the established numeric normalization below.
+        if val == 0.0 and _has_underflowing_nonzero_literal(expr):
+            return f"expr:{_canon_expr(expr)}"
         # Normalize serialization noise by significant digits. Decimal-place
         # rounding erased every rate below 5e-13, even equating it with zero.
         return repr(float(format(val, ".12g")))
@@ -155,13 +172,63 @@ def _resolve_rate(
 
 # Tokenizer for simple rate arithmetic: numbers, identifiers, operators, parens.
 _TOKEN = re.compile(r"[A-Za-z_]\w*|\d+\.?\d*(?:[eE][+-]?\d+)?|[()+\-*/^,]|\S")
-_NUMBER_TOKEN = re.compile(
-    r"(?<![A-Za-z_])(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?(?![A-Za-z_])"
-)
+_CANON_NUMERIC_LITERAL = re.compile(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?\Z")
+_MAX_CANON_NUMERIC_LITERAL_CHARS = 128
+_MAX_CANON_NUMERIC_EXPONENT = 1000
+_MAX_CANON_NUMERIC_BITS = 4096
+
+
+def _is_rational_arithmetic(expr: str) -> bool:
+    """Whether an expression contains only numeric literals and rational ops."""
+    source = re.sub(r"\s+", "", expr).replace("^", "**")
+    if not source or re.fullmatch(r"[\d.eE+*/^()\-]+", source) is None:
+        return False
+    try:
+        tree = ast.parse(source, mode="eval")
+    except SyntaxError:
+        return False
+
+    def supported(node: ast.AST) -> bool:
+        if isinstance(node, ast.Expression):
+            return supported(node.body)
+        if isinstance(node, ast.Constant):
+            return type(node.value) in (int, float)
+        if isinstance(node, ast.UnaryOp):
+            return isinstance(node.op, (ast.UAdd, ast.USub)) and supported(node.operand)
+        if isinstance(node, ast.BinOp):
+            return isinstance(
+                node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+            ) and (supported(node.left) and supported(node.right))
+        return False
+
+    return supported(tree)
+
+
+def _has_underflowing_nonzero_literal(expr: str) -> bool:
+    """Detect source literals that float evaluation would silently turn to 0."""
+    literals = re.findall(
+        r"\d+(?:\.\d*)?(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?", expr
+    )
+    for literal in literals:
+        if len(literal) > _MAX_CANON_NUMERIC_LITERAL_CHARS:
+            continue
+        mantissa = re.split(r"[eE]", literal, maxsplit=1)[0]
+        if not any(character.isdigit() and character != "0" for character in mantissa):
+            continue
+        try:
+            if float(literal) == 0.0:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _eval_symbol(
-    name: str, defs: dict[str, str], seen: set[str], rate_functions: set[str]
+    name: str,
+    defs: dict[str, str],
+    seen: set[str],
+    rate_functions: set[str],
+    rate_observables: set[str],
 ):
     """Resolve a symbol to (value|None, substituted_expression_string).
 
@@ -177,7 +244,7 @@ def _eval_symbol(
         except ValueError:
             return None, name
     seen = seen | {name}
-    return _eval_expr(defs[name], defs, seen, rate_functions)
+    return _eval_expr(defs[name], defs, seen, rate_functions, rate_observables)
 
 
 def _eval_expr(
@@ -185,10 +252,12 @@ def _eval_expr(
     defs: dict[str, str],
     seen: set[str],
     rate_functions: set[str] | None = None,
+    rate_observables: set[str] | None = None,
 ):
     """Evaluate a rate expression. (value|None, substituted_expr_string)."""
     toks = _TOKEN.findall(expr)
     rate_functions = rate_functions or set()
+    rate_observables = rate_observables or set()
     # Substitute identifiers (that are defined parameters) for the structural form.
     sub_parts = []
     constant = True
@@ -199,10 +268,17 @@ def _eval_expr(
             if t in _SAFE_NAMES or t == "if":
                 sub_parts.append(t)
             else:
-                v, sub = _eval_symbol(t, defs, seen, rate_functions)
+                v, sub = _eval_symbol(t, defs, seen, rate_functions, rate_observables)
                 if v is None:
                     constant = False
                     sub_parts.append(f"({sub})" if t in defs and sub != t else sub)
+                elif t in defs and (
+                    _is_rational_arithmetic(sub)
+                    or (v == 0.0 and _has_underflowing_nonzero_literal(sub))
+                ):
+                    # Preserve exact numeric source for rational parameters
+                    # and functions whose nonzero result underflows to zero.
+                    sub_parts.append(f"({sub})")
                 else:
                     sub_parts.append(repr(v))
             index += 1
@@ -210,7 +286,10 @@ def _eval_expr(
             # while its expanded body is just an expression. Consume only the
             # empty call of known zero-argument functions; non-empty calls such
             # as TFUN(path, value) stay structural and fail closed.
-            if t in rate_functions and toks[index : index + 2] == ["(", ")"]:
+            if t in rate_functions | rate_observables and toks[index : index + 2] == [
+                "(",
+                ")",
+            ]:
                 index += 2
         else:
             sub_parts.append(t)
@@ -244,11 +323,11 @@ class _ConditionalToIfExp(ast.NodeTransformer):
 
 def _safe_arith(expr: str) -> float:
     """Evaluate a pure-numeric arithmetic expression with safe math functions."""
-    e = expr.replace("^", "**")
+    e = expr.replace("^", "**").replace("&&", " and ").replace("||", " or ")
 
     # Check that all alphabetical tokens are allowed math functions
     for word in re.findall(r"\b[A-Za-z_]\w*\b", e):
-        if word not in _SAFE_NAMES and word != "if":
+        if word not in _SAFE_NAMES and word not in {"if", "and", "or", "True", "False"}:
             raise ValueError(f"unknown function or symbol {word!r}")
 
     ns = {
@@ -289,7 +368,7 @@ def _safe_arith(expr: str) -> float:
 
 
 def _canon_expr(expr: str) -> str:
-    """Canonicalize harmless numeric and parenthesis serialization differences."""
+    """Canonicalize arithmetic spelling while preserving dynamic structure."""
     result = re.sub(r"\s+", "", expr)
 
     def strip_outer_parentheses(value: str) -> str:
@@ -346,12 +425,6 @@ def _canon_expr(expr: str) -> str:
         if not changed:
             break
 
-    def normalize_number(match: re.Match[str]) -> str:
-        normalized = format(float(match.group(0)), ".15g")
-        return "0" if normalized in {"-0", "-0.0"} else normalized
-
-    result = _NUMBER_TOKEN.sub(normalize_number, result)
-
     # BNG2 and BNG3 can serialize the same unary-minus product with different
     # redundant parentheses, e.g. ``(-(g/2))*x`` vs ``-(g/2)*x``.  Normalize
     # only the safe arithmetic subset; unsupported rate syntax keeps the
@@ -359,8 +432,28 @@ def _canon_expr(expr: str) -> str:
     def supported(node: ast.AST) -> bool:
         if isinstance(node, (ast.Expression, ast.Name, ast.Constant)):
             return True
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        if isinstance(node, ast.UnaryOp) and isinstance(
+            node.op, (ast.UAdd, ast.USub, ast.Not)
+        ):
             return supported(node.operand)
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+            return all(supported(value) for value in node.values)
+        if isinstance(node, ast.Compare):
+            return (
+                all(
+                    isinstance(
+                        operator,
+                        (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE),
+                    )
+                    for operator in node.ops
+                )
+                and supported(node.left)
+                and all(supported(value) for value in node.comparators)
+            )
+        if isinstance(node, ast.IfExp):
+            return (
+                supported(node.test) and supported(node.body) and supported(node.orelse)
+            )
         if isinstance(node, ast.BinOp) and isinstance(
             node.op, (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
         ):
@@ -422,12 +515,210 @@ def _canon_expr(expr: str) -> str:
                 )
             return node
 
+    source = result.replace("^", "**").replace("&&", " and ").replace("||", " or ")
+    source = re.sub(r"\bif\s*(?=\()", "_bng_if", source)
+
+    def binary64_fraction(value: Fraction) -> Fraction:
+        """Round representable numeric operations as the NET engines do.
+
+        Retain out-of-range nonzero rationals rather than silently accepting
+        underflow as zero or overflow as infinity.
+        """
+        try:
+            rounded = float(value)
+        except OverflowError:
+            return value
+        if math.isfinite(rounded) and (rounded != 0.0 or value == 0):
+            return Fraction(rounded)
+        return value
+
+    def literal_fraction(node: ast.Constant) -> Fraction | None:
+        literal = ast.get_source_segment(source, node)
+        if literal is None or len(literal) > _MAX_CANON_NUMERIC_LITERAL_CHARS:
+            return None
+        match = _CANON_NUMERIC_LITERAL.fullmatch(literal)
+        if match is None:
+            return None
+        exponent_text = match.group(1)
+        if exponent_text is not None:
+            # Bound before converting to int or constructing a large Fraction.
+            exponent_digits = exponent_text.lstrip("+-")
+            if len(exponent_digits) > 4:
+                return None
+            if abs(int(exponent_text)) > _MAX_CANON_NUMERIC_EXPONENT:
+                return None
+        try:
+            value = binary64_fraction(Fraction(literal))
+        except (OverflowError, ValueError, ZeroDivisionError):
+            return None
+        if (
+            max(value.numerator.bit_length(), value.denominator.bit_length())
+            > _MAX_CANON_NUMERIC_BITS
+        ):
+            return None
+        return value
+
+    def numeric_value(node: ast.AST) -> Fraction | None:
+        """Evaluate a numeric subtree with binary64 rounding at each operation."""
+        folded = getattr(node, "_canonical_fraction", None)
+        if folded is not None:
+            return folded
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            return literal_fraction(node)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = numeric_value(node.operand)
+            if value is not None:
+                return value if isinstance(node.op, ast.UAdd) else -value
+            return None
+        if not isinstance(node, ast.BinOp):
+            return None
+        left = numeric_value(node.left)
+        right = numeric_value(node.right)
+        if left is None or right is None:
+            return None
+        try:
+            if isinstance(node.op, ast.Add):
+                return binary64_fraction(left + right)
+            if isinstance(node.op, ast.Sub):
+                return binary64_fraction(left - right)
+            if isinstance(node.op, ast.Mult):
+                return binary64_fraction(left * right)
+            if isinstance(node.op, ast.Div):
+                return binary64_fraction(left / right)
+            if isinstance(node.op, ast.Pow) and right.denominator == 1:
+                # Avoid pathological work from malformed or adversarial NETs.
+                exponent = right.numerator
+                operand_bits = max(
+                    left.numerator.bit_length(), left.denominator.bit_length()
+                )
+                if abs(exponent) <= 10000 and operand_bits * abs(exponent) <= 4096:
+                    return binary64_fraction(left**exponent)
+        except (OverflowError, ZeroDivisionError, ValueError):
+            return None
+        return None
+
+    def constant_truth(node: ast.AST) -> bool | None:
+        """Prove only bounded, short-circuit-safe constant conditions."""
+        if isinstance(node, ast.Constant) and type(node.value) is bool:
+            return node.value
+        number = numeric_value(node)
+        if number is not None:
+            return bool(number)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            value = constant_truth(node.operand)
+            return None if value is None else not value
+        if isinstance(node, ast.BoolOp):
+            unknown = False
+            for value_node in node.values:
+                value = constant_truth(value_node)
+                if isinstance(node.op, ast.And):
+                    if value is False:
+                        return False
+                    if value is None:
+                        unknown = True
+                elif isinstance(node.op, ast.Or):
+                    if value is True:
+                        return True
+                    if value is None:
+                        unknown = True
+                else:
+                    return None
+            return None if unknown else isinstance(node.op, ast.And)
+        if isinstance(node, ast.Compare):
+            left = numeric_value(node.left)
+            if left is None:
+                return None
+            for operator, comparator in zip(node.ops, node.comparators):
+                right = numeric_value(comparator)
+                if right is None:
+                    return None
+                if isinstance(operator, ast.Eq):
+                    result = left == right
+                elif isinstance(operator, ast.NotEq):
+                    result = left != right
+                elif isinstance(operator, ast.Lt):
+                    result = left < right
+                elif isinstance(operator, ast.LtE):
+                    result = left <= right
+                elif isinstance(operator, ast.Gt):
+                    result = left > right
+                elif isinstance(operator, ast.GtE):
+                    result = left >= right
+                else:
+                    return None
+                if not result:
+                    return False
+                left = right
+            return True
+        return None
+
+    class SimplifyConstantConditionals(ast.NodeTransformer):
+        """Fold known if conditions without visiting the discarded branch."""
+
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            if isinstance(node.func, ast.Name) and node.func.id == "_bng_if":
+                if len(node.args) != 3 or node.keywords:
+                    raise ValueError("if expects three arguments")
+                test = self.visit(node.args[0])
+                selected = constant_truth(test)
+                if selected is not None:
+                    return self.visit(node.args[1] if selected else node.args[2])
+                return ast.copy_location(
+                    ast.IfExp(
+                        test=test,
+                        body=self.visit(node.args[1]),
+                        orelse=self.visit(node.args[2]),
+                    ),
+                    node,
+                )
+            return self.generic_visit(node)
+
+    class FoldNumericSubtrees(ast.NodeTransformer):
+        """Use exact value markers for numeric terms in dynamic rates."""
+
+        @staticmethod
+        def _marker(value: Fraction, location: ast.AST) -> ast.Constant:
+            marker = ast.Constant(
+                value=f"__rational_{value.numerator}_{value.denominator}__"
+            )
+            marker._canonical_fraction = value
+            return ast.copy_location(marker, location)
+
+        def visit_Constant(self, node: ast.Constant) -> ast.AST:
+            if type(node.value) in (int, float):
+                value = numeric_value(node)
+                if value is not None:
+                    return self._marker(value, node)
+            return node
+
+        def _fold(self, node: ast.AST) -> ast.AST:
+            node = self.generic_visit(node)
+            if isinstance(node, (ast.UnaryOp, ast.BinOp)):
+                value = numeric_value(node)
+                if value is not None:
+                    return self._marker(value, node)
+            return node
+
+        def visit_UnaryOp(self, node: ast.UnaryOp) -> ast.AST:
+            return self._fold(node)
+
+        def visit_BinOp(self, node: ast.BinOp) -> ast.AST:
+            return self._fold(node)
+
     try:
-        tree = ast.parse(result.replace("^", "**"), mode="eval")
-        if supported(tree):
+        tree = ast.parse(source, mode="eval")
+        tree = SimplifyConstantConditionals().visit(tree)
+        ast.fix_missing_locations(tree)
+        numeric_literals_are_bounded = all(
+            literal_fraction(node) is not None
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and type(node.value) in (int, float)
+        )
+        if supported(tree) and numeric_literals_are_bounded:
             normalized = NormalizeNegativeProduct().visit(tree)
             normalized = StripUnitMultiplications().visit(normalized)
             normalized = NormalizeProductOfQuotient().visit(normalized)
+            normalized = FoldNumericSubtrees().visit(normalized)
             result = re.sub(r"\s+", "", ast.unparse(normalized))
     except (SyntaxError, ValueError):
         pass
@@ -977,7 +1268,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
     raw_reactions: list[tuple[list[int], list[int], str]] = []
     rate_defs: dict[str, str] = {}
     rate_functions: set[str] = set()
-    groups: dict[str, dict[int, float]] = {}
+    groups: dict[int, tuple[str, dict[int, float]]] = {}
     section = None
     has_species_block = False
     has_reactions_block = False
@@ -1094,6 +1385,7 @@ def parse_net(path: str | Path, *, rate_mode: str = "value") -> Network | None:
         rate_mode=rate_mode,
         groups=groups,
         rate_functions=rate_functions,
+        rate_observables={name for name, _entries in groups.values()},
         initial_amounts=initial_amounts,
     )
     _rekey(net, rate_mode)
@@ -1110,7 +1402,13 @@ def _rekey(net: Network, rate_mode: str) -> None:
         except KeyError:
             r_strs = tuple(f"?{i}" for i in sorted(reactants))
             p_strs = tuple(f"?{i}" for i in sorted(products))
-        rate_key = _resolve_rate(rate, net.rate_defs, rate_mode, net.rate_functions)
+        rate_key = _resolve_rate(
+            rate,
+            net.rate_defs,
+            rate_mode,
+            net.rate_functions,
+            net.rate_observables,
+        )
         multiset[(r_strs, p_strs, rate_key)] += 1
     net.reaction_multiset = multiset
 
@@ -1277,12 +1575,14 @@ def _species_index_mapping(
                     ref.rate_defs,
                     "value",
                     ref.rate_functions,
+                    ref.rate_observables,
                 )
                 == _resolve_rate(
                     test.initial_amounts.get(test_index, ""),
                     test.rate_defs,
                     "value",
                     test.rate_functions,
+                    test.rate_observables,
                 )
             )
         ]
@@ -1330,7 +1630,13 @@ def _reaction_view(
             )
         )
         rate_key = (
-            _resolve_rate(rate, net.rate_defs, net.rate_mode, net.rate_functions)
+            _resolve_rate(
+                rate,
+                net.rate_defs,
+                net.rate_mode,
+                net.rate_functions,
+                net.rate_observables,
+            )
             if compare_rates
             else ""
         )
@@ -1421,8 +1727,20 @@ def compare_net(
             if (
                 a is None
                 or b is None
-                or _resolve_rate(a, ref.rate_defs, "value", ref.rate_functions)
-                != _resolve_rate(b, test.rate_defs, "value", test.rate_functions)
+                or _resolve_rate(
+                    a,
+                    ref.rate_defs,
+                    "value",
+                    ref.rate_functions,
+                    ref.rate_observables,
+                )
+                != _resolve_rate(
+                    b,
+                    test.rate_defs,
+                    "value",
+                    test.rate_functions,
+                    test.rate_observables,
+                )
             ):
                 amounts_changed.add(ref.species_by_index[left])
     only_ref = rxn_ref - rxn_test

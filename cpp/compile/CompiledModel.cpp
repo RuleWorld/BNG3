@@ -705,7 +705,8 @@ CompiledModel::CompiledModel(const ast::Model& model)
     for (std::size_t index = 0; index < model.getFunctions().size(); ++index) {
         const auto& function = model.getFunctions()[index];
         const auto compiled = CompiledRateLaw::compile(
-            function.getExpression(), symbols_, function.getArgs());
+            function.getExpression(), symbols_, function.getArgs(),
+            model.getFunctions());
         diagnostics_.insert(diagnostics_.end(), compiled.diagnostics().begin(),
                             compiled.diagnostics().end());
         functions_.push_back(CompiledFunction{

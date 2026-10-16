@@ -3927,7 +3927,7 @@ begin observables
     Molecules atotal A()
 end observables
 begin functions
-    f(x) = atotal(x)
+    f(x) = 1*atotal(x)
 end functions
 begin reaction rules
     %x::A() -> %x::A() + B() k + f(x)
