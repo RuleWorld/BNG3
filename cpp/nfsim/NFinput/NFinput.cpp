@@ -2951,6 +2951,7 @@ static bool initReactionRulesBody(
 				bool totalRateFlag=false;
 
 				double volumeConversion = 1.0;
+				Compartment *zeroOrderProductComp = NULL;
 				if (ts->getNreactants() == 0) {
 					Compartment *productComp = NULL;
 					bool allSameCompartment = true;
@@ -2974,6 +2975,7 @@ static bool initReactionRulesBody(
 						if (npqu > 0.0) {
 							volumeConversion *= npqu;
 						}
+						zeroOrderProductComp = productComp;
 					}
 				}
 
@@ -3587,6 +3589,8 @@ static bool initReactionRulesBody(
 						} else {
 							double kcat=0;
 							double Km=0;
+							string kcatParameterName = "";
+							string kmParameterName = "";
 
 							//We should always get the catalytic rate (kcat) first!
 							Element *pRateConstant = pListOfRateConstants->FirstChildElement("RateConstant");
@@ -3609,6 +3613,7 @@ static bool initReactionRulesBody(
 										}
 										kcat = parameter.find(kcatName)->second;
 										usedParam = true;
+										kcatParameterName = kcatName;
 									}
 									if(verbose) {
 										cout<<"\t\t\t\t...setting kcat rate to be: "<<kcatName;
@@ -3639,6 +3644,7 @@ static bool initReactionRulesBody(
 										}
 										Km = parameter.find(KmName)->second;
 										usedParam = true;
+										kmParameterName = KmName;
 									}
 									if(verbose) {
 										cout<<"\t\t\t\t...setting Km rate to be: "<<KmName;
@@ -3651,6 +3657,9 @@ static bool initReactionRulesBody(
 							//Finally, we can make the actual reaction
 							ts->finalize();
 							r = new MMRxnClass(rxnName,kcat,Km,ts,s);
+							// Keep parameter-backed kcat/Km refreshable via
+							// setParameter()+update() (ruleworld/nfsim#105).
+							static_cast<MMRxnClass*>(r)->setRateParameterNames(kcatParameterName, kmParameterName);
 							
 						}
 					}
@@ -3681,6 +3690,7 @@ static bool initReactionRulesBody(
 						}
 
 						vector<double> constants;
+						vector<string> constantParameterNames;
 						for (Element *pRateConstant =
 							 pListOfRateConstants->FirstChildElement("RateConstant");
 							 pRateConstant != 0;
@@ -3693,6 +3703,7 @@ static bool initReactionRulesBody(
 							}
 							const string valueName = pRateConstant->Attribute("value");
 							double value = 0.0;
+							string valueParameterName = "";
 							if (!NFutil::tryConvertToDouble(valueName, value)) {
 								const auto parameterIt = parameter.find(valueName);
 								if (parameterIt == parameter.end()) {
@@ -3703,6 +3714,7 @@ static bool initReactionRulesBody(
 									return false;
 								}
 								value = parameterIt->second;
+								valueParameterName = valueName;
 							}
 							if (!std::isfinite(value) || value < 0.0) {
 								cerr << "Rate Law " << rateLawType << " constants must be finite "
@@ -3711,6 +3723,7 @@ static bool initReactionRulesBody(
 								return false;
 							}
 							constants.push_back(value);
+							constantParameterNames.push_back(valueParameterName);
 						}
 
 						if ((rateLawType == "Sat" &&
@@ -3726,9 +3739,11 @@ static bool initReactionRulesBody(
 						ts->finalize();
 						if (rateLawType == "Sat") {
 							r = new SatRxnClass(rxnName, constants, ts, s);
+							static_cast<SatRxnClass*>(r)->setConstantParameterNames(constantParameterNames);
 						} else {
 							r = new HillRxnClass(
 								rxnName, constants[0], constants[1], constants[2], ts, s);
+							static_cast<HillRxnClass*>(r)->setConstantParameterNames(constantParameterNames);
 						}
 					}
 
@@ -3769,11 +3784,19 @@ static bool initReactionRulesBody(
                 }
             }
 
-						// Apply zero-order volume conversion
+						// Apply zero-order volume conversion, preserving the
+						// rate parameter name so setParameter()+update() rescales
+						// (ruleworld/nfsim#105).  applyZeroOrderVolumeScaling()
+						// keeps the name and links the product compartment for
+						// later refreshes, including functional reactions.
 						if (ts->getNreactants() == 0) {
-							r->volumeConversionFactor = volumeConversion;
-							if (r->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
-								r->setBaseRate(r->getBaseRate() * volumeConversion, "");
+							if (zeroOrderProductComp != NULL) {
+								r->applyZeroOrderVolumeScaling(zeroOrderProductComp);
+							} else {
+								r->volumeConversionFactor = volumeConversion;
+								if (r->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
+									r->setBaseRate(r->getBaseRate() * volumeConversion, r->getBaseRateParameterName());
+								}
 							}
 						}
 

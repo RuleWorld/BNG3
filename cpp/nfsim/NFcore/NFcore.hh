@@ -631,6 +631,14 @@ namespace NFcore
 			void addCompartment(Compartment* comp);
 			int getNumCompartments() const { return compartments.size(); }
 			Compartment * getDefaultCompartment() const;  // For backwards compatibility
+			/* Explicit rescale path for parameter-backed volumes
+			 * (ruleworld/nfsim#105).  Links a compartment size to a System
+			 * parameter so updateCompartmentSizesFromParameters() refreshes
+			 * it, or sets the size directly. */
+			bool setCompartmentSizeParameter(const string& compartmentId,
+					const string& parameterName);
+			bool setCompartmentSize(const string& compartmentId, double size);
+			void updateCompartmentSizesFromParameters();
 
 			/* Energy-based BNG (eBNGL) support */
 			void setEnergyFunction(EnergyFunction *ef) { energyFunction = ef; }
@@ -2451,7 +2459,24 @@ namespace NFcore
 
 			void setBaseRate(double newBaseRate,string newBaseRateName);
 			void setBaseRateParameterConversionFactor(double factor);
-			void resetBaseRateFromSystemParamter();
+			virtual void resetBaseRateFromSystemParamter();
+
+			//! Name of the System parameter backing baseRate ("" = literal)
+			string getBaseRateParameterName() const { return baseRateParameterName; }
+
+			/* Zero-order synthesis volume scaling (ruleworld/nfsim#105).
+			 * A zero-order rate is given per quantity (concentration); the
+			 * live propensity needs the product compartment volume (times
+			 * NumberPerQuantityUnit).  Loaders call
+			 * applyZeroOrderVolumeScaling() once so the parameter name is
+			 * preserved; refreshZeroOrderVolumeFactor() recomputes
+			 * volumeConversionFactor from the compartment's current size.
+			 * Functional (OBS_DEPENDENT) zero-order reactions keep only
+			 * the factor, which update_a() applies. */
+			void applyZeroOrderVolumeScaling(Compartment* productCompartment);
+			void refreshZeroOrderVolumeFactor();
+			bool usesZeroOrderVolumeScaling() const { return zeroOrderVolumeScaling; }
+			Compartment* getZeroOrderCompartment() const { return zeroOrderCompartment; }
 
 			void setTraversalLimit(int limit) { this->traversalLimit = limit; };
 
@@ -2694,6 +2719,8 @@ namespace NFcore
 			string baseRateParameterName;
 			double baseRateParameterConversionFactor = 1.0;
 			bool usesBaseRateParameterConversion = false;
+			Compartment* zeroOrderCompartment = nullptr;
+			bool zeroOrderVolumeScaling = false;
 			double a;
 			unsigned int fireCounter;
 			unsigned long long deferredMembershipUpdateGeneration = 0;

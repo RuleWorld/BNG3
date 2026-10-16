@@ -5639,6 +5639,18 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             double kcat = 0.0;
             double km = 0.0;
+            std::string kcatParameterName;
+            std::string kmParameterName;
+            if (rate.args().size() == 2) {
+                for (int constantIndex = 0; constantIndex < 2; ++constantIndex) {
+                    const auto& argument = rate.args()[static_cast<std::size_t>(constantIndex)];
+                    if (argument.kind() == bng::ast::ExpressionKind::Identifier &&
+                        parameters.count(argument.name()) != 0) {
+                        if (constantIndex == 0) kcatParameterName = argument.name();
+                        else kmParameterName = argument.name();
+                    }
+                }
+            }
             if (!evaluateStaticReactionRate(rate.args()[0], parameters, kcat, diagnostic) ||
                 !evaluateStaticReactionRate(rate.args()[1], parameters, km, diagnostic) ||
                 km < 0.0) {
@@ -5650,6 +5662,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             transformationSet->finalize();
             reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
+            static_cast<MMRxnClass*>(reaction)->setRateParameterNames(
+                kcatParameterName, kmParameterName);
         } else if (saturationRate || hillRate) {
             if (reactantRoots.empty()) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
@@ -5668,7 +5682,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 return false;
             }
             std::vector<double> constants;
+            std::vector<std::string> constantParameterNames;
             constants.reserve(rate.args().size());
+            constantParameterNames.reserve(rate.args().size());
             for (const auto& argument : rate.args()) {
                 double value = 0.0;
                 if (!evaluateStaticReactionRate(argument, parameters, value, diagnostic)) {
@@ -5678,16 +5694,26 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     return false;
                 }
                 constants.push_back(value);
+                if (argument.kind() == bng::ast::ExpressionKind::Identifier &&
+                    parameters.count(argument.name()) != 0) {
+                    constantParameterNames.push_back(argument.name());
+                } else {
+                    constantParameterNames.emplace_back();
+                }
             }
             if (saturationRate) {
                 transformationSet->finalize();
                 reaction = new SatRxnClass(
                     rule.getRuleName(), std::move(constants), transformationSet, s);
+                static_cast<SatRxnClass*>(reaction)->setConstantParameterNames(
+                    constantParameterNames);
             } else {
                 transformationSet->finalize();
                 reaction = new HillRxnClass(
                     rule.getRuleName(), constants[0], constants[1], constants[2],
                     transformationSet, s);
+                static_cast<HillRxnClass*>(reaction)->setConstantParameterNames(
+                    constantParameterNames);
             }
         } else if (functionProductRate) {
             auto* composite1 = s->getCompositeFunctionByName(functionProductOperand1.name);
@@ -5853,18 +5879,17 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 }
             }
 
-            double volumeConversion = 1.0;
+            // Preserve the rate parameter name so setParameter()+update()
+            // rescales (ruleworld/nfsim#105).  applyZeroOrderVolumeScaling()
+            // keeps the name and links the product compartment for later
+            // refreshes, including functional reactions.
             if (productCompartment != nullptr && allSameCompartment) {
-                volumeConversion = productCompartment->getSize();
-                const double numberPerQuantity = s->getNumberPerQuantityUnit();
-                if (numberPerQuantity > 0.0) {
-                    volumeConversion *= numberPerQuantity;
-                }
-            }
-            reaction->volumeConversionFactor = volumeConversion;
-            if (reaction->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
-                reaction->setBaseRate(
-                    reaction->getBaseRate() * volumeConversion, "");
+                reaction->applyZeroOrderVolumeScaling(productCompartment);
+            } else {
+                // No single product compartment: keep the default factor of
+                // 1.0 and leave the base rate (and its parameter name)
+                // untouched so later updates still refresh it.
+                reaction->volumeConversionFactor = 1.0;
             }
         }
 
