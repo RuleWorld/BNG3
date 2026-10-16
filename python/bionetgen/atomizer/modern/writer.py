@@ -805,6 +805,12 @@ def _function_call_pattern(function: str):
     return re.compile(rf"\b{re.escape(function)}\s*\(")
 
 
+@lru_cache(maxsize=128)
+def _formal_pattern(names: Tuple[str, ...]):
+    """Compile the argument replacer, retaining a bounded working set."""
+    return re.compile(rf"\b(?:{'|'.join(re.escape(name) for name in names)})\b")
+
+
 def _replace_nested_function(expression: str, function: str, replacer) -> str:
     result = expression
     pattern = _function_call_pattern(function)
@@ -921,7 +927,7 @@ def _expand_function_call(
     """Expand every call of one SBML function with parenthesis-aware parsing."""
 
     result = expression
-    call_pattern = re.compile(rf"\b{re.escape(function_name)}\s*\(")
+    call_pattern = _function_call_pattern(function_name)
     guard = 0
     while guard < 10000:
         match = call_pattern.search(result)
@@ -948,9 +954,7 @@ def _expand_function_call(
         }
         names = sorted(argument_map, key=len, reverse=True)
         if names:
-            formal_pattern = re.compile(
-                rf"\b(?:{'|'.join(re.escape(name) for name in names)})\b"
-            )
+            formal_pattern = _formal_pattern(tuple(names))
             body = formal_pattern.sub(
                 lambda item: f"({argument_map[item.group(0)]})", body
             )
@@ -972,7 +976,7 @@ def inline_sbml_functions(
         iterations += 1
         for function_id, definition in function_definitions.items():
             function_name = str(function_id)
-            if not re.search(rf"\b{re.escape(function_name)}\s*\(", result):
+            if not _function_call_pattern(function_name).search(result):
                 continue
             expanded = _expand_function_call(result, function_name, definition)
             if expanded != result:
