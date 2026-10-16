@@ -2671,6 +2671,9 @@ namespace NFcore
 			// Called from within Transformation Set to check connectivity
 			bool areMoleculeTypeAndComponentPresent(MoleculeType * mt, int cIndex);
 			bool isTemplateCompatible(TemplateMolecule * t);
+			// Compatible with t on at least one shared specified component
+			// (component-gated fallback for isReactionConnected, nfsim#107).
+			bool isTemplateCompatibleWithSharedComponent(TemplateMolecule * t);
 			bool isDirectProductMolecule(Molecule *molecule) const;
 			void recycleProductNodes();
 
