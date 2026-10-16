@@ -298,6 +298,11 @@ namespace NFcore {
          *
          * With B = W = 0 these reduce to the original expressions, so every
          * existing eBNGL model keeps byte-identical rates.
+         *
+         * Canonical BNG3 adapters (AST/Compiled) always construct this object
+         * with RT == 1: BNG2 builds exp(-(Ea0+phi*dG)) with no RT divisor,
+         * so dividing again would double-scale. An explicit RT survives
+         * only on the legacy XML path for backward compatibility.
          */
         double computeForwardRate(double Ea0, double deltaG, double phi,
                                   double barrier = 0.0, double work = 0.0) const {
