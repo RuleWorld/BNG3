@@ -488,7 +488,12 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        molecule = shallow_copy(self)
+        if type(self) is Molecule:
+            molecule = Molecule.__new__(Molecule)
+            molecule.__dict__ = self.__dict__.copy()
+        else:
+            # Subclasses may carry slots or implement their own copy protocol.
+            molecule = shallow_copy(self)
         molecule.components = [element.copy() for element in self.components]
         return molecule
 
