@@ -661,8 +661,14 @@ struct NetworkRulePlan::Impl {
             };
         }
 
+        std::set<std::string> localScopeNames;
+        for (const auto& observable : localObservables) {
+            localScopeNames.insert(observable.localScopeName);
+        }
+        const bool qualifyLocalScope =
+            functionProductRate || localScopeNames.size() > 1;
         if (!localObservables.empty()) {
-            hooks.localRateFingerprint = [this](
+            hooks.localRateFingerprint = [this, qualifyLocalScope](
                 std::size_t patternIndex,
                 std::size_t moleculeIndex,
                 const BNGcore::Node* scopedMolecule,
@@ -684,7 +690,7 @@ struct NetworkRulePlan::Impl {
                                 pattern, speciesGraph, scopedMolecule);
                         }
                     }
-              if (functionProductRate) {
+              if (qualifyLocalScope) {
                 out << observable.localScopeName << "::" << observable.name
                     << '=' << count << ';';
               } else {

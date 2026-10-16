@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 #include "parser/antlr_compat.hpp"
 #include "antlr4-runtime.h"
@@ -83,7 +85,7 @@ double evaluateRateString(const std::string& rateStr,
 
 
 PsaSimulator::PsaSimulator(const ast::Model& model, const GeneratedNetwork& network)
-    : model_(model), network_(network) {
+    : model_(model), network_(network), functionEvaluator_(model) {
     if (model_.getEventFormatVersion().has_value()) {
         throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
     }
@@ -201,6 +203,14 @@ void PsaSimulator::compile() {
         }
 
         if (!foundDerived) {
+            if (!crxn.isTotalRate) {
+                const auto unitFactor =
+                    bng::io::NetWriter::computeUnitConversionFactor(
+                        rxn, model_, network_);
+                if (unitFactor.has_value()) {
+                    rateStrBuilder << *unitFactor << "*";
+                }
+            }
             if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
                 rateStrBuilder << rxn.getFactor() << "*";
             }
@@ -208,10 +218,22 @@ void PsaSimulator::compile() {
         }
 
         std::string rateStr = rateStrBuilder.str();
+        std::optional<ast::Expression> parsedRate;
         try {
-            crxn.rateConstant = evaluateRateString(rateStr, paramResolver);
+            parsedRate = parser::parseExpression(rateStr);
         } catch (const std::exception&) {
-            crxn.rateConstant = 0.0;
+            // Keep the narrow legacy parser for old rate spellings that the
+            // shared BNGL expression parser does not accept.
+        }
+        if (parsedRate.has_value()) {
+            crxn.rateConstant = functionEvaluator_.evaluate(
+                *parsedRate, paramResolver);
+        } else {
+            try {
+                crxn.rateConstant = evaluateRateString(rateStr, paramResolver);
+            } catch (const std::exception&) {
+                crxn.rateConstant = 0.0;
+            }
         }
 
         compiledRxns_.push_back(crxn);
@@ -230,6 +252,41 @@ void PsaSimulator::compileGroups() {
     for (const auto& observable : model_.getObservables()) {
         CompiledGroup group;
         group.name = observable.getName();
+
+        if (const auto& indexedWeights = observable.getIndexedSpeciesWeights();
+            indexedWeights.has_value()) {
+            std::unordered_map<std::size_t, std::size_t> entryPositions;
+            for (const auto& [speciesIndex, weight] : *indexedWeights) {
+                if (speciesIndex >= network_.species.size()) {
+                    throw std::runtime_error(
+                        "Indexed observable " + observable.getName() +
+                        " references species index " + std::to_string(speciesIndex) +
+                        " outside the generated network");
+                }
+                if (!std::isfinite(weight)) {
+                    throw std::runtime_error(
+                        "Indexed observable " + observable.getName() +
+                        " has a non-finite species weight");
+                }
+
+                const auto [position, inserted] = entryPositions.emplace(
+                    speciesIndex, group.entries.size());
+                if (inserted) {
+                    group.entries.emplace_back(speciesIndex, weight);
+                } else {
+                    auto& combinedWeight = group.entries[position->second].second;
+                    combinedWeight += weight;
+                    if (!std::isfinite(combinedWeight)) {
+                        throw std::runtime_error(
+                            "Indexed observable " + observable.getName() +
+                            " has a non-finite combined species weight");
+                    }
+                }
+            }
+
+            compiledGroups_.push_back(std::move(group));
+            continue;
+        }
 
         for (std::size_t speciesIndex = 0; speciesIndex < network_.species.size(); ++speciesIndex) {
             std::size_t weight = 0;

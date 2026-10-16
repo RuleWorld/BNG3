@@ -1355,6 +1355,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
     const engine::GeneratedNetwork& network) {
     std::unordered_map<std::string, DerivedRateInfo> derived;
     int rateLawCounter = 1;
+    const compile::CompiledModel compiledModel(model);
 
     // Helper: Check if expression is simple (just a parameter/constant name)
     auto isSimpleExpression = [&](const std::string& expr) -> bool {
@@ -1449,17 +1450,55 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                    reaction.getRateLaw().find("|local:") != std::string::npos;
           });
     };
+    const auto localScopeArgument = [&](const std::string &directionName,
+                                        const ast::Expression &expression)
+        -> std::optional<std::string> {
+      if (!hasLocalRateContext(directionName)) return std::nullopt;
+      std::optional<std::string> scopeName;
+      std::function<void(const ast::Expression &)> visit =
+          [&](const ast::Expression &current) {
+        if (scopeName.has_value()) return;
+        if (current.kind() == ast::ExpressionKind::Function ||
+            current.kind() == ast::ExpressionKind::ObservableRef) {
+          const auto function = std::find_if(
+              compiledModel.functions().begin(), compiledModel.functions().end(),
+              [&](const auto &candidate) {
+                return candidate.name == current.name();
+              });
+          if (function != compiledModel.functions().end() &&
+              function->argumentKinds.size() == current.args().size()) {
+            for (std::size_t index = 0; index < function->argumentKinds.size();
+                 ++index) {
+              if (function->argumentKinds[index] ==
+                      compile::FunctionArgumentKind::LocalScope &&
+                  current.args()[index].kind() == ast::ExpressionKind::Identifier) {
+                scopeName = current.args()[index].name();
+                return;
+              }
+            }
+          }
+          if (current.kind() == ast::ExpressionKind::ObservableRef &&
+              current.args().size() == 1 &&
+              current.args().front().kind() == ast::ExpressionKind::Identifier) {
+            const auto observable = std::find_if(
+                model.getObservables().begin(), model.getObservables().end(),
+                [&](const auto &candidate) {
+                  return candidate.getName() == current.name();
+                });
+            if (observable != model.getObservables().end()) {
+              scopeName = current.args().front().name();
+              return;
+            }
+          }
+        }
+        for (const auto &argument : current.args()) visit(argument);
+      };
+      visit(expression);
+      return scopeName;
+    };
     const auto hasScopedFunctionContext = [&](const std::string &directionName,
                                               const ast::Expression &expression) {
-      if ((expression.kind() != ast::ExpressionKind::Function &&
-           expression.kind() != ast::ExpressionKind::ObservableRef) ||
-          expression.args().size() != 1 ||
-          expression.args().front().kind() != ast::ExpressionKind::Identifier)
-        return false;
-      const bool isModelFunction = std::any_of(
-          model.getFunctions().begin(), model.getFunctions().end(),
-          [&](const auto &function) { return function.getName() == expression.name(); });
-      return isModelFunction && hasLocalRateContext(directionName);
+      return localScopeArgument(directionName, expression).has_value();
     };
     std::unordered_set<std::string> functionScan;
     const std::string reverseRuleName = "_reverse__" + ruleName;
@@ -1520,12 +1559,14 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                   if (scopePos == std::string::npos) {
                     // The compiled fingerprint omits the scope for a simple
                     // one-scope function; bind it to the actual call argument.
-                    if (!hasScopedFunctionContext(directionName, expression)) {
+                    const auto scopeName =
+                        localScopeArgument(directionName, expression);
+                    if (!scopeName.has_value()) {
                       throw std::runtime_error(
                           "missing scope in local-rate fingerprint in rule '" +
                           directionName + "'");
                     }
-                    countName = expression.args().front().name() + "::" + countName;
+                    countName = *scopeName + "::" + countName;
                   }
                   localCounts[countName] = count;
                 }
@@ -1610,6 +1651,17 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     break;
                 }
             }
+            const bool hasLocalScopeArgs = [&] {
+                const auto typedFunction = std::find_if(
+                    compiledModel.functions().begin(),
+                    compiledModel.functions().end(),
+                    [&](const auto& function) { return function.name == exprName; });
+                return typedFunction != compiledModel.functions().end() &&
+                       std::find(typedFunction->argumentKinds.begin(),
+                                 typedFunction->argumentKinds.end(),
+                                 compile::FunctionArgumentKind::LocalScope) !=
+                           typedFunction->argumentKinds.end();
+            }();
             if (isModelFunction && hasLocalArgs && (rule.hasScopePrefix() ||
                 !model.getEnergyPatterns().empty() || hasLocalRateContext(ruleName) ||
                 hasLocalRateContext(reverseRuleName))) {
@@ -1920,9 +1972,11 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 derived.emplace(ruleName, std::move(info));
                 continue;
             }
-            // Local function with %x molecule tag but no scope prefix/energy patterns:
-            // write symbolic expression (Perl convention __R{N}_local{M})
-            if (isModelFunction && hasLocalArgs) {
+            // Local-scope function with %x molecule tags but no scope
+            // prefix/energy patterns: write the symbolic local expression
+            // (Perl convention __R{N}_local{M}). Numeric argument functions
+            // remain function calls so their actual arguments are preserved.
+            if (isModelFunction && hasLocalArgs && hasLocalScopeArgs) {
                 int ruleIndex = 0;
                 for (const auto& r : model.getReactionRules()) {
                     ++ruleIndex;
@@ -1951,10 +2005,10 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 continue;
             }
             if (isModelFunction) {
-                // No-arg model function — write directly as function name.
-                // A model-function forward rate can still be reversible; do
-                // not skip derivation of a complex reverse rate when taking
-                // this early path.
+                // Keep numeric model functions out of local-rate parameter
+                // synthesis; normal rate serialization preserves the call's
+                // arguments. A forward function rate can still be reversible;
+                // do not skip a complex reverse-rate derivation here.
                 if (rule.isBidirectional() && rule.getRates().size() > 1) {
                     const auto& reverseRateExprObj = rule.getRates()[1];
                     const std::string reverseRateExpr = reverseRateExprObj.toString();

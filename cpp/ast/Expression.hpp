@@ -22,6 +22,7 @@ class Expression {
 public:
     using FunctionResolver = std::function<double(
         const std::string&, const std::vector<double>&)>;
+    using FunctionPredicate = std::function<bool(const std::string&)>;
     Expression();
 
     static Expression number(double value);
@@ -40,6 +41,10 @@ public:
     double evaluateWithFunctions(
         const std::function<double(const std::string&)>& resolveIdentifier,
         double t, const FunctionResolver& resolveFunction) const;
+    double evaluateWithFunctions(
+        const std::function<double(const std::string&)>& resolveIdentifier,
+        double t, const FunctionResolver& resolveFunction,
+        const FunctionPredicate& isUserFunction) const;
     double evaluateLocal(const std::function<double(const std::string&)>& resolveIdentifier,
                          const std::unordered_map<std::string, double>& localContext,
                          double t = 0.0) const;

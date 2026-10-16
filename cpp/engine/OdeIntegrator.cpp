@@ -185,7 +185,7 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
 
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
-    : model_(model), network_(network) {
+    : model_(model), network_(network), functionEvaluator_(model) {
     if (model_.getEventFormatVersion().has_value()) {
         throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
     }
@@ -384,8 +384,26 @@ void OdeIntegrator::compile() {
                 }
             }
             return false;
+        case ast::ExpressionKind::ObservableRef: {
+            // Imported .net rates are parsed without the typed lowering that
+            // rewrites model-function references to Function nodes. Keep
+            // walking their arguments and declarations so time dependence is
+            // not lost at this representation boundary.
+            for (const auto& arg : expression.args()) {
+                if (expressionReadsTime(arg, visitedFunctions)) {
+                    return true;
+                }
+            }
+            for (const auto& function : model_.getFunctions()) {
+                if (function.getName() == expression.name() &&
+                    visitedFunctions.insert(expression.name()).second &&
+                    expressionReadsTime(function.getExpression(), visitedFunctions)) {
+                    return true;
+                }
+            }
+            return false;
+        }
         case ast::ExpressionKind::Number:
-        case ast::ExpressionKind::ObservableRef:
             return false;
         }
         return false;
@@ -978,20 +996,11 @@ void OdeIntegrator::compile() {
         observableIndex_[compiledGroups_[i].name] = i;
     }
 
-    // 1b. Per-model function indices. Model::getFunctions() is only reachable
-    // through a const-ref accessor (Model.hpp:93) and its two mutators
-    // (Model::addFunction at Model.cpp:33, Model::merge at Model.cpp:244) run
-    // at parse/include time, so the list cannot change while this integrator
-    // is alive. emplace is first-wins on duplicate names, matching the
-    // per-step map this replaces exactly.
-    functionIndex_.clear();
-    zeroArgumentFunctionSet_.clear();
+    // Result functions are immutable for the lifetime of this integrator.
     resultFunctionIndices_.clear();
     for (std::size_t i = 0; i < model_.getFunctions().size(); ++i) {
         const auto& function = model_.getFunctions()[i];
-        functionIndex_.emplace(function.getName(), i);
         if (function.getArgs().empty()) {
-            zeroArgumentFunctionSet_.insert(i);
             if (isResultFunction(function.getName())) {
                 resultFunctionIndices_.push_back(i);
             }
@@ -1302,15 +1311,9 @@ void OdeIntegrator::updateFunctions(
     // by the modern Atomizer).  Evaluate them against the same observable
     // snapshot used by the rate-law resolver so exported assignment values
     // are on exactly the integration output grid.
-    // zeroArgumentFunctionSet_ and resultFunctionIndices_ are precomputed in
-    // compile() from the immutable model function list.  They used to be
-    // rebuilt from scratch on every output step, which is
-    // (output steps x functions) redundant derivations of a per-model
-    // structure.  functionStack_ is the same cycle guard, reused across calls
-    // instead of reallocated; clear() at the top of each call means a
-    // non-std::exception escaping between push and pop cannot leave it dirty
-    // for the next call.
-    functionStack_.clear();
+    // The model function list and result indices are immutable for this
+    // integrator. ModelFunctionEvaluator handles nested numeric arguments and
+    // cycles while the resolver below supplies live observables/parameters.
     const auto& functions = model_.getFunctions();
     std::function<double(const std::string&)> resolver;
     resolver = [&](const std::string& name) -> double {
@@ -1322,26 +1325,6 @@ void OdeIntegrator::updateFunctions(
             observable->second < groupValues.size()) {
             return groupValues[observable->second];
         }
-        const auto function = functionIndex_.find(name);
-        if (function != functionIndex_.end() &&
-            zeroArgumentFunctionSet_.count(function->second) != 0) {
-            if (std::find(functionStack_.begin(), functionStack_.end(), name) !=
-                functionStack_.end()) {
-                // Cyclic algebraic helpers are not a solvable BNGL function
-                // graph.  Return a finite sentinel for this optional output
-                // instead of recursing until the worker stack overflows.
-                return 0.0;
-            }
-            functionStack_.push_back(name);
-            double value = 0.0;
-            try {
-                value = functions[function->second].getExpression().evaluate(resolver, time);
-            } catch (const std::exception&) {
-                value = 0.0;
-            }
-            functionStack_.pop_back();
-            return value;
-        }
         return model_.getParameters().evaluate(name, time);
     };
 
@@ -1349,7 +1332,8 @@ void OdeIntegrator::updateFunctions(
         const auto& function = functions[index];
         try {
             functionValues.push_back(
-                function.getExpression().evaluate(resolver, time));
+                functionEvaluator_.evaluate(
+                    function.getExpression(), resolver, time));
         } catch (const std::exception&) {
             // Keep a malformed optional function from invalidating an
             // otherwise executable state trajectory.  The writer/parser
@@ -1412,12 +1396,6 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
             return groupValues_[observable->second];
         }
 
-        for (const auto& func : model_.getFunctions()) {
-            if (func.getName() == name) {
-                return func.getExpression().evaluate(resolver, t);
-            }
-        }
-
         // `t` must be passed: a parameter whose expression reads `time` is
         // evaluated at the current derivative time, not memoized at t=0.
         return model_.getParameters().evaluate(name, t);
@@ -1428,7 +1406,8 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         double rate;
         if (rxn.functionalRateExpr.has_value()) {
             try {
-                rate = rxn.functionalRateExpr->evaluate(resolver, t);
+                rate = functionEvaluator_.evaluate(
+                    *rxn.functionalRateExpr, resolver, t);
             } catch (const std::exception& error) {
                 if (failOnError) {
                     throw std::runtime_error(
@@ -1505,64 +1484,6 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
 
     // Process functional-rate reactions (require expression evaluation)
     if (hasFunctionalRates_) {
-        // Build resolver with O(1) observable lookup
-        // Use std::function to allow recursive self-reference for function evaluation
-        std::function<double(const std::string&)> resolver;
-        resolver = [&](const std::string& name) -> double {
-            if (name == "time") return t;
-
-            // TFUN resolution: __tfun_NAME__ → interpolate at current time (or custom index value)
-            if (name.rfind("__tfun_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 2) == "__") {
-                auto atPos = name.find("_AT_");
-                if (atPos != std::string::npos) {
-                    std::string tfunName = name.substr(7, atPos - 7);
-                    try {
-                        double val = std::stod(name.substr(atPos + 4, name.size() - atPos - 6));
-                        if (tfunRegistry_.has(tfunName)) {
-                            return tfunRegistry_.evaluate(tfunName, val);
-                        }
-                    } catch (...) {}
-                }
-                std::string tfunName = name.substr(7, name.size() - 9);
-                if (tfunRegistry_.has(tfunName)) {
-                    return tfunRegistry_.evaluate(tfunName, t);
-                }
-            }
-
-            // Sat/MM/Hill substrate references: __substrate_N → y[N]
-            if (name.rfind("__substrate_", 0) == 0) {
-                std::size_t idx = std::stoul(name.substr(12));
-                return (idx < nSpecies_) ? y[idx] : 0.0;
-            }
-
-            // O(1) observable lookup via precomputed map
-            auto it = observableIndex_.find(name);
-            if (it != observableIndex_.end()) {
-                return groupValues_[it->second];
-            }
-
-            // Check user-defined functions (Bug 2 fix)
-            //
-            // Resolved through functionIndex_, which compile() already builds
-            // from the same immutable function vector in the same order with
-            // first-wins insertion — so it selects exactly the function the
-            // old linear scan found, duplicate names included.  This scan ran
-            // once per model function per identifier per RHS call, making a
-            // derivative O(functions x reactions): on the 150-function
-            // benchmark fixture that linear scan alone was ~7x the cost of
-            // everything else in derivs() combined.
-            const auto function = functionIndex_.find(name);
-            if (function != functionIndex_.end()) {
-                return model_.getFunctions()[function->second]
-                    .getExpression().evaluate(resolver, t);
-            }
-
-            // Otherwise try as parameter. `t` must be passed: a parameter whose
-            // expression reads `time` is not memoized, so dropping it here
-            // would silently evaluate it at t=0 inside a derivative.
-            return model_.getParameters().evaluate(name, t);
-        };
-
         for (const auto idx : functionalRxnIndices_) {
             const auto& rxn = compiledRxns_[idx];
             double rate = functionalRateCoefficients_[idx];

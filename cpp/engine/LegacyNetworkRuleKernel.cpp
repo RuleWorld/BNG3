@@ -73,7 +73,9 @@ struct LegacyNetworkRuleKernel::Impl {
               {}, {},
               direction.rateLaw.has_value()
                   ? std::vector<ast::Expression>{compile::lowerResolvedExpressionToAst(
-                        direction.rateLaw->resolvedExpression(), model)}
+                        model.expandFunctions(
+                            direction.rateLaw->resolvedExpression()),
+                        model)}
                   : std::vector<ast::Expression>{},
               executionModifiers(compiledRule),
               false,

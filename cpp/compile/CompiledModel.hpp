@@ -137,10 +137,19 @@ struct CompiledBarrierFactor {
     bool centerResolved = false;
 };
 
+enum class FunctionArgumentKind {
+    Numeric,
+    LocalScope,
+};
+
 struct CompiledFunction {
     FunctionId id;
     std::string name;
     std::vector<std::string> arguments;
+    // A formal used to index a local observable is a scope name. All other
+    // formals are numeric expressions and may be substituted from any typed
+    // numerical expression.
+    std::vector<FunctionArgumentKind> argumentKinds;
     ResolvedExpression expression;
 };
 
@@ -247,6 +256,11 @@ public:
     const CompiledCompartment* compartment(CompartmentId id) const noexcept;
     const CompiledFunction* function(FunctionId id) const noexcept;
     const CompiledObservable* observable(ObservableId id) const noexcept;
+
+    // Inline user-defined function calls by substituting typed actual
+    // arguments into the compiled function body. Parameter references remain
+    // symbolic, and local-scope references remain local references.
+    ResolvedExpression expandFunctions(const ResolvedExpression& expression) const;
 
 private:
     ModelMetadata metadata_;

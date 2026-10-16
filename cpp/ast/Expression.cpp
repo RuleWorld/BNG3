@@ -286,6 +286,14 @@ double Expression::evaluate(const std::function<double(const std::string&)>& res
 double Expression::evaluateWithFunctions(
     const std::function<double(const std::string&)>& resolveIdentifier,
     double t, const FunctionResolver& resolveFunction) const {
+    return evaluateWithFunctions(resolveIdentifier, t, resolveFunction,
+                                 FunctionPredicate{});
+}
+
+double Expression::evaluateWithFunctions(
+    const std::function<double(const std::string&)>& resolveIdentifier,
+    double t, const FunctionResolver& resolveFunction,
+    const FunctionPredicate& isUserFunction) const {
     switch (kind_) {
     case ExpressionKind::Number:
         return numberValue_;
@@ -295,7 +303,8 @@ double Expression::evaluateWithFunctions(
         }
         return resolveIdentifier(text_);
     case ExpressionKind::Unary: {
-        const double value = children_.front().evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
+        const double value = children_.front().evaluateWithFunctions(
+            resolveIdentifier, t, resolveFunction, isUserFunction);
         if (text_ == "+") {
             return value;
         }
@@ -308,8 +317,10 @@ double Expression::evaluateWithFunctions(
         throw std::runtime_error("Unsupported unary operator '" + text_ + "'");
     }
     case ExpressionKind::Binary: {
-        const double lhs = children_[0].evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
-        const double rhs = children_[1].evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
+        const double lhs = children_[0].evaluateWithFunctions(
+            resolveIdentifier, t, resolveFunction, isUserFunction);
+        const double rhs = children_[1].evaluateWithFunctions(
+            resolveIdentifier, t, resolveFunction, isUserFunction);
 
         if (text_ == "+") return lhs + rhs;
         if (text_ == "-") return lhs - rhs;
@@ -330,7 +341,8 @@ double Expression::evaluateWithFunctions(
     }
     case ExpressionKind::Function: {
         const auto evalArg = [&](std::size_t index) {
-            return children_[index].evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
+            return children_[index].evaluateWithFunctions(
+                resolveIdentifier, t, resolveFunction, isUserFunction);
         };
 
         if (text_ == "time" || text_ == "t") {
@@ -550,23 +562,33 @@ double Expression::evaluateWithFunctions(
             std::vector<double> values;
             values.reserve(children_.size());
             for (const auto& child : children_)
-                values.push_back(child.evaluateWithFunctions(resolveIdentifier, t, resolveFunction));
+                values.push_back(child.evaluateWithFunctions(
+                    resolveIdentifier, t, resolveFunction, isUserFunction));
             return resolveFunction(text_, values);
         }
         if (children_.empty()) return resolveIdentifier(text_);
         throw std::runtime_error("Unsupported function '" + text_ + "'");
     }
     case ExpressionKind::ObservableRef:
-        // Resolve observable references via the resolver (which knows about
-        // observable values at the current simulation state).  If children
-        // are present they are ignored — BNG2 observable refs are always
-        // resolved by name alone.
+        // The parser represents named user-function calls with this same node
+        // when their name is not a built-in token. Resolve declared functions
+        // with their arguments, but keep BNG2 observable references name-only.
+        if (resolveFunction && isUserFunction && isUserFunction(text_)) {
+            std::vector<double> values;
+            values.reserve(children_.size());
+            for (const auto& child : children_) {
+                values.push_back(child.evaluateWithFunctions(
+                    resolveIdentifier, t, resolveFunction, isUserFunction));
+            }
+            return resolveFunction(text_, values);
+        }
         return resolveIdentifier(text_);
     case ExpressionKind::TableFunction: {
         if (children_.size() != 1) {
             throw std::runtime_error("TFUN expression must have one counter expression");
         }
-        const double counter = children_.front().evaluateWithFunctions(resolveIdentifier, t, resolveFunction);
+        const double counter = children_.front().evaluateWithFunctions(
+            resolveIdentifier, t, resolveFunction, isUserFunction);
         if (!tableFilePath_.empty()) {
             std::ostringstream value;
             value << std::scientific << std::setprecision(17) << counter;

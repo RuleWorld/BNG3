@@ -4,10 +4,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <set>
 #include <cctype>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "ast/Model.hpp"
@@ -57,6 +61,367 @@ std::vector<units::UnitDefinition> authoredUnitDefinitions(const ast::Model& mod
         if (!definition.builtin) result.push_back(definition);
     }
     return result;
+}
+
+using FunctionExpressionRoot =
+    std::pair<std::string, const ResolvedExpression*>;
+
+void validateFunctionExpressions(
+    std::vector<CompiledFunction>& functions,
+    const std::vector<FunctionExpressionRoot>& roots,
+    std::vector<Diagnostic>& diagnostics) {
+    using ArgumentKind = FunctionArgumentKind;
+    using ExpressionKind = ResolvedExpressionKind;
+
+    std::vector<std::vector<std::optional<ArgumentKind>>> directConstraints;
+    directConstraints.reserve(functions.size());
+    for (const auto& function : functions) {
+        directConstraints.emplace_back(function.arguments.size());
+    }
+    std::set<std::string> conflictingFormals;
+    auto constrainFormal = [&](std::size_t functionIndex,
+                               const std::string& localName,
+                               ArgumentKind expected,
+                               auto& conflicts,
+                               auto& constraints) {
+        const auto& formals = functions[functionIndex].arguments;
+        const auto found = std::find(formals.begin(), formals.end(), localName);
+        if (found == formals.end()) return;
+        const auto index = static_cast<std::size_t>(std::distance(formals.begin(), found));
+        auto& current = constraints[functionIndex][index];
+        if (current.has_value() && *current != expected) {
+            conflicts.insert(functions[functionIndex].name + "." + localName);
+        } else {
+            current = expected;
+        }
+    };
+
+    // Seed the type inference with uses that do not depend on another
+    // function's signature. Local observable arguments are scope names;
+    // ordinary expression operands are numeric. Calls are propagated below.
+    std::function<void(std::size_t, const ResolvedExpression&)> inferDirect;
+    inferDirect = [&](std::size_t functionIndex,
+                      const ResolvedExpression& expression) {
+        if (expression.kind == ExpressionKind::LocalRef) {
+            constrainFormal(functionIndex, expression.localName,
+                            ArgumentKind::Numeric, conflictingFormals,
+                            directConstraints);
+            return;
+        }
+        if (expression.kind == ExpressionKind::FunctionRef) return;
+        if (expression.kind == ExpressionKind::ObservableRef &&
+            !expression.arguments.empty()) {
+            for (const auto& argument : expression.arguments) {
+                if (argument.kind == ExpressionKind::LocalRef) {
+                    constrainFormal(functionIndex, argument.localName,
+                                    ArgumentKind::LocalScope, conflictingFormals,
+                                    directConstraints);
+                }
+            }
+            return;
+        }
+        for (const auto& argument : expression.arguments) {
+            inferDirect(functionIndex, argument);
+        }
+    };
+    for (std::size_t index = 0; index < functions.size(); ++index) {
+        inferDirect(index, functions[index].expression);
+    }
+
+    // An otherwise-unused formal has no type evidence in its body. Preserve
+    // the established local-function form in that case by inferring its kind
+    // from the typed actual at a model call site: a bare LocalRef is a scope,
+    // while every other expression is numeric. Body evidence takes
+    // precedence, so passing a bare scope to a numeric formal is still an
+    // error.
+    auto inferredConstraints = directConstraints;
+    std::function<void(const ResolvedExpression&)> inferRootCalls;
+    inferRootCalls = [&](const ResolvedExpression& expression) {
+        if (expression.kind == ExpressionKind::FunctionRef &&
+            expression.symbol.has_value() &&
+            expression.symbol->kind == SymbolKind::Function &&
+            expression.symbol->index < functions.size()) {
+            const auto targetIndex = expression.symbol->index;
+            const auto count = std::min(functions[targetIndex].arguments.size(),
+                                        expression.arguments.size());
+            for (std::size_t index = 0; index < count; ++index) {
+                if (!directConstraints[targetIndex][index].has_value()) {
+                    const auto actualKind =
+                        expression.arguments[index].kind == ExpressionKind::LocalRef
+                            ? ArgumentKind::LocalScope
+                            : ArgumentKind::Numeric;
+                    auto& constraint = inferredConstraints[targetIndex][index];
+                    if (!constraint.has_value()) {
+                        constraint = actualKind;
+                    } else if (*constraint != actualKind) {
+                        conflictingFormals.insert(
+                            functions[targetIndex].name + "." +
+                            functions[targetIndex].arguments[index]);
+                    }
+                }
+            }
+        }
+        for (const auto& argument : expression.arguments) inferRootCalls(argument);
+    };
+    for (const auto& [entity, expression] : roots) {
+        (void)entity;
+        if (expression != nullptr) inferRootCalls(*expression);
+    }
+
+    const auto applyConstraints = [&](
+        const std::vector<std::vector<std::optional<ArgumentKind>>>& constraints) {
+        for (std::size_t functionIndex = 0; functionIndex < functions.size();
+             ++functionIndex) {
+            auto& kinds = functions[functionIndex].argumentKinds;
+            kinds.resize(functions[functionIndex].arguments.size(),
+                         ArgumentKind::Numeric);
+            for (std::size_t argumentIndex = 0; argumentIndex < kinds.size();
+                 ++argumentIndex) {
+                kinds[argumentIndex] = constraints[functionIndex][argumentIndex]
+                    .value_or(ArgumentKind::Numeric);
+            }
+        }
+    };
+    applyConstraints(inferredConstraints);
+
+    // Propagate scope requirements through nested user-function calls until
+    // signatures stabilize (for example, wrapper(x) = gate(x, k)).
+    for (std::size_t pass = 0; pass <= functions.size(); ++pass) {
+        auto constraints = inferredConstraints;
+        std::set<std::string> passConflicts;
+        std::function<void(std::size_t, const ResolvedExpression&)> inferCalls;
+        inferCalls = [&](std::size_t functionIndex,
+                         const ResolvedExpression& expression) {
+            if (expression.kind == ExpressionKind::LocalRef) {
+                constrainFormal(functionIndex, expression.localName,
+                                ArgumentKind::Numeric, passConflicts, constraints);
+                return;
+            }
+            if (expression.kind == ExpressionKind::FunctionRef) {
+                if (!expression.symbol.has_value() ||
+                    expression.symbol->kind != SymbolKind::Function ||
+                    expression.symbol->index >= functions.size()) return;
+                const auto targetIndex = expression.symbol->index;
+                const auto& target = functions[targetIndex];
+                const auto count = std::min(target.argumentKinds.size(),
+                                            expression.arguments.size());
+                for (std::size_t index = 0; index < count; ++index) {
+                    const auto& actual = expression.arguments[index];
+                    const auto targetConstraint = constraints[targetIndex][index];
+                    if (targetConstraint == ArgumentKind::LocalScope) {
+                        if (actual.kind == ExpressionKind::LocalRef) {
+                            constrainFormal(functionIndex, actual.localName,
+                                            ArgumentKind::LocalScope, passConflicts,
+                                            constraints);
+                        }
+                    } else if (targetConstraint == ArgumentKind::Numeric) {
+                        inferCalls(functionIndex, actual);
+                    } else if (actual.kind == ExpressionKind::LocalRef) {
+                        const auto& callerArguments = functions[functionIndex].arguments;
+                        const auto callerFormal = std::find(
+                            callerArguments.begin(), callerArguments.end(),
+                            actual.localName);
+                        if (callerFormal != callerArguments.end()) {
+                            const auto callerIndex = static_cast<std::size_t>(
+                                std::distance(callerArguments.begin(), callerFormal));
+                            const auto callerConstraint = constraints[functionIndex][callerIndex];
+                            if (callerConstraint.has_value()) {
+                                auto& current = constraints[targetIndex][index];
+                                if (!current.has_value()) current = *callerConstraint;
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+            if (expression.kind == ExpressionKind::ObservableRef &&
+                !expression.arguments.empty()) {
+                for (const auto& argument : expression.arguments) {
+                    if (argument.kind == ExpressionKind::LocalRef) {
+                        constrainFormal(functionIndex, argument.localName,
+                                        ArgumentKind::LocalScope, passConflicts,
+                                        constraints);
+                    }
+                }
+                return;
+            }
+            for (const auto& argument : expression.arguments) {
+                inferCalls(functionIndex, argument);
+            }
+        };
+        for (std::size_t index = 0; index < functions.size(); ++index) {
+            inferCalls(index, functions[index].expression);
+        }
+
+        const auto previous = [&]() {
+            std::vector<std::vector<ArgumentKind>> result;
+            result.reserve(functions.size());
+            for (const auto& function : functions) result.push_back(function.argumentKinds);
+            return result;
+        }();
+        const bool constraintsChanged = constraints != inferredConstraints;
+        applyConstraints(constraints);
+        bool changed = false;
+        for (std::size_t index = 0; index < functions.size(); ++index) {
+            changed = changed || previous[index] != functions[index].argumentKinds;
+        }
+        inferredConstraints = std::move(constraints);
+        if (!changed && !constraintsChanged) {
+            conflictingFormals.insert(passConflicts.begin(), passConflicts.end());
+            break;
+        }
+    }
+
+    for (const auto& formal : conflictingFormals) {
+        addDiagnostic(diagnostics, ValidationCategory::Expressions, formal,
+                      "function argument is used as both a numeric value and a local scope");
+    }
+
+    // Reject recursive dependencies explicitly, including mutual recursion.
+    std::vector<unsigned char> visitState(functions.size(), 0);
+    std::vector<std::size_t> stack;
+    std::set<std::string> reportedCycles;
+    std::function<void(std::size_t)> visitFunction;
+    visitFunction = [&](std::size_t index) {
+        visitState[index] = 1;
+        stack.push_back(index);
+        std::function<void(const ResolvedExpression&)> visitExpression;
+        visitExpression = [&](const ResolvedExpression& expression) {
+            if (expression.kind == ExpressionKind::FunctionRef &&
+                expression.symbol.has_value() &&
+                expression.symbol->kind == SymbolKind::Function &&
+                expression.symbol->index < functions.size()) {
+                const auto target = expression.symbol->index;
+                if (visitState[target] == 0) {
+                    visitFunction(target);
+                } else if (visitState[target] == 1) {
+                    const auto begin = std::find(stack.begin(), stack.end(), target);
+                    std::ostringstream cycle;
+                    for (auto position = begin; position != stack.end(); ++position) {
+                        if (position != begin) cycle << " -> ";
+                        cycle << functions[*position].name;
+                    }
+                    cycle << " -> " << functions[target].name;
+                    const auto message = cycle.str();
+                    if (reportedCycles.insert(message).second) {
+                        addDiagnostic(diagnostics, ValidationCategory::Expressions,
+                                      functions[index].name,
+                                      "recursive function dependency: " + message);
+                    }
+                }
+            }
+            for (const auto& argument : expression.arguments) visitExpression(argument);
+        };
+        visitExpression(functions[index].expression);
+        stack.pop_back();
+        visitState[index] = 2;
+    };
+    for (std::size_t index = 0; index < functions.size(); ++index) {
+        if (visitState[index] == 0) visitFunction(index);
+    }
+
+    const auto localReferenceMatchesKind = [&](const ResolvedExpression& current,
+                                               ArgumentKind expected,
+                                               const std::optional<std::size_t>& caller) {
+        if (!caller.has_value()) return expected == ArgumentKind::LocalScope;
+        const auto& callerFunction = functions[*caller];
+        const auto formal = std::find(callerFunction.arguments.begin(),
+                                      callerFunction.arguments.end(),
+                                      current.localName);
+        if (formal == callerFunction.arguments.end()) return false;
+        const auto index = static_cast<std::size_t>(std::distance(
+            callerFunction.arguments.begin(), formal));
+        return callerFunction.argumentKinds[index] == expected;
+    };
+    const auto localReferencesMatchKind = [&](
+        const ResolvedExpression& expression, ArgumentKind expected,
+        const std::optional<std::size_t>& caller) {
+        std::function<bool(const ResolvedExpression&)> visit;
+        visit = [&](const ResolvedExpression& current) {
+            if (current.kind == ExpressionKind::LocalRef) {
+                return localReferenceMatchesKind(current, expected, caller);
+            }
+            if (current.kind == ExpressionKind::FunctionRef) return true;
+            if (current.kind == ExpressionKind::ObservableRef &&
+                !current.arguments.empty()) {
+                return current.arguments.size() == 1 &&
+                       current.arguments.front().kind == ExpressionKind::LocalRef &&
+                       localReferenceMatchesKind(current.arguments.front(),
+                                                 ArgumentKind::LocalScope, caller) &&
+                       expected == ArgumentKind::Numeric;
+            }
+            return std::all_of(current.arguments.begin(), current.arguments.end(),
+                               [&](const auto& argument) { return visit(argument); });
+        };
+        return visit(expression);
+    };
+    std::function<void(const ResolvedExpression&, const std::string&,
+                       const std::optional<std::size_t>&)> validateCalls;
+    validateCalls = [&](const ResolvedExpression& expression,
+                        const std::string& entity,
+                        const std::optional<std::size_t>& caller) {
+        if (expression.kind == ExpressionKind::ObservableRef &&
+            !expression.arguments.empty() &&
+            (expression.arguments.size() != 1 ||
+             expression.arguments.front().kind != ExpressionKind::LocalRef ||
+             !localReferencesMatchKind(expression.arguments.front(),
+                                       ArgumentKind::LocalScope, caller))) {
+            addDiagnostic(diagnostics, ValidationCategory::Expressions, entity,
+                          "local observable calls require exactly one local-scope argument");
+        }
+        if (expression.kind == ExpressionKind::FunctionRef) {
+            if (!expression.symbol.has_value() ||
+                expression.symbol->kind != SymbolKind::Function ||
+                expression.symbol->index >= functions.size()) {
+                addDiagnostic(diagnostics, ValidationCategory::Expressions, entity,
+                              "function call has no valid compiled function declaration");
+            } else {
+                const auto& function = functions[expression.symbol->index];
+                if (expression.arguments.size() != function.arguments.size()) {
+                    addDiagnostic(diagnostics, ValidationCategory::Expressions,
+                                  function.name,
+                                  "function call has incompatible arity: expected " +
+                                      std::to_string(function.arguments.size()) +
+                                      " arguments, received " +
+                                      std::to_string(expression.arguments.size()));
+                } else {
+                    const auto count = std::min(function.argumentKinds.size(),
+                                                expression.arguments.size());
+                    for (std::size_t index = 0; index < count; ++index) {
+                        const auto& actual = expression.arguments[index];
+                        if (function.argumentKinds[index] == ArgumentKind::LocalScope &&
+                            (actual.kind != ExpressionKind::LocalRef ||
+                             !localReferencesMatchKind(
+                                 actual, ArgumentKind::LocalScope, caller))) {
+                            addDiagnostic(diagnostics, ValidationCategory::Expressions,
+                                          function.name,
+                                          "local-scope argument '" +
+                                              function.arguments[index] +
+                                              "' must be passed a local scope name");
+                        } else if (function.argumentKinds[index] ==
+                                       ArgumentKind::Numeric &&
+                                   !localReferencesMatchKind(
+                                       actual, ArgumentKind::Numeric, caller)) {
+                            addDiagnostic(diagnostics, ValidationCategory::Expressions,
+                                          function.name,
+                                          "numeric argument '" +
+                                              function.arguments[index] +
+                                              "' cannot be passed a local scope");
+                        }
+                    }
+                }
+            }
+        }
+        for (const auto& argument : expression.arguments) {
+            validateCalls(argument, entity, caller);
+        }
+    };
+    for (std::size_t index = 0; index < functions.size(); ++index) {
+        validateCalls(functions[index].expression, functions[index].name, index);
+    }
+    for (const auto& [entity, expression] : roots) {
+        if (expression != nullptr) validateCalls(*expression, entity, std::nullopt);
+    }
 }
 
 void recordResolvedUnitReference(ModelMetadata& metadata, const ast::Model& model,
@@ -345,6 +710,8 @@ CompiledModel::CompiledModel(const ast::Model& model)
                             compiled.diagnostics().end());
         functions_.push_back(CompiledFunction{
             FunctionId::fromDenseIndex(index), function.getName(), function.getArgs(),
+            std::vector<FunctionArgumentKind>(function.getArgs().size(),
+                                              FunctionArgumentKind::Numeric),
             compiled.resolvedExpression()});
     }
 
@@ -586,6 +953,30 @@ CompiledModel::CompiledModel(const ast::Model& model)
         populationMaps_.push_back(std::move(compiled));
     }
 
+    std::vector<FunctionExpressionRoot> expressionRoots;
+    const auto addRoot = [&](const std::string& entity,
+                             const ResolvedExpression& expression) {
+        expressionRoots.emplace_back(entity, &expression);
+    };
+    for (const auto& parameter : parameters_) {
+        addRoot(parameter.name, parameter.expression);
+    }
+    for (const auto& rule : rules_) {
+        if (rule.forward().rateLaw.has_value()) {
+            addRoot(rule.name(), rule.forward().rateLaw->resolvedExpression());
+        }
+        if (rule.reverse().has_value() && rule.reverse()->rateLaw.has_value()) {
+            addRoot("_reverse__" + rule.name(),
+                    rule.reverse()->rateLaw->resolvedExpression());
+        }
+    }
+    for (const auto& factor : energyFactors_) addRoot(factor.label, factor.expression);
+    for (const auto& factor : barrierFactors_) addRoot(factor.label, factor.expression);
+    for (const auto& seed : seeds_) addRoot(seed.sourcePattern, seed.amount);
+    for (const auto& mapping : populationMaps_) {
+        addRoot(mapping.label, mapping.rate);
+    }
+    validateFunctionExpressions(functions_, expressionRoots, diagnostics_);
 }
 
 bool CompiledModel::valid() const noexcept {
@@ -623,6 +1014,68 @@ const CompiledFunction* CompiledModel::function(FunctionId id) const noexcept {
 
 const CompiledObservable* CompiledModel::observable(ObservableId id) const noexcept {
     return id.valid() && id.value() < observables_.size() ? &observables_[id.value()] : nullptr;
+}
+
+ResolvedExpression CompiledModel::expandFunctions(
+    const ResolvedExpression& expression) const {
+    using Kind = ResolvedExpressionKind;
+    using Bindings = std::unordered_map<std::string, ResolvedExpression>;
+    std::unordered_set<std::size_t> activeFunctions;
+    std::function<ResolvedExpression(const ResolvedExpression&, const Bindings&)> expand;
+    expand = [&](const ResolvedExpression& current,
+                 const Bindings& bindings) -> ResolvedExpression {
+        if (current.kind == Kind::LocalRef) {
+            const auto binding = bindings.find(current.localName);
+            if (binding != bindings.end()) return binding->second;
+            return current;
+        }
+
+        if (current.kind == Kind::FunctionRef) {
+            if (!current.symbol.has_value() ||
+                current.symbol->kind != SymbolKind::Function) {
+                throw std::invalid_argument(
+                    "function reference has no compiled function identity");
+            }
+            const auto functionIndex = current.symbol->index;
+            if (functionIndex >= functions_.size()) {
+                throw std::invalid_argument("function reference is out of range");
+            }
+            const auto& target = functions_[functionIndex];
+            if (current.arguments.size() != target.arguments.size()) {
+                throw std::invalid_argument("function '" + target.name +
+                                            "' has incompatible arity");
+            }
+            // Zero-argument functions already have stable runtime identities in
+            // generated networks (notably table-function rate aliases). Only
+            // expand argument-taking calls, where typed substitution is
+            // needed to evaluate their actual expressions consistently.
+            if (target.arguments.empty()) return current;
+            Bindings nestedBindings;
+            nestedBindings.reserve(target.arguments.size());
+            for (std::size_t index = 0; index < target.arguments.size(); ++index) {
+                nestedBindings.emplace(target.arguments[index],
+                                       expand(current.arguments[index], bindings));
+            }
+            // Actual arguments belong to the caller, so nested calls such as
+            // f(f(k)) must finish before guarding expansion of f's body.
+            if (!activeFunctions.insert(functionIndex).second) {
+                throw std::invalid_argument("recursive function dependency at '" +
+                                            target.name + "'");
+            }
+
+            auto result = expand(target.expression, nestedBindings);
+            activeFunctions.erase(functionIndex);
+            return result;
+        }
+
+        auto result = current;
+        for (auto& argument : result.arguments) {
+            argument = expand(argument, bindings);
+        }
+        return result;
+    };
+
+    return expand(expression, {});
 }
 
 } // namespace bng::compile
