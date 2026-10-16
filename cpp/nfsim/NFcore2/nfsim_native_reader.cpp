@@ -37,10 +37,40 @@ bool appendExpressionFunction(NativeReactionHeader& header,
                               const std::string& tableMethod,
                               const std::string& tableCounter);
 
+// ruleworld/nfsim#104: a local function that reads both a locally-scoped
+// observable (evaluated per-molecule and cached) and a global observable
+// goes stale, because legacy fire() only re-evaluates type-II molecules on
+// product complexes and global changes never invalidate the cached values.
+// Throw so the native path fails closed instead of silently falling back to
+// the stale legacy evaluation.
+void throwOnMixedLocalGlobalScopes(LocalFunction* local) {
+    if (!local) return;
+    bool hasLocalScope = false;
+    std::string globalObservable;
+    for (int i = 0; i < local->getNumOfVarRefs(); ++i) {
+        if (local->getVarRefScope(i) == -1) {
+            if (globalObservable.empty())
+                globalObservable = local->getVarObservableName(i);
+        } else {
+            hasLocalScope = true;
+        }
+    }
+    if (hasLocalScope && !globalObservable.empty())
+        throw std::runtime_error(
+            "local function '" + local->getName() + "' reads global observable '" +
+            globalObservable +
+            "' outside its argument: unsupported, would go stale (nfsim#104)");
+}
+
 bool appendSimpleScopedLocalFunction(System& system, LocalFunction* local,
                                      std::uint16_t reactant,
                                      NativeReactionHeader& header) {
     if (!local || local->getParsedExpression().empty()) return false;
+    // ruleworld/nfsim#104: a local function mixing a locally-scoped
+    // observable with a global observable goes stale under legacy
+    // evaluation, so the native path must refuse instead of silently
+    // falling back to it.
+    throwOnMixedLocalGlobalScopes(local);
     NativeReactionHeader candidate = header;
     candidate.rate_law = NATIVE_RATE_EXPRESSION;
     candidate.rate_expression = local->getParsedExpression();
@@ -492,6 +522,8 @@ bool appendLocalFunctionDefinition(System& system, LocalFunction* local,
                                    NativeReactionHeader& header,
                                    std::set<std::string>& visiting) {
     if (!local || local->getParsedExpression().empty()) return false;
+    // Fail closed on ruleworld/nfsim#104 (see throwOnMixedLocalGlobalScopes).
+    throwOnMixedLocalGlobalScopes(local);
     if (!visiting.insert(local->getName()).second) return false;
     std::vector<std::string> arguments;
     for (int i = 0; i < local->getNumOfArgs(); ++i)

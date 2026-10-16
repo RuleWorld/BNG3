@@ -2,6 +2,7 @@
 #include <memory>
 #include <vector>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 #include "NFcore.hh"
 #include "templateMolecule.hh"
 #include "transformationSet.hh"
@@ -1246,4 +1247,122 @@ TEST_CASE("native NFcore2 reader executes MoveConnected species relocation") {
     REQUIRE(engine.fire(lowered.rules[0].family, lowered.rules[0].member, context, delta));
     CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(0)).compartment(a) == NFcore2::nativeCompartmentId("c2"));
     CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(1)).compartment(b) == NFcore2::nativeCompartmentId("c2"));
+}
+
+TEST_CASE("direct NFsim construction refuses a local function mixing global and local observables") {
+    // ruleworld/nfsim#104: a local function that reads both a global
+    // observable (outside its argument) and a locally-scoped observable goes
+    // stale under legacy evaluation, because global changes never invalidate
+    // cached per-molecule values. Construction must fail closed instead of
+    // returning silently wrong propensities.
+    auto mixedModel = bng::parser::parseModel(R"(
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ A(s~0~1)
+ C(d)
+end molecule types
+begin seed species
+ A(s~0) 1
+ C(d) 1
+end seed species
+begin observables
+ Molecules Atot A()
+ Molecules Ctot C()
+end observables
+begin functions
+ loc(x) = k*Atot + Ctot(x)
+end functions
+begin reaction rules
+ A(s~0)%x -> A(s~1) loc(x)
+end reaction rules
+)");
+    REQUIRE(mixedModel);
+    int traversal = 0;
+    auto mixed = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*mixedModel, false, 100, false, traversal));
+    CHECK(mixed == nullptr);
+
+    // Control: the same shape with only a locally-scoped observable still
+    // builds, so the refusal above is due to the mixing, not the model shape.
+    auto localOnlyModel = bng::parser::parseModel(R"(
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ A(s~0~1)
+ C(d)
+end molecule types
+begin seed species
+ A(s~0) 1
+ C(d) 1
+end seed species
+begin observables
+ Molecules Atot A()
+ Molecules Ctot C()
+end observables
+begin functions
+ loc(x) = k*Ctot(x)
+end functions
+begin reaction rules
+ A(s~0)%x -> A(s~1) loc(x)
+end reaction rules
+)");
+    REQUIRE(localOnlyModel);
+    auto localOnly = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*localOnlyModel, false, 100, false, traversal));
+    CHECK(localOnly != nullptr);
+}
+
+TEST_CASE("native NFcore2 reader refuses a local function mixing global and local observables") {
+    // ruleworld/nfsim#104: defense in depth for a hand-built System that
+    // already contains a mixed local function. The native reader must throw
+    // instead of silently falling back to the stale legacy evaluation.
+    auto system = std::make_unique<NFcore::System>("mixed local global refusal");
+    system->addParameter("k", 0.1);
+
+    std::vector<std::string> components{"s"};
+    std::vector<std::string> defaults{"No State"};
+    std::vector<std::vector<std::string>> states(1);
+    auto* aType = new NFcore::MoleculeType(
+        "A", components, defaults, states, system.get());
+
+    auto* globalTemplate = new NFcore::TemplateMolecule(aType);
+    system->addObservableForOutput(
+        new NFcore::MoleculesObservable("Atot", globalTemplate));
+    auto* localTemplate = new NFcore::TemplateMolecule(aType);
+    auto* localObs = new NFcore::MoleculesObservable("Ctot", localTemplate);
+    system->addObservableForOutput(localObs);
+
+    std::vector<std::string> args{"x"};
+    std::vector<std::string> refNames{"Atot", "Ctot_1"};
+    std::vector<std::string> refObsNames{"Atot", "Ctot"};
+    std::vector<NFcore::Observable*> refObs{nullptr, localObs->clone()};
+    std::vector<int> scopes{-1, 0};
+    std::vector<std::string> params{"k"};
+    auto* local = new NFcore::LocalFunction(
+        system.get(), "loc", "k*Atot+Ctot(x)", "k*Atot+Ctot_1",
+        args, refNames, refObsNames, refObs, scopes, params);
+    system->addLocalFunction(local);
+
+    std::vector<std::string> called{"loc"};
+    std::vector<std::string> wrapperArgs{"x"};
+    std::vector<std::string> wrapperParams;
+    auto* composite = new NFcore::CompositeFunction(
+        system.get(), "loc", "loc(x)", called, wrapperArgs, wrapperParams);
+    REQUIRE(system->addCompositeFunction(composite));
+
+    auto* reactant = new NFcore::TemplateMolecule(aType);
+    std::vector<NFcore::TemplateMolecule*> reactants{reactant};
+    auto* transformations = new NFcore::TransformationSet(reactants);
+    REQUIRE(transformations->addLocalFunctionReference(
+        reactant, "x", NFcore::LocalFunction::MOLECULE));
+    transformations->finalize();
+    std::vector<std::string> pointerNames{"x"};
+    system->addReaction(new NFcore::DORRxnClass(
+        "r1", 1.0, "", transformations, composite, pointerNames, system.get()));
+
+    CHECK_THROWS_WITH(NFcore2::snapshotLegacyNFsim(*system),
+                      Catch::Matchers::ContainsSubstring("nfsim#104"));
 }
