@@ -604,3 +604,35 @@ end reaction rules
                                  std::string::npos;
                       }));
 }
+
+TEST_CASE("nested calls to the same nonrecursive function expand normally",
+          "[CompiledModel][functions]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k 2
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin functions
+    twice(x) = 2*x
+end functions
+begin reaction rules
+    X() -> 0 twice(twice(k))
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.valid());
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.reactions.all().size() == 1);
+    engine::OdeIntegrator integrator(*model, network);
+    double concentration = 1.0;
+    double derivative = 0.0;
+    integrator.derivs(0.0, &concentration, &derivative);
+    CHECK_THAT(derivative, Catch::Matchers::WithinAbs(-8.0, 1e-12));
+}

@@ -1050,17 +1050,19 @@ ResolvedExpression CompiledModel::expandFunctions(
             // expand argument-taking calls, where typed substitution is
             // needed to evaluate their actual expressions consistently.
             if (target.arguments.empty()) return current;
-            if (!activeFunctions.insert(functionIndex).second) {
-                throw std::invalid_argument("recursive function dependency at '" +
-                                            target.name + "'");
-            }
-
             Bindings nestedBindings;
             nestedBindings.reserve(target.arguments.size());
             for (std::size_t index = 0; index < target.arguments.size(); ++index) {
                 nestedBindings.emplace(target.arguments[index],
                                        expand(current.arguments[index], bindings));
             }
+            // Actual arguments belong to the caller, so nested calls such as
+            // f(f(k)) must finish before guarding expansion of f's body.
+            if (!activeFunctions.insert(functionIndex).second) {
+                throw std::invalid_argument("recursive function dependency at '" +
+                                            target.name + "'");
+            }
+
             auto result = expand(target.expression, nestedBindings);
             activeFunctions.erase(functionIndex);
             return result;
