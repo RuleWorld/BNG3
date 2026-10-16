@@ -7112,3 +7112,66 @@ end reaction rules
     CHECK(direct->getReaction(1)->get_a() == Catch::Approx(1.0));
     delete direct;
 }
+
+TEST_CASE("NFsim parameter updates rescale zero-order volumes and MM rates", "[issue-105]") {
+    // ruleworld/nfsim#105: compartment size was baked at load,
+    // setParameter()+update() never rescaled zero-order propensities, the
+    // zero-order rate parameter name was dropped ("/"), and MM kcat/Km were
+    // frozen load-time doubles.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    Vc 1.0
+    kp 2.0
+    kcat 1.0
+    Km 10.0
+end parameters
+begin compartments
+    cell 3 1.0
+end compartments
+begin molecule types
+    A()
+    S()
+    E()
+    P()
+end molecule types
+begin seed species
+    S()@cell 100
+    E()@cell 100
+end seed species
+begin reaction rules
+    0 -> A()@cell kp
+    S()@cell + E()@cell -> P()@cell + E()@cell MM(kcat,Km)
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 1000, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+    REQUIRE(system->getAllReactions().size() == 2);
+    // Link the compartment size to parameter Vc (explicit rescale path).
+    REQUIRE(system->setCompartmentSizeParameter("cell", "Vc"));
+    // BNGL auto-names unlabeled rules R1, R2 in declaration order.
+    auto* synth = system->getReactionByName("R1");
+    auto* mm = system->getReactionByName("R2");
+    REQUIRE(synth != nullptr);
+    REQUIRE(mm != nullptr);
+    // Zero-order propensity is kp * Vc = 2 * 1; the rate parameter name must
+    // survive volume scaling.
+    CHECK(synth->getBaseRateParameterName() == "kp");
+    CHECK(synth->get_a() == Catch::Approx(2.0));
+    const double mmBefore = mm->get_a();
+    CHECK(mmBefore > 0.0);
+
+    system->setParameter("Vc", 3.0);
+    system->setParameter("kp", 4.0);
+    system->setParameter("kcat", 2.0);
+    system->setParameter("Km", 20.0);
+    system->updateSystemWithNewParameters();
+
+    CHECK(system->getCompartment("cell")->getSize() == Catch::Approx(3.0));
+    CHECK(synth->get_a() == Catch::Approx(12.0));
+    CHECK(mm->get_a() != Catch::Approx(mmBefore));
+    delete system;
+}

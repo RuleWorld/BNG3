@@ -3,6 +3,7 @@
 */
 
 #include "compartment.hh"
+#include <cmath>
 #include <iostream>
 
 using namespace NFcore;
@@ -33,6 +34,15 @@ Compartment::Compartment(
 Compartment::~Compartment()
 {
 	// Parent is not owned by this compartment, so don't delete it
+}
+
+void Compartment::setSize(double newSize)
+{
+	if (!(newSize > 0.0) || !std::isfinite(newSize)) {
+		cerr << "Warning: Compartment '" << id << "' set to non-positive or "
+		     << "non-finite size: " << newSize << endl;
+	}
+	size = newSize;
 }
 
 bool Compartment::isInside(Compartment* other) const

@@ -1430,6 +1430,17 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
     return true;
 }
 
+std::string compiledParameterName(const CompiledModel& model,
+                                    const ResolvedExpression& expression) {
+    if (expression.kind == ResolvedExpressionKind::ParameterRef &&
+        expression.symbol.has_value()) {
+        if (const auto* parameter = model.parameter(
+                bng::compile::ParameterId::fromDenseIndex(expression.symbol->index)))
+            return parameter->name;
+    }
+    return {};
+}
+
 NFcore::ReactionClass* makeReactionForRate(
     const CompiledModel& model,
     const CompiledRule& rule,
@@ -1461,25 +1472,35 @@ NFcore::ReactionClass* makeReactionForRate(
         const auto km = evaluateStatic(model, expression.arguments[1], diagnostic);
         if (!kcat.has_value() || !km.has_value() || *km < 0.0) return nullptr;
         transformations->finalize();
-        return new NFcore::MMRxnClass(reactionName, *kcat, *km, transformations, &system);
+        auto* mmReaction = new NFcore::MMRxnClass(reactionName, *kcat, *km, transformations, &system);
+        mmReaction->setRateParameterNames(
+            compiledParameterName(model, expression.arguments[0]),
+            compiledParameterName(model, expression.arguments[1]));
+        return mmReaction;
     }
     if (rate.kind == RateKind::Saturation || rate.kind == RateKind::Hill) {
         std::vector<double> constants;
+        std::vector<std::string> constantParameterNames;
         for (const auto& argument : expression.arguments) {
             const auto value = evaluateStatic(model, argument, diagnostic);
             if (!value.has_value()) return nullptr;
             constants.push_back(*value);
+            constantParameterNames.push_back(compiledParameterName(model, argument));
         }
         if (rate.kind == RateKind::Saturation) {
             if (constants.size() < 2 || constants.size() > direction.reactantPatterns.size() + 1) {
                 diagnostic = "Sat has invalid constant count"; return nullptr;
             }
             transformations->finalize();
-            return new NFcore::SatRxnClass(reactionName, std::move(constants), transformations, &system);
+            auto* satReaction = new NFcore::SatRxnClass(reactionName, std::move(constants), transformations, &system);
+            satReaction->setConstantParameterNames(constantParameterNames);
+            return satReaction;
         }
         if (constants.size() != 3) { diagnostic = "Hill requires three constants"; return nullptr; }
         transformations->finalize();
-        return new NFcore::HillRxnClass(reactionName, constants[0], constants[1], constants[2], transformations, &system);
+        auto* hillReaction = new NFcore::HillRxnClass(reactionName, constants[0], constants[1], constants[2], transformations, &system);
+        hillReaction->setConstantParameterNames(constantParameterNames);
+        return hillReaction;
     }
     if (rate.kind == RateKind::ArrheniusEnergy || rate.kind == RateKind::Hybrid) {
         diagnostic = "specialized compiled rate requires dedicated NFsim lowering";
@@ -2274,13 +2295,13 @@ bool lowerDirection(const CompiledModel& model,
             }
         } else {
             if (productCompartment != nullptr && same) {
-                factor = productCompartment->getSize();
-                if (system.getNumberPerQuantityUnit() > 0.0)
-                    factor *= system.getNumberPerQuantityUnit();
+                reaction->applyZeroOrderVolumeScaling(productCompartment);
+            } else {
+                // No single product compartment: keep the default factor of
+                // 1.0 and leave the base rate (and its parameter name)
+                // untouched so later updates still refresh it.
+                reaction->volumeConversionFactor = 1.0;
             }
-            reaction->volumeConversionFactor = factor;
-            if (reaction->getRxnType() != NFcore::ReactionClass::OBS_DEPENDENT_RXN)
-                reaction->setBaseRate(reaction->getBaseRate() * factor, "");
         }
     }
 
