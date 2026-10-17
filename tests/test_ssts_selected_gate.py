@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import os
+import subprocess
 
 import pytest
 
@@ -169,11 +171,58 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
         if step.get("name") == "Run bounded official conformance"
     )
     assert "--gate-selected-cases" in run
-    assert "selection=(--categories semantic --max-cases 128)" in run
+    assert (
+        "selection=(--categories semantic --max-cases 128 "
+        "--selection-strategy feature-cover)"
+    ) in run
     assert '"${{ github.event_name }}" == "schedule"' in run
     assert '"${{ github.event_name }}" == "workflow_dispatch"' in run
     assert "selection=(--categories semantic stochastic)" in run
     assert '"${selection[@]}"' in run
+    dispatch = (workflow.get(True) or {}).get("workflow_dispatch") or {}
+    bounded = dispatch.get("inputs", {}).get("bounded")
+    assert bounded == {
+        "description": "Run the bounded 128-case semantic feature cover",
+        "required": False,
+        "type": "boolean",
+        "default": False,
+    }
+    selector_shell = run.split("python scripts/ci/validate_sbml_test_suite.py", 1)[0]
+    selector_shell = selector_shell.replace(
+        '"${{ github.event_name }}"', '"$EVENT_NAME"'
+    )
+    selector_shell = selector_shell.replace(
+        '"${{ inputs.bounded }}"', '"$BOUNDED_MANUAL"'
+    )
+    selector_shell += '\nprintf "%s\\n" "${selection[@]}"\n'
+
+    def selected_args(event, bounded_input="false"):
+        result = subprocess.run(
+            ["bash", "-c", selector_shell],
+            check=True,
+            capture_output=True,
+            text=True,
+            env={
+                **os.environ,
+                "EVENT_NAME": event,
+                "BOUNDED_MANUAL": bounded_input,
+            },
+        )
+        return result.stdout.splitlines()
+
+    bounded_args = [
+        "--categories",
+        "semantic",
+        "--max-cases",
+        "128",
+        "--selection-strategy",
+        "feature-cover",
+    ]
+    full_args = ["--categories", "semantic", "stochastic"]
+    assert selected_args("pull_request") == bounded_args
+    assert selected_args("schedule") == full_args
+    assert selected_args("workflow_dispatch") == full_args
+    assert selected_args("workflow_dispatch", "true") == bounded_args
     assert "--case-timeout 60" in run
     assert "--jobs 4" in run
     assert '--artifacts-dir "$RUNNER_TEMP/ssts-artifacts/cases"' in run

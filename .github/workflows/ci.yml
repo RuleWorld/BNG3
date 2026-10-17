@@ -1006,3 +1006,56 @@ jobs:
             ${{ steps.image.outputs.name }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  harness:
+    name: Common evidence and selection contracts
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install harness dependencies
+        run: python -m pip install pytest numpy pyyaml
+      # Workflow selector collection runs in python-integration, where the
+      # installed package and native extension required for collection exist.
+      - name: Run common harness contracts from the existing plan
+        env:
+          BNG3_TEST_EVENT_LOG: ${{ runner.temp }}/conformance-harness/pytest-events.jsonl
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+          plan = json.loads(Path('provenance/validation-plan.json').read_text())
+          selected = next(suite for suite in plan['suites'] if suite["id"] == "harness")['tests']
+          selected = list(dict.fromkeys(selected + [
+              'tests/test_ssts_feature_selection.py',
+              'tests/test_ssts_selected_gate.py',
+              'tests/test_ssts_stage_reporting.py',
+              'tests/test_ci_contract.py',
+          ]))
+          output = Path(os.environ['RUNNER_TEMP']) / 'conformance-harness'
+          output.mkdir(parents=True, exist_ok=True)
+          print('Harness contracts only; no native/corpus qualification. Selected tests:', selected, flush=True)
+          subprocess.check_call([
+              sys.executable, '-m', 'pytest', '-p', 'tests.validation.pytest_evidence',
+              *selected, '-q', '--junitxml=' + str(output / 'junit.xml'),
+          ])
+          PY
+      - name: Retain the discovered denominator without qualifying it
+        if: always()
+        run: python scripts/validate.py --inventory-only --report-dir "$RUNNER_TEMP/conformance-harness/inventory"
+      - name: Publish harness outcomes and inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-harness-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/conformance-harness/
+          if-no-files-found: error
+          retention-days: 30
