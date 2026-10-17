@@ -2180,3 +2180,38 @@ def check_sbml(path: str | Path) -> tuple[bool, str]:
     if serious:
         return False, f"{serious} SBML error(s); first: {doc.getError(0).getMessage()}"
     return True, f"valid SBML ({n_err} non-fatal notices)"
+
+
+def qualify_binomial_marginal(runs, column, *, population, probability, label):
+    """Independent mean control for a known binomial marginal (six analytic SE).
+
+    Use the analytic variance, not an empirical reference variance that could
+    itself be biased. This qualifies an oracle before cross-engine comparison;
+    it does not replace or alter the parity thresholds.
+    """
+    mean, _, columns, times = _ensemble_stats(runs)
+    assert (
+        mean is not None and len(runs) >= 2
+    ), f"{label}: invalid analytic control ensemble"
+    assert column in columns, f"{label}: missing analytic control observable {column}"
+    values = np.array([data[:, names.index(column)] for data, names in runs])
+    assert np.isfinite(values).all(), f"{label}: nonfinite analytic control samples"
+    assert (
+        (values >= 0) & (values <= population) & (values == np.floor(values))
+    ).all(), f"{label}: invalid binomial marginal counts"
+    p = np.asarray(probability(times))
+    assert (
+        p.shape == times.shape and np.isfinite(p).all() and ((p >= 0) & (p <= 1)).all()
+    )
+    expected = population * p
+    se = np.sqrt(population * p * (1 - p) / len(runs))
+    residual = np.abs(values.mean(axis=0) - expected)
+    bad = residual > 6 * se + 1e-12
+    if np.any(bad):
+        index = int(np.flatnonzero(bad)[0])
+        raise AssertionError(
+            f"{label}: {column} fails analytic binomial marginal qualification at "
+            f"t={times[index]:g}: mean={values.mean(axis=0)[index]:g}, "
+            f"expected={expected[index]:g}, analytic SE={se[index]:g}; "
+            "reference seed schedule/oracle requires requalification"
+        )

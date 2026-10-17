@@ -1,5 +1,46 @@
 # BNG3 current progress
 
+## Automation continuation (2026-10-17 candidate)
+
+Continue from the runtime/event and NFnext execution changes rather than treating
+green CI as broad implementation equivalence. This candidate adds:
+
+- 128 locked semantic SBML cases on PRs and the full semantic/stochastic inventory
+  on scheduled/manual runs. Conversion, structural round-trip, independent
+  RoadRunner comparison and official references have separate stage counts.
+  Per-case inputs, translations, exported XML, worker reports and logs are retained;
+  worker identity includes a digest of the Python sources.
+- Live pinned BNG2 SSA ensembles in scheduled/manual parity, deterministic spread
+  seeds, and an independent analytic marginal check for the fixed michment model.
+  Scratch generation never refreshes committed golden files implicitly.
+- Workflow contracts that detect removed triggers and explicitly selected tests
+  omitted from PR path filters. CPU fallback does not qualify GPU execution.
+- Focused regressions for concentration/amount rate rules, non-unit-volume Multi
+  state changes and forward function calls during SBML export.
+
+Local candidate evidence: build and 629 CTest checks passed; 65 focused
+SBML/event/GPU-contract checks passed. The locked 128-case run passed all 128
+conversion, structural round-trip and RoadRunner comparisons; official references
+reported 122 passed and six unsupported, with no failures or timeouts. This is a
+partial suite run, and full-suite aggregate flags remain false. Hosted final-head
+CI remains a separate qualification gate. All three live 200-member BNG2 SSA
+ensemble comparisons passed locally against the clean pinned source revision
+`9601746f8884ed19ab2acea49fe87fc4660ace46`. CPU statistical controls passed all
+four models. The headless Python suite reported 1,364 passed, 30 skipped, two
+xfails and one source-versus-installed notebook-path failure; it is not a clean
+full-suite result. Actual GPU execution remains unqualified on this host.
+
+Next development sequence:
+
+1. Diagnose newly exposed scheduled failures by layer using retained replay
+   artifacts; add a focused regression before each semantic repair.
+2. Expand supported SBML/event/NFnext classes only with independent quantitative
+   evidence and explicit unsupported boundaries.
+3. Run GPU qualification on actual hardware; keep unavailable hardware and
+   unsupported stochastic SBML statistics visible instead of inferring support.
+
+The dated audit below describes its original revision, not this candidate.
+
 **Audit refreshed:** 2026-10-16 against RuleWorld/BNG3 main
 `2f7200a279767bcc4a78a33775224e30f3d65521`. This is an issue/CI scope audit,
 not full qualification of that revision. Semantic convergence and release
