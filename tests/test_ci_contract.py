@@ -1067,7 +1067,7 @@ def test_project_declares_click_and_packaging_as_runtime_dependencies():
 
 
 def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
-    """No-deps wheel install must run after click is installed explicitly.
+    """No-deps wheel install must include runtime and exercised test dependencies.
 
     The wheel job intentionally uses ``--no-deps``.  Therefore its test
     environment must install every runtime dependency required at collection
@@ -1085,6 +1085,10 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     assert any(
         re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
     ), "python-test no-deps wheel path must install declared click dependency"
+    assert any(re.search(r"\bscipy(?:[<>=!~].*)?\b", line) for line in install_lines)
+    assert any(
+        re.search(r"\blibroadrunner(?:[<>=!~].*)?\b", line) for line in install_lines
+    )
 
 
 def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
