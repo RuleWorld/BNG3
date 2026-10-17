@@ -49,11 +49,16 @@ def test_integration_selection_comes_from_capability_test_mappings():
 
 
 def test_integrated_cli_inventory_is_source_driven_and_nonqualifying(tmp_path):
+    issues = [{"number": 999, "title": "Unmapped example", "state": "CLOSED"}]
+    snapshot = tmp_path / "issues.json"
+    snapshot.write_text(json.dumps(issues))
     result = subprocess.run(
         [
             sys.executable,
             str(ROOT / "scripts/validate.py"),
             "--inventory-only",
+            "--issues-json",
+            str(snapshot),
             "--report-dir",
             str(tmp_path / "report"),
         ],
@@ -73,6 +78,16 @@ def test_integrated_cli_inventory_is_source_driven_and_nonqualifying(tmp_path):
         "nfnext.lowering-execution",
     } <= {r["id"] for r in report["capabilities"]}
     assert (tmp_path / "report/report.md").is_file()
+    issue = next(row for row in report["issue_coverage"] if row["number"] == 999)
+    assert issue["state"] == "CLOSED"
+    assert issue["coverage"] == "NOT_TESTED"
+    assert issue["capabilities"] == []
+    assert report["issue_inventory"]["scope"] == "provided-snapshot"
+    assert (tmp_path / "report/issues-input.json").read_bytes() == snapshot.read_bytes()
+    assert (
+        json.loads((tmp_path / "report/issue-coverage.json").read_text())
+        == report["issue_coverage"]
+    )
 
 
 def test_existing_report_directory_cannot_supply_stale_success(tmp_path):

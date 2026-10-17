@@ -8,8 +8,10 @@ on:
       - 'provenance/ssts-ci-linux-py312.lock'
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
+      - 'scripts/ci/ssts_selection.py'
       - 'tests/test_ci_contract.py'
       - 'tests/test_ssts_selected_gate.py'
+      - 'tests/test_ssts_feature_selection.py'
       - 'tests/test_ssts_stage_reporting.py'
       - 'tests/python/test_native_events.py'
       - 'tests/python/test_species_rate_rule_amounts.py'
@@ -21,6 +23,12 @@ on:
   schedule:
     - cron: '31 5 * * 1'
   workflow_dispatch:
+    inputs:
+      bounded:
+        description: Run the bounded 128-case semantic feature cover
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -73,7 +81,7 @@ jobs:
             --source-revision "$BNG3_SOURCE_REVISION" \
             > "$RUNNER_TEMP/ssts-artifacts/package-identity.json"
           python -c 'import libsbml, roadrunner; print(libsbml.getLibSBMLDottedVersion(), roadrunner.__version__)'
-          python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/python/test_structural_multi_execution.py tests/python/test_native_events.py tests/python/test_sbml_function_forward_references.py tests/python/test_species_rate_rule_amounts.py -q
+          python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/python/test_structural_multi_execution.py tests/python/test_native_events.py tests/python/test_sbml_function_forward_references.py tests/python/test_species_rate_rule_amounts.py -q
 
       - name: Checkout and preflight complete locked suite
         shell: bash
@@ -97,10 +105,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The locked inventory fixes prefix membership and ordering. Full
-          # scheduled/manual runs retain unsupported cases as separate outcomes.
-          selection=(--categories semantic --max-cases 128)
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          # PR selection covers official metadata classes within a 128-case
+          # budget. Scheduled/manual runs remain full and retain unsupported
+          # cases as separate outcomes.
+          selection=(--categories semantic --max-cases 128 --selection-strategy feature-cover)
+          if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             selection=(--categories semantic stochastic)
           fi
           python scripts/ci/validate_sbml_test_suite.py \
@@ -111,6 +120,16 @@ jobs:
             --gate-selected-cases \
             --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
             2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
+
+      - name: Triage retained stages with the common conformance tools
+        if: always()
+        run: |
+          python -m tests.validation.ci_report \
+            "$RUNNER_TEMP/ssts-artifacts/report.json" \
+            --input-format ssts \
+            --output-dir "$RUNNER_TEMP/ssts-artifacts/triage" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --revision "$BNG3_SOURCE_REVISION"
 
       - name: Summarize separate evidence and digest artifacts
         if: always()

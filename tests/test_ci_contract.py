@@ -52,6 +52,46 @@ SSA_ENSEMBLE_MANIFEST = (
 CPP_CMAKE = REPO / "cpp" / "CMakeLists.txt"
 TOP_LEVEL_CMAKE = REPO / "CMakeLists.txt"
 
+
+@pytest.mark.parametrize("job_id", ["cpp-build", "python-test"])
+def test_semantic_test_jobs_retain_reports_on_failure(job_id):
+    steps = parse_workflow(CI_WORKFLOW)["jobs"][job_id]["steps"]
+    report_tests = [
+        step
+        for step in steps
+        if (
+            "ctest " in step.get("run", "")
+            or "pytest tests/python" in step.get("run", "")
+        )
+    ]
+    assert report_tests, f"{job_id}: no semantic tests selected"
+    for step in report_tests:
+        command = step["run"]
+        assert "--output-junit" in command or "--junitxml=" in command, step["name"]
+    uploads = [
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+        and "test-results" in step.get("with", {}).get("name", "")
+    ]
+    assert len(uploads) == 1, f"{job_id}: missing test result artifact"
+    upload = uploads[0]
+    assert upload.get("if") == "always()"
+    paths = upload["with"]["path"].split()
+    reports = []
+    for step in report_tests:
+        match = re.search(r"(?:--output-junit\s+|--junitxml=)(\S+)", step["run"])
+        assert match, f"{step['name']}: no report destination"
+        report = match.group(1)
+        reports.append(report)
+        expected_path = f"build/{report}" if job_id == "cpp-build" else report
+        assert expected_path in paths, f"report {expected_path} is not retained"
+    assert len(set(reports)) == len(reports), "test invocations overwrite their reports"
+    assert steps.index(upload) > max(steps.index(step) for step in report_tests)
+    if job_id == "cpp-build":
+        assert "build/Testing/Temporary/" in paths
+
+
 # The flags that embed a second copy of the C++ runtime into a binary. They are
 # correct for a CLI executable, which owns its process, and wrong for the
 # Python extension, which is loaded into a process someone else owns.
