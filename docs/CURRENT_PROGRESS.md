@@ -2,6 +2,27 @@
 
 ## Automation continuation (2026-10-17 candidate)
 
+The follow-up read all 60 GitHub issue bodies (44 open, 16 closed) and selected
+bounded work from their acceptance criteria:
+
+- #141: a parameter-role × ODE/SSA reuse matrix compares mutations of volume,
+  seed population and dependent rates with fresh compilation, an analytic ODE
+  trajectory and exact seeded SSA replay.
+- #171/#172: cold behavioral subprocesses select the parent's package. Required
+  public-module and native-loader failures propagate instead of silently
+  selecting legacy behavior or exposing `None`. Explicit Perl mode and genuinely
+  absent native-module importability remain separate tested boundaries.
+- #180: CI resolves populated reconciliation test references against Python AST
+  test nodes, Catch2 declarations and CTest targets. Renamed, missing or
+  commented-out tests fail the guard. Five of seven incorporated/superseded
+  entries still have no test references; resolving a reference does not prove
+  its associated behavior claim. Upstream drift/approval remains open.
+- #157/#160: the event inactivity proof no longer freezes rate-ruled trigger
+  parameters at their initial values. Three-state and coupled two-state controls
+  now remain explicitly untranslated instead of falsely claiming the event can
+  never fire. Official semantic/00403 is classified unsupported; RoadRunner shows
+  its source event firing. This is a classification repair, not new event support.
+
 Continue from the runtime/event and NFnext execution changes rather than treating
 green CI as broad implementation equivalence. This candidate adds:
 
@@ -26,9 +47,15 @@ partial suite run, and full-suite aggregate flags remain false. Hosted final-hea
 CI remains a separate qualification gate. All three live 200-member BNG2 SSA
 ensemble comparisons passed locally against the clean pinned source revision
 `9601746f8884ed19ab2acea49fe87fc4660ace46`. CPU statistical controls passed all
-four models. The headless Python suite reported 1,364 passed, 30 skipped, two
-xfails and one source-versus-installed notebook-path failure; it is not a clean
-full-suite result. Actual GPU execution remains unqualified on this host.
+four models. Actual GPU execution remains unqualified on this host.
+
+The headless Python suite passes with 1,382 passed, 30 skipped and two existing
+xfails. The subprocess selection contract repairs the source-versus-installed
+notebook-defaults failure. Infrastructure
+checks pass (138), including import identity, workflow wiring, reconciliation
+references and SBML report/artifact handling. The event regression module passes
+81 checks. Official semantic/00403 is explicitly unsupported with downstream
+stages not tested; it is not counted as a passing scientific comparison.
 
 Next development sequence:
 
