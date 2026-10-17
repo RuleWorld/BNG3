@@ -5,6 +5,24 @@ from tests.workflow_yaml import parse_workflow
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_common_harness_has_a_fast_path_in_main_ci():
+    workflow = parse_workflow(ROOT / ".github/workflows/ci.yml")
+    triggers = workflow.get("on", workflow.get(True))
+    assert "workflow_dispatch" in triggers and "pull_request" in triggers
+    job = workflow["jobs"]["harness"]
+    assert job["timeout-minutes"] <= 15
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "provenance/validation-plan.json" in commands
+    assert 'suite["id"] == "harness"' in commands
+    assert "subprocess.check_call" in commands
+    assert "cmake --build" not in commands
+    assert any(
+        step.get("if") == "always()"
+        and step.get("uses", "").startswith("actions/upload-artifact@")
+        for step in job["steps"]
+    )
+
+
 def test_existing_ci_runs_harness_mutations_and_publishes_inventory():
     workflow = parse_workflow(ROOT / ".github/workflows/ci.yml")
     steps = workflow["jobs"]["lint"]["steps"]
@@ -28,6 +46,24 @@ def test_differential_reporting_is_additive_and_nightly():
     assert "--report-only" in report["run"]
     assert "--bng2-root" in report["run"]
     assert "--corpus-tier" in report["run"]
+
+
+def test_backlog_snapshot_enriches_reports_without_blocking_semantic_execution():
+    workflow = parse_workflow(ROOT / ".github/workflows/parity.yml")
+    steps = workflow["jobs"]["bng2-parity"]["steps"]
+    snapshot = next(s for s in steps if "gh issue list" in s.get("run", ""))
+    assert "continue-on-error" not in snapshot
+    assert "if gh issue list" in snapshot["run"]
+    assert 'mv "$RUNNER_TEMP/bng3-issues.tmp"' in snapshot["run"]
+    assert "--state all" in snapshot["run"]
+    assert "number,title,state,url" in snapshot["run"]
+    report = next(
+        s for s in steps if "scripts/validate.py --tier smoke" in s.get("run", "")
+    )
+    assert "--issues-json" in report["run"]
+    assert "issue_args=()" in report["run"]
+    assert "mapped-only" in report["run"]
+    assert steps.index(snapshot) < steps.index(report)
 
 
 def test_ci_checks_cdat_gdat_and_publishes_a_distinct_red_diagnostic_check():

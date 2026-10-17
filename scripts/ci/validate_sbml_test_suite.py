@@ -32,6 +32,17 @@ from typing import Any, Callable
 
 import numpy as np
 
+if __package__:
+    from .ssts_selection import (
+        SuiteSelectionError,
+        select_feature_cover as _select_feature_cover,
+    )
+else:
+    from ssts_selection import (
+        SuiteSelectionError,
+        select_feature_cover as _select_feature_cover,
+    )
+
 VERSION_PRIORITY = ("l3v2", "l3v1", "l2v5", "l2v4", "l2v3", "l2v2", "l2v1", "l1v2")
 NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
 # BNG3 and libRoadRunner use separate CVODE wrappers and evaluate assignment
@@ -2178,6 +2189,12 @@ def main() -> int:
     parser.add_argument("--categories", nargs="+", default=["semantic", "stochastic"])
     parser.add_argument("--max-cases", type=int, default=0)
     parser.add_argument(
+        "--selection-strategy",
+        choices=("prefix", "feature-cover"),
+        default="prefix",
+        help="bounded selection policy; feature-cover uses official model metadata",
+    )
+    parser.add_argument(
         "--gate-selected-cases",
         action="store_true",
         help="gate executed selected cases; never claim full-suite conformance",
@@ -2235,6 +2252,10 @@ def main() -> int:
         return 0
     if args.json is None:
         parser.error("--json is required unless --validate-only is set")
+    if args.selection_strategy == "feature-cover" and args.only_case:
+        parser.error(
+            "--selection-strategy feature-cover cannot be combined with --only-case"
+        )
 
     cases = _case_files(args.suite_dir, args.categories)
     full_suite_cases = _case_files(args.suite_dir, ["semantic", "stochastic"])
@@ -2243,6 +2264,7 @@ def main() -> int:
         for category in ("semantic", "stochastic")
     }
     full_suite_inventory["total"] = len(full_suite_cases)
+    selection_metadata = None
     if args.only_case:
         try:
             only_category, only_id = args.only_case.split("/", 1)
@@ -2256,7 +2278,15 @@ def main() -> int:
         if not selected:
             raise SystemExit(f"case is not in the suite inventory: {args.only_case}")
     else:
-        selected = cases[: args.max_cases] if args.max_cases else cases
+        if args.selection_strategy == "feature-cover":
+            try:
+                selected, selection_metadata = _select_feature_cover(
+                    cases, args.max_cases
+                )
+            except SuiteSelectionError as exc:
+                raise SystemExit(f"suite selection failed: {exc}") from exc
+        else:
+            selected = cases[: args.max_cases] if args.max_cases else cases
     partial = _is_partial_run(args.categories, args.max_cases, args.only_case)
     try:
         import bionetgen._bionetgen_cpp as cpp
@@ -2365,6 +2395,16 @@ def main() -> int:
         "case_inventory": len(cases),
         "full_suite_inventory": full_suite_inventory,
         "selected_cases": len(selected),
+        "case_selection": selection_metadata
+        or {
+            "strategy": (
+                "only-case"
+                if args.only_case
+                else "prefix" if args.max_cases else "full-inventory"
+            ),
+            "budget": args.max_cases or None,
+            "selected_case_count": len(selected),
+        },
         "partial_run": partial,
         "selected_surface_passed": _selected_surface_passed(records),
         "counts": counts,
