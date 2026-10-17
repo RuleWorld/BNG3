@@ -188,7 +188,16 @@ jobs:
         run: cmake --build build --config ${{ env.CMAKE_BUILD_TYPE }}
 
       - name: Run C++ unit tests
-        run: ctest --test-dir build --output-on-failure -C ${{ env.CMAKE_BUILD_TYPE }}
+        run: ctest --test-dir build --output-on-failure -C ${{ env.CMAKE_BUILD_TYPE }} --output-junit ctest-results.xml
+
+      - name: Retain C++ test results and replay diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpp-test-results-${{ matrix.os }}-${{ matrix.compiler }}
+          path: |
+            build/ctest-results.xml
+            build/Testing/Temporary/
 
       - name: Upload bng_cpp artifact
         uses: actions/upload-artifact@v4
@@ -666,18 +675,27 @@ jobs:
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
 
       - name: Run Python tests
-        run: pytest tests/python/test_sbml_import.py -v --tb=short
+        run: pytest tests/python/test_sbml_import.py -v --tb=short --junitxml=sbml-results.xml
         env:
           SYMPY_USE_GMPY: "0"
           MPLBACKEND: Agg
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
 
       - name: Run Python tests
-        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml --ignore=tests/python/test_sbml_import.py
+        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml --ignore=tests/python/test_sbml_import.py --junitxml=python-results.xml
         env:
           SYMPY_USE_GMPY: "0"
           MPLBACKEND: Agg
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+
+      - name: Retain Python test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-test-results-${{ matrix.os }}-${{ matrix.python-version }}
+          path: |
+            sbml-results.xml
+            python-results.xml
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'

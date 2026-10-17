@@ -1,5 +1,48 @@
 # BNG3 current progress
 
+## Generated dependency and native identity gates (2026-10-17)
+
+Continuation from `e4394172` on PR #288, with bounded implementation work
+selected from #138/#141/#143 and #153/#155. Existing explicit-grid action
+`stop_if` behavior already matches pinned BNG2; its historical discrepancy was
+not used to justify a duplicate repair.
+
+- Shared parameter mutation now invalidates transitive values and time-dependence
+  together. A deferred reset preserves linear block declaration construction.
+  The generated Catch2 gate enumerates four dependency depths, both declaration
+  orders, eager/lazy evaluation, five static/dynamic mutations, three times,
+  and invalid-cycle recovery. Independent arithmetic and fresh construction
+  check every node. Captured graph/order/step coordinates make failures replayable.
+  The final matrix reports 1,224 failed assertions against the baseline
+  `ParameterList.cpp` linked into the same test harness, and passes after repair.
+- The Python lifecycle matrix checks timed ODE dynamics analytically, mutates to
+  two constant rates, compares fresh/reused ODE trajectories and seeded NFsim
+  replay. NFsim previously refused a stale transitive timed-rate classification.
+  This is lifecycle evidence using embedded NFsim, not new independent-native
+  NFsim qualification.
+- Direct native BNGIR reconstruction rejects duplicate parameter/molecule-type
+  names before distinct IDs can alias. A reusable ID remapper exercises all six
+  permutations of a three-parameter dependency chain. Each reconstruction blocks
+  BNGL parsing/rendering and checks native ODE derivatives against an analytic
+  oracle. This does not establish a complete native BNGIR schema implementation.
+- C++ and Python matrix jobs retain JUnit reports even on failure; C++ artifacts
+  also retain CTest replay logs. Workflow contracts check report destinations,
+  distinct filenames, upload ordering and unconditional retention. Reports expose
+  actual test outcomes; a passing rejection test does not qualify that rejected
+  feature as supported, and jobs not executed remain untested.
+
+Local validation after final source/test edits: Release build passed; all 632
+CTest checks passed; Python reported 1,393 passed, 30 skipped and two existing
+xfails; workflow/report contracts passed 95 checks. The expression suite passed
+3,600 assertions across 31 cases. Black, Ruff and diff checks passed. Hosted
+exact-head results remain a separate gate. No full BioModels campaign was run.
+
+Next priority is executing upstream PyBioNetGen as an isolated behavioral oracle
+(the existing lane checks source signatures and BNG3 contracts), followed by
+feature-class SBML/event qualification against official references/RoadRunner and
+broader NFnext execution correspondence against pinned native NFsim. These remain
+open workstreams; generated mutation/identity gates do not establish broad parity.
+
 ## Automation continuation (2026-10-17 candidate)
 
 The follow-up read all 60 GitHub issue bodies (44 open, 16 closed) and selected
