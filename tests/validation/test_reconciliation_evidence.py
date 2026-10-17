@@ -93,6 +93,24 @@ def test_supported_test_reference_forms_resolve(
             "CTest target does not exist",
         ),
         (
+            "tests/CMakeLists.txt",
+            "bracket_commented_target",
+            "#[[ add_test(NAME bracket_commented_target COMMAND fake) ]]\n",
+            "CTest target does not exist",
+        ),
+        (
+            "tests/CMakeLists.txt",
+            "equal_bracket_commented_target",
+            "#[=[ add_test(NAME equal_bracket_commented_target COMMAND fake) ]=]\n",
+            "CTest target does not exist",
+        ),
+        (
+            "tests/CMakeLists.txt",
+            "bracket_quoted_target",
+            "set(DOC [=[ add_test(NAME bracket_quoted_target COMMAND fake) ]=])\n",
+            "CTest target does not exist",
+        ),
+        (
             "tests/test_sample.py",
             "test_present",
             "def test_present(): pass\n",

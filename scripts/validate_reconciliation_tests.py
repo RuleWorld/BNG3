@@ -55,12 +55,36 @@ def _source_tokens(source: str, *, cmake: bool = False) -> list[tuple[str, str]]
     """Tokenize identifiers, punctuation, and quoted strings; discard comments."""
     tokens = []
     index = 0
+
+    def bracket_argument_end(start: int) -> tuple[str, int] | None:
+        if start >= len(source) or source[start] != "[":
+            return None
+        cursor = start + 1
+        while cursor < len(source) and source[cursor] == "=":
+            cursor += 1
+        if cursor >= len(source) or source[cursor] != "[":
+            return None
+        delimiter = "]" + source[start + 1 : cursor] + "]"
+        content_start = cursor + 1
+        end = source.find(delimiter, content_start)
+        if end < 0:
+            return source[content_start:], len(source)
+        return source[content_start:end], end + len(delimiter)
+
     while index < len(source):
         char = source[index]
         if char.isspace():
             index += 1
             continue
-        if cmake and char == "#" or not cmake and source.startswith("//", index):
+        if cmake and char == "#":
+            bracket = bracket_argument_end(index + 1)
+            if bracket is not None:
+                _, index = bracket
+                continue
+            end = source.find("\n", index)
+            index = len(source) if end < 0 else end + 1
+            continue
+        if not cmake and source.startswith("//", index):
             end = source.find("\n", index)
             index = len(source) if end < 0 else end + 1
             continue
@@ -84,6 +108,12 @@ def _source_tokens(source: str, *, cmake: bool = False) -> list[tuple[str, str]]
                     index += 1
             tokens.append(("string", "".join(value)))
             continue
+        if cmake and char == "[":
+            bracket = bracket_argument_end(index)
+            if bracket is not None:
+                value, index = bracket
+                tokens.append(("string", value))
+                continue
         if char.isalpha() or char == "_":
             start = index
             index += 1
