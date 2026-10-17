@@ -1020,6 +1020,8 @@ jobs:
           python-version: '3.12'
       - name: Install harness dependencies
         run: python -m pip install pytest numpy pyyaml
+      # Workflow selector collection runs in python-integration, where the
+      # installed package and native extension required for collection exist.
       - name: Run common harness contracts from the existing plan
         env:
           BNG3_TEST_EVENT_LOG: ${{ runner.temp }}/conformance-harness/pytest-events.jsonl
@@ -1037,7 +1039,6 @@ jobs:
               'tests/test_ssts_selected_gate.py',
               'tests/test_ssts_stage_reporting.py',
               'tests/test_ci_contract.py',
-              'tests/test_workflow_contract.py',
           ]))
           output = Path(os.environ['RUNNER_TEMP']) / 'conformance-harness'
           output.mkdir(parents=True, exist_ok=True)
