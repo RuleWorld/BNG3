@@ -64,6 +64,35 @@ TEST_CASE("Adding a forward dependency invalidates its cached classification", "
     CHECK(parameters.evaluate("alias", 3.0) == 3.0);
 }
 
+TEST_CASE("Declaration changes keep evaluated values readable for export",
+          "[Expression][Parameters]") {
+    // NetWriter registers derived rate parameters and evaluates them before it
+    // writes the NET parameter block, which reads Parameter::getValue()
+    // directly. A declaration change must invalidate recomputation without
+    // zeroing values that settled consumers still read.
+    ParameterList parameters;
+    parameters.add(Parameter("base", Expression::number(2.0)));
+    parameters.add(Parameter("rate", Expression::binary(
+        "*", Expression::identifier("base"), Expression::number(3.0))));
+    parameters.evaluateAll();
+    REQUIRE(parameters.evaluate("rate") == 6.0);
+
+    // Mirrors appending a derived rate parameter and evaluating it, which
+    // dirties the cache the same way the exporter's own evaluation does.
+    parameters.add(Parameter("derived", Expression::number(0.5)));
+    CHECK(parameters.evaluate("derived") == 0.5);
+
+    CHECK(parameters.get("base").hasValue());
+    CHECK(parameters.get("base").getValue() == 2.0);
+    CHECK(parameters.get("rate").getValue() == 6.0);
+    CHECK(parameters.evaluate("rate") == 6.0);
+
+    // Replacing a dependency still forces its dependents to recompute.
+    parameters.add(Parameter("base", Expression::number(5.0)));
+    CHECK(parameters.evaluate("rate") == 15.0);
+    CHECK(parameters.get("base").getValue() == 5.0);
+}
+
 TEST_CASE("Generated parameter graphs preserve mutation semantics", "[Expression][Parameters][Generated]") {
     // Deterministic graph/mutation enumeration makes every failure replayable
     // from Catch's captured depth, declaration order, refresh mode and step.

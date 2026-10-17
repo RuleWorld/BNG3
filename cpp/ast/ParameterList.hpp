@@ -33,6 +33,12 @@ public:
 
 private:
     void refreshCaches() const;
+    // A memoized value is reusable only while it is still valid for the current
+    // declarations. `Parameter::hasValue` alone cannot answer that: the value is
+    // retained across a declaration change so consumers that read the last
+    // evaluated value (export writers, derived-rate folding) keep working, while
+    // evaluate() recomputes from scratch once the value is marked stale.
+    bool hasFreshValue(std::size_t index) const;
     double evaluateIndex(std::size_t index, std::unordered_map<std::string, bool>& visiting, double t) const;
 
     // A parameter is memoized only when its value cannot change with time.
@@ -48,6 +54,9 @@ private:
     static constexpr std::int8_t kTimeDependent = 2;
     mutable std::vector<std::int8_t> timeDependent_;
     mutable bool cachesDirty_ = false;
+    // Parallel to `parameters_`; true when the memoized value no longer matches
+    // the current declarations and evaluate() must recompute it.
+    mutable std::vector<bool> valuesStale_;
 
     mutable std::vector<Parameter> parameters_;
     std::unordered_map<std::string, std::size_t> indexByName_;

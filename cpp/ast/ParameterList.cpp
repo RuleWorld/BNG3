@@ -15,19 +15,32 @@ void ParameterList::add(Parameter parameter) {
     const auto existing = indexByName_.find(name);
     if (existing != indexByName_.end()) {
         parameters_[existing->second] = std::move(parameter);
+        if (existing->second < valuesStale_.size()) {
+            valuesStale_[existing->second] = true;
+        }
         return;
     }
 
     indexByName_[name] = parameters_.size();
     parameters_.push_back(std::move(parameter));
     timeDependent_.push_back(kUnknown);
+    valuesStale_.push_back(true);
 }
 
 void ParameterList::refreshCaches() const {
     if (!cachesDirty_) return;
-    for (auto& parameter : parameters_) parameter.clearValue();
+    // Retain the memoized values: they are the last values evaluated against a
+    // settled model and direct getValue() consumers depend on them. Marking them
+    // stale is enough for evaluate() to recompute, and avoids zeroing live
+    // values that export writers read without re-evaluating.
+    valuesStale_.assign(parameters_.size(), true);
     timeDependent_.assign(parameters_.size(), kUnknown);
     cachesDirty_ = false;
+}
+
+bool ParameterList::hasFreshValue(std::size_t index) const {
+    return index < valuesStale_.size() && !valuesStale_[index] &&
+           index < parameters_.size() && parameters_[index].hasValue();
 }
 
 namespace {
@@ -179,7 +192,7 @@ double ParameterList::evaluate(const std::string& name, double t) const {
     // of `t`, so returning a value cached at an earlier time would freeze it
     // for the rest of the run.  Time-independent parameters still short-circuit
     // on the memo, which is what keeps the rate-evaluation hot path cheap.
-    if (!isTimeDependent(iter->second) && parameters_[iter->second].hasValue()) {
+    if (!isTimeDependent(iter->second) && hasFreshValue(iter->second)) {
         return parameters_[iter->second].getValue();
     }
 
@@ -190,7 +203,7 @@ double ParameterList::evaluate(const std::string& name, double t) const {
 double ParameterList::evaluateIndex(std::size_t index, std::unordered_map<std::string, bool>& visiting, double t) const {
     auto& parameter = parameters_[index];
     const bool cacheable = !isTimeDependent(index);
-    if (cacheable && parameter.hasValue()) {
+    if (cacheable && hasFreshValue(index)) {
         return parameter.getValue();
     }
 
@@ -213,6 +226,7 @@ double ParameterList::evaluateIndex(std::size_t index, std::unordered_map<std::s
     visiting[name] = false;
     if (cacheable) {
         parameter.setValue(value);
+        if (index < valuesStale_.size()) valuesStale_[index] = false;
     }
     return value;
 }
