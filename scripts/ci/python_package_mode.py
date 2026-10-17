@@ -144,3 +144,30 @@ def verify_package_locations(
             f"{mode} native extension was shadowed: {extension_path} "
             f"(expected under {expected_extension})"
         )
+
+
+def subprocess_import_setup(
+    package_file: str | Path, extension_file: str | Path
+) -> str:
+    """Select the parent's package in a cold behavioral-test subprocess.
+
+    Do not use this for installation/discovery tests: those must exercise the
+    interpreter's normal lookup. This is for tests of package behavior where a
+    second installed wheel or an editable finder must not change the subject.
+    """
+    package = Path(package_file).resolve()
+    extension = Path(extension_file).resolve()
+    return f"""
+import importlib.abc
+import importlib.util
+import sys
+
+class _SelectedBNG3Package(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'bionetgen':
+            return importlib.util.spec_from_file_location(
+                fullname, {str(package)!r},
+                submodule_search_locations=[{str(package.parent)!r}, {str(extension.parent)!r}])
+
+sys.meta_path.insert(0, _SelectedBNG3Package())
+"""

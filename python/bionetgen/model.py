@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import importlib
 import operator
 import os
 from pathlib import Path
@@ -10,11 +11,15 @@ import sys
 from typing import Optional, Union
 
 try:
-    from . import _bionetgen_cpp as _cpp
-except ImportError:
+    _cpp = importlib.import_module(f"{__package__}._bionetgen_cpp")
+except ModuleNotFoundError as exc:
+    if exc.name != f"{__package__}._bionetgen_cpp":
+        raise
     try:
-        import _bionetgen_cpp as _cpp
-    except ImportError:
+        _cpp = importlib.import_module("_bionetgen_cpp")
+    except ModuleNotFoundError as exc:
+        if exc.name != "_bionetgen_cpp":
+            raise
         _cpp = None
     else:
         # CMake's development build places the extension in build/cpp rather

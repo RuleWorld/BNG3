@@ -213,7 +213,7 @@ jobs:
             -q -ra \
             --junitxml="$RUNNER_TEMP/issue182-required-parity.xml"
 
-      - name: Run frozen 200-member SSA ensemble parity (scheduled)
+      - name: Run live pinned 200-member SSA ensemble parity (scheduled)
         id: ssa_ensemble_parity
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         shell: bash
@@ -224,16 +224,22 @@ jobs:
             -m "stochastic and slow" \
             --bng-cpp build/cpp/bng_cpp \
             -q -ra \
+            --basetemp="$RUNNER_TEMP/ssa-live-ensembles" \
             --junitxml="$RUNNER_TEMP/issue182-ssa-ensemble.xml"
         env:
           BNG_ENSEMBLE_WORKERS: "2"
+          BNG3_LIVE_SSA_ENSEMBLES: "1"
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
 
       - name: Upload Issue 182 parity test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: issue182-parity-${{ github.event_name }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/issue182-*.xml
+          path: |
+            ${{ runner.temp }}/issue182-*.xml
+            ${{ runner.temp }}/ssa-live-ensembles
           if-no-files-found: warn
           retention-days: 14
 
@@ -275,7 +281,7 @@ jobs:
           rows = []
           for label, outcome_key, report_key in (
               ("Required RHS/ODE/SSA-determinism/export modules", "REQUIRED_OUTCOME", "REQUIRED_REPORT"),
-              ("Scheduled 200-member SSA ensembles", "ENSEMBLE_OUTCOME", "ENSEMBLE_REPORT"),
+              ("Scheduled live 200-member SSA ensembles", "ENSEMBLE_OUTCOME", "ENSEMBLE_REPORT"),
           ):
               outcome = os.environ[outcome_key]
               result = counts(os.environ[report_key])
@@ -290,7 +296,7 @@ jobs:
               summary.write(f"- Exact BNG3 candidate revision: {os.environ['BNG3_SOURCE_REVISION']}\n")
               summary.write(f"- Installed package identity: {os.environ['IDENTITY_OUTCOME']}; spawned worker identity: {os.environ['WORKER_OUTCOME']}.\n")
               summary.write('- Per-PR required modules: RHS, ODE, SSA determinism, and export (`-m "not slow"`).\n')
-              summary.write('- Scheduled/manual-only: the unchanged 200-member SSA ensemble for `gene_expr`, `michment`, and `simple_system`. No additional model-name filter is applied; missing required engines/oracles fail under strict mode.\n\n')
+              summary.write('- Scheduled/manual-only: live pinned BNG2 200-member SSA ensembles with deterministic spread seeds for `gene_expr`, `michment`, and `simple_system`. No additional model-name filter is applied; missing required engines/oracles fail under strict mode.\n\n')
               summary.write("| Lane | Step outcome | Pytest counts |\n| --- | --- | --- |\n")
               for label, outcome, detail in rows:
                   summary.write(f"| {label} | {outcome} | {detail} |\n")

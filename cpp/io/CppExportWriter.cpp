@@ -22,6 +22,7 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
 
 std::string CppExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
     requireNoEnergySemantics(model, "C++ export");
+    compile::requireNoNativeEvents(model, "C++ export");
     std::ostringstream out;
 
     const std::string modelName = model.getModelName();

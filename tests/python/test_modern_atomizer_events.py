@@ -68,6 +68,78 @@ def test_inclusive_cycle_threshold_tangent_is_not_proven_inactive():
     assert crossing is None
 
 
+def test_rate_rule_cycle_event_is_not_misclassified_as_never_firing():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="rate_rule_cycle_event">
+        <listOfParameters>
+          <parameter id="S1" value="1" constant="false"/>
+          <parameter id="S2" value="2" constant="false"/>
+          <parameter id="S3" value="1" constant="false"/>
+          <parameter id="k1" value="0.75"/>
+          <parameter id="k2" value="0.55"/>
+          <parameter id="k3" value="0.25"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><times/><ci>k3</ci><ci>S3</ci></apply><apply><times/><ci>k1</ci><ci>S1</ci></apply></apply></math></rateRule>
+          <rateRule variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><times/><ci>k1</ci><ci>S1</ci></apply><apply><times/><ci>k2</ci><ci>S2</ci></apply></apply></math></rateRule>
+          <rateRule variable="S3"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><times/><ci>k2</ci><ci>S2</ci></apply><apply><times/><ci>k3</ci><ci>S3</ci></apply></apply></math></rateRule>
+        </listOfRules>
+        <listOfEvents>
+          <event id="reset" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>S1</ci><cn>0.75</cn></apply></math></trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="S2"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1.5</cn></math></eventAssignment>
+              <eventAssignment variable="S1"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>S2</ci></math></eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=10, n_steps=100).atomize(
+        xml
+    )
+
+    assert result.success, result.error
+    assert "proven not to fire" not in result.bngl
+    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl
+    assert "setConcentration(" not in result.bngl
+
+
+def test_unsupported_coupled_rate_rule_event_remains_explicitly_untranslated():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
+      <model id="coupled_rate_rule_event">
+        <listOfParameters>
+          <parameter id="P" value="1" constant="false"/>
+          <parameter id="Q" value="0" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="P"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>Q</ci></math></rateRule>
+          <rateRule variable="Q"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><ci>P</ci></apply></math></rateRule>
+        </listOfRules>
+        <listOfEvents>
+          <event id="crossing" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><lt/><ci>P</ci><cn>0.75</cn></apply></math></trigger>
+            <listOfEventAssignments><eventAssignment variable="P"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=10, n_steps=100).atomize(
+        xml
+    )
+
+    assert result.success, result.error
+    assert "proven not to fire" not in result.bngl
+    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl
+    assert "setConcentration(" not in result.bngl
+
+
 def test_fixed_time_window_event_is_scheduled_at_its_rising_edge():
     from bionetgen.atomizer.modern.events import (
         EventTranslationContext,

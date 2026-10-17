@@ -207,6 +207,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
     requireNoEnergySemantics(model, "SBML");
+    compile::requireNoNativeEvents(model, "SBML export");
     const compile::CompiledModel compiled(model);
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default
@@ -928,6 +929,11 @@ std::string SbmlWriter::exprToMathML(
                 if (expr.kind() == ast::ExpressionKind::ObservableRef) {
                     if (const auto it = symbolIds.observables.find(funcName);
                         it != symbolIds.observables.end()) {
+                        id = it->second;
+                    } else if (const auto it = symbolIds.functions.find(funcName);
+                               it != symbolIds.functions.end()) {
+                        // Forward calls may be parsed as ObservableRef before
+                        // their function declaration has been read.
                         id = it->second;
                     }
                 } else if (const auto it = symbolIds.functions.find(funcName);

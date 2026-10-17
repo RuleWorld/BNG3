@@ -3,7 +3,8 @@
 Golden files are the regression spine: tests load them instead of invoking Perl
 on every run. This script is the *only* sanctioned way to (re)populate
 tests/validation/golden/. It is run deliberately, reviewed, and committed —
-never invoked by the test suite.
+never implicitly refreshed by the test suite. Scheduled tests may reuse the
+ensemble generator with an explicit scratch destination and pinned oracle.
 
 Usage:
     python scripts/regen_golden.py --tier p          # all on-disk compatible models
@@ -38,6 +39,23 @@ ENSEMBLE_EVIDENCE = (
 ENSEMBLE_T_END = 10
 ENSEMBLE_N_STEPS = 50
 ENSEMBLE_MIN_RUNS = 200
+
+
+def ensemble_seeds(n_runs: int) -> list[int]:
+    """Stable, dispersed positive C-int seeds, avoiding libc small-seed bias."""
+    if n_runs < 1:
+        raise ValueError("ensemble requires at least one seed")
+    seeds = []
+    seen = set()
+    index = 0
+    while len(seeds) < n_runs:
+        digest = hashlib.sha256(f"BNG3 SSA ensemble v1:{index}".encode()).digest()
+        seed = 1 + int.from_bytes(digest[:8], "big") % (2**31 - 2)
+        index += 1
+        if seed not in seen:
+            seeds.append(seed)
+            seen.add(seed)
+    return seeds
 
 
 def ensemble_model_source(
@@ -116,22 +134,29 @@ def _ensemble_oracle_identity() -> dict:
     }
 
 
-def _generate_ensemble(model_name: str, n_runs: int, identity: dict) -> dict:
+def _generate_ensemble(
+    model_name: str,
+    n_runs: int,
+    identity: dict,
+    *,
+    destination_root: Path | None = None,
+) -> dict:
     source = corpus.resolve(model_name)
     if source is None:
         raise RuntimeError(f"model {model_name!r} not on disk")
     source = Path(source).resolve()
     stem = source.stem
     source_text = source.read_text(encoding="utf-8")
+    seeds = ensemble_seeds(n_runs)
     wrapper = ensemble_model_source(
         source_text,
-        seeds=range(1, n_runs + 1),
+        seeds=seeds,
         t_end=ENSEMBLE_T_END,
         n_steps=ENSEMBLE_N_STEPS,
     )
     bng2 = Path(identity["BNG2_PERL"])
     env = os.environ.copy()
-    env.setdefault("BNGPATH", str(bng2.parent))
+    env["BNGPATH"] = str(bng2.parent)
     with tempfile.TemporaryDirectory(prefix=f"bng2-{stem}-ensemble-") as td:
         scratch = Path(td)
         wrapper_path = scratch / f"{stem}.bngl"
@@ -163,11 +188,18 @@ def _generate_ensemble(model_name: str, n_runs: int, identity: dict) -> dict:
                 + (result.stderr or result.stdout)
             )
 
+        if destination_root is not None:
+            root = Path(destination_root)
+            root.mkdir(parents=True, exist_ok=True)
+            (root / f"{stem}-wrapper.bngl").write_text(wrapper, encoding="utf-8")
+            (root / f"{stem}-oracle.log").write_text(result.stdout + result.stderr)
+
         from tests.validation.compare import parse_gdat
 
         members = []
         expected = []
-        for seed in range(1, n_runs + 1):
+        runs = []
+        for seed in seeds:
             output = output_dir / f"{stem}_seed_{seed:04d}.gdat"
             if not output.is_file() or output.stat().st_size == 0:
                 raise RuntimeError(
@@ -181,6 +213,7 @@ def _generate_ensemble(model_name: str, n_runs: int, identity: dict) -> dict:
                 or not columns
             ):
                 raise RuntimeError(f"invalid BNG2 ensemble member: {output.name}")
+            runs.append((data, columns))
             expected.append(output)
             members.append(
                 {
@@ -198,9 +231,11 @@ def _generate_ensemble(model_name: str, n_runs: int, identity: dict) -> dict:
                 f"BNG2 produced {len(unexpected)} gdat members for {stem}; expected {n_runs}"
             )
 
-        destination = GOLDEN / f"{stem}.ens"
-        GOLDEN.mkdir(parents=True, exist_ok=True)
-        stage = Path(tempfile.mkdtemp(prefix=f".{stem}.ens-", dir=GOLDEN))
+        oracle_perl.qualify_model_ensemble(model_name, runs, label="BNG2 reference")
+        root = GOLDEN if destination_root is None else Path(destination_root)
+        destination = root / f"{stem}.ens"
+        root.mkdir(parents=True, exist_ok=True)
+        stage = Path(tempfile.mkdtemp(prefix=f".{stem}.ens-", dir=root))
         backup = None
         try:
             for output, member in zip(expected, members):
@@ -230,7 +265,12 @@ def _generate_ensemble(model_name: str, n_runs: int, identity: dict) -> dict:
         "source_path": source.relative_to(corpus.REPO).as_posix(),
         "source_sha256": _sha256(source),
         "wrapper_sha256": hashlib.sha256(wrapper.encode("utf-8")).hexdigest(),
-        "reference_path": f"tests/validation/golden/{stem}.ens",
+        "reference_path": (
+            f"tests/validation/golden/{stem}.ens"
+            if destination_root is None
+            else str(destination.resolve())
+        ),
+        "seeds": seeds,
         "member_count": len(members),
         "aggregate_sha256": aggregate.hexdigest(),
         "members": members,
@@ -240,14 +280,15 @@ def _generate_ensemble(model_name: str, n_runs: int, identity: dict) -> dict:
 def _write_ensemble_manifest(models: dict, identity: dict, n_runs: int) -> None:
     ENSEMBLE_EVIDENCE.mkdir(parents=True, exist_ok=True)
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "oracle": identity,
         "generation": {
             "method": "ssa",
             "t_start": 0,
             "t_end": ENSEMBLE_T_END,
             "n_steps": ENSEMBLE_N_STEPS,
-            "seed_range": [1, n_runs],
+            "seed_schedule": "sha256:BNG3 SSA ensemble v1:<index>",
+            "seeds": ensemble_seeds(n_runs),
             "reset_before_each_member": True,
             "command_template": [
                 "perl",

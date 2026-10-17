@@ -1,5 +1,73 @@
 # BNG3 current progress
 
+## Automation continuation (2026-10-17 candidate)
+
+The follow-up read all 60 GitHub issue bodies (44 open, 16 closed) and selected
+bounded work from their acceptance criteria:
+
+- #141: a parameter-role × ODE/SSA reuse matrix compares mutations of volume,
+  seed population and dependent rates with fresh compilation, an analytic ODE
+  trajectory and exact seeded SSA replay.
+- #171/#172: cold behavioral subprocesses select the parent's package. Required
+  public-module and native-loader failures propagate instead of silently
+  selecting legacy behavior or exposing `None`. Explicit Perl mode and genuinely
+  absent native-module importability remain separate tested boundaries.
+- #180: CI resolves populated reconciliation test references against Python AST
+  test nodes, Catch2 declarations and CTest targets. Renamed, missing or
+  commented-out tests fail the guard. Five of seven incorporated/superseded
+  entries still have no test references; resolving a reference does not prove
+  its associated behavior claim. Upstream drift/approval remains open.
+- #157/#160: the event inactivity proof no longer freezes rate-ruled trigger
+  parameters at their initial values. Three-state and coupled two-state controls
+  now remain explicitly untranslated instead of falsely claiming the event can
+  never fire. Official semantic/00403 is classified unsupported; RoadRunner shows
+  its source event firing. This is a classification repair, not new event support.
+
+Continue from the runtime/event and NFnext execution changes rather than treating
+green CI as broad implementation equivalence. This candidate adds:
+
+- 128 locked semantic SBML cases on PRs and the full semantic/stochastic inventory
+  on scheduled/manual runs. Conversion, structural round-trip, independent
+  RoadRunner comparison and official references have separate stage counts.
+  Per-case inputs, translations, exported XML, worker reports and logs are retained;
+  worker identity includes a digest of the Python sources.
+- Live pinned BNG2 SSA ensembles in scheduled/manual parity, deterministic spread
+  seeds, and an independent analytic marginal check for the fixed michment model.
+  Scratch generation never refreshes committed golden files implicitly.
+- Workflow contracts that detect removed triggers and explicitly selected tests
+  omitted from PR path filters. CPU fallback does not qualify GPU execution.
+- Focused regressions for concentration/amount rate rules, non-unit-volume Multi
+  state changes and forward function calls during SBML export.
+
+Local candidate evidence: build and 629 CTest checks passed; 65 focused
+SBML/event/GPU-contract checks passed. The locked 128-case run passed all 128
+conversion, structural round-trip and RoadRunner comparisons; official references
+reported 122 passed and six unsupported, with no failures or timeouts. This is a
+partial suite run, and full-suite aggregate flags remain false. Hosted final-head
+CI remains a separate qualification gate. All three live 200-member BNG2 SSA
+ensemble comparisons passed locally against the clean pinned source revision
+`9601746f8884ed19ab2acea49fe87fc4660ace46`. CPU statistical controls passed all
+four models. Actual GPU execution remains unqualified on this host.
+
+The headless Python suite passes with 1,382 passed, 30 skipped and two existing
+xfails. The subprocess selection contract repairs the source-versus-installed
+notebook-defaults failure. Infrastructure
+checks pass (138), including import identity, workflow wiring, reconciliation
+references and SBML report/artifact handling. The event regression module passes
+81 checks. Official semantic/00403 is explicitly unsupported with downstream
+stages not tested; it is not counted as a passing scientific comparison.
+
+Next development sequence:
+
+1. Diagnose newly exposed scheduled failures by layer using retained replay
+   artifacts; add a focused regression before each semantic repair.
+2. Expand supported SBML/event/NFnext classes only with independent quantitative
+   evidence and explicit unsupported boundaries.
+3. Run GPU qualification on actual hardware; keep unavailable hardware and
+   unsupported stochastic SBML statistics visible instead of inferring support.
+
+The dated audit below describes its original revision, not this candidate.
+
 **Audit refreshed:** 2026-10-16 against RuleWorld/BNG3 main
 `2f7200a279767bcc4a78a33775224e30f3d65521`. This is an issue/CI scope audit,
 not full qualification of that revision. Semantic convergence and release

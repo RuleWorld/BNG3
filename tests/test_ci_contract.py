@@ -276,6 +276,22 @@ def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
     assert dirty["bng3_source_diff_sha256"] != clean_digest
 
 
+def test_reconciliation_ledger_test_references_stay_live():
+    """The upstream map must not retain stale pytest/CTest/Catch2 evidence."""
+    from scripts.validate_reconciliation_tests import (
+        load_ledgers,
+        validate_test_references,
+    )
+
+    ledgers = load_ledgers()
+    assert {ledger["source"] for _, ledger in ledgers} == {
+        "bionetgen",
+        "nfsim",
+        "pybionetgen",
+    }, "all locked upstream reconciliation ledgers must be checked"
+    assert validate_test_references(ledgers) == []
+
+
 def _locked_ssts_checkout(tmp_path: Path) -> tuple[Path, Path, str]:
     suite = tmp_path / "suite"
     suite.mkdir()
@@ -1011,7 +1027,7 @@ def test_project_declares_click_and_packaging_as_runtime_dependencies():
 
 
 def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
-    """No-deps wheel install must run after click is installed explicitly.
+    """No-deps wheel install must include runtime and exercised test dependencies.
 
     The wheel job intentionally uses ``--no-deps``.  Therefore its test
     environment must install every runtime dependency required at collection
@@ -1029,6 +1045,10 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     assert any(
         re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
     ), "python-test no-deps wheel path must install declared click dependency"
+    assert any(re.search(r"\bscipy(?:[<>=!~].*)?\b", line) for line in install_lines)
+    assert any(
+        re.search(r"\blibroadrunner(?:[<>=!~].*)?\b", line) for line in install_lines
+    )
 
 
 def test_wheel_and_sdist_python_tests_prove_installed_package_identity():

@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include "MatlabWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
@@ -37,6 +38,7 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
 
 std::string MatlabWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
     requireNoEnergySemantics(model, "MATLAB M-file");
+    compile::requireNoNativeEvents(model, "MATLAB export");
     std::ostringstream m;
 
     std::string funcName = makeMatlabFunctionName(model.getModelName());

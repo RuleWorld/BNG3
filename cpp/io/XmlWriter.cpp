@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include "XmlWriter.hpp"
 
 #include "compile/energy/BarrierCompiler.hpp"
@@ -1428,6 +1429,7 @@ bool needsTotalRateFunctionWrapper(const ast::Model& model,
 } // anonymous namespace
 
 std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network) {
+    compile::requireNoNativeEvents(model, "BNG-XML export");
     std::ostringstream xml;
 
     xml << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <cmath>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -73,6 +74,123 @@ nfnext::MatchEmbedding transformationEmbedding(const nfnext::Embedding& embeddin
     for (std::size_t node = 0; node < embedding.particles().size(); ++node)
         result.bindNode(node, embedding.particle(node));
     return result;
+}
+
+void executesCanonicalUnaryModel() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 100
+end seed species
+begin observables
+  Molecules U A(x~u)
+  Molecules P A(x~p)
+end observables
+begin reaction rules
+  A(x~u) -> A(x~p) k
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel semantic(*ast);
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0, 2.0};
+    request.seed = 17;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.columns == std::vector<std::string>{"time", "U", "P"}));
+    assert(result.rows.size() == 3);
+    assert(result.rows[0] == std::vector<double>({0, 100, 0}));
+    for (const auto& row : result.rows) assert(row[1] + row[2] == 100);
+    assert(result.rows[1][1] < 100 && result.rows[1][1] > 0);
+    assert(result.rows[2][1] <= result.rows[1][1]);
+    assert(nfnext::executeFromBioNetGen(semantic, request).rows == result.rows);
+    double mean = 0;
+    for (std::uint64_t seed = 0; seed < 256; ++seed) {
+        request.seed = seed;
+        mean += nfnext::executeFromBioNetGen(semantic, request).rows.back()[1];
+    }
+    mean /= 256;
+    // Independent pure-death expectation: E[U(2)] = 100 exp(-0.5 * 2).
+    assert(std::abs(mean - 100 * std::exp(-1.0)) < 1.5);
+    // Adding output times must not resample a pending event or change the path.
+    request.seed = 17;
+    request.sample_times = {0.0, 0.25, 0.5, 1.0, 2.0};
+    const auto finer = nfnext::executeFromBioNetGen(semantic, request);
+    assert(finer.rows[3] == result.rows[1]);
+    assert(finer.rows[4] == result.rows[2]);
+    request.max_events = 0;
+    bool budgetRefused = false;
+    try { nfnext::executeFromBioNetGen(semantic, request); }
+    catch (const std::runtime_error&) { budgetRefused = true; }
+    assert(budgetRefused);
+    request.max_events = 1'000'000;
+    request.sample_times = {0.0, 2.0, 1.0};
+    bool refused = false;
+    try { nfnext::executeFromBioNetGen(semantic, request); }
+    catch (const std::runtime_error&) { refused = true; }
+    assert(refused);
+}
+
+void refusesClockDependentParameterRates() {
+    for (const std::string rate : {"clock_rate", "k"}) {
+        const auto ast = bng::parser::parseModel(
+            "begin parameters\n clock_rate time()+1\n k 2*clock_rate\nend parameters\n"
+            "begin molecule types\n A(x~u~p)\nend molecule types\n"
+            "begin seed species\n A(x~u) 10\nend seed species\n"
+            "begin reaction rules\n A(x~u) -> A(x~p) " + rate + "\nend reaction rules\n");
+        const bng::compile::CompiledModel semantic(*ast);
+        assert(semantic.valid());
+        assert(semantic.parameters()[0].timeDependent);
+        assert(semantic.parameters()[1].timeDependent);
+        assert(semantic.parameters()[0].constantValue == 1.0);
+        assert(semantic.parameters()[1].constantValue == 2.0);
+        const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+        assert(!lowered.ok());
+        nfnext::BngExecutionRequest request;
+        request.sample_times = {0, 1};
+        bool refused = false;
+        try { nfnext::executeFromBioNetGen(semantic, request); }
+        catch (const std::runtime_error&) { refused = true; }
+        assert(refused);
+    }
+}
+
+void refusesUnsupportedUnaryExecution() {
+    const std::vector<std::string> models = {
+        // Fractional/constant seeds, omitted initial state, graph mutation,
+        // multi-node matching and unsupported observable counting all refuse.
+        "begin parameters\n k 1\nend parameters\n"
+        "begin bng3_events version 1\n event \"later\"\n"
+        " trigger: time >= 1\n initial_value: false\n persistent: true\n"
+        " use_values_from_trigger_time: true\n assignment: k = 0\n"
+        " end event\nend bng3_events\n",
+        "begin seed species\n A(x~u) 2\nend seed species\n"
+        "begin reaction rules\n A(x~u) + A(x~p) -> A(x~p) + A(x~p) 1\nend reaction rules\n",
+        "begin seed species\n A(x~u) 2\nend seed species\n"
+        "begin reaction rules\n A(x~u) -> A(x~p) time()\nend reaction rules\n",
+        "begin seed species\n A(x~u!?) 2\nend seed species\n",
+        "begin seed species\n A(x~u) 1.5\nend seed species\n",
+        "begin seed species\n $A(x~u) 2\nend seed species\n",
+        "begin seed species\n A(x) 2\nend seed species\n",
+        "begin seed species\n A(x~u) 2\nend seed species\n"
+        "begin reaction rules\n A(x~u) -> 0 1\nend reaction rules\n",
+        "begin seed species\n A(x~u) 2\nend seed species\n"
+        "begin observables\n Species U A(x~u)\nend observables\n",
+    };
+    for (const auto& body : models) {
+        const auto ast = bng::parser::parseModel(
+            "begin molecule types\n A(x~u~p)\nend molecule types\n" + body);
+        const bng::compile::CompiledModel semantic(*ast);
+        nfnext::BngExecutionRequest request;
+        request.sample_times = {0, 1};
+        bool refused = false;
+        try { nfnext::executeFromBioNetGen(semantic, request); }
+        catch (const std::runtime_error&) { refused = true; }
+        assert(refused);
+    }
 }
 
 void rejectsUnrepresentablePackedSiteIndex() {
@@ -629,6 +747,9 @@ end reaction rules
     assert(nonzeroSiteRule.actions[0].site == 1);
     assert(nonzeroSiteRule.actions[0].value == 1); // A.y~on
 
+    executesCanonicalUnaryModel();
+    refusesUnsupportedUnaryExecution();
+    refusesClockDependentParameterRates();
     rejectsUnrepresentablePackedSiteIndex();
     rejectsMolecularityNodeIndexOverflow();
     lowersWholeSpeciesDeletionWithHiddenConnectedContext();
