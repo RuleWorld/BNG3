@@ -32,16 +32,12 @@ from typing import Any, Callable
 
 import numpy as np
 
-if __package__:
-    from .ssts_selection import (
-        SuiteSelectionError,
-        select_feature_cover as _select_feature_cover,
-    )
-else:
-    from ssts_selection import (
-        SuiteSelectionError,
-        select_feature_cover as _select_feature_cover,
-    )
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.ci.ssts_selection import (
+    SuiteSelectionError,
+    select_feature_cover as _select_feature_cover,
+)
 
 VERSION_PRIORITY = ("l3v2", "l3v1", "l2v5", "l2v4", "l2v3", "l2v2", "l2v1", "l1v2")
 NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
