@@ -91,3 +91,38 @@ def test_reused_model_matches_fresh_after_parameter_mutation(
     np.testing.assert_allclose(
         reused.concentrations, baseline.concentrations, rtol=1e-10, atol=1e-10
     )
+
+
+@pytest.mark.parametrize("rate", [0.01, 0.07])
+def test_replacing_timed_parameter_reclassifies_transitive_rate(rate):
+    model = BioNetGenModel(cpp.parse_string(source(rate="time()")))
+    timed = model.simulate(method="ode", t_end=2, n_steps=8)
+    population = 40
+    volume = 2
+    np.testing.assert_allclose(
+        timed.observables["A_count"],
+        population / (1 + population * timed.time**2 / volume),
+        rtol=2e-5,
+        atol=1e-8,
+    )
+
+    model.set_parameter("k", rate)
+    options = dict(t_end=2, n_steps=8)
+    reused = model.simulate(method="ode", **options)
+    fresh_static = BioNetGenModel(cpp.parse_string(source(rate=rate)))
+    expected = fresh_static.simulate(method="ode", **options)
+    np.testing.assert_array_equal(reused.time, expected.time)
+    np.testing.assert_allclose(
+        reused.concentrations, expected.concentrations, rtol=1e-10, atol=1e-10
+    )
+    np.testing.assert_allclose(
+        reused.observables["A_count"],
+        population / (1 + 2 * rate * population / volume * reused.time),
+        rtol=1e-6,
+        atol=1e-8,
+    )
+
+    reused_nf = model.simulate(method="nf", seed=31415, **options)
+    fresh_nf = fresh_static.simulate(method="nf", seed=31415, **options)
+    np.testing.assert_array_equal(reused_nf.time, fresh_nf.time)
+    np.testing.assert_array_equal(reused_nf.concentrations, fresh_nf.concentrations)
