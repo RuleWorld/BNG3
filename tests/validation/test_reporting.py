@@ -1,4 +1,70 @@
 from tests.validation import reporting
+import pytest
+
+
+def test_issue_coverage_keeps_closed_unmapped_and_unexecuted_issues_visible():
+    capabilities = [
+        {
+            "id": "rates",
+            "kind": "semantic-claim",
+            "issues": [143],
+            "existing_tests": ["tests/rates.py"],
+            "evidence_ids": ["one", "blocked"],
+            "missing_tests": ["independent local scopes"],
+        },
+        {
+            "id": "scopes",
+            "kind": "semantic-claim",
+            "issues": [143],
+            "existing_tests": ["tests/scopes.py"],
+            "evidence_ids": [],
+        },
+    ]
+    results = [
+        {"id": "one", "status": "PASS", "related_issues": [143]},
+        {"id": "blocked", "status": "NOT_TESTED", "related_issues": [143]},
+        {"id": "suite", "status": "FAIL", "related_issues": [143], "aggregate": True},
+    ]
+    issues = [
+        {"number": 143, "title": "Rates", "state": "CLOSED"},
+        {"number": 162, "title": "Campaign", "state": "OPEN"},
+    ]
+    rows = reporting.issue_coverage(capabilities, results, issues)
+    assert [row["number"] for row in rows] == [143, 162]
+    rates, campaign = rows
+    assert rates["coverage"] == "PARTIAL"
+    assert rates["state"] == "CLOSED"
+    assert rates["result_counts"] == {"PASS": 1, "NOT_TESTED": 1}
+    assert rates["unexecuted_capabilities"] == ["scopes"]
+    assert rates["remaining_qualification"] == {"rates": ["independent local scopes"]}
+    assert campaign["coverage"] == "NOT_TESTED"
+    assert campaign["capabilities"] == []
+
+
+@pytest.mark.parametrize(
+    "issues",
+    [
+        [{"number": True}],
+        [{"number": 0}],
+        [{"number": 1}, {"number": 1}],
+        [None],
+        [{"number": 1, "title": []}],
+        [{"number": 1, "state": "done"}],
+    ],
+)
+def test_issue_coverage_rejects_ambiguous_issue_identities(issues):
+    with pytest.raises(ValueError):
+        reporting.issue_coverage([], [], issues)
+
+
+def test_issue_coverage_rejects_duplicate_result_identities():
+    with pytest.raises(ValueError, match="duplicate"):
+        reporting.issue_coverage([], [{"id": "same", "status": "PASS"}] * 2)
+
+
+def test_issue_coverage_rejects_unknown_outcomes():
+    with pytest.raises(ValueError, match="status"):
+        reporting.issue_coverage([], [{"id": "one", "status": "success-ish"}])
 
 
 def test_similar_failures_are_hypotheses_not_confirmed_causes():

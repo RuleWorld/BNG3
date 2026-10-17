@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -263,9 +264,15 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
 
     std::vector<std::string> parameterNames;
     parameterNames.reserve(parameters.size());
+    std::set<std::string> uniqueParameterNames;
     for (const auto& rawParameter : parameters) {
         const auto parameter = py::cast<py::dict>(rawParameter);
-        parameterNames.push_back(py::cast<std::string>(parameter["name"]));
+        const auto name = py::cast<std::string>(parameter["name"]);
+        if (!uniqueParameterNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR parameter names must be unique");
+        }
+        parameterNames.push_back(name);
     }
     for (const auto& rawParameter : parameters) {
         const auto parameter = py::cast<py::dict>(rawParameter);
@@ -274,10 +281,16 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             expressionFromBngir(py::cast<py::dict>(parameter["expression"]), parameterNames)));
     }
 
+    std::set<std::string> uniqueMoleculeTypeNames;
     for (const auto& rawMoleculeType : moleculeTypes) {
         const auto moleculeType = py::cast<py::dict>(rawMoleculeType);
+        const auto name = py::cast<std::string>(moleculeType["name"]);
+        if (!uniqueMoleculeTypeNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR molecule type names must be unique");
+        }
         model->addMoleculeType(MoleculeType(
-            py::cast<std::string>(moleculeType["name"]), {}, false));
+            name, {}, false));
     }
 
     for (const auto& rawSeed : seeds) {

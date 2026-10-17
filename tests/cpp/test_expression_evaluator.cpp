@@ -3,11 +3,13 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cmath>
+#include <vector>
 
 #include "ast/Expression.hpp"
 #include "ast/ExpressionBuiltins.hpp"
 #include "ast/ExpressionEval.hpp"
 #include "ast/Function.hpp"
+#include "ast/ParameterList.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 using namespace bng::ast;
@@ -15,6 +17,148 @@ using Catch::Matchers::WithinRel;
 
 static double noResolver(const std::string& name) {
     throw std::runtime_error("Unknown identifier: " + name);
+}
+
+TEST_CASE("Parameter replacement invalidates transitive dependency caches", "[Expression][Parameters]") {
+    ParameterList parameters;
+    parameters.add(Parameter("base", Expression::number(2.0)));
+    parameters.add(Parameter("alias", Expression::identifier("base")));
+    parameters.add(Parameter("rate", Expression::binary(
+        "*", Expression::identifier("alias"), Expression::number(3.0))));
+    parameters.evaluateAll();
+    REQUIRE(parameters.evaluate("rate") == 6.0);
+    REQUIRE_FALSE(parameters.isTimeDependent("rate"));
+
+    SECTION("static replacement clears dependent values without evaluateAll") {
+        parameters.add(Parameter("base", Expression::number(4.0)));
+        CHECK(parameters.evaluate("rate") == 12.0);
+    }
+    SECTION("static to dynamic replacement reclassifies all dependents") {
+        parameters.add(Parameter("base", Expression::identifier("time")));
+        parameters.evaluateAll();
+        CHECK(parameters.isTimeDependent("alias"));
+        CHECK(parameters.isTimeDependent("rate"));
+        CHECK(parameters.evaluate("rate", 2.0) == 6.0);
+        CHECK(parameters.evaluate("rate", 4.0) == 12.0);
+    }
+    SECTION("dynamic to static replacement restores static classification") {
+        ParameterList dynamicParameters;
+        dynamicParameters.add(Parameter("base", Expression::identifier("time")));
+        dynamicParameters.add(Parameter("alias", Expression::identifier("base")));
+        dynamicParameters.add(Parameter("rate", Expression::identifier("alias")));
+        REQUIRE(dynamicParameters.isTimeDependent("rate"));
+        dynamicParameters.add(Parameter("base", Expression::number(5.0)));
+        dynamicParameters.evaluateAll();
+        CHECK_FALSE(dynamicParameters.isTimeDependent("alias"));
+        CHECK_FALSE(dynamicParameters.isTimeDependent("rate"));
+        CHECK(dynamicParameters.evaluate("rate", 4.0) == 5.0);
+    }
+}
+
+TEST_CASE("Adding a forward dependency invalidates its cached classification", "[Expression][Parameters]") {
+    ParameterList parameters;
+    parameters.add(Parameter("alias", Expression::identifier("base")));
+    REQUIRE_FALSE(parameters.isTimeDependent("alias"));
+    parameters.add(Parameter("base", Expression::identifier("time")));
+    CHECK(parameters.isTimeDependent("alias"));
+    CHECK(parameters.evaluate("alias", 3.0) == 3.0);
+}
+
+TEST_CASE("Declaration changes keep evaluated values readable for export",
+          "[Expression][Parameters]") {
+    // NetWriter registers derived rate parameters and evaluates them before it
+    // writes the NET parameter block, which reads Parameter::getValue()
+    // directly. A declaration change must invalidate recomputation without
+    // zeroing values that settled consumers still read.
+    ParameterList parameters;
+    parameters.add(Parameter("base", Expression::number(2.0)));
+    parameters.add(Parameter("rate", Expression::binary(
+        "*", Expression::identifier("base"), Expression::number(3.0))));
+    parameters.evaluateAll();
+    REQUIRE(parameters.evaluate("rate") == 6.0);
+
+    // Mirrors appending a derived rate parameter and evaluating it, which
+    // dirties the cache the same way the exporter's own evaluation does.
+    parameters.add(Parameter("derived", Expression::number(0.5)));
+    CHECK(parameters.evaluate("derived") == 0.5);
+
+    CHECK(parameters.get("base").hasValue());
+    CHECK(parameters.get("base").getValue() == 2.0);
+    CHECK(parameters.get("rate").getValue() == 6.0);
+    CHECK(parameters.evaluate("rate") == 6.0);
+
+    // Replacing a dependency still forces its dependents to recompute.
+    parameters.add(Parameter("base", Expression::number(5.0)));
+    CHECK(parameters.evaluate("rate") == 15.0);
+    CHECK(parameters.get("base").getValue() == 5.0);
+}
+
+TEST_CASE("Generated parameter graphs preserve mutation semantics", "[Expression][Parameters][Generated]") {
+    // Deterministic graph/mutation enumeration makes every failure replayable
+    // from Catch's captured depth, declaration order, refresh mode and step.
+    struct Mutation { bool timed; double scale; double offset; };
+    const std::vector<Mutation> mutations = {
+        {false, 0.0, 2.0}, {true, 1.0, 0.0}, {false, 0.0, 5.0},
+        {true, 2.0, 1.0}, {false, 0.0, 1.0},
+    };
+    const auto baseExpression = [](const Mutation& mutation) {
+        if (!mutation.timed) return Expression::number(mutation.offset);
+        return Expression::binary("+", Expression::binary(
+            "*", Expression::identifier("time"), Expression::number(mutation.scale)),
+            Expression::number(mutation.offset));
+    };
+    const auto makeGraph = [&](int depth, bool reversed, const Mutation& mutation) {
+        ParameterList parameters;
+        for (int position = 0; position <= depth; ++position) {
+            const int node = reversed ? depth - position : position;
+            auto expression = node == 0 ? baseExpression(mutation) : Expression::binary(
+                "+", Expression::binary("*",
+                    Expression::identifier("p" + std::to_string(node - 1)),
+                    Expression::number(node + 1)), Expression::identifier("p0"));
+            parameters.add(Parameter("p" + std::to_string(node), std::move(expression)));
+        }
+        return parameters;
+    };
+
+    for (const int depth : {1, 2, 4, 8}) {
+        for (const bool reversed : {false, true}) {
+            for (const bool evaluateAll : {false, true}) {
+                CAPTURE(depth, reversed, evaluateAll);
+                auto reused = makeGraph(depth, reversed, mutations.front());
+                (void)reused.evaluate("p" + std::to_string(depth));
+                for (std::size_t step = 0; step < mutations.size(); ++step) {
+                    const auto& mutation = mutations[step];
+                    reused.add(Parameter("p0", baseExpression(mutation)));
+                    auto fresh = makeGraph(depth, reversed, mutation);
+                    if (evaluateAll) reused.evaluateAll();
+                    for (const double time : {0.0, 0.5, 2.0}) {
+                        // Independent arithmetic oracle, with no native
+                        // expression evaluation or dependency classification.
+                        const double base = mutation.scale * time + mutation.offset;
+                        double expected = base;
+                        for (int node = 0; node <= depth; ++node) {
+                            CAPTURE(depth, reversed, evaluateAll, step, time, node);
+                            if (node != 0) expected = expected * (node + 1) + base;
+                            const auto name = "p" + std::to_string(node);
+                            CHECK(reused.isTimeDependent(name) == mutation.timed);
+                            CHECK_THAT(reused.evaluate(name, time), Catch::Matchers::WithinAbs(expected, 1e-8));
+                            CHECK(reused.evaluate(name, time) == fresh.evaluate(name, time));
+                        }
+                    }
+                }
+                // Invalid dependency cycles must report an error and must
+                // not poison the next valid mutation of the same graph.
+                reused.add(Parameter("p0", Expression::identifier("p" + std::to_string(depth))));
+                CHECK_THROWS_WITH(reused.evaluate("p0"),
+                    Catch::Matchers::ContainsSubstring("Circular parameter dependency"));
+                reused.add(Parameter("p0", baseExpression(mutations.front())));
+                auto recovered = makeGraph(depth, reversed, mutations.front());
+                CHECK_FALSE(reused.isTimeDependent("p" + std::to_string(depth)));
+                CHECK(reused.evaluate("p" + std::to_string(depth)) ==
+                      recovered.evaluate("p" + std::to_string(depth)));
+            }
+        }
+    }
 }
 
 TEST_CASE("Expression: numeric literals", "[Expression]") {

@@ -27,6 +27,14 @@ import os
 import pathlib
 import sys
 
+# The optional JAX backends are contracted against the CPU device; CI pins
+# JAX_PLATFORMS=cpu for its JAX job. Without it, an installed experimental GPU
+# plugin (e.g. jax-metal) that is incompatible with the pinned jaxlib fails on
+# every JAX operation with a backend runtime error. This only sets an
+# environment variable, so it stays above the package-selection guard below
+# without affecting it, and setdefault preserves an explicit GPU override.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+
 # The pytest console script may not put the repository root on sys.path.
 # Append it only to expose the in-tree CI helper without taking precedence over
 # an installed bionetgen package from site-packages.

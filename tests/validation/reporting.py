@@ -61,6 +61,80 @@ def attach_coverage(capabilities: list[dict], results: list[dict]) -> None:
                 )
 
 
+def issue_coverage(
+    capabilities: list[dict], results: list[dict], issues: list[dict] | None = None
+) -> list[dict]:
+    """Roll up observed leaf evidence; neither closed issues nor PASS imply done.
+
+    Without a supplied issue snapshot the denominator is only mapped issues,
+    not the repository backlog. Callers retain the snapshot and its digest.
+    """
+    metadata = {}
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            raise ValueError("issue snapshot entries must be objects")
+        number = issue.get("number")
+        if type(number) is not int or number < 1 or number in metadata:
+            raise ValueError("issue snapshot requires unique positive integer numbers")
+        if "title" in issue and not isinstance(issue["title"], str):
+            raise ValueError("issue snapshot titles must be strings")
+        if "state" in issue and issue["state"] not in {"OPEN", "CLOSED"}:
+            raise ValueError("issue snapshot state must be OPEN or CLOSED")
+        metadata[number] = issue
+    identities = [result["id"] for result in results]
+    if len(set(identities)) != len(identities):
+        raise ValueError("duplicate result identities cannot be issue evidence")
+    if any(result["status"] not in STATUSES for result in results):
+        raise ValueError("unknown result status cannot be issue evidence")
+    claims = [c for c in capabilities if c.get("kind") == "semantic-claim"]
+    numbers = set(metadata)
+    for row in claims:
+        numbers.update(row.get("issues", []))
+    for row in results:
+        numbers.update(row.get("related_issues", []))
+
+    rows = []
+    for number in sorted(numbers):
+        mapped = [c for c in claims if number in c.get("issues", [])]
+        mapped_ids = {
+            identity for c in mapped for identity in c.get("evidence_ids", [])
+        }
+        evidence = [
+            r
+            for r in results
+            if not r.get("aggregate")
+            and (r["id"] in mapped_ids or number in r.get("related_issues", []))
+        ]
+        executed = {r["id"] for r in evidence if r["status"] != "NOT_TESTED"}
+        rows.append(
+            {
+                "number": number,
+                "title": metadata.get(number, {}).get("title"),
+                "state": metadata.get(number, {}).get("state"),
+                "coverage": "PARTIAL" if executed else "NOT_TESTED",
+                "capabilities": sorted(c["id"] for c in mapped),
+                "test_references": sorted(
+                    {p for c in mapped for p in c.get("existing_tests", [])}
+                ),
+                "evidence_ids": sorted(r["id"] for r in evidence),
+                "result_counts": dict(
+                    sorted(Counter(r["status"] for r in evidence).items())
+                ),
+                "unexecuted_capabilities": sorted(
+                    c["id"]
+                    for c in mapped
+                    if not (set(c.get("evidence_ids", [])) & executed)
+                ),
+                "remaining_qualification": {
+                    c["id"]: c["missing_tests"]
+                    for c in mapped
+                    if c.get("missing_tests")
+                },
+            }
+        )
+    return rows
+
+
 def cluster_failures(results: list[dict]) -> list[dict]:
     groups = {}
     for row in results:
@@ -280,6 +354,22 @@ def markdown(report: dict) -> str:
     lines += [
         f"| {c['id']} | {c['support']} | {c['coverage']} | {safe(c['result_counts'])} | {', '.join('#' + str(i) for i in c['issues'])} |"
         for c in claims
+    ]
+    lines += [
+        "",
+        "## Issue evidence coverage",
+        "",
+        "Closed issues and passing tests do not establish complete acceptance. "
+        "PARTIAL means some mapped leaf evidence was executed. "
+        f"Inventory scope: `{report.get('issue_inventory', {}).get('scope', 'mapped-only')}`.",
+        "",
+        "| Issue | Title | Recorded state | Coverage | Mapped claims | Unexecuted claims | Outcomes |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    lines += [
+        f"| #{row['number']} | {safe(row.get('title') or '')} | {safe(row.get('state') or 'unknown')} | "
+        f"{row['coverage']} | {len(row['capabilities'])} | {len(row['unexecuted_capabilities'])} | {safe(row['result_counts'])} |"
+        for row in report.get("issue_coverage", [])
     ]
     lines += [
         "",
