@@ -566,7 +566,13 @@ print(json.dumps(settings, sort_keys=True))
     )
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == bionetgen.defaults.config["bionetgen"]
+    actual = json.loads(result.stdout)
+    expected = dict(bionetgen.defaults.config["bionetgen"])
+    expected["notebook"] = dict(expected["notebook"])
+    for key in ("path", "template"):
+        actual["notebook"][key] = os.path.normcase(actual["notebook"][key])
+        expected["notebook"][key] = os.path.normcase(expected["notebook"][key])
+    assert actual == expected
 
 
 def test_defaults_import_failure_is_not_cached_as_none(tmp_path):

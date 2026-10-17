@@ -116,6 +116,13 @@ MIN_EXPECTED = 5.0
 GOF_ALPHA = 1e-3
 
 
+def _chisquare(observed, expected):
+    # Pearson statistic without SciPy >=1.15's optional sum_check keyword.
+    # Keep the original unnormalized expected counts and degrees of freedom.
+    statistic = np.sum((observed - expected) ** 2 / expected)
+    return statistic, scipy_stats.chi2.sf(statistic, len(expected) - 1)
+
+
 def _batch(bngl, tmp_path, t_end, n_steps=10, batch=BATCH, seed=SEED, threads=0):
     path = tmp_path / "model.bngl"
     path.write_text(bngl)
@@ -171,7 +178,7 @@ def _gof(counts, pmf, batch):
     assert (
         exp.min() >= MIN_EXPECTED
     ), f"pooled tail holds only {exp[-1]:.1f} expected counts; raise BATCH"
-    chi2, p = scipy_stats.chisquare(obs, exp, sum_check=False)
+    chi2, p = _chisquare(obs, exp)
     return chi2, len(exp) - 1, p, exp.min()
 
 
@@ -483,7 +490,7 @@ end model
         # hand-derived one was mis-indexed here and rejected a correct engine
         # at z = -123, where this gives z = -1.42. Row 0 of exp(Q t) is
         # P(j firings by t) for j = 0, 1, 2.
-        chi2, p = scipy_stats.chisquare(observed, expected, sum_check=False)
+        chi2, p = _chisquare(observed, expected)
         if label == "k*C(n,2)":
             assert (
                 p > GOF_ALPHA
