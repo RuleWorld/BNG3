@@ -15,6 +15,8 @@ import pytest
 
 import bionetgen
 
+from scripts.ci.python_package_mode import subprocess_import_setup
+
 REPO = Path(__file__).resolve().parents[2]
 MODEL = Path(__file__).with_name("test.bngl")
 SUPPORTED_METHODS = ("ode", "ssa", "nf", "pla", "psa")
@@ -486,7 +488,14 @@ assert not (blocked & {name.split('.')[0] for name in sys.modules})
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [
+            sys.executable,
+            "-c",
+            subprocess_import_setup(
+                bionetgen.__file__, bionetgen._bionetgen_cpp.__file__
+            )
+            + code,
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -541,7 +550,14 @@ print(json.dumps(settings, sort_keys=True))
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [
+            sys.executable,
+            "-c",
+            subprocess_import_setup(
+                bionetgen.__file__, bionetgen._bionetgen_cpp.__file__
+            )
+            + code,
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -572,7 +588,14 @@ assert bionetgen.defaults is not None
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [
+            sys.executable,
+            "-c",
+            subprocess_import_setup(
+                bionetgen.__file__, bionetgen._bionetgen_cpp.__file__
+            )
+            + code,
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -593,7 +616,14 @@ assert bionetgen.run.__module__ == 'bionetgen.compat.legacy_runner'
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "1"
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [
+            sys.executable,
+            "-c",
+            subprocess_import_setup(
+                bionetgen.__file__, bionetgen._bionetgen_cpp.__file__
+            )
+            + code,
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -854,7 +884,14 @@ else:
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     result = subprocess.run(
-        [sys.executable, "-c", code],
+        [
+            sys.executable,
+            "-c",
+            subprocess_import_setup(
+                bionetgen.__file__, bionetgen._bionetgen_cpp.__file__
+            )
+            + code,
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,

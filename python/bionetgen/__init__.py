@@ -13,11 +13,7 @@ if _USE_LEGACY:
     from bionetgen.compat.legacy_runner import load, run
     from bionetgen.compat.legacy_runner import LegacyModel as BioNetGenModel
 else:
-    try:
-        from bionetgen.model import BioNetGenModel, load, run as _modern_run
-    except ImportError:
-        from bionetgen.compat.legacy_runner import load, run
-        from bionetgen.compat.legacy_runner import LegacyModel as BioNetGenModel
+    from bionetgen.model import BioNetGenModel, load, run as _modern_run
 
     _MODERN_METHODS = frozenset({"ode", "ssa", "nf", "pla", "psa"})
     _RUN_OUT_MISSING = object()
@@ -164,17 +160,8 @@ from bionetgen.scan import ScanResult, ScanResult2D, parameter_scan, parameter_s
 from bionetgen.sensitivity import SensitivityResult, sensitivity_analysis
 from bionetgen.core.exc import BNGError
 
-try:
-    from bionetgen.sbml import BioNetGenError, from_sbml, sbml_to_bngl
-except ImportError:
-    BioNetGenError = BNGError
-    from_sbml = None
-    sbml_to_bngl = None
-
-try:
-    from bionetgen.builder import ModelBuilder
-except ImportError:
-    ModelBuilder = None
+from bionetgen.sbml import BioNetGenError, from_sbml, sbml_to_bngl
+from bionetgen.builder import ModelBuilder
 
 __version__ = "3.0.0a1"
 
