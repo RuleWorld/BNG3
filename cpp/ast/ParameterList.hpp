@@ -32,6 +32,7 @@ public:
     bool expressionIsTimeDependent(const Expression& expression) const;
 
 private:
+    void refreshCaches() const;
     double evaluateIndex(std::size_t index, std::unordered_map<std::string, bool>& visiting, double t) const;
 
     // A parameter is memoized only when its value cannot change with time.
@@ -46,6 +47,7 @@ private:
     static constexpr std::int8_t kTimeIndependent = 1;
     static constexpr std::int8_t kTimeDependent = 2;
     mutable std::vector<std::int8_t> timeDependent_;
+    mutable bool cachesDirty_ = false;
 
     mutable std::vector<Parameter> parameters_;
     std::unordered_map<std::string, std::size_t> indexByName_;

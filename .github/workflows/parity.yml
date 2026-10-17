@@ -17,6 +17,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: read
 
 env:
   CMAKE_BUILD_TYPE: Release
@@ -134,14 +135,33 @@ jobs:
           .venv/bin/python -m pytest -c tests/validation/pytest.ini \
             tests/validation/test_worker_package_identity.py -q -ra
 
+      - name: Snapshot backlog metadata for issue evidence coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 10000 \
+            --json number,title,state,url > "$RUNNER_TEMP/bng3-issues.tmp"; then
+            mv "$RUNNER_TEMP/bng3-issues.tmp" "$RUNNER_TEMP/bng3-issues.json"
+          else
+            rm -f "$RUNNER_TEMP/bng3-issues.tmp"
+            echo 'Backlog metadata query failed; semantic gates will still execute with mapped-only issue coverage.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Publish capability-linked bounded conformance evidence
         shell: bash
         run: |
+          issue_args=()
+          if [[ -s "$RUNNER_TEMP/bng3-issues.json" ]]; then
+            issue_args=(--issues-json "$RUNNER_TEMP/bng3-issues.json")
+          else
+            echo 'Backlog snapshot unavailable; issue evidence scope is mapped-only.' >> "$GITHUB_STEP_SUMMARY"
+          fi
           corpus_tier=s
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
             corpus_tier=p
           fi
           .venv/bin/python scripts/validate.py --tier smoke \
+            "${issue_args[@]}" \
             --corpus-tier "$corpus_tier" --report-only --simulate --net-reload \
             --bng-cpp build/cpp/bng_cpp \
             --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \

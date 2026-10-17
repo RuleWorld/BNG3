@@ -7,20 +7,27 @@
 namespace bng::ast {
 
 void ParameterList::add(Parameter parameter) {
+    // Names can be referenced transitively, including forward references. A
+    // declaration change invalidates both cached values and time dependence.
+    // Defer the linear reset so adding a block of declarations stays linear.
+    cachesDirty_ = true;
     const auto& name = parameter.getName();
     const auto existing = indexByName_.find(name);
     if (existing != indexByName_.end()) {
         parameters_[existing->second] = std::move(parameter);
-        // The replacement carries a different expression, so the previous
-        // time-dependence verdict no longer describes it.  set_parameter
-        // replaces a live parameter with a literal this way.
-        timeDependent_[existing->second] = kUnknown;
         return;
     }
 
     indexByName_[name] = parameters_.size();
     parameters_.push_back(std::move(parameter));
     timeDependent_.push_back(kUnknown);
+}
+
+void ParameterList::refreshCaches() const {
+    if (!cachesDirty_) return;
+    for (auto& parameter : parameters_) parameter.clearValue();
+    timeDependent_.assign(parameters_.size(), kUnknown);
+    cachesDirty_ = false;
 }
 
 namespace {
@@ -87,6 +94,7 @@ bool ParameterList::expressionIsTimeDependent(const Expression& expression) cons
 
 
 bool ParameterList::isTimeDependent(std::size_t index) const {
+    refreshCaches();
     if (index >= timeDependent_.size()) {
         return false;
     }
