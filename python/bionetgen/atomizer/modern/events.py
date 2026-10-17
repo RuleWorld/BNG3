@@ -4291,6 +4291,11 @@ def synthesize_event_actions(
         if (
             not symbol_ids
             or symbol_ids & periodic_rate_state_ids
+            or any(
+                context.resolve_rate_rule_expression_for_event(symbol, event)
+                is not None
+                for symbol in symbol_ids
+            )
             or not symbol_ids.issubset(
                 periodic_target_ids
                 | self_targets
