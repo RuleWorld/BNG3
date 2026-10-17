@@ -1047,8 +1047,7 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     ), "python-test no-deps wheel path must install declared click dependency"
     assert any(re.search(r"\bscipy(?:[<>=!~].*)?\b", line) for line in install_lines)
     assert any(
-        re.search(r"\blibroadrunner(?:[<>=!~].*)?\b", line)
-        for line in install_lines
+        re.search(r"\blibroadrunner(?:[<>=!~].*)?\b", line) for line in install_lines
     )
 
 
