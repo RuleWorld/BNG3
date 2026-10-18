@@ -800,6 +800,38 @@ end model
     )
 
 
+@pytest.mark.parametrize(
+    ("parent", "parent_id", "expected"),
+    [
+        ("missing", None, "compartment parent references an unknown compartment"),
+        ("cell", 7, "compartment parent id is out of range"),
+    ],
+)
+def test_direct_native_builder_rejects_invalid_compartment_parent_reference(
+    parent, parent_id, expected
+):
+    document = _document("""
+begin model
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @cell:A() 1
+end seed species
+end model
+""")
+    compartment = document["model"]["compartments"][0]
+    compartment["parent"] = parent
+    if parent_id is not None:
+        compartment["parent_id"] = parent_id
+
+    with pytest.raises(RuntimeError, match=f"native BNGIR {expected}"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
 @pytest.mark.parametrize("method", ["ode", "ssa"])
 def test_native_import_reconstructs_and_executes_seed_only_model_without_source_parsing(
     monkeypatch, method
