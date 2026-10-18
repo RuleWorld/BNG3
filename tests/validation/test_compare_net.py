@@ -433,6 +433,20 @@ def test_species_graph_equivalence_preserves_states_and_connectivity():
     )
 
 
+def test_species_graph_inherits_species_compartment_for_unqualified_molecules():
+    explicit = "@PM::A(x!1)@CP.B(y!1)@PM"
+    inherited = "@PM::A(x!1)@CP.B(y!1)"
+    assert species_isomorphic(explicit, inherited)
+
+
+def test_species_graph_keeps_outer_and_effective_molecule_compartments_strict():
+    explicit = "@PM::A(x!1)@CP.B(y!1)@PM"
+    changed_outer = "@CP::A(x!1)@CP.B(y!1)@PM"
+    molecule_lost_compartment = "@PM::A(x!1).B(y!1)@PM"
+    assert not species_isomorphic(explicit, changed_outer)
+    assert not species_isomorphic(explicit, molecule_lost_compartment)
+
+
 def test_blbr_symmetric_serializations_are_graph_equivalent():
     reference = (
         "L(l!1,l!2).R(r!1,r!3).R(r!2,r!4).L(l!3,l!5)."

@@ -16,12 +16,14 @@ TIMES = np.linspace(0, 2, 11)
 RATE = 0.4
 REVERSE_RATE = 0.2
 PAIRWISE_INDICES = (0, 3, 5, 10, 12, 15)
+PERTURBATION_PR_INDICES = (0, 5, 12)
 FAMILIES = ("decay", "reversible", "dimerization")
 
 
 def generated_cases(full=False):
-    """Return the bounded pairwise or full Cartesian model-family matrix."""
+    """Return baseline cases plus bounded semantic source perturbations."""
     cases = []
+    decay_bases = {}
     for family in FAMILIES:
         for index, (volume, initial, reverse, atomize) in enumerate(
             itertools.product((1, 3), (20, 80), (False, True), (False, True))
@@ -38,6 +40,8 @@ def generated_cases(full=False):
                 atomize=atomize,
                 exact_nf=family != "reversible",
             )
+            if family == "decay":
+                decay_bases[index] = case
             if family == "reversible":
                 # Atomizer may emit the forward and reverse channels as two
                 # rules. Seeded paths then depend on rule construction order.
@@ -49,6 +53,23 @@ def generated_cases(full=False):
             else:
                 case["nf_comparison"] = "Equal-seed native/embedded NFsim comparison."
             cases.append(case)
+    perturbation_indices = PAIRWISE_INDICES if full else PERTURBATION_PR_INDICES
+    for transform in ("function-shadowing", "concentration-coordinate"):
+        for index in perturbation_indices:
+            base = decay_bases[index]
+            cases.append(
+                dict(
+                    base,
+                    id=f"{transform}-{base['id']}",
+                    base_case_id=base["id"],
+                    transform=transform,
+                    quantity_basis=(
+                        "initialConcentration=N0/V; kinetic law k*cell*A"
+                        if transform == "concentration-coordinate"
+                        else "item amount; function formal shadows global rate"
+                    ),
+                )
+            )
     return cases
 
 
@@ -56,6 +77,16 @@ def _species(name, initial):
     return (
         f'<species id="{name}" compartment="cell" initialAmount="{initial}" '
         'substanceUnits="item" hasOnlySubstanceUnits="true" '
+        'boundaryCondition="false" constant="false"/>'
+    )
+
+
+def _concentration_species(name, initial, volume):
+    concentration = initial / volume
+    return (
+        f'<species id="{name}" compartment="cell" '
+        f'initialConcentration="{concentration:.17g}" '
+        'substanceUnits="item" hasOnlySubstanceUnits="false" '
         'boundaryCondition="false" constant="false"/>'
     )
 
@@ -68,17 +99,39 @@ def sbml_text(case):
     """Return a valid SBML L3V2 source model for a generated case."""
     family = case["family"]
     if family == "decay":
-        amounts = (("A", case["initial"]), ("B", 0))
+        initial_states = (("A", case["initial"]), ("B", 0))
         if case["reverse"]:
-            amounts = tuple(reversed(amounts))
-        species = "".join(_species(name, amount) for name, amount in amounts)
+            initial_states = tuple(reversed(initial_states))
+        if case.get("transform") == "concentration-coordinate":
+            species = "".join(
+                _concentration_species(name, amount, case["volume"])
+                for name, amount in initial_states
+            )
+        else:
+            species = "".join(_species(name, amount) for name, amount in initial_states)
         parameter_units = (
             '<parameter id="k" value="0.4" units="per_second" constant="true"/>'
         )
+        if case.get("transform") == "function-shadowing":
+            parameter_units += (
+                '<parameter id="rate" value="7" units="per_second" ' 'constant="true"/>'
+            )
+            function_definitions = """<listOfFunctionDefinitions>
+<functionDefinition id="rateLaw"><math xmlns="http://www.w3.org/1998/Math/MathML">
+<lambda><bvar><ci>rate</ci></bvar><bvar><ci>amount</ci></bvar>
+<apply><times/><ci>rate</ci><ci>amount</ci></apply></lambda>
+</math></functionDefinition></listOfFunctionDefinitions>"""
+            rate_expression = "<apply><ci>rateLaw</ci><ci>k</ci><ci>A</ci></apply>"
+        elif case.get("transform") == "concentration-coordinate":
+            function_definitions = ""
+            rate_expression = "<apply><times/><ci>k</ci><ci>cell</ci><ci>A</ci></apply>"
+        else:
+            function_definitions = ""
+            rate_expression = "<apply><times/><ci>k</ci><ci>A</ci></apply>"
         reactions = f"""<reaction id="convert" reversible="false">
 <listOfReactants><speciesReference species="A" stoichiometry="1" constant="true"/></listOfReactants>
 <listOfProducts><speciesReference species="B" stoichiometry="1" constant="true"/></listOfProducts>
-<kineticLaw>{_math('<apply><times/><ci>k</ci><ci>A</ci></apply>')}</kineticLaw>
+<kineticLaw>{_math(rate_expression)}</kineticLaw>
 </reaction>"""
     elif family == "reversible":
         a_initial, b_initial = (
@@ -113,6 +166,8 @@ def sbml_text(case):
 </reaction>"""
     else:
         raise ValueError(f"unknown generated model family: {family!r}")
+    if family != "decay":
+        function_definitions = ""
 
     definitions = """<unitDefinition id="per_second"><listOfUnits>
 <unit kind="second" exponent="-1" scale="0" multiplier="1"/>
@@ -125,6 +180,7 @@ def sbml_text(case):
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
 <model id="{family}" timeUnits="second" substanceUnits="item" extentUnits="item">
+{function_definitions}
 <listOfUnitDefinitions>{definitions}</listOfUnitDefinitions>
 <listOfCompartments><compartment id="cell" spatialDimensions="3" units="litre" size="{case['volume']}" constant="true"/></listOfCompartments>
 <listOfSpecies>{species}</listOfSpecies>
@@ -177,6 +233,19 @@ def expected_trajectory(case):
         values.extend((trajectory, trajectory))
         columns.extend((f"{name}_amt", name))
     return np.column_stack(values), columns
+
+
+def expected_source_species(case):
+    """Return source-coordinate trajectories for species named by the model."""
+    values, columns = expected_trajectory(case)
+    species = [name for name in columns if name != "time" and not name.endswith("_amt")]
+    factor = (
+        case["volume"] if case.get("transform") == "concentration-coordinate" else 1
+    )
+    return (
+        np.column_stack([values[:, columns.index(name)] / factor for name in species]),
+        species,
+    )
 
 
 def reuse_bngl(case, *, rate=RATE):

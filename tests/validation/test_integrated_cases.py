@@ -14,7 +14,11 @@ def test_generated_families_preserve_decay_ids_and_bound_pairwise_matrix():
     full = integrated_cases.generated_cases(full=True)
     selected = integrated_cases.generated_cases()
     by_family = {
-        family: [case for case in full if case["family"] == family]
+        family: [
+            case
+            for case in full
+            if case["family"] == family and not case.get("transform")
+        ]
         for family in ("decay", "reversible", "dimerization")
     }
 
@@ -25,11 +29,15 @@ def test_generated_families_preserve_decay_ids_and_bound_pairwise_matrix():
         for reverse in (False, True)
         for atomize in (False, True)
     }
-    assert len(full) == 48
-    assert len(selected) == 18
+    assert len(full) == 60
+    assert len(selected) == 24
     assert len({case["id"] for case in full}) == len(full)
     for family, family_cases in by_family.items():
-        picked = [case for case in selected if case["family"] == family]
+        picked = [
+            case
+            for case in selected
+            if case["family"] == family and not case.get("transform")
+        ]
         assert len(family_cases) == 16
         assert len(picked) == 6
         for left, right in combinations(FACTORS, 2):
@@ -57,7 +65,11 @@ def test_generated_sbml_has_correct_amount_and_rate_units():
         assert float(compartment.attrib["size"]) == case["volume"]
         for species in model.findall("s:listOfSpecies/s:species", ns):
             assert species.attrib["substanceUnits"] == "item"
-            assert species.attrib["hasOnlySubstanceUnits"] == "true"
+            assert species.attrib["hasOnlySubstanceUnits"] == (
+                "false"
+                if case.get("transform") == "concentration-coordinate"
+                else "true"
+            )
         reaction = model.find("s:listOfReactions/s:reaction", ns)
         assert reaction is not None
         assert (
@@ -166,10 +178,14 @@ def test_every_source_species_initial_amount_matches_analytic_time_zero():
     ns = {"s": "http://www.sbml.org/sbml/level3/version2/core"}
     for case in integrated_cases.generated_cases(full=True):
         root = ET.fromstring(integrated_cases.sbml_text(case))
-        actual = {
-            sp.attrib["id"]: float(sp.attrib["initialAmount"])
-            for sp in root.findall(".//s:species", ns)
-        }
+        volume = float(root.find(".//s:compartment", ns).attrib["size"])
+        actual = {}
+        for species in root.findall(".//s:species", ns):
+            if "initialAmount" in species.attrib:
+                amount = float(species.attrib["initialAmount"])
+            else:
+                amount = float(species.attrib["initialConcentration"]) * volume
+            actual[species.attrib["id"]] = amount
         data, columns = integrated_cases.expected_trajectory(case)
         for species, amount in actual.items():
             assert np.isclose(data[0, columns.index(species)], amount)
@@ -183,3 +199,86 @@ def test_reuse_controls_keep_mutable_source_dependencies_for_all_families():
         assert "rate() = " in text
         assert "k" in text.split("rate() = ")[1].splitlines()[0]
         assert "rate()" in text.split("begin reaction rules")[1]
+
+
+def test_generated_perturbations_preserve_baseline_and_name_their_lineage():
+    baseline = integrated_cases.generated_cases()
+    full = integrated_cases.generated_cases(full=True)
+    perturbations = [case for case in full if case.get("transform")]
+
+    assert len(perturbations) == 12
+    assert len([case for case in baseline if case.get("transform")]) == 6
+    assert {case["transform"] for case in perturbations} == {
+        "function-shadowing",
+        "concentration-coordinate",
+    }
+    by_id = {case["id"]: case for case in full}
+    for case in perturbations:
+        base = by_id[case["base_case_id"]]
+        assert base["family"] == "decay"
+        assert case["initial"] == base["initial"]
+        assert case["volume"] == base["volume"]
+        assert case["atomize"] == base["atomize"]
+        assert case["reverse"] == base["reverse"]
+        expected, columns = integrated_cases.expected_trajectory(case)
+        base_expected, base_columns = integrated_cases.expected_trajectory(base)
+        assert columns == base_columns
+        assert np.array_equal(expected, base_expected)
+
+
+def test_function_shadowing_is_a_real_parameterized_sbml_transform():
+    case = next(
+        case
+        for case in integrated_cases.generated_cases()
+        if case.get("transform") == "function-shadowing"
+    )
+    root = ET.fromstring(integrated_cases.sbml_text(case))
+    ns = {"s": "http://www.sbml.org/sbml/level3/version2/core"}
+    model = root.find("s:model", ns)
+    function = model.find("s:listOfFunctionDefinitions/s:functionDefinition", ns)
+    parameters = {
+        parameter.attrib["id"]: float(parameter.attrib["value"])
+        for parameter in model.findall("s:listOfParameters/s:parameter", ns)
+    }
+
+    assert function is not None
+    assert function.attrib["id"] == "rateLaw"
+    assert parameters["rate"] == 7.0
+    assert parameters["k"] == integrated_cases.RATE
+    assert "rateLaw" in integrated_cases.sbml_text(case)
+
+
+def test_concentration_transform_keeps_independent_amount_oracle():
+    cases = [
+        case
+        for case in integrated_cases.generated_cases()
+        if case.get("transform") == "concentration-coordinate"
+    ]
+    assert cases
+    ns = {"s": "http://www.sbml.org/sbml/level3/version2/core"}
+    for case in cases:
+        root = ET.fromstring(integrated_cases.sbml_text(case))
+        species = root.find(".//s:species[@id='A']", ns)
+        law = root.find(".//s:kineticLaw", ns)
+        assert np.isclose(
+            float(species.attrib["initialConcentration"]),
+            case["initial"] / case["volume"],
+        )
+        assert species.attrib["hasOnlySubstanceUnits"] == "false"
+        assert "cell" in ET.tostring(law, encoding="unicode")
+        expected, columns = integrated_cases.expected_trajectory(case)
+        values = dict(zip(columns, expected.T))
+        assert np.allclose(
+            values["A_amt"],
+            case["initial"] * np.exp(-integrated_cases.RATE * integrated_cases.TIMES),
+        )
+        source_values, species_names = integrated_cases.expected_source_species(case)
+        assert species_names == ["A", "B"]
+        assert np.allclose(source_values[:, 0], values["A_amt"] / case["volume"])
+        assert np.allclose(source_values[:, 1], values["B_amt"] / case["volume"])
+        # The declared concentration law multiplies concentration by volume,
+        # yielding the same independently specified amount extent k*N.
+        assert np.isclose(
+            integrated_cases.RATE * case["volume"] * (case["initial"] / case["volume"]),
+            integrated_cases.RATE * case["initial"],
+        )

@@ -19,14 +19,26 @@ import numpy as np
 
 from . import campaign, contracts, inventory, reporting
 from .simulation_contract import net_reload_context
-from .integrated_cases import TIMES, generated_cases, sbml_text, expected_trajectory
-from . import integrated_consumers, scientific_contracts, integrated_extensions
+from .integrated_cases import (
+    TIMES,
+    generated_cases,
+    sbml_text,
+    expected_trajectory,
+)
+from . import (
+    integrated_consumers,
+    integrated_source,
+    scientific_contracts,
+    integrated_extensions,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = Path(__file__).with_name("integrated_worker.py")
 # Required evidence is declared independently of execution, so deleting a
 # comparator cannot leave a green report containing only successful processes.
 PROCESS_STAGES = (
+    "source-validation",
+    "source-sbml-oracle",
     "atomizer",
     "bng2",
     "cli",
@@ -60,7 +72,9 @@ NETWORK_CHECKS = (
 )
 
 
-def expected_contract_ids(cases):
+def expected_contract_ids(
+    cases, *, include_boundaries=True, include_graph_identity=True
+):
     return [
         f"{c['id']}:{suffix}"
         for c in cases
@@ -96,7 +110,11 @@ def expected_contract_ids(cases):
             ),
             "worker-identity:same-installed-build",
         )
-    ] + integrated_extensions.expected_ids(cases)
+    ] + integrated_extensions.expected_ids(
+        cases,
+        include_boundaries=include_boundaries,
+        include_graph_identity=include_graph_identity,
+    )
 
 
 def run_stage(
@@ -298,12 +316,61 @@ def _nf_invariants(case, route, path, rows, dependency):
     _checks(case["id"], stage, checks, rows, [dependency])
 
 
+def _candidate_issue_ids(case, stage):
+    """Map only transformed candidate-side evidence to directly tested issues."""
+    transform = case.get("transform")
+    trajectory = stage.endswith("-source-dynamics")
+    nf_route = stage in {
+        "nf",
+        "native-nf",
+        "nf-independent",
+        "nf-invariants",
+        "nf-marginals",
+    }
+    if transform == "function-shadowing" and (
+        stage == "atomizer" or trajectory or nf_route
+    ):
+        return [143]
+    if transform == "concentration-coordinate":
+        if stage == "atomizer" or trajectory:
+            return [161]
+        if nf_route:
+            return [151]
+    return None
+
+
 def run_case(case, args, rows, env):
+    first_row = len(rows)
     key = case["id"]
     work = args.report_dir / "cases" / key
     work.mkdir(parents=True)
     source = work / "source.xml"
-    source.write_text(sbml_text(case))
+    source_xml = sbml_text(case)
+    source.write_text(source_xml)
+    try:
+        source_status, source_detail = integrated_source.validate_sbml_source(
+            source_xml
+        )
+    except Exception as exc:
+        source_status = "HARNESS_ERROR"
+        source_detail = (
+            f"libSBML source validation unavailable: {type(exc).__name__}: {exc}"
+        )
+    source_validation = dict(
+        id=f"{key}:source-validation",
+        stage="source-validation",
+        integration_case=key,
+        status=source_status,
+        detail=source_detail,
+        command="libsbml.readSBMLFromString + checkConsistency",
+        receipt=str(source.resolve()),
+        related_issues=[],
+    )
+    rows.append(source_validation)
+    source_oracle = integrated_source.source_sbml_oracle(
+        case, source, work, source_validation
+    )
+    rows.append(source_oracle)
     expected = work / "analytic.gdat"
     data, columns = expected_trajectory(case)
     np.savetxt(expected, data, header=" ".join(columns), fmt="%.17g")
@@ -340,7 +407,10 @@ def run_case(case, args, rows, env):
 
     translated = work / "atomizer/model.bngl"
     atomizer = stage(
-        "atomizer", worker("atomizer", source), required=("model.bngl", "identity.json")
+        "atomizer",
+        worker("atomizer", source),
+        deps=[source_validation],
+        required=("model.bngl", "identity.json"),
     )
     # Identical translated source, copied before adding the same action protocol.
     actions = (
@@ -586,6 +656,13 @@ def run_case(case, args, rows, env):
             rows,
             identities,
         )
+    for row in rows[first_row:]:
+        row["base_case_id"] = case.get("base_case_id", case["id"])
+        row["transform"] = case.get("transform", "identity")
+        row["quantity_basis"] = case.get("quantity_basis", "initialAmount; item amount")
+        issue_ids = _candidate_issue_ids(case, row["stage"])
+        if issue_ids is not None:
+            row["related_issues"] = issue_ids
 
 
 def _preflight(args):
@@ -637,8 +714,11 @@ def main(argv=None):
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--boundaries-only", action="store_true")
+    parser.add_argument("--graph-identity-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
+    if args.boundaries_only and args.graph_identity_only:
+        parser.error("select at most one focused qualification")
     args.ensemble_runs = (
         args.ensemble_runs
         if args.ensemble_runs is not None
@@ -654,7 +734,7 @@ def main(argv=None):
         if args.case
         else generated_cases(args.full)
     )
-    if args.boundaries_only:
+    if args.boundaries_only or args.graph_identity_only:
         selected = []
     for name in (
         "bng_cpp",
@@ -684,7 +764,10 @@ def main(argv=None):
     try:
         references = _preflight(args)
         subject_digest = inventory.sha256(args.bng_cpp)
-        integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
+        if not args.graph_identity_only:
+            integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
+        if not args.boundaries_only:
+            integrated_extensions.invoke("graph-identity", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -695,7 +778,13 @@ def main(argv=None):
             raise ValueError(
                 "runtime or reference identity changed during integration run"
             )
-        missing = set(expected_contract_ids(selected)) - {r["id"] for r in rows}
+        missing = set(
+            expected_contract_ids(
+                selected,
+                include_boundaries=not args.graph_identity_only,
+                include_graph_identity=not args.boundaries_only,
+            )
+        ) - {r["id"] for r in rows}
         if missing and all(r["status"] == "PASS" for r in rows):
             raise ValueError(
                 "missing semantic integration evidence: " + ", ".join(sorted(missing))
@@ -729,7 +818,11 @@ def main(argv=None):
             + (
                 ["--boundaries-only"]
                 if row.get("qualification") == "boundaries"
-                else (["--case", case_id] if case_id else [])
+                else (
+                    ["--graph-identity-only"]
+                    if row.get("qualification") == "graph-identity"
+                    else (["--case", case_id] if case_id else [])
+                )
             )
             + [
                 "--report-dir",
@@ -765,22 +858,25 @@ def main(argv=None):
         row.setdefault("question", "generated-cross-component-handoff")
         if row["stage"] in integrated_extensions.OPERATIONS:
             row["source_locations"] = [
-                "tests/validation/integrated_"
-                + {
-                    "boundaries": "boundaries",
-                    "protocol": "protocol",
-                    "nf-marginals": "marginals",
+                {
+                    "boundaries": "tests/validation/integrated_boundaries.py",
+                    "protocol": "tests/validation/integrated_protocol.py",
+                    "nf-marginals": "tests/validation/integrated_marginals.py",
+                    "graph-identity": "tests/validation/graph_identity.py",
                 }[row["stage"]]
-                + ".py"
             ]
+            if row["stage"] == "graph-identity":
+                row["question"] = "native-network-graph-identity-vs-independent-oracle"
         stage = row["stage"]
-        if not row.get("related_issues"):
+        if "related_issues" not in row:
             if stage == "boundaries":
                 issues = [157, 158, 160, 161, 164]
             elif stage == "protocol":
                 issues = [138, 139, 140, 141, 143, 171, 172]
             elif stage == "nf-marginals":
                 issues = [143, 146, 151, 167]
+            elif stage == "graph-identity":
+                issues = [142]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -847,11 +943,13 @@ def main(argv=None):
                 Path(__file__),
                 WORKER,
                 Path(integrated_consumers.__file__),
+                Path(integrated_source.__file__),
                 Path(integrated_extensions.__file__),
                 ROOT / "tests/validation/integrated_protocol.py",
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
+                ROOT / "tests/validation/compare.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",
                 ROOT / "tests/validation/contracts.py",

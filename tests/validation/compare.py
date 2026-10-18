@@ -852,6 +852,8 @@ def _parse_species_graph(value: str) -> _SpeciesGraph | None:
         molecule = molecule.strip()
         if not molecule:
             return None
+        if not molecule_compartment:
+            molecule_compartment = species_compartment
 
         is_constant = molecule.startswith("$")
         constant = "1" if is_constant else "0"

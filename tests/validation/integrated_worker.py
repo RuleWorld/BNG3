@@ -714,6 +714,7 @@ def main():
             "boundaries",
             "protocol",
             "nf-marginals",
+            "graph-identity",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -797,7 +798,12 @@ def main():
     Path("identity.json").write_text(json.dumps(identity, indent=2) + "\n")
     import bionetgen
 
-    if args.operation in ("boundaries", "protocol", "nf-marginals"):
+    if args.operation in (
+        "boundaries",
+        "protocol",
+        "nf-marginals",
+        "graph-identity",
+    ):
         from tests.validation.integrated_extensions import run_worker
 
         checks = run_worker(args.operation, args)

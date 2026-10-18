@@ -4,7 +4,11 @@ from argparse import Namespace
 import json
 from pathlib import Path
 
-from tests.validation import integrated_extensions as extensions, integrated_cases
+from tests.validation import (
+    graph_identity,
+    integrated_extensions as extensions,
+    integrated_cases,
+)
 
 
 def args(tmp_path):
@@ -18,11 +22,52 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
     ids = extensions.expected_ids(cases)
     assert len(ids) == len(set(ids))
     assert "campaign:boundaries" in ids
+    assert "campaign:graph-identity" in ids
+    assert set(extensions.check_ids("graph-identity")) == {
+        f"graph-identity:{case['id']}" for case in graph_identity.CASES
+    }
     for case in cases:
         assert f"{case['id']}:protocol" in ids
         assert (f"{case['id']}:nf-marginals" in ids) == (
             case["family"] in ("decay", "reversible", "dimerization")
         )
+
+
+def test_graph_identity_receipt_links_each_generated_observation_to_issue_142(
+    tmp_path,
+):
+    rows = []
+
+    def worker(case_id, operation, command, directory, results, **kwargs):
+        directory.mkdir(parents=True)
+        (directory / "identity.json").write_text("{}")
+        checks = [
+            {
+                "id": check_id,
+                "check": check_id.rsplit(":", 1)[-1],
+                "status": "PASS",
+                "detail": "generated graph identity observation",
+                "related_issues": [142],
+            }
+            for check_id in extensions.check_ids("graph-identity")
+        ]
+        (directory / "checks.json").write_text(json.dumps(checks))
+        row = dict(
+            id=f"{case_id}:{operation}",
+            stage=operation,
+            status="PASS",
+            receipt="receipt",
+        )
+        results.append(row)
+        return row
+
+    parent = extensions.invoke("graph-identity", args(tmp_path), rows, {}, worker)
+
+    assert parent["status"] == "PASS"
+    assert parent.get("aggregate") is True
+    assert [row["related_issues"] for row in rows[1:]] == [[142]] * len(
+        graph_identity.CASES
+    )
 
 
 def test_missing_qualification_checks_cannot_pass_after_successful_process(tmp_path):
@@ -68,7 +113,7 @@ def test_ensemble_receipt_preserves_seed_budget_and_rejects_duplicate_evidence(
     assert parent["status"] == "HARNESS_ERROR"
     command = captured["command"]
     assert command[command.index("--ensemble-runs") + 1] == "32"
-    assert command[command.index("--ensemble-cases") + 1] == "48"
+    assert command[command.index("--ensemble-cases") + 1] == "60"
     assert captured["timeout"] == 240
 
 

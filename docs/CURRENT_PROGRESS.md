@@ -150,6 +150,51 @@ Green CI establishes only its selected contracts. Current limitations include:
 - CUDA hardware evidence, maintenance policy, scientific ownership and release
   approvals cannot be replaced by CPU CI success.
 
+## Validation-only graph identity continuation (2026-10-18 candidate)
+
+The integrated campaign now has a bounded #142 detector that feeds its normal
+report and issue queue. Six generated seed-only cases exercise the installed
+BNG3 native network generator against the independent validation graph matcher:
+3-, 4- and 5-molecule symmetric rings under molecule/site/bond-label
+permutations, plus negative controls for site-state, species-compartment and
+per-molecule-compartment distinctions. Each named result links to #142, and a
+mismatch is an ordinary failure. Focused local harness checks validate
+non-vacuous oracle cases and
+report wiring; no BNG3 build or native campaign was run locally, so production
+outcomes await parity CI. This does not compare BNGcore and NFsim canonical
+labels, exercise embedded or standalone NFsim identity, or establish general
+network equivalence. #142's implementation/contract criteria remain open.
+The first PR294 hosted graph batch had one apparent compartment mismatch: the
+validation parser omitted the BNGL rule that molecules without an explicit
+local compartment inherit the species prefix. The comparator now treats an
+explicit inherited suffix and its omitted spelling as equal while retaining
+failures for outer-compartment changes and loss of a non-default local
+compartment. This was a harness representation discrepancy, not evidence of a
+BNG3 graph-identity defect.
+
+The next integrated-campaign slice preserves the 48-case baseline (18
+PR-selected cases) and adds six generated semantic siblings to PR runs and
+twelve to full runs. Three function-definition cases pass a rate through a
+lambda formal named `rate` while a global `rate=7` is present and the analytic
+rate remains `k=0.4`; three concentration-coordinate cases initialize
+`N0/V`, use `hasOnlySubstanceUnits=false`, and express extent as `k*cell*A`.
+Each sibling records its unchanged baseline case ID and transformation.
+Generated SBML is checked with libSBML before results are attributed. Raw
+source execution is compared in libRoadRunner against fixed closed-form
+species coordinates using explicit selections (`A` for amount and `[A]` for
+concentration); version, source SHA-256, RoadRunner model name and selections are retained.
+BNG outputs are separately judged as item amounts/counts.
+The existing Atomizer, BNG2, BNG3, PyBioNetGen, BNGIR, and NFsim routes retain
+their ordinary reports and status classifications. Focused local checks cover
+case generation, lineage, analytic coordinates, source-validation
+classification, and required check IDs; no product build or scientific
+campaign was run locally. This is partial detector evidence for function/rate
+and quantity boundaries relevant to #143 and #151/#161; it does not establish
+the shared rate-law contract, NFsim count-rate parity, structural
+Atomizer/Multi qualification, or close any linked issue. CI still must execute
+the generated cases, and embedded/native NFsim outcomes remain separately
+classified rather than assumed supported.
+
 ## Integrated acceptance slices
 
 A bounded repair does not close its broader issue.
