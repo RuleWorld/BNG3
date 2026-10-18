@@ -10,6 +10,75 @@ action-only fixtures use explicit output contracts from
 
 Differential testing against the originals. Nothing merges until it matches.
 
+## Cross-component generated integration cases
+
+`tests.validation.integrated` runs a eighteen-case pairwise PR matrix that sends generated SBML through Atomizer, BNG3 command-line and Python execution, locked BNG2, an isolated upstream PyBioNetGen interpreter, and independently built native NFsim. Scheduled and manually dispatched parity runs can select the full forty-eight-case matrix. Reports retain stage-specific outcomes, tool identities, logs, commands, intermediates, and investigation packets; a passing stage does not imply that a later stage ran or passed.
+
+After building BNG3 and checking out the locked oracles, run the same worker locally with a fresh report directory:
+
+```bash
+python -m tests.validation.integrated \
+  --bng-cpp build/cpp/bng_cpp \
+  --bng2-root /absolute/path/to/locked/bionetgen \
+  --bng2-network-sha256 <run_network-sha256> \
+  --nfsim-root /absolute/path/to/locked/nfsim \
+  --nfsim-binary /absolute/path/to/locked/nfsim/build/NFsim \
+  --nfsim-sha256 <native-nfsim-sha256> \
+  --pybionetgen-root /absolute/path/to/locked/pybionetgen \
+  --pybionetgen-python /absolute/path/to/isolated/pybionetgen-venv/bin/python \
+  --report-dir /tmp/bng3-integrated-validation
+```
+
+Decay, reversible conversion and dimerization families vary compartment volume, population, declaration order (or initially occupied side for reversible conversion), and Atomizer mode. The source analytic amounts are checked against each deterministic route; network identities/rates use BNG2, and native NFsim consumes BNG2 XML for seeded trajectory comparison in the single-channel families. Reversible models check source count/initial/conservation invariants on both NFsim routes; they do not claim pathwise equivalence across differently ordered reaction channels. The final-pass ensemble checks below independently test selected source marginals. `--case v1-n20-r0-a0` selects one replay.
+
+The upstream PyBioNetGen source is imported by the isolated worker; install its requirements into that interpreter without installing the upstream package. Pull requests use the bounded default selection; `--full` selects the expanded matrix. This is regression-discovery evidence, not a claim of complete component equivalence.
+
+The same cases also feed BNGL export/reload, BNGIR 0.1 and native 0.2 reconstruction, SBML export consumed by RoadRunner, and model reuse/mutation/reset/seed replay. Per-consumer `checks.json` is merged into the same report with required check identities. Native BNGIR checks block BNGL parser/render fallback during reconstruction; its guarded NET exporter stays guarded. Native generation compares graph identity, counts and a mapped unit-state RHS snapshot, with independent source trajectories checked separately. Independent source analytic trajectories still judge each deterministic consumer; fresh/reused agreement alone cannot validate both.
+
+`tests.validation.issue_queue` joins one or more exact-revision reports to a retained `gh issue list` snapshot. It rejects stale/conflicting observations and avoids counting a successful process as a passed behavior. Every issue remains explicitly ineligible for automatic closure. The queue includes strict provenance approval debt, reconciliation claims without test references, stale named references, and optional upstream branch observations. A reference resolving in source never counts as executed qualification. CI collects a bounded 1,000-issue snapshot and checks upstream branch drift only on scheduled/manual runs; unavailable or unobserved branches are not treated as matching the lock.
+
+```bash
+python -m tests.validation.issue_queue \
+  --issues-json /tmp/issues.json --report /tmp/bng3-integrated-validation/report.json \
+  --revision <exact-candidate-sha> --output-dir /tmp/bng3-issue-queue
+```
+
+This command reads local evidence and produces a repair/evidence/decision queue; it never modifies GitHub issues or source approvals.
+
+The final qualification stages add eight valid-source SBML boundary controls for nonlinear events, delay history, nonlinear algebraic constraints, and fast reactions with dynamic stoichiometry. LibSBML consistency runs before Atomizer evidence is scored; fast-reaction fixtures use L3V1 because L3V2 removed that attribute. Only matching structured loss diagnostics or actual Atomizer rejections qualify the boundary control. Successful diagnostic-only rows have `supported_execution=false` and enter a separate issue-queue count; they do not establish consumer refusal or supported execution. `--boundaries-only` reproduces this bounded group.
+
+Every generated case also checks modern API equivalence on a requested nonuniform absolute grid, invalid-option refusal with a working positive control, concurrent SSA instances against fresh sequential references, saved-result isolation, and exception recovery. All three families additionally sample fresh embedded and native NFsim runs with fixed spread seeds: 32 per engine on PRs and 128 on scheduled/full runs. Independent source count laws (binomial conversion and the finite dimer pure-death generator), CDFs and seed spread use Hoeffding/DKW/equal-outcome probability bounds with a conservative global error budget of 1e-6 across the full case inventory. The checks concern these count marginals, not a complete stochastic equivalence proof. Dimer count hazards use `k*n*(n-1)/V`; the deterministic `k*A^2/V` trajectory is not a stochastic mean oracle. `--ensemble-runs` overrides a bounded run budget; reports and replay commands retain its exact value.
+
+
+
+Mutable source controls accompany each generated translation. Atomizer may legally
+fold static rate parameters into numeric coefficients, so changing an unused
+source parameter is not evidence of cache invalidation failure. Dependency
+selection follows function calls, and separately identified native BNGL controls
+retain named rate, seed and compartment dependencies. Reused ODE/SSA instances
+are checked against source-edited fresh compilations, then reset; concurrent SSA
+checks identify which source they used. Semantic reload failures retain both
+canonical documents and the first differing JSON pointer.
+Downstream comparisons depend on their named artifact handoff, so an unrelated
+failed semantic contract does not suppress an already completed simulation or
+network comparison. Process/identity errors still block handoffs. A process
+summary explained by complete validated child checks is marked as an aggregate
+rather than counted as a second scientific finding.
+
+The integrated lane requests `rtol=1e-10`, `atol=1e-12` from deterministic
+solvers; its trajectory comparison thresholds remain unchanged. BNG2 NET embeds
+conversion prefactors with eight significant digits (for example `1/6` becomes
+`0.16666667`), so integrated numeric rate comparison explicitly allows relative
+serialization error of `5e-8` with zero absolute allowance. Topology,
+multiplicity and symbolic rates remain exact; general network comparison
+continues to default to strict rate identity.
+
+The issue queue retains each live acceptance checkbox as an independently named
+unverified obligation. A checked issue box or a passing related test cannot
+establish that the full acceptance sentence was executed. Known source-law
+mismatches, including NFsim compartment count-rate conversion, remain ordinary
+failures for investigation rather than exclusions or tolerance changes.
+
 ## Integrated capability campaign
 
 The existing entry point also orchestrates discovery, component tests and live
@@ -258,6 +327,21 @@ These checks establish structural parity for the tested encodings. They do not
 assert that BNGcore and NFsim raw label strings are interchangeable or prove a
 global cross-domain canonical-label contract; cache keys and serialization
 remain domain-specific.
+
+The integrated campaign also runs six generated seed-only identity controls
+through the installed BNG3 native network generator: 3-, 4- and 5-molecule
+symmetric rings under molecule/site/bond-label permutations, plus state,
+species-compartment and molecule-compartment distinctions. Expected seed
+partitions come from the validation graph matcher, whose implementation is
+separate from the native identity consumer. This is a bounded
+`SpeciesList`/network-generation detector;
+it does not compare BNGcore and NFsim labels, exercise embedded or standalone
+NFsim identity, or qualify general network canonicalization. The issue queue
+links each named result to #142, and mismatches remain ordinary failures.
+Run just this group with `--graph-identity-only`; generated BNGL, written NET
+files, per-case outcomes and the first identity difference stay in the report
+directory. Invalid generated inputs and evidence-harness failures retain their
+own classifications, and do not stop later cases.
 
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.

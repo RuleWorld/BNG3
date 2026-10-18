@@ -37,3 +37,16 @@ def test_spawned_api_worker_uses_the_selected_package_and_native_extension():
 
     assert child == parent
     assert parent[1] == parent[3]
+
+
+def test_sweep_child_keeps_the_selected_package_and_engine(api):
+    from tests.validation import test_parity_nfsim as sweep
+
+    runner._ensure_source_python_path()
+    import bionetgen
+    import bionetgen.model
+
+    record = sweep._sweep_child("simple_system")
+    assert record.get("direct_status") == "accepted", record
+    assert record["package"] == bionetgen.__file__, record
+    assert record["native_extension"] == bionetgen.model._cpp.__file__, record

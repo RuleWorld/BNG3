@@ -1,5 +1,116 @@
 # BNG3 current progress
 
+## Generated dependency and native identity gates (2026-10-17)
+
+Continuation from `e4394172` on PR #288, with bounded implementation work
+selected from #138/#141/#143 and #153/#155. Existing explicit-grid action
+`stop_if` behavior already matches pinned BNG2; its historical discrepancy was
+not used to justify a duplicate repair.
+
+- Shared parameter mutation now invalidates transitive values and time-dependence
+  together. A deferred reset preserves linear block declaration construction.
+  The generated Catch2 gate enumerates four dependency depths, both declaration
+  orders, eager/lazy evaluation, five static/dynamic mutations, three times,
+  and invalid-cycle recovery. Independent arithmetic and fresh construction
+  check every node. Captured graph/order/step coordinates make failures replayable.
+  The final matrix reports 1,224 failed assertions against the baseline
+  `ParameterList.cpp` linked into the same test harness, and passes after repair.
+- The Python lifecycle matrix checks timed ODE dynamics analytically, mutates to
+  two constant rates, compares fresh/reused ODE trajectories and seeded NFsim
+  replay. NFsim previously refused a stale transitive timed-rate classification.
+  This is lifecycle evidence using embedded NFsim, not new independent-native
+  NFsim qualification.
+- Direct native BNGIR reconstruction rejects duplicate parameter/molecule-type
+  names before distinct IDs can alias. A reusable ID remapper exercises all six
+  permutations of a three-parameter dependency chain. Each reconstruction blocks
+  BNGL parsing/rendering and checks native ODE derivatives against an analytic
+  oracle. This does not establish a complete native BNGIR schema implementation.
+- C++ and Python matrix jobs retain JUnit reports even on failure; C++ artifacts
+  also retain CTest replay logs. Workflow contracts check report destinations,
+  distinct filenames, upload ordering and unconditional retention. Reports expose
+  actual test outcomes; a passing rejection test does not qualify that rejected
+  feature as supported, and jobs not executed remain untested.
+
+Local validation after final source/test edits: Release build passed; all 632
+CTest checks passed; Python reported 1,393 passed, 30 skipped and two existing
+xfails; workflow/report contracts passed 95 checks. The expression suite passed
+3,600 assertions across 31 cases. Black, Ruff and diff checks passed. Hosted
+exact-head results remain a separate gate. No full BioModels campaign was run.
+
+Next priority is executing upstream PyBioNetGen as an isolated behavioral oracle
+(the existing lane checks source signatures and BNG3 contracts), followed by
+feature-class SBML/event qualification against official references/RoadRunner and
+broader NFnext execution correspondence against pinned native NFsim. These remain
+open workstreams; generated mutation/identity gates do not establish broad parity.
+
+## Automation continuation (2026-10-17 candidate)
+
+The follow-up read all 60 GitHub issue bodies (44 open, 16 closed) and selected
+bounded work from their acceptance criteria:
+
+- #141: a parameter-role × ODE/SSA reuse matrix compares mutations of volume,
+  seed population and dependent rates with fresh compilation, an analytic ODE
+  trajectory and exact seeded SSA replay.
+- #171/#172: cold behavioral subprocesses select the parent's package. Required
+  public-module and native-loader failures propagate instead of silently
+  selecting legacy behavior or exposing `None`. Explicit Perl mode and genuinely
+  absent native-module importability remain separate tested boundaries.
+- #180: CI resolves populated reconciliation test references against Python AST
+  test nodes, Catch2 declarations and CTest targets. Renamed, missing or
+  commented-out tests fail the guard. Five of seven incorporated/superseded
+  entries still have no test references; resolving a reference does not prove
+  its associated behavior claim. Upstream drift/approval remains open.
+- #157/#160: the event inactivity proof no longer freezes rate-ruled trigger
+  parameters at their initial values. Three-state and coupled two-state controls
+  now remain explicitly untranslated instead of falsely claiming the event can
+  never fire. Official semantic/00403 is classified unsupported; RoadRunner shows
+  its source event firing. This is a classification repair, not new event support.
+
+Continue from the runtime/event and NFnext execution changes rather than treating
+green CI as broad implementation equivalence. This candidate adds:
+
+- 128 locked semantic SBML cases on PRs and the full semantic/stochastic inventory
+  on scheduled/manual runs. Conversion, structural round-trip, independent
+  RoadRunner comparison and official references have separate stage counts.
+  Per-case inputs, translations, exported XML, worker reports and logs are retained;
+  worker identity includes a digest of the Python sources.
+- Live pinned BNG2 SSA ensembles in scheduled/manual parity, deterministic spread
+  seeds, and an independent analytic marginal check for the fixed michment model.
+  Scratch generation never refreshes committed golden files implicitly.
+- Workflow contracts that detect removed triggers and explicitly selected tests
+  omitted from PR path filters. CPU fallback does not qualify GPU execution.
+- Focused regressions for concentration/amount rate rules, non-unit-volume Multi
+  state changes and forward function calls during SBML export.
+
+Local candidate evidence: build and 629 CTest checks passed; 65 focused
+SBML/event/GPU-contract checks passed. The locked 128-case run passed all 128
+conversion, structural round-trip and RoadRunner comparisons; official references
+reported 122 passed and six unsupported, with no failures or timeouts. This is a
+partial suite run, and full-suite aggregate flags remain false. Hosted final-head
+CI remains a separate qualification gate. All three live 200-member BNG2 SSA
+ensemble comparisons passed locally against the clean pinned source revision
+`9601746f8884ed19ab2acea49fe87fc4660ace46`. CPU statistical controls passed all
+four models. Actual GPU execution remains unqualified on this host.
+
+The headless Python suite passes with 1,382 passed, 30 skipped and two existing
+xfails. The subprocess selection contract repairs the source-versus-installed
+notebook-defaults failure. Infrastructure
+checks pass (138), including import identity, workflow wiring, reconciliation
+references and SBML report/artifact handling. The event regression module passes
+81 checks. Official semantic/00403 is explicitly unsupported with downstream
+stages not tested; it is not counted as a passing scientific comparison.
+
+Next development sequence:
+
+1. Diagnose newly exposed scheduled failures by layer using retained replay
+   artifacts; add a focused regression before each semantic repair.
+2. Expand supported SBML/event/NFnext classes only with independent quantitative
+   evidence and explicit unsupported boundaries.
+3. Run GPU qualification on actual hardware; keep unavailable hardware and
+   unsupported stochastic SBML statistics visible instead of inferring support.
+
+The dated audit below describes its original revision, not this candidate.
+
 **Audit refreshed:** 2026-10-16 against RuleWorld/BNG3 main
 `2f7200a279767bcc4a78a33775224e30f3d65521`. This is an issue/CI scope audit,
 not full qualification of that revision. Semantic convergence and release
@@ -38,6 +149,51 @@ Green CI establishes only its selected contracts. Current limitations include:
   #153–#155 or a complete production model-to-NFnext boundary (#147/#148).
 - CUDA hardware evidence, maintenance policy, scientific ownership and release
   approvals cannot be replaced by CPU CI success.
+
+## Validation-only graph identity continuation (2026-10-18 candidate)
+
+The integrated campaign now has a bounded #142 detector that feeds its normal
+report and issue queue. Six generated seed-only cases exercise the installed
+BNG3 native network generator against the independent validation graph matcher:
+3-, 4- and 5-molecule symmetric rings under molecule/site/bond-label
+permutations, plus negative controls for site-state, species-compartment and
+per-molecule-compartment distinctions. Each named result links to #142, and a
+mismatch is an ordinary failure. Focused local harness checks validate
+non-vacuous oracle cases and
+report wiring; no BNG3 build or native campaign was run locally, so production
+outcomes await parity CI. This does not compare BNGcore and NFsim canonical
+labels, exercise embedded or standalone NFsim identity, or establish general
+network equivalence. #142's implementation/contract criteria remain open.
+The first PR294 hosted graph batch had one apparent compartment mismatch: the
+validation parser omitted the BNGL rule that molecules without an explicit
+local compartment inherit the species prefix. The comparator now treats an
+explicit inherited suffix and its omitted spelling as equal while retaining
+failures for outer-compartment changes and loss of a non-default local
+compartment. This was a harness representation discrepancy, not evidence of a
+BNG3 graph-identity defect.
+
+The next integrated-campaign slice preserves the 48-case baseline (18
+PR-selected cases) and adds six generated semantic siblings to PR runs and
+twelve to full runs. Three function-definition cases pass a rate through a
+lambda formal named `rate` while a global `rate=7` is present and the analytic
+rate remains `k=0.4`; three concentration-coordinate cases initialize
+`N0/V`, use `hasOnlySubstanceUnits=false`, and express extent as `k*cell*A`.
+Each sibling records its unchanged baseline case ID and transformation.
+Generated SBML is checked with libSBML before results are attributed. Raw
+source execution is compared in libRoadRunner against fixed closed-form
+species coordinates using explicit selections (`A` for amount and `[A]` for
+concentration); version, source SHA-256, RoadRunner model name and selections are retained.
+BNG outputs are separately judged as item amounts/counts.
+The existing Atomizer, BNG2, BNG3, PyBioNetGen, BNGIR, and NFsim routes retain
+their ordinary reports and status classifications. Focused local checks cover
+case generation, lineage, analytic coordinates, source-validation
+classification, and required check IDs; no product build or scientific
+campaign was run locally. This is partial detector evidence for function/rate
+and quantity boundaries relevant to #143 and #151/#161; it does not establish
+the shared rate-law contract, NFsim count-rate parity, structural
+Atomizer/Multi qualification, or close any linked issue. CI still must execute
+the generated cases, and embedded/native NFsim outcomes remain separately
+classified rather than assumed supported.
 
 ## Integrated acceptance slices
 

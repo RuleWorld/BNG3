@@ -1,3 +1,5 @@
+#include "compile/LegacyAstLowering.hpp"
+#include "ast/EventSupport.hpp"
 #include "OdeIntegrator.hpp"
 
 #include <algorithm>
@@ -9,6 +11,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -186,10 +189,23 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network), functionEvaluator_(model) {
-    if (model_.getEventFormatVersion().has_value()) {
-        throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
+    ast::validateNativeEventSubset(model_);
+    if (model_.getEventFormatVersion()) {
+        const compile::CompiledModel compiled(model_);
+        if (!compiled.valid()) throw std::runtime_error("bng3_events require a valid compiled semantic model");
+        const auto& event = compiled.events().front();
+        nativeEvent_.emplace();
+        nativeEvent_->id = event.id;
+        nativeEvent_->trigger = compile::lowerResolvedExpressionToAst(event.trigger, compiled);
+        nativeEvent_->initialValue = event.initialValue;
+        for (const auto& assignment : event.assignments) {
+            nativeEvent_->assignments.push_back({assignment.target,
+                compile::lowerResolvedExpressionToAst(assignment.value, compiled)});
+        }
     }
     compile();
+    validateEventTargets();
+    validateEventRootSurface();
 }
 
 void OdeIntegrator::compile() {
@@ -496,6 +512,9 @@ void OdeIntegrator::compile() {
         // Build the complete rate string that NetWriter writes to .net file
         // Format: [unitConvFactor*][statFactor*]derivedParam OR [statFactor*]rawRate
         std::ostringstream rateStrBuilder;
+        // This text is parsed back into the executable rate expression. The
+        // stream default of six digits changes nonterminating volume factors.
+        rateStrBuilder << std::setprecision(std::numeric_limits<double>::max_digits10);
         bool foundDerived = false;
 
         if (!originRuleName.empty()) {
@@ -1634,7 +1653,104 @@ bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
     return dx < options.steadyStateTol;
 }
 
+void OdeIntegrator::validateEventRootSurface() {
+    if (!nativeEvent_) return;
+    const auto& arguments = nativeEvent_->trigger.args();
+    const auto dynamic = [&](const ast::Expression& value) {
+        return (value.kind() == ast::ExpressionKind::Identifier ||
+                value.kind() == ast::ExpressionKind::ObservableRef) &&
+               (value.name() == "time" || observableIndex_.count(value.name()));
+    };
+    const auto& variable = dynamic(arguments[0]) ? arguments[0] : arguments[1];
+    if (variable.name() == "time") return;
+    const auto fail = [] {
+        throw std::runtime_error("bng3_events event species trigger requires monotone constant-rate unary dynamics");
+    };
+    const auto& entries = compiledGroups_[observableIndex_.at(variable.name())].entries;
+    if (entries.size() != 1 || entries.front().second != 1.0) fail();
+    const auto species = entries.front().first;
+    if (fixedSpecies_[species]) return;
+    // This deliberately narrow proof excludes hidden tangencies and multiple
+    // crossings between solver steps. Every contributing flux depends only on
+    // this species, has a nonnegative constant coefficient, and moves it in
+    // the same direction. Assignments may reset it and rearm the next crossing.
+    int direction = 0;
+    for (const auto& reaction : compiledRxns_) {
+        const auto consumed = std::count(reaction.reactantIndices.begin(),
+                                         reaction.reactantIndices.end(), species);
+        const auto produced = std::count(reaction.productIndices.begin(),
+                                         reaction.productIndices.end(), species);
+        const auto change = produced - consumed;
+        if (change == 0) continue;
+        if (reaction.isFunctional || reaction.isTotalRate ||
+            !std::isfinite(reaction.rateConstant) || reaction.rateConstant < 0 ||
+            reaction.reactantIndices.size() > 1 ||
+            (!reaction.reactantIndices.empty() && reaction.reactantIndices.front() != species)) fail();
+        if (reaction.rateConstant == 0) continue;
+        const int sign = change > 0 ? 1 : -1;
+        if (direction != 0 && direction != sign) fail();
+        direction = sign;
+    }
+}
+
+void OdeIntegrator::validateEventTargets() {
+    if (!nativeEvent_.has_value()) return;
+    for (const auto& assignment : nativeEvent_->assignments) {
+        const auto found = observableIndex_.find(assignment.target);
+        if (found == observableIndex_.end()) {
+            throw std::runtime_error("bng3_events assignment target has no observable");
+        }
+        const auto& entries = compiledGroups_[found->second].entries;
+        if (entries.size() != 1 || entries.front().second != 1.0 ||
+            fixedSpecies_[entries.front().first]) {
+            throw std::runtime_error("bng3_events assignment target must identify one nonconstant species with weight one");
+        }
+        const auto target = entries.front().first;
+        if (std::find(eventTargets_.begin(), eventTargets_.end(), target) != eventTargets_.end()) {
+            throw std::runtime_error("bng3_events assignments alias the same species");
+        }
+        eventTargets_.push_back(target);
+    }
+}
+
+double OdeIntegrator::eventValue(const ast::Expression& expression,
+                                 double time, const double* state) const {
+    std::vector<double> groups;
+    updateGroups(state, groups);
+    const double value = expression.evaluate([&](const std::string& name) {
+        if (name == "time") return time;
+        const auto observable = observableIndex_.find(name);
+        if (observable != observableIndex_.end()) return groups[observable->second];
+        return model_.getParameters().evaluate(name, time);
+    }, time);
+    if (!std::isfinite(value)) throw std::runtime_error("bng3_events expression is nonfinite");
+    return value;
+}
+
+void OdeIntegrator::applyEvent(double time, std::vector<double>& state) const {
+    const auto& assignments = nativeEvent_->assignments;
+    std::vector<double> values;
+    for (const auto& assignment : assignments) {
+        const double value = eventValue(assignment.value, time, state.data());
+        if (value < 0) throw std::runtime_error("bng3_events assignment amount must be nonnegative");
+        values.push_back(value);
+    }
+    for (std::size_t i = 0; i < values.size(); ++i) state[eventTargets_[i]] = values[i];
+}
+
+double OdeIntegrator::cvodeEventRoot(double time, const double* scaledState) const {
+    std::vector<double> state(nSpecies_);
+    for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = scaledState[i] * cvodeStateScale_[i];
+    const auto& trigger = nativeEvent_->trigger;
+    const double difference = eventValue(trigger.args()[0], time, state.data()) -
+                              eventValue(trigger.args()[1], time, state.data());
+    return trigger.name()[0] == '<' ? -difference : difference;
+}
+
 OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
+    if (!!nativeEvent_.has_value() && options.method != "cvode") {
+        throw std::runtime_error("bng3_events require CVODE continuous root detection");
+    }
     if (options.method != "ssa" &&
         (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
         throw std::runtime_error(
@@ -2473,9 +2589,41 @@ static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* 
     return 0;
 }
 
+static int cvodeEventRootWrapper(sunrealtype time, N_Vector state,
+                                 sunrealtype* roots, void* userData) {
+    try {
+        roots[0] = static_cast<OdeIntegrator*>(userData)->cvodeEventRoot(
+            static_cast<double>(time), NV_DATA_S(state));
+        return 0;
+    } catch (...) { return -1; }
+}
+
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
+
+    std::vector<double> initialState(nSpecies_);
+    std::vector<double> initialDerivatives(nSpecies_);
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        initialState[i] = network_.species.get(i).getAmount();
+    }
+    if (stopIfExpr.has_value() &&
+        stopConditionMet(*stopIfExpr, opts.tStart, initialState) &&
+        times.front() != opts.tStart) {
+        times.insert(times.begin(), opts.tStart);
+    }
+    if (!!nativeEvent_.has_value()) {
+        const auto& event = *nativeEvent_;
+        const auto& trigger = event.trigger;
+        if ((trigger.name() == ">" || trigger.name() == "<") &&
+            eventValue(trigger.args()[0], opts.tStart, initialState.data()) ==
+            eventValue(trigger.args()[1], opts.tStart, initialState.data())) {
+            throw std::runtime_error("bng3_events strict trigger equals its threshold at the initial time");
+        }
+        if (!event.initialValue && eventValue(event.trigger, opts.tStart, initialState.data()) != 0.0) {
+            applyEvent(opts.tStart, initialState);
+        }
+    }
 
     // SUNDIALS v7: Create context (required for all SUNDIALS objects)
     SUNContext sunctx = nullptr;
@@ -2491,16 +2639,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         throw std::runtime_error("Failed to allocate CVODE state vector");
     }
 
-    std::vector<double> initialState(nSpecies_);
-    std::vector<double> initialDerivatives(nSpecies_);
-    for (std::size_t i = 0; i < nSpecies_; ++i) {
-        initialState[i] = network_.species.get(i).getAmount();
-    }
-    if (stopIfExpr.has_value() &&
-        stopConditionMet(*stopIfExpr, opts.tStart, initialState) &&
-        times.front() != opts.tStart) {
-        times.insert(times.begin(), opts.tStart);
-    }
     // Converted SBML models can legitimately combine sub-molecular amounts
     // with molecule-number rate constants.  Integrating those raw values
     // makes CVODE's initial Newton step ill-conditioned even when the source
@@ -2600,6 +2738,16 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
 
     // Set user data
     CVodeSetUserData(cvode_mem, this);
+    if (!!nativeEvent_.has_value()) {
+        if (CVodeRootInit(cvode_mem, 1, cvodeEventRootWrapper) != CV_SUCCESS) {
+            CVodeFree(&cvode_mem);
+            N_VDestroy(y);
+            SUNContext_Free(&sunctx);
+            throw std::runtime_error("bng3_events CVodeRootInit failed");
+        }
+        int direction = 1;
+        CVodeSetRootDirection(cvode_mem, &direction);
+    }
 
     // Set max number of steps (BNG2 default: 2000, auto-increases if needed)
     CVodeSetMaxNumSteps(cvode_mem, 2000);
@@ -2684,6 +2832,35 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
             while (true) {
                 flag = CVode(cvode_mem, tOut, y, &t, CV_NORMAL);
 
+                if (flag == CV_ROOT_RETURN) {
+                    int rootInfo = 0;
+                    CVodeGetRootInfo(cvode_mem, &rootInfo);
+                    if (rootInfo > 0) {
+                        std::vector<double> state(nSpecies_);
+                        for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+                        try {
+                            applyEvent(t, state);
+                        } catch (...) {
+                            SUNLinSolFree(LS);
+                            if (A) SUNMatDestroy(A);
+                            CVodeFree(&cvode_mem);
+                            N_VDestroy(y);
+                            SUNContext_Free(&sunctx);
+                            throw;
+                        }
+                        for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
+                        if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
+                            SUNLinSolFree(LS);
+                            if (A) SUNMatDestroy(A);
+                            CVodeFree(&cvode_mem);
+                            N_VDestroy(y);
+                            SUNContext_Free(&sunctx);
+                            throw std::runtime_error("bng3_events CVodeReInit failed");
+                        }
+                    }
+                    if (t >= tOut) break;
+                    continue;
+                }
                 if (flag == CV_SUCCESS || flag == CV_TSTOP_RETURN) {
                     break;
                 } else if (flag == CV_TOO_MUCH_WORK) {

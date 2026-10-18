@@ -25,11 +25,19 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from collections import Counter
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Callable
 
 import numpy as np
+
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.ci.ssts_selection import (
+    SuiteSelectionError,
+    select_feature_cover as _select_feature_cover,
+)
 
 VERSION_PRIORITY = ("l3v2", "l3v1", "l2v5", "l2v4", "l2v3", "l2v2", "l2v1", "l1v2")
 NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
@@ -687,6 +695,17 @@ def _repository_provenance(repo_root: Path) -> dict[str, Any]:
     }
 
 
+def _python_package_source_digest(package_dir: Path) -> str:
+    """Identify Python behavior independently of package location and version."""
+    digest = hashlib.sha256()
+    for source in sorted(package_dir.rglob("*.py")):
+        digest.update(source.relative_to(package_dir).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(_sha256_file(source).encode("ascii"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
 def _runtime_provenance(cpp: Any) -> dict[str, Any]:
     """Record interpreter, Python package, native extension, and oracle versions."""
 
@@ -716,6 +735,9 @@ def _runtime_provenance(cpp: Any) -> dict[str, Any]:
         "platform": platform.platform(),
         "bionetgen_version": bionetgen_version,
         "bionetgen_package_path": str(Path(bionetgen.__file__).resolve()),
+        "python_package_source_sha256": _python_package_source_digest(
+            Path(bionetgen.__file__).resolve().parent
+        ),
         "native_extension_path": str(extension_path),
         "native_extension_resolved_path": str(resolved_extension_path),
         "native_extension_sha256": _sha256_file(resolved_extension_path),
@@ -1700,6 +1722,7 @@ def _validate_case(
     simulation_n_steps: int,
     simulation_rtol: float,
     simulation_atol: float,
+    artifacts_dir: Path | None = None,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -1710,6 +1733,9 @@ def _validate_case(
     from bionetgen.atomizer.modern.types import standardize_name
 
     source_path = Path(case["path"])
+    if artifacts_dir is not None:
+        work_dir = artifacts_dir / case["category"] / case["id"]
+        work_dir.mkdir(parents=True, exist_ok=True)
     record: dict[str, Any] = {
         "category": case["category"],
         "id": case["id"],
@@ -1754,6 +1780,13 @@ def _validate_case(
     source_xml_valid = False
     try:
         sbml = source_path.read_text(encoding="utf-8-sig")
+        if artifacts_dir is not None:
+            (work_dir / "source.xml").write_text(sbml, encoding="utf-8")
+            for reference_path in (reference_settings, reference_results):
+                if reference_path.is_file():
+                    (work_dir / reference_path.name).write_bytes(
+                        reference_path.read_bytes()
+                    )
         record["source_xml"] = _validate_xml(sbml, "source SBML")
         source_xml_valid = True
         parsed = SBMLParser().parse(sbml, source_path=source_path)
@@ -1782,6 +1815,8 @@ def _validate_case(
         atomized = atomizer.atomize(sbml, source_path=source_path)
         if not atomized.success:
             raise RuntimeError(atomized.error or "modern Atomizer returned failure")
+        if artifacts_dir is not None:
+            (work_dir / "translated.bngl").write_text(atomized.bngl, encoding="utf-8")
         source_warnings = record["source_model"]["warnings"]
         source_warnings = _merge_generated_warnings(
             source_warnings, _warnings(atomizer.model)
@@ -1862,6 +1897,8 @@ def _validate_case(
         ).atomize(output_text)
         if not reimport.success:
             raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
+        if artifacts_dir is not None:
+            (work_dir / "reimported.bngl").write_text(reimport.bngl, encoding="utf-8")
         reimport_network = cpp.generate_network(
             cpp.parse_string(reimport.bngl), max_iter=100
         )
@@ -1883,6 +1920,7 @@ def _validate_case(
             raise RuntimeError(
                 f"native reaction count {native['reaction_count']} != {network.num_reactions}"
             )
+        record["roundtrip_passed"] = True
 
         warnings = record["source_model"]["warnings"]
         limitations = [
@@ -1951,8 +1989,18 @@ def _run_isolated_case(
 ) -> dict[str, Any]:
     """Run one suite case in a bounded child process."""
 
-    worker_json = args.json.parent / (
-        f".worker-sbml-{case['category']}-{case['id']}.json"
+    artifacts_dir = getattr(args, "artifacts_dir", None)
+    case_artifacts = (
+        artifacts_dir.resolve() / case["category"] / case["id"]
+        if artifacts_dir is not None
+        else None
+    )
+    if case_artifacts is not None:
+        case_artifacts.mkdir(parents=True, exist_ok=True)
+    worker_json = (
+        case_artifacts / "worker-report.json"
+        if case_artifacts is not None
+        else args.json.parent / f".worker-sbml-{case['category']}-{case['id']}.json"
     )
     worker_json.unlink(missing_ok=True)
     command = [
@@ -1978,6 +2026,9 @@ def _run_isolated_case(
         "--simulation-atol",
         str(args.simulation_atol),
     ]
+    if artifacts_dir is not None:
+        command.extend(["--artifacts-dir", str(artifacts_dir.resolve())])
+    stdout = stderr = ""
     try:
         completed = subprocess.run(
             command,
@@ -1986,6 +2037,7 @@ def _run_isolated_case(
             check=False,
             timeout=args.case_timeout,
         )
+        stdout, stderr = completed.stdout, completed.stderr
         if not worker_json.exists():
             raise RuntimeError(
                 f"worker exited {completed.returncode} without a report: "
@@ -1998,6 +2050,7 @@ def _run_isolated_case(
             "bionetgen_package_path",
             "native_extension_resolved_path",
             "native_extension_sha256",
+            "python_package_source_sha256",
             "libsbml_version",
             "roadrunner_version",
         )
@@ -2013,7 +2066,9 @@ def _run_isolated_case(
         record = worker_report["records"][0]
         record["worker_runtime_provenance"] = worker_runtime
         return record
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
         return {
             "category": case["category"],
             "id": case["id"],
@@ -2042,7 +2097,51 @@ def _run_isolated_case(
             },
         }
     finally:
-        worker_json.unlink(missing_ok=True)
+        if case_artifacts is not None:
+            for name, content in (("stdout.log", stdout), ("stderr.log", stderr)):
+                if isinstance(content, bytes):
+                    content = content.decode("utf-8", errors="replace")
+                (case_artifacts / name).write_text(content, encoding="utf-8")
+        else:
+            worker_json.unlink(missing_ok=True)
+
+
+def _stage_summary(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Count observed stages; structural round-trip is not numerical equivalence.
+
+    ``roundtrip_structure`` checks reimport/readability and model counts. Only
+    ``independent_comparison`` compares exported SBML and native trajectories.
+    """
+    stages = {
+        name: Counter()
+        for name in (
+            "conversion",
+            "roundtrip_structure",
+            "independent_comparison",
+            "official_reference",
+        )
+    }
+    for record in records:
+        failure = record.get("status", "failed")
+        converted = "generated_network" in record
+        stages["conversion"]["passed" if converted else failure] += 1
+        roundtrip = (
+            "passed"
+            if record.get("roundtrip_passed")
+            else failure if converted else "not-tested"
+        )
+        stages["roundtrip_structure"][roundtrip] += 1
+        comparison = record.get("simulation_comparison", {})
+        independent = (
+            "not-tested"
+            if not comparison or comparison.get("skipped")
+            else "passed" if comparison.get("passed") else "failed"
+        )
+        stages["independent_comparison"][independent] += 1
+        stages["official_reference"][
+            record.get("official_conformance", {}).get("status", "missing")
+        ] += 1
+    return {name: dict(counts) for name, counts in stages.items()}
 
 
 def _selected_surface_passed(records: list[dict[str, Any]]) -> bool:
@@ -2074,12 +2173,23 @@ def main() -> int:
     parser.add_argument("--lock", type=Path, default=DEFAULT_SUITE_LOCK)
     parser.add_argument("--json", type=Path)
     parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        help="retain per-case source, translations, exported SBML, reports and logs",
+    )
+    parser.add_argument(
         "--validate-only",
         action="store_true",
         help="verify the clean suite checkout against the source lock and exit",
     )
     parser.add_argument("--categories", nargs="+", default=["semantic", "stochastic"])
     parser.add_argument("--max-cases", type=int, default=0)
+    parser.add_argument(
+        "--selection-strategy",
+        choices=("prefix", "feature-cover"),
+        default="prefix",
+        help="bounded selection policy; feature-cover uses official model metadata",
+    )
     parser.add_argument(
         "--gate-selected-cases",
         action="store_true",
@@ -2138,6 +2248,10 @@ def main() -> int:
         return 0
     if args.json is None:
         parser.error("--json is required unless --validate-only is set")
+    if args.selection_strategy == "feature-cover" and args.only_case:
+        parser.error(
+            "--selection-strategy feature-cover cannot be combined with --only-case"
+        )
 
     cases = _case_files(args.suite_dir, args.categories)
     full_suite_cases = _case_files(args.suite_dir, ["semantic", "stochastic"])
@@ -2146,6 +2260,7 @@ def main() -> int:
         for category in ("semantic", "stochastic")
     }
     full_suite_inventory["total"] = len(full_suite_cases)
+    selection_metadata = None
     if args.only_case:
         try:
             only_category, only_id = args.only_case.split("/", 1)
@@ -2159,7 +2274,15 @@ def main() -> int:
         if not selected:
             raise SystemExit(f"case is not in the suite inventory: {args.only_case}")
     else:
-        selected = cases[: args.max_cases] if args.max_cases else cases
+        if args.selection_strategy == "feature-cover":
+            try:
+                selected, selection_metadata = _select_feature_cover(
+                    cases, args.max_cases
+                )
+            except SuiteSelectionError as exc:
+                raise SystemExit(f"suite selection failed: {exc}") from exc
+        else:
+            selected = cases[: args.max_cases] if args.max_cases else cases
     partial = _is_partial_run(args.categories, args.max_cases, args.only_case)
     try:
         import bionetgen._bionetgen_cpp as cpp
@@ -2197,6 +2320,7 @@ def main() -> int:
                     args.simulation_n_steps,
                     args.simulation_rtol,
                     args.simulation_atol,
+                    args.artifacts_dir,
                 )
                 records.append(record)
                 print(
@@ -2267,9 +2391,20 @@ def main() -> int:
         "case_inventory": len(cases),
         "full_suite_inventory": full_suite_inventory,
         "selected_cases": len(selected),
+        "case_selection": selection_metadata
+        or {
+            "strategy": (
+                "only-case"
+                if args.only_case
+                else "prefix" if args.max_cases else "full-inventory"
+            ),
+            "budget": args.max_cases or None,
+            "selected_case_count": len(selected),
+        },
         "partial_run": partial,
         "selected_surface_passed": _selected_surface_passed(records),
         "counts": counts,
+        "stage_counts": _stage_summary(records),
         "by_category": by_category,
         "records": records,
         "official_conformance": {

@@ -8,13 +8,27 @@ on:
       - 'provenance/ssts-ci-linux-py312.lock'
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
+      - 'scripts/ci/ssts_selection.py'
+      - 'tests/test_ci_contract.py'
       - 'tests/test_ssts_selected_gate.py'
+      - 'tests/test_ssts_feature_selection.py'
+      - 'tests/test_ssts_stage_reporting.py'
+      - 'tests/python/test_native_events.py'
+      - 'tests/python/test_species_rate_rule_amounts.py'
+      - 'tests/python/test_structural_multi_execution.py'
+      - 'tests/python/test_sbml_function_forward_references.py'
       - 'python/**'
       - 'cpp/**'
       - 'pyproject.toml'
   schedule:
     - cron: '31 5 * * 1'
   workflow_dispatch:
+    inputs:
+      bounded:
+        description: Run the bounded 128-case semantic feature cover
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,9 +39,9 @@ concurrency:
 
 jobs:
   conformance:
-    name: Locked official references (32 semantic cases)
+    name: Official SBML references (128 PR cases; full scheduled suite)
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 360
     env:
       BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
       BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -67,7 +81,7 @@ jobs:
             --source-revision "$BNG3_SOURCE_REVISION" \
             > "$RUNNER_TEMP/ssts-artifacts/package-identity.json"
           python -c 'import libsbml, roadrunner; print(libsbml.getLibSBMLDottedVersion(), roadrunner.__version__)'
-          python -m pytest tests/test_ssts_selected_gate.py tests/test_ci_contract.py -q
+          python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/python/test_structural_multi_execution.py tests/python/test_native_events.py tests/python/test_sbml_function_forward_references.py tests/python/test_species_rate_rule_amounts.py -q
 
       - name: Checkout and preflight complete locked suite
         shell: bash
@@ -91,13 +105,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # PR selection covers official metadata classes within a 128-case
+          # budget. Scheduled/manual runs remain full and retain unsupported
+          # cases as separate outcomes.
+          selection=(--categories semantic --max-cases 128 --selection-strategy feature-cover)
+          if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
+            selection=(--categories semantic stochastic)
+          fi
           python scripts/ci/validate_sbml_test_suite.py \
             --suite-dir "$RUNNER_TEMP/official-ssts" \
-            --categories semantic --max-cases 32 \
-            --isolate-cases --case-timeout 60 --jobs 2 \
+            "${selection[@]}" \
+            --isolate-cases --case-timeout 60 --jobs 4 \
+            --artifacts-dir "$RUNNER_TEMP/ssts-artifacts/cases" \
             --gate-selected-cases \
             --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
             2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
+
+      - name: Triage retained stages with the common conformance tools
+        if: always()
+        run: |
+          python -m tests.validation.ci_report \
+            "$RUNNER_TEMP/ssts-artifacts/report.json" \
+            --input-format ssts \
+            --output-dir "$RUNNER_TEMP/ssts-artifacts/triage" \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            --revision "$BNG3_SOURCE_REVISION"
 
       - name: Summarize separate evidence and digest artifacts
         if: always()
@@ -113,15 +145,17 @@ jobs:
           directory.mkdir(exist_ok=True)
           report_path = directory / 'report.json'
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              summary.write('Bounded subset only; full-suite aggregate flags remain false for a partial run.\n\n')
+              summary.write('PRs select the first 128 locked semantic cases; scheduled/manual runs select the complete semantic and stochastic inventory. Partial runs retain false full-suite aggregate flags.\n\n')
               if report_path.exists():
                   report = json.loads(report_path.read_text())
+                  summary.write('Separate observed stages: ' + json.dumps(report['stage_counts']) + '\n\n')
                   summary.write('Round-trip / independent RoadRunner: ' + json.dumps(report['counts']) + '\n\n')
                   summary.write('Official reference: ' + json.dumps(report['official_conformance']['counts']) + '\n\n')
                   summary.write('Selected-surface gate: ' + str(report['selected_surface_passed']) + '\n')
+                  summary.write('Unsupported and unexecuted stages are not support or equivalence evidence. Stochastic official statistics remain unsupported.\n')
               else:
                   summary.write('No numerical report: setup/preflight/execution failed; no conformance claim.\n')
-          digests = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(directory.iterdir()) if p.is_file()}
+          digests = {str(p.relative_to(directory)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(directory.rglob('*')) if p.is_file()}
           (directory / 'sha256.json').write_text(json.dumps(digests, indent=2) + '\n')
           PY
 

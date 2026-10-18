@@ -1,3 +1,4 @@
+#include "ast/EventSupport.hpp"
 #include "CompiledModel.hpp"
 
 #include "energy/BarrierCompiler.hpp"
@@ -18,6 +19,14 @@
 #include "UnitAnalysis.hpp"
 
 namespace bng::compile {
+
+void requireNoNativeEvents(const ast::Model& model, const std::string& consumer) {
+    if (model.getEventFormatVersion()) {
+        throw std::runtime_error(std::string(ast::kUnsupportedEventExecutionMessage) +
+                                 ": " + consumer + " does not preserve native events");
+    }
+}
+
 
 namespace {
 
@@ -537,6 +546,7 @@ CompiledModel::CompiledModel(const ast::Model& model)
       features_(featuresUsed(model)),
       symbols_(SymbolTable::fromModel(model)),
       diagnostics_(symbols_.diagnostics()) {
+    metadata_.hasNativeEvents = model.getEventFormatVersion().has_value();
 
     for (const auto& definition : model.getUnitSystem().definitions()) {
         metadata_.resolvedUnitReferences.try_emplace(
@@ -564,15 +574,37 @@ CompiledModel::CompiledModel(const ast::Model& model)
         }
     }
 
-    if (model.getEventFormatVersion().has_value()) {
+    try {
+        ast::validateNativeEventSubset(model);
+    } catch (const std::exception& error) {
         Diagnostic diagnostic;
         diagnostic.code = DiagnosticCode::UnsupportedFeature;
         diagnostic.severity = Severity::Error;
         diagnostic.category = ValidationCategory::BackendCapability;
         diagnostic.entity = "bng3_events";
-        diagnostic.message =
-            "BNG3 event execution is not implemented; bng3_events models cannot be compiled";
+        diagnostic.message = error.what();
         diagnostics_.push_back(std::move(diagnostic));
+    }
+
+    for (const auto& event : model.getEvents()) {
+        const auto resolve = [&](const ast::Expression& value) {
+            const auto compiled = CompiledRateLaw::compile(value, symbols_);
+            diagnostics_.insert(diagnostics_.end(), compiled.diagnostics().begin(),
+                                compiled.diagnostics().end());
+            return compiled.resolvedExpression();
+        };
+        CompiledEvent compiled;
+        compiled.id = event.id;
+        compiled.trigger = resolve(event.trigger);
+        compiled.initialValue = event.initialValue;
+        compiled.persistent = event.persistent;
+        compiled.useValuesFromTriggerTime = event.useValuesFromTriggerTime;
+        if (event.delay) compiled.delay = resolve(*event.delay);
+        if (event.priority) compiled.priority = resolve(*event.priority);
+        for (const auto& assignment : event.assignments) {
+            compiled.assignments.push_back({assignment.target, resolve(assignment.value)});
+        }
+        events_.push_back(std::move(compiled));
     }
 
     const auto unitAnalysis = analyzeUnits(model);

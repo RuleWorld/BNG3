@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -192,10 +193,33 @@ Expression expressionFromBngir(const py::dict& value,
 }
 
 BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
+    // Keep the native boundary as narrow as the public parser-free contract.
+    // Qualifiers and redundant identities must not disappear during rebuilding.
+    static const std::vector<std::string> patternKeys = {
+        "compartment_prefix", "molecules",
+    };
+    requireObjectKeys(pattern, patternKeys, patternKeys, "pattern");
+    const py::handle prefix = pattern["compartment_prefix"];
+    if (!PyBool_Check(prefix.ptr()) || py::cast<bool>(prefix)) {
+        throw std::runtime_error(
+            "native BNGIR pattern does not support compartment prefixes");
+    }
     BNGcore::PatternGraph graph;
     const auto molecules = py::cast<py::list>(pattern["molecules"]);
+    if (molecules.size() != 1) {
+        throw std::runtime_error(
+            "native BNGIR pattern requires exactly one molecule");
+    }
     for (const auto& rawMolecule : molecules) {
         const auto molecule = py::cast<py::dict>(rawMolecule);
+        static const std::vector<std::string> moleculeKeys = {
+            "occurrence", "sites", "type", "type_id",
+        };
+        requireObjectKeys(molecule, moleculeKeys, moleculeKeys, "pattern molecule");
+        if (indexFromBngir(molecule["occurrence"], "molecule occurrence") != 0) {
+            throw std::runtime_error(
+                "native BNGIR pattern requires molecule occurrence zero");
+        }
         const auto sites = py::cast<py::list>(molecule["sites"]);
         if (!sites.empty()) {
             throw std::runtime_error(
@@ -207,6 +231,11 @@ BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
             throw std::runtime_error("native BNGIR molecule type reference is out of range");
         }
         const auto& moleculeType = model.getMoleculeTypes()[typeId];
+        if (!py::isinstance<py::str>(molecule["type"]) ||
+            py::cast<std::string>(molecule["type"]) != moleculeType.getName()) {
+            throw std::runtime_error(
+                "native BNGIR molecule type name does not match type_id");
+        }
         const auto& nodeType = model.getGraphTypeRegistry().ensureMoleculeType(moleculeType);
         BNGcore::Node node(nodeType);
         graph.add_node(node);
@@ -263,9 +292,15 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
 
     std::vector<std::string> parameterNames;
     parameterNames.reserve(parameters.size());
+    std::set<std::string> uniqueParameterNames;
     for (const auto& rawParameter : parameters) {
         const auto parameter = py::cast<py::dict>(rawParameter);
-        parameterNames.push_back(py::cast<std::string>(parameter["name"]));
+        const auto name = py::cast<std::string>(parameter["name"]);
+        if (!uniqueParameterNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR parameter names must be unique");
+        }
+        parameterNames.push_back(name);
     }
     for (const auto& rawParameter : parameters) {
         const auto parameter = py::cast<py::dict>(rawParameter);
@@ -274,10 +309,16 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             expressionFromBngir(py::cast<py::dict>(parameter["expression"]), parameterNames)));
     }
 
+    std::set<std::string> uniqueMoleculeTypeNames;
     for (const auto& rawMoleculeType : moleculeTypes) {
         const auto moleculeType = py::cast<py::dict>(rawMoleculeType);
+        const auto name = py::cast<std::string>(moleculeType["name"]);
+        if (!uniqueMoleculeTypeNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR molecule type names must be unique");
+        }
         model->addMoleculeType(MoleculeType(
-            py::cast<std::string>(moleculeType["name"]), {}, false));
+            name, {}, false));
     }
 
     for (const auto& rawSeed : seeds) {

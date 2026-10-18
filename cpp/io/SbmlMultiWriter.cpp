@@ -62,6 +62,7 @@ std::string SbmlMultiWriter::write(const ast::Model& model) {
 
 std::string SbmlMultiWriter::write(const ast::Model& model, const Options& options) {
     requireNoEnergySemantics(model, "SBML-multi");
+    compile::requireNoNativeEvents(model, "SBML-Multi export");
     const compile::CompiledModel compiled(model);
     if (sbml_units::enabled(compiled) && !model.getReactionRules().empty()) {
         throw std::invalid_argument(

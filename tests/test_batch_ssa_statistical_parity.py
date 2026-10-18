@@ -35,6 +35,10 @@ machine with a usable backend.
 """
 
 import argparse
+import hashlib
+import json
+from pathlib import Path
+import subprocess
 import sys
 import math
 import numpy as np
@@ -521,7 +525,37 @@ def run_cpu_reference_gate():
     return all_ok
 
 
-def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
+def check_device_result(result, backend, batch_size, expected_times):
+    """Check actual device identity and complete, finite output before statistics."""
+    if backend is not None:
+        assert result["backend"] == backend, "requested GPU backend did not execute"
+    assert result["batch_size"] == batch_size, "incomplete GPU batch"
+    np.testing.assert_array_equal(result["time"], expected_times)
+    names = result["observable_names"]
+    assert names and len(set(names)) == len(names), "missing/duplicate observables"
+    assert np.shape(result["final_observables"]) == (batch_size, len(names))
+    assert np.isfinite(result["final_observables"]).all()
+    assert np.ndim(result["final_species"]) == 2
+    assert np.shape(result["final_species"])[0] == batch_size
+    assert np.isfinite(result["final_species"]).all()
+    assert (np.asarray(result["final_species"]) >= 0).all()
+    assert np.shape(result["event_counts"]) == (batch_size,)
+    counts = np.asarray(result["event_counts"])
+    assert np.isfinite(counts).all() and (counts >= 0).all()
+    assert (counts == np.floor(counts)).all()
+    assert result["total_events"] == sum(int(value) for value in counts)
+    for key in ("observable_means", "observable_stds"):
+        assert set(result[key]) == set(names)
+        for values in result[key].values():
+            assert np.shape(values) == np.shape(expected_times)
+            assert np.isfinite(values).all()
+            if key == "observable_stds":
+                assert (np.asarray(values) >= 0).all()
+
+
+def validate_model(
+    name, bngl_path, t_end, n_steps, batch_size=2000, *, backend="auto", receipt=None
+):
     print(f"\n{'=' * 70}")
     print(f"Statistical Validation: {name} (batch_size={batch_size})")
     print(f"{'=' * 70}")
@@ -540,9 +574,11 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         threads=0,
         base_seed=1000,
     )
+    expected_times = np.linspace(0.0, t_end, n_steps + 1).astype(np.float32)
+    check_device_result(cpu_res, None, batch_size, expected_times)
 
     # Run GPU batch on the backend that would be selected automatically.
-    backend = cpp.default_gpu_backend()
+    backend = cpp.default_gpu_backend() if backend == "auto" else backend
     if backend == "none":
         print(f"  [SKIP] no GPU backend available: {cpp.gpu_backends()}")
         return True
@@ -556,6 +592,44 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
         base_seed=5000,
         backend=backend,
     )
+    check_device_result(gpu_res, backend, batch_size, expected_times)
+    assert gpu_res["observable_names"] == cpu_res["observable_names"]
+    repeated = cpp.simulate_batch_ssa_gpu(
+        model,
+        net,
+        batch_size=batch_size,
+        t_end=t_end,
+        n_steps=n_steps,
+        base_seed=5000,
+        backend=backend,
+    )
+    check_device_result(repeated, backend, batch_size, expected_times)
+    for key in ("final_observables", "final_species", "event_counts"):
+        np.testing.assert_array_equal(gpu_res[key], repeated[key])
+    for key in ("observable_means", "observable_stds"):
+        for observable in gpu_res["observable_names"]:
+            np.testing.assert_array_equal(
+                gpu_res[key][observable], repeated[key][observable]
+            )
+    if receipt is not None:
+        receipt.update(
+            {
+                "backend": gpu_res["backend"],
+                "batch_size": batch_size,
+                "model_sha256": hashlib.sha256(
+                    Path(bngl_path).read_bytes()
+                ).hexdigest(),
+                "cpu_base_seed": 1000,
+                "gpu_base_seed": 5000,
+                "species": net.num_species,
+                "reactions": net.num_reactions,
+                "cpu_wall_time_ms": cpu_res["total_wall_time_ms"],
+                "gpu_wall_time_ms": gpu_res["total_wall_time_ms"],
+                "gpu_sim_time_ms": gpu_res["sim_time_ms"],
+                "gpu_events": gpu_res["total_events"],
+                "seed_reproducible": True,
+            }
+        )
 
     time_points = cpu_res["time"]
     obs_names = cpu_res.get("observable_names", [])
@@ -696,7 +770,7 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
             ks = stats.ks_2samp(c_samp, g_samp, method="asymp")
             c_sd = float(np.std(c_samp))
             g_sd = float(np.std(g_samp))
-            if ks.pvalue < KS_ALPHA:
+            if not np.isfinite([ks.statistic, ks.pvalue]).all() or ks.pvalue < KS_ALPHA:
                 print(
                     f"  '{obs}': [FAIL] KS D={ks.statistic:.4f}, p={ks.pvalue:.3e} "
                     f"< {KS_ALPHA:g} (CPU std={c_sd:.4f}, GPU std={g_sd:.4f}) "
@@ -748,6 +822,9 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
 
         chi2_cpu, p_cpu = stats.chisquare(c_counts, expected_counts)
         chi2_gpu, p_gpu = stats.chisquare(g_counts, expected_counts)
+        assert np.isfinite(
+            [chi2_cpu, p_cpu, chi2_gpu, p_gpu]
+        ).all(), "nonfinite analytical comparison"
 
         print(f"  CPU Chi-square = {chi2_cpu:.2f}, p-value = {p_cpu:.4f}")
         print(f"  GPU Chi-square = {chi2_gpu:.2f}, p-value = {p_gpu:.4f}")
@@ -765,10 +842,21 @@ def validate_model(name, bngl_path, t_end, n_steps, batch_size=2000):
     return all_passed
 
 
-def run_gpu_parity_gate():
+def run_gpu_parity_gate(*, backend="auto", require_device=False, report=None):
     print("=" * 70)
     print("Batch SSA GPU parity gate")
     print("=" * 70)
+
+    inventory = cpp.gpu_backends()
+    selected = cpp.default_gpu_backend() if backend == "auto" else backend
+    if report is None:
+        report = {}
+    report.update(backend=selected, inventory=inventory, models=[], status="NOT_TESTED")
+    if not any(item["name"] == selected and item["available"] for item in inventory):
+        print(
+            f"[NOT_TESTED] requested GPU backend unavailable: {selected}; {inventory}"
+        )
+        return not require_device
 
     test_models = [
         ("isomerization", "models/isomerization.bngl", 20.0, 10),
@@ -779,9 +867,26 @@ def run_gpu_parity_gate():
 
     all_ok = True
     for name, path, t_end, n_steps in test_models:
-        ok = validate_model(name, path, t_end, n_steps, batch_size=2000)
+        receipt = {"model": name, "status": "FAIL"}
+        report["models"].append(receipt)
+        try:
+            ok = validate_model(
+                name,
+                path,
+                t_end,
+                n_steps,
+                batch_size=2000,
+                backend=selected,
+                receipt=receipt,
+            )
+        except Exception as exc:
+            receipt["error"] = f"{type(exc).__name__}: {exc}"
+            print(f"[FAIL] {name}: {receipt['error']}")
+            ok = False
+        receipt["status"] = "PASS" if ok else "FAIL"
         if not ok:
             all_ok = False
+    report["status"] = "PASS" if all_ok else "FAIL"
 
     print("\n" + "=" * 70)
     if all_ok:
@@ -806,14 +911,60 @@ def main(argv=None):
             "runs both."
         ),
     )
+    parser.add_argument("--backend", choices=("auto", "cuda", "metal"), default="auto")
+    parser.add_argument(
+        "--require-device",
+        action="store_true",
+        help="Fail instead of skipping when the requested GPU is unavailable",
+    )
+    parser.add_argument(
+        "--json", type=Path, help="Write hardware qualification receipts"
+    )
     args = parser.parse_args(argv)
+    if args.mode == "cpu" and (args.require_device or args.backend != "auto"):
+        parser.error("--backend and --require-device require --mode gpu or all")
+
+    report = {
+        "schema_version": 1,
+        "command": [sys.executable, *sys.argv],
+        "native_module": str(Path(cpp.__file__).resolve()),
+        "native_sha256": hashlib.sha256(Path(cpp.__file__).read_bytes()).hexdigest(),
+        "source_revision": subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip(),
+        "source_dirty": bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+        ),
+        "gpu": {},
+    }
+
+    def gpu_gate():
+        return run_gpu_parity_gate(
+            backend=args.backend,
+            require_device=args.require_device,
+            report=report["gpu"],
+        )
+
+    def save_report():
+        if args.json:
+            args.json.parent.mkdir(parents=True, exist_ok=True)
+            args.json.write_text(json.dumps(report, indent=2) + "\n")
 
     if args.mode == "gpu":
-        return 0 if run_gpu_parity_gate() else 1
+        ok = gpu_gate()
+        save_report()
+        return 0 if ok else 1
 
     ok = run_cpu_reference_gate()
+    report["cpu_passed"] = ok
     if args.mode == "all":
-        ok = run_gpu_parity_gate() and ok
+        ok = gpu_gate() and ok
+    save_report()
     return 0 if ok else 1
 
 

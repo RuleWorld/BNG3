@@ -7113,6 +7113,39 @@ end reaction rules
     delete direct;
 }
 
+TEST_CASE("NFsim destructive identical reactants retain BNG2 permutation symmetry") {
+    // BNG2 emits symmetry_factor="0.5" for A()+A()->D(). Canonical
+    // NFsim 9b00d42f's XML loader installs that factor on TransformationSet.
+    // The proposal propensity is k*N^2/2; same-molecule selections are null
+    // events, giving the source count hazard k*N*(N-1)/2.
+    auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.8
+end parameters
+begin molecule types
+  A()
+  D()
+end molecule types
+begin seed species
+  A() 20
+end seed species
+begin reaction rules
+  dimerize: A() + A() -> D() k
+end reaction rules
+)BNGL");
+    REQUIRE(model != nullptr);
+    int traversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, traversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(160.0));
+    delete system;
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("symmetry_factor=\"0.5\"") != std::string::npos);
+}
+
 TEST_CASE("NFsim parameter updates rescale zero-order volumes and MM rates", "[issue-105]") {
     // ruleworld/nfsim#105: compartment size was baked at load,
     // setParameter()+update() never rescaled zero-order propensities, the

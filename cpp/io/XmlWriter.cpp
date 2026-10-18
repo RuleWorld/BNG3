@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include "XmlWriter.hpp"
 
 #include "compile/energy/BarrierCompiler.hpp"
@@ -1428,6 +1429,7 @@ bool needsTotalRateFunctionWrapper(const ast::Model& model,
 } // anonymous namespace
 
 std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network) {
+    compile::requireNoNativeEvents(model, "BNG-XML export");
     std::ostringstream xml;
 
     xml << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
@@ -1813,6 +1815,12 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             lowercase(rate->name()) == "arrhenius" && rate->args().size() >= 2;
         xml << "      <ReactionRule id=\"" << rrId
             << "\" name=\"" << escapeXml(rule.getRuleName()) << "\"";
+        const double permutationFactor = rule.getModifiers().empty()
+            ? direction.wholeReactantPermutationFactor() : 1.0;
+        if (permutationFactor != 1.0) {
+            xml << " symmetry_factor=\"" << std::setprecision(17)
+                << permutationFactor << "\"";
+        }
         if (isArrheniusRate) {
             // BNG2 represents a bidirectional Arrhenius rule with one rate
             // law; retain the directionality explicitly for BNG3's XML

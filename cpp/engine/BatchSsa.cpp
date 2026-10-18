@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include "engine/BatchSsa.hpp"
 
 #include <algorithm>
@@ -78,6 +79,7 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
     const ast::Model& model,
     const GeneratedNetwork& network
 ) {
+    compile::requireNoNativeEvents(model, "batch SSA/JAX flattening");
     FlattenedReactionNetwork flat;
     OdeIntegrator integrator(model, network);
 

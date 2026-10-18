@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.validation.ci_report import publish
+from tests.validation.ci_report import main, publish
 
 
 def report():
@@ -103,3 +103,212 @@ def test_annotation_shows_actual_failure_before_traceback_context(tmp_path, caps
     output = capsys.readouterr().out
     assert "expected 200" in output
     assert "irrelevant setup" not in output
+
+
+def test_retained_ssts_report_creates_issue_linked_triage_artifacts(tmp_path):
+    source = tmp_path / "ssts.json"
+    source.write_text(
+        __import__("json").dumps(
+            {
+                "schema_version": 6,
+                "source_provenance": {"bng3_commit": "candidate"},
+                "suite_source_lock": {"revision": "suite-rev"},
+                "runtime_provenance": {"native_extension_sha256": "native-hash"},
+                "records": [
+                    {
+                        "id": "00001",
+                        "category": "semantic",
+                        "status": "failed",
+                        "generated_network": {"species": 1, "reactions": 1},
+                        "roundtrip_passed": True,
+                        "official_conformance": {"status": "passed"},
+                        "simulation_comparison": {
+                            "passed": False,
+                            "error": "observable A differs",
+                        },
+                    }
+                ],
+            }
+        )
+    )
+    issues = tmp_path / "issues.json"
+    issues.write_text(
+        __import__("json").dumps(
+            [{"number": 144, "title": "ODE lifecycle", "state": "OPEN"}]
+        )
+    )
+    output = tmp_path / "triage"
+    summary = tmp_path / "summary.md"
+
+    assert (
+        main(
+            [
+                str(source),
+                "--input-format",
+                "ssts",
+                "--summary",
+                str(summary),
+                "--output-dir",
+                str(output),
+                "--issues-json",
+                str(issues),
+                "--revision",
+                "candidate",
+                "--strict",
+            ]
+        )
+        == 1
+    )
+
+    report = __import__("json").loads((output / "report.json").read_text())
+    simulation = next(
+        r for r in report["results"] if r["stage"] == "cross-engine-simulation"
+    )
+    assert simulation["status"] == "FAIL"
+    assert report["failure_clusters"]
+    assert report["investigation_tasks"][0]["related_issues"]
+    assert (output / "investigation-tasks.json").is_file()
+    assert "#144" in summary.read_text()
+
+
+def test_retained_report_revision_mismatch_fails_before_writing(tmp_path, capsys):
+    source = tmp_path / "biomodels.json"
+    source.write_text(
+        __import__("json").dumps(
+            {"schema_version": 4, "manifest": "manifest.json", "records": []}
+        )
+    )
+    output = tmp_path / "triage"
+    assert (
+        main(
+            [
+                str(source),
+                "--input-format",
+                "biomodels",
+                "--summary",
+                str(tmp_path / "summary.md"),
+                "--output-dir",
+                str(output),
+                "--revision",
+                "candidate",
+            ]
+        )
+        == 1
+    )
+    assert not output.exists()
+    assert "revision" in capsys.readouterr().out.lower()
+
+
+def test_retained_report_output_cannot_overwrite_input(tmp_path, capsys):
+    source = tmp_path / "input.json"
+    source.write_text(__import__("json").dumps({"records": []}))
+    with pytest.raises(SystemExit):
+        main(
+            [
+                str(source),
+                "--input-format",
+                "ssts",
+                "--summary",
+                str(tmp_path / "summary.md"),
+                "--output-dir",
+                str(source.parent),
+            ]
+        )
+    assert __import__("json").loads(source.read_text()) == {"records": []}
+
+
+@pytest.mark.parametrize("summary_target", ["input", "normalized"])
+def test_retained_report_summary_cannot_corrupt_evidence(tmp_path, summary_target):
+    source = tmp_path / "input.json"
+    source.write_text('{"records": []}')
+    output = tmp_path / "triage"
+    summary = source if summary_target == "input" else output / "report.json"
+    with pytest.raises(SystemExit):
+        main(
+            [
+                str(source),
+                "--input-format",
+                "ssts",
+                "--summary",
+                str(summary),
+                "--output-dir",
+                str(output),
+            ]
+        )
+    assert source.read_text() == '{"records": []}'
+
+
+def test_retained_ssts_failure_packet_records_single_case_scientific_replay(tmp_path):
+    source = tmp_path / "input.json"
+    document = {
+        "source_provenance": {"bng3_commit": "candidate"},
+        "suite_dir": "/locked/suite",
+        "simulation": {"t_end": 2.0, "n_steps": 4, "rtol": 1e-7, "atol": 1e-12},
+        "records": [
+            {
+                "id": "00001",
+                "category": "semantic",
+                "status": "failed",
+                "official_conformance": {"status": "failed", "reason": "A differs"},
+            }
+        ],
+    }
+    source.write_text(__import__("json").dumps(document))
+    output = tmp_path / "triage"
+    main(
+        [
+            str(source),
+            "--input-format",
+            "ssts",
+            "--summary",
+            str(tmp_path / "summary.md"),
+            "--output-dir",
+            str(output),
+        ]
+    )
+    report = __import__("json").loads((output / "report.json").read_text())
+    task = report["investigation_tasks"][0]
+    assert "--only-case" in task["reproduce_command"]
+    assert "semantic/00001" in task["reproduce_command"]
+    assert "--simulation-t-end" in task["reproduce_command"]
+    assert task["replay_status"] == "PREPARED_NOT_EXECUTED"
+    assert (output / "input-report.json").read_bytes() == source.read_bytes()
+
+
+def test_annotation_budget_prioritizes_failures_over_unsupported_boundaries(
+    tmp_path, capsys
+):
+    document = report()
+    document["results"] = [
+        {"id": f"unsupported-{index}", "stage": "conversion", "status": "UNSUPPORTED"}
+        for index in range(60)
+    ] + [
+        {
+            "id": "actual-failure",
+            "stage": "simulation",
+            "status": "FAIL",
+            "detail": "wrong dynamics",
+        }
+    ]
+    publish(document, tmp_path / "summary")
+    annotations = capsys.readouterr().out.splitlines()
+    assert "actual-failure" in annotations[0]
+
+
+def test_external_non_object_report_is_a_diagnostic_error(tmp_path):
+    source = tmp_path / "input.json"
+    source.write_text("[]")
+    assert (
+        main(
+            [
+                str(source),
+                "--input-format",
+                "ssts",
+                "--summary",
+                str(tmp_path / "summary"),
+                "--output-dir",
+                str(tmp_path / "triage"),
+            ]
+        )
+        == 1
+    )

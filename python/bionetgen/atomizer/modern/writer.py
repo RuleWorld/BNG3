@@ -1777,8 +1777,8 @@ def check_mass_action(
     and concentration operands, evaluate the rate times the appropriate power of
     volume divided by the stoichiometric divisor at several positive points, and
     accept only a finite low-variance result.  ``reaction_order`` is the number
-    of reactant molecules; it defaults to one for compatibility with the public
-    helper's historical first-order contract.
+    of concentration-valued reactant operands to normalize; it defaults to one
+    for compatibility with the public helper's historical first-order contract.
     """
 
     assignment_rule_variables = assignment_rule_variables or set()
@@ -2230,6 +2230,12 @@ def _rate_for_reaction(
             if species_id in reactants
         }
 
+    # Undo amount/V normalization only for concentration-valued operands.
+    # Amount-valued SBML species already use the native population scale.
+    concentration_order = sum(
+        not model.species[species_id].has_only_substance_units
+        for species_id in reactants
+    )
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
     functional = _is_functional_rate_expression(math)
     if reactant_structures:
@@ -2369,7 +2375,7 @@ def _rate_for_reaction(
                 for species_id in model.species
             },
             assignment_variables,
-            reaction_order=len(reactants),
+            reaction_order=concentration_order,
         )
         if mass_action_constant is not None:
             return apply_conversion(_number(mass_action_constant))
@@ -2461,7 +2467,7 @@ def _rate_for_reaction(
                 for species_id in model.species
             },
             assignment_variables,
-            reaction_order=len(reactants),
+            reaction_order=concentration_order,
         )
         if mass_action_constant is not None:
             return apply_conversion(_number(mass_action_constant))
@@ -5000,6 +5006,34 @@ def write_functions(
             rate_rule_variables=rate_rule_variables,
         )
         name = standardize_name(rule.variable)
+        species = model.species.get(rule.variable)
+        if (
+            species is not None
+            and not species.has_only_substance_units
+            and species.compartment
+        ):
+            compartment = model.compartments[species.compartment]
+            # SBML rate rules differentiate the species symbol. For a
+            # concentration symbol, BNGL needs dN/dt = V*dC/dt + C*dV/dt.
+            # Zero-dimensional compartments always use amount-valued symbols.
+            if compartment.spatial_dimensions != 0:
+                compartment_name = standardize_name(species.compartment)
+                if compartment_name in assignment_rule_compartments or any(
+                    assignment.variable == species.compartment
+                    for event in model.events
+                    for assignment in event.assignments
+                ):
+                    raise ValueError(
+                        "species concentration rate rule requires an explicit compartment derivative; "
+                        "assignment- or event-driven compartment is unsupported"
+                    )
+                if compartment_name in rate_ruled_compartments:
+                    body = (
+                        f"({body}) * {compartment_name}_amt + "
+                        f"_c_{name}() * {RATE_RULE_META_PREFIX}{compartment_name}()"
+                    )
+                else:
+                    body = f"({body}) * __compartment_{compartment_name}__"
         lines.append(f"{RATE_RULE_META_PREFIX}{name}() = {body}")
         lines.append(
             f"{RATE_RULE_POS_PREFIX}{name}() = if({RATE_RULE_META_PREFIX}{name}() > 0, "
