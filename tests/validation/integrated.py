@@ -8,7 +8,6 @@ This is an integration detector, not qualification of the entire upstream union.
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import os
 import shutil
@@ -20,33 +19,11 @@ import numpy as np
 
 from . import campaign, contracts, inventory, reporting
 from .simulation_contract import net_reload_context
+from .integrated_cases import TIMES, generated_cases, sbml_text, expected_trajectory
+from . import integrated_consumers, scientific_contracts
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = Path(__file__).with_name("integrated_worker.py")
-TIMES = np.linspace(0, 2, 11)
-RATE = 0.4
-
-
-def generated_cases(full=False):
-    cases = []
-    for index, (volume, initial, reverse, atomize) in enumerate(
-        itertools.product((1, 3), (20, 80), (False, True), (False, True))
-    ):
-        # Six deterministic rows cover every pair of the four binary factors.
-        if not full and index not in (0, 3, 5, 10, 12, 15):
-            continue
-        cases.append(
-            dict(
-                id=f"v{volume}-n{initial}-r{int(reverse)}-a{int(atomize)}",
-                volume=volume,
-                initial=initial,
-                reverse=reverse,
-                atomize=atomize,
-            )
-        )
-    return cases
-
-
 # Required evidence is declared independently of execution, so deleting a
 # comparator cannot leave a green report containing only successful processes.
 PROCESS_STAGES = (
@@ -59,11 +36,16 @@ PROCESS_STAGES = (
     "nf",
     "native-nf",
     "net-reload",
+    *integrated_consumers.OPERATIONS,
 )
-TRAJECTORY_GROUPS = tuple(
-    name + "-source-dynamics"
-    for name in ("bng2", "cli", "api", "pybng", "compat", "net-reload")
-) + ("pybng-returned-data", "python-public-compatibility", "nf-independent")
+TRAJECTORY_GROUPS = (
+    tuple(
+        name + "-source-dynamics"
+        for name in ("bng2", "cli", "api", "pybng", "compat", "net-reload")
+    )
+    + ("pybng-returned-data", "python-public-compatibility")
+    + tuple(name + "-source-dynamics" for name in integrated_consumers.OPERATIONS)
+)
 NETWORK_CHECKS = (
     "artifact-validity",
     "species-count",
@@ -87,44 +69,34 @@ def expected_contract_ids(cases):
             *(
                 f"{group}:gdat.{check}"
                 for group in TRAJECTORY_GROUPS
+                + (("nf-independent",) if c["exact_nf"] else ())
                 for check in ("artifact-validity", "time-grid", "columns", "values")
             ),
             *(
                 f"{route}-network:{check}"
-                for route in ("cli", "api")
+                for route in ("cli", "api", "bngir-v01", "bngl-reload")
                 for check in NETWORK_CHECKS
+            ),
+            *(
+                suffix.split(c["id"] + ":", 1)[1]
+                for suffix in integrated_consumers.expected_check_ids([c["id"]])
+            ),
+            *(
+                f"{route}-invariants:{check}"
+                for route in ("nf", "native-nf")
+                for check in (
+                    "gdat.artifact-validity",
+                    "gdat.time-grid",
+                    "gdat.columns",
+                    "initial-amounts",
+                    "nonnegative-integer-counts",
+                    "observable-aliases",
+                    "invariant.conserved-total",
+                )
             ),
             "worker-identity:same-installed-build",
         )
     ]
-
-
-def sbml_text(case):
-    # hasOnlySubstanceUnits makes A an amount even in a non-unit compartment.
-    # k*A therefore consumes RATE*A items/second, independently of volume.
-    species = [
-        f'<species id="{name}" compartment="cell" initialAmount="{amount}" '
-        'substanceUnits="item" hasOnlySubstanceUnits="true" '
-        'boundaryCondition="false" constant="false"/>'
-        for name, amount in (("A", case["initial"]), ("B", 0))
-    ]
-    if case["reverse"]:
-        species.reverse()
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
-<model id="decay" timeUnits="second" substanceUnits="item" extentUnits="item">
-<listOfUnitDefinitions><unitDefinition id="per_second"><listOfUnits>
-<unit kind="second" exponent="-1" scale="0" multiplier="1"/>
-</listOfUnits></unitDefinition></listOfUnitDefinitions>
-<listOfCompartments><compartment id="cell" spatialDimensions="3" size="{case['volume']}" constant="true"/></listOfCompartments>
-<listOfSpecies>{''.join(species)}</listOfSpecies>
-<listOfParameters><parameter id="k" value="{RATE}" units="per_second" constant="true"/></listOfParameters>
-<listOfReactions><reaction id="convert" reversible="false">
-<listOfReactants><speciesReference species="A" stoichiometry="1" constant="true"/></listOfReactants>
-<listOfProducts><speciesReference species="B" stoichiometry="1" constant="true"/></listOfProducts>
-<kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>k</ci><ci>A</ci></apply></math></kineticLaw>
-</reaction></listOfReactions></model></sbml>
-"""
 
 
 def run_stage(
@@ -150,7 +122,9 @@ def run_stage(
         if status == "FAIL" and worker_status.is_file():
             declared = json.loads(worker_status.read_text()).get("status")
             status = (
-                declared if declared in ("FAIL", "HARNESS_ERROR") else "HARNESS_ERROR"
+                declared
+                if declared in ("FAIL", "HARNESS_ERROR", "UNSUPPORTED", "NOT_TESTED")
+                else "HARNESS_ERROR"
             )
         row.update(
             status=status,
@@ -210,6 +184,109 @@ def _compare(
     _checks(case, name, checks, rows, dependencies)
 
 
+def _nf_invariants(case, route, path, rows, dependency):
+    """Source invariants supplement seeded parity; they never imply a distribution match."""
+    stage = route + "-invariants"
+    if dependency["status"] != "PASS":
+        rows.append(
+            dict(
+                id=f"{case['id']}:{stage}",
+                stage=stage,
+                integration_case=case["id"],
+                status="NOT_TESTED",
+                detail="stochastic output prerequisite missing",
+                blocked_by=[dependency["id"]],
+            )
+        )
+        return
+    try:
+        data, columns = contracts._trajectory(path)
+    except (ValueError, OSError) as exc:
+        _checks(
+            case["id"],
+            stage,
+            [
+                dict(
+                    check="gdat.artifact-validity",
+                    status="HARNESS_ERROR",
+                    detail=str(exc),
+                )
+            ],
+            rows,
+            [dependency],
+        )
+        return
+    expected, names = expected_trajectory(case)
+    same_names = set(names) == set(columns)
+    checks = [
+        dict(
+            check="gdat.artifact-validity",
+            status="PASS",
+            detail="finite uniquely named trajectory",
+        ),
+        dict(
+            check="gdat.time-grid",
+            status=(
+                "PASS"
+                if len(data) == len(TIMES)
+                and np.allclose(data[:, 0], TIMES, rtol=0, atol=1e-9)
+                else "FAIL"
+            ),
+            detail="complete requested stochastic grid",
+        ),
+        dict(
+            check="gdat.columns",
+            status="PASS" if same_names else "FAIL",
+            detail=f"source={names}, observed={columns}",
+        ),
+    ]
+    if same_names:
+        aligned = data[:, [columns.index(name) for name in names[1:]]]
+        checks += [
+            dict(
+                check="initial-amounts",
+                status=(
+                    "PASS" if np.array_equal(aligned[0], expected[0, 1:]) else "FAIL"
+                ),
+                detail=f"initial={aligned[0].tolist()}, source={expected[0, 1:].tolist()}",
+            ),
+            dict(
+                check="nonnegative-integer-counts",
+                status=(
+                    "PASS"
+                    if np.all(aligned >= 0)
+                    and np.array_equal(aligned, np.rint(aligned))
+                    else "FAIL"
+                ),
+                detail="item observables must be nonnegative integer counts",
+            ),
+        ]
+        aliases_ok = all(
+            np.array_equal(
+                data[:, columns.index(name)], data[:, columns.index(name + "_amt")]
+            )
+            for name in names[1:]
+            if not name.endswith("_amt")
+        )
+        checks.append(
+            dict(
+                check="observable-aliases",
+                status="PASS" if aliases_ok else "FAIL",
+                detail="source amount aliases must equal their corresponding species counts",
+            )
+        )
+        second = "D" if case["family"] == "dimerization" else "B"
+        checks.append(
+            scientific_contracts.conserved_total(
+                data[:, 0],
+                data[:, [columns.index("A"), columns.index(second)]],
+                [1, 2 if second == "D" else 1],
+                case["initial"],
+            )
+        )
+    _checks(case["id"], stage, checks, rows, [dependency])
+
+
 def run_case(case, args, rows, env):
     key = case["id"]
     work = args.report_dir / "cases" / key
@@ -217,13 +294,8 @@ def run_case(case, args, rows, env):
     source = work / "source.xml"
     source.write_text(sbml_text(case))
     expected = work / "analytic.gdat"
-    a = case["initial"] * np.exp(-RATE * TIMES)
-    np.savetxt(
-        expected,
-        np.column_stack((TIMES, a, a, case["initial"] - a, case["initial"] - a)),
-        header="time A_amt A B_amt B",
-        fmt="%.17g",
-    )
+    data, columns = expected_trajectory(case)
+    np.savetxt(expected, data, header=" ".join(columns), fmt="%.17g")
 
     def worker(operation, source, *, upstream=False):
         command = [
@@ -234,6 +306,8 @@ def run_case(case, args, rows, env):
             operation,
             "--input",
             str(source),
+            "--case-id",
+            key,
         ]
         if upstream:
             command += ["--upstream", str(args.pybionetgen_root)]
@@ -324,6 +398,56 @@ def run_case(case, args, rows, env):
         required=("nf.gdat",),
     )
 
+    consumers = []
+    for operation in integrated_consumers.OPERATIONS:
+        required = (
+            "api.gdat",
+            "identity.json",
+            "checks.json",
+            "native-network.json" if operation == "bngir-v02" else "model.net",
+        )
+        consumer = stage(
+            operation, worker(operation, translated), deps=[atomizer], required=required
+        )
+        consumers.append(consumer)
+        checks_path = work / operation / "checks.json"
+        if checks_path.is_file():
+            checks = json.loads(checks_path.read_text())
+            errors = integrated_consumers.validate_checks(key, operation, checks)
+            if errors:
+                consumer.update(status="HARNESS_ERROR", detail="; ".join(errors))
+            else:
+                for check in checks:
+                    check = dict(
+                        check,
+                        check=check["name"],
+                        related_issues=check["issue_ids"],
+                        stage=operation,
+                        integration_case=key,
+                        receipts=(
+                            [consumer["receipt"]] if consumer.get("receipt") else []
+                        ),
+                    )
+                    rows.append(check)
+        _compare(
+            key,
+            operation + "-source-dynamics",
+            rows,
+            [consumer],
+            expected,
+            work / operation / "api.gdat",
+        )
+        if operation in ("bngir-v01", "bngl-reload"):
+            _compare(
+                key,
+                operation + "-network",
+                rows,
+                [bng2, consumer],
+                work / "bng2/model.net",
+                work / operation / "model.net",
+                network=True,
+            )
+
     # Reload BNG3's own serialization through its CLI, then compare to the
     # independently specified source dynamics. No generated golden becomes an oracle.
     if api["status"] == "PASS":
@@ -377,18 +501,22 @@ def run_case(case, args, rows, env):
         work / "pybng/api.gdat",
         work / "compat/api.gdat",
     )
-    _compare(
-        key,
-        "nf-independent",
-        rows,
-        [native, nf],
-        work / "native-nf/nf.gdat",
-        work / "nf/nf.gdat",
-        exact=True,
-    )
+    if case["exact_nf"]:
+        _compare(
+            key,
+            "nf-independent",
+            rows,
+            [native, nf],
+            work / "native-nf/nf.gdat",
+            work / "nf/nf.gdat",
+            exact=True,
+        )
+    for route, dep in (("nf", nf), ("native-nf", native)):
+        _nf_invariants(case, route, work / route / "nf.gdat", rows, dep)
     # Confirm repeated installed workers did not silently select another build.
-    identities = [r for r in (atomizer, api, compat, nf) if r["status"] == "PASS"]
-    if len(identities) == 4:
+    identity_stages = [atomizer, api, compat, nf, *consumers]
+    identities = [r for r in identity_stages if r["status"] == "PASS"]
+    if len(identities) == len(identity_stages):
         observed = [
             json.loads((work / r["stage"] / "identity.json").read_text())
             for r in identities
@@ -560,8 +688,38 @@ def main(argv=None):
             row["stage"],
             ["tests/validation/integrated.py", "tests/validation/contracts.py"],
         )
+        if row["stage"] in integrated_consumers.OPERATIONS:
+            row["source_locations"] = [
+                "tests/validation/integrated_worker.py",
+                (
+                    "python/bionetgen/bngir.py"
+                    if row["stage"].startswith("bngir")
+                    else "python/bionetgen/model.py"
+                ),
+            ]
         row["question"] = "generated-cross-component-handoff"
-        row["related_issues"] = [146, 163, 171, 180]
+        stage = row["stage"]
+        if not row.get("related_issues"):
+            if stage in integrated_consumers.ISSUES:
+                issues = list(integrated_consumers.ISSUES[stage])
+            elif stage.startswith(("bngir-", "bngl-reload")):
+                issues = [153, 154, 155, 156, 163]
+            elif stage.startswith(("nf", "native-nf")):
+                issues = [142, 146, 151]
+            elif stage in (
+                "compat",
+                "pybng",
+                "python-public-compatibility",
+                "pybng-returned-data",
+            ):
+                issues = [140, 171, 172]
+            elif stage == "atomizer":
+                issues = [143, 161, 164]
+            elif stage == "integration-preflight":
+                issues = [179, 180]
+            else:
+                issues = [138, 140, 143, 163]
+            row["related_issues"] = issues
         row["capabilities"] = ["integration.cross-component"]
     import yaml
 
@@ -604,6 +762,8 @@ def main(argv=None):
             for p in (
                 Path(__file__),
                 WORKER,
+                Path(integrated_consumers.__file__),
+                ROOT / "tests/validation/integrated_cases.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",
                 ROOT / "tests/validation/contracts.py",

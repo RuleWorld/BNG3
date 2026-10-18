@@ -13,12 +13,13 @@ from tests.validation import integrated
 def test_pr_selection_covers_each_pair_of_integration_dimensions():
     full = integrated.generated_cases(full=True)
     selected = integrated.generated_cases()
-    assert len(full) == 16 and len(selected) < len(full)
+    assert len(full) == 48 and len(selected) == 18
     assert len({c["id"] for c in full}) == len(full)
-    for left, right in combinations(("volume", "initial", "reverse", "atomize"), 2):
-        assert {(c[left], c[right]) for c in selected} == {
-            (c[left], c[right]) for c in full
-        }
+    for family in {c["family"] for c in full}:
+        for left, right in combinations(("volume", "initial", "reverse", "atomize"), 2):
+            assert {(c[left], c[right]) for c in selected if c["family"] == family} == {
+                (c[left], c[right]) for c in full if c["family"] == family
+            }
 
 
 def test_missing_stage_output_blocks_consumers_but_not_independent_routes(tmp_path):
@@ -136,3 +137,30 @@ def test_corrupted_handoff_keeps_first_divergent_value(tmp_path):
     assert failure["status"] == "FAIL"
     assert failure["first_difference"]["time"] == 1
     assert failure["first_difference"]["column"] == "A"
+
+
+def test_reversible_stochastic_controls_detect_conservation_and_alias_corruption(
+    tmp_path,
+):
+    import numpy as np
+
+    case = next(c for c in integrated.generated_cases() if c["family"] == "reversible")
+    expected, names = integrated.expected_trajectory(case)
+    data = np.tile(expected[0], (len(integrated.TIMES), 1))
+    data[:, 0] = integrated.TIMES
+    path = tmp_path / "nf.gdat"
+    np.savetxt(path, data, header=" ".join(names))
+    rows = []
+    integrated._nf_invariants(case, "nf", path, rows, dict(id="nf", status="PASS"))
+    assert all(r["status"] == "PASS" for r in rows)
+    data[1, names.index("B")] += 1
+    np.savetxt(path, data, header=" ".join(names))
+    rows = []
+    integrated._nf_invariants(case, "nf", path, rows, dict(id="nf", status="PASS"))
+    assert (
+        next(r for r in rows if r["check"] == "observable-aliases")["status"] == "FAIL"
+    )
+    assert (
+        next(r for r in rows if r["check"] == "invariant.conserved-total")["status"]
+        == "FAIL"
+    )

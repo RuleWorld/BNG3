@@ -1088,7 +1088,7 @@ validation_capabilities:
   - cpp/actions/ActionDispatch.cpp
   - cpp/nfsim/NFinput/NFinput_fromAst.cpp
   tests: []
-  issues: [146, 163, 171, 180]
+  issues: []
   reference: generated-analytic-source-and-independent-BNG2-PyBioNetGen-NFsim
   support: partial
   notes: Executed only by tests.validation.integrated. Its bounded first-order generated cases test linked handoffs; harness self-tests do not establish scientific execution or complete upstream equivalence.
