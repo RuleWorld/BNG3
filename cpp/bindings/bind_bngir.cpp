@@ -14,6 +14,7 @@
 #include "ast/Expression.hpp"
 #include "ast/Model.hpp"
 #include "ast/MoleculeType.hpp"
+#include "ast/Observable.hpp"
 #include "ast/Parameter.hpp"
 #include "ast/ReactionRule.hpp"
 #include "ast/SeedSpecies.hpp"
@@ -123,7 +124,7 @@ void requireExpressionProperties(const py::dict& expression,
 
 void rejectUnsupportedModelSections(const py::dict& document) {
     static const std::vector<std::string> sections = {
-        "observables", "functions", "energy_patterns",
+        "functions", "energy_patterns",
         "barrier_patterns", "population_maps", "population_types",
     };
     for (const auto& section : sections) {
@@ -477,6 +478,47 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             py::cast<std::string>(rule["label"]),
             std::move(rates),
             std::move(reactantGraphs), std::move(productGraphs)));
+    }
+
+    const auto observables = py::cast<py::list>(document["observables"]);
+    std::set<std::string> uniqueObservableNames;
+    for (const auto& rawObservable : observables) {
+        const auto observable = py::cast<py::dict>(rawObservable);
+        static const std::vector<std::string> observableKeys = {
+            "name", "type", "patterns",
+        };
+        requireObjectKeys(
+            observable, observableKeys, observableKeys, "observable");
+        if (!py::isinstance<py::str>(observable["name"]) ||
+            !py::isinstance<py::str>(observable["type"])) {
+            throw std::runtime_error(
+                "native BNGIR observable name and type must be strings");
+        }
+        const auto name = py::cast<std::string>(observable["name"]);
+        const auto type = py::cast<std::string>(observable["type"]);
+        if (name.empty() || !uniqueObservableNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR observable names must be nonempty and unique");
+        }
+        if (type != "Molecules" && type != "Species") {
+            throw std::runtime_error(
+                "native BNGIR observable type must be Molecules or Species");
+        }
+        if (!py::isinstance<py::list>(observable["patterns"])) {
+            throw std::runtime_error(
+                "native BNGIR observable patterns must be an array of strings");
+        }
+        const auto rawPatterns = py::cast<py::list>(observable["patterns"]);
+        std::vector<std::string> patterns;
+        patterns.reserve(rawPatterns.size());
+        for (const auto& rawPattern : rawPatterns) {
+            if (!py::isinstance<py::str>(rawPattern)) {
+                throw std::runtime_error(
+                    "native BNGIR observable patterns must be strings");
+            }
+            patterns.push_back(py::cast<std::string>(rawPattern));
+        }
+        model->addObservable(Observable(name, type, std::move(patterns)));
     }
     return model;
 }

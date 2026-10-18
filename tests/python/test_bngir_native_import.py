@@ -614,7 +614,6 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
 @pytest.mark.parametrize(
     "section",
     [
-        "observables",
         "functions",
         "energy_patterns",
         "barrier_patterns",
@@ -640,6 +639,23 @@ def test_direct_native_builder_rejects_nonempty_unsupported_sections(section):
         RuntimeError, match=f"native BNGIR model.{section} is not supported"
     ):
         _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_reconstructs_rendered_observables():
+    document = _document()
+    document["model"]["observables"] = [
+        {"name": "A_total", "type": "Molecules", "patterns": ["A()"]},
+        {"name": "all_species", "type": "Species", "patterns": ["A()", "B()"]},
+    ]
+
+    restored = _cpp._model_from_bngir_v02(document["model"])
+
+    assert [
+        (item.name, item.type, list(item.patterns)) for item in restored.observables
+    ] == [
+        ("A_total", "Molecules", ["A()"]),
+        ("all_species", "Species", ["A()", "B()"]),
+    ]
 
 
 def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypatch):
@@ -673,6 +689,50 @@ def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypa
     nf_result = restored.simulate(method="nf", t_end=0.1, n_steps=1, seed=1)
     assert nf_result.time.tolist() == pytest.approx([0.0, 0.1])
     assert nf_result.construction_path == "direct"
+    assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+def test_native_import_reconstructs_observables_without_source_parsing(monkeypatch):
+    source = SOURCE.replace(
+        "begin seed species",
+        "begin observables\n"
+        "    Molecules A_molecules A()\n"
+        "    Species A_species A()\n"
+        "    Species A_exact A==1\n"
+        "    Species A_at_least A>=1\n"
+        "    Species A_more A>0\n"
+        "end observables\n"
+        "begin seed species",
+    )
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert [(item.name, item.type) for item in restored._model.observables] == [
+        ("A_molecules", "Molecules"),
+        ("A_species", "Species"),
+        ("A_exact", "Species"),
+        ("A_at_least", "Species"),
+        ("A_more", "Species"),
+    ]
+    network = restored.generate_network()
+    assert network.num_species == 2
+    assert network.num_reactions == 1
+    result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    assert result.observables["A_molecules"][0] == pytest.approx(100.0)
+    assert result.observables["A_species"][0] == pytest.approx(100.0)
+    assert result.observables["A_exact"][0] == pytest.approx(100.0)
+    assert result.observables["A_at_least"][0] == pytest.approx(100.0)
+    assert result.observables["A_more"][0] == pytest.approx(100.0)
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
 
 
