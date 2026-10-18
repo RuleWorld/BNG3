@@ -223,8 +223,153 @@ def history(current: dict, previous: dict | None) -> dict:
     }
 
 
-def investigation_tasks(report: dict, directory: Path) -> list[dict]:
+def _obligation_list(obligations):
+    if obligations is None:
+        return []
+    if isinstance(obligations, dict):
+        if "obligations" in obligations:
+            obligations = obligations["obligations"]
+        else:
+            acceptance = obligations.get("acceptance", {})
+            obligations = (
+                acceptance.get("obligations", [])
+                if isinstance(acceptance, dict)
+                else []
+            )
+    if not isinstance(obligations, list):
+        raise ValueError("obligations must be a list or an obligations object")
+    return [item for item in obligations if isinstance(item, dict)]
+
+
+def _identity_present(requirement, check, report):
+    """Resolve explicit dotted identity paths without guessing aliases."""
+    if not isinstance(requirement, str) or not requirement:
+        return False
+    pieces = requirement.split(".")
+    roots = {
+        "source": check.get("candidate_identity", report.get("source", {})),
+        "candidate_identity": check.get("candidate_identity", report.get("source", {})),
+        "references": check.get("oracle_identities", report.get("references", {})),
+        "oracle_identities": check.get(
+            "oracle_identities", report.get("references", {})
+        ),
+    }
+    value = roots.get(pieces[0])
+    if value is None:
+        return False
+    for piece in pieces[1:]:
+        if not isinstance(value, dict) or piece not in value:
+            return False
+        value = value[piece]
+    return value is not None and value != ""
+
+
+def _affected_obligations(row, obligations, report):
+    """Attach only obligations whose evaluated check ID exactly names the leaf."""
+    affected = []
+    for obligation in obligations:
+        checks = obligation.get("checks", [])
+        required = obligation.get("required_checks", [])
+        if not isinstance(checks, list):
+            continue
+        exact = [
+            check
+            for check in checks
+            if isinstance(check, dict)
+            and check.get("id") == row.get("id")
+            and check.get("status") in BAD
+        ]
+        if not exact:
+            continue
+        check = exact[0]
+        required_by_id = {
+            item.get("id"): item
+            for item in required
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+        required_ids = [
+            item.get("id")
+            for item in required
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        evaluated_by_id = {
+            item.get("id"): item
+            for item in checks
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+        missing_checks = {
+            check_id
+            for check_id in required_ids
+            if check_id not in evaluated_by_id
+            or evaluated_by_id[check_id].get("status") in {"NOT_TESTED", "UNSUPPORTED"}
+        }
+        declared_missing = obligation.get("missing_evidence", [])
+        if isinstance(declared_missing, list):
+            missing_checks.update(
+                item
+                for item in declared_missing
+                if isinstance(item, str) and item in required_by_id
+            )
+        missing_identities = set()
+        for check_id in required_ids:
+            metadata = required_by_id[check_id]
+            evaluated = evaluated_by_id.get(check_id)
+            if evaluated is None:
+                continue
+            requirements = metadata.get("identity_requirements", [])
+            if not isinstance(requirements, list):
+                continue
+            for identity in requirements:
+                if not _identity_present(identity, evaluated, report):
+                    missing_identities.add(f"{check_id}:{identity}")
+            gaps = evaluated.get("missing_evidence", [])
+            if isinstance(gaps, list):
+                missing_identities.update(
+                    gap.removeprefix("identity:")
+                    for gap in gaps
+                    if isinstance(gap, str) and gap.startswith("identity:")
+                )
+        if isinstance(declared_missing, list):
+            for gap in declared_missing:
+                if isinstance(gap, str) and "." in gap:
+                    missing_identities.add(gap)
+        metadata = required_by_id.get(row.get("id"), check)
+        boundary = (
+            check.get("first_observed_boundary")
+            or check.get("boundary")
+            or row.get("stage")
+        )
+        affected.append(
+            {
+                "id": obligation.get("id"),
+                "required_check": row.get("id"),
+                "evidence_kind": metadata.get("evidence_kind"),
+                "expectation": metadata.get("expectation"),
+                "missing_required_checks": sorted(missing_checks),
+                "missing_identities": sorted(missing_identities),
+                "missing_evidence": (
+                    sorted(item for item in declared_missing if isinstance(item, str))
+                    if isinstance(declared_missing, list)
+                    else []
+                ),
+                "first_observed_boundary": boundary,
+                "retained_reproducer_status": "PENDING_PACKET_RETENTION",
+                "candidate_identity": check.get("candidate_identity"),
+                "oracle_identities": check.get("oracle_identities"),
+            }
+        )
+    return affected
+
+
+def investigation_tasks(
+    report: dict, directory: Path, *, obligations=None
+) -> list[dict]:
     """One bounded work packet per observed leaf failure; no inferred diagnosis."""
+    obligations = _obligation_list(
+        report.get("acceptance", {}).get("obligations", [])
+        if obligations is None and isinstance(report.get("acceptance"), dict)
+        else obligations
+    )
     tasks = []
     for row in report["results"]:
         if row["status"] not in BAD or row.get("aggregate"):
@@ -377,6 +522,7 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
                 "first_difference", row.get("failure_summary") or row.get("detail", "")
             ),
             evidence=row.get("evidence", []),
+            affected_obligations=_affected_obligations(row, obligations, report),
             receipts=receipts,
             recorded_commands=recorded,
             receipt_records=receipt_records,

@@ -191,6 +191,93 @@ def test_task_packets_are_leaf_failures_with_replay_and_bounded_acceptance(tmp_p
     assert task["evidence"] == ["reference.net", "subject.net"]
 
 
+def test_investigation_packet_links_only_exact_failed_obligation_check(tmp_path):
+    report = {
+        "source": {"revision": "abc"},
+        "subject": {"binary": "/bng_cpp"},
+        "configuration": {},
+        "references": {"oracle": {"revision": "oracle-revision"}},
+        "results": [
+            {
+                "id": "case:amounts",
+                "check": "oracle:amounts",
+                "stage": "network.amounts",
+                "status": "FAIL",
+                "detail": "amount mismatch",
+            },
+            {
+                "id": "neighbor:amounts",
+                "check": "another:amounts",
+                "stage": "network.amounts",
+                "status": "FAIL",
+                "detail": "amount mismatch",
+            },
+        ],
+    }
+    obligations = [
+        {
+            "id": "issue-143.amount-preservation",
+            "status": "FAIL",
+            "required_checks": [
+                {
+                    "id": "case:amounts",
+                    "evidence_kind": "trajectory",
+                    "expectation": "Match initial amount against the independent source oracle.",
+                    "identity_requirements": [
+                        "source.revision",
+                        "references.nfsim.revision",
+                    ],
+                },
+                {
+                    "id": "consumer:reload",
+                    "evidence_kind": "net-reload",
+                    "expectation": "Consume the retained network in reload mode.",
+                    "identity_requirements": ["source.revision"],
+                },
+            ],
+            "checks": [
+                {
+                    "id": "case:amounts",
+                    "status": "FAIL",
+                    "evidence_kind": "trajectory",
+                    "expectation": "Match initial amount against the independent source oracle.",
+                    "identity_requirements": [
+                        "source.revision",
+                        "references.nfsim.revision",
+                    ],
+                    "first_observed_boundary": "network.amounts",
+                    "candidate_identity": {"revision": "abc"},
+                    "oracle_identities": {"oracle": {"revision": "oracle-revision"}},
+                    "missing_evidence": [],
+                    "observation": "amount mismatch",
+                }
+            ],
+            "missing_evidence": ["consumer:reload"],
+        }
+    ]
+
+    tasks = reporting.investigation_tasks(report, tmp_path, obligations=obligations)
+
+    linked = next(task for task in tasks if task["case_id"] == "case:amounts")
+    unlinked = next(task for task in tasks if task["case_id"] == "neighbor:amounts")
+    assert linked["affected_obligations"] == [
+        {
+            "id": "issue-143.amount-preservation",
+            "required_check": "case:amounts",
+            "evidence_kind": "trajectory",
+            "expectation": "Match initial amount against the independent source oracle.",
+            "missing_required_checks": ["consumer:reload"],
+            "missing_identities": ["case:amounts:references.nfsim.revision"],
+            "missing_evidence": ["consumer:reload"],
+            "first_observed_boundary": "network.amounts",
+            "retained_reproducer_status": "PENDING_PACKET_RETENTION",
+            "candidate_identity": {"revision": "abc"},
+            "oracle_identities": {"oracle": {"revision": "oracle-revision"}},
+        }
+    ]
+    assert unlinked["affected_obligations"] == []
+
+
 def test_node_specific_mapping_never_attributes_neighbor_failure_to_capability():
     cap = {
         "id": "actions.amounts",

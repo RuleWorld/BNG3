@@ -421,6 +421,7 @@ def write_bundle(
     baseline=None,
     replicates=(),
     issues=None,
+    obligations=None,
     recorded_root=None,
     max_file_bytes=2_000_000,
     max_packet_bytes=12_000_000,
@@ -475,7 +476,9 @@ def write_bundle(
             row["receipts"] = [str(relocate(p)) for p in row["receipts"]]
     tasks = {
         t["case_id"]: t
-        for t in reporting.investigation_tasks(relocated, report_path.parent)
+        for t in reporting.investigation_tasks(
+            relocated, report_path.parent, obligations=obligations
+        )
     }
     rows = _leaves(report)
     packaged_tasks = 0
@@ -574,7 +577,22 @@ def write_bundle(
                 }
             )
         command = packet.get("reproduce_command") or []
-        packet["repair_eligible"] &= bool(command) and not packet["missing_evidence"]
+        for obligation in packet.get("affected_obligations", []):
+            obligation["retained_reproducer_status"] = (
+                "RETAINED_NOT_MINIMIZED"
+                if packet["retained_evidence"]
+                else "NOT_RETAINED"
+            )
+        packet["repair_eligible"] &= (
+            bool(command)
+            and not packet["missing_evidence"]
+            and not any(
+                item.get("missing_required_checks")
+                or item.get("missing_identities")
+                or item.get("missing_evidence")
+                for item in packet.get("affected_obligations", [])
+            )
+        )
         finding["repair_eligible"] = packet["repair_eligible"]
         if packet["missing_evidence"]:
             ledger["evidence_errors"].append(
@@ -650,6 +668,7 @@ def main(argv=None):
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--replicate", type=Path, action="append", default=[])
     parser.add_argument("--issues-json", type=Path)
+    parser.add_argument("--obligations-json", type=Path)
     parser.add_argument(
         "--recorded-root",
         type=Path,
@@ -669,6 +688,7 @@ def main(argv=None):
             baseline=read(args.baseline),
             replicates=[read(p) for p in args.replicate],
             issues=read(args.issues_json),
+            obligations=read(args.obligations_json),
             recorded_root=args.recorded_root,
         )
     except (OSError, ValueError, KeyError, TypeError) as exc:
