@@ -250,3 +250,82 @@ def test_named_pytest_task_uses_repository_path_and_pinned_oracle_environment(tm
     )
     assert task["reproduce_environment"]["BNG2_PERL"] == "/oracle/bng2/BNG2.pl"
     assert task["reproduce_environment"]["BNG2_NETWORK_SHA256"] == "digest"
+
+
+def test_explicit_list_command_takes_precedence_over_model_fallback(tmp_path):
+    report = {
+        "source": {"revision": "abc"},
+        "subject": {"binary": "/engine"},
+        "configuration": {},
+        "references": {},
+        "results": [
+            {
+                "id": "integrated:case:consumer",
+                "model": "would-use-generic-replay",
+                "command": [
+                    "python",
+                    "-m",
+                    "tests.validation.integrated",
+                    "--case",
+                    "x",
+                ],
+                "stage": "consumer",
+                "status": "FAIL",
+            }
+        ],
+    }
+    task = reporting.investigation_tasks(report, tmp_path)[0]
+    assert task["reproduce_command"] == report["results"][0]["command"]
+
+
+def test_task_packets_pin_report_identities_and_receipt_load_errors(tmp_path):
+    valid = tmp_path / "receipts" / "command.json"
+    valid.parent.mkdir()
+    valid.write_text('{"status": "FAIL"}')
+    malformed = tmp_path / "receipts" / "broken.json"
+    malformed.write_text("not json")
+    report = {
+        "source": {"revision": "abc", "dirty": True, "tree_sha256": "tree"},
+        "subject": {"binary": "/engine", "sha256": "engine-digest"},
+        "configuration": {"tier": ["smoke"]},
+        "references": {
+            "bionetgen": {
+                "path": "/oracle",
+                "script": "/oracle/bng2/BNG2.pl",
+                "revision": "ref",
+            }
+        },
+        "platform": {"system": "test-os", "python": "test-python"},
+        "results": [
+            {
+                "id": "case:unit",
+                "stage": "test",
+                "status": "FAIL",
+                "command": ["pytest", "test_case.py"],
+                "receipts": [
+                    "receipts/command.json",
+                    "receipts/missing.json",
+                    "receipts/broken.json",
+                ],
+            }
+        ],
+    }
+
+    task = reporting.investigation_tasks(report, tmp_path)[0]
+
+    assert task["source"] == report["source"]
+    assert task["source_dirty"] is True
+    assert task["subject"] == report["subject"]
+    assert task["references"] == report["references"]
+    assert task["configuration"] == report["configuration"]
+    assert task["platform"] == report["platform"]
+    assert task["recorded_commands"] == [{"status": "FAIL"}]
+    records = task["receipt_records"]
+    assert [record["status"] for record in records] == [
+        "loaded",
+        "missing",
+        "malformed",
+    ]
+    assert records[0]["resolved_path"] == str(valid)
+    assert "not found" in records[1]["error"]
+    assert "JSON" in records[2]["error"] or "json" in records[2]["error"]
