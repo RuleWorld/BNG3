@@ -488,6 +488,15 @@ def select_campaign(obligations, *, max_families=3):
             authorization="PLAN_ONLY",
             complete_corpus_coverage=False,
         )
+        family["selection_arguments"] = (
+            ["--bngir-adversarial-only"]
+            if family["id"] == "native-bngir-adversarial"
+            else [
+                argument
+                for case_id in family["case_ids"]
+                for argument in ("--case", case_id)
+            ]
+        )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
         selected.append(family)
     return sorted(
@@ -516,6 +525,27 @@ def acceptance_dashboard(queue, assessment, campaigns):
         ]
         row["selected_families"] = [
             f["id"] for f in campaigns if row["number"] in f["issues"]
+        ]
+        row["confirmed_failures"] = [
+            c["id"] for o in obligations for c in o["checks"] if c["status"] == "FAIL"
+        ]
+        row["unexecuted_checks"] = [
+            c["id"] for o in obligations for c in o["checks"] if not c["executed"]
+        ]
+        row["unsupported_boundaries"] = [
+            dict(check=c["id"], boundaries=o["boundaries"])
+            for o in obligations
+            for c in o["checks"]
+            if c["status"] == "UNSUPPORTED"
+        ]
+        row["decisions_required"] = [
+            dict(
+                obligation=o["id"],
+                decisions=o["decisions"],
+                unmapped_scope=o["unmapped_scope"],
+            )
+            for o in obligations
+            if o["decisions"] or o["unmapped_scope"]
         ]
         row["ranking_basis"] = dict(
             confirmed_failures=sum(o["status"] == "FAIL" for o in obligations),

@@ -274,7 +274,7 @@ def test_live_slice_runs_inventory_audit_selection_packets_and_dashboard(tmp_pat
     report = dict(
         subject=dict(binary="fixture", sha256="c" * 64),
         source=dict(revision=REV, dirty=False),
-        references=dict(nfsim=dict(revision="b" * 40)),
+        references=dict(nfsim=dict(revision="b" * 40, sha256="d" * 64)),
         results=rows,
         configuration={},
         capabilities=[],
@@ -308,3 +308,30 @@ def test_live_slice_runs_inventory_audit_selection_packets_and_dashboard(tmp_pat
     # Required named checks live independently of any report leaf.
     absent = q.assess_obligations(obligations, [], REV)
     assert all(o["status"] != "DEMONSTRATED" for o in absent["obligations"])
+
+
+def test_inventory_preserves_all_snapshot_issues_and_missing_scope():
+    import json
+
+    catalog = json.loads((q.ROOT / "provenance/issue-obligations.json").read_text())
+    assert {i["number"] for i in catalog["issues"]} == set(
+        catalog["snapshot"]["issue_numbers"]
+    )
+    assert {141, 151, 155} <= set(catalog["snapshot"]["issue_numbers"])
+    all_obligations = [o for i in catalog["issues"] for o in i["obligations"]]
+    assert len({o["id"] for o in all_obligations}) == len(all_obligations)
+    missing = []
+    for issue in catalog["issues"]:
+        assert len(issue["body_sha256"]) == 64
+        for obligation in issue["obligations"]:
+            assert obligation["criterion"] and obligation["scope"]
+            assert obligation["completion_condition"]
+            for ref in obligation["test_references"]:
+                assert (q.ROOT / ref.split("::")[0]).exists(), ref
+            for check in obligation["required_checks"]:
+                if check["id"].startswith("qualification:"):
+                    assert obligation["unmapped_scope"]
+                    missing.append(check["id"])
+    assert missing
+    assessment = q.assess_obligations(all_obligations, [], REV)
+    assert not any(o["status"] == "DEMONSTRATED" for o in assessment["obligations"])
