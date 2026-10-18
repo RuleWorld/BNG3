@@ -614,7 +614,6 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
 @pytest.mark.parametrize(
     "section",
     [
-        "compartments",
         "observables",
         "functions",
         "energy_patterns",
@@ -1101,12 +1100,11 @@ def test_direct_native_builder_refuses_unknown_direction_semantics():
     ("mutation", "expected"),
     [
         ("pattern-extra", "pattern has unsupported future_semantics"),
-        ("pattern-compartment", "pattern has unsupported compartment"),
-        ("prefix-true", "does not support compartment prefixes"),
-        ("prefix-integer", "does not support compartment prefixes"),
+        ("pattern-compartment", "references an unknown compartment"),
+        ("prefix-integer", "compartment_prefix must be boolean"),
         ("molecule-extra", "pattern molecule has unsupported future_semantics"),
-        ("molecule-compartment", "pattern molecule has unsupported compartment"),
-        ("molecule-compartment-id", "pattern molecule has unsupported compartment_id"),
+        ("molecule-compartment", "pattern molecule references an unknown compartment"),
+        ("molecule-compartment-id", "pattern molecule compartment id is out of range"),
         ("occurrence-boolean", "non-boolean integer index"),
         ("occurrence-nonzero", "requires molecule occurrence zero"),
         ("type-name", "molecule type name does not match type_id"),
