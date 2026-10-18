@@ -113,7 +113,7 @@ def test_ensemble_receipt_preserves_seed_budget_and_rejects_duplicate_evidence(
     assert parent["status"] == "HARNESS_ERROR"
     command = captured["command"]
     assert command[command.index("--ensemble-runs") + 1] == "32"
-    assert command[command.index("--ensemble-cases") + 1] == "48"
+    assert command[command.index("--ensemble-cases") + 1] == "60"
     assert captured["timeout"] == 240
 
 

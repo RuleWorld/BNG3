@@ -19,14 +19,26 @@ import numpy as np
 
 from . import campaign, contracts, inventory, reporting
 from .simulation_contract import net_reload_context
-from .integrated_cases import TIMES, generated_cases, sbml_text, expected_trajectory
-from . import integrated_consumers, scientific_contracts, integrated_extensions
+from .integrated_cases import (
+    TIMES,
+    generated_cases,
+    sbml_text,
+    expected_trajectory,
+)
+from . import (
+    integrated_consumers,
+    integrated_source,
+    scientific_contracts,
+    integrated_extensions,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = Path(__file__).with_name("integrated_worker.py")
 # Required evidence is declared independently of execution, so deleting a
 # comparator cannot leave a green report containing only successful processes.
 PROCESS_STAGES = (
+    "source-validation",
+    "source-sbml-oracle",
     "atomizer",
     "bng2",
     "cli",
@@ -304,12 +316,61 @@ def _nf_invariants(case, route, path, rows, dependency):
     _checks(case["id"], stage, checks, rows, [dependency])
 
 
+def _candidate_issue_ids(case, stage):
+    """Map only transformed candidate-side evidence to directly tested issues."""
+    transform = case.get("transform")
+    trajectory = stage.endswith("-source-dynamics")
+    nf_route = stage in {
+        "nf",
+        "native-nf",
+        "nf-independent",
+        "nf-invariants",
+        "nf-marginals",
+    }
+    if transform == "function-shadowing" and (
+        stage == "atomizer" or trajectory or nf_route
+    ):
+        return [143]
+    if transform == "concentration-coordinate":
+        if stage == "atomizer" or trajectory:
+            return [161]
+        if nf_route:
+            return [151]
+    return None
+
+
 def run_case(case, args, rows, env):
+    first_row = len(rows)
     key = case["id"]
     work = args.report_dir / "cases" / key
     work.mkdir(parents=True)
     source = work / "source.xml"
-    source.write_text(sbml_text(case))
+    source_xml = sbml_text(case)
+    source.write_text(source_xml)
+    try:
+        source_status, source_detail = integrated_source.validate_sbml_source(
+            source_xml
+        )
+    except Exception as exc:
+        source_status = "HARNESS_ERROR"
+        source_detail = (
+            f"libSBML source validation unavailable: {type(exc).__name__}: {exc}"
+        )
+    source_validation = dict(
+        id=f"{key}:source-validation",
+        stage="source-validation",
+        integration_case=key,
+        status=source_status,
+        detail=source_detail,
+        command="libsbml.readSBMLFromString + checkConsistency",
+        receipt=str(source.resolve()),
+        related_issues=[],
+    )
+    rows.append(source_validation)
+    source_oracle = integrated_source.source_sbml_oracle(
+        case, source, work, source_validation
+    )
+    rows.append(source_oracle)
     expected = work / "analytic.gdat"
     data, columns = expected_trajectory(case)
     np.savetxt(expected, data, header=" ".join(columns), fmt="%.17g")
@@ -346,7 +407,10 @@ def run_case(case, args, rows, env):
 
     translated = work / "atomizer/model.bngl"
     atomizer = stage(
-        "atomizer", worker("atomizer", source), required=("model.bngl", "identity.json")
+        "atomizer",
+        worker("atomizer", source),
+        deps=[source_validation],
+        required=("model.bngl", "identity.json"),
     )
     # Identical translated source, copied before adding the same action protocol.
     actions = (
@@ -592,6 +656,13 @@ def run_case(case, args, rows, env):
             rows,
             identities,
         )
+    for row in rows[first_row:]:
+        row["base_case_id"] = case.get("base_case_id", case["id"])
+        row["transform"] = case.get("transform", "identity")
+        row["quantity_basis"] = case.get("quantity_basis", "initialAmount; item amount")
+        issue_ids = _candidate_issue_ids(case, row["stage"])
+        if issue_ids is not None:
+            row["related_issues"] = issue_ids
 
 
 def _preflight(args):
@@ -797,7 +868,7 @@ def main(argv=None):
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
         stage = row["stage"]
-        if not row.get("related_issues"):
+        if "related_issues" not in row:
             if stage == "boundaries":
                 issues = [157, 158, 160, 161, 164]
             elif stage == "protocol":
@@ -872,11 +943,13 @@ def main(argv=None):
                 Path(__file__),
                 WORKER,
                 Path(integrated_consumers.__file__),
+                Path(integrated_source.__file__),
                 Path(integrated_extensions.__file__),
                 ROOT / "tests/validation/integrated_protocol.py",
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
+                ROOT / "tests/validation/compare.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",
                 ROOT / "tests/validation/contracts.py",

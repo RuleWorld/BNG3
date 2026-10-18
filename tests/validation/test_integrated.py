@@ -4,22 +4,28 @@ import json
 import sys
 from itertools import combinations
 from pathlib import Path
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
-from tests.validation import integrated
+from tests.validation import integrated, integrated_source
 
 
 def test_pr_selection_covers_each_pair_of_integration_dimensions():
     full = integrated.generated_cases(full=True)
     selected = integrated.generated_cases()
-    assert len(full) == 48 and len(selected) == 18
+    baseline_full = [case for case in full if not case.get("transform")]
+    baseline_selected = [case for case in selected if not case.get("transform")]
+    assert len(full) == 60 and len(selected) == 24
     assert len({c["id"] for c in full}) == len(full)
-    for family in {c["family"] for c in full}:
+    assert len([case for case in selected if case.get("transform")]) == 6
+    assert len([case for case in full if case.get("transform")]) == 12
+    for family in {c["family"] for c in baseline_full}:
         for left, right in combinations(("volume", "initial", "reverse", "atomize"), 2):
-            assert {(c[left], c[right]) for c in selected if c["family"] == family} == {
-                (c[left], c[right]) for c in full if c["family"] == family
-            }
+            assert {
+                (c[left], c[right]) for c in baseline_selected if c["family"] == family
+            } == {(c[left], c[right]) for c in baseline_full if c["family"] == family}
 
 
 def test_focused_qualification_registries_exclude_the_other_final_stage():
@@ -33,6 +39,92 @@ def test_focused_qualification_registries_exclude_the_other_final_stage():
     assert "campaign:graph-identity" not in boundary
     assert "campaign:graph-identity" in graph
     assert "campaign:boundaries" not in graph
+
+
+def test_generated_source_validation_rejects_invalid_input_before_scoring(monkeypatch):
+    class Error:
+        def getMessage(self):
+            return "invalid generated source"
+
+        def getSeverity(self):
+            return 2
+
+    class Document:
+        def checkConsistency(self):
+            pass
+
+        def getNumErrors(self):
+            return 1
+
+        def getError(self, _index):
+            return Error()
+
+        def getModel(self):
+            return object()
+
+    fake_libsbml = SimpleNamespace(
+        readSBMLFromString=lambda _source: Document(), LIBSBML_SEV_ERROR=2
+    )
+    monkeypatch.setitem(sys.modules, "libsbml", fake_libsbml)
+
+    status, detail = integrated_source.validate_sbml_source("<sbml/>")
+    assert status == "INVALID_INPUT"
+    assert "invalid generated source" in detail
+
+
+def test_integrated_case_contract_requires_source_validation_and_independent_oracle():
+    case = integrated.generated_cases()[0]
+    ids = integrated.expected_contract_ids([case])
+    assert f"{case['id']}:source-validation" in ids
+    assert f"{case['id']}:source-sbml-oracle" in ids
+
+
+def test_concentration_oracle_rejects_missing_or_duplicated_volume_factor():
+    case = next(
+        case
+        for case in integrated.generated_cases()
+        if case.get("transform") == "concentration-coordinate" and case["volume"] == 3
+    )
+    from tests.validation.integrated_cases import TIMES, RATE, expected_source_species
+
+    expected, species = expected_source_species(case)
+    correct = np.column_stack([TIMES, expected])
+    assert (
+        integrated_source.source_trajectory_difference(correct, case, species) is None
+    )
+
+    initial_concentration = case["initial"] / case["volume"]
+    for effective_rate in (RATE / case["volume"], RATE * case["volume"]):
+        amount_a = initial_concentration * np.exp(-effective_rate * TIMES)
+        wrong = np.column_stack([TIMES, amount_a, initial_concentration - amount_a])
+        assert integrated_source.source_trajectory_difference(wrong, case, species)
+
+
+def test_roadrunner_selections_and_issue_links_follow_source_coordinates():
+    concentration = next(
+        case
+        for case in integrated.generated_cases()
+        if case.get("transform") == "concentration-coordinate"
+    )
+    function = next(
+        case
+        for case in integrated.generated_cases()
+        if case.get("transform") == "function-shadowing"
+    )
+    assert integrated_source.source_selection_names(concentration, ["A", "B"]) == [
+        "[A]",
+        "[B]",
+    ]
+    assert integrated_source.source_selection_names(function, ["A", "B"]) == [
+        "A",
+        "B",
+    ]
+    assert integrated._candidate_issue_ids(function, "api-source-dynamics") == [143]
+    assert integrated._candidate_issue_ids(concentration, "nf-independent") == [151]
+    assert integrated._candidate_issue_ids(concentration, "api-source-dynamics") == [
+        161
+    ]
+    assert integrated._candidate_issue_ids(concentration, "source-sbml-oracle") is None
 
 
 def test_missing_stage_output_blocks_consumers_but_not_independent_routes(tmp_path):
