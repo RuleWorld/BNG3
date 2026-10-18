@@ -10,6 +10,29 @@ action-only fixtures use explicit output contracts from
 
 Differential testing against the originals. Nothing merges until it matches.
 
+## Cross-component generated integration cases
+
+`tests.validation.integrated` runs a six-case pairwise PR matrix that sends generated SBML through Atomizer, BNG3 command-line and Python execution, locked BNG2, an isolated upstream PyBioNetGen interpreter, and independently built native NFsim. Scheduled and manually dispatched parity runs can select the full sixteen-case matrix. Reports retain stage-specific outcomes, tool identities, logs, commands, intermediates, and investigation packets; a passing stage does not imply that a later stage ran or passed.
+
+After building BNG3 and checking out the locked oracles, run the same worker locally with a fresh report directory:
+
+```bash
+python -m tests.validation.integrated \
+  --bng-cpp build/cpp/bng_cpp \
+  --bng2-root /absolute/path/to/locked/bionetgen \
+  --bng2-network-sha256 <run_network-sha256> \
+  --nfsim-root /absolute/path/to/locked/nfsim \
+  --nfsim-binary /absolute/path/to/locked/nfsim/build/NFsim \
+  --nfsim-sha256 <native-nfsim-sha256> \
+  --pybionetgen-root /absolute/path/to/locked/pybionetgen \
+  --pybionetgen-python /absolute/path/to/isolated/pybionetgen-venv/bin/python \
+  --report-dir /tmp/bng3-integrated-validation
+```
+
+Cases vary compartment volume, population, species declaration order and Atomizer mode. The source analytic amounts are checked against each deterministic route; network identities/rates use BNG2, and native NFsim consumes BNG2 XML for exact seeded trajectory comparison. `--case v1-n20-r0-a0` selects one replay.
+
+The upstream PyBioNetGen source is imported by the isolated worker; install its requirements into that interpreter without installing the upstream package. Pull requests use the bounded default selection; `--full` selects the expanded matrix. This is regression-discovery evidence, not a claim of complete component equivalence.
+
 ## Integrated capability campaign
 
 The existing entry point also orchestrates discovery, component tests and live

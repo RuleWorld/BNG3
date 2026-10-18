@@ -37,7 +37,8 @@
         "tests/validation/test_scientific_contracts.py",
         "tests/validation/test_harness_paths.py::test_missing_explicit_cli_never_falls_back_to_available_default",
         "tests/validation/test_harness_paths.py::test_missing_environment_cli_never_falls_back_to_available_default",
-        "tests/validation/test_integrated.py"
+        "tests/validation/test_integrated.py",
+        "tests/validation/test_integrated_wiring.py"
       ],
       "question": "harness-self-test"
     },

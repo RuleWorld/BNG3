@@ -179,7 +179,7 @@ If two targeted fixes fail, reassess the diagnosis before making a third.
 
 ## Validation
 
-Use the narrowest useful test while developing, then broaden validation according to the affected surface.
+Prefer CI for builds, broad suites, platform matrices, and corpus campaigns. Keep local testing to focused one-off harness checks or reduced reproducers when useful; do not routinely rebuild or rerun broad suites locally. Wire the affected surface into CI and state which evidence is local versus hosted.
 
 ### Build
 
@@ -369,6 +369,16 @@ Use:
 - archive/history documents — historical provenance only
 
 When documentation disagrees with code or tests, inspect the implementation and current Git history before deciding which is stale.
+
+## Cross-component integration regressions
+
+Use generated, reusable regression cases to detect semantic integration defects across the full maintained system: Python APIs and orchestration, Atomizer/SBML lowering, the native BNG3 engine, BNG2 compatibility, PyBioNetGen compatibility, and NFsim. Integration failures are evidence for investigation; do not bundle product repairs into validation-only work.
+
+Python validation tooling may prepare, run, compare, classify, and preserve evidence for a case. Semantic implementation remains in the component that owns the behavior, normally C++ for native engine semantics and Python for API, orchestration, or translation behavior. Keep those roles clear in findings and patches.
+
+Prefer broad generated or parameterized regression coverage in CI so regressions are repeatable and shared across contributors. Use local checks to validate the harness or a narrowly reduced reproducer; do not replace the CI matrix with one-off local cases. Preserve each stage boundary and classify unsupported, invalid input, timeout, harness error, and semantic failure separately.
+
+Use an isolated worktree and branch for sustained integration-validation work. Commit coherent checkpoints after review and appropriate focused validation; do not mix regression detection with a product fix unless the user explicitly asks for both. Delegation is optional. When using subagents in this repository, use at most one or two Luna agents, with no further delegation, unless the user explicitly authorizes a different model or scale.
 
 ## Definition of done
 
