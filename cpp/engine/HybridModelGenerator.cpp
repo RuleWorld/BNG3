@@ -415,7 +415,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             // First, add the original rule
             hybridModel.addReactionRule(ast::ReactionRule(
                 rule.getRuleName(),
-                rule.getLabel(),
+                rule.getRuleName() + ":",
                 rule.getReactants(),
                 rule.getProducts(),
                 rule.getRates(),
@@ -453,7 +453,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
                 std::string popRuleName = rule.getRuleName() + "_pop";
                 hybridModel.addReactionRule(ast::ReactionRule(
                     popRuleName,
-                    rule.getLabel(),
+                    popRuleName + ":",
                     reactantsCopy,
                     productsCopy,
                     rule.getRates(),
@@ -471,7 +471,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             // No population match: copy rule as-is
             hybridModel.addReactionRule(ast::ReactionRule(
                 rule.getRuleName(),
-                rule.getLabel(),
+                rule.getRuleName() + ":",
                 rule.getReactants(),
                 rule.getProducts(),
                 rule.getRates(),
@@ -511,7 +511,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         std::string mapRuleName = "_map_" + populationName;
         hybridModel.addReactionRule(ast::ReactionRule(
             mapRuleName,
-            pm.label,
+            mapRuleName + ":",
             {pm.patternText},
             {populationPattern},
             {pm.hasExplicitRate ? pm.rateExpression : ast::Expression::number(0)},
