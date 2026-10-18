@@ -508,6 +508,9 @@ bool addCompartmentsFromCompiled(const bng::compile::CompiledModel& model,
             system->getCompartment(compartment.name) != nullptr) return false;
         system->addCompartment(new NFcore::Compartment(
             compartment.name, compartment.dimension, compartment.volume));
+        if (!compartment.volumeParameterName.empty() &&
+            !system->setCompartmentSizeParameter(
+                compartment.name, compartment.volumeParameterName)) return false;
         if (verbose) std::cerr << "[nfsim/compiled] compartment " << compartment.name << "\n";
     }
     for (const auto& compartment : model.compartments()) {

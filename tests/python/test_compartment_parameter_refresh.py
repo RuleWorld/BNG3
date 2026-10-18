@@ -92,6 +92,25 @@ def test_physical_zero_order_nfsim_rate_matches_fresh_volume_after_override(
     )
 
 
+def test_direct_nfsim_tracks_simple_compartment_parameter_expression(tmp_path):
+    source = tmp_path / "simple_parameter_volume.bngl"
+    source.write_text(_volume_model(vcell="Vbase"))
+    model = bionetgen.load(str(source))
+    model.set_parameter("Vcell", 2.0)
+
+    fresh_path = tmp_path / "fresh_simple_parameter_volume.bngl"
+    fresh_path.write_text(_volume_model(vcell="2"))
+    fresh = bionetgen.load(str(fresh_path))
+
+    actual = model.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
+    expected = fresh.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
+
+    assert actual.construction_path == expected.construction_path == "direct"
+    assert actual.observables["A_count"].tolist() == (
+        expected.observables["A_count"].tolist()
+    )
+
+
 def test_nonfinite_parameter_backed_volume_is_refused_by_physical_nfsim(tmp_path):
     source = tmp_path / "nonfinite_parameter_volume.bngl"
     source.write_text("""begin model

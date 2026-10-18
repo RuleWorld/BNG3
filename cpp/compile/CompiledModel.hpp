@@ -90,6 +90,7 @@ struct CompiledCompartment {
     std::optional<units::Unit> declaredUnit;
     std::string unitName;
     std::optional<double> normalizedVolume;
+    std::string volumeParameterName;
 };
 
 enum class ObservableKind {

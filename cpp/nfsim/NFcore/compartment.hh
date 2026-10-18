@@ -56,6 +56,28 @@ namespace NFcore
 			
 			//! Set parent compartment
 			void setParent(Compartment* p) { parent = p; }
+
+			//! Set the size (volume or area)
+			/*!
+			    Resets the compartment size, e.g. after a parameter-backed
+			    volume changes via System::updateSystemWithNewParameters().
+			    Non-finite or non-positive sizes print a warning (as the
+			    constructor does) but are still stored so callers can
+			    fail closed downstream.
+			*/
+			void setSize(double newSize);
+
+			//! Name of the System parameter this size tracks ("" = static)
+			/*!
+			    When non-empty and the named parameter exists,
+			    System::updateCompartmentSizesFromParameters() copies the
+			    parameter value into the size before reaction propensities
+			    are refreshed. Use System::setCompartmentSizeParameter()
+			    to establish the link, or set it explicitly for loaders
+			    that resolve a plain-identifier volume expression.
+			*/
+			void setSizeParameterName(const string& name) { sizeParameterName = name; }
+			string getSizeParameterName() const { return sizeParameterName; }
 			
 			//! Check if this compartment is inside another
 			/*!
@@ -72,6 +94,7 @@ namespace NFcore
 			string id;                    //!< Compartment identifier
 			int spatialDimensions;        //!< 2 for membrane, 3 for volume
 			double size;                  //!< Volume (3D) or area (2D)
+			string sizeParameterName;     //!< System parameter tracked by size ("" = static)
 			Compartment* parent;          //!< Parent compartment for nesting (optional)
 	};
 }

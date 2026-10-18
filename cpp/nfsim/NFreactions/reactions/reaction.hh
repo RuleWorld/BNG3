@@ -95,7 +95,12 @@ namespace NFcore
 
 		public:
 			MMRxnClass(string name, double kcat, double Km, TransformationSet *transformationSet, System *s);
+			MMRxnClass(string name, double kcat, double Km, TransformationSet *transformationSet, System *s,
+				const std::string& kcatParameterName, const std::string& kmParameterName);
 			virtual ~MMRxnClass();
+
+			void setRateParameterNames(const std::string& kcatName, const std::string& kmName);
+			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
 			virtual bool propensityDependsOnlyOnMembership() const { return !hasPopulationReactant(); }
@@ -107,6 +112,8 @@ namespace NFcore
 			double Km;
 			double kcat;
 			double sFree;
+			std::string kcatParameterName;
+			std::string kmParameterName;
 		};
 
 	class SatRxnClass : public BasicRxnClass {
@@ -115,6 +122,9 @@ namespace NFcore
 			            TransformationSet *transformationSet, System *s);
 			virtual ~SatRxnClass();
 
+			void setConstantParameterNames(const std::vector<std::string>& names);
+			virtual void resetBaseRateFromSystemParamter();
+
 			virtual double update_a();
 			virtual double exactRuleMonkey_a();
 			virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
@@ -122,6 +132,7 @@ namespace NFcore
 
 		protected:
 			vector<double> saturationConstants;
+			std::vector<std::string> constantParameterNames;
 	};
 
 	class HillRxnClass : public BasicRxnClass {
@@ -129,6 +140,9 @@ namespace NFcore
 			HillRxnClass(string name, double vmax, double kh, double exponent,
 			             TransformationSet *transformationSet, System *s);
 			virtual ~HillRxnClass();
+
+			void setConstantParameterNames(const std::vector<std::string>& names);
+			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
 			virtual double exactRuleMonkey_a();
@@ -139,6 +153,7 @@ namespace NFcore
 			double vmax;
 			double kh;
 			double exponent;
+			std::vector<std::string> constantParameterNames;
 	};
 
 
