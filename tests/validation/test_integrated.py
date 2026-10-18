@@ -275,3 +275,16 @@ def test_reversible_stochastic_controls_detect_conservation_and_alias_corruption
         next(r for r in rows if r["check"] == "invariant.conserved-total")["status"]
         == "FAIL"
     )
+
+
+def test_adversarial_registry_can_be_selected_without_other_campaigns():
+    ids = integrated.expected_contract_ids(
+        [],
+        include_boundaries=False,
+        include_graph_identity=False,
+        include_bngir_adversarial=True,
+    )
+    assert "campaign:bngir-adversarial" in ids
+    assert "campaign:graph-identity" not in ids
+    assert "campaign:boundaries" not in ids
+    assert len(ids) > 10

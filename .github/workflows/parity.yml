@@ -59,6 +59,10 @@ jobs:
             tests/validation/test_integrated_matrix.py \
             tests/validation/test_integrated_consumers.py \
             tests/validation/test_issue_queue.py \
+            tests/validation/test_reporting.py \
+            tests/validation/test_triage.py \
+            tests/validation/test_replay.py \
+            tests/validation/test_bngir_adversarial.py \
             tests/validation/test_integrated_boundaries.py \
             tests/validation/test_integrated_protocol.py \
             tests/validation/test_integrated_marginals.py \
@@ -187,6 +191,43 @@ jobs:
             "$RUNNER_TEMP/bng3-conformance/report.json" \
             --summary "$GITHUB_STEP_SUMMARY" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Restore previous main conformance observations
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/triage-conformance-history
+          key: triage-conformance-main-${{ github.sha }}
+          restore-keys: triage-conformance-main-
+
+      - name: Bounded named-check replay and portable conformance repair tasks
+        if: always()
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/bng3-conformance"
+          test -s "$evidence/report.json"
+          python -m tests.validation.replay "$evidence/report.json" \
+            --execute --output "$evidence/replays" --max-cases 2 --runs 1 --timeout 40 --budget 90
+          args=()
+          if [[ -f "$RUNNER_TEMP/triage-conformance-history/ledger.json" ]]; then
+            args+=(--previous "$RUNNER_TEMP/triage-conformance-history/ledger.json")
+          fi
+          shopt -s nullglob
+          for report in "$evidence"/replays/replicate-*.json; do
+            args+=(--replicate "$report")
+          done
+          python -m tests.validation.triage "$evidence/report.json" \
+            --output "$evidence/triage" "${args[@]}"
+          cat "$evidence/triage/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/triage-conformance-history"
+          cp "$evidence/triage/ledger.json" "$RUNNER_TEMP/triage-conformance-history/ledger.json"
+
+      - name: Retain main conformance observation history
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/triage-conformance-history
+          key: triage-conformance-main-${{ github.sha }}
 
       - name: Upload conformance diagnostics and inventory
         if: always()
@@ -503,6 +544,43 @@ jobs:
             ${{ runner.temp }}/bng3-issues.json
           if-no-files-found: warn
           retention-days: 30
+
+      - name: Restore previous main integrated-validation observations
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/triage-integrated-validation-history
+          key: triage-integrated-validation-main-${{ github.sha }}
+          restore-keys: triage-integrated-validation-main-
+
+      - name: Bounded named-check replay and portable integrated-validation repair tasks
+        if: always()
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/bng3-integrated-validation"
+          test -s "$evidence/report.json"
+          python -m tests.validation.replay "$evidence/report.json" \
+            --execute --output "$evidence/replays" --max-cases 2 --runs 1 --timeout 40 --budget 90
+          args=()
+          if [[ -f "$RUNNER_TEMP/triage-integrated-validation-history/ledger.json" ]]; then
+            args+=(--previous "$RUNNER_TEMP/triage-integrated-validation-history/ledger.json")
+          fi
+          shopt -s nullglob
+          for report in "$evidence"/replays/replicate-*.json; do
+            args+=(--replicate "$report")
+          done
+          python -m tests.validation.triage "$evidence/report.json" \
+            --output "$evidence/triage" "${args[@]}" --issues-json "$RUNNER_TEMP/bng3-issues.json"
+          cat "$evidence/triage/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/triage-integrated-validation-history"
+          cp "$evidence/triage/ledger.json" "$RUNNER_TEMP/triage-integrated-validation-history/ledger.json"
+
+      - name: Retain main integrated-validation observation history
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/triage-integrated-validation-history
+          key: triage-integrated-validation-main-${{ github.sha }}
 
       - name: Upload integrated reports and replay artifacts
         if: always()
