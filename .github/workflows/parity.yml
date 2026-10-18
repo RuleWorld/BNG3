@@ -54,6 +54,7 @@ jobs:
             tests/validation/test_parity_workflow_wiring.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
+            tests/validation/test_integrated_traces.py \
             tests/validation/test_integrated_cases.py \
             tests/validation/test_integrated_consumers.py \
             tests/validation/test_issue_queue.py \

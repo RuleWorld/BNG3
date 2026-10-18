@@ -30,6 +30,7 @@ from . import (
     integrated_source,
     scientific_contracts,
     integrated_extensions,
+    integrated_traces,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +41,7 @@ PROCESS_STAGES = (
     "source-validation",
     "source-sbml-oracle",
     "atomizer",
+    "rate-trace",
     "bng2",
     "cli",
     "api",
@@ -80,6 +82,9 @@ def expected_contract_ids(
         for c in cases
         for suffix in (
             *PROCESS_STAGES,
+            "rate-trace:source-compiled-rate-multiset",
+            "rate-trace:compiled-net-rate-multiset",
+            "rate-trace:net-bngxml-rate-coefficient",
             *(
                 f"{group}:gdat.{check}"
                 for group in TRAJECTORY_GROUPS
@@ -115,6 +120,29 @@ def expected_contract_ids(
         include_boundaries=include_boundaries,
         include_graph_identity=include_graph_identity,
     )
+
+
+def _rate_trace_row(case_id, name, result, *, evidence, trace_id, summary, receipts):
+    row = dict(
+        id=f"{case_id}:rate-trace:{name}",
+        check=name,
+        stage="rate-trace",
+        integration_case=case_id,
+        status=result["status"],
+        detail=result["detail"],
+        first_difference=result.get("first_difference"),
+        **evidence,
+        trace_id=trace_id,
+        trace_boundary_statuses=summary["boundary_statuses"],
+        trace_first_divergence=summary["first_divergence"],
+        trace_blocked_at=summary["blocked_at"],
+        trace_observed_failures=summary["observed_failures"],
+        evidence=[summary],
+        receipts=receipts,
+        related_issues=[151],
+    )
+    row.update(integrated_traces.boundary_metadata(name))
+    return row
 
 
 def run_stage(
@@ -412,6 +440,104 @@ def run_case(case, args, rows, env):
         deps=[source_validation],
         required=("model.bngl", "identity.json"),
     )
+    rate_trace = stage(
+        "rate-trace",
+        worker("rate-trace", translated),
+        deps=[source_validation, atomizer],
+        required=("rate-trace.json", "identity.json"),
+    )
+    observation = None
+    net_export = integrated_traces.exported_net_rates(work / "rate-trace/model.net")
+    xml_export = None
+    try:
+        source_trace = integrated_traces.source_rate_trace(source_xml)
+        xml_export = integrated_traces.exported_bng_xml(
+            work / "rate-trace/model.xml", source_trace
+        )
+        observation_path = work / "rate-trace/rate-trace.json"
+        observation = (
+            json.loads(observation_path.read_text())
+            if rate_trace["status"] == "PASS" and observation_path.is_file()
+            else None
+        )
+        trace_result = integrated_traces.compare_rate_trace(source_trace, observation)
+        net_result = integrated_traces.compare_rate_values(
+            observation.get("reaction_rate_coefficients") if observation else None,
+            net_export.get("effective_rates"),
+            "BNG3 NET export vs compiled API",
+            # BNG NET values are serialized with twelve significant digits.
+            rtol=5e-11,
+        )
+        xml_result = integrated_traces.compare_rate_values(
+            net_export.get("effective_rates"),
+            xml_export.get("effective_rates"),
+            "BNG-XML elementary coefficients vs NET",
+            rtol=5e-11,
+        )
+    except Exception as exc:
+        source_trace = None
+        trace_result = net_result = xml_result = dict(
+            status="HARNESS_ERROR",
+            detail=f"could not construct source-to-compiled rate trace: {type(exc).__name__}: {exc}",
+            first_difference=None,
+        )
+    trace_receipts = [rate_trace.get("receipt")] if rate_trace.get("receipt") else []
+    trace_boundary_rows = [
+        ("source-to-compiled", trace_result),
+        ("compiled-to-net", net_result),
+        ("net-to-bngxml", xml_result),
+    ]
+    trace_summary = integrated_traces.first_differing_boundary(
+        [
+            dict(
+                name=name,
+                status=result["status"],
+                first_difference=result.get("first_difference"),
+            )
+            for name, result in trace_boundary_rows
+        ]
+    )
+    trace_id = (
+        integrated_traces.trace_identity(key, source_trace)
+        if source_trace is not None
+        else f"{key}:rate-units:source-unavailable"
+    )
+    for name, result, evidence in (
+        (
+            "source-compiled-rate-multiset",
+            trace_result,
+            {"source_trace": source_trace, "observation": observation},
+        ),
+        (
+            "compiled-net-rate-multiset",
+            net_result,
+            {
+                "compiled_trace_id": f"{key}:rate-trace:source-compiled-rate-multiset",
+                "observation": observation,
+                "net_export": net_export,
+            },
+        ),
+        (
+            "net-bngxml-rate-coefficient",
+            xml_result,
+            {
+                "net_trace_id": f"{key}:rate-trace:compiled-net-rate-multiset",
+                "net_export": net_export,
+                "bng_xml_export": xml_export,
+            },
+        ),
+    ):
+        rows.append(
+            _rate_trace_row(
+                key,
+                name,
+                result,
+                evidence=evidence,
+                trace_id=trace_id,
+                summary=trace_summary,
+                receipts=trace_receipts,
+            )
+        )
     # Identical translated source, copied before adding the same action protocol.
     actions = (
         "\nbegin actions\ngenerate_network({overwrite=>1})\n"
@@ -632,7 +758,15 @@ def run_case(case, args, rows, env):
             )
         )
     # Confirm repeated installed workers did not silently select another build.
-    identity_stages = [atomizer, api, compat, nf, *consumers, *qualifications]
+    identity_stages = [
+        atomizer,
+        rate_trace,
+        api,
+        compat,
+        nf,
+        *consumers,
+        *qualifications,
+    ]
     identities = [r for r in identity_stages if r["status"] == "PASS"]
     if len(identities) == len(identity_stages):
         observed = [
@@ -867,6 +1001,13 @@ def main(argv=None):
             ]
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
+        if row["stage"] == "rate-trace":
+            row["source_locations"] = [
+                "tests/validation/integrated_traces.py",
+                "tests/validation/integrated_worker.py",
+                "cpp/bindings/bind_engine.cpp",
+            ]
+            row["question"] = "source-sbml-rate-and-unit-scaling-vs-bng3-compiled-rhs"
         stage = row["stage"]
         if "related_issues" not in row:
             if stage == "boundaries":
@@ -945,6 +1086,7 @@ def main(argv=None):
                 Path(integrated_consumers.__file__),
                 Path(integrated_source.__file__),
                 Path(integrated_extensions.__file__),
+                Path(integrated_traces.__file__),
                 ROOT / "tests/validation/integrated_protocol.py",
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
