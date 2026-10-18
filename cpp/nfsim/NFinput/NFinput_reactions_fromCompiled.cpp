@@ -2,6 +2,7 @@
 
 #include "compile/Capabilities.hpp"
 #include "compile/CompiledModel.hpp"
+#include "compile/RuleUnitConversion.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
@@ -148,6 +149,36 @@ NFcore::Compartment* resolveCompartment(NFcore::System& system,
     auto* compartment = system.getCompartment(name);
     if (compartment == nullptr) diagnostic = "unknown compartment '" + name + "'";
     return compartment;
+}
+// Resolve a reactant pattern's declaration so the shared count-rate helper can
+// read its dimension and volume. Prefer the typed compartment id (canonical
+// for compiled patterns) and fall back to the human-readable name.
+const bng::compile::CompiledCompartment* reactantCompartmentDeclaration(
+    const CompiledModel& model, const Pattern& pattern) {
+    for (const auto& molecule : pattern.molecules()) {
+        if (molecule.compartmentId.has_value()) {
+            if (const auto* declaration = model.compartment(*molecule.compartmentId))
+                return declaration;
+        }
+    }
+    if (pattern.compartmentId().has_value()) {
+        if (const auto* declaration = model.compartment(*pattern.compartmentId()))
+            return declaration;
+    }
+
+    const auto byName = [&](const std::string& name) -> const bng::compile::CompiledCompartment* {
+        if (name.empty()) return nullptr;
+        for (const auto& declaration : model.compartments()) {
+            if (declaration.name == name) return &declaration;
+        }
+        return nullptr;
+    };
+    for (const auto& molecule : pattern.molecules()) {
+        if (const auto* declaration =
+                byName(compartmentName(model, pattern, molecule)))
+            return declaration;
+    }
+    return byName(pattern.compartment());
 }
 
 std::optional<double> evaluateStatic(const CompiledModel& model,
@@ -2304,6 +2335,39 @@ bool lowerDirection(const CompiledModel& model,
                 // 1.0 and leave the base rate (and its parameter name)
                 // untouched so later updates still refresh it.
                 reaction->volumeConversionFactor = 1.0;
+            }
+        }
+    } else if (!compiledRate.unit.has_value()) {
+        // Reactant-bearing bare rate. NFsim's default propensity is the
+        // mass-action count law, which already carries BNG2's identical-reactant
+        // permutation factor but does not divide by compartment volume. Apply
+        // the Perl-faithful Rxn.pm conversion so the count hazard matches the
+        // source law and the deterministic path (NetWriter::unitConversionFactor
+        // writes the same 1/product(sizes) factor as unit_conversion in .net).
+        // Physical-unit rates never reach here: nfSimPhysicalUnitBridgeRejection
+        // rejects reactant-bearing typed rates before construction, and the
+        // unit.has_value() guard keeps this a no-op if that ever changes.
+        std::vector<bng::compile::ReactantCompartment> reactantCompartments;
+        for (const auto& pattern : direction.reactantPatterns) {
+            const auto* declaration = reactantCompartmentDeclaration(model, pattern);
+            if (declaration == nullptr) continue;
+            double size = declaration->volume;
+            if (system.getNumberPerQuantityUnit() > 0.0)
+                size *= system.getNumberPerQuantityUnit();
+            reactantCompartments.push_back({declaration->dimension, size});
+        }
+        if (const auto factor =
+                bng::compile::reactantUnitConversionFactor(reactantCompartments)) {
+            // Only bare mass-action (BasicRxnClass) rates are converted here.
+            // Functional/saturating rates carry their own count-rate semantics
+            // and the XML writer leaves their (non-numeric) rate objects
+            // untouched, so scaling only Basic keeps the two paths in lockstep.
+            if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN) {
+                reaction->volumeConversionFactor = *factor;
+                // BasicRxnClass::update_a() ignores volumeConversionFactor, and
+                // setBaseRate() would re-apply the constructor's symmetry
+                // factor. Scale the already-symmetrized base rate exactly once.
+                reaction->scaleBaseRate(*factor);
             }
         }
     }

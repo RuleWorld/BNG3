@@ -745,6 +745,7 @@ def main():
     parser.add_argument("--native-xml", type=Path)
     parser.add_argument("--ensemble-runs", type=int, default=32)
     parser.add_argument("--ensemble-cases", type=int, default=48)
+    parser.add_argument("--xml-out", type=Path)
     args = parser.parse_args()
     consumer_operations = (
         "bngir-v01",
@@ -882,6 +883,11 @@ def main():
             actions="",
         )
         Path("model.bngl").write_text(text)
+        if args.xml_out is not None:
+            # BNG3's own NFsim XML export; native routes must consume this,
+            # not BNG2's XML, to observe BNG3 conversion semantics.
+            args.xml_out.parent.mkdir(parents=True, exist_ok=True)
+            bionetgen.load("model.bngl").write_xml(str(args.xml_out))
     elif args.operation == "rate-trace":
         model = bionetgen.load(str(args.input))
         network = model.generate_network()

@@ -117,6 +117,28 @@ def test_ensemble_receipt_preserves_seed_budget_and_rejects_duplicate_evidence(
     assert captured["timeout"] == 240
 
 
+def test_native_marginals_route_consumes_bng3_exported_xml(tmp_path):
+    """Native NFsim must read BNG3's XML so BNG3 conversion semantics apply."""
+    case = next(
+        c for c in integrated_cases.generated_cases() if c["family"] == "reversible"
+    )
+    rows, captured = [], {}
+
+    def capture(case_id, stage, command, directory, results, **kwargs):
+        captured["command"] = command
+        directory.mkdir(parents=True)
+        (directory / "checks.json").write_text("[]")
+        row = dict(id=f"{case_id}:{stage}", stage=stage, status="PASS")
+        results.append(row)
+        return row
+
+    extensions.invoke("nf-marginals", args(tmp_path), rows, {}, capture, case=case)
+    command = captured["command"]
+    native_xml = Path(command[command.index("--native-xml") + 1])
+    assert native_xml == tmp_path / "cases" / case["id"] / "bng3/model.xml"
+    assert "bng2" not in native_xml.parts
+
+
 def test_complete_ids_without_observation_payload_are_still_harness_errors(tmp_path):
     case = integrated_cases.generated_cases()[0]
     rows = []

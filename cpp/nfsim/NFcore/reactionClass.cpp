@@ -390,6 +390,12 @@ void ReactionClass::setBaseRate(double newBaseRate,string newBaseRateName) {
 	update_a();
 };
 
+void ReactionClass::scaleBaseRate(double factor, string newBaseRateName) {
+	this->baseRate *= factor;
+	this->baseRateParameterName = newBaseRateName;
+	update_a();
+};
+
 void ReactionClass::setBaseRateParameterConversionFactor(double factor) {
 	if (!std::isfinite(factor) || factor < 0.0) {
 		throw std::invalid_argument("NFsim parameter-rate conversion factor must be finite and non-negative");

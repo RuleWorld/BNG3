@@ -107,7 +107,7 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
             "--native-nfsim",
             str(args.nfsim_binary),
             "--native-xml",
-            str(args.report_dir / "cases" / key / "bng2/model.xml"),
+            str(args.report_dir / "cases" / key / "bng3/model.xml"),
             "--ensemble-runs",
             str(args.ensemble_runs),
             "--ensemble-cases",

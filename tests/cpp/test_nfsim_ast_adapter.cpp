@@ -2574,6 +2574,89 @@ end reaction rules
     CHECK(xml->getReaction(0)->get_a() == Catch::Approx(80.0));
     delete xml;
 }
+TEST_CASE("NFsim AST adapter applies reactant volume conversion for bare bimolecular rates") {
+    // Source law: a dimerization extent k*A^2/V with species in items gives the
+    // count hazard k*n*(n-1)/V (self-pair proposals are rejected as null
+    // events). NFsim's default propensity omits the 1/V, so both the direct
+    // embedded path and the in-memory XML path must apply the Perl-faithful
+    // Rxn.pm factor. The proposal propensity is k*N^2/2*(1/V); after the fix the
+    // embedded and XML legs agree exactly, and equal the volume-scaled
+    // no-volume propensity (k*N^2/2 = 160 at V=1 -> 160/3 here).
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 0.8
+end parameters
+begin compartments
+    cell 3 3
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:D() 0
+end seed species
+begin reaction rules
+    @cell:A() + @cell:A() -> @cell:D() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const double expected = 0.8 * 20.0 * 20.0 / 2.0 / 3.0;
+
+    int directTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, directTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete direct;
+
+    int xmlTraversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, xmlTraversalLimit);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getAllReactions().size() == 1);
+    xml->prepareForSimulation();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete xml;
+}
+
+TEST_CASE("NFsim AST adapter leaves unit-volume reactant propensities unchanged") {
+    // Volume 1 must reduce to the bare proposal law k*N^2/2 (=160 here); the
+    // effective count hazard k*N*(N-1)/2 emerges from rejected self-pairs.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 0.8
+end parameters
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:D() 0
+end seed species
+begin reaction rules
+    @cell:A() + @cell:A() -> @cell:D() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const double expected = 0.8 * 20.0 * 20.0 / 2.0;
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete direct;
+}
 
 TEST_CASE("NFsim AST adapter converts static zero-order physical rates exactly once") {
     auto model = bng::parser::parseModel(R"BNGL(

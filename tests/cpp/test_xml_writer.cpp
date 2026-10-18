@@ -4,11 +4,12 @@
 // BNG2 (bionetgen 0.8.7) writeXML, with BNG2's RxnRule.pm / SpeciesGraph.pm
 // as oracle. Expected strings were diffed against BNG2-generated XML.
 #include <string>
-
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "ast/Model.hpp"
+#include "compile/RuleUnitConversion.hpp"
 #include "io/XmlWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -391,4 +392,125 @@ end model
 )");
     REQUIRE(model != nullptr);
     CHECK_THROWS(io::XmlWriter::write(*model));
+}
+TEST_CASE("reactant unit conversion helper mirrors NetWriter") {
+    using bng::compile::ReactantCompartment;
+    using bng::compile::reactantUnitConversionFactor;
+
+    // Bimolecular in one volume V -> 1/V.
+    CHECK(reactantUnitConversionFactor({{3, 3.0}, {3, 3.0}}) ==
+          Catch::Approx(1.0 / 3.0));
+    // Unimolecular -> no conversion (the single compartment is the anchor).
+    CHECK_FALSE(reactantUnitConversionFactor({{3, 3.0}}).has_value());
+    // No compartmented reactants -> no conversion.
+    CHECK_FALSE(reactantUnitConversionFactor({}).has_value());
+    // A surface is the anchor, so a paired volume stays in the denominator.
+    CHECK(reactantUnitConversionFactor({{2, 2.0}, {3, 5.0}}) ==
+          Catch::Approx(1.0 / 5.0));
+    // Distinct volume sizes -> 1/product of the remaining size after the anchor.
+    CHECK(reactantUnitConversionFactor({{3, 2.0}, {3, 5.0}}) ==
+          Catch::Approx(1.0 / 5.0));
+    // Two surfaces anchor one, keeping the other.
+    CHECK(reactantUnitConversionFactor({{2, 2.0}, {2, 5.0}}) ==
+          Catch::Approx(1.0 / 5.0));
+}
+
+TEST_CASE("XmlWriter bakes reactant volume conversion into bare rates") {
+    // NFsim applies its own volume conversion only to zero-order synthesis, so
+    // a bare reactant-bearing rate serialized into BNG3 XML must already carry
+    // the Rxn.pm 1/product(sizes) factor. Volume 1 must be left untouched.
+    const std::string xml = writeXml(R"(
+begin model
+begin parameters
+    k 0.8
+end parameters
+begin compartments
+    cell 3 3
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+end seed species
+begin reaction rules
+    @cell:A() + @cell:A() -> @cell:D() k
+end reaction rules
+end model
+)");
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<RateConstant value=\"0.26666666666666666\"/>"));
+    CHECK(xml.find("<RateConstant value=\"0.80000000000000004\"/>") == std::string::npos);
+
+    const std::string unitVolumeXml = writeXml(R"(
+begin model
+begin parameters
+    k 0.8
+end parameters
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+end seed species
+begin reaction rules
+    @cell:A() + @cell:A() -> @cell:D() k
+end reaction rules
+end model
+)");
+    CHECK_THAT(unitVolumeXml, Catch::Matchers::ContainsSubstring(
+        "<RateConstant value=\"0.80000000000000004\"/>"));
+}
+
+TEST_CASE("XmlWriter parses single-colon prefix compartments in observables and rules") {
+    // BNGL source uses the single-colon '@Comp:M()' prefix. The writer must
+    // split it into a separate molecule name and compartment attribute rather
+    // than folding it into a bogus name/compartment pair; native NFsim rejects
+    // the malformed form. Both observables and reaction rules are covered, as
+    // is the legacy molecule-suffix 'M()@Comp' spelling.
+    const std::string xml = writeXml(R"(
+begin model
+begin parameters
+    k1 1.0
+end parameters
+begin compartments
+    cell 3 3
+end compartments
+begin molecule types
+    M_A()
+    M_D()
+end molecule types
+begin seed species
+    @cell:M_A() 10
+end seed species
+begin observables
+    Molecules A_obs @cell:M_A()
+    Molecules D_obs M_D()@cell
+end observables
+begin reaction rules
+    @cell:M_A() -> @cell:M_D() k1
+end reaction rules
+end model
+)");
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Pattern id=\"O1_P1\" compartment=\"cell\">"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Molecule id=\"O1_P1_M1\" name=\"M_A\">"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Molecule id=\"O2_P1_M1\" name=\"M_D\" compartment=\"cell\">"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<ReactantPattern id=\"RR1_RP1\" compartment=\"cell\">"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Molecule id=\"RR1_RP1_M1\" name=\"M_A\">"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<ProductPattern id=\"RR1_PP1\" compartment=\"cell\">"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Molecule id=\"RR1_PP1_M1\" name=\"M_D\">"));
+    CHECK(xml.find("compartment=\"cell:M_A\"") == std::string::npos);
+    CHECK(xml.find("name=\"\"") == std::string::npos);
 }

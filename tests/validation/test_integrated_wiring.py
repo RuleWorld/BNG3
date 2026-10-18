@@ -110,13 +110,20 @@ def test_generated_matrix_audit_runs_on_the_exact_integrated_report_and_candidat
         if step.get("name") == "Audit generated consumer matrix receipts"
     )
     assert matrix_step["if"] == "always()"
-    assert 'test -s "$RUNNER_TEMP/bng3-integrated-validation/report.json"' in matrix_step["run"]
+    assert (
+        'test -s "$RUNNER_TEMP/bng3-integrated-validation/report.json"'
+        in matrix_step["run"]
+    )
     assert "python -m tests.validation.integrated_matrix" in matrix_step["run"]
     assert SOURCE_HEAD in matrix_step["run"]
     assert "matrix-report.json" in matrix_step["run"]
     issue_queue = next(
         step
         for step in job["steps"]
-        if step.get("name") == "Build exact-revision issue and provenance evidence queue"
+        if step.get("name")
+        == "Build exact-revision issue and provenance evidence queue"
     )
-    assert '--report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json"' in issue_queue["run"]
+    assert (
+        '--report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json"'
+        in issue_queue["run"]
+    )

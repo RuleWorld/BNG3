@@ -2458,6 +2458,14 @@ namespace NFcore
             TransformationSet* getTransformationSet() const { return transformationSet; }
 
 			void setBaseRate(double newBaseRate,string newBaseRateName);
+			// Scale the existing base rate in place without re-applying the
+			// reaction-center symmetry factor that the constructor already
+			// folded into baseRate. Used by the NFsim compartment count-rate
+			// bridge, which must scale a bare rate exactly once. The new base
+			// rate name defaults to empty, matching setBaseRate's behaviour:
+			// the conversion factor is baked into baseRate and must not be
+			// overwritten by resetBaseRateFromSystemParamter().
+			void scaleBaseRate(double factor, string newBaseRateName="");
 			void setBaseRateParameterConversionFactor(double factor);
 			virtual void resetBaseRateFromSystemParamter();
 

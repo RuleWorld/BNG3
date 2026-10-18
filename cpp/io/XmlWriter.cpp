@@ -1,6 +1,7 @@
 #include "compile/CompiledModel.hpp"
 #include "XmlWriter.hpp"
 
+#include "compile/RuleUnitConversion.hpp"
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/CompiledRule.hpp"
 #include "compile/SymbolTable.hpp"
@@ -230,12 +231,20 @@ ParsedPattern parsePattern(const std::string& text) {
     std::string input = text;
     bool hadLeadingCompartmentPrefix = false;
 
-    // Strip leading @Compartment:: prefix
+    // Strip a leading compartment prefix. BNGL source spells this either with
+    // the legacy double-colon '@Comp::M()' or the source single-colon
+    // '@Comp:M()'. Parse "::" first so a double colon is not mistaken for two
+    // single-colon separators.
     if (!input.empty() && input[0] == '@') {
         auto colonPos = input.find("::");
-        if (colonPos != std::string::npos) {
+        std::size_t separatorLength = 2;
+        if (colonPos == std::string::npos) {
+            colonPos = input.find(':');
+            separatorLength = 1;
+        }
+        if (colonPos != std::string::npos && colonPos > 1) {
             pattern.compartment = input.substr(1, colonPos - 1);
-            input = input.substr(colonPos + 2);
+            input = input.substr(colonPos + separatorLength);
             hadLeadingCompartmentPrefix = true;
         }
     }
@@ -476,6 +485,55 @@ ParsedPattern parsePattern(const std::string& text) {
     }
 
     return pattern;
+}
+
+// Serialize-time compartment geometry for a reactant-bearing rule. Mirrors the
+// direct embedded lowering and NetWriter::unitConversionFactor so BNG3 XML and
+// BNG3-direct agree. Physical-unit rates are converted by the typed unit path
+// and are never passed here.
+std::optional<double> xmlReactantUnitConversionFactor(
+    const ast::Model& model,
+    const std::vector<std::string>& reactantPatterns) {
+    if (reactantPatterns.empty() || model.getCompartments().empty())
+        return std::nullopt;
+
+    std::optional<double> numberPerQuantity;
+    const auto option = model.getOptions().find("NumberPerQuantityUnit");
+    if (option != model.getOptions().end()) {
+        try {
+            numberPerQuantity = std::stod(option->second);
+        } catch (...) {
+            numberPerQuantity.reset();
+        }
+    }
+
+    std::vector<compile::ReactantCompartment> reactants;
+    for (const auto& text : reactantPatterns) {
+        const auto parsed = parsePattern(text);
+        std::string compartment = parsed.compartment;
+        if (compartment.empty()) {
+            for (const auto& molecule : parsed.molecules) {
+                if (!molecule.compartment.empty()) {
+                    compartment = molecule.compartment;
+                    break;
+                }
+            }
+        }
+        if (compartment.empty()) continue;
+
+        const auto declaration = std::find_if(
+            model.getCompartments().begin(), model.getCompartments().end(),
+            [&](const auto& candidate) {
+                return candidate.getName() == compartment;
+            });
+        if (declaration == model.getCompartments().end()) continue;
+
+        double size = declaration->getVolume();
+        if (numberPerQuantity && *numberPerQuantity > 0.0)
+            size *= *numberPerQuantity;
+        reactants.push_back({declaration->getDimension(), size});
+    }
+    return compile::reactantUnitConversionFactor(reactants);
 }
 
 bool parsedComponentLess(const ParsedComponent& left,
@@ -1791,12 +1849,33 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
             }
         } else {
             double staticValue = 0.0;
+            const bool staticallyEvaluable =
+                expressionCanEvaluateStatically(rate, model, staticValue);
+            const bool numericConstant =
+                rate.kind() != ast::ExpressionKind::Identifier &&
+                staticallyEvaluable;
             std::string value = rate.toString();
-            if (rate.kind() != ast::ExpressionKind::Identifier &&
-                expressionCanEvaluateStatically(rate, model, staticValue)) {
+            if (numericConstant) {
                 std::ostringstream numeric;
                 numeric << std::setprecision(17) << staticValue;
                 value = numeric.str();
+            }
+
+            // A bare reactant-bearing rate carries NFsim's default count law,
+            // which does not divide by the compartment volume. Bake the
+            // Perl-faithful Rxn.pm factor into the serialized constant so
+            // external native NFsim (and BNG3's own XML loader) reproduce the
+            // source count hazard. The direct embedded path applies the same
+            // factor and likewise drops any parameter binding, so the two agree.
+            const bool unitAnnotated =
+                direction.rateLaw.has_value() && direction.rateLaw->unit.has_value();
+            if (!rule.getReactants().empty() && !unitAnnotated && staticallyEvaluable) {
+                if (const auto factor =
+                        xmlReactantUnitConversionFactor(model, rule.getReactants())) {
+                    std::ostringstream numeric;
+                    numeric << std::setprecision(17) << staticValue * *factor;
+                    value = numeric.str();
+                }
             }
             xml << "            <RateConstant value=\"" << escapeXml(value) << "\"/>\n";
         }

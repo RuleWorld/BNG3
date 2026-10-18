@@ -213,16 +213,30 @@ def _compare(
 ):
     blocked = [r["id"] for r in dependencies if r["status"] != "PASS"]
     if blocked:
-        rows.append(
-            dict(
-                id=f"{case}:{name}",
-                stage=name,
-                integration_case=case,
-                status="NOT_TESTED",
-                detail="comparison prerequisite missing",
-                blocked_by=blocked,
+        # Emit the inner check ids the unblocked branch would produce so that
+        # declared evidence is always present, each blocked by the failed handoff.
+        checks = (
+            NETWORK_CHECKS
+            if network
+            else tuple(
+                "gdat." + check
+                for check in ("artifact-validity", "time-grid", "columns", "values")
             )
         )
+        receipts = [r["receipt"] for r in dependencies if r.get("receipt")]
+        for check in checks:
+            rows.append(
+                dict(
+                    check=check,
+                    id=f"{case}:{name}:{check}",
+                    stage=name,
+                    integration_case=case,
+                    status="NOT_TESTED",
+                    detail="comparison prerequisite missing",
+                    blocked_by=blocked,
+                    receipts=receipts,
+                )
+            )
         return
     checks = (
         # BNG2 NET embeds conversion prefactors with eight significant digits
@@ -403,7 +417,7 @@ def run_case(case, args, rows, env):
     data, columns = expected_trajectory(case)
     np.savetxt(expected, data, header=" ".join(columns), fmt="%.17g")
 
-    def worker(operation, source, *, upstream=False):
+    def worker(operation, source, *, upstream=False, xml_out=None):
         command = [
             str(args.pybionetgen_python) if upstream else sys.executable,
             "-I",
@@ -419,6 +433,8 @@ def run_case(case, args, rows, env):
             command += ["--upstream", str(args.pybionetgen_root)]
         if operation == "atomizer" and case["atomize"]:
             command += ["--atomize"]
+        if xml_out is not None:
+            command += ["--xml-out", str(xml_out)]
         return command
 
     def stage(name, command, *, deps=(), required=()):
@@ -434,12 +450,15 @@ def run_case(case, args, rows, env):
         )
 
     translated = work / "atomizer/model.bngl"
+    bng3_xml = work / "bng3/model.xml"
     atomizer = stage(
         "atomizer",
-        worker("atomizer", source),
+        worker("atomizer", source, xml_out=bng3_xml),
         deps=[source_validation],
         required=("model.bngl", "identity.json"),
     )
+    if atomizer["status"] == "PASS" and not bng3_xml.is_file():
+        atomizer.update(status="HARNESS_ERROR", detail="missing BNG3 NFsim XML export")
     rate_trace = stage(
         "rate-trace",
         worker("rate-trace", translated),
@@ -767,29 +786,29 @@ def run_case(case, args, rows, env):
         *consumers,
         *qualifications,
     ]
-    identities = [r for r in identity_stages if r["status"] == "PASS"]
-    if len(identities) == len(identity_stages):
+    blocked = [r["id"] for r in identity_stages if r["status"] != "PASS"]
+    if blocked:
+        check = dict(
+            check="same-installed-build",
+            status="NOT_TESTED",
+            detail="process identity prerequisite missing",
+            blocked_by=blocked,
+        )
+    else:
         observed = [
             json.loads((work / r["stage"] / "identity.json").read_text())
-            for r in identities
+            for r in identity_stages
         ]
         consistent = (
             len({(i["package_file"], i["native_extension_sha256"]) for i in observed})
             == 1
         )
-        _checks(
-            key,
-            "worker-identity",
-            [
-                dict(
-                    check="same-installed-build",
-                    status="PASS" if consistent else "HARNESS_ERROR",
-                    detail="package location and native extension digest across Atomizer/API/compat/NF workers",
-                )
-            ],
-            rows,
-            identities,
+        check = dict(
+            check="same-installed-build",
+            status="PASS" if consistent else "HARNESS_ERROR",
+            detail="package location and native extension digest across Atomizer/API/compat/NF workers",
         )
+    _checks(key, "worker-identity", [check], rows, identity_stages)
     for row in rows[first_row:]:
         row["base_case_id"] = case.get("base_case_id", case["id"])
         row["transform"] = case.get("transform", "identity")
