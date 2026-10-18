@@ -7126,7 +7126,7 @@ begin parameters
     Km 10.0
 end parameters
 begin compartments
-    cell 3 1.0
+    cell 3 Vc
 end compartments
 begin molecule types
     A()
@@ -7150,8 +7150,6 @@ end reaction rules
     REQUIRE(system != nullptr);
     system->prepareForSimulation();
     REQUIRE(system->getAllReactions().size() == 2);
-    // Link the compartment size to parameter Vc (explicit rescale path).
-    REQUIRE(system->setCompartmentSizeParameter("cell", "Vc"));
     // BNGL auto-names unlabeled rules R1, R2 in declaration order.
     auto* synth = system->getReactionByName("R1");
     auto* mm = system->getReactionByName("R2");

@@ -648,6 +648,12 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.volumeTimeDependent = compartment.isVolumeTimeDependent();
         compiled.dimension = compartment.getDimension();
         compiled.parentName = compartment.getParent();
+        if (const auto& expression = compartment.getVolumeExpression();
+            expression.has_value() &&
+            expression->kind() == ast::ExpressionKind::Identifier &&
+            model.getParameters().contains(expression->name())) {
+            compiled.volumeParameterName = expression->name();
+        }
         if (compartment.hasUnit()) {
             compiled.declaredUnit = compartment.getUnit();
             compiled.unitName = compartment.getUnitName();
