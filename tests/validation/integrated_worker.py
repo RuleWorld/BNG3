@@ -823,6 +823,7 @@ def main():
         "protocol",
         "nf-marginals",
         "graph-identity",
+        "bngir-adversarial",
     ):
         from tests.validation.integrated_extensions import run_worker
 

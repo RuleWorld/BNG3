@@ -1,0 +1,86 @@
+import copy
+import json
+from pathlib import Path
+
+import jsonschema
+import pytest
+
+from tests.validation import integrated_extensions
+from tests.validation import bngir_adversarial as adversarial
+
+SCHEMA = Path(__file__).parents[2] / "provenance/schemas/bngir-0.2.schema.json"
+
+
+def test_native_bngir_adversarial_operation_is_registered():
+    assert "bngir-adversarial" in integrated_extensions.OPERATIONS
+
+
+def test_generated_documents_are_independent_schema_valid_and_exactly_named():
+    schema = json.loads(SCHEMA.read_text())
+    cases = adversarial.generated_cases()
+    assert cases
+    assert len({case["id"] for case in cases}) == len(cases)
+    assert set(adversarial.check_ids()) == {
+        f"bngir-adversarial:{case['id']}" for case in cases
+    }
+    expected = integrated_extensions.expected_ids([])
+    assert "campaign:bngir-adversarial" in expected
+    for case in cases:
+        jsonschema.validate(case["document"], schema)
+        assert case["oracle"] in {"accept", "refuse"}
+        assert case["document"]["format"] == "BNGIR"
+
+
+def test_case_mutations_keep_the_schema_valid():
+    schema = json.loads(SCHEMA.read_text())
+    cases = adversarial.generated_cases()
+    for case in cases:
+        document = copy.deepcopy(case["document"])
+        jsonschema.validate(document, schema)
+        assert case["expected_semantics"]
+
+
+def test_native_adapter_reports_explicit_refusals_as_diagnostic_controls():
+    case = next(c for c in adversarial.generated_cases() if c["oracle"] == "refuse")
+
+    class FakeNative:
+        pass
+
+    row = adversarial.evaluate_case(
+        case,
+        native_import=lambda _model: (_ for _ in ()).throw(
+            RuntimeError("native BNGIR structural reference refused")
+        ),
+        wrap_model=lambda _model: FakeNative(),
+    )
+    assert row["status"] == "PASS"
+    assert row["evidence_kind"] == "diagnostic-only"
+    assert row["supported_execution"] is False
+    assert row["related_issues"] == [153, 154, 155, 156]
+
+
+def test_native_adapter_fails_if_a_corrupt_document_is_accepted():
+    case = next(c for c in adversarial.generated_cases() if c["oracle"] == "refuse")
+    row = adversarial.evaluate_case(
+        case, native_import=lambda _model: object(), wrap_model=lambda model: model
+    )
+    assert row["status"] == "FAIL"
+    assert row["supported_execution"] is False
+    assert row["first_difference"]["field"] == "native_refusal"
+
+
+def test_native_worker_consumes_independent_documents_and_analytic_controls(tmp_path):
+    rows = adversarial.run_worker(tmp_path)
+    assert [row["id"] for row in rows] == adversarial.check_ids()
+    assert all(row["related_issues"] == [153, 154, 155, 156] for row in rows)
+    assert all(row["status"] == "PASS" for row in rows[:-1])
+    controls = [row for row in rows if row["evidence_kind"] != "diagnostic-only"]
+    diagnostics = [row for row in rows if row["evidence_kind"] == "diagnostic-only"]
+    assert len(controls) == 4
+    assert len(diagnostics) == len(rows) - len(controls)
+    compartment = rows[-1]
+    if compartment["status"] == "PASS":
+        assert compartment["supported_execution"] is False
+    else:
+        assert compartment["status"] == "FAIL"
+        assert compartment["first_difference"]["field"] == "native_refusal"
