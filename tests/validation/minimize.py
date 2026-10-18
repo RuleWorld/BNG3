@@ -11,11 +11,131 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import time
 from pathlib import Path
 
 from . import campaign, inventory
 from .compare import compare_net, parse_net
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def verify_report_source(report, repository_root):
+    """Require the report's exact clean checkout before reducing its evidence."""
+    source = report.get("source")
+    if not isinstance(source, dict) or source.get("dirty") is not False:
+        raise ValueError("report source must explicitly record dirty=false")
+    revision = source.get("revision")
+    if (
+        not isinstance(revision, str)
+        or len(revision) != 40
+        or any(char not in "0123456789abcdef" for char in revision.lower())
+    ):
+        raise ValueError("report source revision is missing or malformed")
+    if report.get("input_changes_during_run") != []:
+        raise ValueError("report has input changes during run or lacks clean evidence")
+    current = campaign.git(repository_root, "rev-parse", "HEAD")
+    if current != revision:
+        raise ValueError(f"report source revision {revision} != current {current}")
+    if campaign.git(
+        repository_root, "status", "--porcelain", "--untracked-files=normal"
+    ):
+        raise ValueError("source checkout is dirty")
+    return revision
+
+
+def _resolve_receipt(receipt_path, report_dir):
+    path = Path(receipt_path)
+    candidates = [report_dir / path] if not path.is_absolute() else [path]
+    if path.is_absolute():
+        # Hosted reports preserve runner-absolute paths. The report tree stores
+        # the corresponding artifact under the standard models/<case>/... path.
+        parts = path.parts
+        for index in range(len(parts) - 3):
+            if parts[index] == "models":
+                candidates.append(report_dir.joinpath(*parts[index:]))
+                break
+    return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def verify_recorded_input(row, report_dir, source, subject_binary=None):
+    """Match the staged model bytes to the subject command's retained receipt."""
+    receipts = row.get("receipts", [])
+    if not isinstance(receipts, list):
+        raise ValueError("failure row has no recorded subject receipt list")
+    for receipt_path in receipts:
+        if not isinstance(receipt_path, str):
+            continue
+        path = _resolve_receipt(receipt_path, report_dir)
+        if path is None or "subject" not in path.parts:
+            continue
+        try:
+            receipt = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot load recorded subject receipt: {exc}") from exc
+        if not isinstance(receipt, dict) or receipt.get("status") != "PASS":
+            raise ValueError("recorded subject command did not pass")
+        command = receipt.get("command")
+        artifacts = receipt.get("artifacts")
+        if (
+            not isinstance(command, list)
+            or not command
+            or not isinstance(artifacts, list)
+        ):
+            raise ValueError("recorded subject receipt lacks command artifacts")
+        if subject_binary is not None and command[0] != subject_binary:
+            raise ValueError("recorded subject receipt uses a different binary")
+        input_arg = command[-1]
+        if not isinstance(input_arg, str) or Path(input_arg).name != source.name:
+            raise ValueError("recorded subject receipt names a different model input")
+        matches = [
+            artifact
+            for artifact in artifacts
+            if isinstance(artifact, dict) and artifact.get("path") == input_arg
+        ]
+        if not matches:
+            raise ValueError("recorded subject receipt has no recorded model digest")
+        if len(matches) != 1:
+            raise ValueError(
+                "recorded subject receipt has no unique model input digest"
+            )
+        digest = matches[0].get("sha256")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest.lower())
+        ):
+            raise ValueError("recorded subject receipt has no recorded model digest")
+        if inventory.sha256(source) != digest.lower():
+            raise ValueError("original model does not match recorded subject input")
+        return digest.lower()
+    raise ValueError("recorded subject input receipt is unavailable")
+
+
+def minimization_hashes(original, candidate):
+    return {
+        "original_model_sha256": inventory.sha256(original),
+        "candidate_model_sha256": inventory.sha256(candidate),
+    }
+
+
+def input_evidence_row(report, aggregate_row, case):
+    """Use the failing named contract row, which retains the command receipts."""
+    if aggregate_row.get("receipts"):
+        return aggregate_row
+    target = aggregate_row.get("first_observed_divergence")
+    return next(
+        (
+            row
+            for row in report.get("results", [])
+            if row.get("id") == target
+            and row.get("model") == case
+            and row.get("status") == "FAIL"
+            and row.get("receipts")
+        ),
+        aggregate_row,
+    )
 
 
 def ddmin(items, reproduces, *, max_attempts=24):
@@ -98,6 +218,8 @@ def main():
     args = parser.parse_args()
     if not (3 <= args.attempts <= 96 and 0 < args.seconds <= 300):
         parser.error("minimization requires 3..96 attempts and 0..300 seconds")
+    if Path(args.case).name != args.case or args.case in {".", ".."}:
+        parser.error("case must be a model stem")
     deadline = time.monotonic() + args.seconds
     report = json.loads(args.report.read_text())
     row = next(
@@ -105,9 +227,23 @@ def main():
     )
     if not row or row["status"] != "FAIL" or row["stage"] != "bounded-network":
         parser.error("case must be a recorded bounded-network mismatch")
+    try:
+        verify_report_source(report, ROOT)
+    except (KeyError, ValueError, subprocess.CalledProcessError) as exc:
+        parser.error(str(exc))
     original = args.report.parent / "models" / args.case
     source_dir = original / "input"
-    source = next(source_dir.glob("*.bngl"))
+    source_files = sorted(source_dir.glob("*.bngl"))
+    if len(source_files) != 1:
+        parser.error("case must contain exactly one staged BNGL source")
+    source = source_files[0]
+    try:
+        evidence_row = input_evidence_row(report, row, args.case)
+        recorded_input_sha256 = verify_recorded_input(
+            evidence_row, args.report.parent, source, report["subject"]["binary"]
+        )
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
     subject = Path(report["subject"]["binary"])
     campaign.verify_digest(subject, report["subject"]["sha256"])
     reference = report["references"]["bionetgen"]
@@ -187,10 +323,13 @@ def main():
     (args.output / name).write_text(
         "".join(line for i, line in enumerate(lines) if i not in removable or i in kept)
     )
+    hashes = minimization_hashes(source, args.output / name)
     (args.output / "minimization.json").write_text(
         json.dumps(
             {
                 "parent_report_sha256": inventory.sha256(args.report),
+                **hashes,
+                "recorded_subject_input_sha256": recorded_input_sha256,
                 "attempts": attempts,
                 "verified": reduction["verified"],
                 "signature": expected_signature,
