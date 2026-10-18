@@ -401,9 +401,11 @@ def assess_obligations(obligations, reports, revision):
                 obligation,
                 status=status,
                 checks=checks,
-                test_reference_status="RELEVANT_TEST_EXISTS"
-                if obligation.get("test_references")
-                else "NO_TEST_REFERENCE",
+                test_reference_status=(
+                    "RELEVANT_TEST_EXISTS"
+                    if obligation.get("test_references")
+                    else "NO_TEST_REFERENCE"
+                ),
                 missing_evidence=[m for c in checks for m in c["missing_evidence"]],
                 untested_routes=[
                     dict(
