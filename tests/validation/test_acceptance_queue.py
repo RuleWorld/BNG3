@@ -335,3 +335,45 @@ def test_inventory_preserves_all_snapshot_issues_and_missing_scope():
     assert missing
     assessment = q.assess_obligations(all_obligations, [], REV)
     assert not any(o["status"] == "DEMONSTRATED" for o in assessment["obligations"])
+
+
+def test_missing_revision_is_unverifiable_and_never_a_pass():
+    result = q.assess_obligations([obligation()], [dict(source=None, results=[])], REV)
+    assert result["evidence_audit"][0]["status"] == "UNVERIFIABLE"
+    assert result["obligations"][0]["status"] == "NOT_TESTED"
+
+
+def test_packet_identity_contract_accepts_subject_and_rejects_stale_assessment():
+    from tests.validation import reporting
+
+    report = dict(source=dict(revision=REV, dirty=False), subject=dict(sha256="c" * 64))
+    check = dict(
+        id="consumer:values",
+        status="FAIL",
+        candidate_identity=report["source"],
+        identity_requirements=["subject.sha256"],
+    )
+    o = obligation()
+    o["required_checks"][0]["identity_requirements"] = ["subject.sha256"]
+    o["checks"] = [check]
+    row = dict(id="consumer:values", status="FAIL", stage="consumer")
+    affected = reporting._affected_obligations(row, [o], report)
+    assert affected[0]["missing_identities"] == []
+    check["candidate_identity"] = dict(revision="b" * 40, dirty=False)
+    affected = reporting._affected_obligations(row, [o], report)
+    assert affected[0]["missing_identities"]
+
+
+def test_known_finding_selects_family_without_claiming_obligation_coverage():
+    rows = [
+        dict(
+            id="dimerization-v3-n20-r1-a0:nf-independent:gdat.values",
+            status="FAIL",
+            related_issues=[151],
+        )
+    ]
+    plans = q.select_campaign([obligation()], findings=rows, max_families=1)
+    assert plans[0]["id"] == "generated-dimerization"
+    assert plans[0]["obligation_ids"] == []
+    assert plans[0]["known_finding_ids"] == [rows[0]["id"]]
+    assert plans[0]["confirmed_failures"] == 0

@@ -243,16 +243,26 @@ def _identity_value(report, path):
     return value
 
 
+def _report_status(report, revision):
+    if not isinstance(report, dict):
+        raise ValueError("evidence report must be an object")
+    source = report.get("source")
+    if (
+        not isinstance(source, dict)
+        or not isinstance(source.get("revision"), str)
+        or not re.fullmatch("[0-9a-f]{40}", source["revision"])
+        or source.get("dirty") is not False
+    ):
+        return "UNVERIFIABLE"
+    return "STALE" if source["revision"] != revision else None
+
+
 def assess_obligations(obligations, reports, revision):
     """Audit exact leaf checks; missing evidence is never inferred from issue links."""
     observations, audit, conflicts = {}, [], set()
     for index, report in enumerate(reports):
         source = report.get("source", {})
-        reason = (
-            "STALE"
-            if source.get("revision") != revision
-            else ("UNVERIFIABLE" if source.get("dirty") is not False else None)
-        )
+        reason = _report_status(report, revision)
         if reason:
             audit.append(dict(report=index, status=reason, source=source))
             continue
@@ -429,7 +439,7 @@ def assess_obligations(obligations, reports, revision):
     return dict(obligations=assessed, evidence_audit=audit)
 
 
-def select_campaign(obligations, *, max_families=3):
+def select_campaign(obligations, *, findings=(), max_families=3):
     """Choose plans from existing generators; this never authorizes execution."""
     if type(max_families) is not int or not 0 <= max_families <= 10:
         raise ValueError("campaign family budget must be between zero and ten")
@@ -477,14 +487,23 @@ def select_campaign(obligations, *, max_families=3):
             if o.get("status") != "DEMONSTRATED"
             and any(c["id"] in available for c in o["required_checks"])
         ]
-        if not targets:
+        known = [
+            r
+            for r in findings
+            if r.get("id") in available
+            and not r.get("aggregate")
+            and r.get("status") in {"FAIL", "HARNESS_ERROR", "TIMEOUT"}
+        ]
+        if not targets and not known:
             continue
         family.update(
             obligation_ids=sorted(o["id"] for o in targets),
             issues=sorted(
                 {o.get("issue", int(o["id"].split(":")[1])) for o in targets}
+                | {number for row in known for number in row.get("related_issues", [])}
             ),
-            reason="Uncovered exact checks in existing generated family; issue links alone are not selection evidence.",
+            known_finding_ids=sorted({r["id"] for r in known}),
+            reason="Existing family contains uncovered exact obligation checks or named failing observations; finding issue links are investigation hints only and establish no additional obligation coverage.",
             authorization="PLAN_ONLY",
             complete_corpus_coverage=False,
         )
@@ -503,6 +522,7 @@ def select_campaign(obligations, *, max_families=3):
         selected,
         key=lambda f: (
             -f["confirmed_failures"],
+            -len(f["known_finding_ids"]),
             -len(f["issues"]),
             -len(f["obligation_ids"]),
             f["id"],
@@ -744,11 +764,12 @@ def main(argv=None):
                 ],
             )
             for r in reports
-            if r.get("source", {}).get("revision") == args.revision
-            and r.get("source", {}).get("dirty") is False
+            if _report_status(r, args.revision) is None
         ]
         campaigns = select_campaign(
-            assessment["obligations"], max_families=args.max_families
+            assessment["obligations"],
+            findings=[row for r in usable for row in r.get("results", [])],
+            max_families=args.max_families,
         )
         queue = acceptance_dashboard(
             build_queue(issues, usable, args.revision), assessment, campaigns

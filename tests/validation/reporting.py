@@ -247,6 +247,7 @@ def _identity_present(requirement, check, report):
         return False
     pieces = requirement.split(".")
     roots = {
+        **report,
         "source": check.get("candidate_identity", report.get("source", {})),
         "candidate_identity": check.get("candidate_identity", report.get("source", {})),
         "references": check.get("oracle_identities", report.get("references", {})),
@@ -311,6 +312,12 @@ def _affected_obligations(row, obligations, report):
                 if isinstance(item, str) and item in required_by_id
             )
         missing_identities = set()
+        if check.get("candidate_identity") != report.get("source"):
+            missing_identities.add("assessment:candidate-identity")
+        if check.get("oracle_identities") is not None and check.get(
+            "oracle_identities"
+        ) != report.get("references", {}):
+            missing_identities.add("assessment:oracle-identities")
         for check_id in required_ids:
             metadata = required_by_id[check_id]
             evaluated = evaluated_by_id.get(check_id)
@@ -610,7 +617,7 @@ def markdown(report: dict) -> str:
     ]
     for task in report.get("investigation_tasks", [])[:50]:
         lines += [
-            f"- **{safe(task['case_id'])} / {task['status']}**: {safe(task['observation'])[:600]}. Packet `{task['id']}` in `investigation-tasks.json`; inspect {', '.join('`'+p+'`' for p in task['source_locations']) or 'recorded source/test location'}. Pass this exact check against its pinned reference; preserve neighboring checks."
+            f"- **{safe(task['case_id'])} / {task['status']}**: {safe(task['observation'])[:600]}. Packet `{task['id']}` in `investigation-tasks.json`; inspect {', '.join('`' + p + '`' for p in task['source_locations']) or 'recorded source/test location'}. Pass this exact check against its pinned reference; preserve neighboring checks."
         ]
     for group in report["failure_clusters"][:25]:
         lines += [
