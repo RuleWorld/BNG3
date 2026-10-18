@@ -1094,3 +1094,98 @@ def test_direct_native_builder_refuses_unknown_direction_semantics():
         RuntimeError, match="rule direction has unsupported future_semantics"
     ):
         _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize("location", ["seed", "reactant", "product"])
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("pattern-extra", "pattern has unsupported future_semantics"),
+        ("pattern-compartment", "pattern has unsupported compartment"),
+        ("prefix-true", "does not support compartment prefixes"),
+        ("prefix-integer", "does not support compartment prefixes"),
+        ("molecule-extra", "pattern molecule has unsupported future_semantics"),
+        ("molecule-compartment", "pattern molecule has unsupported compartment"),
+        ("molecule-compartment-id", "pattern molecule has unsupported compartment_id"),
+        ("occurrence-boolean", "non-boolean integer index"),
+        ("occurrence-nonzero", "requires molecule occurrence zero"),
+        ("type-name", "molecule type name does not match type_id"),
+        ("empty-pattern", "requires exactly one molecule"),
+        ("multiple-molecules", "requires exactly one molecule"),
+    ],
+)
+def test_direct_native_builder_refuses_lossy_pattern_identity(
+    location, mutation, expected
+):
+    document = _document()
+    model = document["model"]
+    pattern = (
+        model["seeds"][0]["pattern"]
+        if location == "seed"
+        else model["rules"][0]["forward"][
+            "reactants" if location == "reactant" else "products"
+        ][0]
+    )
+    molecule = pattern["molecules"][0]
+    if mutation == "pattern-extra":
+        pattern["future_semantics"] = True
+    elif mutation == "pattern-compartment":
+        pattern["compartment"] = "cell"
+    elif mutation == "prefix-true":
+        pattern["compartment_prefix"] = True
+    elif mutation == "prefix-integer":
+        pattern["compartment_prefix"] = 0
+    elif mutation == "molecule-extra":
+        molecule["future_semantics"] = True
+    elif mutation == "molecule-compartment":
+        molecule["compartment"] = "cell"
+    elif mutation == "molecule-compartment-id":
+        molecule["compartment_id"] = 0
+    elif mutation == "occurrence-boolean":
+        molecule["occurrence"] = False
+    elif mutation == "occurrence-nonzero":
+        molecule["occurrence"] = 7
+    elif mutation == "type-name":
+        molecule["type"] = "B" if molecule["type"] == "A" else "A"
+    elif mutation == "empty-pattern":
+        pattern["molecules"] = []
+    else:
+        pattern["molecules"].append(copy.deepcopy(molecule))
+
+    # Call the native boundary itself: Python validation/round-trip comparison
+    # must not be the only protection against silently discarded graph data.
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(model)
+
+
+@pytest.mark.parametrize("type_order", [("A", "B"), ("B", "A")])
+def test_native_molecule_id_reordering_preserves_downstream_rhs(
+    monkeypatch, type_order
+):
+    document = _document()
+    model = document["model"]
+    declarations = {item["name"]: item for item in model["molecule_types"]}
+    model["molecule_types"] = [declarations[name] for name in type_order]
+    for new_id, molecule_type in enumerate(model["molecule_types"]):
+        molecule_type["id"] = new_id
+    patterns = [model["seeds"][0]["pattern"]]
+    for side in ("reactants", "products"):
+        patterns.extend(model["rules"][0]["forward"][side])
+    for pattern in patterns:
+        molecule = pattern["molecules"][0]
+        molecule["type_id"] = type_order.index(molecule["type"])
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(
+        importlib.import_module("bionetgen.bngir"), "_as_bngl_v02", forbidden
+    )
+    restored = bionetgen.from_bngir(document, native=True)
+    network = restored.generate_network()
+    state = [100.0 if name == "A()" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, state)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A()": -10.0, "B()": 10.0}
+    )
