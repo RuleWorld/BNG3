@@ -302,3 +302,12 @@ def test_concentration_transform_keeps_independent_amount_oracle():
             integrated_cases.RATE * case["volume"] * (case["initial"] / case["volume"]),
             integrated_cases.RATE * case["initial"],
         )
+
+
+def test_concentration_source_law_executes_the_volume_conversion_expression():
+    from tests.validation.integrated_cases import source_law_cases, source_law_bngl
+
+    case = next(c for c in source_law_cases() if c["quantity_basis"] == "concentration")
+    source = source_law_bngl(case)
+    assert "C0 " in source
+    assert "@cell:A() C0*V" in source

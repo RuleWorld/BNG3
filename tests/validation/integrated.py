@@ -94,7 +94,11 @@ def annotate_acceptance_evidence(rows):
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
-        if row["id"] in consumers and row.get("supported_execution") is not False:
+        if (
+            row["id"] in consumers
+            and row.get("supported_execution") is not False
+            and row.get("status") in {"PASS", "FAIL"}
+        ):
             row.setdefault("evidence_kind", "supported-execution")
             row.setdefault("supported_execution", True)
 

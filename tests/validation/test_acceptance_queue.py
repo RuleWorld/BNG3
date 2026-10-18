@@ -378,3 +378,14 @@ def test_known_finding_selects_family_without_claiming_obligation_coverage():
     assert plans[0]["obligation_ids"] == []
     assert plans[0]["known_finding_ids"] == [rows[0]["id"]]
     assert plans[0]["confirmed_failures"] == 0
+
+
+def test_unexecuted_qualifications_cannot_claim_supported_execution():
+    from tests.validation.integrated import annotate_acceptance_evidence
+
+    rows = [
+        dict(id="v1-n20-r0-a0:protocol:lifecycle-topology-unavailable", status=status)
+        for status in ("UNSUPPORTED", "NOT_TESTED", "HARNESS_ERROR")
+    ]
+    annotate_acceptance_evidence(rows)
+    assert all(row.get("supported_execution") is not True for row in rows)

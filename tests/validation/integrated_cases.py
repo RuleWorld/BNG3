@@ -93,6 +93,12 @@ def source_law_bngl(case):
         raise ValueError(f"unknown source-law family: {law!r}")
     initial_b = case["initial"] if case.get("initial_side") == "B" else 0
     initial_a = case["initial"] - initial_b
+    seed_a = "C0*V" if case["quantity_basis"] == "concentration" else str(initial_a)
+    coordinate_parameter = (
+        f"  C0 {case['initial_coordinate_value']:.17g}\n"
+        if case["quantity_basis"] == "concentration"
+        else ""
+    )
     source_coordinate_comment = (
         f"# SBML initialConcentration={case['initial_coordinate_value']:.17g}; "
         f"amount count={case['initial']} after multiplying by V\n"
@@ -104,7 +110,7 @@ def source_law_bngl(case):
 begin parameters
   k {case['rate']:.17g}
   V {case['volume']:.17g}
-end parameters
+{coordinate_parameter}end parameters
 begin compartments
   cell 3 V
 end compartments
@@ -114,7 +120,7 @@ begin molecule types
   D()
 end molecule types
 begin seed species
-  @cell:A() {initial_a}
+  @cell:A() {seed_a}
   @cell:B() {initial_b}
   @cell:D() 0
 end seed species
