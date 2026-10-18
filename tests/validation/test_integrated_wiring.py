@@ -99,3 +99,24 @@ def test_issue_queue_keeps_snapshots_and_scheduled_drift_without_issue_writes():
     )
     assert uploaded["if"] == "always()"
     assert "bng3-issues.json" in uploaded["with"]["path"]
+
+
+def test_generated_matrix_audit_runs_on_the_exact_integrated_report_and_candidate():
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["integrated-semantic-validation"]
+    matrix_step = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Audit generated consumer matrix receipts"
+    )
+    assert matrix_step["if"] == "always()"
+    assert 'test -s "$RUNNER_TEMP/bng3-integrated-validation/report.json"' in matrix_step["run"]
+    assert "python -m tests.validation.integrated_matrix" in matrix_step["run"]
+    assert SOURCE_HEAD in matrix_step["run"]
+    assert "matrix-report.json" in matrix_step["run"]
+    issue_queue = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Build exact-revision issue and provenance evidence queue"
+    )
+    assert '--report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json"' in issue_queue["run"]

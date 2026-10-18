@@ -12,7 +12,7 @@ Differential testing against the originals. Nothing merges until it matches.
 
 ## Cross-component generated integration cases
 
-`tests.validation.integrated` runs a eighteen-case pairwise PR matrix that sends generated SBML through Atomizer, BNG3 command-line and Python execution, locked BNG2, an isolated upstream PyBioNetGen interpreter, and independently built native NFsim. Scheduled and manually dispatched parity runs can select the full forty-eight-case matrix. Reports retain stage-specific outcomes, tool identities, logs, commands, intermediates, and investigation packets; a passing stage does not imply that a later stage ran or passed.
+`tests.validation.integrated` runs a twenty-five-case pairwise PR matrix that sends generated SBML through Atomizer, BNG3 command-line and Python execution, locked BNG2, an isolated upstream PyBioNetGen interpreter, and independently built native NFsim. Scheduled and manually dispatched parity runs can select the full sixty-one-case matrix. Reports retain stage-specific outcomes, tool identities, logs, commands, intermediates, and investigation packets; a passing stage does not imply that a later stage ran or passed.
 
 After building BNG3 and checking out the locked oracles, run the same worker locally with a fresh report directory:
 
@@ -51,6 +51,22 @@ is explicitly a reaction-rate multiset probe because reaction identity mapping
 is unavailable at this hook. Dynamic/multi-parameter XML laws and missing
 observations remain `NOT_TESTED`; these traces do not qualify all downstream
 NFsim semantics or stochastic count conventions.
+
+CI also runs `tests.validation.integrated_matrix` over four PR-selected decay
+sources: the baseline, function-argument shadowing, amount-to-concentration
+coordinates, and a new function-shadowing case whose unused global `rate=13`
+is deliberately far from the active `k=0.4`. The matrix requires named
+Atomizer, BNG2, CLI, Python, PyBioNetGen, compatibility, NET reload, BNGIR,
+SBML/RoadRunner, reuse, embedded NFsim, native NFsim, protocol, and stochastic
+marginal/invariant receipts. It verifies receipt paths and
+SHA-256 values and records the exact candidate revision and replay commands.
+For each deterministic artifact it independently checks the source analytic
+trajectory. For reuse it checks the selected parameter and before/after values,
+then compares both the mutated instance and a fresh compilation with the
+closed-form changed-rate trajectory; a missing mutable dependency remains
+`NOT_TESTED`. The separate `matrix-report.json` is uploaded with the integrated
+report and makes missing cells, stale artifacts, and shared wrong mutation
+references visible.
 
 `tests.validation.issue_queue` joins one or more exact-revision reports to a retained `gh issue list` snapshot. It rejects stale/conflicting observations and avoids counting a successful process as a passed behavior. Every issue remains explicitly ineligible for automatic closure. The queue includes strict provenance approval debt, reconciliation claims without test references, stale named references, and optional upstream branch observations. A reference resolving in source never counts as executed qualification. CI collects a bounded 1,000-issue snapshot and checks upstream branch drift only on scheduled/manual runs; unavailable or unobserved branches are not treated as matching the lock.
 

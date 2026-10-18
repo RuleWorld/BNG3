@@ -56,6 +56,7 @@ jobs:
             tests/validation/test_integrated.py \
             tests/validation/test_integrated_traces.py \
             tests/validation/test_integrated_cases.py \
+            tests/validation/test_integrated_matrix.py \
             tests/validation/test_integrated_consumers.py \
             tests/validation/test_issue_queue.py \
             tests/validation/test_integrated_boundaries.py \
@@ -459,6 +460,16 @@ jobs:
             --report-dir "$RUNNER_TEMP/bng3-integrated-validation" \
             "${full_args[@]}"
 
+      - name: Audit generated consumer matrix receipts
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/bng3-integrated-validation/report.json"
+          python -m tests.validation.integrated_matrix \
+            --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
+            --output "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}"
+
       - name: Summarize integrated findings for the exact candidate
         if: always()
         run: |
@@ -477,6 +488,7 @@ jobs:
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
+            --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
