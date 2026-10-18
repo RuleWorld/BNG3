@@ -102,3 +102,10 @@ def test_common_evidence_job_installs_source_law_oracle_dependency():
     )
     commands = "\n".join(str(step.get("run", "")) for step in job["steps"])
     assert "scipy" in commands
+
+
+def test_bng2_conformance_job_installs_source_law_oracle_dependency():
+    workflow = parse_workflow(ROOT / ".github/workflows/parity.yml")
+    job = workflow["jobs"]["bng2-parity"]
+    commands = "\n".join(str(step.get("run", "")) for step in job["steps"])
+    assert "scipy" in commands
