@@ -2,6 +2,45 @@ from tests.validation import reporting
 import pytest
 
 
+def test_history_exposes_admission_failures_and_lost_coverage():
+    old = {
+        "comparison_key": "same",
+        "results": [
+            {"id": "admitted", "status": "UNSUPPORTED"},
+            {"id": "supported", "status": "UNSUPPORTED"},
+            {"id": "lost", "status": "PASS"},
+            {"id": "missing", "status": "PASS"},
+            {"id": "blocked", "status": "UNSUPPORTED"},
+        ],
+    }
+    new = {
+        "comparison_key": "same",
+        "results": [
+            {"id": "admitted", "status": "FAIL"},
+            {"id": "supported", "status": "PASS"},
+            {"id": "lost", "status": "NOT_TESTED"},
+            {"id": "blocked", "status": "HARNESS_ERROR"},
+        ],
+    }
+    change = reporting.history(new, old)
+    assert change["newly_admitted_failures"] == ["admitted"]
+    assert change["unsupported_to_supported"] == ["supported"]
+    assert change["coverage_regressions"] == ["lost", "missing"]
+    assert change["new_failures"] == []
+
+
+def test_history_rejects_duplicate_leaf_identities_and_ignores_rollups():
+    baseline = {"comparison_key": "same", "results": []}
+    report = {
+        "comparison_key": "same",
+        "results": [{"id": "rollup", "status": "FAIL", "aggregate": True}],
+    }
+    assert reporting.history(report, baseline)["newly_executed"] == []
+    report["results"] = [{"id": "duplicate", "status": "PASS"}] * 2
+    with pytest.raises(ValueError, match="duplicate"):
+        reporting.history(report, baseline)
+
+
 def test_issue_coverage_keeps_closed_unmapped_and_unexecuted_issues_visible():
     capabilities = [
         {
