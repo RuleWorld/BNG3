@@ -396,6 +396,8 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
     std::set<std::string> uniqueCompartmentNames;
     const auto compartments = py::cast<py::list>(document["compartments"]);
     requireDenseOrderedIds(compartments, "compartment");
+    std::vector<std::string> compartmentNames;
+    compartmentNames.reserve(compartments.size());
     for (const auto& rawCompartment : compartments) {
         const auto compartment = py::cast<py::dict>(rawCompartment);
         static const std::vector<std::string> required = {
@@ -411,6 +413,12 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             throw std::runtime_error(
                 "native BNGIR compartment names must be unique");
         }
+        compartmentNames.push_back(name);
+    }
+
+    for (std::size_t index = 0; index < compartments.size(); ++index) {
+        const auto compartment = py::cast<py::dict>(compartments[index]);
+        const auto name = compartmentNames[index];
         const auto volume = finiteNumberFromBngir(
             compartment["volume"], "compartment volume");
         const auto dimension = py::cast<int>(compartment["dimension"]);
@@ -418,9 +426,38 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             throw std::runtime_error(
                 "native BNGIR compartment dimension must be 1, 2, or 3");
         }
-        const auto parent = compartment.contains(py::str("parent"))
-            ? py::cast<std::string>(compartment["parent"])
-            : std::string{};
+        std::string parent;
+        if (compartment.contains(py::str("parent"))) {
+            if (!py::isinstance<py::str>(compartment["parent"])) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent must be a string");
+            }
+            parent = py::cast<std::string>(compartment["parent"]);
+            if (!parent.empty() &&
+                std::find(compartmentNames.begin(), compartmentNames.end(), parent) ==
+                    compartmentNames.end()) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent references an unknown compartment");
+            }
+        }
+        if (compartment.contains(py::str("parent_id"))) {
+            const auto parentId =
+                indexFromBngir(compartment["parent_id"], "compartment parent id");
+            if (parentId >= compartmentNames.size()) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent id is out of range");
+            }
+            const auto& parentById = compartmentNames[parentId];
+            if (!parent.empty() && parent != parentById) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent name and id disagree");
+            }
+            parent = parentById;
+        }
+        if (parent == name) {
+            throw std::runtime_error(
+                "native BNGIR compartment cannot be its own parent");
+        }
         model->addCompartment(Compartment(name, volume, dimension, parent));
     }
 
