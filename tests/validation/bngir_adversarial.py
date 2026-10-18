@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .campaign import STATUSES
 
-ISSUES = [153, 154, 155, 156]
+ISSUES = [153, 154, 155, 156, 163]
 OPERATION = "bngir-adversarial"
 
 
@@ -201,6 +201,104 @@ def generated_cases():
         }
     )
 
+    permuted = copy.deepcopy(baseline)
+    permuted["model"]["molecule_types"].reverse()
+    for index, item in enumerate(permuted["model"]["molecule_types"]):
+        item["id"] = index
+    for pattern in (
+        permuted["model"]["seeds"][0]["pattern"],
+        *permuted["model"]["rules"][0]["forward"]["reactants"],
+        *permuted["model"]["rules"][0]["forward"]["products"],
+    ):
+        pattern["molecules"][0]["type_id"] = 1 - pattern["molecules"][0]["type_id"]
+    cases.append(
+        dict(
+            id="molecule-id-permutation",
+            document=permuted,
+            oracle="accept",
+            expected_semantics=copy.deepcopy(cases[0]["expected_semantics"]),
+        )
+    )
+
+    # Pending #300 owns compartment support. Until it lands, explicit native
+    # refusal remains UNSUPPORTED; acceptance must execute all analytic checks.
+    for spelling in ("suffix", "prefix", "molecule"):
+        document = copy.deepcopy(baseline)
+        model = document["model"]
+        model["compartments"] = [dict(id=0, name="cell", dimension=3, volume=2.0)]
+        model["seeds"][0]["compartment"] = "cell"
+        patterns = [
+            model["seeds"][0]["pattern"],
+            *model["rules"][0]["forward"]["reactants"],
+            *model["rules"][0]["forward"]["products"],
+        ]
+        for pattern in patterns:
+            if spelling == "molecule":
+                pattern["molecules"][0].update(compartment="cell", compartment_id=0)
+            else:
+                pattern.update(
+                    compartment="cell", compartment_prefix=spelling == "prefix"
+                )
+        cases.append(
+            dict(
+                id=(
+                    "molecule-compartment"
+                    if spelling == "molecule"
+                    else "compartment-" + spelling
+                ),
+                document=document,
+                oracle="accept-or-unsupported",
+                expected_semantics=dict(
+                    seed={"A()@cell": 100.0, "B()@cell": 0.0},
+                    rhs={"A()@cell": -10.0, "B()@cell": 10.0},
+                ),
+            )
+        )
+
+    bonded = copy.deepcopy(baseline)
+    bonded["model"]["molecule_types"][0]["components"] = [
+        dict(index=0, name="b", states=[])
+    ]
+    molecule = bonded["model"]["seeds"][0]["pattern"]["molecules"][0]
+    molecule["sites"] = [
+        dict(
+            occurrence=0,
+            component="b",
+            component_index=0,
+            state=dict(kind="any"),
+            bond=dict(kind="exact", group=1),
+        )
+    ]
+    second = copy.deepcopy(molecule)
+    second["occurrence"] = 1
+    bonded["model"]["seeds"][0]["pattern"]["molecules"].append(second)
+    cases.append(
+        dict(
+            id="bonded-complex-boundary",
+            document=bonded,
+            oracle="unsupported",
+            expected_semantics=dict(
+                reason="native multi-molecule/site reconstruction unavailable"
+            ),
+        )
+    )
+
+    # Fixed grid and closed-form conversion law declared before execution.
+    for case in cases:
+        if "seed" in case["expected_semantics"]:
+            seed = case["expected_semantics"]["seed"]
+            names = list(seed)
+            case["expected_semantics"]["trajectory"] = [
+                dict(
+                    time=t,
+                    amounts={
+                        names[0]: 100 * math.exp(-0.1 * t),
+                        names[1]: 100 * (1 - math.exp(-0.1 * t)),
+                    },
+                )
+                for t in (0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0)
+            ]
+
     mutations = []
     invalid_parameter = copy.deepcopy(baseline)
     invalid_parameter["model"]["rules"][0]["forward"]["rate"]["expression"] = {
@@ -250,6 +348,9 @@ def generated_cases():
         "compartment"
     ] = "cell"
     mutations.append(("compartment-parent-reference-out-of-range", bad_compartment))
+    unknown = copy.deepcopy(baseline)
+    unknown["model"]["seeds"][0]["pattern"]["compartment"] = "missing"
+    mutations.append(("unknown-pattern-compartment", unknown))
 
     cases.extend(
         {
@@ -278,52 +379,84 @@ def _schema_path():
     )
 
 
-def _analytic_observation(model, expected):
-    from bionetgen.model import _cpp
-
-    network = model.generate_network()
-    names = list(network.species_names)
-    if set(names) != set(expected["seed"]):
-        return {
-            "field": "network.species_names",
-            "expected": sorted(expected["seed"]),
-            "actual": sorted(names),
-        }
-    result = model.simulate(method="ode", t_end=0.1, n_steps=1)
-    initial = {
-        name: float(value) for name, value in zip(names, result.concentrations[0])
-    }
-    for name, value in expected["seed"].items():
-        if not math.isclose(initial[name], value, rel_tol=0.0, abs_tol=1e-12):
-            return {
-                "field": "initial_amount." + name,
-                "expected": value,
-                "actual": initial[name],
-            }
-    state = [expected["seed"][name] for name in names]
-    rhs = _cpp._validation_ode_rhs(model._model, network, 0.0, state)
-    observed = dict(zip(names, (float(value) for value in rhs)))
-    for name, value in expected["rhs"].items():
-        if not math.isclose(observed[name], value, rel_tol=1e-12, abs_tol=1e-12):
-            return {
-                "field": "ode_rhs." + name,
-                "expected": value,
-                "actual": observed[name],
-            }
+def compare_observation(field, observed, expected, *, atol=1e-12, rtol=1e-12):
+    if set(observed) != set(expected):
+        return dict(
+            field=field + ".species", expected=sorted(expected), actual=sorted(observed)
+        )
+    for name, value in expected.items():
+        actual = observed[name]
+        if not math.isfinite(actual) or not math.isclose(
+            actual, value, abs_tol=atol, rel_tol=rtol
+        ):
+            return dict(field=field + "." + name, expected=value, actual=actual)
     return None
 
 
-def evaluate_case(case, *, native_import, wrap_model):
+def _analytic_observation(model, expected, output=None):
+    from bionetgen.model import _cpp
+
+    network = model.generate_network()
+    # Prefix/suffix spelling is not structural identity; retain compartment name.
+    names = [
+        (
+            name.split(":", 1)[1] + "@" + name[1:].split(":", 1)[0]
+            if name.startswith("@")
+            else name
+        )
+        for name in network.species_names
+    ]
+    result = model.simulate(method="ode", t_end=2.0, n_steps=10, atol=1e-12, rtol=1e-10)
+    initial = dict(zip(names, map(float, result.concentrations[0])))
+    rhs = _cpp._validation_ode_rhs(
+        model._model, network, 0.0, list(result.concentrations[0])
+    )
+    receipt = dict(
+        seed=initial,
+        rhs=dict(zip(names, map(float, rhs))),
+        trajectory=[
+            dict(time=float(t), amounts=dict(zip(names, map(float, values))))
+            for t, values in zip(result.time, result.concentrations)
+        ],
+    )
+    if output is not None:
+        output.write_text(json.dumps(receipt, indent=2) + "\n")
+    for field in ("seed", "rhs"):
+        difference = compare_observation(field, receipt[field], expected[field])
+        if difference:
+            return difference
+    if len(receipt["trajectory"]) != len(expected["trajectory"]):
+        return dict(
+            field="trajectory.rows",
+            expected=len(expected["trajectory"]),
+            actual=len(receipt["trajectory"]),
+        )
+    for actual, reference in zip(receipt["trajectory"], expected["trajectory"]):
+        if not math.isclose(actual["time"], reference["time"], abs_tol=1e-12):
+            return dict(
+                field="trajectory.time",
+                expected=reference["time"],
+                actual=actual["time"],
+            )
+        difference = compare_observation(
+            "trajectory", actual["amounts"], reference["amounts"], atol=1e-7, rtol=1e-7
+        )
+        if difference:
+            return dict(difference, time=reference["time"])
+    return None
+
+
+def evaluate_case(case, *, native_import, wrap_model, output=None):
     """Classify one case; expected refusals remain diagnostic-only evidence."""
     identity = f"{OPERATION}:{case['id']}"
     row = {
         "id": identity,
         "check": case["id"],
         "related_issues": list(ISSUES),
-        "supported_execution": case["oracle"] == "accept",
+        "supported_execution": case["oracle"] in {"accept", "accept-or-unsupported"},
         "evidence_kind": (
             "native-bngir-semantic-control"
-            if case["oracle"] == "accept"
+            if case["oracle"] in {"accept", "accept-or-unsupported"}
             else "diagnostic-only"
         ),
         "first_difference": None,
@@ -331,7 +464,18 @@ def evaluate_case(case, *, native_import, wrap_model):
     try:
         restored = wrap_model(native_import(copy.deepcopy(case["document"])))
     except NativeRefusal as exc:
-        if case["oracle"] == "refuse":
+        if case["oracle"] in {"unsupported", "accept-or-unsupported"} and (
+            str(exc) == "native BNGIR model.compartments is not supported"
+            or str(exc) == "native BNGIR molecule type components are unsupported"
+            or str(exc) == "native BNGIR does not support compartments"
+        ):
+            row.update(
+                status="UNSUPPORTED",
+                detail=str(exc),
+                supported_execution=False,
+                evidence_kind="unsupported-boundary",
+            )
+        elif case["oracle"] == "refuse":
             row.update(
                 status="PASS",
                 detail=f"native import explicitly refused schema-valid corruption: {type(exc).__name__}: {exc}",
@@ -361,7 +505,7 @@ def evaluate_case(case, *, native_import, wrap_model):
             supported_execution=False,
         )
         return row
-    if case["oracle"] == "refuse":
+    if case["oracle"] in {"refuse", "unsupported"}:
         row.update(
             status="FAIL",
             detail="native import accepted a schema-valid structural corruption",
@@ -372,11 +516,11 @@ def evaluate_case(case, *, native_import, wrap_model):
             },
         )
         return row
-    difference = _analytic_observation(restored, case["expected_semantics"])
+    difference = _analytic_observation(restored, case["expected_semantics"], output)
     if difference is None:
         row.update(
             status="PASS",
-            detail="independently authored BNGIR produced the declared seed and analytic ODE RHS",
+            detail="independently authored BNGIR produced the declared seed, analytic ODE RHS and closed-form trajectory",
         )
     else:
         row.update(
@@ -462,6 +606,7 @@ def run_worker(directory: Path):
                 case,
                 native_import=native_import,
                 wrap_model=lambda native_model: bionetgen.BioNetGenModel(native_model),
+                output=directory / f"{case['id']}.execution.json",
             )
             row["source_artifact"] = path.name
             row["source_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()

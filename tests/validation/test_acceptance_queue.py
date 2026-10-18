@@ -293,6 +293,7 @@ def test_live_slice_runs_inventory_audit_selection_packets_and_dashboard(tmp_pat
     assert {f["id"] for f in campaigns} == {
         "generated-decay",
         "native-bngir-adversarial",
+        "quantity-source-laws",
     }
     packets = reporting.investigation_tasks(report, tmp_path, obligations=assessment)
     assert packets[0]["affected_obligations"][0]["id"] == "issue:141:slice:reset"

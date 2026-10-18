@@ -27,7 +27,12 @@ def test_generated_documents_are_independent_schema_valid_and_exactly_named():
     assert "campaign:bngir-adversarial" in expected
     for case in cases:
         jsonschema.validate(case["document"], schema)
-        assert case["oracle"] in {"accept", "refuse"}
+        assert case["oracle"] in {
+            "accept",
+            "refuse",
+            "unsupported",
+            "accept-or-unsupported",
+        }
         assert case["document"]["format"] == "BNGIR"
 
 
@@ -56,7 +61,7 @@ def test_native_adapter_reports_explicit_refusals_as_diagnostic_controls():
     assert row["status"] == "PASS"
     assert row["evidence_kind"] == "diagnostic-only"
     assert row["supported_execution"] is False
-    assert row["related_issues"] == [153, 154, 155, 156]
+    assert row["related_issues"] == [153, 154, 155, 156, 163]
 
 
 @pytest.mark.parametrize(
@@ -117,3 +122,80 @@ def test_native_adapter_fails_if_a_corrupt_document_is_accepted():
     assert row["status"] == "FAIL"
     assert row["supported_execution"] is False
     assert row["first_difference"]["field"] == "native_refusal"
+
+
+def test_structural_cases_declare_independent_trajectories_and_boundary_policy():
+    cases = {case["id"]: case for case in adversarial.generated_cases()}
+    for name in (
+        "molecule-id-permutation",
+        "compartment-suffix",
+        "compartment-prefix",
+        "molecule-compartment",
+    ):
+        case = cases[name]
+        assert case["expected_semantics"]["trajectory"]
+        assert case["oracle"] in {"accept", "accept-or-unsupported"}
+    assert cases["bonded-complex-boundary"]["oracle"] == "unsupported"
+    assert cases["unknown-pattern-compartment"]["oracle"] == "refuse"
+
+
+def test_structural_loss_detector_rejects_missing_compartment():
+    expected = {"A()@cell": 100.0, "B()@cell": 0.0}
+    difference = adversarial.compare_observation(
+        "seed", {"A()": 100.0, "B()": 0.0}, expected
+    )
+    assert difference["field"] == "seed.species"
+
+
+def test_optional_supported_structure_refusal_is_unsupported_not_pass():
+    case = {
+        "id": "future-compartment",
+        "oracle": "accept-or-unsupported",
+        "document": {},
+        "expected_semantics": {},
+    }
+    row = adversarial.evaluate_case(
+        case,
+        native_import=lambda _: (_ for _ in ()).throw(
+            adversarial.NativeRefusal("native BNGIR does not support compartments")
+        ),
+        wrap_model=lambda x: x,
+    )
+    assert row["status"] == "UNSUPPORTED"
+    assert row["supported_execution"] is False
+
+
+def test_positive_structure_does_not_hide_unexpected_native_refusal():
+    case = next(c for c in adversarial.CASES if c["id"] == "compartment-suffix")
+    row = adversarial.evaluate_case(
+        case,
+        native_import=lambda _: (_ for _ in ()).throw(
+            adversarial.NativeRefusal(
+                "native BNGIR molecule type reference is out of range"
+            )
+        ),
+        wrap_model=lambda x: x,
+    )
+    assert row["status"] == "FAIL"
+
+
+def test_worker_cli_accepts_registered_adversarial_execution():
+    import ast
+
+    tree = ast.parse((Path(__file__).parent / "integrated_worker.py").read_text())
+    choices = next(
+        keyword.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+        if keyword.arg == "choices"
+    )
+    assert "bngir-adversarial" in ast.literal_eval(choices)
+
+
+def test_numeric_seed_rhs_and_trajectory_corruption_are_detected():
+    for field in ("seed", "rhs", "trajectory"):
+        difference = adversarial.compare_observation(
+            field, {"A()": 99.0}, {"A()": 100.0}
+        )
+        assert difference == dict(field=field + ".A()", expected=100.0, actual=99.0)

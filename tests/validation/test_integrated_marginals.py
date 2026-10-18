@@ -81,3 +81,113 @@ def test_dimer_mass_preserves_parity_and_rejects_wrong_kinetics():
         r["status"] == "FAIL"
         for r in integrated_marginals.assess_samples(samples, model)
     )
+
+
+def test_source_law_cases_cover_orders_conventions_and_parameter_backed_volume():
+    cases = integrated_cases.source_law_cases()
+    assert len(cases) == 6
+    assert {case["law"] for case in cases} == {
+        "zero-order",
+        "first-order",
+        "second-order",
+    }
+    assert {case["rate_convention"] for case in cases} == {
+        "physical_source_law",
+        "bngl_count",
+    }
+    assert {case["volume"] for case in cases} == {3}
+    for case in cases:
+        source = integrated_cases.source_law_bngl(case)
+        assert "V 3" in source
+        assert "cell 3 V" in source
+        assert "Molecules A @cell:A()" in source
+    concentration = next(
+        case for case in cases if case["quantity_basis"] == "concentration"
+    )
+    assert concentration["initial_coordinate_value"] == 40 / 3
+    assert "initialConcentration=" in integrated_cases.source_law_bngl(concentration)
+
+
+def test_source_laws_separate_physical_units_from_bare_count_conventions():
+    from tests.validation.integrated_marginals import source_marginal_mass
+
+    zero_physical = dict(
+        law="zero-order",
+        initial=0,
+        rate=0.4,
+        volume=3,
+        rate_convention="physical_source_law",
+        quantity_basis="amount",
+    )
+    zero_bare = dict(zero_physical, rate_convention="bngl_count")
+    physical = source_marginal_mass(zero_physical)
+    bare = source_marginal_mass(zero_bare)
+    assert np.allclose(physical.sum(axis=1), 1, atol=1e-14)
+    assert np.allclose(bare.sum(axis=1), 1, atol=1e-14)
+    assert np.allclose(physical.sum(axis=1), 1, atol=1e-14)
+    assert np.allclose(bare.sum(axis=1), 1, atol=1e-14)
+    assert np.isclose(np.dot(np.arange(physical.shape[1]), physical[-1]), 0.8)
+    assert np.isclose(np.dot(np.arange(bare.shape[1]), bare[-1]), 2.4)
+
+    dimer_physical = dict(
+        law="second-order",
+        family="second-order",
+        initial=2,
+        rate=0.4,
+        volume=3,
+        rate_convention="physical_source_law",
+        quantity_basis="amount",
+    )
+    dimer_bare = dict(dimer_physical, rate_convention="bngl_count")
+    physical_mass = source_marginal_mass(dimer_physical)
+    bare_mass = source_marginal_mass(dimer_bare)
+    assert np.isclose(physical_mass[-1, 2], np.exp(-2 * 0.4 * 2 / 3))
+    assert np.isclose(bare_mass[-1, 2], np.exp(-0.4 * 2 / 3))
+
+
+def test_source_law_detector_rejects_wrong_rate_and_concentration_is_amount_scaled():
+    model = dict(
+        law="first-order",
+        family="first-order",
+        initial=40,
+        rate=0.4,
+        volume=3,
+        rate_convention="physical_source_law",
+        quantity_basis="concentration",
+    )
+    expected = integrated_marginals.source_marginal_mass(model)
+    rng = np.random.default_rng(3107)
+    samples = np.column_stack(
+        [rng.choice(41, size=512, p=probability) for probability in expected]
+    )
+    assert all(
+        r["status"] == "PASS"
+        for r in integrated_marginals.assess_samples(samples, model)
+    )
+    wrong_model = dict(model, rate=0.04)
+    assert any(
+        row["status"] == "FAIL"
+        for row in integrated_marginals.assess_samples(samples, wrong_model)
+    )
+
+
+def test_poisson_source_cdf_tail_does_not_treat_support_overflow_as_unit_error():
+    model = dict(
+        law="zero-order",
+        family="zero-order",
+        initial=0,
+        rate=0.4,
+        volume=3,
+        rate_convention="physical_source_law",
+        quantity_basis="amount",
+    )
+    mass = integrated_marginals.source_marginal_mass(model)
+    rng = np.random.default_rng(771)
+    samples = np.column_stack([rng.choice(len(row), size=512, p=row) for row in mass])
+    samples[0, -1] = mass.shape[1] + 1
+    cdf = next(
+        row
+        for row in integrated_marginals.assess_samples(samples, model)
+        if row["check"] == "source-cdf"
+    )
+    assert cdf["status"] == "PASS"

@@ -328,6 +328,33 @@
             "Missing required qualification ID: qualification:issue:140:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:140:executed-slice:lifecycle-public-routes",
+          "criterion": "Verify equivalent CLI, Python and BNGL action behavior, including invalid options and defaults.",
+          "scope": "One generated conversion model: installed Python/CLI/action output equivalence; analytic dynamics checked separately. Runtime topology editing and broader model shapes remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:protocol:lifecycle-public-routes",
+              "evidence_kind": "supported-execution",
+              "expectation": "One generated conversion model: installed Python/CLI/action output equivalence; analytic dynamics checked separately. Runtime topology editing and broader model shapes remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_protocol.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -757,6 +784,33 @@
               "atomize": false
             }
           ]
+        },
+        {
+          "id": "issue:141:executed-slice:lifecycle-construction-isolation",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "One generated conversion model: two concurrently constructed models with distinct seeds/parameters, three interleaved SSA runs each versus fresh construction. Runtime topology editing and broader model shapes remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:protocol:lifecycle-construction-isolation",
+              "evidence_kind": "supported-execution",
+              "expectation": "One generated conversion model: two concurrently constructed models with distinct seeds/parameters, three interleaved SSA runs each versus fresh construction. Runtime topology editing and broader model shapes remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_protocol.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -929,6 +983,33 @@
             "Missing required qualification ID: qualification:issue:143:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:143:executed-slice:lifecycle-mutation-baseline",
+          "criterion": "Compare supported backend coefficients/RHS/propensities against independent references and test cache invalidation.",
+          "scope": "One generated conversion model: V/N/k mutations and return to baseline, fresh construction comparison and independent closed-form ODE law. Runtime topology editing and broader model shapes remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:protocol:lifecycle-mutation-baseline",
+              "evidence_kind": "supported-execution",
+              "expectation": "One generated conversion model: V/N/k mutations and return to baseline, fresh construction comparison and independent closed-form ODE law. Runtime topology editing and broader model shapes remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_protocol.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -1100,6 +1181,168 @@
             "Missing required qualification ID: qualification:issue:146:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:146:executed-slice:quantity-zero-order-physical_source_law",
+          "criterion": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
+          "scope": "Native NFsim A-count marginal on zero-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-zero-order-physical_source_law-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on zero-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:146:executed-slice:quantity-zero-order-bngl_count",
+          "criterion": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
+          "scope": "Native NFsim A-count marginal on zero-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-zero-order-bngl_count-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on zero-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:146:executed-slice:quantity-first-order-physical_source_law",
+          "criterion": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
+          "scope": "Native NFsim A-count marginal on first-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-first-order-physical_source_law-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on first-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:146:executed-slice:quantity-first-order-bngl_count",
+          "criterion": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
+          "scope": "Native NFsim A-count marginal on first-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-first-order-bngl_count-concentration-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on first-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:146:executed-slice:quantity-second-order-physical_source_law",
+          "criterion": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
+          "scope": "Native NFsim A-count marginal on second-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-second-order-physical_source_law-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on second-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:146:executed-slice:quantity-second-order-bngl_count",
+          "criterion": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
+          "scope": "Native NFsim A-count marginal on second-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-second-order-bngl_count-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on second-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -1880,6 +2123,168 @@
               "physical_unit_annotations": false
             }
           ]
+        },
+        {
+          "id": "issue:151:executed-slice:quantity-zero-order-physical_source_law",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim A-count marginal on zero-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-zero-order-physical_source_law-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on zero-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:151:executed-slice:quantity-zero-order-bngl_count",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim A-count marginal on zero-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-zero-order-bngl_count-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on zero-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:151:executed-slice:quantity-first-order-physical_source_law",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim A-count marginal on first-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-first-order-physical_source_law-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on first-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:151:executed-slice:quantity-first-order-bngl_count",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim A-count marginal on first-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-first-order-bngl_count-concentration-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on first-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:151:executed-slice:quantity-second-order-physical_source_law",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim A-count marginal on second-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-second-order-physical_source_law-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on second-order at V=3 with physical_source_law; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:151:executed-slice:quantity-second-order-bngl_count",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim A-count marginal on second-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "quantity-second-order-bngl_count-amount-v3:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Native NFsim A-count marginal on second-order at V=3 with bngl_count; fixed 32 PR trajectories, source law and global statistical error budget. Physical-law controls are explicitly prelowered; this does not qualify physical-unit annotation ingestion or full path laws.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -2040,6 +2445,114 @@
             "Missing required qualification ID: qualification:issue:153:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:153:executed-slice:reconstruction-molecule-id-permutation",
+          "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-id-permutation",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:153:executed-slice:reconstruction-compartment-suffix",
+          "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-suffix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:153:executed-slice:reconstruction-compartment-prefix",
+          "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-prefix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:153:executed-slice:reconstruction-molecule-compartment",
+          "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-compartment",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -2122,6 +2635,114 @@
             "Missing required qualification ID: qualification:issue:154:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:154:executed-slice:reconstruction-molecule-id-permutation",
+          "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-id-permutation",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:154:executed-slice:reconstruction-compartment-suffix",
+          "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-suffix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:154:executed-slice:reconstruction-compartment-prefix",
+          "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-prefix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:154:executed-slice:reconstruction-molecule-compartment",
+          "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-compartment",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -2742,6 +3363,114 @@
             "tests/validation/test_bngir_adversarial_native.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:executed-slice:reconstruction-molecule-id-permutation",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-id-permutation",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:executed-slice:reconstruction-compartment-suffix",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-suffix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:executed-slice:reconstruction-compartment-prefix",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-prefix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:executed-slice:reconstruction-molecule-compartment",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-compartment",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
           "unmapped_scope": []
         }
@@ -3393,6 +4122,114 @@
             "Missing required qualification ID: qualification:issue:163:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:163:executed-slice:reconstruction-molecule-id-permutation",
+          "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-id-permutation",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:163:executed-slice:reconstruction-compartment-suffix",
+          "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-suffix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:163:executed-slice:reconstruction-compartment-prefix",
+          "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-prefix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:163:executed-slice:reconstruction-molecule-compartment",
+          "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "dependencies": [],
+          "boundaries": [
+            "Installed candidate consumer execution against the stated independent expectation.",
+            "This finite slice does not satisfy the other feature combinations in the broad acceptance criterion."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:molecule-compartment",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },

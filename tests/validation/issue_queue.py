@@ -401,9 +401,11 @@ def assess_obligations(obligations, reports, revision):
                 obligation,
                 status=status,
                 checks=checks,
-                test_reference_status="RELEVANT_TEST_EXISTS"
-                if obligation.get("test_references")
-                else "NO_TEST_REFERENCE",
+                test_reference_status=(
+                    "RELEVANT_TEST_EXISTS"
+                    if obligation.get("test_references")
+                    else "NO_TEST_REFERENCE"
+                ),
                 missing_evidence=[m for c in checks for m in c["missing_evidence"]],
                 untested_routes=[
                     dict(
@@ -460,6 +462,7 @@ def select_campaign(obligations, *, findings=(), max_families=3):
                     include_boundaries=False,
                     include_graph_identity=False,
                     include_bngir_adversarial=False,
+                    include_quantity_laws=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -476,6 +479,23 @@ def select_campaign(obligations, *, findings=(), max_families=3):
             runner="tests.validation.integrated",
             budget=dict(checks=len(check_ids()), stage_timeout_seconds=60),
             limits="Bounded generated native reader shapes; no complete migration or arbitrary graph coverage.",
+        )
+    )
+    from .integrated_marginals import source_law_check_ids
+    from .integrated_cases import source_law_cases
+
+    families.append(
+        dict(
+            id="quantity-source-laws",
+            case_ids=[case["id"] for case in source_law_cases()],
+            check_ids=source_law_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                cases=len(source_law_cases()),
+                ensemble_runs=32,
+                stage_timeout_seconds=900,
+            ),
+            limits="Finite prelowered physical-law and bare BNGL count controls; no unit-annotation ingestion or joint-law qualification.",
         )
     )
     selected = []
@@ -510,11 +530,15 @@ def select_campaign(obligations, *, findings=(), max_families=3):
         family["selection_arguments"] = (
             ["--bngir-adversarial-only"]
             if family["id"] == "native-bngir-adversarial"
-            else [
-                argument
-                for case_id in family["case_ids"]
-                for argument in ("--case", case_id)
-            ]
+            else (
+                ["--quantity-laws-only"]
+                if family["id"] == "quantity-source-laws"
+                else [
+                    argument
+                    for case_id in family["case_ids"]
+                    for argument in ("--case", case_id)
+                ]
+            )
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
         selected.append(family)

@@ -206,3 +206,30 @@ def test_complete_ids_without_observation_payload_are_still_harness_errors(tmp_p
     )
     assert parent["status"] == "HARNESS_ERROR"
     assert all(r["status"] == "NOT_TESTED" for r in rows[1:])
+
+
+def test_quantity_source_laws_are_declared_before_execution():
+    assert "quantity-laws" in extensions.OPERATIONS
+    names = extensions.check_ids("quantity-laws")
+    assert names and len(names) == len(set(names))
+    assert set(names) <= set(extensions.expected_ids([]))
+
+
+def test_scientific_lane_runs_independent_checks_after_case_failure():
+    import yaml
+
+    workflow = yaml.safe_load(
+        (Path(__file__).parents[2] / ".github/workflows/parity.yml").read_text()
+    )
+    steps = workflow["jobs"]["integrated-semantic-validation"]["steps"]
+    native = next(
+        s
+        for s in steps
+        if s.get("name") == "Check independently authored native BNGIR controls"
+    )
+    assert "steps.candidate_identity.outcome == 'success'" in native["if"]
+    assert "always()" in native["if"]
+    worker = next(
+        s for s in steps if s.get("name") == "Verify spawned scientific worker identity"
+    )
+    assert "test_worker_package_identity.py" in worker["run"]

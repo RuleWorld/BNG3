@@ -20,6 +20,114 @@ PERTURBATION_PR_INDICES = (0, 5, 12)
 FAMILIES = ("decay", "reversible", "dimerization")
 
 
+def source_law_cases(full=False):
+    """Small count-law models covering rate order, units, volume and basis.
+
+    Physical cases record the SBML-style units represented by the descriptor;
+    their generated BNGL coefficient is explicitly converted to the standard
+    count convention. Bare cases retain the supplied BNGL count coefficient.
+    """
+    volumes = (1, 3) if full else (3,)
+    cases = []
+    axes = (
+        ("zero-order", "physical_source_law", "amount"),
+        ("zero-order", "bngl_count", "amount"),
+        ("first-order", "physical_source_law", "amount"),
+        ("first-order", "bngl_count", "concentration"),
+        ("second-order", "physical_source_law", "amount"),
+        ("second-order", "bngl_count", "amount"),
+    )
+    for law, convention, basis in axes:
+        for volume in volumes:
+            initial = (
+                0 if law == "zero-order" else (12 if law == "second-order" else 40)
+            )
+            case = dict(
+                id=f"quantity-{law}-{convention}-{basis}-v{volume}",
+                law=law,
+                family=law,
+                rate_convention=convention,
+                quantity_basis=basis,
+                initial=initial,
+                initial_coordinate_value=(
+                    initial / volume if basis == "concentration" else initial
+                ),
+                rate=0.4,
+                volume=volume,
+                times=tuple(float(t) for t in TIMES),
+                observable="A",
+                source_units=(
+                    {
+                        "zero-order": "item/second",
+                        "first-order": "1/second",
+                        "second-order": "litre/item/second",
+                    }[law]
+                    if convention == "physical_source_law"
+                    else "unannotated BNGL count-rate convention"
+                ),
+            )
+            # A bounded pairwise source-law slice with one representative per
+            # molecularity and convention; scheduled/full mode adds V=1.
+            cases.append(case)
+    return cases
+
+
+def source_law_bngl(case):
+    """Return a parameter-backed BNGL fixture for a source-law descriptor."""
+    law = case["law"]
+    if case["rate_convention"] == "physical_source_law":
+        rate = {
+            "zero-order": "k/V",
+            "first-order": "k",
+            "second-order": "2*k",
+        }[law]
+    else:
+        rate = "k"
+    if law == "zero-order":
+        reactants, products = "0", "@cell:A()"
+    elif law == "first-order":
+        reactants, products = "@cell:A()", "@cell:B()"
+    elif law == "second-order":
+        reactants, products = "@cell:A() + @cell:A()", "@cell:D()"
+    else:
+        raise ValueError(f"unknown source-law family: {law!r}")
+    initial_b = case["initial"] if case.get("initial_side") == "B" else 0
+    initial_a = case["initial"] - initial_b
+    source_coordinate_comment = (
+        f"# SBML initialConcentration={case['initial_coordinate_value']:.17g}; "
+        f"amount count={case['initial']} after multiplying by V\n"
+        if case["quantity_basis"] == "concentration"
+        else ""
+    )
+    return f"""# Source-law basis: {case['rate_convention']} ({case['source_units']}); physical rates are prelowered to BNGL count units.
+{source_coordinate_comment}begin model
+begin parameters
+  k {case['rate']:.17g}
+  V {case['volume']:.17g}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  B()
+  D()
+end molecule types
+begin seed species
+  @cell:A() {initial_a}
+  @cell:B() {initial_b}
+  @cell:D() 0
+end seed species
+begin observables
+  Molecules A @cell:A()
+end observables
+begin reaction rules
+  source: {reactants} -> {products} {rate}
+end reaction rules
+end model
+"""
+
+
 def generated_cases(full=False):
     """Return baseline cases plus bounded semantic source perturbations."""
     cases = []

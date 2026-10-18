@@ -522,3 +522,37 @@ Missing required consumers or identities prevent repair eligibility. Product
 repairs remain separate. The common parity workflow builds the dashboard before
 packet generation and uploads both, including on scientific failures. No command
 in this workflow merges PRs or closes issues.
+
+### Executed lifecycle, quantity and reconstruction slices
+
+The installed-worker protocol adds four bounded lifecycle cases: two concurrent
+constructions, distinct parameters/seeds, three interleaved runs per model,
+V/N/k mutations with fresh and closed-form controls, restoration, and installed
+console-script/API/action execution. Trajectories and CLI ownership/digests are
+retained. Public in-place topology edits remain explicitly unavailable; these
+checks do not qualify arbitrary threaded engine execution.
+
+`quantity-laws` declares six PR cases and twelve scheduled cases before running.
+Each case uses 32 PR (128 full) trajectories per stochastic consumer: SSA,
+embedded NFsim and independently built native NFsim. Independent Poisson,
+binomial and finite pure-death laws judge A-count marginals with a campaign
+error budget of 1e-6, split across cases, consumers, times and checks. ODE uses
+closed-form laws. These physical-law fixtures are independently prelowered BNGL
+controls; their unit descriptions and concentration-coordinate seed conversion
+do not establish product ingestion of physical-unit annotations. Existing
+unit-annotated SBML families and source-oracle checks remain separate.
+
+Native BNGIR adversarial controls now execute seeds, RHS and closed-form
+trajectories after disabling BNGL parsing/rendering during reconstruction.
+Molecule-ID permutations are positive controls. Compartment controls preserve
+prefix/suffix/molecule placement when accepted, or report UNSUPPORTED pending
+#300. Bonded structures remain an explicit unsupported boundary. Actual JSON
+outputs and input hashes accompany the existing receipts; malformed references
+remain diagnostic-only controls.
+
+The three nonunit-volume dimer trajectory disagreements on main `65c8d336`
+coexist with passing embedded/native source-CDF checks at that run's finite
+budget. They remain trajectory disagreements without an established cause;
+neither source-law acceptance nor equal seeds establishes full path equivalence.
+`--quantity-laws-only` selects the new bounded campaign; `--full` expands it.
+Manual workflow `bounded=true` retains PR selection on a stacked candidate.
