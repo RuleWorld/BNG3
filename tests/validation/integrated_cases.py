@@ -38,17 +38,19 @@ def generated_cases(full=False):
                 initial=initial,
                 reverse=reverse,
                 atomize=atomize,
-                exact_nf=family != "reversible",
+                exact_nf=family != "reversible" and not (family == "dimerization" and volume > 1),
             )
             if family == "decay":
                 decay_bases[index] = case
-            if family == "reversible":
-                # Atomizer may emit the forward and reverse channels as two
-                # rules. Seeded paths then depend on rule construction order.
+            if family == "reversible" or (family == "dimerization" and case["volume"] > 1):
+                # For dimerization with volume > 1, the rate law k*A*A/V
+                # involves 0.4/3 which is not exactly representable in IEEE 754;
+                # embedded and native NFsim may round differently, causing
+                # seeded paths to diverge. Use distributional comparison.
                 case["nf_comparison"] = (
                     "Use equal-seed comparison only when both routes preserve "
                     "reaction ordering; otherwise compare ensemble means and "
-                    "the conserved A+B total."
+                    "the conserved A+2D total."
                 )
             else:
                 case["nf_comparison"] = "Equal-seed native/embedded NFsim comparison."
