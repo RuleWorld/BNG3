@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 
 from . import campaign, inventory
@@ -42,20 +43,47 @@ def ddmin(items, reproduces, *, max_attempts=24):
     return kept
 
 
+def reduce_verified(items, reproduces, *, max_attempts=24):
+    """Reserve a fresh final confirmation; never label an intermittent candidate minimal."""
+    if max_attempts < 3:
+        raise ValueError("verified reduction needs at least three attempts")
+    attempts = 0
+
+    def predicate(candidate):
+        nonlocal attempts
+        attempts += 1
+        return reproduces(candidate)
+
+    kept = ddmin(items, predicate, max_attempts=max_attempts - 1)
+    verified = predicate(kept)
+    return {"kept": kept, "verified": verified, "attempts": attempts}
+
+
 def _signature(diff):
+    """Preserve actual divergent identities/rates, not just a count category.
+
+    Removing an unrelated rule may alter total counts, so retain deltas alongside
+    exact differing species/reactions/groups. This conservative identity can
+    reject useful reductions; that is preferable to changing the failure.
+    """
     if diff.ok:
         return "equal"
-    if diff.n_species_ref != diff.n_species_test:
-        return "species-count"
-    if diff.n_reactions_ref != diff.n_reactions_test:
-        return "reaction-count"
-    if diff.species_only_ref or diff.species_only_test:
-        return "species-identity"
-    if diff.initial_amounts_changed:
-        return "initial-amounts"
-    if diff.groups_only_ref or diff.groups_only_test or diff.groups_changed:
-        return "observable-projection"
-    return "reaction-semantics"
+    return json.dumps(
+        {
+            "species_delta": diff.n_species_test - diff.n_species_ref,
+            "reaction_delta": diff.n_reactions_test - diff.n_reactions_ref,
+            "species_only_ref": sorted(diff.species_only_ref),
+            "species_only_test": sorted(diff.species_only_test),
+            "reactions_only_ref": sorted(diff.reactions_only_ref),
+            "reactions_only_test": sorted(diff.reactions_only_test),
+            "groups_only_ref": sorted(diff.groups_only_ref),
+            "groups_only_test": sorted(diff.groups_only_test),
+            "groups_changed": sorted(diff.groups_changed),
+            "groups_renamed": sorted(diff.groups_renamed),
+            "initial_amounts_changed": sorted(diff.initial_amounts_changed),
+        },
+        sort_keys=True,
+    )
 
 
 def main():
@@ -66,7 +94,11 @@ def main():
     )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--attempts", type=int, default=24)
+    parser.add_argument("--seconds", type=float, default=120)
     args = parser.parse_args()
+    if not (3 <= args.attempts <= 96 and 0 < args.seconds <= 300):
+        parser.error("minimization requires 3..96 attempts and 0..300 seconds")
+    deadline = time.monotonic() + args.seconds
     report = json.loads(args.report.read_text())
     row = next(
         (r for r in report["results"] if r["id"] == args.case + ":network"), None
@@ -100,6 +132,8 @@ def main():
 
     def reproduces(kept):
         nonlocal expected_signature
+        if time.monotonic() >= deadline:
+            return False
         attempt_dir = args.output / f"attempt-{len(attempts):03}"
         text = "".join(
             line for i, line in enumerate(lines) if i not in removable or i in kept
@@ -123,10 +157,14 @@ def main():
                 if label == "reference"
                 else [str(subject), str(model.resolve())]
             )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                attempt["budget_exhausted"] = True
+                return False
             receipt = campaign.run_command(
                 command,
                 work,
-                report["configuration"]["case_timeout"],
+                min(report["configuration"]["case_timeout"], remaining),
                 required=[source.stem + ".net"],
                 env=env,
             )
@@ -143,8 +181,10 @@ def main():
         attempt["accepted"] = signature != "equal" and signature == expected_signature
         return attempt["accepted"]
 
-    kept = ddmin(removable, reproduces, max_attempts=args.attempts)
-    (args.output / "reproducer.bngl").write_text(
+    reduction = reduce_verified(removable, reproduces, max_attempts=args.attempts)
+    kept = reduction["kept"]
+    name = "reproducer.bngl" if reduction["verified"] else "unverified-candidate.bngl"
+    (args.output / name).write_text(
         "".join(line for i, line in enumerate(lines) if i not in removable or i in kept)
     )
     (args.output / "minimization.json").write_text(
@@ -152,13 +192,16 @@ def main():
             {
                 "parent_report_sha256": inventory.sha256(args.report),
                 "attempts": attempts,
-                "claim": "same observed mismatch category; root cause unconfirmed; reduction bounded by rule-line and attempt limits",
+                "verified": reduction["verified"],
+                "signature": expected_signature,
+                "seconds_budget": args.seconds,
+                "claim": "same detailed observed mismatch; root cause unconfirmed; final replay required; reduction bounded by rule-line, attempt and time limits",
             },
             indent=2,
         )
         + "\n"
     )
-    return 0
+    return 0 if reduction["verified"] else 1
 
 
 if __name__ == "__main__":
