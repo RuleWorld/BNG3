@@ -47,8 +47,32 @@ This command reads local evidence and produces a repair/evidence/decision queue;
 
 The final qualification stages add eight valid-source SBML boundary controls for nonlinear events, delay history, nonlinear algebraic constraints, and fast reactions with dynamic stoichiometry. LibSBML consistency runs before Atomizer evidence is scored; fast-reaction fixtures use L3V1 because L3V2 removed that attribute. Only matching structured loss diagnostics or actual Atomizer rejections qualify the boundary control. Successful diagnostic-only rows have `supported_execution=false` and enter a separate issue-queue count; they do not establish consumer refusal or supported execution. `--boundaries-only` reproduces this bounded group.
 
-Every generated case also checks modern API equivalence on a requested nonuniform absolute grid, invalid-option refusal with a working positive control, concurrent SSA instances against fresh sequential references, saved-result isolation, and exception recovery. Decay and reversible cases additionally sample fresh embedded and native NFsim runs with fixed spread seeds: 32 per engine on PRs and 128 on scheduled/full runs. Exact source binomial means, CDFs and seed spread use Hoeffding/DKW/equal-outcome probability bounds with a conservative global error budget of 1e-6 across the full case inventory. The checks concern these unimolecular marginals, not a complete stochastic equivalence proof. `--ensemble-runs` overrides a bounded run budget; reports and replay commands retain its exact value.
+Every generated case also checks modern API equivalence on a requested nonuniform absolute grid, invalid-option refusal with a working positive control, concurrent SSA instances against fresh sequential references, saved-result isolation, and exception recovery. All three families additionally sample fresh embedded and native NFsim runs with fixed spread seeds: 32 per engine on PRs and 128 on scheduled/full runs. Independent source count laws (binomial conversion and the finite dimer pure-death generator), CDFs and seed spread use Hoeffding/DKW/equal-outcome probability bounds with a conservative global error budget of 1e-6 across the full case inventory. The checks concern these count marginals, not a complete stochastic equivalence proof. Dimer count hazards use `k*n*(n-1)/V`; the deterministic `k*A^2/V` trajectory is not a stochastic mean oracle. `--ensemble-runs` overrides a bounded run budget; reports and replay commands retain its exact value.
 
+
+
+Mutable source controls accompany each generated translation. Atomizer may legally
+fold static rate parameters into numeric coefficients, so changing an unused
+source parameter is not evidence of cache invalidation failure. Dependency
+selection follows function calls, and separately identified native BNGL controls
+retain named rate, seed and compartment dependencies. Reused ODE/SSA instances
+are checked against source-edited fresh compilations, then reset; concurrent SSA
+checks identify which source they used. Semantic reload failures retain both
+canonical documents and the first differing JSON pointer.
+
+The integrated lane requests `rtol=1e-10`, `atol=1e-12` from deterministic
+solvers; its trajectory comparison thresholds remain unchanged. BNG2 NET embeds
+conversion prefactors with eight significant digits (for example `1/6` becomes
+`0.16666667`), so integrated numeric rate comparison explicitly allows relative
+serialization error of `5e-8` with zero absolute allowance. Topology,
+multiplicity and symbolic rates remain exact; general network comparison
+continues to default to strict rate identity.
+
+The issue queue retains each live acceptance checkbox as an independently named
+unverified obligation. A checked issue box or a passing related test cannot
+establish that the full acceptance sentence was executed. Known source-law
+mismatches, including NFsim compartment count-rate conversion, remain ordinary
+failures for investigation rather than exclusions or tolerance changes.
 
 ## Integrated capability campaign
 

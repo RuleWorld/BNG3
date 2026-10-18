@@ -1,8 +1,8 @@
-"""Independent finite-population NFsim marginals for unimolecular source models.
+"""Independent finite-population NFsim marginals from source count laws.
 
-Decay and two-state conversion have binomial A-count marginals. Means use a
-Hoeffding bound over independent source Bernoulli trials; CDFs use the DKW
-bound. A union budget covers both engines, all samples and selected cases.
+Decay and two-state conversion use binomial laws; dimerization uses its finite
+pure-death generator. Means use Hoeffding bounds over independent particles
+or trajectories as applicable; CDFs use the DKW bound. A union budget covers both engines, all samples and selected cases.
 This tests those marginals, not complete stochastic execution equivalence.
 """
 
@@ -16,7 +16,7 @@ import numpy as np
 from . import campaign, contracts
 from .integrated_cases import TIMES, expected_trajectory
 
-CHECKS = ("sample-validity", "marginal-means", "binomial-cdf", "seed-spread")
+CHECKS = ("sample-validity", "marginal-means", "source-cdf", "seed-spread")
 ISSUES = (143, 146, 151, 167)
 
 
@@ -34,21 +34,62 @@ def binomial_mass(population, probability):
     )
 
 
+def source_marginal_mass(case):
+    """Independent source count law; columns index the number of A molecules.
+
+    Dimerization is the finite pure-death chain n -> n-2 with propensity
+    k*n*(n-1)/V. Its stochastic mean is not the deterministic A^2 solution.
+    """
+    population = case["initial"]
+    if case["family"] in ("decay", "reversible"):
+        expected, names = expected_trajectory(case)
+        return np.array(
+            [
+                binomial_mass(population, float(p))
+                for p in expected[:, names.index("A")] / population
+            ]
+        )
+    if case["family"] != "dimerization":
+        raise ValueError("no independent source count law for family")
+    from scipy.linalg import expm
+    from .integrated_cases import RATE
+
+    states = np.arange(population, -1, -2)
+    generator = np.zeros((len(states), len(states)))
+    for index, count in enumerate(states[:-1]):
+        hazard = RATE * count * (count - 1) / case["volume"]
+        generator[index, index] = -hazard
+        generator[index, index + 1] = hazard
+    mass = np.zeros((len(TIMES), population + 1))
+    for index, time in enumerate(TIMES):
+        probabilities = expm(generator * time)[0]
+        if np.min(probabilities) < -1e-13 or abs(probabilities.sum() - 1) > 1e-12:
+            raise ValueError(
+                "independent count-law exponentiation lost probability mass"
+            )
+        probabilities = np.maximum(probabilities, 0)
+        mass[index, states] = probabilities / probabilities.sum()
+    return mass
+
+
 def _row(check, ok, detail, **evidence):
     return dict(
         check=check,
         status="PASS" if ok else "FAIL",
         detail=detail,
         related_issues=list(ISSUES),
-        question="independent-binomial-marginals",
+        question="independent-source-count-marginals",
         **evidence,
     )
 
 
 def assess_samples(samples, case, *, alpha=1e-6):
-    if case["family"] not in ("decay", "reversible") or not 0 < alpha < 1:
+    if (
+        case["family"] not in ("decay", "reversible", "dimerization")
+        or not 0 < alpha < 1
+    ):
         raise ValueError(
-            "binomial marginals require a declared unimolecular family and valid alpha"
+            "marginals require a declared source count law and valid alpha"
         )
     samples = np.asarray(samples, dtype=float)
     population = case["initial"]
@@ -71,20 +112,21 @@ def assess_samples(samples, case, *, alpha=1e-6):
             )
             for name in CHECKS
         ]
-    expected, names = expected_trajectory(case)
-    probabilities = expected[:, names.index("A")] / population
+    masses = source_marginal_mass(case)
     runs = len(samples)
     budget = alpha / (3 * len(TIMES))
-    mean_bound = math.sqrt(0.5 * population * runs * math.log(2 / budget))
+    # Unimolecular families are sums of independent Bernoulli particles.
+    # For dimers only independent trajectories, bounded by population, apply.
+    scale = population ** (2 if case["family"] == "dimerization" else 1)
+    mean_bound = math.sqrt(0.5 * scale * runs * math.log(2 / budget))
     cdf_bound = math.sqrt(math.log(2 / budget) / (2 * runs))
     first_mean = first_cdf = first_spread = None
-    for index, probability in enumerate(probabilities):
+    for index, mass in enumerate(masses):
         counts = samples[:, index].astype(int)
-        mass = binomial_mass(population, float(probability))
-        expected_sum = runs * population * probability
+        expected_sum = runs * float(np.dot(np.arange(population + 1), mass))
         error = abs(float(counts.sum()) - expected_sum)
         # Source deterministic endpoints (including t=0) have no uncertainty.
-        limit = 0 if probability in (0, 1) else mean_bound
+        limit = 0 if np.count_nonzero(mass) == 1 else mean_bound
         if error > limit and first_mean is None:
             first_mean = dict(
                 time=float(TIMES[index]),
@@ -120,15 +162,15 @@ def assess_samples(samples, case, *, alpha=1e-6):
         _row(
             "marginal-means",
             first_mean is None,
-            "source binomial mean; Hoeffding simultaneous bounds",
+            "source count-law mean; Hoeffding simultaneous bounds",
             first_difference=first_mean,
             alpha=alpha,
             per_check_budget=budget,
         ),
         _row(
-            "binomial-cdf",
+            "source-cdf",
             first_cdf is None,
-            "empirical counts against exact source binomial CDF; DKW bound",
+            "empirical counts against independent source count CDF; DKW bound",
             first_difference=first_cdf,
             alpha=alpha,
             cdf_bound=cdf_bound,

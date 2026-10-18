@@ -143,3 +143,32 @@ def test_loss_diagnostic_control_is_not_supported_execution_evidence():
     assert item["outcomes"] == {}
     assert item["diagnostic_control_outcomes"] == {"PASS": 1}
     assert item["evidence_ids"] == []
+
+
+def test_issue_acceptance_checklist_is_preserved_without_inferring_completion():
+    issue = dict(
+        number=141,
+        body="""**Acceptance criteria**
+- [ ] Test parallel instances.
+- [x] Record scope decision.
+
+**Source evidence**
+- [ ] unrelated checklist
+""",
+    )
+    item = issue_queue.build_queue([issue], [], REVISION)[0]
+    assert item["acceptance_criteria"] == [
+        dict(
+            id="issue:141:acceptance:1",
+            text="Test parallel instances.",
+            maintainer_checked=False,
+            evidence_status="UNVERIFIED",
+        ),
+        dict(
+            id="issue:141:acceptance:2",
+            text="Record scope decision.",
+            maintainer_checked=True,
+            evidence_status="UNVERIFIED",
+        ),
+    ]
+    assert not item["closure_eligible"]

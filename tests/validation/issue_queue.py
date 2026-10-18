@@ -19,6 +19,35 @@ ROOT = Path(__file__).resolve().parents[2]
 FAILURES = {"FAIL", "HARNESS_ERROR", "TIMEOUT", "INVALID_INPUT"}
 
 
+def acceptance_criteria(issue):
+    """Retain live issue criteria separately from broad issue-linked evidence.
+
+    A maintainer checkbox and a passing related contract are both useful,
+    but neither establishes execution of the entire acceptance sentence.
+    """
+    criteria, active = [], False
+    for raw_line in (issue.get("body") or "").splitlines():
+        line = raw_line.strip()
+        if line.strip("#* ").lower() == "acceptance criteria":
+            active = True
+            continue
+        if not active:
+            continue
+        if line.startswith(("#", "**")):
+            break
+        match = re.match(r"[-*] \[([ xX])\] (.+)", line)
+        if match:
+            criteria.append(
+                dict(
+                    id=f"issue:{issue['number']}:acceptance:{len(criteria) + 1}",
+                    text=match.group(2),
+                    maintainer_checked=match.group(1).lower() == "x",
+                    evidence_status="UNVERIFIED",
+                )
+            )
+    return criteria
+
+
 def build_queue(issues, reports, revision):
     if not isinstance(issues, list):
         raise ValueError("issue snapshot must be a list")
@@ -134,6 +163,7 @@ def build_queue(issues, reports, revision):
                         Counter(row["status"] for row in diagnostics.values()).items()
                     )
                 ),
+                acceptance_criteria=acceptance_criteria(dict(issue, number=number)),
                 closure_eligible=False,
                 maintainer_decision_required=decision,
                 investigation_task_ids=sorted(
@@ -321,12 +351,12 @@ def main(argv=None):
             "",
             f"Candidate: `{args.revision}`. No issue is automatically qualified for closure.",
             "",
-            "| Issue | Disposition | Executed outcomes | Next action |",
-            "| --- | --- | --- | --- |",
+            "| Issue | Disposition | Executed outcomes | Acceptance criteria to verify | Next action |",
+            "| --- | --- | --- | --- | --- |",
         ]
         for row in queue:
             lines.append(
-                f"| [#{row['number']}](https://github.com/RuleWorld/BNG3/issues/{row['number']}) | {row['disposition']} | {row['outcomes']} | {row['next_action']} |"
+                f"| [#{row['number']}](https://github.com/RuleWorld/BNG3/issues/{row['number']}) | {row['disposition']} | {row['outcomes']} | {len(row['acceptance_criteria'])} | {row['next_action']} |"
             )
         debt = report["provenance"]
         lines += [

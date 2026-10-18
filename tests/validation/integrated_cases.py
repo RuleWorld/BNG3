@@ -177,3 +177,52 @@ def expected_trajectory(case):
         values.extend((trajectory, trajectory))
         columns.extend((f"{name}_amt", name))
     return np.column_stack(values), columns
+
+
+def reuse_bngl(case, *, rate=RATE):
+    """Native source control with named rate, seed and volume dependencies.
+
+    This companion is deliberately separate from Atomizer's legal static
+    folding. Fresh references replace source literals rather than calling the
+    same set_parameter path as the instance under test.
+    """
+    family = case["family"]
+    a_initial, b_initial = "N", "0"
+    if family == "reversible" and case["reverse"]:
+        a_initial, b_initial = "0", "N"
+    second = "D" if family == "dimerization" else "B"
+    reactants = "@cell:A() + @cell:A()" if family == "dimerization" else "@cell:A()"
+    rate_expression = "2*k" if family == "dimerization" else "k"
+    backward = (
+        "\n  backward: @cell:B() -> @cell:A() kr" if family == "reversible" else ""
+    )
+    return f"""begin model
+begin parameters
+  k {rate:.17g}
+  kr {REVERSE_RATE:.17g}
+  N {case['initial']}
+  V {case['volume']}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  {second}()
+end molecule types
+begin seed species
+  @cell:A() {a_initial}
+  @cell:{second}() {b_initial}
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules {second} @cell:{second}()
+end observables
+begin functions
+  rate() = {rate_expression}
+end functions
+begin reaction rules
+  forward: {reactants} -> @cell:{second}() rate(){backward}
+end reaction rules
+end model
+"""

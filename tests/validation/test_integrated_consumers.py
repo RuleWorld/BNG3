@@ -92,3 +92,21 @@ def test_native_rhs_comparison_aligns_species_graphs_before_values():
     assert _network_difference(left, right) is None
     right["unit_state_probe"]["ode_rhs"] = [2, -1]
     assert _network_difference(left, right)["field"] == "unit_state_probe.ode_rhs"
+
+
+def test_semantic_difference_reports_the_first_structural_path():
+    from tests.validation.integrated_worker import _document_difference
+
+    assert _document_difference(
+        {"model": {"seeds": [{"compartment": "cell"}]}}, {"model": {"seeds": [{}]}}
+    ) == {
+        "field": "/model/seeds/0/compartment",
+        "left": "cell",
+        "right_missing": True,
+    }
+    assert _document_difference({"a": [1, 2]}, {"a": [1, 3]}) == {
+        "field": "/a/1",
+        "left": 2,
+        "right": 3,
+    }
+    assert _document_difference({"a": 1}, {"a": 1}) is None
