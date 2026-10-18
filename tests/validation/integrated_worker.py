@@ -702,6 +702,7 @@ def main():
         "operation",
         choices=(
             "atomizer",
+            "rate-trace",
             "api",
             "nf",
             "pybng",
@@ -863,6 +864,32 @@ def main():
             actions="",
         )
         Path("model.bngl").write_text(text)
+    elif args.operation == "rate-trace":
+        model = bionetgen.load(str(args.input))
+        network = model.generate_network()
+        from bionetgen import _bionetgen_cpp as cpp
+
+        state = [1.0] * network.num_species
+        observation = {
+            "observer": "BNG3 native compiled ODE rate coefficients and RHS",
+            "species": list(network.species_names),
+            "reaction_labels_diagnostic_only": list(network.reaction_strings),
+            "state": state,
+            "reaction_rate_coefficients": list(
+                cpp._validation_ode_rate_coefficients(model._model, network, 0.0, state)
+            ),
+            "ode_rhs": list(cpp._validation_ode_rhs(model._model, network, 0.0, state)),
+        }
+        model.write_net("model.net")
+        try:
+            model.write_xml("model.xml")
+            observation["bng_xml_export"] = {"status": "OBSERVED", "path": "model.xml"}
+        except (RuntimeError, ValueError) as exc:
+            observation["bng_xml_export"] = {
+                "status": "UNSUPPORTED",
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
+        Path("rate-trace.json").write_text(json.dumps(observation, indent=2) + "\n")
     elif args.operation == "api":
         model = bionetgen.load(str(args.input))
         model.generate_network()

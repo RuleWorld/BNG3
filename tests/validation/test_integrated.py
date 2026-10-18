@@ -77,6 +77,12 @@ def test_integrated_case_contract_requires_source_validation_and_independent_ora
     ids = integrated.expected_contract_ids([case])
     assert f"{case['id']}:source-validation" in ids
     assert f"{case['id']}:source-sbml-oracle" in ids
+    for check in (
+        "source-compiled-rate-multiset",
+        "compiled-net-rate-multiset",
+        "net-bngxml-rate-coefficient",
+    ):
+        assert f"{case['id']}:rate-trace:{check}" in ids
 
 
 def test_concentration_oracle_rejects_missing_or_duplicated_volume_factor():

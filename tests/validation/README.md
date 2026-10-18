@@ -35,6 +35,23 @@ The upstream PyBioNetGen source is imported by the isolated worker; install its 
 
 The same cases also feed BNGL export/reload, BNGIR 0.1 and native 0.2 reconstruction, SBML export consumed by RoadRunner, and model reuse/mutation/reset/seed replay. Per-consumer `checks.json` is merged into the same report with required check identities. Native BNGIR checks block BNGL parser/render fallback during reconstruction; its guarded NET exporter stays guarded. Native generation compares graph identity, counts and a mapped unit-state RHS snapshot, with independent source trajectories checked separately. Independent source analytic trajectories still judge each deterministic consumer; fresh/reused agreement alone cannot validate both.
 
+Each generated SBML case also records its reaction MathML, parameter/unit
+definitions, compartment volumes and source rate evaluated at a unit amount
+state. An isolated BNG3 worker captures native compiled reaction coefficients,
+ODE RHS, NET, and BNG-XML output. It compares the observed source-to-compiled,
+compiled-to-NET, and NET-to-BNG-XML boundaries in sequence, retaining all
+statuses and a stable source trace ID. A missing boundary prevents the report
+from assigning a first divergence past that point, while later failures remain
+visible in the trace and repair packet. The NET rate parser resolves emitted
+rate expressions with the existing comparison helper. For the generated scalar
+elementary BNG-XML slice, the detector compares each numeric `RateConstant`
+times its explicit `symmetry_factor` (default 1); a mismatch is diagnostic
+evidence only (`supported_execution=false`). Native compiled rate comparison
+is explicitly a reaction-rate multiset probe because reaction identity mapping
+is unavailable at this hook. Dynamic/multi-parameter XML laws and missing
+observations remain `NOT_TESTED`; these traces do not qualify all downstream
+NFsim semantics or stochastic count conventions.
+
 `tests.validation.issue_queue` joins one or more exact-revision reports to a retained `gh issue list` snapshot. It rejects stale/conflicting observations and avoids counting a successful process as a passed behavior. Every issue remains explicitly ineligible for automatic closure. The queue includes strict provenance approval debt, reconciliation claims without test references, stale named references, and optional upstream branch observations. A reference resolving in source never counts as executed qualification. CI collects a bounded 1,000-issue snapshot and checks upstream branch drift only on scheduled/manual runs; unavailable or unobserved branches are not treated as matching the lock.
 
 ```bash
