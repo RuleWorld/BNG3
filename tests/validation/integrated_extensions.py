@@ -6,7 +6,13 @@ import json
 import sys
 from pathlib import Path
 
-from . import campaign, integrated_boundaries, integrated_marginals, integrated_protocol
+from . import (
+    campaign,
+    integrated_boundaries,
+    integrated_consumers,
+    integrated_marginals,
+    integrated_protocol,
+)
 from .integrated_cases import generated_cases
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -166,6 +172,8 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
     except (OSError, ValueError, KeyError, TypeError) as exc:
         parent.update(status="HARNESS_ERROR", detail=str(exc))
         checks = []
+    if checks:
+        integrated_consumers.mark_process_summary(parent, checks)
     if not checks:
         checks = [
             dict(

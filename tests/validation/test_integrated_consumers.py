@@ -110,3 +110,36 @@ def test_semantic_difference_reports_the_first_structural_path():
         "right": 3,
     }
     assert _document_difference({"a": 1}, {"a": 1}) is None
+
+
+def test_failed_peer_contract_does_not_block_a_completed_artifact_handoff():
+    parent = dict(id="case:bngl-reload", status="FAIL")
+    rows = [
+        dict(
+            id="case:bngl-reload:semantic-equality",
+            name="semantic-equality",
+            status="FAIL",
+        ),
+        dict(id="case:bngl-reload:simulation", name="simulation", status="PASS"),
+    ]
+    assert consumers.handoff_dependency(parent, rows, "simulation") == rows[1]
+    assert consumers.handoff_dependency(parent, rows, "network") == parent
+    broken_identity = dict(parent, status="HARNESS_ERROR")
+    assert (
+        consumers.handoff_dependency(broken_identity, rows, "simulation")
+        == broken_identity
+    )
+
+
+def test_process_summaries_do_not_duplicate_findings_or_hide_process_errors():
+    rows = [dict(id="case:stage:values", status="FAIL")]
+    parent = dict(id="case:stage", status="FAIL")
+    consumers.mark_process_summary(parent, rows)
+    assert parent["aggregate"] is True
+    assert parent["child_ids"] == ["case:stage:values"]
+    crashed = dict(id="case:stage", status="HARNESS_ERROR")
+    consumers.mark_process_summary(crashed, rows)
+    assert not crashed.get("aggregate")
+    missing = dict(id="case:stage", status="FAIL")
+    consumers.mark_process_summary(missing, [])
+    assert not missing.get("aggregate")

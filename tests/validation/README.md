@@ -59,6 +59,11 @@ retain named rate, seed and compartment dependencies. Reused ODE/SSA instances
 are checked against source-edited fresh compilations, then reset; concurrent SSA
 checks identify which source they used. Semantic reload failures retain both
 canonical documents and the first differing JSON pointer.
+Downstream comparisons depend on their named artifact handoff, so an unrelated
+failed semantic contract does not suppress an already completed simulation or
+network comparison. Process/identity errors still block handoffs. A process
+summary explained by complete validated child checks is marked as an aggregate
+rather than counted as a second scientific finding.
 
 The integrated lane requests `rtol=1e-10`, `atol=1e-12` from deterministic
 solvers; its trajectory comparison thresholds remain unchanged. BNG2 NET embeds

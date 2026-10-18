@@ -422,12 +422,15 @@ def run_case(case, args, rows, env):
         )
         consumers.append(consumer)
         checks_path = work / operation / "checks.json"
+        validated_checks = []
         if checks_path.is_file():
             checks = json.loads(checks_path.read_text())
             errors = integrated_consumers.validate_checks(key, operation, checks)
             if errors:
                 consumer.update(status="HARNESS_ERROR", detail="; ".join(errors))
             else:
+                validated_checks = checks
+                integrated_consumers.mark_process_summary(consumer, checks)
                 for check in checks:
                     check = dict(
                         check,
@@ -444,7 +447,19 @@ def run_case(case, args, rows, env):
             key,
             operation + "-source-dynamics",
             rows,
-            [consumer],
+            [
+                integrated_consumers.handoff_dependency(
+                    consumer,
+                    validated_checks,
+                    (
+                        "original"
+                        if operation == "reuse"
+                        else (
+                            "trajectory" if operation == "sbml-reload" else "simulation"
+                        )
+                    ),
+                )
+            ],
             expected,
             work / operation / "api.gdat",
         )
@@ -453,7 +468,12 @@ def run_case(case, args, rows, env):
                 key,
                 operation + "-network",
                 rows,
-                [bng2, consumer],
+                [
+                    bng2,
+                    integrated_consumers.handoff_dependency(
+                        consumer, validated_checks, "network"
+                    ),
+                ],
                 work / "bng2/model.net",
                 work / operation / "model.net",
                 network=True,
