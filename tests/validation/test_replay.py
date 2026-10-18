@@ -118,3 +118,30 @@ def test_replay_wall_budget_is_enforced_for_nonterminating_process(tmp_path):
     assert result["status"] == "UNVERIFIED"
     assert result["receipt"]["status"] == "TIMEOUT"
     assert result["receipt"]["elapsed_seconds"] < 3
+
+
+def test_replay_selects_distinct_invocations_instead_of_duplicate_leaf_symptoms():
+    document = {
+        "results": [
+            {
+                "id": "a:one",
+                "status": "FAIL",
+                "stage": "rhs",
+                "command": ["run", "--case", "a"],
+            },
+            {
+                "id": "a:two",
+                "status": "FAIL",
+                "stage": "rhs",
+                "command": ["run", "--case", "a"],
+            },
+            {
+                "id": "b:one",
+                "status": "FAIL",
+                "stage": "rhs",
+                "command": ["run", "--case", "b"],
+            },
+        ]
+    }
+    selected = replay.select_cases(document, max_cases=2)
+    assert [r["id"] for r in selected] == ["a:one", "b:one"]

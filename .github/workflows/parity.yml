@@ -62,6 +62,7 @@ jobs:
             tests/validation/test_reporting.py \
             tests/validation/test_triage.py \
             tests/validation/test_replay.py \
+            tests/validation/test_minimize.py \
             tests/validation/test_bngir_adversarial.py \
             tests/validation/test_integrated_boundaries.py \
             tests/validation/test_integrated_protocol.py \
@@ -500,6 +501,10 @@ jobs:
             --pybionetgen-python "$PYBIONETGEN_PYTHON" \
             --report-dir "$RUNNER_TEMP/bng3-integrated-validation" \
             "${full_args[@]}"
+
+      - name: Check independently authored native BNGIR controls
+        if: always()
+        run: python -m pytest tests/validation/test_bngir_adversarial_native.py -q
 
       - name: Audit generated consumer matrix receipts
         if: always()

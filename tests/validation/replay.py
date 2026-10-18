@@ -15,7 +15,7 @@ import os
 from pathlib import Path
 import time
 
-from . import campaign, inventory, reporting, triage
+from . import campaign, inventory, triage
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -34,6 +34,8 @@ def verify_configuration(original, replayed):
 
 def verify_identity(report):
     source = report.get("source", {})
+    if report.get("input_changes_during_run"):
+        raise ValueError("original report records changed inputs during execution")
     if source.get("dirty") is not False or campaign.git(ROOT, "status", "--porcelain"):
         raise ValueError("replay requires a clean recorded source checkout")
     if campaign.git(ROOT, "rev-parse", "HEAD") != source.get("revision"):
@@ -98,14 +100,20 @@ def execute_case(report, row, directory, *, timeout):
         for name in ("references", "inputs", "subject", "platform"):
             if observed.get(name) != report.get(name):
                 raise ValueError("replay identity differs: " + name)
-        check = triage._leaves(observed).get(row["id"])
+        observed_rows = triage._leaves(observed)
+        original_rows = triage._leaves(report)
+        check = observed_rows.get(row["id"])
         if check is None:
             raise ValueError("named check missing from replay report")
         if any(check.get(key) != row.get(key) for key in ("stage", "check")):
             raise ValueError("named check contract differs")
         repeated = dict(
             report,
-            results=[check],
+            results=[
+                actual
+                for identity, actual in observed_rows.items()
+                if identity in original_rows
+            ],
             generated_at=datetime.now(timezone.utc).isoformat(),
             replay_evidence={
                 "report_sha256": inventory.sha256(path),
@@ -123,6 +131,29 @@ def execute_case(report, row, directory, *, timeout):
     return result
 
 
+def select_cases(report, *, max_cases):
+    """Spend replay budget on distinct exact invocations, not duplicate symptoms."""
+    seen, selected = set(), []
+    for _, row in sorted(triage._leaves(report).items()):
+        if row["status"] != "FAIL":
+            continue
+        command = row.get("command")
+        if (
+            not isinstance(command, list)
+            or not command
+            or not all(isinstance(x, str) for x in command)
+        ):
+            continue
+        identity = tuple(command)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        selected.append(row)
+        if len(selected) >= max_cases:
+            break
+    return selected
+
+
 def run(report_path, output, *, max_cases=2, runs=1, timeout=40, budget=90):
     if not (
         1 <= max_cases <= 20
@@ -137,11 +168,7 @@ def run(report_path, output, *, max_cases=2, runs=1, timeout=40, budget=90):
     if output.exists():
         raise ValueError("replay output directory must be fresh")
     output.mkdir(parents=True)
-    rows = triage._leaves(report)
-    tasks = reporting.investigation_tasks(report, report_path.parent)
-    selected = [
-        rows[t["case_id"]] for t in tasks if rows[t["case_id"]]["status"] == "FAIL"
-    ][:max_cases]
+    selected = select_cases(report, max_cases=max_cases)
     start, attempts, replicate_paths = time.monotonic(), [], []
     # One semantic replay per unique invocation can qualify several failing leaves.
     # Selection remains bounded by case count; no process-code-only qualification.

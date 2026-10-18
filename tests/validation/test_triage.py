@@ -439,3 +439,22 @@ def test_packet_detects_tampered_receipt_artifact(tmp_path):
     assert packet["artifact_errors"][0]["reason"] == "recorded digest differs"
     assert packet["repair_eligible"] is False
     assert not list(output.rglob("input.bngl"))
+
+
+def test_packet_retains_consumed_models_and_original_generated_source(tmp_path):
+    case = tmp_path / "cases" / "generated"
+    (case / "atomizer").mkdir(parents=True)
+    (case / "source.xml").write_text("<sbml/>")
+    (case / "atomizer/model.bngl").write_text("begin model\nend model\n")
+    receipt = {"command": ["worker", "--input", str(case / "atomizer/model.bngl")]}
+    (case / "command.json").write_text(json.dumps(receipt))
+    value = report()
+    value["results"][0].update(
+        integration_case="generated", receipt=str(case / "command.json")
+    )
+    (tmp_path / "report.json").write_text(json.dumps(value))
+    output = tmp_path / "out"
+    ledger = triage.write_bundle(tmp_path / "report.json", output)
+    directory = output / ledger["findings"][0]["task_package"]
+    assert (directory / "evidence/cases/generated/atomizer/model.bngl").is_file()
+    assert (directory / "evidence/cases/generated/source.xml").is_file()

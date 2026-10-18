@@ -117,20 +117,3 @@ def test_native_adapter_fails_if_a_corrupt_document_is_accepted():
     assert row["status"] == "FAIL"
     assert row["supported_execution"] is False
     assert row["first_difference"]["field"] == "native_refusal"
-
-
-def test_native_worker_consumes_independent_documents_and_analytic_controls(tmp_path):
-    rows = adversarial.run_worker(tmp_path)
-    assert [row["id"] for row in rows] == adversarial.check_ids()
-    assert all(row["related_issues"] == [153, 154, 155, 156] for row in rows)
-    assert all(row["status"] == "PASS" for row in rows[:-1])
-    controls = [row for row in rows if row["evidence_kind"] != "diagnostic-only"]
-    diagnostics = [row for row in rows if row["evidence_kind"] == "diagnostic-only"]
-    assert len(controls) == 4
-    assert len(diagnostics) == len(rows) - len(controls)
-    compartment = rows[-1]
-    if compartment["status"] == "PASS":
-        assert compartment["supported_execution"] is False
-    else:
-        assert compartment["status"] == "FAIL"
-        assert compartment["first_difference"]["field"] == "native_refusal"

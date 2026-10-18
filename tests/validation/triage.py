@@ -13,6 +13,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
@@ -37,7 +38,7 @@ def normalize(value, report_root=None):
     text = json.dumps(value, sort_keys=True, allow_nan=False)
     roots = [(str(ROOT), "<WORKSPACE>")]
     if report_root:
-        roots.append((str(Path(report_root).resolve()), "<REPORT>"))
+        roots.append((os.path.abspath(report_root), "<REPORT>"))
     for source, replacement in sorted(roots, key=lambda pair: -len(pair[0])):
         text = re.sub(re.escape(source) + r"(?=$|/)", replacement, text)
     return json.loads(text)
@@ -398,6 +399,17 @@ def _artifact_paths(row, task):
     )
     for receipt in task.get("recorded_commands", []):
         paths += [a["path"] for a in receipt.get("artifacts", []) if a.get("path")]
+        for argument in receipt.get("command", []):
+            if isinstance(argument, str) and Path(argument).suffix.lower() in {
+                ".bngl",
+                ".xml",
+                ".net",
+                ".sbml",
+            }:
+                path = Path(argument)
+                if not path.is_absolute() and receipt.get("cwd"):
+                    path = Path(receipt["cwd"]) / path
+                paths.append(str(path))
     return sorted({p for p in paths if isinstance(p, str)})
 
 
@@ -512,6 +524,16 @@ def write_bundle(
                     )
         used = 0
         artifact_paths = _artifact_paths(rows[finding["case_id"]], task)
+        case = rows[finding["case_id"]].get("integration_case")
+        if case:
+            artifact_paths.append(
+                str(
+                    (recorded_root or report_path.parent)
+                    / "cases"
+                    / case
+                    / "source.xml"
+                )
+            )
         packet["missing_evidence"].extend(artifact_paths[max_artifacts:])
         for item in artifact_paths[:max_artifacts]:
             source = relocate(item)
