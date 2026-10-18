@@ -2034,6 +2034,9 @@ bool lowerDirection(const CompiledModel& model,
                                 : new NFcore::TransformationSet(roots, addTemplates);
     transformations->setComplexBookkeeping(blockSameComplexBinding || hasDisjointSets);
     transformations->setNumProductPatterns(static_cast<unsigned int>(direction.productPatterns.size()));
+    const double permutationFactor = rule.modifiers().empty()
+        ? direction.wholeReactantPermutationFactor() : 1.0;
+    if (permutationFactor != 1.0) transformations->setSymmetryFactor(permutationFactor);
     for (auto* creator : creators)
         if (!transformations->addAddMolecule(creator)) { delete transformations; return false; }
 
