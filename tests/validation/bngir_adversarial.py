@@ -14,6 +14,14 @@ ISSUES = [153, 154, 155, 156]
 OPERATION = "bngir-adversarial"
 
 
+class NativeRefusal(RuntimeError):
+    """An explicit refusal returned by the native BNGIR importer."""
+
+
+class HarnessError(RuntimeError):
+    """The adapter could not establish a native semantic outcome."""
+
+
 def _number(value):
     return {"kind": "number", "value": value}
 
@@ -322,7 +330,7 @@ def evaluate_case(case, *, native_import, wrap_model):
     }
     try:
         restored = wrap_model(native_import(copy.deepcopy(case["document"])))
-    except Exception as exc:
+    except NativeRefusal as exc:
         if case["oracle"] == "refuse":
             row.update(
                 status="PASS",
@@ -339,6 +347,19 @@ def evaluate_case(case, *, native_import, wrap_model):
                     "detail": str(exc),
                 },
             )
+        return row
+    except Exception as exc:
+        row.update(
+            status="HARNESS_ERROR",
+            evidence_kind="harness-error",
+            detail=f"native BNGIR outcome unavailable: {type(exc).__name__}: {exc}",
+            first_difference={
+                "field": "harness",
+                "exception": type(exc).__name__,
+                "detail": str(exc),
+            },
+            supported_execution=False,
+        )
         return row
     if case["oracle"] == "refuse":
         row.update(
@@ -366,6 +387,37 @@ def evaluate_case(case, *, native_import, wrap_model):
     return row
 
 
+def _native_import_without_bngl_fallback(cpp, bngir_module, document):
+    """Call the native importer directly; distinguish refusal from adapter failure."""
+    original_parser = cpp.parse_string
+    original_renderer = bngir_module._as_bngl_v02
+
+    def forbidden(*_args, **_kwargs):
+        raise HarnessError(
+            "BNGIR adversarial worker attempted BNGL render/parse fallback"
+        )
+
+    cpp.parse_string = forbidden
+    bngir_module._as_bngl_v02 = forbidden
+    try:
+        try:
+            return cpp._model_from_bngir_v02(document["model"])
+        except HarnessError:
+            raise
+        except RuntimeError as exc:
+            # Current native structural refusals identify the BNGIR boundary.
+            # Other RuntimeErrors can be adapter/runtime faults and are not a
+            # semantic result for this schema-valid generated control.
+            if str(exc).startswith("native BNGIR "):
+                raise NativeRefusal(str(exc)) from exc
+            raise HarnessError(
+                f"unexpected native importer RuntimeError: {exc}"
+            ) from exc
+    finally:
+        cpp.parse_string = original_parser
+        bngir_module._as_bngl_v02 = original_renderer
+
+
 def run_worker(directory: Path):
     """Validate and exercise the native import route without parser rendering."""
     import jsonschema
@@ -378,21 +430,7 @@ def run_worker(directory: Path):
     rows = []
 
     def native_import(document):
-        original_parser = _cpp.parse_string
-        original_renderer = bngir_module._as_bngl_v02
-
-        def forbidden(*_args, **_kwargs):
-            raise RuntimeError(
-                "BNGIR adversarial worker attempted BNGL render/parse fallback"
-            )
-
-        _cpp.parse_string = forbidden
-        bngir_module._as_bngl_v02 = forbidden
-        try:
-            return _cpp._model_from_bngir_v02(document["model"])
-        finally:
-            _cpp.parse_string = original_parser
-            bngir_module._as_bngl_v02 = original_renderer
+        return _native_import_without_bngl_fallback(_cpp, bngir_module, document)
 
     for case in CASES:
         path = directory / f"{case['id']}.bngir.json"

@@ -49,7 +49,7 @@ def test_native_adapter_reports_explicit_refusals_as_diagnostic_controls():
     row = adversarial.evaluate_case(
         case,
         native_import=lambda _model: (_ for _ in ()).throw(
-            RuntimeError("native BNGIR structural reference refused")
+            adversarial.NativeRefusal("native BNGIR structural reference refused")
         ),
         wrap_model=lambda _model: FakeNative(),
     )
@@ -57,6 +57,56 @@ def test_native_adapter_reports_explicit_refusals_as_diagnostic_controls():
     assert row["evidence_kind"] == "diagnostic-only"
     assert row["supported_execution"] is False
     assert row["related_issues"] == [153, 154, 155, 156]
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        RuntimeError("BNGIR adversarial worker attempted BNGL render/parse fallback"),
+        ImportError("native extension missing"),
+        ValueError("unexpected adapter error"),
+    ],
+)
+def test_native_adapter_never_counts_unclassified_exceptions_as_refusals(exception):
+    case = next(c for c in adversarial.generated_cases() if c["oracle"] == "refuse")
+    row = adversarial.evaluate_case(
+        case,
+        native_import=lambda _model: (_ for _ in ()).throw(exception),
+        wrap_model=lambda model: model,
+    )
+    assert row["status"] == "HARNESS_ERROR"
+    assert row["evidence_kind"] == "harness-error"
+    assert row["supported_execution"] is False
+
+
+def test_native_adapter_marks_unexpected_runtime_errors_as_harness_errors():
+    case = next(c for c in adversarial.generated_cases() if c["oracle"] == "refuse")
+    row = adversarial.evaluate_case(
+        case,
+        native_import=lambda _model: (_ for _ in ()).throw(
+            RuntimeError("unexpected native runtime failure")
+        ),
+        wrap_model=lambda model: model,
+    )
+    assert row["status"] == "HARNESS_ERROR"
+
+
+def test_fallback_attempt_is_not_misclassified_as_native_refusal():
+    class FakeCpp:
+        def parse_string(self, _source):
+            raise AssertionError("must be replaced during native import")
+
+        def _model_from_bngir_v02(self, _model):
+            return self.parse_string("fallback")
+
+    class FakeBngir:
+        def _as_bngl_v02(self, _document):
+            raise AssertionError("must be replaced during native import")
+
+    with pytest.raises(adversarial.HarnessError, match="fallback"):
+        adversarial._native_import_without_bngl_fallback(
+            FakeCpp(), FakeBngir(), {"model": {}}
+        )
 
 
 def test_native_adapter_fails_if_a_corrupt_document_is_accepted():
