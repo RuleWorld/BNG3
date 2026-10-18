@@ -26,6 +26,7 @@ def test_integrated_worker_cli_accepts_native_bngir_adversarial_operation():
         check=False,
     )
     assert result.returncode == 0, result.stderr
+    assert "bngir-adversarial" in result.stdout
 
 
 def test_generated_documents_are_independent_schema_valid_and_exactly_named():
