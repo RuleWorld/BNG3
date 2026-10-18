@@ -8,6 +8,7 @@ additional novelty gate, never the original scientific validation result.
 from __future__ import annotations
 
 import argparse
+import copy
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
@@ -408,6 +409,7 @@ def write_bundle(
     baseline=None,
     replicates=(),
     issues=None,
+    recorded_root=None,
     max_file_bytes=2_000_000,
     max_packet_bytes=12_000_000,
     max_artifacts=128,
@@ -433,18 +435,35 @@ def write_bundle(
     if report_path.stat().st_size > max_report_bytes:
         raise ValueError("input report exceeds the triage report byte limit")
     report = json.loads(report_path.read_text())
+    if recorded_root is not None:
+        recorded_root = Path(recorded_root)
+        if not recorded_root.is_absolute() or recorded_root == Path("/"):
+            raise ValueError("recorded evidence root must be an absolute non-root path")
+
+    def relocate(value):
+        path = Path(value)
+        if recorded_root and path.is_absolute() and path.is_relative_to(recorded_root):
+            return report_path.parent / path.relative_to(recorded_root)
+        return path
+
     ledger = analyze(
         report,
         previous=previous,
         baseline=baseline,
         replicates=replicates,
-        report_root=report_path.parent,
+        report_root=recorded_root or report_path.parent,
     )
     output.mkdir(parents=True, exist_ok=True)
     shutil.copy2(report_path, output / "input-report.json")
+    relocated = copy.deepcopy(report)
+    for row in relocated["results"]:
+        if row.get("receipt"):
+            row["receipt"] = str(relocate(row["receipt"]))
+        if row.get("receipts"):
+            row["receipts"] = [str(relocate(p)) for p in row["receipts"]]
     tasks = {
         t["case_id"]: t
-        for t in reporting.investigation_tasks(report, report_path.parent)
+        for t in reporting.investigation_tasks(relocated, report_path.parent)
     }
     rows = _leaves(report)
     packaged_tasks = 0
@@ -475,12 +494,27 @@ def write_bundle(
             report_sha256=ledger["report_sha256"],
             missing_evidence=[],
             retained_evidence=[],
+            artifact_errors=[],
+            evidence_relocation={
+                "recorded_root": str(recorded_root) if recorded_root else None,
+                "local_root": str(report_path.parent),
+            },
         )
+        expected_digests = {}
+        for receipt in task.get("recorded_commands", []):
+            for artifact in receipt.get("artifacts", []):
+                if artifact.get("path") and artifact.get("sha256"):
+                    path = relocate(artifact["path"])
+                    if not path.is_absolute():
+                        path = report_path.parent / path
+                    expected_digests.setdefault(str(path.resolve()), set()).add(
+                        artifact["sha256"].removeprefix("sha256:")
+                    )
         used = 0
         artifact_paths = _artifact_paths(rows[finding["case_id"]], task)
         packet["missing_evidence"].extend(artifact_paths[max_artifacts:])
         for item in artifact_paths[:max_artifacts]:
-            source = Path(item)
+            source = relocate(item)
             if not source.is_absolute():
                 source = report_path.parent / source
             resolved = source.resolve()
@@ -492,6 +526,19 @@ def write_bundle(
             ):
                 packet["missing_evidence"].append(item)
                 continue
+            actual_digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+            expected = expected_digests.get(str(resolved))
+            if expected is not None and expected != {actual_digest}:
+                packet["artifact_errors"].append(
+                    {
+                        "path": item,
+                        "reason": "recorded digest differs",
+                        "expected": sorted(expected),
+                        "actual": actual_digest,
+                    }
+                )
+                packet["missing_evidence"].append(item)
+                continue
             relative = resolved.relative_to(report_path.parent)
             destination = directory / "evidence" / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -501,7 +548,7 @@ def write_bundle(
                 {
                     "original": item,
                     "path": str(destination.relative_to(directory)),
-                    "sha256": hashlib.sha256(destination.read_bytes()).hexdigest(),
+                    "sha256": actual_digest,
                 }
             )
         command = packet.get("reproduce_command") or []
@@ -581,6 +628,11 @@ def main(argv=None):
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--replicate", type=Path, action="append", default=[])
     parser.add_argument("--issues-json", type=Path)
+    parser.add_argument(
+        "--recorded-root",
+        type=Path,
+        help="explicit original artifact root for downloaded CI evidence",
+    )
     parser.add_argument("--strict", action="store_true")
     args = parser.parse_args(argv)
 
@@ -595,6 +647,7 @@ def main(argv=None):
             baseline=read(args.baseline),
             replicates=[read(p) for p in args.replicate],
             issues=read(args.issues_json),
+            recorded_root=args.recorded_root,
         )
     except (OSError, ValueError, KeyError, TypeError) as exc:
         parser.exit(2, f"triage infrastructure error: {exc}\n")

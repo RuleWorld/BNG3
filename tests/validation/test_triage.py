@@ -373,3 +373,69 @@ def test_task_package_count_is_bounded_and_omitted_cases_are_not_repair_eligible
     )
     assert omitted["repair_eligible"] is False
     assert any("task package limit" in error for error in result["evidence_errors"])
+
+
+def test_downloaded_artifact_root_is_explicit_and_retains_original_paths(tmp_path):
+    source = tmp_path / "download"
+    source.mkdir()
+    (source / "input.bngl").write_text("begin model\nend model\n")
+    receipt = {
+        "command": ["engine", "input.bngl"],
+        "artifacts": [
+            {
+                "path": "/ci/run/report/input.bngl",
+                "sha256": __import__("hashlib")
+                .sha256((source / "input.bngl").read_bytes())
+                .hexdigest(),
+            }
+        ],
+    }
+    (source / "command.json").write_text(json.dumps(receipt))
+    value = report()
+    row = value["results"][0]
+    row["evidence"] = ["/ci/run/report/input.bngl"]
+    row["receipt"] = "/ci/run/report/command.json"
+    path = source / "report.json"
+    path.write_text(json.dumps(value))
+    output = tmp_path / "packaged"
+    ledger = triage.write_bundle(path, output, recorded_root="/ci/run/report")
+    packet = json.loads(
+        (output / ledger["findings"][0]["task_package"] / "task.json").read_text()
+    )
+    assert packet["recorded_commands"][0]["command"] == ["engine", "input.bngl"]
+    assert packet["missing_evidence"] == []
+    assert packet["evidence_relocation"]["recorded_root"] == "/ci/run/report"
+    assert any(
+        x["original"] == "/ci/run/report/input.bngl"
+        for x in packet["retained_evidence"]
+    )
+
+
+def test_packet_detects_tampered_receipt_artifact(tmp_path):
+    import hashlib
+
+    original = b"original model"
+    (tmp_path / "input.bngl").write_bytes(b"changed model")
+    (tmp_path / "command.json").write_text(
+        json.dumps(
+            {
+                "artifacts": [
+                    {
+                        "path": str(tmp_path / "input.bngl"),
+                        "sha256": hashlib.sha256(original).hexdigest(),
+                    }
+                ]
+            }
+        )
+    )
+    value = report()
+    value["results"][0]["receipt"] = str(tmp_path / "command.json")
+    (tmp_path / "report.json").write_text(json.dumps(value))
+    output = tmp_path / "out"
+    ledger = triage.write_bundle(tmp_path / "report.json", output)
+    packet = json.loads(
+        (output / ledger["findings"][0]["task_package"] / "task.json").read_text()
+    )
+    assert packet["artifact_errors"][0]["reason"] == "recorded digest differs"
+    assert packet["repair_eligible"] is False
+    assert not list(output.rglob("input.bngl"))

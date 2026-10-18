@@ -289,9 +289,7 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
                     str(config["simulation_protocol"]["n_steps"]),
                 ]
         elif (
-            not command
-            and row.get("test_file", "").endswith(".py")
-            and row.get("name")
+            not command and row.get("test_file", "").endswith(".py") and row.get("name")
         ):
             node = row["test_file"] + (
                 "::" + row["name"].split("::", 1)[1] if "::" in row["name"] else ""
@@ -345,7 +343,9 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             except json.JSONDecodeError as exc:
                 record.update(status="malformed", error=f"invalid JSON: {exc}")
             except UnicodeError as exc:
-                record.update(status="malformed", error=f"invalid receipt encoding: {exc}")
+                record.update(
+                    status="malformed", error=f"invalid receipt encoding: {exc}"
+                )
             except OSError as exc:
                 record.update(status="error", error=f"could not read receipt: {exc}")
             else:
