@@ -17,7 +17,7 @@ from .integrated_cases import generated_cases
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = Path(__file__).with_name("integrated_worker.py")
-OPERATIONS = ("boundaries", "protocol", "nf-marginals")
+OPERATIONS = ("boundaries", "protocol", "nf-marginals", "graph-identity")
 
 
 def check_ids(operation, case=None):
@@ -28,6 +28,10 @@ def check_ids(operation, case=None):
             f"{case['id']}:protocol:{name}"
             for name in integrated_protocol.expected_check_names
         ]
+    if operation == "graph-identity":
+        from .graph_identity import CASES
+
+        return [f"graph-identity:{case['id']}" for case in CASES]
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -35,8 +39,12 @@ def check_ids(operation, case=None):
     ]
 
 
-def expected_ids(cases):
-    ids = ["campaign:boundaries", *check_ids("boundaries")]
+def expected_ids(cases, *, include_boundaries=True, include_graph_identity=True):
+    ids = []
+    if include_boundaries:
+        ids.extend(["campaign:boundaries", *check_ids("boundaries")])
+    if include_graph_identity:
+        ids.extend(["campaign:graph-identity", *check_ids("graph-identity")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -48,6 +56,10 @@ def run_worker(operation, args):
     """Use installed identity selection from integrated_worker before this call."""
     if operation == "boundaries":
         return integrated_boundaries.run(Path.cwd())
+    if operation == "graph-identity":
+        from .graph_identity import run_worker as run_graph_identity
+
+        return run_graph_identity(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)
@@ -114,7 +126,7 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
     )
     if not case:
         parent.pop("integration_case", None)
-        parent["qualification"] = "boundaries"
+        parent["qualification"] = operation
     expected = check_ids(operation, case)
     path = directory / "checks.json"
     checks = []
@@ -190,7 +202,7 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
         if case:
             row["integration_case"] = key
         else:
-            row["qualification"] = "boundaries"
+            row["qualification"] = operation
         row["receipts"] = [parent["receipt"]] if parent.get("receipt") else []
         rows.append(row)
     return parent

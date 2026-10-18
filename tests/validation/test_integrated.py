@@ -22,6 +22,19 @@ def test_pr_selection_covers_each_pair_of_integration_dimensions():
             }
 
 
+def test_focused_qualification_registries_exclude_the_other_final_stage():
+    boundary = integrated.expected_contract_ids(
+        [], include_boundaries=True, include_graph_identity=False
+    )
+    graph = integrated.expected_contract_ids(
+        [], include_boundaries=False, include_graph_identity=True
+    )
+    assert "campaign:boundaries" in boundary
+    assert "campaign:graph-identity" not in boundary
+    assert "campaign:graph-identity" in graph
+    assert "campaign:boundaries" not in graph
+
+
 def test_missing_stage_output_blocks_consumers_but_not_independent_routes(tmp_path):
     rows = []
     missing = integrated.run_stage(

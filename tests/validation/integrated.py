@@ -60,7 +60,9 @@ NETWORK_CHECKS = (
 )
 
 
-def expected_contract_ids(cases):
+def expected_contract_ids(
+    cases, *, include_boundaries=True, include_graph_identity=True
+):
     return [
         f"{c['id']}:{suffix}"
         for c in cases
@@ -96,7 +98,11 @@ def expected_contract_ids(cases):
             ),
             "worker-identity:same-installed-build",
         )
-    ] + integrated_extensions.expected_ids(cases)
+    ] + integrated_extensions.expected_ids(
+        cases,
+        include_boundaries=include_boundaries,
+        include_graph_identity=include_graph_identity,
+    )
 
 
 def run_stage(
@@ -637,8 +643,11 @@ def main(argv=None):
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--boundaries-only", action="store_true")
+    parser.add_argument("--graph-identity-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
+    if args.boundaries_only and args.graph_identity_only:
+        parser.error("select at most one focused qualification")
     args.ensemble_runs = (
         args.ensemble_runs
         if args.ensemble_runs is not None
@@ -654,7 +663,7 @@ def main(argv=None):
         if args.case
         else generated_cases(args.full)
     )
-    if args.boundaries_only:
+    if args.boundaries_only or args.graph_identity_only:
         selected = []
     for name in (
         "bng_cpp",
@@ -684,7 +693,10 @@ def main(argv=None):
     try:
         references = _preflight(args)
         subject_digest = inventory.sha256(args.bng_cpp)
-        integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
+        if not args.graph_identity_only:
+            integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
+        if not args.boundaries_only:
+            integrated_extensions.invoke("graph-identity", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -695,7 +707,13 @@ def main(argv=None):
             raise ValueError(
                 "runtime or reference identity changed during integration run"
             )
-        missing = set(expected_contract_ids(selected)) - {r["id"] for r in rows}
+        missing = set(
+            expected_contract_ids(
+                selected,
+                include_boundaries=not args.graph_identity_only,
+                include_graph_identity=not args.boundaries_only,
+            )
+        ) - {r["id"] for r in rows}
         if missing and all(r["status"] == "PASS" for r in rows):
             raise ValueError(
                 "missing semantic integration evidence: " + ", ".join(sorted(missing))
@@ -729,7 +747,11 @@ def main(argv=None):
             + (
                 ["--boundaries-only"]
                 if row.get("qualification") == "boundaries"
-                else (["--case", case_id] if case_id else [])
+                else (
+                    ["--graph-identity-only"]
+                    if row.get("qualification") == "graph-identity"
+                    else (["--case", case_id] if case_id else [])
+                )
             )
             + [
                 "--report-dir",
@@ -765,14 +787,15 @@ def main(argv=None):
         row.setdefault("question", "generated-cross-component-handoff")
         if row["stage"] in integrated_extensions.OPERATIONS:
             row["source_locations"] = [
-                "tests/validation/integrated_"
-                + {
-                    "boundaries": "boundaries",
-                    "protocol": "protocol",
-                    "nf-marginals": "marginals",
+                {
+                    "boundaries": "tests/validation/integrated_boundaries.py",
+                    "protocol": "tests/validation/integrated_protocol.py",
+                    "nf-marginals": "tests/validation/integrated_marginals.py",
+                    "graph-identity": "tests/validation/graph_identity.py",
                 }[row["stage"]]
-                + ".py"
             ]
+            if row["stage"] == "graph-identity":
+                row["question"] = "native-network-graph-identity-vs-independent-oracle"
         stage = row["stage"]
         if not row.get("related_issues"):
             if stage == "boundaries":
@@ -781,6 +804,8 @@ def main(argv=None):
                 issues = [138, 139, 140, 141, 143, 171, 172]
             elif stage == "nf-marginals":
                 issues = [143, 146, 151, 167]
+            elif stage == "graph-identity":
+                issues = [142]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):

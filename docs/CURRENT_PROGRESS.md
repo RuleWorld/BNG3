@@ -150,6 +150,21 @@ Green CI establishes only its selected contracts. Current limitations include:
 - CUDA hardware evidence, maintenance policy, scientific ownership and release
   approvals cannot be replaced by CPU CI success.
 
+## Validation-only graph identity continuation (2026-10-18 candidate)
+
+The integrated campaign now has a bounded #142 detector that feeds its normal
+report and issue queue. Six generated seed-only cases exercise the installed
+BNG3 native network generator against the independent validation graph matcher:
+3-, 4- and 5-molecule symmetric rings under molecule/site/bond-label
+permutations, plus negative controls for site-state, species-compartment and
+per-molecule-compartment distinctions. Each named result links to #142, and a
+mismatch is an ordinary failure. Focused local harness checks validate
+non-vacuous oracle cases and
+report wiring; no BNG3 build or native campaign was run locally, so production
+outcomes await parity CI. This does not compare BNGcore and NFsim canonical
+labels, exercise embedded or standalone NFsim identity, or establish general
+network equivalence. #142's implementation/contract criteria remain open.
+
 ## Integrated acceptance slices
 
 A bounded repair does not close its broader issue.

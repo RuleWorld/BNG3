@@ -328,5 +328,20 @@ assert that BNGcore and NFsim raw label strings are interchangeable or prove a
 global cross-domain canonical-label contract; cache keys and serialization
 remain domain-specific.
 
+The integrated campaign also runs six generated seed-only identity controls
+through the installed BNG3 native network generator: 3-, 4- and 5-molecule
+symmetric rings under molecule/site/bond-label permutations, plus state,
+species-compartment and molecule-compartment distinctions. Expected seed
+partitions come from the validation graph matcher, whose implementation is
+separate from the native identity consumer. This is a bounded
+`SpeciesList`/network-generation detector;
+it does not compare BNGcore and NFsim labels, exercise embedded or standalone
+NFsim identity, or qualify general network canonicalization. The issue queue
+links each named result to #142, and mismatches remain ordinary failures.
+Run just this group with `--graph-identity-only`; generated BNGL, written NET
+files, per-case outcomes and the first identity difference stay in the report
+directory. Invalid generated inputs and evidence-harness failures retain their
+own classifications, and do not stop later cases.
+
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.

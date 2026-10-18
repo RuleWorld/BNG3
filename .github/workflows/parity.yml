@@ -61,6 +61,7 @@ jobs:
             tests/validation/test_integrated_protocol.py \
             tests/validation/test_integrated_marginals.py \
             tests/validation/test_integrated_extensions.py \
+            tests/validation/test_graph_identity.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
