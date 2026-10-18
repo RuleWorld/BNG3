@@ -23,7 +23,10 @@ def _write_gdat(path, data, columns):
 def _receipt(directory, files):
     directory.mkdir(parents=True, exist_ok=True)
     artifacts = [
-        {"path": str(path.resolve()), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        {
+            "path": str(path.resolve()),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
         for path in files
     ]
     path = directory / "command.json"
@@ -43,7 +46,9 @@ def _minimal_report(tmp_path):
             data, columns = matrix.expected_source_trajectory(case)
             if cell["stage"] == "reuse":
                 directory.mkdir(parents=True, exist_ok=True)
-                mutated, mutated_columns = matrix.mutated_analytic_trajectory(case, rate=0.6)
+                mutated, mutated_columns = matrix.mutated_analytic_trajectory(
+                    case, rate=0.6
+                )
                 source = directory / "translated.bngl"
                 source.write_text("generated source", encoding="utf-8")
                 metadata = {
@@ -54,11 +59,17 @@ def _minimal_report(tmp_path):
                     "source_path": str(source.resolve()),
                     "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
                 }
-                (directory / "mutation.json").write_text(json.dumps(metadata), encoding="utf-8")
+                (directory / "mutation.json").write_text(
+                    json.dumps(metadata), encoding="utf-8"
+                )
                 files = [
                     _write_gdat(directory / "api.gdat", data, columns),
-                    _write_gdat(directory / "reuse-mutated.gdat", mutated, mutated_columns),
-                    _write_gdat(directory / "reuse-fresh.gdat", mutated, mutated_columns),
+                    _write_gdat(
+                        directory / "reuse-mutated.gdat", mutated, mutated_columns
+                    ),
+                    _write_gdat(
+                        directory / "reuse-fresh.gdat", mutated, mutated_columns
+                    ),
                     directory / "mutation.json",
                     source,
                 ]
@@ -188,12 +199,12 @@ def test_expected_matrix_covers_mutation_and_all_declared_consumer_routes():
             "protocol",
             "nf-marginals",
         } <= stages
-        assert f"{case['id']}:reuse:mutation-fresh" in matrix.expected_check_ids(
-            [case]
-        )
+        assert f"{case['id']}:reuse:mutation-fresh" in matrix.expected_check_ids([case])
 
 
-def test_report_audit_rejects_missing_and_duplicate_cells_and_missing_receipts(tmp_path):
+def test_report_audit_rejects_missing_and_duplicate_cells_and_missing_receipts(
+    tmp_path,
+):
     report = _minimal_report(tmp_path)
     assert matrix.audit_report(report, revision="abc123")["status"] == "PASS"
 
@@ -205,11 +216,15 @@ def test_report_audit_rejects_missing_and_duplicate_cells_and_missing_receipts(t
 
     duplicate = copy.deepcopy(report)
     duplicate["results"].append(duplicate["results"][0])
-    assert matrix.audit_report(duplicate, revision="abc123")["status"] == "HARNESS_ERROR"
+    assert (
+        matrix.audit_report(duplicate, revision="abc123")["status"] == "HARNESS_ERROR"
+    )
 
     no_receipt = copy.deepcopy(report)
     no_receipt["results"][0]["receipt"] = "/tmp/does-not-exist/command.json"
-    assert matrix.audit_report(no_receipt, revision="abc123")["status"] == "HARNESS_ERROR"
+    assert (
+        matrix.audit_report(no_receipt, revision="abc123")["status"] == "HARNESS_ERROR"
+    )
 
 
 def test_audit_keeps_unsupported_and_not_tested_distinct_from_pass(tmp_path):
@@ -242,12 +257,12 @@ def test_adversarial_case_reaches_execution_matrix_with_conflicting_bindings():
 def test_parameter_invalidation_check_is_not_tested_when_dependency_is_absent(tmp_path):
     report = _minimal_report(tmp_path)
     mutation = next(
-        row
-        for row in report["results"]
-        if row["id"].endswith(":reuse:mutation-fresh")
+        row for row in report["results"] if row["id"].endswith(":reuse:mutation-fresh")
     )
     mutation["status"] = "NOT_TESTED"
-    mutation["detail"] = "no translated parameter dependency; numeric folding is allowed"
+    mutation["detail"] = (
+        "no translated parameter dependency; numeric folding is allowed"
+    )
     audit = matrix.audit_report(report, revision="abc123")
     outcome = next(
         row

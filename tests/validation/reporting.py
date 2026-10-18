@@ -187,6 +187,7 @@ def history(current: dict, previous: dict | None) -> dict:
             "comparable": False,
             "reason": "configuration, corpus, tests or reference identity changed",
         }
+
     def leaf_statuses(report):
         statuses = {}
         for row in report["results"]:
@@ -217,8 +218,7 @@ def history(current: dict, previous: dict | None) -> dict:
         "coverage_regressions": sorted(
             k
             for k in old
-            if old[k] == "PASS"
-            and new.get(k) in {None, "NOT_TESTED", "UNSUPPORTED"}
+            if old[k] == "PASS" and new.get(k) in {None, "NOT_TESTED", "UNSUPPORTED"}
         ),
     }
 

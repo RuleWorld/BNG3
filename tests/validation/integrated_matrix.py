@@ -200,10 +200,14 @@ def _artifact_from_receipt(row, artifact_name):
 
 
 def _validate_receipt(payload, path, *, require_success=False):
-    if payload.get("status") not in _ALLOWED or not isinstance(payload.get("command"), list):
+    if payload.get("status") not in _ALLOWED or not isinstance(
+        payload.get("command"), list
+    ):
         raise ValueError(f"command receipt has invalid status or command: {path}")
     if require_success and payload.get("status") != "PASS":
-        raise ValueError(f"command receipt is not a successful execution receipt: {path}")
+        raise ValueError(
+            f"command receipt is not a successful execution receipt: {path}"
+        )
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, list):
         raise ValueError(f"command receipt has no artifact inventory: {path}")
@@ -469,8 +473,7 @@ def _analytic_rows(cells, case, child_checks):
         try:
             payload = json.loads(Path(reuse["receipt"]).read_text(encoding="utf-8"))
             artifacts = {
-                Path(item["path"]).name: item
-                for item in payload.get("artifacts", [])
+                Path(item["path"]).name: item for item in payload.get("artifacts", [])
             }
             mutation_meta_path = Path(reuse["receipt"]).parent / "mutation.json"
             mutation_meta = json.loads(mutation_meta_path.read_text(encoding="utf-8"))
@@ -504,13 +507,17 @@ def _analytic_rows(cells, case, child_checks):
                     differences[name] = {"field": "receipt", "detail": "missing"}
                     continue
                 path = Path(artifact["path"])
-                if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != artifact.get("sha256"):
+                if not path.is_file() or hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest() != artifact.get("sha256"):
                     differences[name] = {"field": "receipt-digest", "path": str(path)}
                     continue
                 differences[name] = _trajectory_difference(
                     path, expected, mutated_names, rate=mutation_rate
                 )
-            actual = {name: diff for name, diff in differences.items() if diff is not None}
+            actual = {
+                name: diff for name, diff in differences.items() if diff is not None
+            }
             row = mutation_row
             row.update(
                 status="FAIL" if actual else "PASS",
@@ -566,7 +573,9 @@ def audit_report(report, *, revision=None):
     if not isinstance(actual_revision, str) or not actual_revision:
         errors.append("integrated report has no source revision")
     if source.get("dirty") is not False:
-        errors.append("integrated report source is dirty or clean-tree state is missing")
+        errors.append(
+            "integrated report source is dirty or clean-tree state is missing"
+        )
     if revision is not None and actual_revision != revision:
         errors.append(
             f"candidate revision mismatch: expected {revision}, got {actual_revision}"
@@ -578,7 +587,9 @@ def audit_report(report, *, revision=None):
     }
     missing_cases = sorted({case["id"] for case in cases} - configured)
     if missing_cases:
-        errors.append("selected cases absent from integrated run: " + ", ".join(missing_cases))
+        errors.append(
+            "selected cases absent from integrated run: " + ", ".join(missing_cases)
+        )
 
     cells, checks, auxiliary, analytic = [], [], [], []
     for case in cases:
@@ -621,13 +632,9 @@ def audit_report(report, *, revision=None):
             for engine in ("embedded", "native")
             for name in integrated_marginals.CHECKS
         )
-        case_auxiliary = [
-            _check_direct(index, case, *spec) for spec in direct_specs
-        ]
+        case_auxiliary = [_check_direct(index, case, *spec) for spec in direct_specs]
         auxiliary.extend(case_auxiliary)
-        analytic.extend(
-            _analytic_rows(case_cells, case, case_checks + case_auxiliary)
-        )
+        analytic.extend(_analytic_rows(case_cells, case, case_checks + case_auxiliary))
 
     all_rows = cells + checks + auxiliary + analytic
     status = _status(all_rows)
@@ -651,7 +658,10 @@ def audit_report(report, *, revision=None):
                 **row,
                 "check": row["id"].split(":", 1)[-1],
                 "related_issues": issue_ids,
-                "capabilities": ["integration.cross-component", "generated.consumer-matrix"],
+                "capabilities": [
+                    "integration.cross-component",
+                    "generated.consumer-matrix",
+                ],
                 "command": stage_cell.get("replay_command") if stage_cell else None,
                 "receipt": stage_cell.get("receipt") if stage_cell else None,
             }
@@ -705,7 +715,9 @@ def audit_report(report, *, revision=None):
             "selected_cases": [case["id"] for case in cases],
         },
         "errors": errors,
-        "expected_cell_ids": [cell["row_id"] for case in cases for cell in expected_cells(case)],
+        "expected_cell_ids": [
+            cell["row_id"] for case in cases for cell in expected_cells(case)
+        ],
         "expected_check_ids": expected_check_ids(cases),
         "expected_contract_ids": [row["id"] for row in findings],
         "cells": cells,
