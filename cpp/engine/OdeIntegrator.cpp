@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -511,6 +512,9 @@ void OdeIntegrator::compile() {
         // Build the complete rate string that NetWriter writes to .net file
         // Format: [unitConvFactor*][statFactor*]derivedParam OR [statFactor*]rawRate
         std::ostringstream rateStrBuilder;
+        // This text is parsed back into the executable rate expression. The
+        // stream default of six digits changes nonterminating volume factors.
+        rateStrBuilder << std::setprecision(std::numeric_limits<double>::max_digits10);
         bool foundDerived = false;
 
         if (!originRuleName.empty()) {
