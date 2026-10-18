@@ -619,6 +619,24 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
                 )
             old_rate = float(old_rate)
             changed_rate = old_rate * 1.5
+            mutation_source = Path(source_path).resolve()
+            (Path.cwd() / "mutation.json").write_text(
+                json.dumps(
+                    {
+                        "parameter": rate_name,
+                        "original_value": old_rate,
+                        "mutated_value": changed_rate,
+                        "factor": 1.5,
+                        "source_path": str(mutation_source),
+                        "source_sha256": hashlib.sha256(
+                            mutation_source.read_bytes()
+                        ).hexdigest(),
+                    },
+                    indent=2,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             source.set_parameter(rate_name, changed_rate)
             mutated = source.simulate(
                 method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12

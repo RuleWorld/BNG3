@@ -29,8 +29,8 @@ def test_generated_families_preserve_decay_ids_and_bound_pairwise_matrix():
         for reverse in (False, True)
         for atomize in (False, True)
     }
-    assert len(full) == 60
-    assert len(selected) == 24
+    assert len(full) == 61
+    assert len(selected) == 25
     assert len({case["id"] for case in full}) == len(full)
     for family, family_cases in by_family.items():
         picked = [
@@ -206,11 +206,12 @@ def test_generated_perturbations_preserve_baseline_and_name_their_lineage():
     full = integrated_cases.generated_cases(full=True)
     perturbations = [case for case in full if case.get("transform")]
 
-    assert len(perturbations) == 12
-    assert len([case for case in baseline if case.get("transform")]) == 6
+    assert len(perturbations) == 13
+    assert len([case for case in baseline if case.get("transform")]) == 7
     assert {case["transform"] for case in perturbations} == {
         "function-shadowing",
         "concentration-coordinate",
+        "shadow-global-decoy",
     }
     by_id = {case["id"]: case for case in full}
     for case in perturbations:
@@ -246,6 +247,25 @@ def test_function_shadowing_is_a_real_parameterized_sbml_transform():
     assert parameters["rate"] == 7.0
     assert parameters["k"] == integrated_cases.RATE
     assert "rateLaw" in integrated_cases.sbml_text(case)
+
+
+def test_adversarial_shadow_case_is_in_the_pr_sample_and_keeps_source_k_binding():
+    case = next(
+        case
+        for case in integrated_cases.generated_cases()
+        if case.get("transform") == "shadow-global-decoy"
+    )
+    root = ET.fromstring(integrated_cases.sbml_text(case))
+    ns = {"s": "http://www.sbml.org/sbml/level3/version2/core"}
+    model = root.find("s:model", ns)
+    parameters = {
+        parameter.attrib["id"]: float(parameter.attrib["value"])
+        for parameter in model.findall("s:listOfParameters/s:parameter", ns)
+    }
+    assert parameters["rate"] == 13.0
+    assert parameters["k"] == integrated_cases.RATE
+    assert "<bvar><ci>rate</ci></bvar>" in integrated_cases.sbml_text(case)
+    assert case["base_case_id"] == "v1-n20-r0-a0"
 
 
 def test_concentration_transform_keeps_independent_amount_oracle():

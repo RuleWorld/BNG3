@@ -17,10 +17,10 @@ def test_pr_selection_covers_each_pair_of_integration_dimensions():
     selected = integrated.generated_cases()
     baseline_full = [case for case in full if not case.get("transform")]
     baseline_selected = [case for case in selected if not case.get("transform")]
-    assert len(full) == 60 and len(selected) == 24
+    assert len(full) == 61 and len(selected) == 25
     assert len({c["id"] for c in full}) == len(full)
-    assert len([case for case in selected if case.get("transform")]) == 6
-    assert len([case for case in full if case.get("transform")]) == 12
+    assert len([case for case in selected if case.get("transform")]) == 7
+    assert len([case for case in full if case.get("transform")]) == 13
     for family in {c["family"] for c in baseline_full}:
         for left, right in combinations(("volume", "initial", "reverse", "atomize"), 2):
             assert {

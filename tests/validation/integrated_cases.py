@@ -70,6 +70,18 @@ def generated_cases(full=False):
                     ),
                 )
             )
+    # Keep one distinct, deliberately misleading global-rate declaration in
+    # the PR sample. The local function formal still binds k; a reference that
+    # accidentally resolves the global `rate` must therefore diverge sharply.
+    shadow = dict(decay_bases[0])
+    shadow.update(
+        id=f"shadow-global-decoy-{decay_bases[0]['id']}",
+        base_case_id=decay_bases[0]["id"],
+        transform="shadow-global-decoy",
+        shadow_global_rate=13.0,
+        quantity_basis="amount; function formal rate shadows adversarial global rate=13",
+    )
+    cases.append(shadow)
     return cases
 
 
@@ -112,9 +124,10 @@ def sbml_text(case):
         parameter_units = (
             '<parameter id="k" value="0.4" units="per_second" constant="true"/>'
         )
-        if case.get("transform") == "function-shadowing":
+        if case.get("transform") in ("function-shadowing", "shadow-global-decoy"):
             parameter_units += (
-                '<parameter id="rate" value="7" units="per_second" ' 'constant="true"/>'
+                f'<parameter id="rate" value="{case.get("shadow_global_rate", 7)}" '
+                'units="per_second" constant="true"/>'
             )
             function_definitions = """<listOfFunctionDefinitions>
 <functionDefinition id="rateLaw"><math xmlns="http://www.w3.org/1998/Math/MathML">

@@ -187,8 +187,19 @@ def history(current: dict, previous: dict | None) -> dict:
             "comparable": False,
             "reason": "configuration, corpus, tests or reference identity changed",
         }
-    old = {r["id"]: r["status"] for r in previous["results"]}
-    new = {r["id"]: r["status"] for r in current["results"]}
+
+    def leaf_statuses(report):
+        statuses = {}
+        for row in report["results"]:
+            if row.get("aggregate"):
+                continue
+            if row["id"] in statuses:
+                raise ValueError("duplicate history result identity: " + row["id"])
+            statuses[row["id"]] = row["status"]
+        return statuses
+
+    old = leaf_statuses(previous)
+    new = leaf_statuses(current)
     return {
         "comparable": True,
         "new_failures": sorted(
@@ -197,6 +208,18 @@ def history(current: dict, previous: dict | None) -> dict:
         "resolved": sorted(k for k in old if old[k] in BAD and new.get(k) == "PASS"),
         "newly_executed": sorted(new.keys() - old.keys()),
         "no_longer_executed": sorted(old.keys() - new.keys()),
+        # A newly admitted semantic failure differs from a broken harness.
+        "newly_admitted_failures": sorted(
+            k for k in new if old.get(k) == "UNSUPPORTED" and new[k] == "FAIL"
+        ),
+        "unsupported_to_supported": sorted(
+            k for k in new if old.get(k) == "UNSUPPORTED" and new[k] == "PASS"
+        ),
+        "coverage_regressions": sorted(
+            k
+            for k in old
+            if old[k] == "PASS" and new.get(k) in {None, "NOT_TESTED", "UNSUPPORTED"}
+        ),
     }
 
 
