@@ -20,7 +20,7 @@ import numpy as np
 from . import campaign, contracts, inventory, reporting
 from .simulation_contract import net_reload_context
 from .integrated_cases import TIMES, generated_cases, sbml_text, expected_trajectory
-from . import integrated_consumers, scientific_contracts
+from . import integrated_consumers, scientific_contracts, integrated_extensions
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKER = Path(__file__).with_name("integrated_worker.py")
@@ -96,11 +96,20 @@ def expected_contract_ids(cases):
             ),
             "worker-identity:same-installed-build",
         )
-    ]
+    ] + integrated_extensions.expected_ids(cases)
 
 
 def run_stage(
-    case, stage, command, directory, rows, *, dependencies=(), required=(), env=None
+    case,
+    stage,
+    command,
+    directory,
+    rows,
+    *,
+    dependencies=(),
+    required=(),
+    env=None,
+    timeout=60,
 ):
     blocked = [r["id"] for r in dependencies if r["status"] != "PASS"]
     row = dict(
@@ -115,7 +124,7 @@ def run_stage(
         row.update(blocked_by=blocked, detail="prerequisite handoff did not pass")
     else:
         receipt = campaign.run_command(
-            command, directory, 60, required=required, env=env
+            command, directory, timeout, required=required, env=env
         )
         status = receipt["status"]
         worker_status = directory / "worker-status.json"
@@ -513,8 +522,25 @@ def run_case(case, args, rows, env):
         )
     for route, dep in (("nf", nf), ("native-nf", native)):
         _nf_invariants(case, route, work / route / "nf.gdat", rows, dep)
+    qualifications = [
+        integrated_extensions.invoke(
+            "protocol", args, rows, env, run_stage, case=case, dependencies=[atomizer]
+        )
+    ]
+    if case["family"] in ("decay", "reversible"):
+        qualifications.append(
+            integrated_extensions.invoke(
+                "nf-marginals",
+                args,
+                rows,
+                env,
+                run_stage,
+                case=case,
+                dependencies=[atomizer, bng2],
+            )
+        )
     # Confirm repeated installed workers did not silently select another build.
-    identity_stages = [atomizer, api, compat, nf, *consumers]
+    identity_stages = [atomizer, api, compat, nf, *consumers, *qualifications]
     identities = [r for r in identity_stages if r["status"] == "PASS"]
     if len(identities) == len(identity_stages):
         observed = [
@@ -588,7 +614,16 @@ def main(argv=None):
     parser.add_argument("--report-dir", type=Path, required=True)
     parser.add_argument("--case", action="append", default=[])
     parser.add_argument("--full", action="store_true")
+    parser.add_argument("--boundaries-only", action="store_true")
+    parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
+    args.ensemble_runs = (
+        args.ensemble_runs
+        if args.ensemble_runs is not None
+        else (128 if args.full else 32)
+    )
+    if not 8 <= args.ensemble_runs <= 256:
+        parser.error("ensemble run budget must be 8..256")
     all_cases = generated_cases(full=True)
     if set(args.case) - {c["id"] for c in all_cases}:
         parser.error("unknown integration case")
@@ -597,6 +632,8 @@ def main(argv=None):
         if args.case
         else generated_cases(args.full)
     )
+    if args.boundaries_only:
+        selected = []
     for name in (
         "bng_cpp",
         "bng2_root",
@@ -625,6 +662,7 @@ def main(argv=None):
     try:
         references = _preflight(args)
         subject_digest = inventory.sha256(args.bng_cpp)
+        integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -661,11 +699,16 @@ def main(argv=None):
         "pybionetgen_python",
     ):
         replay_base += ["--" + name.replace("_", "-"), str(getattr(args, name))]
+    replay_base += ["--ensemble-runs", str(args.ensemble_runs)]
     for row in rows:
         case_id = row.get("integration_case")
         row["command"] = (
             replay_base
-            + (["--case", case_id] if case_id else [])
+            + (
+                ["--boundaries-only"]
+                if row.get("qualification") == "boundaries"
+                else (["--case", case_id] if case_id else [])
+            )
             + [
                 "--report-dir",
                 str(args.report_dir.parent / ("replay-" + (case_id or "preflight"))),
@@ -697,10 +740,26 @@ def main(argv=None):
                     else "python/bionetgen/model.py"
                 ),
             ]
-        row["question"] = "generated-cross-component-handoff"
+        row.setdefault("question", "generated-cross-component-handoff")
+        if row["stage"] in integrated_extensions.OPERATIONS:
+            row["source_locations"] = [
+                "tests/validation/integrated_"
+                + {
+                    "boundaries": "boundaries",
+                    "protocol": "protocol",
+                    "nf-marginals": "marginals",
+                }[row["stage"]]
+                + ".py"
+            ]
         stage = row["stage"]
         if not row.get("related_issues"):
-            if stage in integrated_consumers.ISSUES:
+            if stage == "boundaries":
+                issues = [157, 158, 160, 161, 164]
+            elif stage == "protocol":
+                issues = [138, 139, 140, 141, 143, 171, 172]
+            elif stage == "nf-marginals":
+                issues = [143, 146, 151, 167]
+            elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
                 issues = [153, 154, 155, 156, 163]
@@ -754,6 +813,9 @@ def main(argv=None):
             t_end=2,
             n_steps=10,
             seed=7,
+            ensemble_runs=args.ensemble_runs,
+            ensemble_alpha_global=1e-6,
+            ensemble_case_budget=len(all_cases),
             rtol=1e-6,
             atol=1e-9,
         ),
@@ -763,6 +825,10 @@ def main(argv=None):
                 Path(__file__),
                 WORKER,
                 Path(integrated_consumers.__file__),
+                Path(integrated_extensions.__file__),
+                ROOT / "tests/validation/integrated_protocol.py",
+                ROOT / "tests/validation/integrated_boundaries.py",
+                ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",

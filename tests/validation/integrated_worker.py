@@ -280,6 +280,7 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
             _write_checks(checks)
             return "UNSUPPORTED"
         Path("model.bngir.json").write_text(document, encoding="utf-8")
+        native_unsupported = None
         if version == "0.2":
             import bionetgen.bngir as bngir_module
             from bionetgen.model import _cpp
@@ -293,13 +294,52 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
                 bngir_module._as_bngl_v02 = forbidden
                 try:
                     _cpp.parse_string = forbidden
-                    restored = bionetgen.from_bngir(json.loads(document), native=True)
+                    try:
+                        restored = bionetgen.from_bngir(
+                            json.loads(document), native=True
+                        )
+                    except ValueError as exc:
+                        # The native v0.2 gate is fail-closed: a section outside
+                        # its slice is explicitly unsupported, not a silent BNGL
+                        # fallback and not a harness crash. Other native gate
+                        # violations (dense ids, required fields) stay failures.
+                        if not str(exc).startswith("native BNGIR does not support"):
+                            raise
+                        native_unsupported = str(exc)
                 finally:
                     _cpp.parse_string = original_parser
             finally:
                 bngir_module._as_bngl_v02 = original_renderer
         else:
             restored = bionetgen.from_bngir(json.loads(document))
+        if native_unsupported is not None:
+            checks.extend(
+                [
+                    _new_check(
+                        case_id,
+                        operation,
+                        "semantic-equality",
+                        "UNSUPPORTED",
+                        native_unsupported,
+                    ),
+                    _new_check(
+                        case_id,
+                        operation,
+                        "network",
+                        "NOT_TESTED",
+                        "native v0.2 reconstruction prerequisite is unsupported",
+                    ),
+                    _new_check(
+                        case_id,
+                        operation,
+                        "simulation",
+                        "NOT_TESTED",
+                        "native v0.2 reconstruction prerequisite is unsupported",
+                    ),
+                ]
+            )
+            _write_checks(checks)
+            return "UNSUPPORTED"
         equal = bionetgen.semantic_equal(source, restored, version=version)
         _save_comparison(
             checks,
@@ -621,12 +661,20 @@ def main():
             "bngl-reload",
             "sbml-reload",
             "reuse",
+            "boundaries",
+            "protocol",
+            "nf-marginals",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--atomize", action="store_true")
     parser.add_argument("--upstream", type=Path)
     parser.add_argument("--case-id", default="case")
+    parser.add_argument("--case-json")
+    parser.add_argument("--native-nfsim", type=Path)
+    parser.add_argument("--native-xml", type=Path)
+    parser.add_argument("--ensemble-runs", type=int, default=32)
+    parser.add_argument("--ensemble-cases", type=int, default=48)
     args = parser.parse_args()
     consumer_operations = (
         "bngir-v01",
@@ -698,6 +746,30 @@ def main():
         raise HarnessError(str(exc)) from exc
     Path("identity.json").write_text(json.dumps(identity, indent=2) + "\n")
     import bionetgen
+
+    if args.operation in ("boundaries", "protocol", "nf-marginals"):
+        from tests.validation.integrated_extensions import run_worker
+
+        checks = run_worker(args.operation, args)
+        _write_checks(checks)
+        statuses = {row["status"] for row in checks}
+        status = next(
+            (
+                value
+                for value in (
+                    "HARNESS_ERROR",
+                    "FAIL",
+                    "TIMEOUT",
+                    "INVALID_INPUT",
+                    "UNSUPPORTED",
+                    "NOT_TESTED",
+                )
+                if value in statuses
+            ),
+            "PASS",
+        )
+        Path("worker-status.json").write_text(json.dumps({"status": status}) + "\n")
+        raise SystemExit(0 if checks and status == "PASS" else 1)
 
     if args.operation in consumer_operations:
         try:

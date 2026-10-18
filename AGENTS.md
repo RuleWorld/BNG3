@@ -384,6 +384,8 @@ Issue mappings and source test references are triage hints, not closure evidence
 
 Equal stochastic seeds establish pathwise parity only when construction and draw ordering are comparable. Otherwise use a justified distributional comparison, or label invariant-only checks with their narrower scope; deterministic ODE agreement and conservation do not establish stochastic equivalence.
 
+Validate generated source models independently before scoring refusal or loss diagnostics. Diagnostic-only and rejection controls must never count as supported scientific execution. Stochastic ensemble checks need an independent source law or oracle, fixed recorded seed/run budgets, explicit statistical error control, and claims limited to the distributions or marginals actually checked.
+
 ## Definition of done
 
 A change is done when:

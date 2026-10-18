@@ -57,6 +57,10 @@ jobs:
             tests/validation/test_integrated_cases.py \
             tests/validation/test_integrated_consumers.py \
             tests/validation/test_issue_queue.py \
+            tests/validation/test_integrated_boundaries.py \
+            tests/validation/test_integrated_protocol.py \
+            tests/validation/test_integrated_marginals.py \
+            tests/validation/test_integrated_extensions.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
@@ -357,7 +361,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build perl
-          python -m pip install scikit-build-core pybind11 pytest numpy scipy pyyaml python-libsbml
+          python -m pip install scikit-build-core pybind11 pytest numpy scipy pyyaml python-libsbml libroadrunner
 
       - name: Checkout locked BioNetGen oracle
         run: |

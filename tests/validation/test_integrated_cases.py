@@ -160,3 +160,16 @@ def test_reversible_trajectory_uses_two_rate_equilibrium_and_orientation():
     )
     assert np.isclose(r["A"][0], 0)
     assert np.isclose(r["A"][-1], equilibrium_fraction_a * 20 * (1 - np.exp(-0.6 * 2)))
+
+
+def test_every_source_species_initial_amount_matches_analytic_time_zero():
+    ns = {"s": "http://www.sbml.org/sbml/level3/version2/core"}
+    for case in integrated_cases.generated_cases(full=True):
+        root = ET.fromstring(integrated_cases.sbml_text(case))
+        actual = {
+            sp.attrib["id"]: float(sp.attrib["initialAmount"])
+            for sp in root.findall(".//s:species", ns)
+        }
+        data, columns = integrated_cases.expected_trajectory(case)
+        for species, amount in actual.items():
+            assert np.isclose(data[0, columns.index(species)], amount)

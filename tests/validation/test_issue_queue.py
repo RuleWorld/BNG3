@@ -123,3 +123,23 @@ def test_dirty_revision_and_duplicate_rows_are_rejected_but_null_body_is_valid()
     assert (
         issue_queue.build_queue([issue], [], REVISION)[0]["disposition"] == "UNMAPPED"
     )
+
+
+def test_loss_diagnostic_control_is_not_supported_execution_evidence():
+    row = dict(
+        id="sbml-boundary:delay:control",
+        check="explicit-loss-diagnostic",
+        stage="boundaries",
+        status="PASS",
+        related_issues=[160],
+        supported_execution=False,
+        evidence_kind="diagnostic-only",
+    )
+    queue = issue_queue.build_queue(
+        [dict(number=160, body="")], [report([row])], REVISION
+    )
+    item = next(r for r in queue if r["number"] == 160)
+    assert item["disposition"] == "EVIDENCE_GAP"
+    assert item["outcomes"] == {}
+    assert item["diagnostic_control_outcomes"] == {"PASS": 1}
+    assert item["evidence_ids"] == []

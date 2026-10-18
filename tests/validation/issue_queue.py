@@ -73,6 +73,8 @@ def build_queue(issues, reports, revision):
                     "related_issues",
                     "capabilities",
                     "test_file",
+                    "supported_execution",
+                    "evidence_kind",
                 )
             }
             if key in observations and observations[key] != observed:
@@ -84,7 +86,7 @@ def build_queue(issues, reports, revision):
         numbers.update(row.get("related_issues") or [])
     for number in sorted(numbers):
         issue = metadata.get(number, {})
-        evidence = {}
+        evidence, diagnostics = {}, {}
         for key, row in observations.items():
             if row["status"] == "PASS" and not (
                 row.get("check") or row.get("test_file")
@@ -95,7 +97,13 @@ def build_queue(issues, reports, revision):
                 for capability in row.get("capabilities") or []:
                     related.update(capability_issues.get(capability, set()))
             if number in related:
-                evidence[key] = row
+                if row["status"] == "PASS" and (
+                    row.get("supported_execution") is False
+                    or row.get("evidence_kind") == "diagnostic-only"
+                ):
+                    diagnostics[key] = row
+                else:
+                    evidence[key] = row
         counts = Counter(row["status"] for row in evidence.values())
         decision = "maintainer/product decision" in (issue.get("body") or "")
         if FAILURES & counts.keys():
@@ -120,6 +128,12 @@ def build_queue(issues, reports, revision):
                 next_action=action,
                 outcomes=dict(sorted(counts.items())),
                 evidence_ids=sorted(evidence),
+                diagnostic_control_ids=sorted(diagnostics),
+                diagnostic_control_outcomes=dict(
+                    sorted(
+                        Counter(row["status"] for row in diagnostics.values()).items()
+                    )
+                ),
                 closure_eligible=False,
                 maintainer_decision_required=decision,
                 investigation_task_ids=sorted(
