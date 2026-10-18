@@ -6,7 +6,13 @@ import json
 import sys
 from pathlib import Path
 
-from . import campaign, integrated_boundaries, integrated_marginals, integrated_protocol
+from . import (
+    campaign,
+    integrated_boundaries,
+    integrated_consumers,
+    integrated_marginals,
+    integrated_protocol,
+)
 from .integrated_cases import generated_cases
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -33,7 +39,7 @@ def expected_ids(cases):
     ids = ["campaign:boundaries", *check_ids("boundaries")]
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
-        if case["family"] in ("decay", "reversible"):
+        if case["family"] in ("decay", "reversible", "dimerization"):
             ids += [f"{case['id']}:nf-marginals", *check_ids("nf-marginals", case)]
     return ids
 
@@ -43,7 +49,9 @@ def run_worker(operation, args):
     if operation == "boundaries":
         return integrated_boundaries.run(Path.cwd())
     if operation == "protocol":
-        rows = integrated_protocol.run(args.input, args.case_id, Path.cwd())
+        rows = integrated_protocol.run(
+            args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)
+        )
         return [
             dict(row, id=row["check"], check=row["check"].rsplit(":", 1)[-1])
             for row in rows
@@ -80,10 +88,10 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
         "--case-id",
         key,
     ]
+    if case is not None:
+        command += ["--case-json", json.dumps(case, sort_keys=True)]
     if operation == "nf-marginals":
         command += [
-            "--case-json",
-            json.dumps(case, sort_keys=True),
             "--native-nfsim",
             str(args.nfsim_binary),
             "--native-xml",
@@ -164,6 +172,8 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
     except (OSError, ValueError, KeyError, TypeError) as exc:
         parent.update(status="HARNESS_ERROR", detail=str(exc))
         checks = []
+    if checks:
+        integrated_consumers.mark_process_summary(parent, checks)
     if not checks:
         checks = [
             dict(

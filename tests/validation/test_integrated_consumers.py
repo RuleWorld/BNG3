@@ -92,3 +92,54 @@ def test_native_rhs_comparison_aligns_species_graphs_before_values():
     assert _network_difference(left, right) is None
     right["unit_state_probe"]["ode_rhs"] = [2, -1]
     assert _network_difference(left, right)["field"] == "unit_state_probe.ode_rhs"
+
+
+def test_semantic_difference_reports_the_first_structural_path():
+    from tests.validation.integrated_worker import _document_difference
+
+    assert _document_difference(
+        {"model": {"seeds": [{"compartment": "cell"}]}}, {"model": {"seeds": [{}]}}
+    ) == {
+        "field": "/model/seeds/0/compartment",
+        "left": "cell",
+        "right_missing": True,
+    }
+    assert _document_difference({"a": [1, 2]}, {"a": [1, 3]}) == {
+        "field": "/a/1",
+        "left": 2,
+        "right": 3,
+    }
+    assert _document_difference({"a": 1}, {"a": 1}) is None
+
+
+def test_failed_peer_contract_does_not_block_a_completed_artifact_handoff():
+    parent = dict(id="case:bngl-reload", status="FAIL")
+    rows = [
+        dict(
+            id="case:bngl-reload:semantic-equality",
+            name="semantic-equality",
+            status="FAIL",
+        ),
+        dict(id="case:bngl-reload:simulation", name="simulation", status="PASS"),
+    ]
+    assert consumers.handoff_dependency(parent, rows, "simulation") == rows[1]
+    assert consumers.handoff_dependency(parent, rows, "network") == parent
+    broken_identity = dict(parent, status="HARNESS_ERROR")
+    assert (
+        consumers.handoff_dependency(broken_identity, rows, "simulation")
+        == broken_identity
+    )
+
+
+def test_process_summaries_do_not_duplicate_findings_or_hide_process_errors():
+    rows = [dict(id="case:stage:values", status="FAIL")]
+    parent = dict(id="case:stage", status="FAIL")
+    consumers.mark_process_summary(parent, rows)
+    assert parent["aggregate"] is True
+    assert parent["child_ids"] == ["case:stage:values"]
+    crashed = dict(id="case:stage", status="HARNESS_ERROR")
+    consumers.mark_process_summary(crashed, rows)
+    assert not crashed.get("aggregate")
+    missing = dict(id="case:stage", status="FAIL")
+    consumers.mark_process_summary(missing, [])
+    assert not missing.get("aggregate")

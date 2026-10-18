@@ -223,13 +223,15 @@ std::string BnglWriter::writeSeedSpecies(const ast::Model& model) {
     bngl << "begin seed species\n";
 
     for (const auto& seed : model.getSeedSpecies()) {
-        // Evaluate amount
-        auto amountValue = seed.getAmount().evaluate([&](const std::string& name) {
-            return model.getParameters().evaluate(name);
-        }, 0.0);
-
-        bngl << "  " << seed.getPattern()
-             << " " << formatNumber(amountValue)
+        // Prefix compartments are stored separately from the seed pattern.
+        // Preserve the expression and fixed-species flag for later overrides.
+        bngl << "  ";
+        if (seed.isConstant()) bngl << "$";
+        if (!seed.getCompartment().empty() && seed.getPattern().find('@') == std::string::npos) {
+            bngl << "@" << seed.getCompartment() << ":";
+        }
+        bngl << seed.getPattern()
+             << " " << seed.getAmount().toString()
              << (seed.hasUnit() ? " [" + seed.getUnitName() + "]" : "")
              << "\n";
     }
@@ -325,8 +327,12 @@ std::string BnglWriter::writeReactionRules(const ast::Model& model) {
     for (const auto& rule : model.getReactionRules()) {
         bngl << "  ";
 
-        if (!rule.getRuleName().empty()) {
-            bngl << rule.getRuleName() << ": ";
+        // ruleName is an internal generated identity; the parsed label includes
+        // its colon. Emitting the generated name replaces user labels on reload.
+        if (!rule.getLabel().empty()) {
+            bngl << rule.getLabel();
+            if (rule.getLabel().back() != ':') bngl << ":";
+            bngl << " ";
         }
 
         // Reactants (these are pattern strings)

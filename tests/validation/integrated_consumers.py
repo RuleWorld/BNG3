@@ -85,3 +85,50 @@ def status_from_checks(case_id, operation, checks):
     if "NOT_TESTED" in statuses:
         return "NOT_TESTED"
     return "PASS"
+
+
+def handoff_dependency(parent, validated_checks, name):
+    """A failed peer contract does not erase an already validated artifact.
+
+    Call only after checking the complete worker evidence schema/identity.
+    Process/identity failures still block every downstream consumer.
+    """
+    if parent["status"] in {"HARNESS_ERROR", "TIMEOUT", "INVALID_INPUT"}:
+        return parent
+    matches = [row for row in validated_checks if row.get("name") == name]
+    if len(matches) != 1:
+        return parent
+    return (
+        dict(matches[0], receipt=parent["receipt"])
+        if parent.get("receipt")
+        else matches[0]
+    )
+
+
+def mark_process_summary(parent, validated_checks):
+    """Exclude a duplicate rollup only when valid children explain its status."""
+    if not validated_checks or parent["status"] not in {
+        "PASS",
+        "FAIL",
+        "UNSUPPORTED",
+        "NOT_TESTED",
+    }:
+        return
+    statuses = {row["status"] for row in validated_checks}
+    outcome = next(
+        (
+            status
+            for status in (
+                "HARNESS_ERROR",
+                "FAIL",
+                "TIMEOUT",
+                "INVALID_INPUT",
+                "UNSUPPORTED",
+                "NOT_TESTED",
+            )
+            if status in statuses
+        ),
+        "PASS",
+    )
+    if parent["status"] == outcome:
+        parent.update(aggregate=True, child_ids=[row["id"] for row in validated_checks])

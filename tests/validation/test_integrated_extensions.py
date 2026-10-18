@@ -21,7 +21,7 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
     for case in cases:
         assert f"{case['id']}:protocol" in ids
         assert (f"{case['id']}:nf-marginals" in ids) == (
-            case["family"] in ("decay", "reversible")
+            case["family"] in ("decay", "reversible", "dimerization")
         )
 
 

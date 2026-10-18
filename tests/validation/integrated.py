@@ -179,7 +179,9 @@ def _compare(
         )
         return
     checks = (
-        contracts.network_contracts(reference, subject)
+        # BNG2 NET embeds conversion prefactors with eight significant digits
+        # (e.g. 1/6 -> 0.16666667). Keep structural checks exact.
+        contracts.network_contracts(reference, subject, numeric_rate_rtol=5e-8)
         if network
         else contracts.trajectory_contracts(
             reference,
@@ -343,7 +345,7 @@ def run_case(case, args, rows, env):
     # Identical translated source, copied before adding the same action protocol.
     actions = (
         "\nbegin actions\ngenerate_network({overwrite=>1})\n"
-        "writeXML()\nsimulate_ode({t_end=>2,n_steps=>10,rtol=>1e-8,atol=>1e-12})\nend actions\n"
+        "writeXML()\nsimulate_ode({t_end=>2,n_steps=>10,rtol=>1e-10,atol=>1e-12})\nend actions\n"
     )
     if atomizer["status"] == "PASS":
         text = translated.read_text()
@@ -420,12 +422,15 @@ def run_case(case, args, rows, env):
         )
         consumers.append(consumer)
         checks_path = work / operation / "checks.json"
+        validated_checks = []
         if checks_path.is_file():
             checks = json.loads(checks_path.read_text())
             errors = integrated_consumers.validate_checks(key, operation, checks)
             if errors:
                 consumer.update(status="HARNESS_ERROR", detail="; ".join(errors))
             else:
+                validated_checks = checks
+                integrated_consumers.mark_process_summary(consumer, checks)
                 for check in checks:
                     check = dict(
                         check,
@@ -442,7 +447,19 @@ def run_case(case, args, rows, env):
             key,
             operation + "-source-dynamics",
             rows,
-            [consumer],
+            [
+                integrated_consumers.handoff_dependency(
+                    consumer,
+                    validated_checks,
+                    (
+                        "original"
+                        if operation == "reuse"
+                        else (
+                            "trajectory" if operation == "sbml-reload" else "simulation"
+                        )
+                    ),
+                )
+            ],
             expected,
             work / operation / "api.gdat",
         )
@@ -451,7 +468,12 @@ def run_case(case, args, rows, env):
                 key,
                 operation + "-network",
                 rows,
-                [bng2, consumer],
+                [
+                    bng2,
+                    integrated_consumers.handoff_dependency(
+                        consumer, validated_checks, "network"
+                    ),
+                ],
                 work / "bng2/model.net",
                 work / operation / "model.net",
                 network=True,
@@ -466,7 +488,7 @@ def run_case(case, args, rows, env):
         (directory / "reload.bngl").write_text(
             net_reload_context(translated)
             + '\nbegin actions\nreadFile({file=>"model.net"})\n'
-            'simulate_ode({t_end=>2,n_steps=>10,rtol=>1e-8,atol=>1e-12,prefix=>"reload"})\nend actions\n'
+            'simulate_ode({t_end=>2,n_steps=>10,rtol=>1e-10,atol=>1e-12,prefix=>"reload"})\nend actions\n'
         )
     reload = stage(
         "net-reload",
@@ -527,7 +549,7 @@ def run_case(case, args, rows, env):
             "protocol", args, rows, env, run_stage, case=case, dependencies=[atomizer]
         )
     ]
-    if case["family"] in ("decay", "reversible"):
+    if case["family"] in ("decay", "reversible", "dimerization"):
         qualifications.append(
             integrated_extensions.invoke(
                 "nf-marginals",

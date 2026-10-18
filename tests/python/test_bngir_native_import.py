@@ -792,7 +792,7 @@ def test_source_backed_model_legacy_exports_remain_available(tmp_path):
     bngl = model.to_bngl()
     xml = model.to_xml()
     assert "A() 100" in bngl
-    assert "R1: A() -> B() k" in bngl
+    assert "convert: A() -> B() k" in bngl
     assert "<Molecule id=" in xml
 
     bngl_path = tmp_path / "source.bngl"

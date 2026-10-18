@@ -173,3 +173,13 @@ def test_every_source_species_initial_amount_matches_analytic_time_zero():
         data, columns = integrated_cases.expected_trajectory(case)
         for species, amount in actual.items():
             assert np.isclose(data[0, columns.index(species)], amount)
+
+
+def test_reuse_controls_keep_mutable_source_dependencies_for_all_families():
+    for case in integrated_cases.generated_cases():
+        text = integrated_cases.reuse_bngl(case)
+        assert "cell 3 V" in text
+        assert "N " in text
+        assert "rate() = " in text
+        assert "k" in text.split("rate() = ")[1].splitlines()[0]
+        assert "rate()" in text.split("begin reaction rules")[1]

@@ -13,6 +13,7 @@ def test_expected_protocol_checks_are_explicit_and_issue_linked():
         "invalid-option-rejection",
         "independent-ssa-state",
         "exception-recovery",
+        "parameter-source-controls",
     )
     assert set(protocol._ISSUES) == set(protocol.expected_check_names)
     assert {issue for issues in protocol._ISSUES.values() for issue in issues} == {
@@ -117,3 +118,24 @@ def test_saved_result_snapshot_detects_mutation():
     assert protocol._snapshot_difference(
         saved, protocol._copy_result(result), "saved"
     ) == {"field": "saved.A"}
+
+
+def test_rate_parameter_does_not_select_unused_source_parameter():
+    model = SimpleNamespace(
+        parameters=[SimpleNamespace(name="k", expression="0.4")],
+        functions=[],
+        reaction_rules=[SimpleNamespace(rates=["0.4"])],
+    )
+    from tests.validation.integrated_worker import _rate_parameter
+
+    assert protocol._rate_parameter(model) is None
+    assert _rate_parameter(model) is None
+
+
+def test_rate_parameter_follows_functions_and_parameter_dependencies():
+    model = SimpleNamespace(
+        parameters=[SimpleNamespace(name="k", expression="0.4")],
+        functions=[SimpleNamespace(name="flux", expression="k * 2", args=[])],
+        reaction_rules=[SimpleNamespace(rates=["flux() * 3"])],
+    )
+    assert protocol._rate_parameter(model) == "k"

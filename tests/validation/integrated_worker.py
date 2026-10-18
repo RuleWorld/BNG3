@@ -77,6 +77,40 @@ def _same_results(left, right, *, atol=1e-10, rtol=1e-9):
     return None
 
 
+def _document_difference(left, right, path=""):
+    """First deterministic JSON pointer difference; retain missing-vs-null."""
+    if type(left) is not type(right):
+        return dict(field=path or "/", left=left, right=right)
+    if isinstance(left, dict):
+        for key in sorted(left.keys() | right.keys()):
+            pointer = path + "/" + key.replace("~", "~0").replace("/", "~1")
+            if key not in left:
+                return dict(field=pointer, left_missing=True, right=right[key])
+            if key not in right:
+                return dict(field=pointer, left=left[key], right_missing=True)
+            difference = _document_difference(left[key], right[key], pointer)
+            if difference is not None:
+                return difference
+    elif isinstance(left, list):
+        if len(left) != len(right):
+            return dict(field=path + "/length", left=len(left), right=len(right))
+        for index, (a, b) in enumerate(zip(left, right)):
+            difference = _document_difference(a, b, path + "/" + str(index))
+            if difference is not None:
+                return difference
+    elif left != right:
+        return dict(field=path or "/", left=left, right=right)
+    return None
+
+
+def _semantic_difference(bionetgen, source, restored, version):
+    left = json.loads(bionetgen.to_bngir(source, version=version))
+    right = json.loads(bionetgen.to_bngir(restored, version=version))
+    Path("source-semantic.json").write_text(json.dumps(left, indent=2) + "\n")
+    Path("restored-semantic.json").write_text(json.dumps(right, indent=2) + "\n")
+    return _document_difference(left, right)
+
+
 def _new_check(case_id, operation, name, status, detail, first_difference=None):
     from tests.validation.integrated_consumers import ISSUES
 
@@ -122,18 +156,10 @@ def _complete_checks(case_id, operation, checks, detail):
     _write_checks(checks)
 
 
-def _rate_parameter(model, preferred="k"):
-    parameters = {parameter.name for parameter in model.parameters}
-    if preferred in parameters:
-        return preferred
-    for rule in model.reaction_rules:
-        for rate in rule.rates:
-            for identifier in re.findall(r"\b[A-Za-z_]\w*\b", rate):
-                if identifier in parameters:
-                    return identifier
-    raise HarnessError(
-        f"could not identify source rate parameter {preferred!r} from reaction rates"
-    )
+def _rate_parameter(model):
+    from tests.validation.integrated_protocol import _rate_parameter as find_dependency
+
+    return find_dependency(model)
 
 
 def _network_snapshot(network, model=None):
@@ -350,11 +376,7 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
             (
                 None
                 if equal
-                else {
-                    "field": "semantic_model",
-                    "left": "source",
-                    "right": "reconstructed",
-                }
+                else _semantic_difference(bionetgen, source, restored, version)
             ),
         )
         restored_network = restored.generate_network()
@@ -384,7 +406,9 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
                 "network",
                 "reconstructed model generated model.net",
             )
-        result = restored.simulate(method="ode", t_end=2, n_steps=10)
+        result = restored.simulate(
+            method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12
+        )
         write_result(result, "api.gdat")
         _save_comparison(
             checks,
@@ -407,7 +431,7 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
             (
                 None
                 if equal
-                else {"field": "semantic_model", "left": "source", "right": "roundtrip"}
+                else _semantic_difference(bionetgen, source, restored, "0.2")
             ),
         )
         restored.generate_network()
@@ -415,7 +439,12 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
         _save_comparison(
             checks, case_id, operation, "network", "reloaded model generated model.net"
         )
-        write_result(restored.simulate(method="ode", t_end=2, n_steps=10), "api.gdat")
+        write_result(
+            restored.simulate(
+                method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12
+            ),
+            "api.gdat",
+        )
         _save_comparison(
             checks, case_id, operation, "simulation", "reloaded model wrote api.gdat"
         )
@@ -519,7 +548,9 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
         try:
             rr.integrator.relative_tolerance = 1e-10
             rr.integrator.absolute_tolerance = 1e-12
-            reference = source.simulate(method="ode", t_end=2, n_steps=10)
+            reference = source.simulate(
+                method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12
+            )
             rr_result = rr.simulate(
                 times=np.asarray(reference.time, dtype=float), selections=selections
             )
@@ -556,7 +587,9 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
         )
 
     elif operation == "reuse":
-        baseline = source.simulate(method="ode", t_end=2, n_steps=10)
+        baseline = source.simulate(
+            method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12
+        )
         write_result(baseline, "api.gdat")
         checks.append(
             _new_check(
@@ -568,38 +601,55 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
             )
         )
         rate_name = _rate_parameter(source)
-        old_rate = source.get_parameter(rate_name).value
-        if old_rate is None or not np.isfinite(old_rate):
-            raise HarnessError(
-                f"source rate parameter {rate_name!r} is not a finite scalar"
+        if rate_name is None:
+            checks.append(
+                _new_check(
+                    case_id,
+                    operation,
+                    "mutation-fresh",
+                    "NOT_TESTED",
+                    "no parameter dependency in translated reaction rates; numeric folding is allowed",
+                )
             )
-        old_rate = float(old_rate)
-        changed_rate = old_rate * 1.5
-        source.set_parameter(rate_name, changed_rate)
-        mutated = source.simulate(method="ode", t_end=2, n_steps=10)
-        write_result(mutated, "reuse-mutated.gdat")
-        fresh = bionetgen.load(str(source_path))
-        fresh.set_parameter(rate_name, changed_rate)
-        fresh_result = fresh.simulate(method="ode", t_end=2, n_steps=10)
-        write_result(fresh_result, "reuse-fresh.gdat")
-        mutation_difference = _same_results(mutated, fresh_result)
-        if mutation_difference is None and _same_results(baseline, mutated) is None:
-            mutation_difference = {
-                "field": "parameter-mutation-effect",
-                "parameter": rate_name,
-                "value": changed_rate,
-                "detail": "mutated trajectory is identical to original trajectory",
-            }
-        _save_comparison(
-            checks,
-            case_id,
-            operation,
-            "mutation-fresh",
-            f"mutated native model parameter {rate_name!r} compared with fresh parse and compilation",
-            mutation_difference,
+        else:
+            old_rate = source.get_parameter(rate_name).value
+            if old_rate is None or not np.isfinite(old_rate):
+                raise HarnessError(
+                    f"source rate parameter {rate_name!r} is not a finite scalar"
+                )
+            old_rate = float(old_rate)
+            changed_rate = old_rate * 1.5
+            source.set_parameter(rate_name, changed_rate)
+            mutated = source.simulate(
+                method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12
+            )
+            write_result(mutated, "reuse-mutated.gdat")
+            fresh = bionetgen.load(str(source_path))
+            fresh.set_parameter(rate_name, changed_rate)
+            fresh_result = fresh.simulate(
+                method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12
+            )
+            write_result(fresh_result, "reuse-fresh.gdat")
+            mutation_difference = _same_results(mutated, fresh_result)
+            if mutation_difference is None and _same_results(baseline, mutated) is None:
+                mutation_difference = {
+                    "field": "parameter-mutation-effect",
+                    "parameter": rate_name,
+                    "value": changed_rate,
+                    "detail": "mutated trajectory is identical to original trajectory",
+                }
+            _save_comparison(
+                checks,
+                case_id,
+                operation,
+                "mutation-fresh",
+                f"mutated native model parameter {rate_name!r} compared with fresh parse and compilation",
+                mutation_difference,
+            )
+            source.set_parameter(rate_name, old_rate)
+        reset = source.simulate(
+            method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12
         )
-        source.set_parameter(rate_name, old_rate)
-        reset = source.simulate(method="ode", t_end=2, n_steps=10)
         write_result(reset, "reuse-reset.gdat")
         _save_comparison(
             checks,
@@ -811,7 +861,10 @@ def main():
         model = bionetgen.load(str(args.input))
         model.generate_network()
         model.write_net("model.net")
-        write_result(model.simulate(method="ode", t_end=2, n_steps=10), "api.gdat")
+        write_result(
+            model.simulate(method="ode", t_end=2, n_steps=10, rtol=1e-10, atol=1e-12),
+            "api.gdat",
+        )
     elif args.operation == "compat":
         result = bionetgen.run(str(args.input), str(Path.cwd()), suppress=True)
         write_legacy_result(result)

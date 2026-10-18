@@ -91,3 +91,14 @@ def test_ci_checks_cdat_gdat_and_publishes_a_distinct_red_diagnostic_check():
         for s in gate["steps"]
     )
     assert "continue-on-error" not in gate
+
+
+def test_common_evidence_job_installs_source_law_oracle_dependency():
+    workflow = parse_workflow(ROOT / ".github/workflows/ci.yml")
+    job = next(
+        job
+        for job in workflow["jobs"].values()
+        if job.get("name") == "Common evidence and selection contracts"
+    )
+    commands = "\n".join(str(step.get("run", "")) for step in job["steps"])
+    assert "scipy" in commands
