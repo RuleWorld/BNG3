@@ -179,7 +179,7 @@ If two targeted fixes fail, reassess the diagnosis before making a third.
 
 ## Validation
 
-Use the narrowest useful test while developing, then broaden validation according to the affected surface.
+Prefer CI for builds, broad suites, platform matrices, and corpus campaigns. Keep local testing to focused one-off harness checks or reduced reproducers when useful; do not routinely rebuild or rerun broad suites locally. Wire the affected surface into CI and state which evidence is local versus hosted.
 
 ### Build
 
@@ -369,6 +369,22 @@ Use:
 - archive/history documents — historical provenance only
 
 When documentation disagrees with code or tests, inspect the implementation and current Git history before deciding which is stale.
+
+## Cross-component integration regressions
+
+Use generated, reusable regression cases to detect semantic integration defects across the full maintained system: Python APIs and orchestration, Atomizer/SBML lowering, the native BNG3 engine, BNG2 compatibility, PyBioNetGen compatibility, and NFsim. Integration failures are evidence for investigation; do not bundle product repairs into validation-only work.
+
+Python validation tooling may prepare, run, compare, classify, and preserve evidence for a case. Semantic implementation remains in the component that owns the behavior, normally C++ for native engine semantics and Python for API, orchestration, or translation behavior. Keep those roles clear in findings and patches.
+
+Prefer broad generated or parameterized regression coverage in CI so regressions are repeatable and shared across contributors. Use local checks to validate the harness or a narrowly reduced reproducer; do not replace the CI matrix with one-off local cases. Preserve each stage boundary and classify unsupported, invalid input, timeout, harness error, and semantic failure separately.
+
+Use an isolated worktree and branch for sustained integration-validation work. Commit coherent checkpoints after review and appropriate focused validation; do not mix regression detection with a product fix unless the user explicitly asks for both. Delegation is optional. When using subagents in this repository, use at most one or two Luna agents, with no further delegation, unless the user explicitly authorizes a different model or scale.
+
+Issue mappings and source test references are triage hints, not closure evidence or proof of execution. Declare required semantic check identities independently of process execution, consume exported artifacts in the intended downstream component, and retain bounded replay packets. Do not count a producer artifact as a successful consumer check. Reject stale, conflicting, dirty, or unverifiable revision evidence when assembling a current issue queue; source approvals and scope decisions remain explicit maintainer decisions.
+
+Equal stochastic seeds establish pathwise parity only when construction and draw ordering are comparable. Otherwise use a justified distributional comparison, or label invariant-only checks with their narrower scope; deterministic ODE agreement and conservation do not establish stochastic equivalence.
+
+Validate generated source models independently before scoring refusal or loss diagnostics. Diagnostic-only and rejection controls must never count as supported scientific execution. Stochastic ensemble checks need an independent source law or oracle, fixed recorded seed/run budgets, explicit statistical error control, and claims limited to the distributions or marginals actually checked.
 
 ## Definition of done
 
