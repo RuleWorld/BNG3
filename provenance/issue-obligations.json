@@ -1,0 +1,1495 @@
+{
+  "schema_version": 1,
+  "issues": [
+    {
+      "number": 141,
+      "body_sha256": "2b06a72fc9ead82926823a598c880478973e48e5343d6bf5b7ed3a19fcac48c4",
+      "obligations": [
+        {
+          "id": "issue:141:repeated-instantiation",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Repeated instantiation behavior across one compiled model must be checked.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:repeated-instantiation",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:repeated-instantiation.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:concurrent-instantiation",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Concurrent instantiation must be exercised.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:concurrent-instantiation",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:concurrent-instantiation.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:independent-rng-ownership",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Each trajectory must own an independent RNG stream.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:independent-rng-ownership",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:independent-rng-ownership.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:independent-caches",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Each trajectory must own independent mutable caches.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:independent-caches",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:independent-caches.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:independent-solver-state",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Each trajectory must own independent solver state.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:independent-solver-state",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:independent-solver-state.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:exception-cleanup",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Exception paths must release or restore trajectory-owned state safely.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:exception-cleanup",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:exception-cleanup.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:parameter-only-reuse",
+          "criterion": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
+          "scope": "Parameter-only overrides must reuse the compiled structure where valid.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:parameter-only-reuse",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:parameter-only-reuse.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:topology-invalidation",
+          "criterion": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
+          "scope": "Topology changes must invalidate reuse and be checked against fresh compilation.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:topology-invalidation",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:topology-invalidation.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:compartment-invalidation",
+          "criterion": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
+          "scope": "Compartment or volume changes must invalidate reuse and be checked against fresh compilation.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:compartment-invalidation",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:compartment-invalidation.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:implementation-or-disposition",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record the implementation or an explicit disposition.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:implementation-or-disposition",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:implementation-or-disposition.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:exact-revision",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record the exact revision to which the evidence applies.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:exact-revision",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:exact-revision.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:validation-receipt",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record validation commands and their results.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:validation-receipt",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:validation-receipt.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:remaining-limits",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record remaining limits before issue closure.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:141:remaining-limits",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:141:remaining-limits.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:141:slice:mutation-fresh",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Generated-case parameter mutation and fresh-compilation comparison only.",
+          "dependencies": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh/reset/seeded trajectory comparator",
+            "Does not establish concurrent instance independence, independent cache/solver ownership, exception cleanup, or topology/compartment invalidation."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:reuse:mutation-fresh",
+              "evidence_kind": "supported-execution",
+              "expectation": "mutation-fresh consumer result is present and PASS for the fixed v1-n20-r0-a0 case.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_consumers.py",
+            "tests/validation/integrated_worker.py",
+            "tests/validation/integrated_matrix.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            }
+          ]
+        },
+        {
+          "id": "issue:141:slice:reset",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Generated-case reset versus preserved baseline comparison only.",
+          "dependencies": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh/reset/seeded trajectory comparator",
+            "Does not establish concurrent instance independence, independent cache/solver ownership, exception cleanup, or topology/compartment invalidation."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:reuse:reset",
+              "evidence_kind": "supported-execution",
+              "expectation": "reset consumer result is present and PASS for the fixed v1-n20-r0-a0 case.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_consumers.py",
+            "tests/validation/integrated_worker.py",
+            "tests/validation/integrated_matrix.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            }
+          ]
+        },
+        {
+          "id": "issue:141:slice:seeded-repeat",
+          "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "scope": "Generated-case fresh SSA same-seed repeat only.",
+          "dependencies": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh/reset/seeded trajectory comparator",
+            "Does not establish concurrent instance independence, independent cache/solver ownership, exception cleanup, or topology/compartment invalidation."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:reuse:seeded-repeat",
+              "evidence_kind": "supported-execution",
+              "expectation": "seeded-repeat consumer result is present and PASS for the fixed v1-n20-r0-a0 case.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_consumers.py",
+            "tests/validation/integrated_worker.py",
+            "tests/validation/integrated_matrix.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 151,
+      "body_sha256": "9f6526a61d7994ee848400ad55da1b508a4fda2a62fe8c0e1f0279ae57c86e4e",
+      "obligations": [
+        {
+          "id": "issue:151:amount-count-conversion",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Define conversion between supported amount and count representations.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:amount-count-conversion",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:amount-count-conversion.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:elementary-rate-conversion",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Define conversion for supported elementary rate units.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:elementary-rate-conversion",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:elementary-rate-conversion.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:molecularity",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Conversion must account for reaction molecularity.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:molecularity",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:molecularity.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:compartment-context",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Conversion must account for compartment context.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:compartment-context",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:compartment-context.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:independent-count-model-comparison",
+          "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
+          "scope": "Compare converted behavior against independent count-based models.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:independent-count-model-comparison",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision",
+                "references.nfsim.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:independent-count-model-comparison.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:missing-context-refusal",
+          "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
+          "scope": "Reject conversion when required context is missing.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:missing-context-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:missing-context-refusal.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:unsupported-dimension-refusal",
+          "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
+          "scope": "Reject unsupported physical dimensions.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:unsupported-dimension-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:unsupported-dimension-refusal.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:double-scaling-refusal",
+          "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
+          "scope": "Reject or detect duplicate volume scaling.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:double-scaling-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:double-scaling-refusal.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:implementation-or-disposition",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record the implementation or an explicit disposition.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:implementation-or-disposition",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:implementation-or-disposition.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:exact-revision",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record the exact revision to which the evidence applies.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:exact-revision",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:exact-revision.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:validation-receipt",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record validation commands and their results.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:validation-receipt",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:validation-receipt.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:remaining-limits",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record remaining limits before issue closure.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:151:remaining-limits",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:151:remaining-limits.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:151:slice:native.source-cdf",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim samples compared with the independent finite-population source CDF for one generated baseline count-law case.",
+          "dependencies": [
+            "issue:151:slice:source-compiled-rate-multiset",
+            "issue:151:slice:compiled-net-rate-multiset"
+          ],
+          "boundaries": [
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:nf-marginals:native.source-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "Narrow source-law/rate-trace check only; it does not demonstrate physical-unit amount/count conversion, molecularity or compartment-dimensional correctness.",
+              "identity_requirements": [
+                "source.revision",
+                "references.nfsim.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_traces.py",
+            "tests/validation/integrated_matrix.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "molecularity": 1,
+              "volume": 1,
+              "amount_basis": "item",
+              "physical_unit_annotations": false
+            }
+          ]
+        },
+        {
+          "id": "issue:151:slice:native.marginal-means",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Native NFsim marginal means compared with the independent source count law for one generated baseline case.",
+          "dependencies": [
+            "issue:151:slice:source-compiled-rate-multiset",
+            "issue:151:slice:compiled-net-rate-multiset"
+          ],
+          "boundaries": [
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:nf-marginals:native.marginal-means",
+              "evidence_kind": "supported-execution",
+              "expectation": "Narrow source-law/rate-trace check only; it does not demonstrate physical-unit amount/count conversion, molecularity or compartment-dimensional correctness.",
+              "identity_requirements": [
+                "source.revision",
+                "references.nfsim.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_traces.py",
+            "tests/validation/integrated_matrix.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "molecularity": 1,
+              "volume": 1,
+              "amount_basis": "item",
+              "physical_unit_annotations": false
+            }
+          ]
+        },
+        {
+          "id": "issue:151:slice:source-compiled-rate-multiset",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Source-law versus BNG3 compiled reaction-rate multiset control for one generated baseline case.",
+          "dependencies": [],
+          "boundaries": [
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:rate-trace:source-compiled-rate-multiset",
+              "evidence_kind": "supported-execution",
+              "expectation": "Narrow source-law/rate-trace check only; it does not demonstrate physical-unit amount/count conversion, molecularity or compartment-dimensional correctness.",
+              "identity_requirements": [
+                "source.revision",
+                "references.nfsim.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_traces.py",
+            "tests/validation/integrated_matrix.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "molecularity": 1,
+              "volume": 1,
+              "amount_basis": "item",
+              "physical_unit_annotations": false
+            }
+          ]
+        },
+        {
+          "id": "issue:151:slice:compiled-net-rate-multiset",
+          "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "scope": "Compiled rate multiset versus emitted NET control for one generated baseline case.",
+          "dependencies": [],
+          "boundaries": [
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+          ],
+          "required_checks": [
+            {
+              "id": "v1-n20-r0-a0:rate-trace:compiled-net-rate-multiset",
+              "evidence_kind": "supported-execution",
+              "expectation": "Narrow source-law/rate-trace check only; it does not demonstrate physical-unit amount/count conversion, molecularity or compartment-dimensional correctness.",
+              "identity_requirements": [
+                "source.revision",
+                "references.nfsim.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_traces.py",
+            "tests/validation/integrated_matrix.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "molecularity": 1,
+              "volume": 1,
+              "amount_basis": "item",
+              "physical_unit_annotations": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "number": 155,
+      "body_sha256": "2210504524616ce4290d63cc4242fb16c9ed483ed7d8e2a232b62ba5a3437f3a",
+      "obligations": [
+        {
+          "id": "issue:155:native-import-contract",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Add a native import contract.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:native-import-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:native-import-contract.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:native-export-contract",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Add a native export contract.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:native-export-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:native-export-contract.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:version-migration-fixtures",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Add fixtures for version migration.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:version-migration-fixtures",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:version-migration-fixtures.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:deterministic-serialization-fixtures",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Add fixtures proving deterministic serialization.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:deterministic-serialization-fixtures",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:deterministic-serialization-fixtures.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:malformed-reference-cases",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Exercise malformed references.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:malformed-reference-cases",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:malformed-reference-cases.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:cross-referenced-id-cases",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Exercise cross-referenced IDs.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:cross-referenced-id-cases",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:cross-referenced-id-cases.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:generated-property-cases",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Use generated or property-based cases for adversarial inputs.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:generated-property-cases",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:generated-property-cases.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:independent-refusal-verification",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Verify refusal at the native boundary without relying on Python rendering.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:independent-refusal-verification",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:independent-refusal-verification.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:implementation-or-disposition",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record the implementation or an explicit disposition.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:implementation-or-disposition",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:implementation-or-disposition.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:exact-revision",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record the exact revision to which the evidence applies.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:exact-revision",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:exact-revision.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:validation-receipt",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record validation commands and their results.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:validation-receipt",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:validation-receipt.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:remaining-limits",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record remaining limits before issue closure.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:155:remaining-limits",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:155:remaining-limits.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:155:slice:baseline-native-control",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independent positive native-import semantic control for the named BNGIR v0.2 case.",
+          "dependencies": [],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These import controls do not establish native export contracts, version migration or deterministic export serialization."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:baseline-native-control",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Positive native-import control must be PASS with supported_execution=true.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:alpha-renamed-symbols",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independent positive native-import semantic control for the named BNGIR v0.2 case.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These import controls do not establish native export contracts, version migration or deterministic export serialization."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:alpha-renamed-symbols",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Positive native-import control must be PASS with supported_execution=true.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:parameter-declaration-order",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independent positive native-import semantic control for the named BNGIR v0.2 case.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These import controls do not establish native export contracts, version migration or deterministic export serialization."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:parameter-declaration-order",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Positive native-import control must be PASS with supported_execution=true.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:nested-rate-expression",
+          "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "scope": "Independent positive native-import semantic control for the named BNGIR v0.2 case.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These import controls do not establish native export contracts, version migration or deterministic export serialization."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:nested-rate-expression",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Positive native-import control must be PASS with supported_execution=true.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:nested-parameter-reference-out-of-range",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:nested-parameter-reference-out-of-range",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected refusal must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:parameter-reference-kind-mismatch",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:parameter-reference-kind-mismatch",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected refusal must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:seed-molecule-type-reference-out-of-range",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:seed-molecule-type-reference-out-of-range",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected refusal must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:seed-type-name-id-disagreement",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:seed-type-name-id-disagreement",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected refusal must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:duplicate-molecule-type-id",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:duplicate-molecule-type-id",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected refusal must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:duplicate-parameter-name",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:duplicate-parameter-name",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected refusal must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:compartment-parent-reference-out-of-range",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:compartment-parent-reference-out-of-range",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected refusal must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        }
+      ]
+    }
+  ]
+}

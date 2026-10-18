@@ -74,6 +74,28 @@ NETWORK_CHECKS = (
 )
 
 
+def annotate_acceptance_evidence(rows):
+    """Label registered semantic consumer checks, never process receipts."""
+    consumers = set(
+        integrated_consumers.expected_check_ids(
+            [case["id"] for case in generated_cases(full=True)]
+        )
+    )
+    for case in generated_cases(full=True):
+        consumers.update(
+            {
+                f"{case['id']}:nf-marginals:native.source-cdf",
+                f"{case['id']}:nf-marginals:native.marginal-means",
+                f"{case['id']}:rate-trace:source-compiled-rate-multiset",
+                f"{case['id']}:rate-trace:compiled-net-rate-multiset",
+            }
+        )
+    for row in rows:
+        if row["id"] in consumers and row.get("supported_execution") is not False:
+            row.setdefault("evidence_kind", "supported-execution")
+            row.setdefault("supported_execution", True)
+
+
 def expected_contract_ids(
     cases,
     *,
@@ -1097,6 +1119,7 @@ def main(argv=None):
         ROOT, matrix["validation_capabilities"]
     )
     reporting.attach_coverage(capabilities, rows)
+    annotate_acceptance_evidence(rows)
     report = dict(
         schema_version=1,
         generated_by="tests.validation.integrated",
@@ -1155,6 +1178,20 @@ def main(argv=None):
         issue_coverage=reporting.issue_coverage(capabilities, rows),
         expected_contract_ids=required_ids,
         failure_clusters=reporting.cluster_failures(rows),
+    )
+    obligation_catalog = json.loads(
+        (ROOT / "provenance/issue-obligations.json").read_text()
+    )
+    report["required_obligation_checks"] = sorted(
+        {
+            check["id"]
+            for issue in obligation_catalog["issues"]
+            for obligation in issue["obligations"]
+            for check in obligation["required_checks"]
+        }
+    )
+    report["obligation_catalog_sha256"] = inventory.sha256(
+        ROOT / "provenance/issue-obligations.json"
     )
     report["investigation_tasks"] = reporting.investigation_tasks(
         report, args.report_dir
