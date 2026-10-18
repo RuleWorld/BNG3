@@ -38,7 +38,10 @@
         "tests/validation/test_harness_paths.py::test_missing_explicit_cli_never_falls_back_to_available_default",
         "tests/validation/test_harness_paths.py::test_missing_environment_cli_never_falls_back_to_available_default",
         "tests/validation/test_integrated.py",
-        "tests/validation/test_integrated_wiring.py"
+        "tests/validation/test_integrated_wiring.py",
+        "tests/validation/test_integrated_cases.py",
+        "tests/validation/test_integrated_consumers.py",
+        "tests/validation/test_issue_queue.py"
       ],
       "question": "harness-self-test"
     },
@@ -142,7 +145,8 @@
     "atomizer-biomodels": "scripts/ci/validate_published_biomodels.py",
     "legacy-atomizer": "benchmarks/benchmark_legacy_atomizer.py",
     "pybionetgen": "scripts/ci/check_pybionetgen_compat.py",
-    "integrated-stack": "tests/validation/integrated.py"
+    "integrated-stack": "tests/validation/integrated.py",
+    "issue-evidence-queue": "tests/validation/issue_queue.py"
   },
   "capability_inventory": "provenance/capability-matrix.yml"
 }

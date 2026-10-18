@@ -12,7 +12,7 @@ Differential testing against the originals. Nothing merges until it matches.
 
 ## Cross-component generated integration cases
 
-`tests.validation.integrated` runs a six-case pairwise PR matrix that sends generated SBML through Atomizer, BNG3 command-line and Python execution, locked BNG2, an isolated upstream PyBioNetGen interpreter, and independently built native NFsim. Scheduled and manually dispatched parity runs can select the full sixteen-case matrix. Reports retain stage-specific outcomes, tool identities, logs, commands, intermediates, and investigation packets; a passing stage does not imply that a later stage ran or passed.
+`tests.validation.integrated` runs a eighteen-case pairwise PR matrix that sends generated SBML through Atomizer, BNG3 command-line and Python execution, locked BNG2, an isolated upstream PyBioNetGen interpreter, and independently built native NFsim. Scheduled and manually dispatched parity runs can select the full forty-eight-case matrix. Reports retain stage-specific outcomes, tool identities, logs, commands, intermediates, and investigation packets; a passing stage does not imply that a later stage ran or passed.
 
 After building BNG3 and checking out the locked oracles, run the same worker locally with a fresh report directory:
 
@@ -29,9 +29,21 @@ python -m tests.validation.integrated \
   --report-dir /tmp/bng3-integrated-validation
 ```
 
-Cases vary compartment volume, population, species declaration order and Atomizer mode. The source analytic amounts are checked against each deterministic route; network identities/rates use BNG2, and native NFsim consumes BNG2 XML for exact seeded trajectory comparison. `--case v1-n20-r0-a0` selects one replay.
+Decay, reversible conversion and dimerization families vary compartment volume, population, declaration order (or initially occupied side for reversible conversion), and Atomizer mode. The source analytic amounts are checked against each deterministic route; network identities/rates use BNG2, and native NFsim consumes BNG2 XML for seeded trajectory comparison in the single-channel families. Reversible models check source count/initial/conservation invariants on both NFsim routes; they do not claim pathwise or distributional equivalence across differently ordered reaction channels. `--case v1-n20-r0-a0` selects one replay.
 
 The upstream PyBioNetGen source is imported by the isolated worker; install its requirements into that interpreter without installing the upstream package. Pull requests use the bounded default selection; `--full` selects the expanded matrix. This is regression-discovery evidence, not a claim of complete component equivalence.
+
+The same cases also feed BNGL export/reload, BNGIR 0.1 and native 0.2 reconstruction, SBML export consumed by RoadRunner, and model reuse/mutation/reset/seed replay. Per-consumer `checks.json` is merged into the same report with required check identities. Native BNGIR checks block BNGL parser/render fallback during reconstruction; its guarded NET exporter stays guarded. Native generation compares graph identity, counts and a mapped unit-state RHS snapshot, with independent source trajectories checked separately. Independent source analytic trajectories still judge each deterministic consumer; fresh/reused agreement alone cannot validate both.
+
+`tests.validation.issue_queue` joins one or more exact-revision reports to a retained `gh issue list` snapshot. It rejects stale/conflicting observations and avoids counting a successful process as a passed behavior. Every issue remains explicitly ineligible for automatic closure. The queue includes strict provenance approval debt, reconciliation claims without test references, stale named references, and optional upstream branch observations. A reference resolving in source never counts as executed qualification. CI collects a bounded 1,000-issue snapshot and checks upstream branch drift only on scheduled/manual runs; unavailable or unobserved branches are not treated as matching the lock.
+
+```bash
+python -m tests.validation.issue_queue \
+  --issues-json /tmp/issues.json --report /tmp/bng3-integrated-validation/report.json \
+  --revision <exact-candidate-sha> --output-dir /tmp/bng3-issue-queue
+```
+
+This command reads local evidence and produces a repair/evidence/decision queue; it never modifies GitHub issues or source approvals.
 
 ## Integrated capability campaign
 

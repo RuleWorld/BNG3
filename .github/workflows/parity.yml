@@ -54,6 +54,9 @@ jobs:
             tests/validation/test_parity_workflow_wiring.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
+            tests/validation/test_integrated_cases.py \
+            tests/validation/test_integrated_consumers.py \
+            tests/validation/test_issue_queue.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
@@ -331,6 +334,9 @@ jobs:
     timeout-minutes: 90
     env:
       BNG3_PYTHON_TEST_MODE: installed
+    permissions:
+      contents: read
+      issues: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -339,6 +345,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Snapshot bounded GitHub issue backlog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 1000 \
+            --json number,title,state,body,updatedAt > "$RUNNER_TEMP/bng3-issues.json"
 
       - name: Install native build and validation dependencies
         run: |
@@ -447,6 +460,31 @@ jobs:
             "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
             --strict --summary "$GITHUB_STEP_SUMMARY" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Build exact-revision issue and provenance evidence queue
+        if: always()
+        run: |
+          head_args=()
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            head_args=(--collect-upstream-heads)
+          fi
+          python -m tests.validation.issue_queue \
+            --issues-json "$RUNNER_TEMP/bng3-issues.json" \
+            --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
+          cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload issue queue and provenance observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bng3-issue-queue-${{ github.event_name }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/bng3-issue-queue/
+            ${{ runner.temp }}/bng3-issues.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload integrated reports and replay artifacts
         if: always()

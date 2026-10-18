@@ -380,6 +380,10 @@ Prefer broad generated or parameterized regression coverage in CI so regressions
 
 Use an isolated worktree and branch for sustained integration-validation work. Commit coherent checkpoints after review and appropriate focused validation; do not mix regression detection with a product fix unless the user explicitly asks for both. Delegation is optional. When using subagents in this repository, use at most one or two Luna agents, with no further delegation, unless the user explicitly authorizes a different model or scale.
 
+Issue mappings and source test references are triage hints, not closure evidence or proof of execution. Declare required semantic check identities independently of process execution, consume exported artifacts in the intended downstream component, and retain bounded replay packets. Do not count a producer artifact as a successful consumer check. Reject stale, conflicting, dirty, or unverifiable revision evidence when assembling a current issue queue; source approvals and scope decisions remain explicit maintainer decisions.
+
+Equal stochastic seeds establish pathwise parity only when construction and draw ordering are comparable. Otherwise use a justified distributional comparison, or label invariant-only checks with their narrower scope; deterministic ODE agreement and conservation do not establish stochastic equivalence.
+
 ## Definition of done
 
 A change is done when:

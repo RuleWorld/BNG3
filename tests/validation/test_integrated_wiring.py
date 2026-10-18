@@ -69,7 +69,33 @@ def test_integrated_validation_job_runs_locked_oracles_and_retains_strict_eviden
         step
         for step in job["steps"]
         if step.get("uses", "").startswith("actions/upload-artifact@")
+        and "bng3-integrated-validation-" in step.get("with", {}).get("name", "")
     )
     assert artifact["if"] == "always()"
     assert "bng3-integrated-validation-" in artifact["with"]["name"]
     assert artifact["with"]["path"] == "${{ runner.temp }}/bng3-integrated-validation/"
+
+
+def test_issue_queue_keeps_snapshots_and_scheduled_drift_without_issue_writes():
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["integrated-semantic-validation"]
+    assert job["permissions"]["issues"] == "read"
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "gh issue list" in commands and "--limit 1000" in commands
+    assert "tests.validation.issue_queue" in commands
+    assert "--collect-upstream-heads" in commands
+    assert "--revision" in commands
+    queue = next(
+        s
+        for s in job["steps"]
+        if s.get("name") == "Build exact-revision issue and provenance evidence queue"
+    )
+    assert queue["if"] == "always()"
+    assert '"schedule"' in queue["run"] and '"workflow_dispatch"' in queue["run"]
+    uploaded = next(
+        s
+        for s in job["steps"]
+        if s.get("name") == "Upload issue queue and provenance observations"
+    )
+    assert uploaded["if"] == "always()"
+    assert "bng3-issues.json" in uploaded["with"]["path"]
