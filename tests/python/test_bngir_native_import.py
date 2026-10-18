@@ -736,6 +736,70 @@ def test_native_import_reconstructs_observables_without_source_parsing(monkeypat
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
 
 
+def test_native_import_reconstructs_compartmented_observables_without_source_parsing(
+    monkeypatch,
+):
+    source = """
+begin model
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @cell:A() 10
+end seed species
+begin observables
+    Molecules A_molecules @cell:A()
+    Species A_species @cell:A()
+end observables
+end model
+"""
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert [(item.name, item.type) for item in restored._model.observables] == [
+        ("A_molecules", "Molecules"),
+        ("A_species", "Species"),
+    ]
+    network = restored.generate_network()
+    assert network.num_species == 1
+    assert network.num_reactions == 0
+    source_result = source_model.simulate(method="ode", t_end=0.1, n_steps=1)
+    result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    for name in ("A_molecules", "A_species"):
+        assert result.observables[name] == pytest.approx(
+            source_result.observables[name]
+        )
+    assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+    explicit_compartments = copy.deepcopy(document)
+    for pattern in [
+        explicit_compartments["model"]["seeds"][0]["pattern"],
+        *[
+            term["pattern"]
+            for observable in explicit_compartments["model"]["observables"]
+            for term in observable["terms"]
+        ],
+    ]:
+        pattern["molecules"][0]["compartment"] = "cell"
+    explicit_restored = bionetgen.from_bngir(explicit_compartments, native=True)
+    assert (
+        json.loads(explicit_restored.to_bngir(version="0.2")) == explicit_compartments
+    )
+
+
 @pytest.mark.parametrize("method", ["ode", "ssa"])
 def test_native_import_reconstructs_and_executes_seed_only_model_without_source_parsing(
     monkeypatch, method

@@ -290,7 +290,13 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
             }
             moleculeCompartment = compartments[compartmentId].getName();
         }
-        if (!moleculeCompartment.empty()) {
+        // The compiled snapshot includes a resolved compartment id even when
+        // it is inherited from the enclosing pattern. Preserve inheritance
+        // when only that redundant id is present, while retaining an explicit
+        // molecule compartment string from the BNGIR document.
+        if (!moleculeCompartment.empty() &&
+            (molecule.contains(py::str("compartment")) ||
+             moleculeCompartment != outerCompartment)) {
             const auto& compartments = model.getCompartments();
             if (std::find_if(compartments.begin(), compartments.end(),
                               [&](const Compartment& compartment) {
