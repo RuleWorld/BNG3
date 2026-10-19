@@ -1,0 +1,2111 @@
+{
+  "audited_revision": "9af03d79d48c7488a1ffe98ced270053b27478bd",
+  "excluded_pr": 310,
+  "excluded_pr_head": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+  "classification_counts": {
+    "closure candidate": 0,
+    "maintainer decision": 12,
+    "proposed deferral": 13,
+    "qualification-only work": 17,
+    "bounded product fix": 1
+  },
+  "issues": [
+    {
+      "number": 137,
+      "title": "A06: Approve the BNG3 capability-union inventory and support policy",
+      "url": "https://github.com/RuleWorld/BNG3/issues/137",
+      "updated_at": "2026-10-07T14:48:26Z",
+      "body_sha256": "685b12d326c40655140fd8afb89ddb8fccddd3c3eae52840eba8d4992cf5802f",
+      "classification": "maintainer decision",
+      "assessment": "Working capability inventory has pending owners; approve supported/experimental/excluded union and gates.",
+      "source_path": "provenance/capability-matrix.yml",
+      "acceptance_criteria": [
+        {
+          "id": "issue:137:acceptance:1",
+          "text": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:137:acceptance:2",
+          "text": "Assign each capability a support status, owner and acceptance gate; record explicit exclusions and experimental scope.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:137:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:137:inventory-behavior-from-bionetgen-pybionetgen-canonical-newer-nf",
+        "issue:137:assign-each-capability-a-support-status-owner-and-acceptance-gat",
+        "issue:137:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 138,
+      "title": "B01: Migrate remaining runtime consumers to the resolved semantic model",
+      "url": "https://github.com/RuleWorld/BNG3/issues/138",
+      "updated_at": "2026-10-17T04:58:59Z",
+      "body_sha256": "bd26a1b63d1dc5a015e727e212b966558ec22cd28363dcc58cf122a6d5fed0ba",
+      "classification": "proposed deferral",
+      "assessment": "43-file AST compatibility allowlist remains; retain tested adapters for this release rather than require wholesale migration.",
+      "source_path": "provenance/architecture/ast_compat_allowlist.txt",
+      "acceptance_criteria": [
+        {
+          "id": "issue:138:acceptance:1",
+          "text": "Inventory the 43 allowed AST-dependent compatibility files and migrate by consumer with explicit ownership boundaries.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:138:acceptance:2",
+          "text": "Reduce the compatibility allowlist only after corresponding behavior and independent parity checks pass.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:138:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:138:inventory-the-43-allowed-ast-dependent-compatibility-files-and-m",
+        "issue:138:reduce-the-compatibility-allowlist-only-after-corresponding-beha",
+        "issue:138:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 46,
+        "PASS": 1337
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 139,
+      "title": "B02: Separate network-rule execution from reconstructed AST rules",
+      "url": "https://github.com/RuleWorld/BNG3/issues/139",
+      "updated_at": "2026-10-13T13:16:21Z",
+      "body_sha256": "4b72f72e7f42dbd18365cceae3c684cce0ad1663aa46c91c31c391eb5e7d61b9",
+      "classification": "proposed deferral",
+      "assessment": "LegacyNetworkRuleKernel still reconstructs ReactionRule. Defer retirement until graph/rate/filter/local/reverse parity is complete.",
+      "source_path": "cpp/engine/LegacyNetworkRuleKernel.cpp",
+      "acceptance_criteria": [
+        {
+          "id": "issue:139:acceptance:1",
+          "text": "Replace the necessary LegacyNetworkRuleKernel reconstruction with a compile-owned execution contract in bounded slices.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:139:acceptance:2",
+          "text": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:139:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit",
+        "issue:139:demonstrate-graph-rate-filter-local-scope-and-reversible-rule-pa",
+        "issue:139:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 21,
+        "PASS": 99
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 140,
+      "title": "B03: Type simulation protocol actions and share option semantics",
+      "url": "https://github.com/RuleWorld/BNG3/issues/140",
+      "updated_at": "2026-10-13T12:40:47Z",
+      "body_sha256": "60f5376eece0c7ca3de4da53f380fd0f81bad86320a2ede21bb4f61cbed83b3e",
+      "classification": "qualification-only work",
+      "assessment": "Typed setters and protocol slices exist; audit current defaults, sample_times/stop_if and CLI/API/BNGL behavior before treating older gap notes as current defects.",
+      "source_path": "cpp/actions/ActionDispatch.cpp",
+      "acceptance_criteria": [
+        {
+          "id": "issue:140:acceptance:1",
+          "text": "Replace string-based semantic dispatch/arguments with validated typed protocol values while preserving source spelling for diagnostics.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:140:acceptance:2",
+          "text": "Verify equivalent CLI, Python and BNGL action behavior, including invalid options and defaults.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:140:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3,
+        "DEMONSTRATED": 1
+      },
+      "demonstrated_obligations": [
+        "issue:140:executed-slice:lifecycle-public-routes"
+      ],
+      "remaining_obligations": [
+        "issue:140:replace-string-based-semantic-dispatch-arguments-with-validated",
+        "issue:140:verify-equivalent-cli-python-and-bngl-action-behavior-including",
+        "issue:140:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 21,
+        "PASS": 1398
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 141,
+      "title": "B04: Qualify compile-once model reuse and independent trajectory state",
+      "url": "https://github.com/RuleWorld/BNG3/issues/141",
+      "updated_at": "2026-10-17T04:58:45Z",
+      "body_sha256": "2b06a72fc9ead82926823a598c880478973e48e5343d6bf5b7ed3a19fcac48c4",
+      "classification": "qualification-only work",
+      "assessment": "Reset, seeded repeat and construction-isolation slices demonstrated; repeated/concurrent RNG/cache/solver ownership, exception cleanup and invalidation acceptance still incomplete.",
+      "source_path": "tests/python/test_model_reuse_contract.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:141:acceptance:1",
+          "text": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:141:acceptance:2",
+          "text": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:141:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 14,
+        "DEMONSTRATED": 3
+      },
+      "demonstrated_obligations": [
+        "issue:141:slice:reset",
+        "issue:141:slice:seeded-repeat",
+        "issue:141:executed-slice:lifecycle-construction-isolation"
+      ],
+      "remaining_obligations": [
+        "issue:141:repeated-instantiation",
+        "issue:141:concurrent-instantiation",
+        "issue:141:independent-rng-ownership",
+        "issue:141:independent-caches",
+        "issue:141:independent-solver-state",
+        "issue:141:exception-cleanup",
+        "issue:141:parameter-only-reuse",
+        "issue:141:topology-invalidation",
+        "issue:141:compartment-invalidation",
+        "issue:141:implementation-or-disposition",
+        "issue:141:exact-revision",
+        "issue:141:validation-receipt",
+        "issue:141:remaining-limits",
+        "issue:141:slice:mutation-fresh"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 73,
+        "PASS": 168,
+        "UNSUPPORTED": 25
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 142,
+      "title": "B05: Unify network and NFsim graph-identity semantics",
+      "url": "https://github.com/RuleWorld/BNG3/issues/142",
+      "updated_at": "2026-10-18T15:17:21Z",
+      "body_sha256": "acde1176ba0c66a93a3e58675c9ab8063d2b45221e2cbb665157195b3b3bee84",
+      "classification": "qualification-only work",
+      "assessment": "Generated graph identity checks pass; independent isomorphism and shared production identity acceptance remain broader than the tested rings/compartment cases.",
+      "source_path": "tests/validation/graph_identity.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:142:acceptance:1",
+          "text": "Compare the two graph encodings/canonicalizers against independent isomorphism on symmetric and compartmental complexes.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:142:acceptance:2",
+          "text": "Share the justified identity contract or implementation and retain differential regression coverage.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:142:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:142:compare-the-two-graph-encodings-canonicalizers-against-independe",
+        "issue:142:share-the-justified-identity-contract-or-implementation-and-reta",
+        "issue:142:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 371
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 143,
+      "title": "B06: Complete the shared rate-law and local-function semantic contract",
+      "url": "https://github.com/RuleWorld/BNG3/issues/143",
+      "updated_at": "2026-10-18T15:17:22Z",
+      "body_sha256": "27be65ee35a6b5e83354af70626c6b0781e831618bc98507459b5e32d36f1a17",
+      "classification": "qualification-only work",
+      "assessment": "Nonfinite constant-rate refusal and lifecycle mutation baseline exist; qualify special rates, TFUN, local scopes, multiplicity and cache invalidation across claimed backends.",
+      "source_path": "cpp/compile/Capabilities.cpp",
+      "acceptance_criteria": [
+        {
+          "id": "issue:143:acceptance:1",
+          "text": "Specify supported special-rate, TFUN, scope, multiplicity and dependency/evaluation conventions once.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:143:acceptance:2",
+          "text": "Compare supported backend coefficients/RHS/propensities against independent references and test cache invalidation.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:143:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3,
+        "DEMONSTRATED": 1
+      },
+      "demonstrated_obligations": [
+        "issue:143:executed-slice:lifecycle-mutation-baseline"
+      ],
+      "remaining_obligations": [
+        "issue:143:specify-supported-special-rate-tfun-scope-multiplicity-and-depen",
+        "issue:143:compare-supported-backend-coefficients-rhs-propensities-against",
+        "issue:143:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 73,
+        "PASS": 1865,
+        "UNSUPPORTED": 25
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 144,
+      "title": "B07: Resolve and execute the canonical finite-backend migration",
+      "url": "https://github.com/RuleWorld/BNG3/issues/144",
+      "updated_at": "2026-10-07T14:48:46Z",
+      "body_sha256": "73a2973772e64e71a07dfbb2e732d78f671665a2296f12456b4324d2354dc066",
+      "classification": "maintainer decision",
+      "assessment": "ADR 0003 retains optional BNGsim with native fallback; approve bounded release fallback and migration scope, not forced backend replacement.",
+      "source_path": "docs/adr/0003-bngsim-canonical-finite-backend.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:144:acceptance:1",
+          "text": "Confirm ADR 0003's supported BNGsim boundary and record explicit native fallback decisions.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:144:acceptance:2",
+          "text": "Close selected adapter gaps with differential ODE/SSA evidence and a staged ownership/retirement plan.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:144:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:144:confirm-adr-0003-s-supported-bngsim-boundary-and-record-explicit",
+        "issue:144:close-selected-adapter-gaps-with-differential-ode-ssa-evidence-a",
+        "issue:144:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 2,
+        "PASS": 158
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 146,
+      "title": "C01: Expand independent direct-NFsim and XML-path qualification",
+      "url": "https://github.com/RuleWorld/BNG3/issues/146",
+      "updated_at": "2026-10-13T12:27:44Z",
+      "body_sha256": "139196697b1208f6a72c75510fea0c76b438e0534200a64ffa69daf8e2bdb86c",
+      "classification": "qualification-only work",
+      "assessment": "Six quantity-law slices demonstrated; scopes/observables/symmetry/deletion/filters/lifecycle and route assertions require complete direct/XML/native qualification. PR #310 owns native count-rate normalization.",
+      "source_path": "tests/validation/integrated.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:146:acceptance:1",
+          "text": "Extend fixtures for scopes, dynamic rates, observables, symmetry, deletion, filters, compartments and lifecycle; assert the selected route.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:146:acceptance:2",
+          "text": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:146:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3,
+        "DEMONSTRATED": 6
+      },
+      "demonstrated_obligations": [
+        "issue:146:executed-slice:quantity-zero-order-physical_source_law",
+        "issue:146:executed-slice:quantity-zero-order-bngl_count",
+        "issue:146:executed-slice:quantity-first-order-physical_source_law",
+        "issue:146:executed-slice:quantity-first-order-bngl_count",
+        "issue:146:executed-slice:quantity-second-order-physical_source_law",
+        "issue:146:executed-slice:quantity-second-order-bngl_count"
+      ],
+      "remaining_obligations": [
+        "issue:146:extend-fixtures-for-scopes-dynamic-rates-observables-symmetry-de",
+        "issue:146:compare-direct-xml-and-independently-built-native-nfsim-using-fi",
+        "issue:146:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 578
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 147,
+      "title": "C02: Extend NFnext lowering for approved unsupported semantic families",
+      "url": "https://github.com/RuleWorld/BNG3/issues/147",
+      "updated_at": "2026-10-10T02:59:28Z",
+      "body_sha256": "434e083239a495d2b972b1d5d50d49739882a9569103abf56f537069cea69a8a",
+      "classification": "proposed deferral",
+      "assessment": "NFnext additions require approved capability slices; retain unsupported refusals and avoid promoting a replacement backend during bounded release.",
+      "source_path": "docs/CURRENT_PROGRESS.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:147:acceptance:1",
+          "text": "Select supported additions for dynamic rates, filters/modifiers, compartments, population maps and energy from the approved capability matrix.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:147:acceptance:2",
+          "text": "Add representation, executor and independent tests per slice; retain explicit rejection for everything outside scope.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:147:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:147:select-supported-additions-for-dynamic-rates-filters-modifiers-c",
+        "issue:147:add-representation-executor-and-independent-tests-per-slice-reta",
+        "issue:147:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 148,
+      "title": "C03: Qualify a complete model-to-NFnext execution boundary",
+      "url": "https://github.com/RuleWorld/BNG3/issues/148",
+      "updated_at": "2026-10-10T02:59:29Z",
+      "body_sha256": "4617d4866d92e230d47f5bdc874d59e76bdb468b3654b6ecf8e16bec8fd4cda2",
+      "classification": "proposed deferral",
+      "assessment": "Existing NFnext contracts do not establish seeds/observables/functions/protocol/output initialization of a complete production model.",
+      "source_path": "formal/lean/scripts/run_nfnext_contract.sh",
+      "acceptance_criteria": [
+        {
+          "id": "issue:148:acceptance:1",
+          "text": "Carry and initialize the supported seeds, observables, parameter/function graph, protocol and output contract, beyond topology/rules.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:148:acceptance:2",
+          "text": "Compare production-lowered execution with reference fixtures and independent NFsim before promoting it as a replacement.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:148:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:148:carry-and-initialize-the-supported-seeds-observables-parameter-f",
+        "issue:148:compare-production-lowered-execution-with-reference-fixtures-and",
+        "issue:148:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 149,
+      "title": "C04: Decide maintained roles for NFcore, NFcore2 and NFnext",
+      "url": "https://github.com/RuleWorld/BNG3/issues/149",
+      "updated_at": "2026-10-07T14:49:01Z",
+      "body_sha256": "f225e39fe3fe28407e0b89a9b691a539334b9351ad47b9ba6f3064fa42a064e3",
+      "classification": "maintainer decision",
+      "assessment": "Choose workload ownership for NFcore/NFcore2/NFnext and contain prototype overlap; do not infer promotion from native contracts.",
+      "source_path": "docs/CURRENT_PROGRESS.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:149:acceptance:1",
+          "text": "Document which engine owns each supported workload and whether NFcore2 remains a bounded prototype.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:149:acceptance:2",
+          "text": "Implement and qualify any promoted route, or contain/deprecate overlap without losing supported behavior.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:149:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:149:document-which-engine-owns-each-supported-workload-and-whether-n",
+        "issue:149:implement-and-qualify-any-promoted-route-or-contain-deprecate-ov",
+        "issue:149:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 150,
+      "title": "C05: Complete or disposition hybrid particle-population execution",
+      "url": "https://github.com/RuleWorld/BNG3/issues/150",
+      "updated_at": "2026-10-07T14:49:04Z",
+      "body_sha256": "53d6d4de68582e2dc1161e0e65c7e6c72b24e594d280facd6ed1ce2cf76bf444",
+      "classification": "maintainer decision",
+      "assessment": "Population-map storage/hybrid generation is not proof of hybrid execution refinement; decide supported rates/conservation/observable scope or explicit exclusion.",
+      "source_path": "cpp/engine/HybridModelGenerator.cpp",
+      "acceptance_criteria": [
+        {
+          "id": "issue:150:acceptance:1",
+          "text": "Distinguish population-map storage and hybrid BNGL generation from actual execution refinement.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:150:acceptance:2",
+          "text": "Qualify approved conversion, rates, conservation, observables and compartment behavior, or document explicit exclusions.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:150:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:150:distinguish-population-map-storage-and-hybrid-bngl-generation-fr",
+        "issue:150:qualify-approved-conversion-rates-conservation-observables-and-c",
+        "issue:150:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 151,
+      "title": "C06: Implement the verified NFsim physical-unit count-rate bridge",
+      "url": "https://github.com/RuleWorld/BNG3/issues/151",
+      "updated_at": "2026-10-18T15:17:23Z",
+      "body_sha256": "9f6526a61d7994ee848400ad55da1b508a4fda2a62fe8c0e1f0279ae57c86e4e",
+      "classification": "bounded product fix",
+      "assessment": "Typed physical NFsim rates still admit only zero-order directions. Bound a future first-order typed-unit bridge, with count-law oracle and missing-context/dimension/double-scaling refusal controls. Existing prelowered quantity-law passes do not establish annotation ingestion.",
+      "source_path": "cpp/compile/Capabilities.cpp",
+      "acceptance_criteria": [
+        {
+          "id": "issue:151:acceptance:1",
+          "text": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:151:acceptance:2",
+          "text": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:151:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 12,
+        "DEMONSTRATED": 10
+      },
+      "demonstrated_obligations": [
+        "issue:151:slice:native.source-cdf",
+        "issue:151:slice:native.marginal-means",
+        "issue:151:slice:source-compiled-rate-multiset",
+        "issue:151:slice:compiled-net-rate-multiset",
+        "issue:151:executed-slice:quantity-zero-order-physical_source_law",
+        "issue:151:executed-slice:quantity-zero-order-bngl_count",
+        "issue:151:executed-slice:quantity-first-order-physical_source_law",
+        "issue:151:executed-slice:quantity-first-order-bngl_count",
+        "issue:151:executed-slice:quantity-second-order-physical_source_law",
+        "issue:151:executed-slice:quantity-second-order-bngl_count"
+      ],
+      "remaining_obligations": [
+        "issue:151:amount-count-conversion",
+        "issue:151:elementary-rate-conversion",
+        "issue:151:molecularity",
+        "issue:151:compartment-context",
+        "issue:151:independent-count-model-comparison",
+        "issue:151:missing-context-refusal",
+        "issue:151:unsupported-dimension-refusal",
+        "issue:151:double-scaling-refusal",
+        "issue:151:implementation-or-disposition",
+        "issue:151:exact-revision",
+        "issue:151:validation-receipt",
+        "issue:151:remaining-limits"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 685
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 152,
+      "title": "C07: Reconcile newer NFsim energy, Rasi and protocol capabilities",
+      "url": "https://github.com/RuleWorld/BNG3/issues/152",
+      "updated_at": "2026-10-07T14:49:09Z",
+      "body_sha256": "d027f92e47947fbbe36fb98a2ffec7307c575dee4ebebd54d6471026660ab509",
+      "classification": "qualification-only work",
+      "assessment": "Refresh newer NFsim/Rasi source cutoffs and source-linked RNA/uORF, motor, TQSSA, fceRI and multisite fixtures before claiming parity.",
+      "source_path": "provenance/reconciliation/nfsim.yml",
+      "acceptance_criteria": [
+        {
+          "id": "issue:152:acceptance:1",
+          "text": "Review source behavior after the recorded cutoffs; classify each change as equivalent, port-required or deliberately excluded.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:152:acceptance:2",
+          "text": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:152:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:152:review-source-behavior-after-the-recorded-cutoffs-classify-each",
+        "issue:152:add-relevant-real-rna-uorf-motor-tqssa-fceri-and-multisite-proto",
+        "issue:152:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 153,
+      "title": "D01: Deserialize structural BNGIR directly into the native semantic model",
+      "url": "https://github.com/RuleWorld/BNG3/issues/153",
+      "updated_at": "2026-10-17T04:59:01Z",
+      "body_sha256": "04672166502575b928a12aba4ee4310c355a7d29c85ea4582af4631d7b985625",
+      "classification": "qualification-only work",
+      "assessment": "Parser-free native reconstruction now includes functions and observables; four reconstruction slices demonstrated. PR #310 exclusively owns multi-pattern rule expansion.",
+      "source_path": "cpp/bindings/bind_bngir.cpp",
+      "acceptance_criteria": [
+        {
+          "id": "issue:153:acceptance:1",
+          "text": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:153:acceptance:2",
+          "text": "Round-trip and execute reconstructed models with source-text independence and fail-closed malformed-reference handling.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:153:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3,
+        "DEMONSTRATED": 4
+      },
+      "demonstrated_obligations": [
+        "issue:153:executed-slice:reconstruction-molecule-id-permutation",
+        "issue:153:executed-slice:reconstruction-compartment-suffix",
+        "issue:153:executed-slice:reconstruction-compartment-prefix",
+        "issue:153:executed-slice:reconstruction-molecule-compartment"
+      ],
+      "remaining_obligations": [
+        "issue:153:reconstruct-the-supported-resolved-model-without-rendering-or-pa",
+        "issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind",
+        "issue:153:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 36,
+        "PASS": 845,
+        "UNSUPPORTED": 7
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 154,
+      "title": "D02: Qualify BNGIR round trips across the supported semantic surface",
+      "url": "https://github.com/RuleWorld/BNG3/issues/154",
+      "updated_at": "2026-10-12T03:09:09Z",
+      "body_sha256": "326363a249d76925dc0e7882fc0c16368de2d2ed94917dcb046396dfdbf59f37",
+      "classification": "qualification-only work",
+      "assessment": "Four reconstruction slices demonstrated; qualify declarations/IDs, reversible rules, mutations, scope/filter/unit/energy/population/protocol preservation on declared supported versions.",
+      "source_path": "tests/python/test_bngir_native_import.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:154:acceptance:1",
+          "text": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:154:acceptance:2",
+          "text": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:154:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3,
+        "DEMONSTRATED": 4
+      },
+      "demonstrated_obligations": [
+        "issue:154:executed-slice:reconstruction-molecule-id-permutation",
+        "issue:154:executed-slice:reconstruction-compartment-suffix",
+        "issue:154:executed-slice:reconstruction-compartment-prefix",
+        "issue:154:executed-slice:reconstruction-molecule-compartment"
+      ],
+      "remaining_obligations": [
+        "issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi",
+        "issue:154:check-semantic-execution-as-well-as-document-shape-reject-every",
+        "issue:154:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 36,
+        "PASS": 920,
+        "UNSUPPORTED": 7
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 155,
+      "title": "D03: Add independent native BNGIR contracts and adversarial fixtures",
+      "url": "https://github.com/RuleWorld/BNG3/issues/155",
+      "updated_at": "2026-10-17T04:58:46Z",
+      "body_sha256": "2210504524616ce4290d63cc4242fb16c9ed483ed7d8e2a232b62ba5a3437f3a",
+      "classification": "qualification-only work",
+      "assessment": "15 bounded adversarial/reconstruction obligations demonstrated; full native import/export, migration, serialization and generated reference checks remain.",
+      "source_path": "tests/validation/bngir_adversarial.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:155:acceptance:1",
+          "text": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:155:acceptance:2",
+          "text": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:155:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 12,
+        "DEMONSTRATED": 15
+      },
+      "demonstrated_obligations": [
+        "issue:155:slice:baseline-native-control",
+        "issue:155:slice:alpha-renamed-symbols",
+        "issue:155:slice:parameter-declaration-order",
+        "issue:155:slice:nested-rate-expression",
+        "issue:155:slice:nested-parameter-reference-out-of-range",
+        "issue:155:slice:parameter-reference-kind-mismatch",
+        "issue:155:slice:seed-molecule-type-reference-out-of-range",
+        "issue:155:slice:seed-type-name-id-disagreement",
+        "issue:155:slice:duplicate-molecule-type-id",
+        "issue:155:slice:duplicate-parameter-name",
+        "issue:155:slice:compartment-parent-reference-out-of-range",
+        "issue:155:executed-slice:reconstruction-molecule-id-permutation",
+        "issue:155:executed-slice:reconstruction-compartment-suffix",
+        "issue:155:executed-slice:reconstruction-compartment-prefix",
+        "issue:155:executed-slice:reconstruction-molecule-compartment"
+      ],
+      "remaining_obligations": [
+        "issue:155:native-import-contract",
+        "issue:155:native-export-contract",
+        "issue:155:version-migration-fixtures",
+        "issue:155:deterministic-serialization-fixtures",
+        "issue:155:malformed-reference-cases",
+        "issue:155:cross-referenced-id-cases",
+        "issue:155:generated-property-cases",
+        "issue:155:independent-refusal-verification",
+        "issue:155:implementation-or-disposition",
+        "issue:155:exact-revision",
+        "issue:155:validation-receipt",
+        "issue:155:remaining-limits"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 36,
+        "PASS": 845,
+        "UNSUPPORTED": 7
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 156,
+      "title": "D04: Define BNGIR version defaults, compatibility and semantic equality",
+      "url": "https://github.com/RuleWorld/BNG3/issues/156",
+      "updated_at": "2026-10-12T20:42:28Z",
+      "body_sha256": "e860cf578c9a0d0749666c6d78fbda64e0ce456b20294634e0f6a909a01bd58d",
+      "classification": "maintainer decision",
+      "assessment": "v0.1 remains public default; native route requires v0.2. Approve default/migration and semantic_equal identity/provenance promises.",
+      "source_path": "python/bionetgen/bngir.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:156:acceptance:1",
+          "text": "Decide the public default version and supported migration policy, including v0.1 units/population limitations.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:156:acceptance:2",
+          "text": "Specify identity versus provenance and test exactly what semantic_equal promises across supported versions.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:156:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:156:decide-the-public-default-version-and-supported-migration-policy",
+        "issue:156:specify-identity-versus-provenance-and-test-exactly-what-semanti",
+        "issue:156:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 36,
+        "PASS": 845,
+        "UNSUPPORTED": 7
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 157,
+      "title": "E01: Execute native dynamic events with continuous root detection",
+      "url": "https://github.com/RuleWorld/BNG3/issues/157",
+      "updated_at": "2026-10-17T04:42:24Z",
+      "body_sha256": "133e278ec7f76885b5d046467b76421be79f602730d335185da0f33178c00ab3",
+      "classification": "qualification-only work",
+      "assessment": "Compiled event transport and narrow CVODE continuous roots exist, with analytic/RoadRunner tests. Qualify initial/rising edges, updates/reinitialization and explicit subset limits; older blanket absence notes are stale.",
+      "source_path": "tests/python/test_native_events.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:157:acceptance:1",
+          "text": "Carry the existing event AST through the canonical compiled model and implement native trigger/root handling.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:157:acceptance:2",
+          "text": "Verify initial/rising edges, state/parameter/compartment updates and solver reinitialization against official cases and an independent engine.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:157:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:157:carry-the-existing-event-ast-through-the-canonical-compiled-mode",
+        "issue:157:verify-initial-rising-edges-state-parameter-compartment-updates",
+        "issue:157:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 158,
+      "title": "E02: Complete delayed, prioritized and stochastic event-queue semantics",
+      "url": "https://github.com/RuleWorld/BNG3/issues/158",
+      "updated_at": "2026-10-07T14:49:26Z",
+      "body_sha256": "a7881840ecae4ddad8caa22c6caca52d18309b03fe41cf42dc45a1a91d7d26e8",
+      "classification": "proposed deferral",
+      "assessment": "Retain explicit event-subset refusal for general delays, priorities, cancellation/cascades and stochastic transitions; broader queue semantics are a separate milestone.",
+      "source_path": "tests/python/test_event_backend_boundaries.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:158:acceptance:1",
+          "text": "Implement approved delay, snapshot, persistence, cancellation, priority, cascade and recurrence behavior.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:158:acceptance:2",
+          "text": "Validate stochastic event transitions and seeded equal-priority ordering; reject combinations not represented exactly.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:158:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:158:implement-approved-delay-snapshot-persistence-cancellation-prior",
+        "issue:158:validate-stochastic-event-transitions-and-seeded-equal-priority",
+        "issue:158:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 159,
+      "title": "E03: Publish current revision-locked official SBML conformance evidence",
+      "url": "https://github.com/RuleWorld/BNG3/issues/159",
+      "updated_at": "2026-10-17T13:39:12Z",
+      "body_sha256": "35f7c561067b09cb03db9d9ef610b570232556ffc32b2322e35a27623e738502",
+      "classification": "qualification-only work",
+      "assessment": "Latest retained official run is older SHA 65c8d336: conversion 1712 pass/211 unsupported, official-reference 1115 pass/701 unsupported/107 fail. Refresh bounded exact-head references; do not import old failures as current proof.",
+      "source_path": "scripts/ci/validate_sbml_test_suite.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:159:acceptance:1",
+          "text": "Run the existing locked-suite runner on an identified final BNG3 build and retain durable per-case artifacts.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:159:acceptance:2",
+          "text": "Report conversion, round trip, official-reference conformance and independent comparison separately, including event targets and zero-observable cases.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:159:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:159:run-the-existing-locked-suite-runner-on-an-identified-final-bng3",
+        "issue:159:report-conversion-round-trip-official-reference-conformance-and",
+        "issue:159:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 75
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 160,
+      "title": "E04: Disposition unsupported SBML semantics by feature class",
+      "url": "https://github.com/RuleWorld/BNG3/issues/160",
+      "updated_at": "2026-10-07T14:49:32Z",
+      "body_sha256": "2a09a233283fe1653a711d863806a2ae648b1bb93a61817c92851a9749e38df9",
+      "classification": "maintainer decision",
+      "assessment": "Use existing unsupported feature summaries to approve maintained exclusions versus precise supported subclasses; conversion and independent-export agreement cannot override official-reference failures.",
+      "source_path": "scripts/ci/validate_sbml_test_suite.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:160:acceptance:1",
+          "text": "Group current unsupported cases by dynamic rules/events, history, algebraic constraints, stoichiometry, fast reactions and packages.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:160:acceptance:2",
+          "text": "For each class implement a semantics-preserving supported subset or record a specific maintained exclusion and diagnostic.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:160:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:160:group-current-unsupported-cases-by-dynamic-rules-events-history",
+        "issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
+        "issue:160:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 161,
+      "title": "E05: Expand structural Atomizer and SBML Multi execution qualification",
+      "url": "https://github.com/RuleWorld/BNG3/issues/161",
+      "updated_at": "2026-10-18T15:17:24Z",
+      "body_sha256": "c8057e0ac330a6958a8f8c46f9adf713cfddb457b1ff41013104cb6f0e8f9bb3",
+      "classification": "qualification-only work",
+      "assessment": "142 related passes and 2 not tested do not cover all structural Atomizer/Multi changes, quantities, metadata and source-dynamics round trips.",
+      "source_path": "tests/python/test_structural_multi_execution.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:161:acceptance:1",
+          "text": "Cover reconstruction, reaction/bond changes, compartments, quantities and retained metadata on supported models.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:161:acceptance:2",
+          "text": "Compare full execution and semantic round trips with independent references; do not substitute successful parsing for dynamics.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:161:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:161:cover-reconstruction-reaction-bond-changes-compartments-quantiti",
+        "issue:161:compare-full-execution-and-semantic-round-trips-with-independent",
+        "issue:161:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 2,
+        "PASS": 142
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 162,
+      "title": "E06: Resume curated BioModels and cross-engine Atomizer qualification when authorized",
+      "url": "https://github.com/RuleWorld/BNG3/issues/162",
+      "updated_at": "2026-10-07T14:49:38Z",
+      "body_sha256": "25d744064d2c8db1c8f064ca927a23ef5cfe7cc2a40f9850053de26b00c734f9",
+      "classification": "proposed deferral",
+      "assessment": "Preserve full BioModels stop; this request authorizes no corpus expansion or resumption. Retain pinned plan only pending explicit authorization.",
+      "source_path": "provenance/published-biomodels.json",
+      "acceptance_criteria": [
+        {
+          "id": "issue:162:acceptance:1",
+          "text": "Keep the existing full BioModels stop in effect until the user explicitly resumes it; prepare pinned source/corpus and bounded execution plans.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:162:acceptance:2",
+          "text": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:162:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:162:keep-the-existing-full-biomodels-stop-in-effect-until-the-user-e",
+        "issue:162:after-resumption-retain-current-flat-atomized-and-cross-engine-r",
+        "issue:162:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 163,
+      "title": "E07: Populate format Tier-X with semantic and consumer-level checks",
+      "url": "https://github.com/RuleWorld/BNG3/issues/163",
+      "updated_at": "2026-10-11T20:23:12Z",
+      "body_sha256": "e0fb5a318372bbb58f449dc2bf29ec97830ce076cdf584985e02828fa2be3342",
+      "classification": "qualification-only work",
+      "assessment": "Existing consumers and four reconstruction slices execute, but locked Tier-X remains empty. Inventory downstream format consumption; changes to tier membership need approval.",
+      "source_path": "tests/validation/integrated_consumers.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:163:acceptance:1",
+          "text": "Inventory supported BNGL/XML/NET/SBML/Multi and code/graph/document exporters; map existing tests before adding coverage.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:163:acceptance:2",
+          "text": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:163:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3,
+        "DEMONSTRATED": 4
+      },
+      "demonstrated_obligations": [
+        "issue:163:executed-slice:reconstruction-molecule-id-permutation",
+        "issue:163:executed-slice:reconstruction-compartment-suffix",
+        "issue:163:executed-slice:reconstruction-compartment-prefix",
+        "issue:163:executed-slice:reconstruction-molecule-compartment"
+      ],
+      "remaining_obligations": [
+        "issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum",
+        "issue:163:populate-a-nonempty-format-tier-and-verify-semantic-round-trips",
+        "issue:163:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "NOT_TESTED": 24,
+        "PASS": 2023,
+        "UNSUPPORTED": 1
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 164,
+      "title": "E08: Split Atomizer lowering and emission by semantic responsibility",
+      "url": "https://github.com/RuleWorld/BNG3/issues/164",
+      "updated_at": "2026-10-07T14:49:43Z",
+      "body_sha256": "d52aae7a36b7cac6e7af297465f2fdaa032fbbd3c75358f2ad3e7b68d62c3ce4",
+      "classification": "proposed deferral",
+      "assessment": "Characterization and Atomizer module splitting are useful maintenance work, not required release semantic expansion; defer extraction while retaining current tests.",
+      "source_path": "python/bionetgen/atomizer",
+      "acceptance_criteria": [
+        {
+          "id": "issue:164:acceptance:1",
+          "text": "Establish characterization tests around symbol resolution, feature checks, event planning, units, structural mapping and text output.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:164:acceptance:2",
+          "text": "Extract cohesive boundaries incrementally without changing supported semantics or introducing parallel implementations.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:164:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:164:establish-characterization-tests-around-symbol-resolution-featur",
+        "issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
+        "issue:164:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 166,
+      "title": "F02: Establish production lowering correspondence for a named supported subset",
+      "url": "https://github.com/RuleWorld/BNG3/issues/166",
+      "updated_at": "2026-10-08T13:42:42Z",
+      "body_sha256": "ddfcf0e91f5eda8b053ce9236865e72fb4463432a2763f37652e41bff15e89b0",
+      "classification": "proposed deferral",
+      "assessment": "Executable C++/Lean bridge contracts are not a general production lowering correspondence theorem. Keep claims bounded and defer new proof scope.",
+      "source_path": "formal/lean/README.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:166:acceptance:1",
+          "text": "Specify correspondence between the resolved C++ model, serialized semantic IDs/packing and the Lean reference.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:166:acceptance:2",
+          "text": "Provide general refinement evidence for the stated boundary; keep executable C++ fixtures distinct from machine-checked theorems.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:166:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:166:specify-correspondence-between-the-resolved-c-model-serialized-s",
+        "issue:166:provide-general-refinement-evidence-for-the-stated-boundary-keep",
+        "issue:166:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 167,
+      "title": "F03: Extend formal rate, propensity and stochastic execution semantics",
+      "url": "https://github.com/RuleWorld/BNG3/issues/167",
+      "updated_at": "2026-10-07T14:49:52Z",
+      "body_sha256": "a31fae73ec10631d512c6b2c24ed92128f13a6bd83ad17c465351b78797d3c6e",
+      "classification": "proposed deferral",
+      "assessment": "Existing rate-related checks and green Lean kernel do not prove full special-rate/local-function/TFUN/propensity/event-selection refinement.",
+      "source_path": "formal/lean/README.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:167:acceptance:1",
+          "text": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:167:acceptance:2",
+          "text": "Prove the selected refinement statements; explicitly exclude unproved floating-point solver behavior.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:167:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:167:encode-the-exact-supported-special-rate-local-function-tfun-and",
+        "issue:167:prove-the-selected-refinement-statements-explicitly-exclude-unpr",
+        "issue:167:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 236
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 168,
+      "title": "F04: Qualify and formalize canonicalization and bounded network equivalence",
+      "url": "https://github.com/RuleWorld/BNG3/issues/168",
+      "updated_at": "2026-10-07T14:49:55Z",
+      "body_sha256": "d49309dad6fc0810ad56f4f33312df04e71b6d0ff6114f7a17116e09214164c9",
+      "classification": "proposed deferral",
+      "assessment": "Graph differential tests can qualify release behavior; general bounded equivalence theorem and termination/domain assumptions remain separate formal work.",
+      "source_path": "tests/validation/graph_identity.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:168:acceptance:1",
+          "text": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:168:acceptance:2",
+          "text": "State and prove the intended bounded equivalence with explicit domain and termination assumptions.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:168:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:168:generate-differential-cases-comparing-production-graph-identity",
+        "issue:168:state-and-prove-the-intended-bounded-equivalence-with-explicit-d",
+        "issue:168:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 10
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 170,
+      "title": "F06: Decide the optional CRNT model-property verification bridge",
+      "url": "https://github.com/RuleWorld/BNG3/issues/170",
+      "updated_at": "2026-10-07T14:50:00Z",
+      "body_sha256": "df9283735ffc4b1e876d4a1bdcca16a618ac0a9cf346042e79d9e23ea929713c",
+      "classification": "maintainer decision",
+      "assessment": "Optional CRNT bridge needs explicit model classes, mathematical objects, assumptions and theorem targets; recommend deferral without biological-validity claims.",
+      "source_path": "formal/lean/README.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:170:acceptance:1",
+          "text": "Define requested model classes, exported mathematical objects, assumptions and theorem targets.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:170:acceptance:2",
+          "text": "If retained in scope, implement the bridge and audit exact proved claims; otherwise record a deliberate deferral without implying biological validity.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:170:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:170:define-requested-model-classes-exported-mathematical-objects-ass",
+        "issue:170:if-retained-in-scope-implement-the-bridge-and-audit-exact-proved",
+        "issue:170:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 171,
+      "title": "G01: Complete the PyBioNetGen public compatibility matrix",
+      "url": "https://github.com/RuleWorld/BNG3/issues/171",
+      "updated_at": "2026-10-17T04:42:25Z",
+      "body_sha256": "d44160ca835056403aec4f685d58d1114476c5f398451bd61f920cd4fb5dc6a1",
+      "classification": "qualification-only work",
+      "assessment": "250 related compatibility passes are partial evidence; complete installed API/CLI signatures/defaults/dispatch/timeouts/results/exceptions/optional imports against isolated upstream.",
+      "source_path": "scripts/ci/check_pybionetgen_compat.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:171:acceptance:1",
+          "text": "Cover signatures/defaults, positional dispatch, timeouts, actions, results/files, exceptions, optional imports and integrations.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:171:acceptance:2",
+          "text": "Test supported simulation methods through both installed API and CLI; document intentional incompatibilities and deprecations.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:171:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:171:cover-signatures-defaults-positional-dispatch-timeouts-actions-r",
+        "issue:171:test-supported-simulation-methods-through-both-installed-api-and",
+        "issue:171:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 260
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 172,
+      "title": "G02: Retire redundant legacy Python paths after compatibility qualification",
+      "url": "https://github.com/RuleWorld/BNG3/issues/172",
+      "updated_at": "2026-10-17T04:42:27Z",
+      "body_sha256": "9ba434920c5e27aa6e4ff7462d938884dfe1b03d01331d45c306ab5de3ce550e",
+      "classification": "proposed deferral",
+      "assessment": "Retain compatibility paths until #171 caller/import and installed behavior evidence permits surgical retirement; no release-driven deletion.",
+      "source_path": "tests/python/test_compatibility_contract.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:172:acceptance:1",
+          "text": "Trace imports and callers of modelapi, legacy network/parser/simulator and Cement paths; retain a deliberate compatibility adapter.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:172:acceptance:2",
+          "text": "Remove only superseded paths after contracts pass and make missing required functionality diagnostic rather than silently hidden.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:172:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:172:trace-imports-and-callers-of-modelapi-legacy-network-parser-simu",
+        "issue:172:remove-only-superseded-paths-after-contracts-pass-and-make-missi",
+        "issue:172:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 250
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 174,
+      "title": "G04: Publish current representative speed and memory baselines",
+      "url": "https://github.com/RuleWorld/BNG3/issues/174",
+      "updated_at": "2026-10-10T12:50:00Z",
+      "body_sha256": "65cba0c64ac94a4e807843d6bd5ecfedbb527fac924cbbbc7c59631a88340af7",
+      "classification": "qualification-only work",
+      "assessment": "Collect final-revision speed/memory/allocation baselines with controlled A/A timing and independent correctness; recent optimization is not acceptance evidence.",
+      "source_path": "benchmarks/run_benchmarks.py",
+      "acceptance_criteria": [
+        {
+          "id": "issue:174:acceptance:1",
+          "text": "Measure parse/compile/generate, ODE/SSA/NFsim, scans, cold/warm setup, memory and allocations on a fixed revision.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:174:acceptance:2",
+          "text": "Retain controlled A/A timing, independent correctness evidence, exact environment/corpus and no-win results.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:174:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:174:measure-parse-compile-generate-ode-ssa-nfsim-scans-cold-warm-set",
+        "issue:174:retain-controlled-a-a-timing-independent-correctness-evidence-ex",
+        "issue:174:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 176,
+      "title": "G06: Refresh the NFsim CPU, ensemble and GPU roadmap from measurements",
+      "url": "https://github.com/RuleWorld/BNG3/issues/176",
+      "updated_at": "2026-10-07T14:50:18Z",
+      "body_sha256": "d98a5b53f198c5d848694584ac7bb5fd2fedbe2e45c9870dbdf6aae560bde683",
+      "classification": "maintainer decision",
+      "assessment": "Choose CPU/ensemble/GPU roadmap after measured profiles; network batch SSA success is not network-free GPU evidence. Recommend no new GPU scope.",
+      "source_path": "docs/NFSIM_GPU_PERF_PLAN.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:176:acceptance:1",
+          "text": "Reconcile the old plan with implemented CPU work and current workload profiles; distinguish network SSA from network-free execution.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:176:acceptance:2",
+          "text": "Qualify retained ensemble/isolation scope and pursue device kernels only for measured supported classes with independent parity.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:176:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:176:reconcile-the-old-plan-with-implemented-cpu-work-and-current-wor",
+        "issue:176:qualify-retained-ensemble-isolation-scope-and-pursue-device-kern",
+        "issue:176:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 177,
+      "title": "G07: Independently qualify barrier and reservoir energy extensions",
+      "url": "https://github.com/RuleWorld/BNG3/issues/177",
+      "updated_at": "2026-10-07T14:50:21Z",
+      "body_sha256": "bd4185e7e35d1b4568ff8af570bc9e41a011ebb1cbd9c573515ac2a2f21bfd13",
+      "classification": "proposed deferral",
+      "assessment": "Keep barrier/reservoir extensions experimental opt-in; canonical engines cannot validate extensions absent from their semantics.",
+      "source_path": "docs/nonequilibrium_energy.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:177:acceptance:1",
+          "text": "Use analytic expectations and an independent reference for detailed balance/affinity, reversal, units and exporter semantics.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:177:acceptance:2",
+          "text": "Keep experimental opt-in until the supported extension surface has execution evidence; do not use unsupported canonical oracles as proof.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:177:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:177:use-analytic-expectations-and-an-independent-reference-for-detai",
+        "issue:177:keep-experimental-opt-in-until-the-supported-extension-surface-h",
+        "issue:177:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 178,
+      "title": "G08: Consolidate action, numerical and exporter semantic decisions",
+      "url": "https://github.com/RuleWorld/BNG3/issues/178",
+      "updated_at": "2026-10-07T14:50:24Z",
+      "body_sha256": "d82274f22cfd712af957097044004755928a6e45a15d3918c72ea484df47b775",
+      "classification": "proposed deferral",
+      "assessment": "Defer broad dispatch/integrator/exporter consolidation; fix demonstrated duplicated decisions only when required by a bounded defect.",
+      "source_path": "cpp/actions/ActionDispatch.cpp",
+      "acceptance_criteria": [
+        {
+          "id": "issue:178:acceptance:1",
+          "text": "Identify duplicate option/rate/capability logic in large dispatch, integrator and exporter modules.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:178:acceptance:2",
+          "text": "Extract existing coherent seams with behavioral regression tests and reduce duplicated decisions without a new parallel framework.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:178:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:178:identify-duplicate-option-rate-capability-logic-in-large-dispatc",
+        "issue:178:extract-existing-coherent-seams-with-behavioral-regression-tests",
+        "issue:178:closure-record"
+      ],
+      "related_leaf_outcomes": {
+        "PASS": 20
+      },
+      "closure_eligible": false
+    },
+    {
+      "number": 179,
+      "title": "H01: Resolve strict provenance approvals and enforce the release gate",
+      "url": "https://github.com/RuleWorld/BNG3/issues/179",
+      "updated_at": "2026-10-08T14:05:56Z",
+      "body_sha256": "79e32cb5492b116ba00e43c85aca88b775be850820544dfab8dccd8e43b80a6c",
+      "classification": "maintainer decision",
+      "assessment": "14 strict provenance approval errors remain. Approve actual source/oracle/toolchain evidence and require approved gate in release; never flip statuses to pass.",
+      "source_path": "provenance/upstreams.lock.yml",
+      "acceptance_criteria": [
+        {
+          "id": "issue:179:acceptance:1",
+          "text": "Obtain actual decisions and evidence for the baseline, nine source cutoffs, two oracles, compiler images and Python lock.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:179:acceptance:2",
+          "text": "Make validate_provenance.py --require-approved pass for substantiated reasons and require it in release qualification.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:179:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:179:obtain-actual-decisions-and-evidence-for-the-baseline-nine-sourc",
+        "issue:179:make-validate-provenance-py-require-approved-pass-for-substantia",
+        "issue:179:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 180,
+      "title": "H02: Refresh upstream reconciliation and map behavior claims to tests",
+      "url": "https://github.com/RuleWorld/BNG3/issues/180",
+      "updated_at": "2026-10-17T04:36:34Z",
+      "body_sha256": "4c771a7de970319505e0e158c74cb14619d372a55b6da923f983b33e58adef35",
+      "classification": "qualification-only work",
+      "assessment": "Refreshed gh upstream identities show drift/unavailable sources; ledger references have no stale paths, but behavior claims still require named current execution and owner review.",
+      "source_path": "provenance/reconciliation",
+      "acceptance_criteria": [
+        {
+          "id": "issue:180:acceptance:1",
+          "text": "Review source drift since recorded cutoffs and assign reconciliation ownership.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:180:acceptance:2",
+          "text": "Attach exact tests/results to substantive equivalence claims; distinguish documentation/merge-only entries that need no behavioral test.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:180:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:180:review-source-drift-since-recorded-cutoffs-and-assign-reconcilia",
+        "issue:180:attach-exact-tests-results-to-substantive-equivalence-claims-dis",
+        "issue:180:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 181,
+      "title": "H03: Approve complete capability-based corpus tiers and budgets",
+      "url": "https://github.com/RuleWorld/BNG3/issues/181",
+      "updated_at": "2026-10-17T13:39:13Z",
+      "body_sha256": "5f44c760c8f2fc23955a4e36515953926efbe6d0ef37076d399a5d45ebe5f98d",
+      "classification": "maintainer decision",
+      "assessment": "Frozen tiers remain S=10/P=106/NF=4/expr=5/X=0/B=0 with pending approval; reconcile separate workflow selection and approve owners/budgets before expansion.",
+      "source_path": "provenance/corpus/selection.json",
+      "acceptance_criteria": [
+        {
+          "id": "issue:181:acceptance:1",
+          "text": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:181:acceptance:2",
+          "text": "Expand justified NF, format and stress selections; populate currently empty X/B tiers with budgets and owners.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:181:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:181:reconcile-106-selected-models-and-the-separate-71-model-workflow",
+        "issue:181:expand-justified-nf-format-and-stress-selections-populate-curren",
+        "issue:181:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 184,
+      "title": "H06: Complete release-candidate scientific and packaging qualification",
+      "url": "https://github.com/RuleWorld/BNG3/issues/184",
+      "updated_at": "2026-10-07T14:50:42Z",
+      "body_sha256": "d16f52eb25779ac8d699e0854a25b983def552251ff2f228bbcd4b85908c2f67",
+      "classification": "qualification-only work",
+      "assessment": "Final-candidate release gates still need scheduled NFsim, approved provenance/corpus, installs/upgrades/extras, platform/sanitizer/memory and licenses/build metadata.",
+      "source_path": ".github/workflows/release.yml",
+      "acceptance_criteria": [
+        {
+          "id": "issue:184:acceptance:1",
+          "text": "Require approved provenance/corpora, scheduled NFsim results, clean installs/upgrades/extras and representative installed execution.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:184:acceptance:2",
+          "text": "Verify final-candidate platform, sanitizer/memory, licenses/notices and reproducible-build evidence; retain normal CI's narrower scope.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:184:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:184:require-approved-provenance-corpora-scheduled-nfsim-results-clea",
+        "issue:184:verify-final-candidate-platform-sanitizer-memory-licenses-notice",
+        "issue:184:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 185,
+      "title": "H07: Assign scientific, formal and compatibility review ownership",
+      "url": "https://github.com/RuleWorld/BNG3/issues/185",
+      "updated_at": "2026-10-07T14:50:44Z",
+      "body_sha256": "0bc849252caf85cae3ae4ed1eeefe7bc7f6e425cdecd0305bc6dc74d7e679203",
+      "classification": "maintainer decision",
+      "assessment": "No CODEOWNERS. Branch-protection query returned 404 (unavailable); rulesets returned empty. Obtain actual reviewers and enforcement decisions without inventing owners.",
+      "source_path": ".github",
+      "acceptance_criteria": [
+        {
+          "id": "issue:185:acceptance:1",
+          "text": "Assign responsible reviewers for semantics, comparators/tolerances, provenance, proofs and public contracts.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:185:acceptance:2",
+          "text": "Add agreed ownership rules and separately inspect required-review/branch-protection enforcement without inventing assignees.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:185:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:185:assign-responsible-reviewers-for-semantics-comparators-tolerance",
+        "issue:185:add-agreed-ownership-rules-and-separately-inspect-required-revie",
+        "issue:185:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    },
+    {
+      "number": 186,
+      "title": "H08: Publish alpha migration, backend-support and repository-maintenance guidance",
+      "url": "https://github.com/RuleWorld/BNG3/issues/186",
+      "updated_at": "2026-10-07T14:50:48Z",
+      "body_sha256": "a4237c9c3e2df6654577f7f6e17871a544b67d0a42870d82f64fe6941ad1bc06",
+      "classification": "maintainer decision",
+      "assessment": "Migration/install guidance exists; approve alpha versus legacy distribution, supported/experimental backend matrix and canonical contribution/upstream maintenance responsibilities.",
+      "source_path": "docs/migration_guide.md",
+      "acceptance_criteria": [
+        {
+          "id": "issue:186:acceptance:1",
+          "text": "Document alpha installation versus legacy stable, supported/experimental backends, optional dependencies and compatibility changes.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:186:acceptance:2",
+          "text": "Record canonical contribution policy, release guidance and intended upstream maintenance/retirement responsibilities.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        },
+        {
+          "id": "issue:186:acceptance:3",
+          "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "maintainer_checked": false,
+          "evidence_status": "UNVERIFIED"
+        }
+      ],
+      "obligation_outcomes": {
+        "NOT_TESTED": 3
+      },
+      "demonstrated_obligations": [],
+      "remaining_obligations": [
+        "issue:186:document-alpha-installation-versus-legacy-stable-supported-exper",
+        "issue:186:record-canonical-contribution-policy-release-guidance-and-intend",
+        "issue:186:closure-record"
+      ],
+      "related_leaf_outcomes": {},
+      "closure_eligible": false
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 12226320106,
+      "node_id": "MDg6QXJ0aWZhY3QxMjIyNjMyMDEwNg==",
+      "name": "bng3-conformance-push-39330889076",
+      "size_in_bytes": 5445768,
+      "url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12226320106",
+      "archive_download_url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12226320106/zip",
+      "expired": false,
+      "digest": "sha256:008952c5b6af299455eea6a9bc17a7651c401d31f447053f9bd115c9bb49d4c2",
+      "created_at": "2026-10-19T22:12:54Z",
+      "updated_at": "2026-10-19T22:12:54Z",
+      "expires_at": "2026-11-18T22:12:53Z",
+      "workflow_run": {
+        "id": 39330889076,
+        "repository_id": 1235802606,
+        "head_repository_id": 1235802606,
+        "head_branch": "main",
+        "head_sha": "9af03d79d48c7488a1ffe98ced270053b27478bd"
+      }
+    },
+    {
+      "id": 12225369672,
+      "node_id": "MDg6QXJ0aWZhY3QxMjIyNTM2OTY3Mg==",
+      "name": "bng3-issue-queue-push-39330889076",
+      "size_in_bytes": 307069,
+      "url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12225369672",
+      "archive_download_url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12225369672/zip",
+      "expired": false,
+      "digest": "sha256:c3f085f28c6845ed1bca2846031631deb5a4a55434bdf4e20e24b6d6825219fb",
+      "created_at": "2026-10-19T22:31:45Z",
+      "updated_at": "2026-10-19T22:31:45Z",
+      "expires_at": "2026-11-18T22:31:44Z",
+      "workflow_run": {
+        "id": 39330889076,
+        "repository_id": 1235802606,
+        "head_repository_id": 1235802606,
+        "head_branch": "main",
+        "head_sha": "9af03d79d48c7488a1ffe98ced270053b27478bd"
+      }
+    },
+    {
+      "id": 12225344894,
+      "node_id": "MDg6QXJ0aWZhY3QxMjIyNTM0NDg5NA==",
+      "name": "bng3-integrated-validation-push-39330889076",
+      "size_in_bytes": 6190001,
+      "url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12225344894",
+      "archive_download_url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12225344894/zip",
+      "expired": false,
+      "digest": "sha256:a5690bd8f65775fa6b6ae3275b10a3389ef5eb4bc8bf40233f9bc5c2a04cf3c0",
+      "created_at": "2026-10-19T22:31:54Z",
+      "updated_at": "2026-10-19T22:31:54Z",
+      "expires_at": "2026-11-18T22:31:50Z",
+      "workflow_run": {
+        "id": 39330889076,
+        "repository_id": 1235802606,
+        "head_repository_id": 1235802606,
+        "head_branch": "main",
+        "head_sha": "9af03d79d48c7488a1ffe98ced270053b27478bd"
+      }
+    },
+    {
+      "id": 12224899471,
+      "node_id": "MDg6QXJ0aWZhY3QxMjIyNDg5OTQ3MQ==",
+      "name": "issue182-parity-push-39330889076",
+      "size_in_bytes": 1766,
+      "url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12224899471",
+      "archive_download_url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12224899471/zip",
+      "expired": false,
+      "digest": "sha256:d8333baaa81b8c82c44de46f0f196d12f3f3a0ad36f5e7491f916ec93976336a",
+      "created_at": "2026-10-19T22:13:41Z",
+      "updated_at": "2026-10-19T22:13:41Z",
+      "expires_at": "2026-11-02T22:13:41Z",
+      "workflow_run": {
+        "id": 39330889076,
+        "repository_id": 1235802606,
+        "head_repository_id": 1235802606,
+        "head_branch": "main",
+        "head_sha": "9af03d79d48c7488a1ffe98ced270053b27478bd"
+      }
+    }
+  ],
+  "older_official_sbml_artifacts": [
+    {
+      "id": 12183297042,
+      "node_id": "MDg6QXJ0aWZhY3QxMjE4MzI5NzA0Mg==",
+      "name": "ssts-65c8d33651d89448b39ab93b8ec7ac3aa7d55251-1",
+      "size_in_bytes": 22848404,
+      "url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12183297042",
+      "archive_download_url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12183297042/zip",
+      "expired": false,
+      "digest": "sha256:af905c9e258bea2a7a12137a43d6205c0f6e2aa2d42823efaaf2735d734619a8",
+      "created_at": "2026-10-19T11:32:02Z",
+      "updated_at": "2026-10-19T11:32:02Z",
+      "expires_at": "2027-01-17T11:06:04Z",
+      "workflow_run": {
+        "id": 39242170602,
+        "repository_id": 1235802606,
+        "head_repository_id": 1235802606,
+        "head_branch": "main",
+        "head_sha": "65c8d33651d89448b39ab93b8ec7ac3aa7d55251"
+      }
+    }
+  ],
+  "upstream_heads": {
+    "observed_at": "2026-10-19T22:58:12.747261+00:00",
+    "sources": {
+      "bionetgen": {
+        "repository": "https://github.com/RuleWorld/bionetgen.git",
+        "branch": "master",
+        "revision": "0bbb15c17f5841d45f74ac4d7d3a040760e861b4",
+        "error": null
+      },
+      "nfsim": {
+        "repository": "https://github.com/RuleWorld/NFsim.git",
+        "branch": "master",
+        "revision": "fe6abd62bd66f7640c183a3368cf3e649ee321ef",
+        "error": null
+      },
+      "nfsim-rasi": {
+        "repository": "https://github.com/akutuva21/nfsim.git",
+        "branch": "perf/rasi-translation-optimization",
+        "revision": null,
+        "error": "gh: No commit found for SHA: perf/rasi-translation-optimization (HTTP 422)"
+      },
+      "bngsim": {
+        "repository": "https://github.com/lanl/bngsim.git",
+        "branch": "main",
+        "revision": "cc29eacc847e08c6c80071231abbbfc446ef9456",
+        "error": null
+      },
+      "pybionetgen": {
+        "repository": "https://github.com/RuleWorld/PyBioNetGen.git",
+        "branch": "main",
+        "revision": "28bf351a9bbfc197e19487c26dedda683716bb64",
+        "error": null
+      },
+      "bngplayground": {
+        "repository": "https://github.com/RuleWorld/bngplayground.git",
+        "branch": "codex/atomizer-roundtrip-parity",
+        "revision": null,
+        "error": "gh: No commit found for SHA: codex/atomizer-roundtrip-parity (HTTP 422)"
+      },
+      "sbml-test-suite": {
+        "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+        "branch": "3.5.0",
+        "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+        "error": null
+      },
+      "rulehub": {
+        "repository": "https://github.com/RuleWorld/RuleHub.git",
+        "branch": "master",
+        "revision": "b84f0a72ad21dc70cb99d4880b49a40f17046357",
+        "error": null
+      }
+    }
+  },
+  "input_hashes": {
+    "/private/tmp/bng3-open-issues.json": "0038ce47fbc3cd94ab538bef8c0f4cc13d21e0261f7e483f7de0a0c563bebc6f",
+    "/private/tmp/bng3-all-issues.json": "734004eff5b98b5b008ec09d37aeb71f230cb1636092856db2cec49816689d2e"
+  },
+  "provenance_approval_errors": [
+    "strict gate requires an approved baseline",
+    "strict gate requires sources.bng3.status=accepted",
+    "strict gate requires sources.bionetgen.status=accepted",
+    "strict gate requires sources.nfsim.status=accepted",
+    "strict gate requires sources.nfsim-rasi.status=accepted",
+    "strict gate requires sources.bngsim.status=accepted",
+    "strict gate requires sources.pybionetgen.status=accepted",
+    "strict gate requires sources.bngplayground.status=accepted",
+    "strict gate requires sources.sbml-test-suite.status=accepted",
+    "strict gate requires sources.rulehub.status=accepted",
+    "strict gate requires oracles.bng2.status=locked",
+    "strict gate requires oracles.nfsim.status=locked",
+    "strict gate requires compiler_images.status=locked",
+    "strict gate requires python_lock.status=locked"
+  ],
+  "authorization": "Reporting/validation repairs only. No merge, closure, corpus expansion, product repair or PR #310 edits."
+}
