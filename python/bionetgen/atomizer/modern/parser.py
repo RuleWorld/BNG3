@@ -3068,12 +3068,20 @@ class SBMLParser:
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
             if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
+                if not math.isfinite(dimension) or dimension < 0:
+                    reason = "BNG3 requires finite, non-negative compartment dimensions."
+                elif result.level == 2:
+                    reason = "SBML Level 2 permits only values 0 through 3."
+                else:
+                    reason = (
+                        "BNG3 does not support spatialDimensions values greater than 3."
+                    )
                 result.import_warnings.append(
                     {
                         "category": "compartment",
                         "message": (
                             f'Compartment "{compartment_id}" has spatialDimensions '
-                            f"{dimension:g}; SBML core permits only values 0 through 3."
+                            f"{dimension:g}; {reason}"
                         ),
                         "count": 1,
                         "severity": "dropped",
