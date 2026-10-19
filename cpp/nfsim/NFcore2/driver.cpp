@@ -1,10 +1,72 @@
+#define BNG_NFCORE2_PROTOTYPE
 #include "driver.hh"
 
+#include <algorithm>
+#include <set>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 
 namespace NFcore2 {
+namespace {
+const CompartmentDescriptor* findCompartment(const CompiledModel& model,
+                                            std::uint32_t id) {
+    for (const auto& compartment : model.compartments())
+        if (compartment.id == id) return &compartment;
+    return nullptr;
+}
+
+bool adjacent(const CompartmentDescriptor& a, const CompartmentDescriptor& b) {
+    return a.id == b.id || a.parent == b.id || b.parent == a.id;
+}
+
+bool reactantsCanInteract(const SimulationState& state,
+                          const MatchContext& context) {
+    if (context.reactants.size() < 2 || state.model().compartments().empty())
+        return true;
+    const auto unplaced = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t volume = unplaced;
+    std::uint32_t surface = unplaced;
+    bool missing = false;
+    for (std::size_t i = 0; i < context.reactants.size(); ++i) {
+        const MoleculeRef& ref = context.reactants[i];
+        if (!ref.valid()) return false;
+        const std::uint32_t id =
+            state.molecules(ref.type).compartment(ref.handle);
+        if (id == unplaced) {
+            missing = true;
+            continue;
+        }
+        const CompartmentDescriptor* compartment =
+            findCompartment(state.model(), id);
+        if (!compartment) return false;
+        // NFsim anchors a multi-reactant rule in a 2-D surface or 3-D volume
+        // (selectReactionCompartment); any other dimensionality cannot
+        // establish a placement rule and is refused rather than assumed
+        // compatible.  Volumes must agree, surfaces must agree, and a mixed
+        // volume/surface pair must be adjacent.
+        if (compartment->dimensions == 3) {
+            if (volume != unplaced && volume != id) return false;
+            volume = id;
+        } else if (compartment->dimensions == 2) {
+            if (surface != unplaced && surface != id) return false;
+            surface = id;
+        } else {
+            return false;
+        }
+    }
+    if (missing && (volume != unplaced || surface != unplaced)) return false;
+    if (volume != unplaced && surface != unplaced) {
+        const CompartmentDescriptor* v =
+            findCompartment(state.model(), volume);
+        const CompartmentDescriptor* s =
+            findCompartment(state.model(), surface);
+        if (!v || !s || !adjacent(*v, *s)) return false;
+    }
+    return true;
+}
+}
 
 SsaDriver::SsaDriver(const ExecutableModel& executable,
                      const std::vector<SsaMemberSignature>& signatures)
@@ -24,9 +86,6 @@ SsaDriver::SsaDriver(const ExecutableModel& executable,
         const RuleFamilyDescriptor& fam = families[sig.family.value()];
         if (sig.member >= fam.members.size())
             throw std::out_of_range("driver signature references unknown member");
-        if (sig.reactantTypes.size() > 2)
-            throw std::invalid_argument(
-                "driver v1 supports at most two reactant roots per member");
         const RateLawDescriptor& law = fam.members[sig.member].rate_law;
         if (law.kind == LEGACY_RATE_EXPRESSION)
             throw std::invalid_argument(
@@ -97,7 +156,8 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
             for (std::size_t i = 0; i < pool[0].size(); ++i) {
                 MatchContext ctx;
                 ctx.setMoleculeAt(0, pool[0][i]);
-                if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
+                if (!reactantsCanInteract(state, ctx) ||
+                    !matcher.evaluate(state, engine_.scaffolds(), ctx))
                     continue;
                 const double rate =
                     engine_.evaluateRate(RuleFamilyId(familyIndex), m, ctx);
@@ -110,7 +170,7 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                 t.rate = rate;
                 fresh.tuples.push_back(t);
             }
-        } else {
+        } else if (roots.size() == 2) {
             for (std::size_t i = 0; i < pool[0].size(); ++i) {
                 for (std::size_t j = 0; j < pool[1].size(); ++j) {
                     if (pool[0][i] == pool[1][j])
@@ -130,7 +190,7 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                     MatchContext ctx;
                     ctx.setMoleculeAt(0, first);
                     ctx.setMoleculeAt(1, second);
-                    bool matched =
+                    bool matched = reactantsCanInteract(state, ctx) &&
                         matcher.evaluate(state, engine_.scaffolds(), ctx);
                     if (!matched && first.type == second.type) {
                         first = pool[1][j];
@@ -138,8 +198,8 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                         ctx = MatchContext();
                         ctx.setMoleculeAt(0, first);
                         ctx.setMoleculeAt(1, second);
-                        matched = matcher.evaluate(state, engine_.scaffolds(),
-                                                  ctx);
+                        matched = reactantsCanInteract(state, ctx) &&
+                            matcher.evaluate(state, engine_.scaffolds(), ctx);
                     }
                     if (!matched)
                         continue;
@@ -157,6 +217,128 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                     fresh.tuples.push_back(t);
                 }
             }
+        } else {
+            // Arbitrary number of reactant roots.  Enumerate injective
+            // assignments of live molecules to roots and count each unordered
+            // combination once, matching the two-root convention above.
+            const std::size_t nRoots = roots.size();
+            // Enumerate injective assignments directly.  Deduplication by
+            // sorted molecule set (below) ensures each unordered combination
+            // is counted once; no artificial complexity guard is applied so
+            // large reactant sets are supported.  Backtracking prunes
+            // injective clashes as soon as they arise.
+            std::vector<MoleculeRef> assignment(nRoots);
+            auto moleculeLess = [](const MoleculeRef& a, const MoleculeRef& b) {
+                if (a.type.value() != b.type.value())
+                    return a.type.value() < b.type.value();
+                if (a.handle.slot != b.handle.slot)
+                    return a.handle.slot < b.handle.slot;
+                return a.handle.generation < b.handle.generation;
+            };
+            struct VectorLess {
+                const decltype(moleculeLess)& cmp;
+                bool operator()(const std::vector<MoleculeRef>& a,
+                                const std::vector<MoleculeRef>& b) const {
+                    return std::lexicographical_compare(
+                        a.begin(), a.end(), b.begin(), b.end(), cmp);
+                }
+            };
+            std::set<std::vector<MoleculeRef>, VectorLess> counted(VectorLess{moleculeLess});
+
+            // Group root indices by molecule type so permutations are only
+            // attempted within same-typed roots, preserving injective and
+            // unordered-combination semantics without enumerating all n!/(...)
+            // ordered tuples for distinct-typed roots.
+            std::vector<std::vector<std::size_t> > typeGroups;
+            for (std::size_t i = 0; i < nRoots; ++i) {
+                bool placed = false;
+                for (auto& g : typeGroups) {
+                    if (roots[g[0]] == roots[i]) { g.push_back(i); placed = true; break; }
+                }
+                if (!placed) typeGroups.push_back({i});
+            }
+
+            std::function<void(std::size_t)> visit = [&](std::size_t depth) {
+                if (depth == nRoots) {
+                    std::vector<MoleculeRef> key(assignment);
+                    std::sort(key.begin(), key.end(), moleculeLess);
+                    if (counted.find(key) != counted.end()) return;
+
+                    // Try every permutation of same-typed roots so a match is
+                    // not missed when only a non-canonical orientation satisfies
+                    // the matcher; record at most one tuple per molecule set.
+                    std::vector<MoleculeRef> trial = assignment;
+                    bool recorded = false;
+                    std::function<void(std::size_t)> tryGroup =
+                        [&](std::size_t gi) {
+                            if (recorded) return;
+                            if (gi == typeGroups.size()) {
+                                MatchContext ctx;
+                                for (std::size_t r = 0; r < nRoots; ++r)
+                                    ctx.setMoleculeAt(r, trial[r]);
+                                if (!reactantsCanInteract(state, ctx))
+                                    return;
+                                if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
+                                    return;
+                                const double rate = engine_.evaluateRate(
+                                    RuleFamilyId(familyIndex), m, ctx);
+                                if (rate < 0.0 || !std::isfinite(rate))
+                                    throw std::runtime_error(
+                                        "driver: non-finite member rate");
+                                if (rate == 0.0)
+                                    return;
+                                counted.insert(key);
+                                Tuple t;
+                                t.roots = trial;
+                                t.rate = rate;
+                                fresh.tuples.push_back(t);
+                                recorded = true;
+                                return;
+                            }
+                            const auto& group = typeGroups[gi];
+                            std::vector<MoleculeRef> mols;
+                            mols.reserve(group.size());
+                            for (std::size_t idx : group) mols.push_back(assignment[idx]);
+                            std::vector<std::size_t> order(group.size());
+                            for (std::size_t k = 0; k < group.size(); ++k) order[k] = k;
+                            do {
+                                for (std::size_t k = 0; k < group.size(); ++k)
+                                    trial[group[k]] = mols[order[k]];
+                                tryGroup(gi + 1);
+                                if (recorded) return;
+                            } while (std::next_permutation(order.begin(), order.end()));
+                            // restore canonical orientation for this group
+                            for (std::size_t k = 0; k < group.size(); ++k)
+                                trial[group[k]] = mols[k];
+                        };
+                    tryGroup(0);
+                    return;
+                }
+                for (std::size_t i = 0; i < pool[depth].size(); ++i) {
+                    const MoleculeRef& candidate = pool[depth][i];
+                    bool clash = false;
+                    for (std::size_t k = 0; k < depth; ++k)
+                        if (assignment[k] == candidate) { clash = true; break; }
+                    if (clash)
+                        continue;
+                    // Canonical ordering among same-typed roots: require
+                    // strictly increasing molecule handles, so each unordered
+                    // combination is enumerated once instead of n! times.
+                    bool orderViolation = false;
+                    for (std::size_t k = 0; k < depth; ++k) {
+                        if (roots[k] == roots[depth] &&
+                            !moleculeLess(assignment[k], candidate)) {
+                            orderViolation = true;
+                            break;
+                        }
+                    }
+                    if (orderViolation)
+                        continue;
+                    assignment[depth] = candidate;
+                    visit(depth + 1);
+                }
+            };
+            visit(0);
         }
         members_[familyIndex][m] = fresh;
         double activity = 0.0;

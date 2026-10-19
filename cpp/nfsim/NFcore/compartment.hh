@@ -121,6 +121,9 @@ namespace NFcore
 			    @return true if this compartment is inside 'other'
 			*/
 			bool isInside(Compartment* other) const;
+
+			//! Whether two compartments are equal or directly adjacent in the hierarchy.
+			bool adjacent(Compartment* other) const;
 			
 			//! Print compartment details for debugging
 			void printDetails() const;

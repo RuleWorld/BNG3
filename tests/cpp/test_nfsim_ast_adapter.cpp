@@ -1507,7 +1507,7 @@ end reaction rules
     direct->seedRNG(17);
     direct->stepTo(100.0);
     CHECK(direct->getMoleculeTypeByName("A")->getMolecule(0)->getCompartmentId() == "c2");
-    CHECK(direct->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c2");
+    CHECK(direct->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c1");
     delete direct;
 
     suggestedTraversalLimit = 0;
@@ -1525,8 +1525,231 @@ end reaction rules
     REQUIRE(xmlSystem->getMoleculeTypeByName("A")->getMoleculeCount() == 1);
     REQUIRE(xmlSystem->getMoleculeTypeByName("B")->getMoleculeCount() == 1);
     CHECK(xmlSystem->getMoleculeTypeByName("A")->getMolecule(0)->getCompartmentId() == "c2");
-    CHECK(xmlSystem->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c2");
+    CHECK(xmlSystem->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c1");
     delete xmlSystem;
+}
+
+TEST_CASE("NFsim MoveConnected honors explicit placements of every product molecule") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin compartments
+    c1 3 1.0
+    c2 3 1.0
+end compartments
+begin molecule types
+    A(site)
+    B(site)
+end molecule types
+begin seed species
+    A(site!1)@c1.B(site!1)@c1 1
+end seed species
+begin reaction rules
+    A(site!1)@c1.B(site!1)@c1 -> A(site!1)@c2.B(site!1)@c2 k MoveConnected
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const auto runAndCheck = [](NFcore::System* system) {
+        REQUIRE(system != nullptr);
+        system->prepareForSimulation();
+        system->seedRNG(17);
+        system->stepTo(100.0);
+        REQUIRE(system->getMoleculeTypeByName("A")->getMoleculeCount() == 1);
+        REQUIRE(system->getMoleculeTypeByName("B")->getMoleculeCount() == 1);
+        CHECK(system->getMoleculeTypeByName("A")->getMolecule(0)->getCompartmentId() == "c2");
+        CHECK(system->getMoleculeTypeByName("B")->getMolecule(0)->getCompartmentId() == "c2");
+    };
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    runAndCheck(direct);
+    delete direct;
+
+    traversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    runAndCheck(xml);
+    delete xml;
+}
+
+TEST_CASE("NFsim preserves issue 109 created molecule compartment inheritance") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 10.0
+end parameters
+begin compartments
+    EC 3 1.0
+    PM 2 1.0 EC
+    CP 3 1.0 PM
+end compartments
+begin molecule types
+    A()
+    C()
+end molecule types
+begin seed species
+    A()@EC 10
+    A()@PM 10
+    A()@CP 10
+end seed species
+begin observables
+    Molecules C_EC C()@EC
+    Molecules C_PM C()@PM
+    Molecules C_CP C()@CP
+end observables
+begin reaction rules
+    synth: A() -> A() + C() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const auto runAndCheck = [](NFcore::System* system) {
+        REQUIRE(system != nullptr);
+        system->prepareForSimulation();
+        system->seedRNG(123);
+        system->stepTo(10.0);
+        const int ec = system->getObservableByName("C_EC")->getCount();
+        const int pm = system->getObservableByName("C_PM")->getCount();
+        const int cp = system->getObservableByName("C_CP")->getCount();
+        CHECK(ec > 0);
+        CHECK(pm > 0);
+        CHECK(cp > 0);
+    };
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100000, false, traversalLimit);
+    runAndCheck(direct);
+    delete direct;
+
+    traversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100000, false, traversalLimit);
+    runAndCheck(xml);
+    delete xml;
+}
+
+TEST_CASE("NFsim XML and AST seed molecule compartments override species compartment") {
+    auto model = bng::parser::parseModel(R"(
+begin compartments
+    EC 3 1.0
+    PM 2 1.0 EC
+end compartments
+begin molecule types
+    L(r)
+    R(l)
+end molecule types
+begin seed species
+    L(r!1)@EC.R(l!1)@PM 4
+end seed species
+begin observables
+    Molecules L_EC L()@EC
+    Molecules R_PM R()@PM
+end observables
+begin reaction rules
+    noop: L(r!1)@EC.R(l!1)@PM -> L(r!1)@EC.R(l!1)@PM 1
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const auto checkSeeds = [](NFcore::System* system) {
+        REQUIRE(system != nullptr);
+        system->prepareForSimulation();
+        CHECK(system->getObservableByName("L_EC")->getCount() == 4);
+        CHECK(system->getObservableByName("R_PM")->getCount() == 4);
+    };
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    checkSeeds(direct);
+    delete direct;
+    traversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    checkSeeds(xml);
+    delete xml;
+}
+
+TEST_CASE("NFsim binds only compartment-compatible reactants") {
+    const auto boundCount = [](const std::string& bCompartment, bool xmlPath) {
+        auto model = bng::parser::parseModel("\n"
+            "begin parameters\n k 1.0\nend parameters\n"
+            "begin compartments\n EC 3 1.0\n PM 2 1.0 EC\n CP 3 1.0 PM\nend compartments\n"
+            "begin molecule types\n A(b)\n B(a)\nend molecule types\n"
+            "begin seed species\n A(b)@EC 10\n B(a)@" + bCompartment + " 10\nend seed species\n"
+            "begin observables\n Molecules Bound A(b!1).B(a!1)\nend observables\n"
+            "begin reaction rules\n bind: A(b) + B(a) -> A(b!1).B(a!1) k\nend reaction rules\n");
+        REQUIRE(model != nullptr);
+        int traversalLimit = 0;
+        auto* system = xmlPath
+            ? NFinput::initializeFromModel(
+                  static_cast<void*>(model.get()), false, 100, false,
+                  traversalLimit)
+            : NFinput::buildSystemFromAst(
+                  *model, false, 100, false, traversalLimit);
+        REQUIRE(system != nullptr);
+        system->prepareForSimulation();
+        system->seedRNG(7);
+        system->stepTo(1.0);
+        const int bound = system->getObservableByName("Bound")->getCount();
+        delete system;
+        return bound;
+    };
+    for (const bool xmlPath : {false, true}) {
+        // Directly adjacent surface/volume pair can bind.
+        CHECK(boundCount("PM", xmlPath) > 0);
+        // EC and CP are separated by PM, so no binding is permitted.
+        CHECK(boundCount("CP", xmlPath) == 0);
+    }
+}
+
+TEST_CASE("NFsim refuses mixed, non-adjacent, and unusual-dimension placements") {
+    const auto boundCount = [](const std::string& compartments,
+                               const std::string& seedA,
+                               const std::string& seedB,
+                               bool xmlPath) {
+        auto model = bng::parser::parseModel(std::string(
+            "begin parameters\n k 1.0\nend parameters\n") +
+            "begin compartments\n" + compartments + "end compartments\n" +
+            "begin molecule types\n A(b)\n B(a)\nend molecule types\n" +
+            "begin seed species\n " + seedA + " 10\n " + seedB +
+            " 10\nend seed species\n" +
+            "begin observables\n Molecules Bound A(b!1).B(a!1)\nend observables\n" +
+            "begin reaction rules\n bind: A(b) + B(a) -> A(b!1).B(a!1) k\nend reaction rules\n");
+        REQUIRE(model != nullptr);
+        int traversalLimit = 0;
+        auto* system = xmlPath
+            ? NFinput::initializeFromModel(
+                  static_cast<void*>(model.get()), false, 100, false,
+                  traversalLimit)
+            : NFinput::buildSystemFromAst(
+                  *model, false, 100, false, traversalLimit);
+        REQUIRE(system != nullptr);
+        system->prepareForSimulation();
+        system->seedRNG(7);
+        system->stepTo(1.0);
+        const int bound = system->getObservableByName("Bound")->getCount();
+        delete system;
+        return bound;
+    };
+    // V1/PM1 is one adjacent volume/surface pair; V2 is a separate volume.
+    const std::string pair = " V1 3 1.0\n PM1 2 1.0 V1\n V2 3 1.0\n";
+    for (const bool xmlPath : {false, true}) {
+        // A placed reactant must not bind an unplaced reactant.
+        CHECK(boundCount(pair, "A(b)@V1", "B(a)", xmlPath) == 0);
+        // An adjacent volume/surface pair still binds.
+        CHECK(boundCount(pair, "A(b)@V1", "B(a)@PM1", xmlPath) > 0);
+        // A surface and a volume that are not adjacent must not bind.
+        CHECK(boundCount(pair, "A(b)@V2", "B(a)@PM1", xmlPath) == 0);
+    }
+    // Compartments whose dimension is neither 2-D nor 3-D cannot establish a
+    // placement rule for a multi-reactant reaction.
+    for (const bool xmlPath : {false, true}) {
+        CHECK(boundCount(" L 1 1.0\n", "A(b)@L", "B(a)@L", xmlPath) == 0);
+        CHECK(boundCount(" L 0 1.0\n", "A(b)@L", "B(a)@L", xmlPath) == 0);
+    }
 }
 
 TEST_CASE("NFsim AST adapter maps direct binding reaction rules") {

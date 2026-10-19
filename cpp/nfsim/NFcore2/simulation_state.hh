@@ -68,6 +68,8 @@ public:
     double transportVolumeRatio(std::uint32_t source, std::uint32_t destination) const;
     void moveMolecule(MoleculeRef ref, std::uint32_t destination);
     void moveSpecies(MoleculeRef ref, std::uint32_t destination);
+    void moveSpecies(MoleculeRef ref, std::uint32_t destination,
+                     const std::vector<MoleculeRef>& excluded);
     bool wouldEraseSplitSpecies(MoleculeRef ref) const;
 private:
     const CompiledModel& model_;

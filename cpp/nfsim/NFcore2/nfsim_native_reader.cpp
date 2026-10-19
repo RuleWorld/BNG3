@@ -889,7 +889,7 @@ NativeReactionHeader NativeNFsimSystemReader::reactionHeader(std::size_t i) cons
     TransformationSet* ts=r->getTransformationSet();if(ts)for(int p=0;p<r->getNumOfReactants();++p)for(int x=0;x<ts->getNumOfTransformations(p);++x)if(ts->getTransformation(p,x)->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE && h.rate_law != NATIVE_RATE_EXPRESSION)h.uses_local_function=true;
     return h;
 }
-void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<NativeGraphPatternSnapshot>& out) const {
+void NativeNFsimSystemReader::collectGraphPatternsWithIndices(std::size_t i,std::vector<NativeGraphPatternSnapshot>& out,std::map<TemplateMolecule*,std::uint32_t>* node_indices) const {
     ReactionClass* r=system_.getReaction(static_cast<int>(i));
     std::vector<TemplateMolecule*> roots;
     for (int p=0;p<r->getNumOfReactants();++p) roots.push_back(r->getReactantTemplate(p));
@@ -988,6 +988,7 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
                 pendingSymmetric.push_back(PendingSymmetric{nodeIndex, constraintIndex, symmetric.partner});
         }
         indices[molecule]=graph.nodes.size();
+        if (node_indices) (*node_indices)[molecule]=static_cast<std::uint32_t>(graph.nodes.size());
         graph.nodes.push_back(node);
         pending.push(molecule);
         return true;
@@ -1130,6 +1131,10 @@ void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<Nat
     out.push_back(graph);
 }
 
+void NativeNFsimSystemReader::collectGraphPatterns(std::size_t i,std::vector<NativeGraphPatternSnapshot>& out) const {
+    collectGraphPatternsWithIndices(i, out, nullptr);
+}
+
 void NativeNFsimSystemReader::collectCompartments(std::vector<NativeCompartmentSnapshot>& out) const {
     out.clear();
     const auto& compartments=system_.getCompartments();
@@ -1212,11 +1217,57 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
     ReactionClass* r=system_.getReaction(static_cast<int>(i));
     TransformationSet* ts=r->getTransformationSet();
     if(!ts)return;
+    std::map<TemplateMolecule*, std::uint32_t> graphNodeIndices;
+    std::vector<NativeGraphPatternSnapshot> graphPatterns;
+    bool graphLoaded = false;
+    auto loadGraph = [&]() {
+        if (!graphLoaded) {
+            collectGraphPatternsWithIndices(i, graphPatterns, &graphNodeIndices);
+            graphLoaded = true;
+        }
+    };
+    auto excludedGraphNode = [&](TemplateMolecule* molecule) -> std::uint32_t {
+        // A missing graph snapshot (extraction failure or a reader that
+        // disables connectivity) cannot resolve exclusion nodes; callers
+        // refuse the rule instead of dropping the exclusions and moving a
+        // separately-mapped molecule.
+        loadGraph();
+        if (graphPatterns.empty()) return std::numeric_limits<std::uint32_t>::max();
+        auto found = graphNodeIndices.find(molecule);
+        if (found == graphNodeIndices.end())
+            return std::numeric_limits<std::uint32_t>::max();
+        return found->second;
+    };
+    // A reactant index addresses only a connected component's root.  Other
+    // pattern molecules must be addressed by their graph-node index.
+    auto graphNodeIndex = [&](TemplateMolecule* molecule) -> std::uint32_t {
+        loadGraph();
+        if (graphPatterns.empty()) return std::numeric_limits<std::uint32_t>::max();
+        auto found = graphNodeIndices.find(molecule);
+        if (found == graphNodeIndices.end() ||
+            found->second >= graphPatterns[0].nodes.size())
+            return std::numeric_limits<std::uint32_t>::max();
+        return found->second;
+    };
     std::vector<std::vector<NFsimPublicTransformView> > views(
         static_cast<std::size_t>(std::max(1,r->getNumOfReactants())));
     for(int p=0;p<r->getNumOfReactants();++p){
         for(int x=0;x<ts->getNumOfTransformations(p);++x){
             Transformation* t=ts->getTransformation(p,x);
+            // A transform whose template is not the connected-component root
+            // cannot be addressed by the reactant index.  Point it at the
+            // graph node when the snapshot provides one; otherwise refuse the
+            // rule rather than transform the wrong molecule.
+            auto markTarget = [&](Transformation* transform, NFsimPublicTransformView& view) {
+                if (transform->getTemplateMolecule() == r->getReactantTemplate(p)) return;
+                const std::uint32_t node = graphNodeIndex(transform->getTemplateMolecule());
+                if (node == std::numeric_limits<std::uint32_t>::max()) {
+                    view.kind = NATIVE_UNSUPPORTED;
+                    return;
+                }
+                view.target_is_graph_node = true;
+                view.target_graph_node = node;
+            };
             NFsimPublicTransformView v;
             v.kind=t->getType();
             v.reactant=static_cast<std::uint16_t>(p);
@@ -1254,6 +1305,9 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
                     }else if(q->getMoleculeType()){
                         v.added_molecule_type=static_cast<std::uint32_t>(
                             q->getMoleculeType()->getTypeID());
+                        if (Compartment* c = q->getNewCompartment())
+                            v.added_molecule_compartment =
+                                nativeCompartmentId(c->getId());
                     }
                 }
             }else if(t->getType()==TransformationFactory::DECREMENT_POPULATION){
@@ -1263,12 +1317,53 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
                 if(q){
                     v.destination_compartment=nativeCompartmentId(q->getNewCompartmentId());
                     v.move_connected=q->isMoveConnected();
+                    markTarget(t, v);
+                    for (int mappingIndex : q->getExcludedMappingIndices()) {
+                        if (mappingIndex < 0 ||
+                            mappingIndex >= ts->getNumOfTransformations(p))
+                            throw std::logic_error("MoveConnected exclusion index is out of range");
+                        Transformation* excluded = ts->getTransformation(p, mappingIndex);
+                        if (!excluded || !excluded->getTemplateMolecule())
+                            throw std::logic_error("MoveConnected exclusion has no pattern molecule");
+                        const std::uint32_t excludedNode =
+                            excludedGraphNode(excluded->getTemplateMolecule());
+                        if (excludedNode == std::numeric_limits<std::uint32_t>::max()) {
+                            // Exclusions exist but the graph snapshot cannot
+                            // name them.  Dropping them would move molecules the
+                            // rule maps separately, so refuse the rule instead.
+                            v.kind = NATIVE_UNSUPPORTED;
+                            v.excluded_graph_nodes.clear();
+                            break;
+                        }
+                        v.excluded_graph_nodes.push_back(excludedNode);
+                    }
                 }
             }else if(t->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE){
                 LocalFunctionReference* q=dynamic_cast<LocalFunctionReference*>(t);
                 if(!q)throw std::logic_error("local-function transform type mismatch");
                 v.local_function_pointer=q->getPointerName();
                 v.local_function_scope=q->getFunctionScope();
+            }
+            // Non-move transforms act on a specific pattern molecule too; a
+            // state change, bond, or deletion on an internal molecule must
+            // address that molecule's graph node rather than the root.
+            if (v.kind != NATIVE_UNSUPPORTED) {
+                switch(t->getType()){
+                    case TransformationFactory::STATE_CHANGE:
+                    case TransformationFactory::INCREMENT_STATE:
+                    case TransformationFactory::DECREMENT_STATE:
+                    case TransformationFactory::BINDING:
+                    case TransformationFactory::UNBINDING:
+                    case TransformationFactory::REMOVE:
+                        markTarget(t, v);
+                        break;
+                    case TransformationFactory::EMPTY:
+                        // Only the second half of a binding names a partner
+                        // molecule; MoveConnected exclusion markers do not.
+                        if (v.second_binding_half) markTarget(t, v);
+                        break;
+                    default: break;
+                }
             }
             views[static_cast<std::size_t>(p)].push_back(v);
         }
@@ -1282,7 +1377,11 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
                                           : TransformationFactory::ADD;
         v.reactant = 0;
         v.added_molecule_type = static_cast<std::uint32_t>(add->getMoleculeType()->getTypeID());
-        if (add->isPopulationType()) v.population_delta = 1;
+        if (add->isPopulationType()) {
+            v.population_delta = 1;
+        } else if (Compartment* c = add->getNewCompartment()) {
+            v.added_molecule_compartment = nativeCompartmentId(c->getId());
+        }
         views[0].push_back(v);
     }
     out=NFsimTransformDecoder::decode(views);

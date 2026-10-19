@@ -35,8 +35,10 @@ namespace NFcore
 
 			// create a molecule and get pointer
 			Molecule * create_molecule( );
+			Molecule * create_molecule( Compartment * inheritedCompartment );
 			// AS2023 - alternate call sig to write and store a log of molecule creation
 			Molecule * create_molecule( string &logstr );
+			Molecule * create_molecule( string &logstr, Compartment * inheritedCompartment );
 
 			// get the template molecule
 			TemplateMolecule * getTemplateMolecule () const { return template_molecule; };
@@ -48,6 +50,10 @@ namespace NFcore
 
 			// get pointer to population molecule (NULL if molecule is a particle)
 			Molecule * get_population_pointer() const;
+
+			// explicit product compartment, or NULL when the creator inherits
+			// the reaction compartment at transformation time
+			Compartment * getCompartment() const { return compartment; };
 
 		protected:
 

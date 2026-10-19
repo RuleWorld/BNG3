@@ -160,26 +160,162 @@ TEST(Driver_ReversibleIsomerizationMatchesEquilibrium) {
     EXPECT_NEAR(meanB, 40.0 / 3.0, 0.6);
 }
 
-TEST(Driver_RejectsThreeRoots) {
+TEST(Driver_TermolecularJoinEnumeratesEveryCombination) {
+    // A + B + C -> D: each distinct combination of one molecule per root is
+    // one tuple, so 2*3*2 = 12 combinations must be enumerated.
     ExecutableModel e;
     const MoleculeTypeId a = addType(e, "A");
-    const RuleFamilyId f =
-        addConvertFamily(e, "r", alwaysMatcher(e), convertProgram(e, 0), 1.0);
+    const MoleculeTypeId b = addType(e, "B");
+    const MoleculeTypeId c = addType(e, "C");
+    const MoleculeTypeId d = addType(e, "D");
+    TransformProgram p;
+    for (std::uint16_t root = 0; root < 3; ++root) {
+        TransformInstruction del{TRANSFORM_DELETE_MOLECULE};
+        del.target = root;
+        p.add(del);
+    }
+    TransformInstruction mk{TRANSFORM_CREATE_MOLECULE};
+    mk.target = 3;
+    mk.a = d.value();
+    p.add(mk);
+    p.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId t = e.buildTransforms().add(p);
+    RuleFamilyDescriptor f;
+    f.name = "ternary";
+    f.matcher = alwaysMatcher(e);
+    f.transform = t;
+    RuleMember rm;
+    rm.rate = 1.0;
+    f.members.push_back(rm);
+    const RuleFamilyId fid = e.buildMetadata().addRuleFamily(f);
     SsaMemberSignature s;
-    s.family = f;
+    s.family = fid;
+    s.member = 0;
+    s.reactantTypes.push_back(a);
+    s.reactantTypes.push_back(b);
+    s.reactantTypes.push_back(c);
+    std::vector<SsaMemberSignature> sigs;
+    sigs.push_back(s);
+    SsaDriver driver(e, sigs);
+    seed(e, driver, a, 2);
+    seed(e, driver, b, 3);
+    seed(e, driver, c, 2);
+    driver.initialize();
+    EXPECT_EQ(driver.tupleCount(fid, 0), 12u);
+    SsaDriverOptions opts;
+    opts.tEnd = 100.0;
+    opts.seed = 11;
+    const SsaDriverResult r = driver.run(opts);
+    EXPECT_EQ(r.events, 2ull);
+    EXPECT_EQ(driver.state().molecules(a).liveCount(), 0u);
+    EXPECT_EQ(driver.state().molecules(b).liveCount(), 1u);
+    EXPECT_EQ(driver.state().molecules(c).liveCount(), 0u);
+    EXPECT_EQ(driver.state().molecules(d).liveCount(), 2u);
+}
+
+TEST(Driver_HomotypicTripleCountsEachCombinationOnce) {
+    // A + A + A -> D: the number of combinations is C(n,3), not the number of
+    // ordered injective assignments n*(n-1)*(n-2).
+    ExecutableModel e;
+    const MoleculeTypeId a = addType(e, "A");
+    const MoleculeTypeId d = addType(e, "D");
+    TransformProgram p;
+    for (std::uint16_t root = 0; root < 3; ++root) {
+        TransformInstruction del{TRANSFORM_DELETE_MOLECULE};
+        del.target = root;
+        p.add(del);
+    }
+    TransformInstruction mk{TRANSFORM_CREATE_MOLECULE};
+    mk.target = 3;
+    mk.a = d.value();
+    p.add(mk);
+    p.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId t = e.buildTransforms().add(p);
+    RuleFamilyDescriptor f;
+    f.name = "triple";
+    f.matcher = alwaysMatcher(e);
+    f.transform = t;
+    RuleMember rm;
+    rm.rate = 1.0;
+    f.members.push_back(rm);
+    const RuleFamilyId fid = e.buildMetadata().addRuleFamily(f);
+    SsaMemberSignature s;
+    s.family = fid;
     s.member = 0;
     s.reactantTypes.push_back(a);
     s.reactantTypes.push_back(a);
     s.reactantTypes.push_back(a);
     std::vector<SsaMemberSignature> sigs;
     sigs.push_back(s);
-    bool threw = false;
-    try {
-        SsaDriver d(e, sigs);
-    } catch (const std::invalid_argument&) {
-        threw = true;
+    SsaDriver driver(e, sigs);
+    seed(e, driver, a, 4);
+    driver.initialize();
+    EXPECT_EQ(driver.tupleCount(fid, 0), 4u); // C(4,3)
+    SsaDriverOptions opts;
+    opts.tEnd = 100.0;
+    opts.seed = 13;
+    const SsaDriverResult r = driver.run(opts);
+    EXPECT_EQ(r.events, 1ull);
+    EXPECT_EQ(driver.state().molecules(a).liveCount(), 1u);
+    EXPECT_EQ(driver.state().molecules(d).liveCount(), 1u);
+}
+
+TEST(Driver_TermolecularPlacementRequiresCompatibleCompartments) {
+    // Compartment compatibility must cover every reactant, not only the first
+    // two: placing the third reactant in a different volume blocks the rule.
+    ExecutableModel e;
+    const MoleculeTypeId a = addType(e, "A");
+    const MoleculeTypeId b = addType(e, "B");
+    const MoleculeTypeId c = addType(e, "C");
+    const MoleculeTypeId d = addType(e, "D");
+    CompartmentDescriptor first;
+    first.id = 1;
+    first.dimensions = 3;
+    e.buildMetadata().addCompartment(first);
+    CompartmentDescriptor second;
+    second.id = 2;
+    second.dimensions = 3;
+    e.buildMetadata().addCompartment(second);
+    TransformProgram p;
+    for (std::uint16_t root = 0; root < 3; ++root) {
+        TransformInstruction del{TRANSFORM_DELETE_MOLECULE};
+        del.target = root;
+        p.add(del);
     }
-    EXPECT_TRUE(threw);
+    TransformInstruction mk{TRANSFORM_CREATE_MOLECULE};
+    mk.target = 3;
+    mk.a = d.value();
+    p.add(mk);
+    p.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId t = e.buildTransforms().add(p);
+    RuleFamilyDescriptor f;
+    f.name = "placed";
+    f.matcher = alwaysMatcher(e);
+    f.transform = t;
+    RuleMember rm;
+    rm.rate = 1.0;
+    f.members.push_back(rm);
+    const RuleFamilyId fid = e.buildMetadata().addRuleFamily(f);
+    SsaMemberSignature s;
+    s.family = fid;
+    s.member = 0;
+    s.reactantTypes.push_back(a);
+    s.reactantTypes.push_back(b);
+    s.reactantTypes.push_back(c);
+    std::vector<SsaMemberSignature> sigs;
+    sigs.push_back(s);
+    SsaDriver driver(e, sigs);
+    const MoleculeHandle ha = driver.state().molecules(a).create();
+    driver.state().molecules(a).setCompartment(ha, 1);
+    const MoleculeHandle hb = driver.state().molecules(b).create();
+    driver.state().molecules(b).setCompartment(hb, 2);
+    const MoleculeHandle hc = driver.state().molecules(c).create();
+    driver.state().molecules(c).setCompartment(hc, 1);
+    driver.initialize();
+    EXPECT_EQ(driver.tupleCount(fid, 0), 0u);
+    driver.state().molecules(b).setCompartment(hb, 1);
+    driver.initialize();
+    EXPECT_EQ(driver.tupleCount(fid, 0), 1u);
 }
 
 TEST(Driver_RejectsMissingFamilyRoots) {
@@ -280,4 +416,45 @@ TEST(Driver_AsymmetricHomotypicPairMatchesEitherOrientation) {
     EXPECT_EQ(r.nullEvents, 0ull);
     EXPECT_EQ(d.state().molecules(a).liveCount(), 0u);
     EXPECT_EQ(d.state().molecules(c).liveCount(), 1u);
+}
+
+TEST(Driver_EnumeratesLargeReactantSet) {
+    ExecutableModel e;
+    const MoleculeTypeId a = addType(e, "A");
+    const MoleculeTypeId d = addType(e, "D");
+    TransformProgram p;
+    for (std::uint16_t root = 0; root < 3; ++root) {
+        TransformInstruction del{TRANSFORM_DELETE_MOLECULE};
+        del.target = root;
+        p.add(del);
+    }
+    TransformInstruction mk{TRANSFORM_CREATE_MOLECULE};
+    mk.target = 3;
+    mk.a = d.value();
+    p.add(mk);
+    p.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId t = e.buildTransforms().add(p);
+    RuleFamilyDescriptor f;
+    f.name = "big";
+    f.matcher = alwaysMatcher(e);
+    f.transform = t;
+    RuleMember rm;
+    rm.rate = 1.0;
+    f.members.push_back(rm);
+    const RuleFamilyId fid = e.buildMetadata().addRuleFamily(f);
+    SsaMemberSignature s;
+    s.family = fid;
+    s.member = 0;
+    s.reactantTypes.push_back(a);
+    s.reactantTypes.push_back(a);
+    s.reactantTypes.push_back(a);
+    std::vector<SsaMemberSignature> sigs;
+    sigs.push_back(s);
+    SsaDriver driver(e, sigs);
+    // 101 molecules per root: enumerate all injective unordered
+    // combinations without the former complexity guard.
+    seed(e, driver, a, 101);
+    driver.initialize();
+    // C(101,3) unordered combinations of three distinct molecules.
+    EXPECT_EQ(driver.tupleCount(fid, 0), 166650u);
 }

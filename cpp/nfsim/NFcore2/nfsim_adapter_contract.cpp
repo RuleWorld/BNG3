@@ -24,6 +24,17 @@ std::uint32_t reactantType(const NativeModelSnapshot& m,const NativeReactionSnap
     throw std::out_of_range("NFsim adapter reactant type unavailable");
 }
 
+// A non-root pattern molecule is addressed by its reactant-graph node.  The
+// node's molecule type selects the feature table and validates component
+// indices, so it cannot be inferred from the reactant root.
+std::uint32_t graphNodeType(const NativeModelSnapshot& m,const NativeReactionSnapshot& r,std::uint32_t node) {
+    if (r.graph_patterns.empty() || r.graph_patterns[0].nodes.size()<=node)
+        throw std::out_of_range("NFsim adapter graph-node target");
+    const std::uint32_t type=r.graph_patterns[0].nodes[node].molecule_type;
+    if (type >= m.molecule_types.size()) throw std::out_of_range("NFsim adapter graph-node molecule type");
+    return type;
+}
+
 std::uint32_t populationIndex(const NativeModelSnapshot& m, std::uint32_t type) {
     if (type >= m.molecule_types.size() || !m.molecule_types[type].population)
         throw std::invalid_argument("NFsim population transform requires a population type");
@@ -482,7 +493,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
         for (std::size_t di=0;di<nr.dependencies.size();++di) {
             const NativeDependencySnapshot& d=nr.dependencies[di];
             std::uint32_t type=reactantType(source,nr,d.reactant);
-            validateComponent(source,type,d.component);
+            if (d.kind==NATIVE_STATE_REQUIRED || d.kind==NATIVE_STATE_EXCLUDED ||
+                d.kind==NATIVE_BOND_FREE || d.kind==NATIVE_BOND_BOUND ||
+                d.kind==NATIVE_BOND_TO)
+                validateComponent(source,type,d.component);
             LegacyPredicateIR p;
             switch(d.kind) {
                 case NATIVE_STATE_REQUIRED:
@@ -538,11 +552,14 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 (x.kind == NATIVE_INCREMENT_POPULATION ||
                  x.kind == NATIVE_DECREMENT_POPULATION);
             const bool has_reactant =
-                x.kind != NATIVE_ADD && !zero_reactant_population_transform;
+                x.kind != NATIVE_ADD && x.kind != NATIVE_UNSUPPORTED &&
+                !zero_reactant_population_transform;
             std::uint32_t type = 0;
             if (has_reactant) {
-                type=reactantType(source,nr,x.reactant);
-                if (x.kind!=NATIVE_EMPTY && x.kind!=NATIVE_LOCAL_FUNCTION_REFERENCE && x.kind!=NATIVE_MOVE &&
+                type = x.target_is_graph_node
+                    ? graphNodeType(source,nr,x.target_graph_node)
+                    : reactantType(source,nr,x.reactant);
+                if (x.kind!=NATIVE_EMPTY && x.kind!=NATIVE_ADD && x.kind!=NATIVE_LOCAL_FUNCTION_REFERENCE && x.kind!=NATIVE_MOVE &&
                     x.kind!=NATIVE_INCREMENT_POPULATION && x.kind!=NATIVE_DECREMENT_POPULATION &&
                     x.kind!=NATIVE_REMOVE)
                     validateComponent(source,type,x.component);
@@ -552,20 +569,33 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     throw std::out_of_range("NFsim population transform molecule type");
             }
             LegacyTransformIR t;
+            // Pattern molecules that are not the connected-component root are
+            // addressed by their reactant-graph node.  Carry that addressing
+            // through every transform kind, not only moves.
+            auto emit = [&](LegacyTransformIR built) {
+                built.target_is_graph_node = x.target_is_graph_node;
+                built.target_graph_node = x.target_graph_node;
+                built.other_is_graph_node = x.other_is_graph_node;
+                built.other_graph_node = x.other_graph_node;
+                r.transforms.push_back(built);
+            };
             switch(x.kind) {
                 case NATIVE_STATE_CHANGE:
-                    t=transform(LEGACY_TRANSFORM_SET_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=x.new_value;r.transforms.push_back(t);break;
+                    t=transform(LEGACY_TRANSFORM_SET_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=x.new_value;emit(t);break;
                 case NATIVE_BINDING:{
-                    std::uint32_t ot=reactantType(source,nr,x.other_reactant);validateComponent(source,ot,x.other_component);
-                    t=transform(LEGACY_TRANSFORM_BIND,x.reactant,x.component,fmap.bond[type][x.component]);t.other=x.other_reactant;t.b=x.other_component;r.transforms.push_back(t);r.changes_topology=true;r.topology_change_is_local=true;break;}
+                    const std::uint32_t ot = x.other_is_graph_node
+                        ? graphNodeType(source,nr,x.other_graph_node)
+                        : reactantType(source,nr,x.other_reactant);
+                    validateComponent(source,ot,x.other_component);
+                    t=transform(LEGACY_TRANSFORM_BIND,x.reactant,x.component,fmap.bond[type][x.component]);t.other=x.other_reactant;t.b=x.other_component;emit(t);r.changes_topology=true;r.topology_change_is_local=true;break;}
                 case NATIVE_UNBINDING:
-                    t=transform(LEGACY_TRANSFORM_UNBIND,x.reactant,x.component,fmap.bond[type][x.component]);t.b=x.other_component;r.transforms.push_back(t);r.changes_topology=true;r.topology_change_is_local=true;break;
+                    t=transform(LEGACY_TRANSFORM_UNBIND,x.reactant,x.component,fmap.bond[type][x.component]);t.b=x.other_component;emit(t);r.changes_topology=true;r.topology_change_is_local=true;break;
                 case NATIVE_REMOVE:
                     r.changes_topology=true;
-                    if (x.removal_type==NATIVE_DELETE_MOLECULE_ONLY) {t=transform(LEGACY_TRANSFORM_DELETE_MOLECULE,x.reactant,0,fmap.existence[type]);r.transforms.push_back(t);r.topology_change_is_local=true;}
-                    else if (x.removal_type==NATIVE_DELETE_COMPLETE_SPECIES) {t=transform(LEGACY_TRANSFORM_DELETE_SPECIES,x.reactant,0,FeatureId());r.transforms.push_back(t);r.topology_change_is_local=true;}
-                    else if (x.removal_type==NATIVE_DELETE_MOLECULE_CONDITIONAL) {t=transform(LEGACY_TRANSFORM_DELETE_MOLECULE_CONDITIONAL,x.reactant,0,fmap.existence[type]);r.transforms.push_back(t);r.topology_change_is_local=true;}
-                    else {t.kind=LEGACY_TRANSFORM_UNSUPPORTED;r.transforms.push_back(t);r.topology_change_is_local=false;}
+                    if (x.removal_type==NATIVE_DELETE_MOLECULE_ONLY) {t=transform(LEGACY_TRANSFORM_DELETE_MOLECULE,x.reactant,0,fmap.existence[type]);emit(t);r.topology_change_is_local=true;}
+                    else if (x.removal_type==NATIVE_DELETE_COMPLETE_SPECIES) {t=transform(LEGACY_TRANSFORM_DELETE_SPECIES,x.reactant,0,FeatureId());emit(t);r.topology_change_is_local=true;}
+                    else if (x.removal_type==NATIVE_DELETE_MOLECULE_CONDITIONAL) {t=transform(LEGACY_TRANSFORM_DELETE_MOLECULE_CONDITIONAL,x.reactant,0,fmap.existence[type]);emit(t);r.topology_change_is_local=true;}
+                    else {t.kind=LEGACY_TRANSFORM_UNSUPPORTED;emit(t);r.topology_change_is_local=false;}
                     break;
                 case NATIVE_EMPTY: break;
                 case NATIVE_LOCAL_FUNCTION_REFERENCE:
@@ -579,34 +609,36 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                         r.uses_local_function=true;
                     break;
                 case NATIVE_INCREMENT_STATE:
-                    t=transform(LEGACY_TRANSFORM_ADD_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=1;r.transforms.push_back(t);break;
+                    t=transform(LEGACY_TRANSFORM_ADD_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=1;emit(t);break;
                 case NATIVE_DECREMENT_STATE:
-                    t=transform(LEGACY_TRANSFORM_ADD_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=-1;r.transforms.push_back(t);break;
+                    t=transform(LEGACY_TRANSFORM_ADD_STATE_WORD,x.reactant,x.component,fmap.state[type][x.component]);t.value=-1;emit(t);break;
                 case NATIVE_ADD:
                     if (x.added_molecule_type >= source.molecule_types.size() || source.molecule_types[x.added_molecule_type].population)
                         throw std::invalid_argument("NFsim synthesis molecule type");
                     t=transform(LEGACY_TRANSFORM_CREATE_MOLECULE,x.reactant,x.added_molecule_type,fmap.existence[x.added_molecule_type]);
-                    r.transforms.push_back(t);break;
+                    t.b=x.added_molecule_compartment;
+                    emit(t);break;
                 case NATIVE_INCREMENT_POPULATION:
                     t=transform(LEGACY_TRANSFORM_POPULATION_ADD,x.reactant,0,fmap.population[type]);
-                    t.a=populationIndex(source,type);t.value=x.population_delta==0?1:x.population_delta;r.transforms.push_back(t);break;
+                    t.a=populationIndex(source,type);t.value=x.population_delta==0?1:x.population_delta;emit(t);break;
                 case NATIVE_DECREMENT_POPULATION:
                     t=transform(LEGACY_TRANSFORM_POPULATION_ADD,x.reactant,0,fmap.population[type]);
-                    t.a=populationIndex(source,type);t.value=-(x.population_delta==0?1:x.population_delta);r.transforms.push_back(t);break;
+                    t.a=populationIndex(source,type);t.value=-(x.population_delta==0?1:x.population_delta);emit(t);break;
                 case NATIVE_MOVE:
                     if (x.move_connected) {
                         t=transform(LEGACY_TRANSFORM_MOVE_SPECIES,x.reactant,0,fmap.compartment[type]);
                         t.a=x.destination_compartment;
-                        r.transforms.push_back(t);
+                        t.excluded_graph_nodes=x.excluded_graph_nodes;
+                        emit(t);
                         r.changes_topology=true;
                         r.topology_change_is_local=true;
                     } else {
                         t=transform(LEGACY_TRANSFORM_MOVE_MOLECULE,x.reactant,0,fmap.compartment[type]);
                         t.a=x.destination_compartment;
-                        r.transforms.push_back(t);
+                        emit(t);
                     }
                     break;
-                default:t.kind=LEGACY_TRANSFORM_UNSUPPORTED;r.transforms.push_back(t);break;
+                default:t.kind=LEGACY_TRANSFORM_UNSUPPORTED;emit(t);break;
             }
         }
         out.rules.push_back(r);

@@ -29,6 +29,7 @@ add_executable(bng3_nfcore2_reference_tests
     nfcore2/test_validation_dependency.cpp
 )
 target_link_libraries(bng3_nfcore2_reference_tests PRIVATE bng_nfcore2)
+target_compile_definitions(bng3_nfcore2_reference_tests PRIVATE BNG_NFCORE2_PROTOTYPE)
 # ExprTk include removed with WO-3b; NFsim uses the shared evaluator.
 add_test(NAME architecture_nfcore2_reference COMMAND bng3_nfcore2_reference_tests)
 set_tests_properties(architecture_nfcore2_reference PROPERTIES

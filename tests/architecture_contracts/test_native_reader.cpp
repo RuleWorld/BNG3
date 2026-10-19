@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <memory>
+#include <string>
 #include <vector>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -91,6 +92,54 @@ std::unique_ptr<NFcore::System> moveConnectedSystem() {
         "begin seed species\n @c1:A(site!1).B(site!1) 1\nend seed species\n"
         "begin reaction rules\n @c1:A(site!1).B(site!1) -> "
         "@c2:A(site!1).B(site!1) 1 MoveConnected\nend reaction rules\n");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> internalStateSystem() {
+    // NFsim roots a reactant at the molecule the rule modifies.  Modifying
+    // both A and B makes A (the first modified molecule) the root, so B's
+    // state change must be addressed by B's graph node.
+    auto model = bng::parser::parseModel(
+        "begin molecule types\n A(s~U~P,b)\n B(a,s~U~P)\nend molecule types\n"
+        "begin seed species\n A(s~U,b!1).B(a!1,s~U) 1\nend seed species\n"
+        "begin reaction rules\n flip: A(s~U,b!1).B(a!1,s~U) -> "
+        "A(s~P,b!1).B(a!1,s~P) 1\nend reaction rules\n");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> internalBindingSystem() {
+    // X is modified too, so X (first) roots the second reactant and the
+    // binding partner S is internal and must be addressed by its graph node.
+    auto model = bng::parser::parseModel(
+        "begin molecule types\n A(c)\n X(s~U~P,b)\n S(b,d)\nend molecule types\n"
+        "begin seed species\n A(c) 1\n X(s~U,b!1).S(b!1,d) 1\nend seed species\n"
+        "begin reaction rules\n link: A(c) + X(s~U,b!1).S(b!1,d) -> "
+        "A(c!2).X(s~P,b!1).S(b!1,d!2) 1\nend reaction rules\n");
+    REQUIRE(model);
+    int traversal = 0;
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, false, 100, false, traversal));
+    REQUIRE(system);
+    return system;
+}
+
+std::unique_ptr<NFcore::System> internalDeleteSystem() {
+    // A is the reactant root; the internal B is removed and A remains.
+    auto model = bng::parser::parseModel(
+        "begin molecule types\n A(b)\n B(a)\nend molecule types\n"
+        "begin seed species\n A(b!1).B(a!1) 1\nend seed species\n"
+        "begin reaction rules\n drop: A(b!1).B(a!1) -> A(b) 1 "
+        "DeleteMolecules\nend reaction rules\n");
     REQUIRE(model);
     int traversal = 0;
     auto system = std::unique_ptr<NFcore::System>(
@@ -1247,6 +1296,245 @@ TEST_CASE("native NFcore2 reader executes MoveConnected species relocation") {
     REQUIRE(engine.fire(lowered.rules[0].family, lowered.rules[0].member, context, delta));
     CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(0)).compartment(a) == NFcore2::nativeCompartmentId("c2"));
     CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(1)).compartment(b) == NFcore2::nativeCompartmentId("c2"));
+}
+
+TEST_CASE("native NFcore2 reader addresses an internal molecule's state change by graph node") {
+    auto system = internalStateSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    REQUIRE(snapshot.rules[0].graph_patterns.size() == 1);
+    const auto& graph = snapshot.rules[0].graph_patterns[0];
+    REQUIRE(graph.nodes.size() == 2);
+    const auto internal = std::find_if(
+        graph.nodes.begin(), graph.nodes.end(), [](const auto& node) {
+            return node.reactant == std::numeric_limits<std::uint16_t>::max();
+        });
+    REQUIRE(internal != graph.nodes.end());
+    const std::size_t internalIndex =
+        static_cast<std::size_t>(internal - graph.nodes.begin());
+    const auto change = std::find_if(
+        snapshot.rules[0].transforms.begin(), snapshot.rules[0].transforms.end(),
+        [&](const auto& transform) {
+            return transform.kind == NFcore2::NATIVE_STATE_CHANGE &&
+                   transform.target_is_graph_node &&
+                   transform.target_graph_node == internalIndex;
+        });
+    REQUIRE(change != snapshot.rules[0].transforms.end());
+    // The other state change acts on the reactant root and stays reactant
+    // addressed; the internal molecule's change must be addressed by its graph
+    // node instead.
+    CHECK(std::any_of(
+        snapshot.rules[0].transforms.begin(), snapshot.rules[0].transforms.end(),
+        [](const auto& transform) {
+            return transform.kind == NFcore2::NATIVE_STATE_CHANGE &&
+                   !transform.target_is_graph_node;
+        }));
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const NFcore2::MoleculeTypeId rootType(graph.nodes[0].molecule_type);
+    const NFcore2::MoleculeTypeId internalType(internal->molecule_type);
+    const auto rootMol = engine.state().molecules(rootType).create();
+    const auto internalMol = engine.state().molecules(internalType).create();
+    REQUIRE(graph.edges.size() == 1);
+    const auto& edge = graph.edges[0];
+    const std::uint32_t rootSlot =
+        edge.first_node == 0 ? edge.first_component : edge.second_component;
+    const std::uint32_t internalSlot =
+        edge.first_node == internalIndex ? edge.first_component : edge.second_component;
+    engine.state().molecules(rootType).setBondRef(
+        rootMol, rootSlot, NFcore2::MoleculeRef(internalType, internalMol));
+    engine.state().molecules(internalType).setBondRef(
+        internalMol, internalSlot, NFcore2::MoleculeRef(rootType, rootMol));
+    if (graph.nodes[0].state >= 0)
+        engine.state().molecules(rootType).setStateWord(
+            rootMol, graph.nodes[0].state_component,
+            static_cast<std::uint64_t>(graph.nodes[0].state));
+    if (internal->state >= 0)
+        engine.state().molecules(internalType).setStateWord(
+            internalMol, internal->state_component,
+            static_cast<std::uint64_t>(internal->state));
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(rootType, rootMol));
+    NFcore2::FeatureDelta delta;
+    REQUIRE(engine.fire(lowered.rules[0].family, lowered.rules[0].member, context, delta));
+    CHECK(engine.state().molecules(internalType).stateWord(
+              internalMol, change->component) ==
+          static_cast<std::uint64_t>(change->new_value));
+}
+
+TEST_CASE("native NFcore2 reader addresses an internal molecule's deletion by graph node") {
+    auto system = internalDeleteSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    REQUIRE(snapshot.rules[0].graph_patterns.size() == 1);
+    const auto& graph = snapshot.rules[0].graph_patterns[0];
+    const auto internal = std::find_if(
+        graph.nodes.begin(), graph.nodes.end(), [](const auto& node) {
+            return node.reactant == std::numeric_limits<std::uint16_t>::max();
+        });
+    REQUIRE(internal != graph.nodes.end());
+    const std::size_t internalIndex =
+        static_cast<std::size_t>(internal - graph.nodes.begin());
+    const auto removal = std::find_if(
+        snapshot.rules[0].transforms.begin(), snapshot.rules[0].transforms.end(),
+        [](const auto& transform) {
+            return transform.kind == NFcore2::NATIVE_REMOVE;
+        });
+    REQUIRE(removal != snapshot.rules[0].transforms.end());
+    CHECK(removal->target_is_graph_node);
+    CHECK(removal->target_graph_node == internalIndex);
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    NFcore2::Engine engine(lowered.executable);
+    const auto a = engine.state().molecules(NFcore2::MoleculeTypeId(0)).create();
+    const auto b = engine.state().molecules(NFcore2::MoleculeTypeId(1)).create();
+    engine.state().molecules(NFcore2::MoleculeTypeId(0)).setBondRef(
+        a, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(1), b));
+    engine.state().molecules(NFcore2::MoleculeTypeId(1)).setBondRef(
+        b, 0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(NFcore2::MoleculeTypeId(0), a));
+    NFcore2::FeatureDelta delta;
+    REQUIRE(engine.fire(lowered.rules[0].family, lowered.rules[0].member, context, delta));
+    CHECK(engine.state().molecules(NFcore2::MoleculeTypeId(0)).alive(a));
+    CHECK_FALSE(engine.state().molecules(NFcore2::MoleculeTypeId(1)).alive(b));
+}
+
+TEST_CASE("native NFcore2 reader addresses a binding partner's internal molecule by graph node") {
+    auto system = internalBindingSystem();
+    const auto snapshot = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(snapshot.rules.size() == 1);
+    REQUIRE(snapshot.rules[0].graph_patterns.size() == 1);
+    const auto& graph = snapshot.rules[0].graph_patterns[0];
+    const auto internal = std::find_if(
+        graph.nodes.begin(), graph.nodes.end(), [](const auto& node) {
+            return node.reactant == std::numeric_limits<std::uint16_t>::max();
+        });
+    REQUIRE(internal != graph.nodes.end());
+    const std::size_t internalIndex =
+        static_cast<std::size_t>(internal - graph.nodes.begin());
+    const auto binding = std::find_if(
+        snapshot.rules[0].transforms.begin(), snapshot.rules[0].transforms.end(),
+        [](const auto& transform) {
+            return transform.kind == NFcore2::NATIVE_BINDING;
+        });
+    REQUIRE(binding != snapshot.rules[0].transforms.end());
+    // One half of the binding names the internal molecule; that half must be
+    // addressed by its graph node, because a reactant index only reaches the
+    // reactant root.
+    const bool primaryInternal =
+        binding->target_is_graph_node && binding->target_graph_node == internalIndex;
+    const bool partnerInternal =
+        binding->other_is_graph_node && binding->other_graph_node == internalIndex;
+    CHECK((primaryInternal || partnerInternal));
+    const auto lowered = NFcore2::lowerLegacyNFsim(*system);
+    CHECK(lowered.supported_rule_count == 1);
+    CHECK(lowered.fallback_rule_count == 0);
+    // Execute the binding: the internal molecule must gain the new bond.
+    const auto nodeByReactant = [&](std::uint16_t reactant) {
+        return std::find_if(graph.nodes.begin(), graph.nodes.end(),
+                            [&](const auto& node) { return node.reactant == reactant; });
+    };
+    const auto root0 = nodeByReactant(0);
+    const auto root1 = nodeByReactant(1);
+    REQUIRE(root0 != graph.nodes.end());
+    REQUIRE(root1 != graph.nodes.end());
+    const NFcore2::MoleculeTypeId type0(root0->molecule_type);
+    const NFcore2::MoleculeTypeId type1(root1->molecule_type);
+    const NFcore2::MoleculeTypeId internalType(internal->molecule_type);
+    NFcore2::Engine engine(lowered.executable);
+    const auto mol0 = engine.state().molecules(type0).create();
+    const auto mol1 = engine.state().molecules(type1).create();
+    const auto molInternal = engine.state().molecules(internalType).create();
+    REQUIRE(graph.edges.size() == 1);
+    const auto& edge = graph.edges[0];
+    const std::size_t internalNodeIndex = internalIndex;
+    const std::size_t root1NodeIndex =
+        static_cast<std::size_t>(root1 - graph.nodes.begin());
+    REQUIRE(((edge.first_node == root1NodeIndex && edge.second_node == internalNodeIndex) ||
+             (edge.first_node == internalNodeIndex && edge.second_node == root1NodeIndex)));
+    const std::uint32_t root1Slot =
+        edge.first_node == root1NodeIndex ? edge.first_component : edge.second_component;
+    const std::uint32_t internalSlot =
+        edge.first_node == internalNodeIndex ? edge.first_component : edge.second_component;
+    engine.state().molecules(type1).setBondRef(
+        mol1, root1Slot, NFcore2::MoleculeRef(internalType, molInternal));
+    engine.state().molecules(internalType).setBondRef(
+        molInternal, internalSlot, NFcore2::MoleculeRef(type1, mol1));
+    if (root1->state >= 0)
+        engine.state().molecules(type1).setStateWord(
+            mol1, root1->state_component,
+            static_cast<std::uint64_t>(root1->state));
+    NFcore2::MatchContext context;
+    context.setMoleculeAt(0, NFcore2::MoleculeRef(type0, mol0));
+    context.setMoleculeAt(1, NFcore2::MoleculeRef(type1, mol1));
+    NFcore2::FeatureDelta delta;
+    REQUIRE(engine.fire(lowered.rules[0].family, lowered.rules[0].member, context, delta));
+    // The internal molecule is now bound to the first reactant's molecule. The
+    // new bond uses the internal molecule's own component, so the slot comes
+    // from whichever half of the binding names the internal molecule.
+    const std::uint32_t internalNewSlot =
+        primaryInternal ? binding->component : binding->other_component;
+    const std::uint32_t firstNewSlot =
+        primaryInternal ? binding->other_component : binding->component;
+    CHECK(engine.state().molecules(internalType).bondRef(molInternal, internalNewSlot).valid());
+    CHECK(engine.state().molecules(type0).bondRef(mol0, firstNewSlot).valid());
+}
+
+namespace {
+// A reader that cannot supply a connectivity snapshot, simulating a graph
+// extraction failure in a real reader.
+class GraphlessReader : public NFcore2::NativeNFsimSystemReader {
+public:
+    explicit GraphlessReader(NFcore::System& system)
+        : NFcore2::NativeNFsimSystemReader(system) {}
+protected:
+    void collectGraphPatternsWithIndices(
+        std::size_t, std::vector<NFcore2::NativeGraphPatternSnapshot>& out,
+        std::map<NFcore::TemplateMolecule*, std::uint32_t>*) const override {
+        out.clear();
+    }
+};
+}
+
+TEST_CASE("native NFcore2 reader refuses MoveConnected exclusions without a graph snapshot") {
+    auto system = moveConnectedSystem();
+    // Baseline: the real reader names the excluded pattern molecules.
+    const auto supported = NFcore2::snapshotLegacyNFsim(*system);
+    REQUIRE(supported.rules.size() == 1);
+    const auto move = std::find_if(
+        supported.rules[0].transforms.begin(), supported.rules[0].transforms.end(),
+        [](const auto& transform) {
+            return transform.kind == NFcore2::NATIVE_MOVE && transform.move_connected;
+        });
+    REQUIRE(move != supported.rules[0].transforms.end());
+    CHECK_FALSE(move->excluded_graph_nodes.empty());
+    // Without a graph snapshot the exclusions cannot be named.  Dropping them
+    // would move molecules the rule maps separately, so the rule is refused
+    // instead of silently applying base MoveConnected semantics.
+    GraphlessReader reader(*system);
+    const auto refused = NFcore2::readNFsimSystem(reader);
+    REQUIRE(refused.rules.size() == 1);
+    const auto refusedMove = std::find_if(
+        refused.rules[0].transforms.begin(), refused.rules[0].transforms.end(),
+        [](const auto& transform) {
+            return transform.kind == NFcore2::NATIVE_UNSUPPORTED &&
+                   transform.move_connected;
+        });
+    REQUIRE(refusedMove != refused.rules[0].transforms.end());
+    CHECK(refusedMove->excluded_graph_nodes.empty());
+
+    // The refused rule must not be lowered as supported: it falls back
+    // instead of executing with dropped exclusions.
+    GraphlessReader loweredReader(*system);
+    const auto loweredSnapshot = NFcore2::readNFsimSystem(loweredReader);
+    const auto loweredLegacy = NFcore2::NFsimSnapshotAdapter::toLegacy(loweredSnapshot);
+    const auto lowered = NFcore2::LegacyLowerer::lower(loweredLegacy);
+    CHECK(lowered.supported_rule_count == 0);
+    CHECK(lowered.fallback_rule_count == 1);
 }
 
 TEST_CASE("direct NFsim construction refuses a local function mixing global and local observables") {

@@ -60,6 +60,11 @@ bool Compartment::isInside(Compartment* other) const
 	return false;
 }
 
+bool Compartment::adjacent(Compartment* other) const
+{
+	return other && (this == other || parent == other || other->parent == this);
+}
+
 void Compartment::printDetails() const
 {
 	cout << "Compartment '" << id << "': ";

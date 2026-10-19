@@ -162,6 +162,89 @@ TEST(ModelImage_RoundTripTransformBytecode){
     EXPECT_EQ(c[0].feature,FeatureId(0));
 }
 
+TEST(ModelImage_RoundTripMoveTransformTargets){
+    ExecutableModel e;
+    TransformProgram tp;
+    TransformInstruction mv(TRANSFORM_MOVE_SPECIES);
+    mv.target=0;
+    mv.a=7;
+    mv.target_is_graph_node=true;
+    mv.target_graph_node=3;
+    mv.excluded_graph_nodes={2,4};
+    tp.add(mv);
+    tp.add(TransformInstruction(TRANSFORM_END));
+    e.buildTransforms().add(tp);
+    ExecutableModel b=readBytes(writeBytes(e));
+    EXPECT_EQ(b.transforms().size(),1u);
+    if (b.transforms().size()!=1u) return;
+    const std::vector<TransformInstruction>& c=b.transforms().at(TransformProgramId(0)).code();
+    EXPECT_EQ(c.size(),2u);
+    if (c.empty()) return;
+    EXPECT_TRUE(c[0].target_is_graph_node);
+    EXPECT_EQ(c[0].target_graph_node,3u);
+    EXPECT_EQ(c[0].excluded_graph_nodes.size(),2u);
+    if (c[0].excluded_graph_nodes.size()==2u) {
+        EXPECT_EQ(c[0].excluded_graph_nodes[0],2u);
+        EXPECT_EQ(c[0].excluded_graph_nodes[1],4u);
+    }
+}
+
+TEST(ModelImage_RoundTripNonRootTransformTargets){
+    ExecutableModel e;
+    TransformProgram tp;
+    TransformInstruction sc(TRANSFORM_SET_STATE_WORD);
+    sc.target=0; sc.a=1; sc.value=5; sc.feature=FeatureId(0);
+    sc.target_is_graph_node=true; sc.target_graph_node=2;
+    tp.add(sc);
+    TransformInstruction del(TRANSFORM_DELETE_MOLECULE);
+    del.target=0;
+    del.target_is_graph_node=true; del.target_graph_node=3;
+    tp.add(del);
+    TransformInstruction bind(TRANSFORM_BIND);
+    bind.target=0; bind.a=0; bind.other=1; bind.b=0;
+    bind.target_is_graph_node=true; bind.target_graph_node=2;
+    bind.other_is_graph_node=true; bind.other_graph_node=4;
+    tp.add(bind);
+    TransformInstruction cr(TRANSFORM_CREATE_MOLECULE);
+    cr.target=0; cr.a=7;
+    cr.target_is_graph_node=true; cr.target_graph_node=1;
+    tp.add(cr);
+    TransformInstruction unbind(TRANSFORM_UNBIND);
+    unbind.target=0; unbind.a=0;
+    unbind.target_is_graph_node=true; unbind.target_graph_node=2;
+    tp.add(unbind);
+    tp.add(TransformInstruction(TRANSFORM_END));
+    e.buildTransforms().add(tp);
+    ExecutableModel b=readBytes(writeBytes(e));
+    EXPECT_EQ(b.transforms().size(),1u);
+    if (b.transforms().size()!=1u) return;
+    const std::vector<TransformInstruction>& c=b.transforms().at(TransformProgramId(0)).code();
+    EXPECT_EQ(c.size(),6u);
+    if (c.size()<6u) return;
+    // state change
+    EXPECT_TRUE(c[0].target_is_graph_node);
+    EXPECT_EQ(c[0].target_graph_node,2u);
+    EXPECT_EQ(c[0].opcode,TRANSFORM_SET_STATE_WORD);
+    // deletion
+    EXPECT_TRUE(c[1].target_is_graph_node);
+    EXPECT_EQ(c[1].target_graph_node,3u);
+    EXPECT_EQ(c[1].opcode,TRANSFORM_DELETE_MOLECULE);
+    // binding + partner
+    EXPECT_TRUE(c[2].target_is_graph_node);
+    EXPECT_EQ(c[2].target_graph_node,2u);
+    EXPECT_TRUE(c[2].other_is_graph_node);
+    EXPECT_EQ(c[2].other_graph_node,4u);
+    EXPECT_EQ(c[2].opcode,TRANSFORM_BIND);
+    // creation
+    EXPECT_TRUE(c[3].target_is_graph_node);
+    EXPECT_EQ(c[3].target_graph_node,1u);
+    EXPECT_EQ(c[3].opcode,TRANSFORM_CREATE_MOLECULE);
+    // bond change
+    EXPECT_TRUE(c[4].target_is_graph_node);
+    EXPECT_EQ(c[4].target_graph_node,2u);
+    EXPECT_EQ(c[4].opcode,TRANSFORM_UNBIND);
+}
+
 TEST(ModelImage_RoundTripRuleFamiliesAndMembers){
     ExecutableModel a=imageModel();
     ExecutableModel b=readBytes(writeBytes(a));

@@ -15,11 +15,18 @@ struct NFsimPublicTransformView {
     bool second_binding_half;
     std::int64_t population_delta;
     std::uint32_t added_molecule_type;
+    std::uint32_t added_molecule_compartment;
     std::uint32_t destination_compartment;
     bool move_connected;
+    // Non-root pattern molecules are addressed by their reactant-graph node
+    // index rather than by reactant index.  Reactant indices identify only
+    // the connected-component root.
+    bool target_is_graph_node;
+    std::uint32_t target_graph_node;
+    std::vector<std::uint32_t> excluded_graph_nodes;
     std::string local_function_pointer;
     int local_function_scope;
-    NFsimPublicTransformView():kind(NATIVE_EMPTY),reactant(0),component(0),final_state(0),removal_type(-1),other_reactant(-1),other_mapping_index(-1),second_binding_half(false),population_delta(0),added_molecule_type(0),destination_compartment(0),move_connected(false),local_function_scope(-1){}
+    NFsimPublicTransformView():kind(NATIVE_EMPTY),reactant(0),component(0),final_state(0),removal_type(-1),other_reactant(-1),other_mapping_index(-1),second_binding_half(false),population_delta(0),added_molecule_type(0),added_molecule_compartment(std::numeric_limits<std::uint32_t>::max()),destination_compartment(0),move_connected(false),target_is_graph_node(false),target_graph_node(0),local_function_scope(-1){}
 };
 class NFsimTransformDecoder {
 public:
