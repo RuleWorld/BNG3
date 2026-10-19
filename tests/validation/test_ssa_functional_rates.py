@@ -158,3 +158,102 @@ end model
 
     with pytest.raises(RuntimeError, match="non-finite functional rate coefficient"):
         model.simulate(method="ssa", t_end=1, n_steps=2, seed=1)
+
+
+def test_ode_rejects_nonfinite_functional_coefficients(api, tmp_path):
+    # The same refusal has to hold for the ODE engine: a coefficient that is
+    # not a finite number is a model error, not an engine-specific detail.
+    source = tmp_path / "invalid_functional_ode.bngl"
+    source.write_text(
+        """begin model
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 0
+end seed species
+begin functions
+    f() = ln(-1)
+end functions
+begin reaction rules
+    A() -> B() f()
+end reaction rules
+end model
+""",
+        encoding="utf-8",
+    )
+
+    model = api.load(str(source))
+
+    with pytest.raises(RuntimeError, match="non-finite functional rate coefficient"):
+        model.simulate(method="ode", t_end=1, n_steps=2, seed=1)
+
+
+def test_ssa_rejects_nonfinite_parameter_rate_coefficients(api, tmp_path):
+    # A rate that is non-finite because of a parameter expression is refused
+    # for the same reason as a non-finite model function.
+    source = tmp_path / "invalid_parameter_rate_ssa.bngl"
+    source.write_text(
+        """begin model
+begin molecule types
+    A()
+    B()
+end molecule types
+begin parameters
+    k ln(-1)
+end parameters
+begin seed species
+    A() 1
+    B() 0
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+""",
+        encoding="utf-8",
+    )
+
+    model = api.load(str(source))
+
+    with pytest.raises(RuntimeError, match="non-finite functional rate coefficient"):
+        model.simulate(method="ssa", t_end=1, n_steps=2, seed=1)
+
+
+def test_ssa_runs_a_model_with_a_finite_function_rate(api, tmp_path):
+    # The refusal is narrow: a model whose function rate is finite still runs.
+    source = tmp_path / "finite_functional_ssa.bngl"
+    source.write_text(
+        """begin model
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 2
+    B() 0
+end seed species
+begin observables
+    Molecules Acount A()
+    Molecules Bcount B()
+end observables
+begin functions
+    f() = 100
+end functions
+begin reaction rules
+    A() -> B() f()
+end reaction rules
+end model
+""",
+        encoding="utf-8",
+    )
+
+    model = api.load(str(source))
+    trajectory = runner._result_to_trajectory(
+        model.simulate(method="ssa", t_end=1, n_steps=1, seed=1)
+    )
+
+    assert trajectory.data[-1, trajectory.columns.index("Acount")] == 0
+    assert trajectory.data[-1, trajectory.columns.index("Bcount")] == 2

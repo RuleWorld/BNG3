@@ -1,6 +1,7 @@
 """Fault injection for independent stochastic marginal detectors."""
 
 import numpy as np
+import pytest
 
 from tests.validation import integrated_cases, integrated_marginals
 
@@ -191,3 +192,159 @@ def test_poisson_source_cdf_tail_does_not_treat_support_overflow_as_unit_error()
         if row["check"] == "source-cdf"
     )
     assert cdf["status"] == "PASS"
+
+
+def test_native_oracle_is_handed_the_count_rate_convention_for_a_compartment():
+    """The oracle is handed the model the embedded engine executes.
+
+    BNG2 divides a reactant-bearing rate constant by the reaction
+    compartment's size; the pinned native NFsim applies a compartment size
+    only to zero-order synthesis, so for a bimolecular rule in a compartment
+    of size 3 it would sample a different model.  The harness therefore
+    folds BNG2's compartment unit conversion into the rule's rate constant
+    before the oracle runs, and the case is comparable again.
+    """
+    dimer_v3 = dict(
+        law="second-order",
+        family="second-order",
+        initial=12,
+        rate=0.4,
+        volume=3,
+        rate_convention="physical_source_law",
+        quantity_basis="amount",
+    )
+    assert integrated_marginals.native_oracle_realizes_source_law(dimer_v3)
+    # A compartment of size 1 needs no conversion, but stays comparable.
+    assert integrated_marginals.native_oracle_realizes_source_law(
+        dict(dimer_v3, volume=1)
+    )
+    for law in ("zero-order", "first-order"):
+        assert integrated_marginals.native_oracle_realizes_source_law(
+            dict(dimer_v3, law=law, volume=3)
+        )
+    assert integrated_marginals.native_oracle_realizes_source_law(
+        dict(family="dimerization", initial=20, volume=3)
+    )
+
+
+def test_native_marginal_rows_say_that_the_oracle_sampled_the_model(tmp_path):
+    """A native comparison that ran says so; one that could not says why."""
+    from tests.validation import integrated_traces
+
+    bionetgen = pytest.importorskip("bionetgen")
+
+    case = next(
+        item
+        for item in integrated_cases.source_law_cases()
+        if item["law"] == "second-order" and item["rate_convention"] == "bngl_count"
+    )
+    source = tmp_path / "model.bngl"
+    source.write_text(integrated_cases.source_law_bngl(case))
+    xml = tmp_path / "model.xml"
+
+    bionetgen.load(str(source)).write_xml(str(xml))
+    normalisation = integrated_traces.native_count_rate_xml(
+        xml, tmp_path / "native-count-rate.xml"
+    )
+    assert normalisation["status"] == "NORMALISED"
+    rule = normalisation["rules"][0]
+    # BNG2's count-rate coefficient: rate constant x symmetry factor x the
+    # compartment unit conversion of a compartment of size 3.
+    assert rule["compartment_unit_conversion"] == pytest.approx(1 / 3)
+    assert rule["count_rate_coefficient"] == pytest.approx(0.4 * 0.5 / 3)
+    text = (tmp_path / "native-count-rate.xml").read_text()
+    assert 'value="0.06666666666666667"' in text
+    assert "symmetry_factor" not in text
+    # The pinned oracle reads namespace-insensitive XML, but the artefact it
+    # is handed must keep the document's own default namespace.
+    assert "ns0:" not in text
+    assert 'xmlns="http://www.sbml.org/sbml/level3"' in text
+
+
+def test_native_rows_state_the_count_rate_convention_when_the_oracle_is_present(
+    tmp_path,
+):
+    """A native comparison that ran says so, and reports its coefficients."""
+    from tests.validation import oracle_nfsim
+
+    bionetgen = pytest.importorskip("bionetgen")
+
+    binary = oracle_nfsim.nfsim_binary()
+    if binary is None:
+        pytest.skip("native NFsim binary not available")
+    case = next(
+        item
+        for item in integrated_cases.source_law_cases()
+        if item["law"] == "second-order" and item["rate_convention"] == "bngl_count"
+    )
+    source = tmp_path / "model.bngl"
+    source.write_text(integrated_cases.source_law_bngl(case))
+    xml = tmp_path / "model.xml"
+
+    bionetgen.load(str(source)).write_xml(str(xml))
+    rows = integrated_marginals.run(
+        source,
+        case,
+        binary,
+        xml,
+        tmp_path / "ensembles",
+        runs=32,
+        cases=6,
+    )
+    native = [row for row in rows if row["check"].startswith("native.")]
+    assert len(native) == len(integrated_marginals.CHECKS)
+    assert all(row["status"] == "PASS" for row in native)
+    assert all("count-rate convention" in row["detail"] for row in native)
+    rule = native[0]["oracle_count_rate_rules"][0]
+    assert rule["count_rate_coefficient"] == pytest.approx(0.4 * 0.5 / 3)
+    # The oracle sampled the model the embedded engine executes.
+    embedded = [row for row in rows if row["check"].startswith("embedded.")]
+    assert all(row["status"] == "PASS" for row in embedded)
+
+
+def test_native_marginal_rows_report_the_missing_prerequisite(tmp_path):
+    """The native rows are NOT_TESTED with the reason, not silently failed.
+
+    A compartment whose size is not statically determinable states no
+    count-rate coefficient, so the oracle cannot be handed an equivalent
+    model; the comparison is then an explained absence, not a failure.
+    """
+    from tests.validation import reporting
+
+    bionetgen = pytest.importorskip("bionetgen")
+
+    case = next(
+        item
+        for item in integrated_cases.source_law_cases()
+        if item["law"] == "second-order" and item["rate_convention"] == "bngl_count"
+    )
+    source = tmp_path / "model.bngl"
+    source.write_text(integrated_cases.source_law_bngl(case))
+    xml = tmp_path / "model.xml"
+
+    bionetgen.load(str(source)).write_xml(str(xml))
+    # A parameter-backed compartment size states no static conversion.
+    text = xml.read_text().replace(' size="3"', "")
+    xml.write_text(text)
+    rows = integrated_marginals.run(
+        source,
+        case,
+        tmp_path / "missing-native-binary",
+        xml,
+        tmp_path / "ensembles",
+        runs=8,
+        cases=1,
+    )
+    native = [row for row in rows if row["check"].startswith("native.")]
+    embedded = [row for row in rows if row["check"].startswith("embedded.")]
+    assert len(native) == len(embedded) == len(integrated_marginals.CHECKS)
+    assert all(row["status"] == "NOT_TESTED" for row in native)
+    assert all(
+        row["applicability"] == "native-oracle-unit-conversion-unsupported"
+        for row in native
+    )
+    assert all("compartment unit conversion" in row["detail"] for row in native)
+    # The explained absence of execution is not a gating failure.
+    for index, row in enumerate(native):
+        row["id"] = f"case:nf-marginals:{row['check']}"
+    assert reporting.gate_failures(native) == []

@@ -10,6 +10,22 @@ from pathlib import Path
 import sys
 from typing import Optional, Union
 
+# Development builds: the native extension may live in build/cpp (the CMake
+# binary directory for this checkout) rather than inside the installed
+# package. When build/cpp/ contains the extension, re-point the
+# scikit-build redirect finder to the build-tree .so so that stale
+# site-packages copies are never used. This keeps the source checkout's
+# compiled extension authoritative across all interpreter entry points
+# (pytest, CLI, notebooks, subprocesses) without bypassing meta-path finders
+# that callers (including tests) may have injected for error-propagation checks.
+_build_cpp = Path(__file__).resolve().parents[2] / "build" / "cpp"
+_build_cpp_so = next(iter(_build_cpp.glob("_bionetgen_cpp*.so")), None)
+if _build_cpp_so is not None:
+    for _finder in sys.meta_path:
+        if type(_finder).__name__ == "ScikitBuildRedirectingFinder":
+            for _key in list(getattr(_finder, "known_wheel_files", {})):
+                if _key.endswith("._bionetgen_cpp"):
+                    _finder.known_wheel_files[_key] = str(_build_cpp_so)
 try:
     _cpp = importlib.import_module(f"{__package__}._bionetgen_cpp")
 except ModuleNotFoundError as exc:
@@ -22,10 +38,6 @@ except ModuleNotFoundError as exc:
             raise
         _cpp = None
     else:
-        # CMake's development build places the extension in build/cpp rather
-        # than inside the source package.  Register that fallback under the
-        # package name so ``import bionetgen._bionetgen_cpp`` works exactly as
-        # it does from an installed wheel.
         _module_name = f"{__package__}._bionetgen_cpp"
         sys.modules.setdefault(_module_name, _cpp)
         _package = sys.modules.get(__package__)

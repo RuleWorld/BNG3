@@ -201,6 +201,46 @@ def generated_cases():
         }
     )
 
+    # A rate law that runs through a model function. The function binds its own
+    # argument and the rule calls it with a parameter, so the rate stays the
+    # declared 0.1 and the closed-form trajectory is unchanged.
+    functions = copy.deepcopy(baseline)
+    functions["features"]["used"] = sorted(
+        [*functions["features"]["used"], "functions"]
+    )
+    functions["model"]["functions"] = [
+        {
+            "id": 0,
+            "name": "doubled",
+            "arguments": ["x"],
+            "expression": {
+                "kind": "binary",
+                "operator": "add",
+                "arguments": [
+                    {"kind": "local_ref", "name": "x"},
+                    {"kind": "local_ref", "name": "x"},
+                ],
+            },
+        }
+    ]
+    functions["model"]["rules"][0]["forward"]["rate"]["expression"] = {
+        "kind": "function_ref",
+        "symbol": {"kind": "function", "index": 0},
+        "call": True,
+        "arguments": [_parameter(0)],
+    }
+    cases.append(
+        {
+            "id": "function-rate-law",
+            "document": functions,
+            "oracle": "accept",
+            "expected_semantics": {
+                "seed": {"A()": 100.0, "B()": 0.0},
+                "rhs": {"A()": -10.0, "B()": 10.0},
+            },
+        }
+    )
+
     permuted = copy.deepcopy(baseline)
     permuted["model"]["molecule_types"].reverse()
     for index, item in enumerate(permuted["model"]["molecule_types"]):
@@ -393,19 +433,27 @@ def compare_observation(field, observed, expected, *, atol=1e-12, rtol=1e-12):
     return None
 
 
+def _canonical_species_name(name):
+    """Normalize a network species name to a spelling-independent identity.
+
+    A compartmented species is named ``@compartment::Pattern``; the analytic
+    control states the compartment as a ``Pattern@compartment`` suffix, so the
+    pattern-level, species-level and molecule-level spellings of one
+    compartmented species compare equal.
+    """
+    for separator in ("::", ":"):
+        if name.startswith("@") and separator in name:
+            head, _, body = name.partition(separator)
+            return body + "@" + head[1:]
+    return name
+
+
 def _analytic_observation(model, expected, output=None):
     from bionetgen.model import _cpp
 
     network = model.generate_network()
     # Prefix/suffix spelling is not structural identity; retain compartment name.
-    names = [
-        (
-            name.split(":", 1)[1] + "@" + name[1:].split(":", 1)[0]
-            if name.startswith("@")
-            else name
-        )
-        for name in network.species_names
-    ]
+    names = [_canonical_species_name(name) for name in network.species_names]
     result = model.simulate(method="ode", t_end=2.0, n_steps=10, atol=1e-12, rtol=1e-10)
     initial = dict(zip(names, map(float, result.concentrations[0])))
     rhs = _cpp._validation_ode_rhs(

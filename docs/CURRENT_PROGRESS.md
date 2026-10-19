@@ -1,5 +1,128 @@
 # BNG3 current progress
 
+## Native BNGIR v0.2 model functions (2026-10-19 candidate)
+
+The native BNGIR v0.2 importer refused the whole `model.functions` section, so
+every generated case of the integrated semantic validation reported
+`UNSUPPORTED` with the detail "native BNGIR does not support model.functions",
+even though the only thing those documents used was a helper function.
+
+The native C++ importer now rebuilds model functions. A declaration keeps its
+name, its arguments and its body, and the body is rebuilt with the same
+representation the BNGL parser produces: an argument is a plain identifier, a
+call to another model function is a function call, and the body is resolved
+against the parameters, the arguments, the other model functions and the
+observables of the model. The supported body expressions are numbers,
+parameter references, the function's own arguments, calls to other model
+functions, a global observable reference, and the ordinary unary and binary
+operators. Everything else stays an explicit refusal at the native boundary:
+builtin calls, table functions, clock references, reactant-count references,
+unresolved expressions, scoped observable references, and every expression kind
+outside that list.
+
+A declaration is refused when the compiler could not resolve it faithfully: a
+function name that collides with a parameter, an observable or a builtin, a
+duplicate function name, a duplicate argument name, an argument that shadows a
+parameter the body still reads, a reference to an unknown function, and a call
+whose arity does not match the declaration. The native reader's dense-id,
+unique-name and cross-reference rules are applied to the section as well.
+
+The reconstructed model executes. A model whose rate law runs through a model
+function reconstructs natively, round trips to the same BNGIR v0.2 document,
+and produces the same ODE and SSA numbers as the same model written in BNGL;
+the trajectory is written to a `.gdat` and compared against the BNGL model.
+The Playground-derived Atomizer cases, whose helper functions name an
+observable, reconstruct and run unchanged.
+
+The `bngir-v02` consumer therefore changes from `UNSUPPORTED` to `PASS` for
+the generated cases: 45 of the 61 generated cases now pass the semantic
+equality, network and simulation checks. The 16 dimerization cases stay
+`UNSUPPORTED`, now for the reason that actually applies to them, a rule
+direction with two reactant patterns, which is outside the native slice. The
+native import boundary names that boundary in the established
+"native BNGIR does not support ..." wording so the consumer reports a
+support boundary instead of a harness failure.
+
+## Non-finite rate coefficients are refused where they enter the engine
+
+A rate law with no runtime dependency is folded into a constant rate
+coefficient when the engine compiles the generated network. When that number
+was not finite — a model function such as `f() = ln(-1)`, a parameter
+expression, or a derived rate — the coefficient reached the simulator as a NaN
+or an infinity: the SSA drew the next reaction from a NaN propensity table
+and the ODE integrated NaN derivatives, so both engines ran a model that
+cannot be simulated and reported nothing. The engine now refuses such a model
+while it compiles the network, which is where the constant coefficient first
+enters it, and the refusal reuses the established "non-finite functional rate
+coefficient" wording. Because every simulator on that integrator compiles the
+network first, the refusal covers the SSA, the batch SSA and the ODE methods,
+as well as the rate-coefficient validation hook, which used to report the
+non-finite value instead of refusing it. A coefficient that is non-finite only
+at some later time belongs to a functional rate: the SSA already refuses that
+case when it evaluates the rate, and the compile-time check leaves those
+models alone.
+
+`tests/validation/test_ssa_functional_rates.py` was not executed by any CI
+job, which is why the gap stayed invisible. It now runs in the required
+parity step, and it covers the ODE counterpart of the SSA refusal, the
+parameter-expression case, and a finite-function model that must still run.
+
+## Integrated semantic validation repairs (2026-10-19 candidate)
+
+The hosted integrated semantic validation job failed on `main` with sixteen
+failing results in three clusters, and the C++ suite failed with six placement
+tests. Every cause was established against an independent oracle before
+anything was changed.
+
+- The native BNGIR compartment controls accepted a compartmented document, but
+  the public network API reported the bare graph label, so the analytic control
+  could not observe the compartment. `ast::Species::canonicalName()` now
+  produces the BNG2-canonical identity (`@compartment::Pattern`, with the
+  constant marker and per-molecule suffixes) and the `.net` writer and the
+  network API share one implementation of it. `GeneratedNetwork.species_names`
+  therefore names a compartmented species the way BNG2's `.net` and
+  `SpeciesGraph::StringExact` do, and two species that differ only by
+  compartment stay distinct. The control states the compartment spelling
+  independently of the prefix, suffix and molecule spellings.
+- The BNG-XML and NET rate comparison compared two conventions. The NET export
+  folds BNG2's compartment unit conversion into the coefficient; the BNG-XML
+  export keeps the rule rate constant, the symmetry factor and the compartment
+  size apart, exactly as BNG2's `writeXML` does. The XML probe now applies the
+  same conversion before the two are compared, so the boundary states one rate
+  in one convention, and reports a parameter-backed compartment size as not
+  comparable.
+- The pinned native NFsim applies a compartment size only to zero-order
+  synthesis, so it would sample a bimolecular rule in a compartment whose
+  size is not one at `rate constant x symmetry factor` rather than at BNG2's
+  count-rate coefficient. Running the pinned binary on BNG2's own XML at two
+  compartment sizes produces identical trajectories, while BNG2's own `cvode`
+  run on BNG2's `.net` matches the independent count law. The marginal stage
+  now normalises the model it hands the oracle before it runs: it folds the
+  same compartment unit conversion the XML probe applies into the rule's rate
+  constant and drops the now-redundant symmetry factor, so the oracle samples
+  the model the embedded engine executes and its marginals are compared
+  against the independent count law again. An export whose compartment size
+  is not statically determinable states no count-rate coefficient, and those
+  native rows stay explicitly not tested with that reason.
+
+The same candidate repairs a C++ regression that `main` carried: the
+wildcard-compartment conversion guard introduced by `6e6a5a88` compared
+compartment dimensions as well as sizes, so a model with several compartments of
+one size but mixed dimensions was refused. The dimension selects the anchor
+compartment, not the factor, so the guard now states the criterion it
+documents, "every compartment shares one size and refreshes identically", and
+the six placement tests pass again.
+
+A non-pass stage rollup now states the reason its children give, and the
+consumer matrix lane fails on failed or malformed results rather than on a
+documented support boundary, which it reports distinctly. The remaining
+openings are unchanged: the exact native-versus-embedded NFsim parity lane,
+which still compares the pinned oracle on BNG2's own XML, the native BNGIR
+rule-direction boundary behind the dimerization cases' `UNSUPPORTED` outcome,
+and the #151/#146/#155 obligations that these rows feed.
+
+
+
 ## Generated dependency and native identity gates (2026-10-17)
 
 Continuation from `e4394172` on PR #288, with bounded implementation work

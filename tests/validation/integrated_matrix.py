@@ -163,6 +163,29 @@ def _status(rows):
     )
 
 
+def _lane_failures(audit):
+    """Return the audited rows that fail the matrix lane.
+
+    The matrix audits receipts and evidence: a missing or stale receipt, an
+    unexplained cell, or a failed comparison is a lane failure.  A consumer
+    that explicitly refuses a construct, or a check that was never
+    applicable, is reported with that status and stays distinct from a pass;
+    it is a documented support boundary, not a receipt failure.  This is the
+    same distinction the integrated report's gate makes.
+    """
+    failing = {"FAIL", "HARNESS_ERROR", "INVALID_INPUT", "TIMEOUT"}
+    failures = [row for row in audit.get("results", []) if row.get("status") in failing]
+    if audit.get("errors"):
+        failures.append(
+            {
+                "id": "matrix:report-integrity",
+                "status": "HARNESS_ERROR",
+                "detail": "; ".join(str(error) for error in audit["errors"]),
+            }
+        )
+    return failures
+
+
 def _row_index(report):
     rows = report.get("results")
     if not isinstance(rows, list):
@@ -744,7 +767,7 @@ def main(argv=None):
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(audit, indent=2) + "\n", encoding="utf-8")
-    return 0 if audit["status"] == "PASS" else 1
+    return 0 if _lane_failures(audit) == [] else 1
 
 
 if __name__ == "__main__":

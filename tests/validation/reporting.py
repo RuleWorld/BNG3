@@ -13,6 +13,14 @@ from .campaign import STATUSES
 
 BAD = {"FAIL", "TIMEOUT", "HARNESS_ERROR"}
 
+# NOT_TESTED rows that record an explained, scoped absence of execution rather
+# than an unexplained gap.  Each token names the specific missing prerequisite.
+NON_GATING_APPLICABILITY = {
+    "no-observables",
+    "no-rate-parameter-dependency",
+    "native-oracle-unit-conversion-unsupported",
+}
+
 
 def gate_failures(results):
     """Keep unsupported coverage visible; fail unexplained missing execution.
@@ -31,8 +39,7 @@ def gate_failures(results):
         row["id"]
         for row in results
         if row.get("status") == "NOT_TESTED"
-        and row.get("applicability")
-        in {"no-observables", "no-rate-parameter-dependency"}
+        and row.get("applicability") in NON_GATING_APPLICABILITY
         and not row.get("support_required")
     )
     passed = {row["id"] for row in results if row.get("status") == "PASS"}

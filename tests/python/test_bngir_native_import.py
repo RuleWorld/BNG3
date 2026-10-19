@@ -83,6 +83,38 @@ end seed species
 end model
 """
 
+# A model whose rate law is written with model functions: one function binds
+# its own argument, one calls another model function, and one names an
+# observable the way the Playground-derived Atomizer writes its helpers.
+FUNCTION_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_functions")
+begin model
+begin parameters
+    k 0.1
+    base 2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+end seed species
+begin observables
+    Molecules A_total A()
+end observables
+begin functions
+    scaled(x) = x*k
+    doubled(x) = scaled(x)*2
+    _c_A() = A_total
+end functions
+begin reaction rules
+    convert: A() -> B() doubled(base)
+end reaction rules
+end model
+"""
+
 
 def _document(source: str = SOURCE) -> dict:
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
@@ -614,7 +646,6 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
 @pytest.mark.parametrize(
     "section",
     [
-        "functions",
         "energy_patterns",
         "barrier_patterns",
         "population_maps",
@@ -623,17 +654,7 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
 )
 def test_direct_native_builder_rejects_nonempty_unsupported_sections(section):
     document = _document()
-    unsupported_entry = (
-        {
-            "id": 0,
-            "name": "f",
-            "arguments": [],
-            "expression": {"kind": "number", "value": 1.0},
-        }
-        if section == "functions"
-        else {}
-    )
-    document["model"][section].append(unsupported_entry)
+    document["model"][section].append({})
 
     with pytest.raises(
         RuntimeError, match=f"native BNGIR model.{section} is not supported"
@@ -1002,11 +1023,21 @@ def test_native_import_rejects_malformed_declaration_ids_before_building(monkeyp
 
 def test_native_import_rejects_out_of_slice_semantics_without_fallback(monkeypatch):
     document = _document()
-    document["model"]["functions"].append(
+    document["model"]["energy_patterns"].append(
         {
             "id": 0,
-            "name": "f",
-            "arguments": [],
+            "label": "dG",
+            "pattern": {
+                "compartment_prefix": False,
+                "molecules": [
+                    {
+                        "occurrence": 0,
+                        "sites": [],
+                        "type": "A",
+                        "type_id": 0,
+                    }
+                ],
+            },
             "expression": {"kind": "number", "value": 1.0},
         }
     )
@@ -1016,7 +1047,7 @@ def test_native_import_rejects_out_of_slice_semantics_without_fallback(monkeypat
 
     monkeypatch.setattr(_cpp, "parse_string", forbidden)
     with pytest.raises(
-        ValueError, match="native BNGIR.*functions|functions.*native BNGIR"
+        ValueError, match="native BNGIR.*energy_patterns|energy_patterns.*native BNGIR"
     ):
         bionetgen.from_bngir(document, native=True)
 
@@ -1343,3 +1374,380 @@ def test_native_molecule_id_reordering_preserves_downstream_rhs(
     assert dict(zip(network.species_names, derivative)) == pytest.approx(
         {"A()": -10.0, "B()": 10.0}
     )
+
+
+def _function_document() -> dict:
+    return _document(FUNCTION_SOURCE)
+
+
+def _native_model_section(document: dict) -> dict:
+    """The model section in the shape the native builder consumes."""
+    bngir_module = importlib.import_module("bionetgen.bngir")
+    model = copy.deepcopy(document["model"])
+    model["observables"] = [
+        {
+            "name": observable["name"],
+            "type": "Molecules" if observable["kind"] == "molecules" else "Species",
+            "patterns": [
+                bngir_module._observable_term_v02(term) for term in observable["terms"]
+            ],
+        }
+        for observable in model["observables"]
+    ]
+    return model
+
+
+def test_native_import_reconstructs_model_functions_and_executes(tmp_path):
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(FUNCTION_SOURCE))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    assert [item["name"] for item in document["model"]["functions"]] == [
+        "scaled",
+        "doubled",
+        "_c_A",
+    ]
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    # The reconstructed model keeps the declared functions, their arguments
+    # and their bodies, so the wire document survives the round trip.
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert [(item.name, list(item.args)) for item in restored._model.functions] == [
+        ("scaled", ["x"]),
+        ("doubled", ["x"]),
+        ("_c_A", []),
+    ]
+
+    network = restored.generate_network()
+    assert network.num_species == 2
+    assert network.num_reactions == 1
+    assert set(network.species_names) == {"A()", "B()"}
+
+    # The rate law runs through the reconstructed function: doubled(base) is
+    # 2 * base * k, so dA/dt starts at -40.
+    state = [100.0 if name == "A()" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, state)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A()": -40.0, "B()": 40.0}
+    )
+
+    for method in ("ode", "ssa"):
+        source_result = source_model.simulate(
+            method=method, t_end=0.2, n_steps=2, seed=1
+        )
+        restored_result = restored.simulate(method=method, t_end=0.2, n_steps=2, seed=1)
+        assert restored_result.time.tolist() == pytest.approx(
+            source_result.time.tolist()
+        )
+        for restored_row, source_row in zip(
+            restored_result.concentrations, source_result.concentrations
+        ):
+            assert list(restored_row) == pytest.approx(list(source_row))
+
+    # The reconstructed model writes the same trajectory the BNGL model does.
+    gdat = tmp_path / "functions.gdat"
+    result = restored.simulate(method="ode", t_end=0.2, n_steps=2)
+    gdat.write_text(
+        "\n".join(
+            " ".join([f"{time:.17g}"] + [f"{value:.17g}" for value in amounts])
+            for time, amounts in zip(result.time, result.concentrations)
+        )
+        + "\n"
+    )
+    source_result = source_model.simulate(method="ode", t_end=0.2, n_steps=2)
+    written = [
+        [float(value) for value in line.split()]
+        for line in gdat.read_text().splitlines()
+        if line.strip()
+    ]
+    assert [row[0] for row in written] == pytest.approx(
+        [float(value) for value in source_result.time]
+    )
+    assert [row[1] for row in written] == pytest.approx(
+        [float(value) for value in source_result.concentrations[:, 0]]
+    )
+
+
+def test_native_import_reconstructs_a_function_body_naming_an_observable():
+    document = _function_document()
+    assert document["model"]["functions"][2]["expression"] == {
+        "kind": "observable_ref",
+        "symbol": {"kind": "observable", "index": 0},
+    }
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+
+def _function_with(name, arguments, expression):
+    return {
+        "id": 0,
+        "name": name,
+        "arguments": arguments,
+        "expression": expression,
+    }
+
+
+def test_direct_native_builder_rejects_a_function_that_shadows_a_parameter():
+    document = _function_document()
+    document["model"]["functions"][0]["name"] = "k"
+
+    with pytest.raises(
+        RuntimeError,
+        match="native BNGIR function names must not collide with parameter names",
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+def test_direct_native_builder_rejects_duplicate_function_names():
+    document = _function_document()
+    document["model"]["functions"][1]["name"] = "scaled"
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR function names must be nonempty and unique"
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+def test_direct_native_builder_rejects_duplicate_function_arguments():
+    document = _function_document()
+    document["model"]["functions"][0]["arguments"] = ["x", "x"]
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR function argument names must be unique"
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+def test_direct_native_builder_rejects_a_local_reference_outside_the_arguments():
+    document = _function_document()
+    document["model"]["functions"][0]["expression"]["arguments"][0] = {
+        "kind": "local_ref",
+        "name": "y",
+    }
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR local reference is not a function argument"
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+def test_direct_native_builder_rejects_a_parameter_shadowed_by_an_argument():
+    document = _function_document()
+    document["model"]["functions"][0]["arguments"] = ["x", "k"]
+    document["model"]["functions"][0]["expression"]["arguments"][1] = {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 0},
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="native BNGIR function parameter reference is shadowed by an argument",
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+def test_direct_native_builder_rejects_a_function_call_with_the_wrong_arity():
+    document = _function_document()
+    document["model"]["functions"][1]["expression"]["arguments"][0]["arguments"].append(
+        {"kind": "local_ref", "name": "x"}
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="native BNGIR function call arity does not match the declaration",
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+def test_direct_native_builder_rejects_an_unknown_function_reference():
+    document = _function_document()
+    document["model"]["functions"][1]["expression"]["arguments"][0]["symbol"][
+        "index"
+    ] = 7
+
+    with pytest.raises(
+        RuntimeError, match="native BNGIR function reference is out of range"
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+@pytest.mark.parametrize(
+    ("kind", "expression"),
+    [
+        ("builtin_call", {"kind": "builtin_call", "builtin": "sin", "arguments": []}),
+        ("time_ref", {"kind": "time_ref"}),
+        (
+            "table_function",
+            {"kind": "table_function", "x": [0.0, 1.0], "y": [0.0, 1.0]},
+        ),
+        ("reactant_count_ref", {"kind": "reactant_count_ref"}),
+        ("unresolved", {"kind": "unresolved"}),
+    ],
+    ids=["builtin-call", "time-ref", "table-function", "reactant-count", "unresolved"],
+)
+def test_direct_native_builder_refuses_unsupported_function_bodies(kind, expression):
+    document = _function_document()
+    document["model"]["functions"][0]["expression"] = expression
+
+    with pytest.raises(RuntimeError, match="unsupported native BNGIR expression kind"):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+def test_native_import_refuses_an_unsupported_function_body_without_fallback(
+    monkeypatch,
+):
+    document = _function_document()
+    document["model"]["functions"][0]["expression"] = {
+        "kind": "builtin_call",
+        "builtin": "sin",
+        "arguments": [],
+    }
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import fell back to the BNGL parser")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    with pytest.raises(ValueError, match="outside the supported expression subset"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_refuses_a_function_that_shadows_a_parameter():
+    document = _function_document()
+    document["model"]["functions"][0]["name"] = "k"
+
+    with pytest.raises(
+        ValueError,
+        match="native BNGIR function names must not collide with parameter names",
+    ):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_refuses_a_rule_direction_outside_the_native_slice():
+    document = _document()
+    direction = document["model"]["rules"][0]["forward"]
+    direction["reactants"].append(copy.deepcopy(direction["reactants"][0]))
+
+    with pytest.raises(ValueError, match="native BNGIR does not support"):
+        bionetgen.from_bngir(document, native=True)
+
+
+OBSERVABLES_SOURCE = SOURCE.replace(
+    "begin seed species",
+    "begin observables\n"
+    "    Molecules a_count A()\n"
+    "    Species b_count B()\n"
+    "end observables\n"
+    "begin seed species",
+)
+
+
+def test_native_import_reconstructs_observables():
+    document = _document(OBSERVABLES_SOURCE)
+    assert "observables" in document["features"]["used"]
+    restored = bionetgen.from_bngir(document, native=True)
+    assert [(item.name, item.type) for item in restored.observables] == [
+        ("a_count", "Molecules"),
+        ("b_count", "Species"),
+    ]
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+@pytest.mark.parametrize("relation", [">", ">=", "<", "<=", "=="])
+def test_native_import_reconstructs_observable_relations(relation):
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = relation
+    document["model"]["observables"][0]["terms"][0]["quantity"] = 3
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+def test_native_import_rejects_unknown_observable_kind():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["kind"] = "unknown"
+    with pytest.raises(ValueError, match="unsupported.*kind"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_invalid_observable_relation():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = "="
+    with pytest.raises(ValueError, match="unsupported count relation"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_non_dense_observable_ids():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["id"] = 5
+    with pytest.raises(ValueError, match="observable ids must be dense"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_duplicate_observable_names():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["name"] = "a_count"
+    with pytest.raises(ValueError, match="duplicate"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_empty_observable_terms():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"] = []
+    with pytest.raises(ValueError, match="at least one term"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_unsupported_observable_keys():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["future_semantics"] = True
+    with pytest.raises(ValueError, match="unsupported"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_observable_python_binding_round_trips():
+    """The Python-exposed Observable constructor + Model.addObservable must
+    produce the same structured snapshot as a native BNGL-parsed model."""
+    source = OBSERVABLES_SOURCE
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    reference = json.loads(source_model.to_bngir(version="0.2"))
+
+    from bionetgen._bionetgen_cpp import Observable
+
+    model = _cpp.parse_string(SOURCE)
+    model.addObservable(Observable("a_count", "Molecules", ["A()"]))
+    model.addObservable(Observable("b_count", "Species", ["B()"]))
+    restored = bionetgen.BioNetGenModel(model)
+    assert json.loads(restored.to_bngir(version="0.2")) == reference
+
+
+def test_native_import_reconstructs_multi_term_observables():
+    """An observable with multiple terms (e.g. A(), B()) must round-trip."""
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["terms"].append(
+        {
+            "pattern": {
+                "compartment_prefix": False,
+                "molecules": [
+                    {"occurrence": 0, "sites": [], "type": "A", "type_id": 0}
+                ],
+            },
+            "quantity": 0,
+        }
+    )
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+def test_neq_observable_round_trips():
+    """The ``!=`` count relation is supported by the C++ matcher
+    (``splitObservablePattern`` / ``observablePatternCountMatches``) and is
+    included in the native v0.2 accepted-relation set."""
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = "!="
+    document["model"]["observables"][0]["terms"][0]["quantity"] = 2
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document

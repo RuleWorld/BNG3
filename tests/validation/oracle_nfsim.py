@@ -37,6 +37,11 @@ def _nfsim_bin() -> Path | None:
     return path.resolve() if path.exists() else None
 
 
+def nfsim_binary() -> Path | None:
+    """The configured independent native NFsim binary, if one is named."""
+    return _nfsim_bin()
+
+
 def nfsim_available() -> bool:
     return _nfsim_bin() is not None
 

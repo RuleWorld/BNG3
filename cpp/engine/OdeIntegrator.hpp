@@ -85,7 +85,7 @@ public:
     struct CompiledReaction {
         std::vector<std::size_t> reactantIndices;  // 0-based species indices
         std::vector<std::size_t> productIndices;
-        double rateConstant;          // evaluated rate (for elementary)
+        double rateConstant = 0.0;    // evaluated rate (for elementary)
         double statFactor;            // statistical factor
         bool isFunctional = false;    // true if rate depends on time/observables
         bool isTimeDependent = false; // SSA cannot use the direct method for these rates

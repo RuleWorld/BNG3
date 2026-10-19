@@ -364,7 +364,9 @@ void bind_engine(py::module_& m) {
         .def_property_readonly("species_names", [](const GeneratedNetwork& gn) {
             std::vector<std::string> names;
             for (const auto& sp : gn.species.all()) {
-                names.push_back(sp.getSpeciesGraph().toString());
+                // The BNG2-canonical identity keeps the species compartment,
+                // so species that differ only by compartment stay distinct.
+                names.push_back(sp.canonicalName());
             }
             return names;
         })

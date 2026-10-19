@@ -66,7 +66,10 @@ then compares both the mutated instance and a fresh compilation with the
 closed-form changed-rate trajectory; a missing mutable dependency remains
 `NOT_TESTED`. The separate `matrix-report.json` is uploaded with the integrated
 report and makes missing cells, stale artifacts, and shared wrong mutation
-references visible.
+references visible. The matrix lane fails on a failed, malformed or missing
+result; a consumer that explicitly refuses a construct, or a check that was
+never applicable, keeps that status in the report and stays distinct from a
+pass, the same distinction the integrated report's gate makes.
 
 `tests.validation.issue_queue` joins one or more exact-revision reports to a retained `gh issue list` snapshot. It rejects stale/conflicting observations and avoids counting a successful process as a passed behavior. Every issue remains explicitly ineligible for automatic closure. The queue includes strict provenance approval debt, reconciliation claims without test references, stale named references, and optional upstream branch observations. A reference resolving in source never counts as executed qualification. CI collects a bounded 1,000-issue snapshot and checks upstream branch drift only on scheduled/manual runs; unavailable or unobserved branches are not treated as matching the lock.
 
@@ -81,6 +84,8 @@ This command reads local evidence and produces a repair/evidence/decision queue;
 The final qualification stages add eight valid-source SBML boundary controls for nonlinear events, delay history, nonlinear algebraic constraints, and fast reactions with dynamic stoichiometry. LibSBML consistency runs before Atomizer evidence is scored; fast-reaction fixtures use L3V1 because L3V2 removed that attribute. Only matching structured loss diagnostics or actual Atomizer rejections qualify the boundary control. Successful diagnostic-only rows have `supported_execution=false` and enter a separate issue-queue count; they do not establish consumer refusal or supported execution. `--boundaries-only` reproduces this bounded group.
 
 Every generated case also checks modern API equivalence on a requested nonuniform absolute grid, invalid-option refusal with a working positive control, concurrent SSA instances against fresh sequential references, saved-result isolation, and exception recovery. All three families additionally sample fresh embedded and native NFsim runs with fixed spread seeds: 32 per engine on PRs and 128 on scheduled/full runs. Independent source count laws (binomial conversion and the finite dimer pure-death generator), CDFs and seed spread use Hoeffding/DKW/equal-outcome probability bounds with a conservative global error budget of 1e-6 across the full case inventory. The checks concern these count marginals, not a complete stochastic equivalence proof. Dimer count hazards use `k*n*(n-1)/V`; the deterministic `k*A^2/V` trajectory is not a stochastic mean oracle. `--ensemble-runs` overrides a bounded run budget; reports and replay commands retain its exact value.
+
+The native lane samples the model the embedded engine executes. BNG2 states a reactant-bearing rate constant in count-rate units, dividing it by the reaction compartment's size, while the pinned native NFsim applies a compartment size only to zero-order synthesis. The marginal stage therefore normalises the BNG-XML export it hands the oracle before it runs: the same compartment unit conversion the XML rate probe applies is folded into the rule's rate constant, and the now-redundant symmetry factor is dropped. The native rows state that the oracle sampled the model in that convention, and an export whose compartment size is not statically determinable states no count-rate coefficient, so those native rows stay explicitly not tested with that reason.
 
 
 

@@ -1118,7 +1118,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             relation = term.get("relation")
             if relation is None:
                 continue
-            if relation not in {"==", ">", ">=", "<", "<="}:
+            if relation not in {"==", "!=", ">", ">=", "<", "<="}:
                 raise ValueError(
                     f"BNGIR model.observables[{i}].terms[{j}] has unsupported "
                     f"count relation: {relation!r}"
@@ -1329,8 +1329,24 @@ def _is_native_finite_number(value: Any) -> bool:
 
 
 def _native_expression_v02(
-    expression: Mapping[str, Any], parameter_ids: set[int], where: str
+    expression: Mapping[str, Any],
+    parameter_ids: set[int],
+    where: str,
+    *,
+    local_names: frozenset[str] | None = None,
+    function_ids: frozenset[int] = frozenset(),
+    function_arities: Mapping[int, int] | None = None,
+    observable_ids: frozenset[int] = frozenset(),
+    allow_function_calls: bool = False,
 ) -> None:
+    """Validate one expression of the native BNGIR v0.2 subset.
+
+    ``local_names`` is ``None`` for a model-level expression and holds the
+    arguments of the owning function for a function body. A local or an
+    observable reference only has a meaning inside a function body, so the
+    two contexts accept different expression kinds. A function call is only
+    accepted where a rate law may name a model function.
+    """
     expression = _require_mapping(expression, where)
     kind = expression.get("kind")
     if kind == "number":
@@ -1352,6 +1368,98 @@ def _native_expression_v02(
         ):
             raise ValueError(f"native BNGIR {where} references an unknown parameter id")
         return
+    if kind == "local_ref":
+        if local_names is None:
+            raise ValueError(
+                f"native BNGIR {where} kind 'local_ref' is outside the supported "
+                "expression subset"
+            )
+        _native_exact_keys(expression, {"kind", "name"}, where)
+        name = expression["name"]
+        if not isinstance(name, str) or name not in local_names:
+            raise ValueError(
+                f"native BNGIR {where} references an unknown function argument"
+            )
+        return
+    if kind == "function_ref":
+        if not allow_function_calls:
+            raise ValueError(f"native BNGIR {where} does not support a function call")
+        _native_required_optional_keys(
+            expression,
+            {"kind", "symbol"},
+            {"kind", "symbol", "call", "arguments"},
+            where,
+        )
+        symbol = _require_mapping(expression["symbol"], f"{where}.symbol")
+        _native_exact_keys(symbol, {"kind", "index"}, f"{where}.symbol")
+        index = symbol["index"]
+        if (
+            symbol["kind"] != "function"
+            or isinstance(index, bool)
+            or not isinstance(index, int)
+            or index not in function_ids
+        ):
+            raise ValueError(f"native BNGIR {where} references an unknown function id")
+        call = expression.get("call", False)
+        if not isinstance(call, bool):
+            raise ValueError(f"native BNGIR {where}.call must be boolean")
+        args = expression.get("arguments", [])
+        if not isinstance(args, list):
+            raise ValueError(f"native BNGIR {where}.arguments must be an array")
+        if call and function_arities is not None:
+            if len(args) != function_arities[index]:
+                raise ValueError(
+                    f"native BNGIR {where} calls a function with a different arity"
+                )
+        if not call and args:
+            raise ValueError(f"native BNGIR {where} arguments require a call")
+        for argument_index, argument in enumerate(args):
+            _native_expression_v02(
+                argument,
+                parameter_ids,
+                f"{where}.arguments[{argument_index}]",
+                local_names=local_names,
+                function_ids=function_ids,
+                function_arities=function_arities,
+                observable_ids=observable_ids,
+                allow_function_calls=allow_function_calls,
+            )
+        return
+    if kind == "observable_ref":
+        if local_names is None:
+            raise ValueError(
+                f"native BNGIR {where} kind 'observable_ref' is outside the supported "
+                "expression subset"
+            )
+        _native_required_optional_keys(
+            expression,
+            {"kind", "symbol"},
+            {"kind", "symbol", "call", "arguments"},
+            where,
+        )
+        symbol = _require_mapping(expression["symbol"], f"{where}.symbol")
+        _native_exact_keys(symbol, {"kind", "index"}, f"{where}.symbol")
+        index = symbol["index"]
+        if (
+            symbol["kind"] != "observable"
+            or isinstance(index, bool)
+            or not isinstance(index, int)
+            or index not in observable_ids
+        ):
+            raise ValueError(
+                f"native BNGIR {where} references an unknown observable id"
+            )
+        call = expression.get("call", False)
+        if not isinstance(call, bool):
+            raise ValueError(f"native BNGIR {where}.call must be boolean")
+        args = expression.get("arguments", [])
+        if not isinstance(args, list):
+            raise ValueError(f"native BNGIR {where}.arguments must be an array")
+        if args:
+            raise ValueError(
+                f"native BNGIR {where} does not support a scoped observable"
+            )
+        return
     if kind == "unary":
         _native_exact_keys(expression, {"kind", "operator", "arguments"}, where)
         operator = expression["operator"]
@@ -1360,7 +1468,16 @@ def _native_expression_v02(
         args = expression["arguments"]
         if not isinstance(args, list) or len(args) != 1:
             raise ValueError(f"native BNGIR {where} must have one argument")
-        _native_expression_v02(args[0], parameter_ids, f"{where}.arguments[0]")
+        _native_expression_v02(
+            args[0],
+            parameter_ids,
+            f"{where}.arguments[0]",
+            local_names=local_names,
+            function_ids=function_ids,
+            function_arities=function_arities,
+            observable_ids=observable_ids,
+            allow_function_calls=allow_function_calls,
+        )
         return
     if kind == "binary":
         _native_exact_keys(expression, {"kind", "operator", "arguments"}, where)
@@ -1378,7 +1495,14 @@ def _native_expression_v02(
             raise ValueError(f"native BNGIR {where} must have two arguments")
         for index, argument in enumerate(args):
             _native_expression_v02(
-                argument, parameter_ids, f"{where}.arguments[{index}]"
+                argument,
+                parameter_ids,
+                f"{where}.arguments[{index}]",
+                local_names=local_names,
+                function_ids=function_ids,
+                function_arities=function_arities,
+                observable_ids=observable_ids,
+                allow_function_calls=allow_function_calls,
             )
         return
     raise ValueError(
@@ -1479,7 +1603,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     }
     _native_exact_keys(model, sections, "model")
     for section in (
-        "functions",
         "energy_patterns",
         "barrier_patterns",
         "population_maps",
@@ -1614,17 +1737,139 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             seed["amount"], parameter_ids, f"model.seeds[{index}].amount"
         )
 
+    # Observables are the only model section that the v0.2 native slice
+    # supports alongside seeds and rules.  Each observable term carries a
+    # structured pattern (validated via _native_pattern_v02), an integer
+    # quantity, and an optional count-relation operator understood by
+    # CompiledModel::observablePatternCountMatches.
+    observable_names: set[str] = set()
+    observable_ids: set[int] = set()
     for index, raw in enumerate(model["observables"]):
-        observable = _require_mapping(raw, f"model.observables[{index}]")
-        for term_index, raw_term in enumerate(observable["terms"]):
+        obs = _require_mapping(raw, f"model.observables[{index}]")
+        _native_exact_keys(
+            obs,
+            {"id", "name", "kind", "terms"},
+            f"model.observables[{index}]",
+        )
+        if (
+            isinstance(obs["id"], bool)
+            or not isinstance(obs["id"], int)
+            or obs["id"] != index
+        ):
+            raise ValueError("native BNGIR observable ids must be dense and ordered")
+        observable_ids.add(index)
+        name = obs["name"]
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name)
+            or name in observable_names
+        ):
+            raise ValueError(
+                f"native BNGIR observable name is invalid or duplicated: {name!r}"
+            )
+        if obs["kind"] not in {"molecules", "species"}:
+            raise ValueError(
+                f"native BNGIR model.observables[{index}] has unsupported kind "
+                f"{obs['kind']!r} (only 'molecules' and 'species' are supported)"
+            )
+        terms = obs["terms"]
+        if not isinstance(terms, list) or not terms:
+            raise ValueError(
+                f"native BNGIR model.observables[{index}] must have at least one term"
+            )
+        for term_index, term in enumerate(terms):
             term = _require_mapping(
-                raw_term, f"model.observables[{index}].terms[{term_index}]"
+                term, f"model.observables[{index}].terms[{term_index}]"
+            )
+            _native_required_optional_keys(
+                term,
+                {"pattern", "quantity"},
+                {"pattern", "quantity", "relation"},
+                f"model.observables[{index}].terms[{term_index}]",
             )
             _native_pattern_v02(
                 term["pattern"],
                 f"model.observables[{index}].terms[{term_index}].pattern",
                 molecule_ids,
             )
+            quantity = term["quantity"]
+            if (
+                isinstance(quantity, bool)
+                or not isinstance(quantity, int)
+                or quantity < 0
+            ):
+                raise ValueError(
+                    "native BNGIR observable quantity must be a non-negative integer"
+                )
+            relation = term.get("relation")
+            if relation is not None:
+                if not isinstance(relation, str) or relation not in {
+                    "==",
+                    "!=",
+                    ">",
+                    ">=",
+                    "<",
+                    "<=",
+                }:
+                    raise ValueError(
+                        f"native BNGIR model.observables[{index}].terms[{term_index}] "
+                        f"has unsupported count relation: {relation!r}"
+                    )
+        observable_names.add(name)
+
+    function_ids: set[int] = set()
+    function_names: set[str] = set()
+    function_arities: dict[int, int] = {}
+    function_arguments: list[list[str]] = []
+    if not isinstance(model["functions"], list):
+        raise ValueError("native BNGIR model.functions must be an array")
+    for index, raw in enumerate(model["functions"]):
+        function = _require_mapping(raw, f"model.functions[{index}]")
+        _native_exact_keys(
+            function,
+            {"id", "name", "arguments", "expression"},
+            f"model.functions[{index}]",
+        )
+        if (
+            isinstance(function["id"], bool)
+            or not isinstance(function["id"], int)
+            or function["id"] != index
+        ):
+            raise ValueError("native BNGIR function ids must be dense and ordered")
+        name = function["name"]
+        if not isinstance(name, str) or not name or name in function_names:
+            raise ValueError("native BNGIR function names must be nonempty and unique")
+        if name in parameter_names:
+            raise ValueError(
+                "native BNGIR function names must not collide with parameter names"
+            )
+        arguments = function["arguments"]
+        if not isinstance(arguments, list) or not all(
+            isinstance(argument, str) and argument for argument in arguments
+        ):
+            raise ValueError(
+                f"native BNGIR model.functions[{index}].arguments must be nonempty strings"
+            )
+        if len(set(arguments)) != len(arguments):
+            raise ValueError(
+                f"native BNGIR model.functions[{index}].arguments must be unique"
+            )
+        function_ids.add(index)
+        function_names.add(name)
+        function_arities[index] = len(arguments)
+        function_arguments.append(list(arguments))
+    for index, raw in enumerate(model["functions"]):
+        function = _require_mapping(raw, f"model.functions[{index}]")
+        _native_expression_v02(
+            function["expression"],
+            parameter_ids,
+            f"model.functions[{index}].expression",
+            local_names=frozenset(function_arguments[index]),
+            function_ids=frozenset(function_ids),
+            function_arities=function_arities,
+            observable_ids=frozenset(observable_ids),
+            allow_function_calls=True,
+        )
 
     rule_names: set[str] = set()
     for index, raw in enumerate(model["rules"]):
@@ -1692,8 +1937,13 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         for side in ("reactants", "products"):
             patterns = direction[side]
             if not isinstance(patterns, list) or len(patterns) != 1:
+                # The native slice rebuilds one reactant and one product
+                # pattern. A rule outside that slice is an explicit refusal,
+                # so the message names the boundary the consumer classifies on.
+                side_name = "reactant" if side == "reactants" else "product"
                 raise ValueError(
-                    f"native BNGIR model.rules[{index}].{side} requires one pattern"
+                    "native BNGIR does not support a rule direction without "
+                    f"exactly one {side_name} pattern"
                 )
             _native_pattern_v02(
                 patterns[0], f"model.rules[{index}].{side}[0]", molecule_ids
@@ -1750,6 +2000,9 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             rate["expression"],
             parameter_ids,
             f"model.rules[{index}].forward.rate.expression",
+            function_ids=frozenset(function_ids),
+            function_arities=function_arities,
+            allow_function_calls=True,
         )
         mutations = direction["mutations"]
         if not isinstance(mutations, list):
@@ -1801,6 +2054,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     expected_used = sorted(
         ["structured_patterns", "structured_expressions"]
         + (["compartments"] if model.get("compartments") else [])
+        + (["functions"] if model["functions"] else [])
         + (["observables"] if model["observables"] else [])
         + (["rules"] if model["rules"] else [])
         + (["seeds"] if model["seeds"] else [])
@@ -2304,6 +2558,12 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
         _validate_native_v02(root)
         model_data = _require_mapping(root["model"], "model")
         native_data = dict(model_data)
+        # The observables stay in the C++ input. A model function may name an
+        # observable, and the native importer resolves that name against the
+        # model's observables while it rebuilds the function body, so the
+        # observable list has to reach it. The wire form states a kind and
+        # structured terms; the native importer takes a type and the rendered
+        # pattern of each term.
         native_data["observables"] = [
             {
                 "name": observable["name"],
@@ -2316,7 +2576,8 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
             }
             for observable in model_data["observables"]
         ]
-        result = BioNetGenModel(_cpp._model_from_bngir_v02(native_data))
+        result_cpp = _cpp._model_from_bngir_v02(native_data)
+        result = BioNetGenModel(result_cpp)
         rebuilt = _parse_document(to_bngir(result, version=STRUCTURAL_VERSION))
         if rebuilt != root:
             raise ValueError(
