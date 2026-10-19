@@ -2574,6 +2574,78 @@ end reaction rules
     CHECK(xml->getReaction(0)->get_a() == Catch::Approx(80.0));
     delete xml;
 }
+
+TEST_CASE("NFsim XML preserves parameter-backed compartment sizes on update") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    kp 2
+    Vc 1
+end parameters
+begin compartments
+    cell 3 Vc
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin reaction rules
+    0 -> A()@cell kp
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const auto xmlText = bng::io::XmlWriter::write(*model);
+    CHECK(xmlText.find("sizeParameter=\"Vc\"") != std::string::npos);
+
+    int traversalLimit = 0;
+    auto* system = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(2.0));
+    system->setParameter("Vc", 4.0);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getCompartment("cell")->getSize() == Catch::Approx(4.0));
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(8.0));
+    delete system;
+}
+
+TEST_CASE("NFsim zero-order complex synthesis uses its lowest-dimensional compartment") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin compartments
+    PM 2 2
+    CP 3 3 PM
+end compartments
+begin molecule types
+    V(t)
+    S(y)
+end molecule types
+begin reaction rules
+    0 -> V(t!1)@CP.S(y!1)@PM k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete direct;
+
+    traversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getAllReactions().size() == 1);
+    xml->prepareForSimulation();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(2.0));
+    delete xml;
+}
 TEST_CASE("NFsim AST adapter applies reactant volume conversion for bare bimolecular rates") {
     // Source law: a dimerization extent k*A^2/V with species in items gives the
     // count hazard k*n*(n-1)/V (self-pair proposals are rejected as null
@@ -2585,9 +2657,10 @@ TEST_CASE("NFsim AST adapter applies reactant volume conversion for bare bimolec
     auto model = bng::parser::parseModel(R"(
 begin parameters
     k 0.8
+    Vc 3
 end parameters
 begin compartments
-    cell 3 3
+    cell 3 Vc
 end compartments
 begin molecule types
     A()
@@ -2611,6 +2684,9 @@ end reaction rules
     REQUIRE(direct->getAllReactions().size() == 1);
     direct->prepareForSimulation();
     CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    direct->setParameter("Vc", 6.0);
+    direct->updateSystemWithNewParameters();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
     delete direct;
 
     int xmlTraversalLimit = 0;
@@ -2620,6 +2696,9 @@ end reaction rules
     REQUIRE(xml->getAllReactions().size() == 1);
     xml->prepareForSimulation();
     CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected));
+    xml->setParameter("Vc", 6.0);
+    xml->updateSystemWithNewParameters();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
     delete xml;
 }
 
@@ -2656,6 +2735,91 @@ end reaction rules
     direct->prepareForSimulation();
     CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
     delete direct;
+}
+
+TEST_CASE("NFsim refreshes numeric bare bimolecular rates after volume changes") {
+    // A literal rate must still be rescaled exactly once when its
+    // parameter-backed compartment changes; the conversion is not allowed to
+    // compound across updates.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    Vc 3
+end parameters
+begin compartments
+    cell 3 Vc
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:D() 0
+end seed species
+begin reaction rules
+    @cell:A() + @cell:A() -> @cell:D() 0.8
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const double expected = 0.8 * 20.0 * 20.0 / 2.0 / 3.0;
+
+    int directTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, directTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    direct->setParameter("Vc", 6.0);
+    direct->updateSystemWithNewParameters();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
+    direct->setParameter("Vc", 3.0);
+    direct->updateSystemWithNewParameters();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete direct;
+
+    int xmlTraversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, xmlTraversalLimit);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getAllReactions().size() == 1);
+    xml->prepareForSimulation();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected));
+    xml->setParameter("Vc", 6.0);
+    xml->updateSystemWithNewParameters();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
+    delete xml;
+}
+
+TEST_CASE("NFsim refuses wildcard reactant volumes it cannot convert") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 0.8
+end parameters
+begin compartments
+    cell 3 3
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin reaction rules
+    @cell:A() + A() -> @cell:D() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    CHECK(direct == nullptr);
+    delete direct;
+
+    traversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    CHECK(xml == nullptr);
+    delete xml;
 }
 
 TEST_CASE("NFsim AST adapter converts static zero-order physical rates exactly once") {

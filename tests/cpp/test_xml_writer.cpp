@@ -415,17 +415,20 @@ TEST_CASE("reactant unit conversion helper mirrors NetWriter") {
           Catch::Approx(1.0 / 5.0));
 }
 
-TEST_CASE("XmlWriter bakes reactant volume conversion into bare rates") {
-    // NFsim applies its own volume conversion only to zero-order synthesis, so
-    // a bare reactant-bearing rate serialized into BNG3 XML must already carry
-    // the Rxn.pm 1/product(sizes) factor. Volume 1 must be left untouched.
+TEST_CASE("XmlWriter preserves reactant volume provenance for runtime conversion") {
+    // NFsim applies the Rxn.pm 1/product(sizes) factor when it loads the rule,
+    // using the current compartment sizes. The writer must therefore keep the
+    // source rate expression and the compartment's size parameter instead of
+    // baking a load-time numeric factor, so a later parameter update can
+    // rescale the rate exactly once.
     const std::string xml = writeXml(R"(
 begin model
 begin parameters
     k 0.8
+    Vc 3
 end parameters
 begin compartments
-    cell 3 3
+    cell 3 Vc
 end compartments
 begin molecule types
     A()
@@ -440,8 +443,11 @@ end reaction rules
 end model
 )");
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<RateConstant value=\"0.26666666666666666\"/>"));
-    CHECK(xml.find("<RateConstant value=\"0.80000000000000004\"/>") == std::string::npos);
+        "sizeParameter=\"Vc\""));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<RateConstant value=\"k\"/>"));
+    CHECK(xml.find("<RateConstant value=\"0.26666666666666666\"/>") ==
+          std::string::npos);
 
     const std::string unitVolumeXml = writeXml(R"(
 begin model
@@ -464,7 +470,7 @@ end reaction rules
 end model
 )");
     CHECK_THAT(unitVolumeXml, Catch::Matchers::ContainsSubstring(
-        "<RateConstant value=\"0.80000000000000004\"/>"));
+        "<RateConstant value=\"k\"/>"));
 }
 
 TEST_CASE("XmlWriter parses single-colon prefix compartments in observables and rules") {

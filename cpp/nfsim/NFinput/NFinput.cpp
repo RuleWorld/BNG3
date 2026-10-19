@@ -561,6 +561,19 @@ System * NFinput::initializeFromXML(
 			return NULL;
 		}
 
+		/* A sizeParameter written by BNG3 XML must name a real System
+		 * parameter; otherwise later updates would silently leave the volume
+		 * stale.  Parameters are read after compartments, so validate here. */
+		for (const auto& entry : s->getCompartments()) {
+			const string& tracked = entry.second->getSizeParameterName();
+			if (!tracked.empty() && !s->hasParameter(tracked)) {
+				cerr << "Error: compartment '" << entry.first
+					 << "' refers to unknown size parameter '" << tracked << "'." << endl;
+				delete s;
+				return NULL;
+			}
+		}
+
 		if(!verbose) cout<<"-";
 		else cout<<"\n\tReading list of MoleculeTypes..."<<endl;
 		map<string,int> allowedStates;
@@ -689,6 +702,10 @@ bool NFinput::initCompartments(TiXmlElement *pListOfCompartments, System *s, boo
 
 		Compartment *c = new Compartment(id, spatialDimensions, size);
 		s->addCompartment(c);
+		if (pCompElement->Attribute("sizeParameter") &&
+			!s->setCompartmentSizeParameter(id, pCompElement->Attribute("sizeParameter"))) {
+			return false;
+		}
 
 		// Record outside compartment for second pass
 		if (pCompElement->Attribute("outside")) {
@@ -2132,6 +2149,7 @@ static bool initReactionRulesBody(
 				map <string, component> comps;
 				// points to TemplateMolecules for Reactants
 				vector <TemplateMolecule *> templates;
+				vector <Compartment *> reactantCompartments;
 				// map reactant ids to positional indexes
 				map <string, int> reactantIndexMap;
 				// points to TemplateMolecules for AddMoleculeTransforms
@@ -2178,6 +2196,22 @@ static bool initReactionRulesBody(
 						 * defaults molecules lacking Molecule/@compartment. */
 						Compartment *patternCompartment = NULL;
 						if (!resolvePatternDefaultCompartment(pReactant, s, string(reactantName), "ReactantPattern", patternCompartment)) return false;
+						Compartment *reactantCompartment = patternCompartment;
+						if (reactantCompartment == NULL) {
+							for (Element *molecule = pListOfMols->FirstChildElement("Molecule"); molecule;
+								 molecule = molecule->NextSiblingElement("Molecule")) {
+								if (!molecule->Attribute("compartment")) continue;
+								Compartment *candidate = s->getCompartment(molecule->Attribute("compartment"));
+								if (candidate == NULL) {
+									cerr << "Error: reaction " << rxnName << " refers to unknown reactant compartment '"
+										 << molecule->Attribute("compartment") << "'." << endl;
+									return false;
+								}
+								if (reactantCompartment == NULL || candidate->getSpatialDimensions() < reactantCompartment->getSpatialDimensions())
+									reactantCompartment = candidate;
+							}
+						}
+						reactantCompartments.push_back(reactantCompartment);
 						TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, reactantName, reactants, comps, symMap, verbose, suggestedTraversalLimit, patternCompartment);
 						if(tm==NULL) return false;
 						templates.push_back(tm);
@@ -3000,25 +3034,21 @@ static bool initReactionRulesBody(
 				bool totalRateFlag=false;
 
 				double volumeConversion = 1.0;
+				bool bareElementaryRate = false;
 				Compartment *zeroOrderProductComp = NULL;
 				if (ts->getNreactants() == 0) {
 					Compartment *productComp = NULL;
-					bool allSameCompartment = true;
 					for (size_t i = 0; i < productCompartments.size(); i++) {
 						Compartment *c = productCompartments[i];
 						if (c != NULL) {
-							if (productComp == NULL) {
+							if (productComp == NULL ||
+								c->getSpatialDimensions() < productComp->getSpatialDimensions()) {
 								productComp = c;
-							} else if (productComp != c) {
-								allSameCompartment = false;
-								cerr << "Warning: zero-order synthesis (" << rxnName
-								     << ") with products in different compartments. Volume scaling may be incorrect." << endl;
-								break;
 							}
 						}
 					}
 
-					if (productComp != NULL && allSameCompartment) {
+					if (productComp != NULL) {
 						volumeConversion = productComp->getSize();
 						double npqu = s->getNumberPerQuantityUnit();
 						if (npqu > 0.0) {
@@ -3058,6 +3088,7 @@ static bool initReactionRulesBody(
 				else {
 					string rateLawName = pRateLaw->Attribute("id");
 					string rateLawType = pRateLaw->Attribute("type");
+					bareElementaryRate = rateLawType == "Ele";
 
 					if(verbose) cout<<"\t\t\tRate Law for Reaction is: "<<rateLawType<<endl;
 
@@ -3846,6 +3877,44 @@ static bool initReactionRulesBody(
 								if (r->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
 									r->setBaseRate(r->getBaseRate() * volumeConversion, r->getBaseRateParameterName());
 								}
+							}
+						}
+						else if (bareElementaryRate && ts->getNreactants() > 1 && s->getNumCompartments() > 0) {
+							const bool hasWildcardCompartment =
+								reactantCompartments.size() != static_cast<size_t>(ts->getNreactants()) ||
+								std::find(reactantCompartments.begin(), reactantCompartments.end(), static_cast<Compartment *>(NULL)) != reactantCompartments.end();
+							if (hasWildcardCompartment && !s->hasStaticUnitSizedCompartments()) {
+								cerr << "Error: reaction " << rxnName << " has wildcard reactant compartments; "
+									 << "NFsim requires static unit-sized compartments to preserve its volume-dependent rate conversion." << endl;
+								return false;
+							}
+							if (!hasWildcardCompartment) {
+								vector<Compartment *> surfaces, volumes, converted;
+								for (Compartment *compartment : reactantCompartments) {
+									if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
+									else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
+									else {
+										cerr << "Error: reaction " << rxnName << " uses an unsupported reactant compartment dimension." << endl;
+										return false;
+									}
+								}
+								if (!surfaces.empty()) {
+									converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
+									converted.insert(converted.end(), volumes.begin(), volumes.end());
+								} else if (!volumes.empty()) {
+									converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
+								}
+								for (Compartment *compartment : converted) {
+									double size = compartment->getSize();
+									double npqu = s->getNumberPerQuantityUnit();
+									if (npqu > 0.0) size *= npqu;
+									if (!std::isfinite(size) || size <= 0.0) {
+										cerr << "Error: reaction " << rxnName
+											 << " uses a non-positive or non-finite reactant compartment volume." << endl;
+										return false;
+									}
+								}
+								r->setReactantVolumeCompartments(converted);
 							}
 						}
 

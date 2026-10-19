@@ -195,6 +195,12 @@ bool addCompartmentsFromAst(const bng::ast::Model& model, System* s, bool verbos
         auto* nfCompartment = new Compartment(
             name, compartment.getDimension(), compartment.getVolume());
         s->addCompartment(nfCompartment);
+        if (const auto& expression = compartment.getVolumeExpression();
+            expression.has_value() &&
+            expression->kind() == bng::ast::ExpressionKind::Identifier &&
+            model.getParameters().contains(expression->name())) {
+            s->setCompartmentSizeParameter(name, expression->name());
+        }
         if (!compartment.getParent().empty()) {
             parentByChild.emplace(name, compartment.getParent());
         }
@@ -5852,7 +5858,6 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
         // scaled once before they enter the live reaction list.
         if (reactantRoots.empty()) {
             Compartment* productCompartment = nullptr;
-            bool allSameCompartment = true;
             for (const auto& product : collectRuleGraphMolecules(productPatterns)) {
                 const auto& molecule = product.molecule;
                 bool declaredProductType = false;
@@ -5878,15 +5883,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     cleanupDirectProducts();
                     return false;
                 }
-                if (productCompartment == nullptr) {
+                if (productCompartment == nullptr ||
+                    compartment->getSpatialDimensions() <
+                        productCompartment->getSpatialDimensions()) {
                     productCompartment = compartment;
-                } else if (productCompartment != compartment) {
-                    allSameCompartment = false;
-                    std::cerr << "[nfsim/ast] warning: zero-order synthesis ('"
-                              << rule.getRuleName()
-                              << "') has products in different compartments; "
-                                 "volume scaling may be incorrect\n";
-                    break;
                 }
             }
 
@@ -5894,13 +5894,90 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             // rescales (ruleworld/nfsim#105).  applyZeroOrderVolumeScaling()
             // keeps the name and links the product compartment for later
             // refreshes, including functional reactions.
-            if (productCompartment != nullptr && allSameCompartment) {
+            if (productCompartment != nullptr) {
                 reaction->applyZeroOrderVolumeScaling(productCompartment);
             } else {
                 // No single product compartment: keep the default factor of
                 // 1.0 and leave the base rate (and its parameter name)
                 // untouched so later updates still refresh it.
                 reaction->volumeConversionFactor = 1.0;
+            }
+        } else if (!typedRate.unit.has_value() &&
+                   reaction->getRxnType() == ReactionClass::BASIC_RXN &&
+                   !model.getCompartments().empty()) {
+            std::vector<Compartment*> reactantCompartments;
+            bool hasWildcardCompartment = false;
+            const auto& reactantPatterns = rule.getReactantPatterns();
+            for (const auto& pattern : reactantPatterns) {
+                Compartment* selected = nullptr;
+                for (const auto& molecule : collectGraphMolecules(pattern.getGraph())) {
+                    const std::string name = graphMoleculeCompartment(pattern, molecule);
+                    if (name.empty()) continue;
+                    Compartment* candidate = nullptr;
+                    if (!resolveCompartment(s, name, candidate, diagnostic)) {
+                        std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                                  << "': " << diagnostic << "\n";
+                        delete reaction;
+                        delete transformationSet;
+                        cleanupDirectProducts();
+                        return false;
+                    }
+                    if (selected == nullptr || candidate->getSpatialDimensions() < selected->getSpatialDimensions())
+                        selected = candidate;
+                }
+                if (selected == nullptr) hasWildcardCompartment = true;
+                reactantCompartments.push_back(selected);
+            }
+
+            bool staticUnitVolumes = s->getNumberPerQuantityUnit() <= 0.0 ||
+                                     s->getNumberPerQuantityUnit() == 1.0;
+            for (const auto& compartment : model.getCompartments()) {
+                if (compartment.getVolume() != 1.0 || compartment.isVolumeTimeDependent() ||
+                    compartment.getVolumeExpression().has_value())
+                    staticUnitVolumes = false;
+            }
+            if (hasWildcardCompartment && !staticUnitVolumes) {
+                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                          << "': wildcard reactant compartments require statically unit-sized compartments\n";
+                delete reaction;
+                delete transformationSet;
+                cleanupDirectProducts();
+                return false;
+            }
+            if (!hasWildcardCompartment) {
+                std::vector<Compartment*> surfaces, volumes, converted;
+                for (Compartment* compartment : reactantCompartments) {
+                    if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
+                    else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
+                    else {
+                        std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                                  << "': reactant compartment uses an unsupported dimension\n";
+                        delete reaction;
+                        delete transformationSet;
+                        cleanupDirectProducts();
+                        return false;
+                    }
+                }
+                if (!surfaces.empty()) {
+                    converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
+                    converted.insert(converted.end(), volumes.begin(), volumes.end());
+                } else if (!volumes.empty()) {
+                    converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
+                }
+                for (Compartment* compartment : converted) {
+                    double size = compartment->getSize();
+                    if (s->getNumberPerQuantityUnit() > 0.0)
+                        size *= s->getNumberPerQuantityUnit();
+                    if (!std::isfinite(size) || size <= 0.0) {
+                        std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                                  << "': reactant compartment has a non-positive or non-finite volume\n";
+                        delete reaction;
+                        delete transformationSet;
+                        cleanupDirectProducts();
+                        return false;
+                    }
+                }
+                reaction->setReactantVolumeCompartments(converted);
             }
         }
 

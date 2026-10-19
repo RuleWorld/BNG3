@@ -629,6 +629,7 @@ namespace NFcore
 			Compartment * getCompartment(string id) const;
 			const map<string, Compartment*>& getCompartments() const { return compartments; }
 			void addCompartment(Compartment* comp);
+			bool hasStaticUnitSizedCompartments() const;
 			int getNumCompartments() const { return compartments.size(); }
 			Compartment * getDefaultCompartment() const;  // For backwards compatibility
 			/* Explicit rescale path for parameter-backed volumes
@@ -639,6 +640,9 @@ namespace NFcore
 					const string& parameterName);
 			bool setCompartmentSize(const string& compartmentId, double size);
 			void updateCompartmentSizesFromParameters();
+			bool hasParameter(const string& name) const {
+				return paramMap.find(name) != paramMap.end();
+			}
 
 			/* Energy-based BNG (eBNGL) support */
 			void setEnergyFunction(EnergyFunction *ef) { energyFunction = ef; }
@@ -2483,6 +2487,8 @@ namespace NFcore
 			 * the factor, which update_a() applies. */
 			void applyZeroOrderVolumeScaling(Compartment* productCompartment);
 			void refreshZeroOrderVolumeFactor();
+			void setReactantVolumeCompartments(const vector<Compartment*>& compartments);
+			void refreshReactantVolumeFactor();
 			bool usesZeroOrderVolumeScaling() const { return zeroOrderVolumeScaling; }
 			Compartment* getZeroOrderCompartment() const { return zeroOrderCompartment; }
 
@@ -2732,6 +2738,11 @@ namespace NFcore
 			bool usesBaseRateParameterConversion = false;
 			Compartment* zeroOrderCompartment = nullptr;
 			bool zeroOrderVolumeScaling = false;
+			double zeroOrderUnscaledBaseRate = 0.0;
+			double reactantVolumeConversionFactor = 1.0;
+			double reactantUnscaledBaseRate = 0.0;
+			bool reactantVolumeScaling = false;
+			vector<Compartment*> reactantVolumeCompartments;
 			double a;
 			unsigned int fireCounter;
 			unsigned long long deferredMembershipUpdateGeneration = 0;
