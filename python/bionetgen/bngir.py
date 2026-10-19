@@ -1614,17 +1614,78 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             seed["amount"], parameter_ids, f"model.seeds[{index}].amount"
         )
 
+    # Observables are the only model section that the v0.2 native slice
+    # supports alongside seeds and rules.  Each observable term carries a
+    # structured pattern (validated via _native_pattern_v02), an integer
+    # quantity, and an optional count-relation operator understood by
+    # CompiledModel::observablePatternCountMatches.
+    observable_names: set[str] = set()
     for index, raw in enumerate(model["observables"]):
-        observable = _require_mapping(raw, f"model.observables[{index}]")
-        for term_index, raw_term in enumerate(observable["terms"]):
+        obs = _require_mapping(raw, f"model.observables[{index}]")
+        _native_exact_keys(
+            obs, {"id", "name", "kind", "terms"},
+            f"model.observables[{index}]",
+        )
+        if (
+            isinstance(obs["id"], bool)
+            or not isinstance(obs["id"], int)
+            or obs["id"] != index
+        ):
+            raise ValueError("native BNGIR observable ids must be dense and ordered")
+        name = obs["name"]
+        if (
+            not isinstance(name, str)
+            or not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name)
+            or name in observable_names
+        ):
+            raise ValueError(
+                f"native BNGIR observable name is invalid or duplicated: {name!r}"
+            )
+        if obs["kind"] not in {"molecules", "species"}:
+            raise ValueError(
+                f"native BNGIR model.observables[{index}] has unsupported kind "
+                f"{obs['kind']!r} (only 'molecules' and 'species' are supported)"
+            )
+        terms = obs["terms"]
+        if not isinstance(terms, list) or not terms:
+            raise ValueError(
+                f"native BNGIR model.observables[{index}] must have at least one term"
+            )
+        for term_index, term in enumerate(terms):
             term = _require_mapping(
-                raw_term, f"model.observables[{index}].terms[{term_index}]"
+                term, f"model.observables[{index}].terms[{term_index}]"
+            )
+            _native_required_optional_keys(
+                term,
+                {"pattern", "quantity"},
+                {"pattern", "quantity", "relation"},
+                f"model.observables[{index}].terms[{term_index}]",
             )
             _native_pattern_v02(
                 term["pattern"],
                 f"model.observables[{index}].terms[{term_index}].pattern",
                 molecule_ids,
             )
+            quantity = term["quantity"]
+            if (
+                isinstance(quantity, bool)
+                or not isinstance(quantity, int)
+                or quantity < 0
+            ):
+                raise ValueError(
+                    "native BNGIR observable quantity must be a non-negative integer"
+                )
+            relation = term.get("relation")
+            if relation is not None:
+                if (
+                    not isinstance(relation, str)
+                    or relation not in {"==", ">", ">=", "<", "<="}
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.observables[{index}].terms[{term_index}] "
+                        f"has unsupported count relation: {relation!r}"
+                    )
+        observable_names.add(name)
 
     rule_names: set[str] = set()
     for index, raw in enumerate(model["rules"]):

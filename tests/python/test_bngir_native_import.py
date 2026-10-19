@@ -1343,3 +1343,77 @@ def test_native_molecule_id_reordering_preserves_downstream_rhs(
     assert dict(zip(network.species_names, derivative)) == pytest.approx(
         {"A()": -10.0, "B()": 10.0}
     )
+
+
+OBSERVABLES_SOURCE = SOURCE.replace(
+    "begin seed species",
+    "begin observables\n"
+    "    Molecules a_count A()\n"
+    "    Species b_count B()\n"
+    "end observables\n"
+ "begin seed species",
+)
+
+
+def test_native_import_reconstructs_observables():
+    document = _document(OBSERVABLES_SOURCE)
+    assert "observables" in document["features"]["used"]
+    restored = bionetgen.from_bngir(document, native=True)
+    assert [(item.name, item.type) for item in restored.observables] == [
+        ("a_count", "Molecules"),
+        ("b_count", "Species"),
+    ]
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+@pytest.mark.parametrize("relation", [">", ">=", "<", "<=", "=="])
+def test_native_import_reconstructs_observable_relations(relation):
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = relation
+    document["model"]["observables"][0]["terms"][0]["quantity"] = 3
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+def test_native_import_rejects_unknown_observable_kind():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["kind"] = "unknown"
+    with pytest.raises(ValueError, match="unsupported.*kind"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_invalid_observable_relation():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = "!="
+    with pytest.raises(ValueError, match="unsupported count relation"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_non_dense_observable_ids():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["id"] = 5
+    with pytest.raises(ValueError, match="observable ids must be dense"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_duplicate_observable_names():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["name"] = "a_count"
+    with pytest.raises(ValueError, match="duplicate"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_empty_observable_terms():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"] = []
+    with pytest.raises(ValueError, match="at least one term"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_unsupported_observable_keys():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["future_semantics"] = True
+    with pytest.raises(ValueError, match="unsupported"):
+        bionetgen.from_bngir(document, native=True)
