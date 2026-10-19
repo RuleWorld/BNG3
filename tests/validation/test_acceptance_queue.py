@@ -367,7 +367,7 @@ def test_packet_identity_contract_accepts_subject_and_rejects_stale_assessment()
 def test_known_finding_selects_family_without_claiming_obligation_coverage():
     rows = [
         dict(
-            id="dimerization-v3-n20-r1-a0:nf-independent:gdat.values",
+            id="dimerization-v3-n20-r1-a0:nf-marginals:embedded.source-cdf",
             status="FAIL",
             related_issues=[151],
         )
@@ -377,3 +377,14 @@ def test_known_finding_selects_family_without_claiming_obligation_coverage():
     assert plans[0]["obligation_ids"] == []
     assert plans[0]["known_finding_ids"] == [rows[0]["id"]]
     assert plans[0]["confirmed_failures"] == 0
+
+
+def test_undeclared_finding_does_not_select_an_unexecutable_check():
+    rows = [
+        dict(
+            id="dimerization-v3-n20-r1-a0:retired-check",
+            status="FAIL",
+            related_issues=[151],
+        )
+    ]
+    assert q.select_campaign([obligation()], findings=rows, max_families=1) == []
