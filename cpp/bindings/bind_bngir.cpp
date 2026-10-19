@@ -12,6 +12,7 @@
 #include <pybind11/pybind11.h>
 
 #include "ast/Expression.hpp"
+#include "ast/Function.hpp"
 #include "ast/Model.hpp"
 #include "ast/MoleculeType.hpp"
 #include "ast/Observable.hpp"
@@ -19,6 +20,7 @@
 #include "ast/ReactionRule.hpp"
 #include "ast/SeedSpecies.hpp"
 #include "ast/SpeciesGraph.hpp"
+#include "compile/CompiledRateLaw.hpp"
 #include "core/BNGcore.hpp"
 
 namespace py = pybind11;
@@ -107,14 +109,19 @@ void requireParameterKeys(const py::dict& parameter) {
     }
 }
 
-void requireParameterReferenceSymbol(const py::dict& symbol) {
+// Read a wire symbol and require it to name the expected kind. The index is
+// returned so the caller can resolve the name it points at.
+std::size_t requireSymbolIndex(const py::dict& symbol,
+                                const std::string& where,
+                                const std::string& kind,
+                                const std::string& indexWhere) {
     static const std::vector<std::string> keys = {"kind", "index"};
-    requireObjectKeys(symbol, keys, keys, "parameter reference symbol");
+    requireObjectKeys(symbol, keys, keys, where);
     if (!py::isinstance<py::str>(symbol["kind"]) ||
-        py::cast<std::string>(symbol["kind"]) != "parameter") {
-        throw std::runtime_error(
-            "native BNGIR parameter reference symbol kind must be parameter");
+        py::cast<std::string>(symbol["kind"]) != kind) {
+        throw std::runtime_error("native BNGIR " + where + " kind must be " + kind);
     }
+    return indexFromBngir(symbol["index"], indexWhere);
 }
 
 void requireExpressionProperties(const py::dict& expression,
@@ -124,8 +131,8 @@ void requireExpressionProperties(const py::dict& expression,
 
 void rejectUnsupportedModelSections(const py::dict& document) {
     static const std::vector<std::string> sections = {
-        "functions", "energy_patterns",
-        "barrier_patterns", "population_maps", "population_types",
+        "energy_patterns", "barrier_patterns", "population_maps",
+        "population_types",
     };
     for (const auto& section : sections) {
         const py::str key(section);
@@ -138,8 +145,31 @@ void rejectUnsupportedModelSections(const py::dict& document) {
     }
 }
 
-Expression expressionFromBngir(const py::dict& value,
-                               const std::vector<std::string>& parameterNames) {
+// The names a wire expression can point at. The compiler resolves a bare name
+// to a parameter, an observable or a function in that order, so the importer
+// has to know every name in the model to rebuild a reference faithfully.
+struct BngirNames {
+    std::vector<std::string> parameterNames;
+    std::vector<std::string> functionNames;
+    std::vector<std::size_t> functionArities;
+    std::vector<std::string> observableNames;
+};
+
+// The scope an expression is rebuilt in. A model-level expression has no
+// arguments; a function body is rebuilt with the arguments of the function
+// that owns it, because a local reference is only meaningful there.
+struct BngirScope {
+    const BngirNames* names = nullptr;
+    std::vector<std::string> localNames;
+    bool functionBody = false;
+};
+
+bool containsName(const std::vector<std::string>& names, const std::string& name) {
+    return std::find(names.begin(), names.end(), name) != names.end();
+}
+
+Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
+    const auto& names = *scope.names;
     const auto kind = py::cast<std::string>(value["kind"]);
     if (kind == "number") {
         requireExpressionProperties(value, {"kind", "value"});
@@ -149,12 +179,124 @@ Expression expressionFromBngir(const py::dict& value,
     if (kind == "parameter_ref") {
         requireExpressionProperties(value, {"kind", "symbol"});
         const auto symbol = py::cast<py::dict>(value["symbol"]);
-        requireParameterReferenceSymbol(symbol);
-        const auto index = indexFromBngir(symbol["index"], "parameter reference");
-        if (index >= parameterNames.size()) {
+        const auto index = requireSymbolIndex(
+            symbol, "parameter reference symbol", "parameter", "parameter reference");
+        if (index >= names.parameterNames.size()) {
             throw std::runtime_error("native BNGIR parameter reference is out of range");
         }
-        return Expression::identifier(parameterNames[index]);
+        const auto& name = names.parameterNames[index];
+        // The compiler resolves an argument before a parameter, so a parameter
+        // that shares a name with an argument is unreachable in the body.
+        if (containsName(scope.localNames, name)) {
+            throw std::runtime_error(
+                "native BNGIR function parameter reference is shadowed by an argument");
+        }
+        return Expression::identifier(name);
+    }
+    if (kind == "local_ref") {
+        requireExpressionProperties(value, {"kind", "name"});
+        if (!scope.functionBody) {
+            throw std::runtime_error(
+                "native BNGIR local reference is only supported inside a function body");
+        }
+        if (!py::isinstance<py::str>(value["name"])) {
+            throw std::runtime_error(
+                "native BNGIR local reference name must be a string");
+        }
+        const auto name = py::cast<std::string>(value["name"]);
+        if (!containsName(scope.localNames, name)) {
+            throw std::runtime_error(
+                "native BNGIR local reference is not a function argument");
+        }
+        return Expression::identifier(name);
+    }
+    if (kind == "function_ref") {
+        requireExpressionProperties(value, {"kind", "symbol", "call", "arguments"});
+        const auto symbol = py::cast<py::dict>(value["symbol"]);
+        const auto index = requireSymbolIndex(
+            symbol, "function reference symbol", "function", "function reference");
+        if (index >= names.functionNames.size()) {
+            throw std::runtime_error("native BNGIR function reference is out of range");
+        }
+        const auto& name = names.functionNames[index];
+        bool isCall = false;
+        if (value.contains(py::str("call"))) {
+            const auto call = value["call"];
+            if (!PyBool_Check(call.ptr())) {
+                throw std::runtime_error(
+                    "native BNGIR function reference call must be boolean");
+            }
+            isCall = py::cast<bool>(call);
+        }
+        std::vector<Expression> arguments;
+        if (value.contains(py::str("arguments"))) {
+            const auto raw = py::cast<py::list>(value["arguments"]);
+            arguments.reserve(raw.size());
+            for (const auto& item : raw) {
+                arguments.push_back(
+                    expressionFromBngir(py::cast<py::dict>(item), scope));
+            }
+        }
+        if (!isCall) {
+            if (!arguments.empty()) {
+                throw std::runtime_error(
+                    "native BNGIR function reference arguments require a call");
+            }
+            // A bare name reaches the function only when no parameter, no
+            // observable and no argument answers to it first.
+            if (containsName(names.parameterNames, name) ||
+                containsName(names.observableNames, name) ||
+                containsName(scope.localNames, name)) {
+                throw std::runtime_error(
+                    "native BNGIR function reference is shadowed by another symbol");
+            }
+            return Expression::identifier(name);
+        }
+        if (arguments.size() != names.functionArities[index]) {
+            throw std::runtime_error(
+                "native BNGIR function call arity does not match the declaration");
+        }
+        return Expression::function(name, std::move(arguments));
+    }
+    if (kind == "observable_ref") {
+        requireExpressionProperties(value, {"kind", "symbol", "call", "arguments"});
+        const auto symbol = py::cast<py::dict>(value["symbol"]);
+        const auto index = requireSymbolIndex(
+            symbol, "observable reference symbol", "observable",
+            "observable reference");
+        if (index >= names.observableNames.size()) {
+            throw std::runtime_error("native BNGIR observable reference is out of range");
+        }
+        if (!scope.functionBody) {
+            throw std::runtime_error(
+                "native BNGIR observable reference is only supported inside a function body");
+        }
+        if (value.contains(py::str("arguments")) &&
+            !py::cast<py::list>(value["arguments"]).empty()) {
+            throw std::runtime_error(
+                "native BNGIR scoped observable reference is not supported");
+        }
+        const auto& name = names.observableNames[index];
+        bool isCall = false;
+        if (value.contains(py::str("call"))) {
+            const auto call = value["call"];
+            if (!PyBool_Check(call.ptr())) {
+                throw std::runtime_error(
+                    "native BNGIR observable reference call must be boolean");
+            }
+            isCall = py::cast<bool>(call);
+        }
+        if (isCall) {
+            return Expression::observableRef(name, {});
+        }
+        // A bare observable name is an identifier, and an identifier reaches
+        // an argument or a parameter before it reaches the observable.
+        if (containsName(scope.localNames, name) ||
+            containsName(names.parameterNames, name)) {
+            throw std::runtime_error(
+                "native BNGIR function observable reference is shadowed by another symbol");
+        }
+        return Expression::identifier(name);
     }
 
     if (kind == "unary") {
@@ -165,8 +307,8 @@ Expression expressionFromBngir(const py::dict& value,
                 "native BNGIR unary expression must have one argument");
         }
         const auto op = py::cast<std::string>(value["operator"]);
-        if (op == "plus") return Expression::unary("+", expressionFromBngir(arguments[0], parameterNames));
-        if (op == "negate") return Expression::unary("-", expressionFromBngir(arguments[0], parameterNames));
+        if (op == "plus") return Expression::unary("+", expressionFromBngir(arguments[0], scope));
+        if (op == "negate") return Expression::unary("-", expressionFromBngir(arguments[0], scope));
         throw std::runtime_error("unsupported native BNGIR unary operator");
     }
     if (kind == "binary") {
@@ -187,8 +329,8 @@ Expression expressionFromBngir(const py::dict& value,
         }
         return Expression::binary(
             found->second,
-            expressionFromBngir(arguments[0], parameterNames),
-            expressionFromBngir(arguments[1], parameterNames));
+            expressionFromBngir(arguments[0], scope),
+            expressionFromBngir(arguments[1], scope));
     }
     throw std::runtime_error("unsupported native BNGIR expression kind: " + kind);
 }
@@ -315,12 +457,78 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
     return result;
 }
 
+// A model function declared by the wire document.
+struct BngirFunction {
+    std::string name;
+    std::vector<std::string> arguments;
+};
+
+// Read the function declarations. The compiler resolves a bare name to a
+// parameter, an observable or a function in that order, so a function whose
+// name answers to an earlier symbol can never be reached and is refused here
+// instead of being rebuilt into a reference that means something else.
+std::vector<BngirFunction> functionsFromBngir(
+    const py::list& functions,
+    const std::vector<std::string>& parameterNames,
+    const std::vector<std::string>& observableNames) {
+    std::vector<BngirFunction> result;
+    result.reserve(functions.size());
+    std::set<std::string> uniqueNames;
+    for (const auto& rawFunction : functions) {
+        const auto function = py::cast<py::dict>(rawFunction);
+        static const std::vector<std::string> functionKeys = {
+            "id", "name", "arguments", "expression",
+        };
+        requireObjectKeys(function, functionKeys, functionKeys, "function");
+        const auto name = py::cast<std::string>(function["name"]);
+        if (name.empty() || !uniqueNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR function names must be nonempty and unique");
+        }
+        if (containsName(parameterNames, name)) {
+            throw std::runtime_error(
+                "native BNGIR function names must not collide with parameter names");
+        }
+        if (containsName(observableNames, name)) {
+            throw std::runtime_error(
+                "native BNGIR function names must not collide with observable names");
+        }
+        if (bng::compile::isBuiltinFunctionName(name)) {
+            throw std::runtime_error(
+                "native BNGIR function names must not shadow a builtin function");
+        }
+        const auto rawArguments = py::cast<py::list>(function["arguments"]);
+        std::vector<std::string> arguments;
+        arguments.reserve(rawArguments.size());
+        for (const auto& rawArgument : rawArguments) {
+            if (!py::isinstance<py::str>(rawArgument)) {
+                throw std::runtime_error(
+                    "native BNGIR function arguments must be strings");
+            }
+            const auto argument = py::cast<std::string>(rawArgument);
+            if (argument.empty()) {
+                throw std::runtime_error(
+                    "native BNGIR function arguments must be nonempty strings");
+            }
+            if (containsName(arguments, argument)) {
+                throw std::runtime_error(
+                    "native BNGIR function argument names must be unique");
+            }
+            arguments.push_back(argument);
+        }
+        result.push_back(BngirFunction{name, std::move(arguments)});
+    }
+    return result;
+}
+
 std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
     rejectUnsupportedModelSections(document);
     const auto parameters = py::cast<py::list>(document["parameters"]);
     const auto moleculeTypes = py::cast<py::list>(document["molecule_types"]);
     const auto seeds = py::cast<py::list>(document["seeds"]);
     const auto rules = py::cast<py::list>(document["rules"]);
+    const auto functions = py::cast<py::list>(document["functions"]);
+    const auto observables = py::cast<py::list>(document["observables"]);
     for (const auto& rawParameter : parameters) {
         requireParameterKeys(py::cast<py::dict>(rawParameter));
     }
@@ -328,6 +536,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
     requireDenseOrderedIds(moleculeTypes, "molecule type");
     requireDenseOrderedIds(seeds, "seed");
     requireDenseOrderedIds(rules, "rule");
+    requireDenseOrderedIds(functions, "function");
     for (const auto& rawMoleculeType : moleculeTypes) {
         const auto moleculeType = py::cast<py::dict>(rawMoleculeType);
         const py::str populationKey("population");
@@ -374,11 +583,70 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         }
         parameterNames.push_back(name);
     }
+
+    // The observables are rebuilt before the function declarations: a
+    // function that answers to an observable name can never be reached,
+    // because the compiler resolves a bare name to the observable first.
+    std::vector<std::string> observableNames;
+    std::set<std::string> uniqueObservableNames;
+    for (const auto& rawObservable : observables) {
+        const auto observable = py::cast<py::dict>(rawObservable);
+        static const std::vector<std::string> observableKeys = {
+            "name", "type", "patterns",
+        };
+        requireObjectKeys(
+            observable, observableKeys, observableKeys, "observable");
+        if (!py::isinstance<py::str>(observable["name"]) ||
+            !py::isinstance<py::str>(observable["type"])) {
+            throw std::runtime_error(
+                "native BNGIR observable name and type must be strings");
+        }
+        const auto name = py::cast<std::string>(observable["name"]);
+        const auto type = py::cast<std::string>(observable["type"]);
+        if (name.empty() || !uniqueObservableNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR observable names must be nonempty and unique");
+        }
+        if (type != "Molecules" && type != "Species") {
+            throw std::runtime_error(
+                "native BNGIR observable type must be Molecules or Species");
+        }
+        if (!py::isinstance<py::list>(observable["patterns"])) {
+            throw std::runtime_error(
+                "native BNGIR observable patterns must be an array of strings");
+        }
+        const auto rawPatterns = py::cast<py::list>(observable["patterns"]);
+        std::vector<std::string> patterns;
+        patterns.reserve(rawPatterns.size());
+        for (const auto& rawPattern : rawPatterns) {
+            if (!py::isinstance<py::str>(rawPattern)) {
+                throw std::runtime_error(
+                    "native BNGIR observable patterns must be strings");
+            }
+            patterns.push_back(py::cast<std::string>(rawPattern));
+        }
+        observableNames.push_back(name);
+        model->addObservable(Observable(name, type, std::move(patterns)));
+    }
+
+    const auto declaredFunctions =
+        functionsFromBngir(functions, parameterNames, observableNames);
+
+    BngirNames names;
+    names.parameterNames = parameterNames;
+    for (const auto& function : declaredFunctions) {
+        names.functionNames.push_back(function.name);
+        names.functionArities.push_back(function.arguments.size());
+    }
+    names.observableNames = observableNames;
+    const BngirScope modelScope{&names, {}, false};
+
     for (const auto& rawParameter : parameters) {
         const auto parameter = py::cast<py::dict>(rawParameter);
         model->addParameter(Parameter(
             py::cast<std::string>(parameter["name"]),
-            expressionFromBngir(py::cast<py::dict>(parameter["expression"]), parameterNames)));
+            expressionFromBngir(
+                py::cast<py::dict>(parameter["expression"]), modelScope)));
     }
 
     std::set<std::string> uniqueMoleculeTypeNames;
@@ -465,7 +733,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         const auto seed = py::cast<py::dict>(rawSeed);
         auto graph = patternFromBngir(*model, py::cast<py::dict>(seed["pattern"]));
         auto amount = expressionFromBngir(
-            py::cast<py::dict>(seed["amount"]), parameterNames);
+            py::cast<py::dict>(seed["amount"]), modelScope);
         std::string seedCompartment;
         if (seed.contains(py::str("compartment")) &&
             py::isinstance<py::str>(seed["compartment"])) {
@@ -515,7 +783,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         const auto rate = py::cast<py::dict>(direction["rate"]);
         std::vector<Expression> rates;
         rates.push_back(expressionFromBngir(
-            py::cast<py::dict>(rate["expression"]), parameterNames));
+            py::cast<py::dict>(rate["expression"]), modelScope));
         model->addReactionRule(ReactionRule::fromResolvedPatterns(
             py::cast<std::string>(rule["name"]),
             py::cast<std::string>(rule["label"]),
@@ -523,45 +791,18 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             std::move(reactantGraphs), std::move(productGraphs)));
     }
 
-    const auto observables = py::cast<py::list>(document["observables"]);
-    std::set<std::string> uniqueObservableNames;
-    for (const auto& rawObservable : observables) {
-        const auto observable = py::cast<py::dict>(rawObservable);
-        static const std::vector<std::string> observableKeys = {
-            "name", "type", "patterns",
-        };
-        requireObjectKeys(
-            observable, observableKeys, observableKeys, "observable");
-        if (!py::isinstance<py::str>(observable["name"]) ||
-            !py::isinstance<py::str>(observable["type"])) {
-            throw std::runtime_error(
-                "native BNGIR observable name and type must be strings");
-        }
-        const auto name = py::cast<std::string>(observable["name"]);
-        const auto type = py::cast<std::string>(observable["type"]);
-        if (name.empty() || !uniqueObservableNames.insert(name).second) {
-            throw std::runtime_error(
-                "native BNGIR observable names must be nonempty and unique");
-        }
-        if (type != "Molecules" && type != "Species") {
-            throw std::runtime_error(
-                "native BNGIR observable type must be Molecules or Species");
-        }
-        if (!py::isinstance<py::list>(observable["patterns"])) {
-            throw std::runtime_error(
-                "native BNGIR observable patterns must be an array of strings");
-        }
-        const auto rawPatterns = py::cast<py::list>(observable["patterns"]);
-        std::vector<std::string> patterns;
-        patterns.reserve(rawPatterns.size());
-        for (const auto& rawPattern : rawPatterns) {
-            if (!py::isinstance<py::str>(rawPattern)) {
-                throw std::runtime_error(
-                    "native BNGIR observable patterns must be strings");
-            }
-            patterns.push_back(py::cast<std::string>(rawPattern));
-        }
-        model->addObservable(Observable(name, type, std::move(patterns)));
+    // The function bodies are rebuilt last: a body may name a parameter, one
+    // of its own arguments, another model function or an observable, and the
+    // compiler resolves those names in that order.
+    for (std::size_t index = 0; index < functions.size(); ++index) {
+        const auto function = py::cast<py::dict>(functions[index]);
+        const auto& declared = declaredFunctions[index];
+        const BngirScope functionScope{&names, declared.arguments, true};
+        model->addFunction(Function(
+            declared.name,
+            declared.arguments,
+            expressionFromBngir(
+                py::cast<py::dict>(function["expression"]), functionScope)));
     }
     return model;
 }

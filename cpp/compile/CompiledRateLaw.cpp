@@ -398,4 +398,8 @@ CompiledRateLaw CompiledRateLaw::compile(
     return compiled;
 }
 
+bool isBuiltinFunctionName(std::string_view name) {
+    return builtinFunction(std::string(name)) != BuiltinFunction::Unknown;
+}
+
 } // namespace bng::compile

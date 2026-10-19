@@ -1,5 +1,48 @@
 # BNG3 current progress
 
+## Native BNGIR v0.2 model functions (2026-10-19 candidate)
+
+The native BNGIR v0.2 importer refused the whole `model.functions` section, so
+every generated case of the integrated semantic validation reported
+`UNSUPPORTED` with the detail "native BNGIR does not support model.functions",
+even though the only thing those documents used was a helper function.
+
+The native C++ importer now rebuilds model functions. A declaration keeps its
+name, its arguments and its body, and the body is rebuilt with the same
+representation the BNGL parser produces: an argument is a plain identifier, a
+call to another model function is a function call, and the body is resolved
+against the parameters, the arguments, the other model functions and the
+observables of the model. The supported body expressions are numbers,
+parameter references, the function's own arguments, calls to other model
+functions, a global observable reference, and the ordinary unary and binary
+operators. Everything else stays an explicit refusal at the native boundary:
+builtin calls, table functions, clock references, reactant-count references,
+unresolved expressions, scoped observable references, and every expression kind
+outside that list.
+
+A declaration is refused when the compiler could not resolve it faithfully: a
+function name that collides with a parameter, an observable or a builtin, a
+duplicate function name, a duplicate argument name, an argument that shadows a
+parameter the body still reads, a reference to an unknown function, and a call
+whose arity does not match the declaration. The native reader's dense-id,
+unique-name and cross-reference rules are applied to the section as well.
+
+The reconstructed model executes. A model whose rate law runs through a model
+function reconstructs natively, round trips to the same BNGIR v0.2 document,
+and produces the same ODE and SSA numbers as the same model written in BNGL;
+the trajectory is written to a `.gdat` and compared against the BNGL model.
+The Playground-derived Atomizer cases, whose helper functions name an
+observable, reconstruct and run unchanged.
+
+The `bngir-v02` consumer therefore changes from `UNSUPPORTED` to `PASS` for
+the generated cases: 45 of the 61 generated cases now pass the semantic
+equality, network and simulation checks. The 16 dimerization cases stay
+`UNSUPPORTED`, now for the reason that actually applies to them, a rule
+direction with two reactant patterns, which is outside the native slice. The
+native import boundary names that boundary in the established
+"native BNGIR does not support ..." wording so the consumer reports a
+support boundary instead of a harness failure.
+
 ## Integrated semantic validation repairs (2026-10-19 candidate)
 
 The hosted integrated semantic validation job failed on `main` with sixteen
@@ -46,8 +89,9 @@ A non-pass stage rollup now states the reason its children give, and the
 consumer matrix lane fails on failed or malformed results rather than on a
 documented support boundary, which it reports distinctly. The remaining
 openings are unchanged: the native NFsim gap for compartment models, the
-native BNGIR function boundary behind the BNGIR consumer's `UNSUPPORTED`
-outcome, and the #151/#146/#155 obligations that these rows feed.
+#151/#146/#155 obligations that these rows feed, and the native BNGIR support
+boundary that the newer model-function section above reduces to rules with
+more than one reactant pattern.
 
 ## Generated dependency and native identity gates (2026-10-17)
 

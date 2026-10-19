@@ -201,6 +201,46 @@ def generated_cases():
         }
     )
 
+    # A rate law that runs through a model function. The function binds its own
+    # argument and the rule calls it with a parameter, so the rate stays the
+    # declared 0.1 and the closed-form trajectory is unchanged.
+    functions = copy.deepcopy(baseline)
+    functions["features"]["used"] = sorted(
+        [*functions["features"]["used"], "functions"]
+    )
+    functions["model"]["functions"] = [
+        {
+            "id": 0,
+            "name": "doubled",
+            "arguments": ["x"],
+            "expression": {
+                "kind": "binary",
+                "operator": "add",
+                "arguments": [
+                    {"kind": "local_ref", "name": "x"},
+                    {"kind": "local_ref", "name": "x"},
+                ],
+            },
+        }
+    ]
+    functions["model"]["rules"][0]["forward"]["rate"]["expression"] = {
+        "kind": "function_ref",
+        "symbol": {"kind": "function", "index": 0},
+        "call": True,
+        "arguments": [_parameter(0)],
+    }
+    cases.append(
+        {
+            "id": "function-rate-law",
+            "document": functions,
+            "oracle": "accept",
+            "expected_semantics": {
+                "seed": {"A()": 100.0, "B()": 0.0},
+                "rhs": {"A()": -10.0, "B()": 10.0},
+            },
+        }
+    )
+
     permuted = copy.deepcopy(baseline)
     permuted["model"]["molecule_types"].reverse()
     for index, item in enumerate(permuted["model"]["molecule_types"]):

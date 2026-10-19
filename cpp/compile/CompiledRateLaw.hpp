@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "Capabilities.hpp"
@@ -10,6 +11,11 @@
 #include "units/Unit.hpp"
 
 namespace bng::compile {
+
+// True when a call spelled with this name resolves to a compiler builtin
+// rather than to a user-defined model function. The comparison is
+// case-insensitive, matching the compiler's own builtin dispatch.
+bool isBuiltinFunctionName(std::string_view name);
 
 enum class RateLawKind {
     Expression,
