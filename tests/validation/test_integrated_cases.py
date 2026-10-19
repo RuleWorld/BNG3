@@ -46,16 +46,13 @@ def test_generated_families_preserve_decay_ids_and_bound_pairwise_matrix():
             }
 
         def expected_exact(case):
-            if family == "reversible":
-                return False
-            if family == "dimerization" and case["volume"] > 1:
-                return False
+            # The native oracle is handed the model in BNG2's count-rate
+            # convention, so the seeded trajectories compare exactly for every
+            # family.
             return True
 
         assert all(case["exact_nf"] is expected_exact(case) for case in family_cases)
-    assert all(
-        "ensemble means" in case["nf_comparison"] for case in by_family["reversible"]
-    )
+    assert all("Equal-seed" in case["nf_comparison"] for case in family_cases)
 
 
 def test_transformed_decay_cases_keep_machine_readable_quantity_basis():

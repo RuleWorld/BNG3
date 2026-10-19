@@ -289,16 +289,18 @@ def test_direct_native_builder_rejects_molecule_sites(location):
 
 
 @pytest.mark.parametrize(
-    ("side", "pattern_count"),
+    ("side", "pattern_count", "message"),
     [
-        ("reactants", 0),
-        ("reactants", 2),
-        ("products", 0),
-        ("products", 2),
+        ("reactants", 0, "without a reactant and product pattern"),
+        ("reactants", 2, "delete-and-add operations"),
+        ("products", 0, "without a reactant and product pattern"),
+        ("products", 2, "delete-and-add operations"),
     ],
     ids=["no-reactants", "extra-reactant", "no-products", "extra-product"],
 )
-def test_direct_native_builder_rejects_invalid_rule_pattern_counts(side, pattern_count):
+def test_direct_native_builder_rejects_invalid_rule_pattern_counts(
+    side, pattern_count, message
+):
     document = _document()
     direction = document["model"]["rules"][0]["forward"]
     if pattern_count == 0:
@@ -306,9 +308,7 @@ def test_direct_native_builder_rejects_invalid_rule_pattern_counts(side, pattern
     else:
         direction[side].append(copy.deepcopy(direction[side][0]))
 
-    with pytest.raises(
-        RuntimeError, match="requires exactly one reactant and product pattern"
-    ):
+    with pytest.raises(RuntimeError, match=message):
         _cpp._model_from_bngir_v02(document["model"])
 
 
@@ -1624,11 +1624,98 @@ def test_native_import_refuses_a_function_that_shadows_a_parameter():
 
 
 def test_native_import_refuses_a_rule_direction_outside_the_native_slice():
+    """A second reactant pattern changes the rule's operations.
+
+    The native importer rebuilds a direction from its patterns, so a direction
+    with more than one pattern is only rebuilt faithfully when the document
+    states the same operations. A copy of the first reactant pattern does not.
+    """
     document = _document()
     direction = document["model"]["rules"][0]["forward"]
     direction["reactants"].append(copy.deepcopy(direction["reactants"][0]))
 
-    with pytest.raises(ValueError, match="native BNGIR does not support"):
+    with pytest.raises(ValueError, match="delete-and-add operations"):
+        bionetgen.from_bngir(document, native=True)
+
+
+DIMERIZATION_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_dimerization")
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    A() 10
+    D() 0
+end seed species
+begin reaction rules
+    dimerize: A() + A() -> D() k
+end reaction rules
+end model
+"""
+
+
+def test_native_import_reconstructs_a_multi_reactant_rule_direction():
+    """Two reactant patterns rebuild the rule the document states.
+
+    The rule consumes both reactants and creates the product, which is what
+    the document's mutations state, and the reconstructed model executes with
+    the same numbers as the same model written in BNGL.
+    """
+    document = _document(DIMERIZATION_SOURCE)
+    direction = document["model"]["rules"][0]["forward"]
+    assert len(direction["reactants"]) == 2
+    assert document["model"]["rules"][0]["molecule_mappings"] == []
+    assert {mutation["kind"] for mutation in direction["mutations"]} == {
+        "delete_molecule",
+        "add_molecule",
+    }
+
+    restored = bionetgen.from_bngir(document, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(DIMERIZATION_SOURCE))
+    derivatives = []
+    for model in (restored, source_model):
+        network = model.generate_network()
+        state = [10.0 if name == "A()" else 0.0 for name in network.species_names]
+        derivative = _cpp._validation_ode_rhs(model._model, network, 0.0, state)
+        by_species = dict(zip(network.species_names, derivative))
+        assert by_species["A()"] < 0.0
+        assert by_species["D()"] > 0.0
+        derivatives.append(by_species)
+    # The reconstructed rule consumes both reactants and creates the product,
+    # exactly as the same model written in BNGL does.
+    assert derivatives[0] == pytest.approx(derivatives[1])
+
+
+def test_native_import_refuses_a_multi_reactant_direction_with_a_mapping():
+    """A molecule mapping cannot be rebuilt from several patterns."""
+    document = _document(DIMERIZATION_SOURCE)
+    document["model"]["rules"][0]["molecule_mappings"] = [
+        {
+            "product": {"molecule": 0, "pattern": 0, "side": "product"},
+            "reactant": {"molecule": 0, "pattern": 0, "side": "reactant"},
+        }
+    ]
+
+    with pytest.raises(ValueError, match="molecule mapping"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_refuses_a_multi_reactant_direction_that_carries_a_molecule():
+    """A product that matches a reactant type is a transformation."""
+    document = _document(DIMERIZATION_SOURCE)
+    product = document["model"]["rules"][0]["forward"]["products"][0]
+    product["molecules"][0]["type"] = "A"
+    product["molecules"][0]["type_id"] = 0
+
+    with pytest.raises(ValueError, match="transformation"):
         bionetgen.from_bngir(document, native=True)
 
 

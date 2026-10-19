@@ -87,6 +87,8 @@ Every generated case also checks modern API equivalence on a requested nonunifor
 
 The native lane samples the model the embedded engine executes. BNG2 states a reactant-bearing rate constant in count-rate units, dividing it by the reaction compartment's size, while the pinned native NFsim applies a compartment size only to zero-order synthesis. The marginal stage therefore normalises the BNG-XML export it hands the oracle before it runs: the same compartment unit conversion the XML rate probe applies is folded into the rule's rate constant, and the now-redundant symmetry factor is dropped. The native rows state that the oracle sampled the model in that convention, and an export whose compartment size is not statically determinable states no count-rate coefficient, so those native rows stay explicitly not tested with that reason.
 
+The native NFsim stage applies the same normalisation to BNG2's XML, so the seeded native and embedded NFsim trajectories compare exactly for every generated case, the compartment and reversible families included. The rewrite reads the compartment of a rule pattern, drops the symmetry factor the coefficient now carries, and removes the compartment factor the oracle applies itself for a zero-order rule whose product molecule states a compartment; an export the rewrite cannot state is an explicit refusal rather than an approximation.
+
 
 
 Mutable source controls accompany each generated translation. Atomizer may legally
