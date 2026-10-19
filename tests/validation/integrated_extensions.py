@@ -26,10 +26,13 @@ OPERATIONS = (
     "nf-marginals",
     "graph-identity",
     "bngir-adversarial",
+    "quantity-laws",
 )
 
 
-def check_ids(operation, case=None):
+def check_ids(operation, case=None, *, full=False):
+    if operation == "quantity-laws":
+        return integrated_marginals.source_law_check_ids(full=full)
     if operation == "boundaries":
         return integrated_boundaries.expected_check_ids()
     if operation == "protocol":
@@ -56,8 +59,12 @@ def expected_ids(
     include_boundaries=True,
     include_graph_identity=True,
     include_bngir_adversarial=True,
+    include_quantity_laws=True,
+    full=False,
 ):
     ids = []
+    if include_quantity_laws:
+        ids.extend(["campaign:quantity-laws", *check_ids("quantity-laws", full=full)])
     if include_boundaries:
         ids.extend(["campaign:boundaries", *check_ids("boundaries")])
     if include_graph_identity:
@@ -73,6 +80,10 @@ def expected_ids(
 
 def run_worker(operation, args):
     """Use installed identity selection from integrated_worker before this call."""
+    if operation == "quantity-laws":
+        return integrated_marginals.run_source_laws(
+            Path.cwd(), args.native_nfsim, full=args.full, runs=args.ensemble_runs
+        )
     if operation == "boundaries":
         return integrated_boundaries.run(Path.cwd())
     if operation == "graph-identity":
@@ -123,7 +134,7 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
     ]
     if case is not None:
         command += ["--case-json", json.dumps(case, sort_keys=True)]
-    if operation == "nf-marginals":
+    if operation in {"nf-marginals", "quantity-laws"}:
         command += [
             "--native-nfsim",
             str(args.nfsim_binary),
@@ -134,6 +145,8 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
             "--ensemble-cases",
             str(len(generated_cases(full=True))),
         ]
+    if operation == "quantity-laws" and getattr(args, "full", False):
+        command += ["--full"]
     parent = run_stage(
         key,
         operation,
@@ -143,12 +156,16 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
         dependencies=dependencies,
         required=("identity.json", "checks.json"),
         env=env,
-        timeout=240 if operation == "nf-marginals" else 60,
+        timeout=(
+            900
+            if operation == "quantity-laws"
+            else (240 if operation == "nf-marginals" else 120)
+        ),
     )
     if not case:
         parent.pop("integration_case", None)
         parent["qualification"] = operation
-    expected = check_ids(operation, case)
+    expected = check_ids(operation, case, full=getattr(args, "full", False))
     path = directory / "checks.json"
     checks = []
     try:

@@ -736,10 +736,12 @@ def main():
             "nf-marginals",
             "graph-identity",
             "bngir-adversarial",
+            "quantity-laws",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--atomize", action="store_true")
+    parser.add_argument("--full", action="store_true")
     parser.add_argument("--upstream", type=Path)
     parser.add_argument("--case-id", default="case")
     parser.add_argument("--case-json")
@@ -826,6 +828,7 @@ def main():
         "nf-marginals",
         "graph-identity",
         "bngir-adversarial",
+        "quantity-laws",
     ):
         from tests.validation.integrated_extensions import run_worker
 

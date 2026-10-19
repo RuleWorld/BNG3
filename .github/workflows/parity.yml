@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+    inputs:
+      bounded:
+        description: Use the finite PR scientific selection instead of the scheduled matrix
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   # Preserve the evidence for each exact PR head.  A later documentation push
@@ -464,6 +470,7 @@ jobs:
           echo "PYBIONETGEN_PYTHON=$RUNNER_TEMP/pybionetgen-venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Install BNG3 CLI and full Python package
+        id: candidate_install
         run: |
           python -m pip install --no-build-isolation \
             --config-settings=build-dir=build \
@@ -473,6 +480,7 @@ jobs:
           CMAKE_ARGS: "-DBUILD_CLI=ON -DBUILD_NFSIM_CLI=OFF -DBUILD_TESTS=OFF"
 
       - name: Verify installed BNG3 package identity
+        id: candidate_identity
         run: |
           python scripts/ci/check_python_package_identity.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
@@ -483,12 +491,16 @@ jobs:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Verify spawned scientific worker identity
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: python -m pytest -c tests/validation/pytest.ini tests/validation/test_worker_package_identity.py -q
+
       - name: Run integrated cross-component cases
         id: integrated_cases
         run: |
           set -euo pipefail
           full_args=()
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             full_args=(--full)
           fi
           python -m tests.validation.integrated \
@@ -504,7 +516,7 @@ jobs:
             "${full_args[@]}"
 
       - name: Check independently authored native BNGIR controls
-        if: always()
+        if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest tests/validation/test_bngir_adversarial_native.py -q
 
       - name: Audit generated consumer matrix receipts

@@ -14,6 +14,10 @@ def test_expected_protocol_checks_are_explicit_and_issue_linked():
         "independent-ssa-state",
         "exception-recovery",
         "parameter-source-controls",
+        "lifecycle-construction-isolation",
+        "lifecycle-mutation-baseline",
+        "lifecycle-public-routes",
+        "lifecycle-topology-unavailable",
     )
     assert set(protocol._ISSUES) == set(protocol.expected_check_names)
     assert {issue for issues in protocol._ISSUES.values() for issue in issues} == {
@@ -34,6 +38,34 @@ def test_expected_protocol_checks_are_explicit_and_issue_linked():
             "first_difference": None,
             "related_issues": protocol._ISSUES[name],
         }
+
+
+def test_lifecycle_protocol_declares_bounded_work_and_explicit_topology_gap():
+    assert protocol.lifecycle_budget == {
+        "max_cases": 4,
+        "construction_runs_per_model": 3,
+        "concurrent_models_per_case": 2,
+        "mutation_parameters": ("V", "N", "k"),
+        "mutation_methods": ("ode", "ssa"),
+        "public_routes_per_case": 2,
+        "topology_probes": (
+            "add_compartment",
+            "add_molecule_type",
+            "add_seed_species",
+            "remove_seed_species",
+            "move_species_to_compartment",
+        ),
+    }
+    row = protocol._topology_unavailable_row("case")
+    assert row["status"] == "UNSUPPORTED"
+    assert row["check"] == "case:protocol:lifecycle-topology-unavailable"
+    assert "runtime topology mutation" in row["detail"]
+
+
+def test_lifecycle_case_slice_respects_declared_budget():
+    selected = protocol._lifecycle_case_ids()
+    assert len(selected) == protocol.lifecycle_budget["max_cases"] == 4
+    assert len(set(selected)) == 4
 
 
 def test_result_comparison_requires_exact_time_grid_and_observable_set():
@@ -118,6 +150,53 @@ def test_saved_result_snapshot_detects_mutation():
     assert protocol._snapshot_difference(
         saved, protocol._copy_result(result), "saved"
     ) == {"field": "saved.A"}
+
+
+def test_public_route_receipt_allows_results_without_concentration_matrix():
+    result = SimpleNamespace(
+        time=np.array([0.0, 1.0]), observables={"A": np.array([2.0, 1.0])}
+    )
+
+    receipt = protocol._result_receipt(result, route="cli")
+
+    assert receipt["concentrations"] is None
+    assert (
+        protocol._snapshot_difference(
+            protocol._copy_result(result), protocol._copy_result(result), "saved"
+        )
+        is None
+    )
+
+
+def test_lifecycle_baseline_detector_catches_stale_mutated_run():
+    baseline = SimpleNamespace(
+        time=np.array([0.0, 1.0]),
+        observables={"A": np.array([10.0, 8.0])},
+        concentrations=np.array([[10.0], [8.0]]),
+    )
+    stale_after_reset = SimpleNamespace(
+        time=np.array([0.0, 1.0]),
+        observables={"A": np.array([10.0, 7.0])},
+        concentrations=np.array([[10.0], [7.0]]),
+    )
+    assert protocol._result_difference(baseline, stale_after_reset)["field"] == "A"
+
+
+def test_lifecycle_receipt_retains_actual_outputs(tmp_path):
+    import json
+
+    result = SimpleNamespace(
+        time=np.array([0.0, 1.0]),
+        observables={"A": np.array([10.0, 8.0])},
+        concentrations=np.array([[10.0], [8.0]]),
+    )
+    protocol._write_lifecycle_receipt(
+        tmp_path,
+        "lifecycle-mutation-baseline",
+        [protocol._result_receipt(result, method="ode", phase="baseline")],
+    )
+    receipt = json.loads((tmp_path / "lifecycle-results.json").read_text())
+    assert receipt["lifecycle-mutation-baseline"][0]["observables"]["A"] == [10.0, 8.0]
 
 
 def test_rate_parameter_does_not_select_unused_source_parameter():

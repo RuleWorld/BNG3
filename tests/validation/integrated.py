@@ -90,8 +90,15 @@ def annotate_acceptance_evidence(rows):
                 f"{case['id']}:rate-trace:compiled-net-rate-multiset",
             }
         )
+    consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
+    for case in generated_cases(full=True):
+        consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
-        if row["id"] in consumers and row.get("supported_execution") is not False:
+        if (
+            row["id"] in consumers
+            and row.get("supported_execution") is not False
+            and row.get("status") in {"PASS", "FAIL"}
+        ):
             row.setdefault("evidence_kind", "supported-execution")
             row.setdefault("supported_execution", True)
 
@@ -102,6 +109,8 @@ def expected_contract_ids(
     include_boundaries=True,
     include_graph_identity=True,
     include_bngir_adversarial=True,
+    include_quantity_laws=True,
+    full=False,
 ):
     return [
         f"{c['id']}:{suffix}"
@@ -146,6 +155,8 @@ def expected_contract_ids(
         include_boundaries=include_boundaries,
         include_graph_identity=include_graph_identity,
         include_bngir_adversarial=include_bngir_adversarial,
+        include_quantity_laws=include_quantity_laws,
+        full=full,
     )
 
 
@@ -903,6 +914,7 @@ def main(argv=None):
     parser.add_argument("--boundaries-only", action="store_true")
     parser.add_argument("--graph-identity-only", action="store_true")
     parser.add_argument("--bngir-adversarial-only", action="store_true")
+    parser.add_argument("--quantity-laws-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -911,6 +923,7 @@ def main(argv=None):
                 args.boundaries_only,
                 args.graph_identity_only,
                 args.bngir_adversarial_only,
+                args.quantity_laws_only,
             )
         )
         > 1
@@ -931,7 +944,12 @@ def main(argv=None):
         if args.case
         else generated_cases(args.full)
     )
-    if args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only:
+    if (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
+    ):
         selected = []
     for name in (
         "bng_cpp",
@@ -959,16 +977,25 @@ def main(argv=None):
     env["BIONETGEN_USE_PERL"] = "0"
     qualification_selection = dict(
         include_boundaries=not (
-            args.graph_identity_only or args.bngir_adversarial_only
+            args.graph_identity_only
+            or args.bngir_adversarial_only
+            or args.quantity_laws_only
         ),
         include_graph_identity=not (
-            args.boundaries_only or args.bngir_adversarial_only
+            args.boundaries_only
+            or args.bngir_adversarial_only
+            or args.quantity_laws_only
         ),
         include_bngir_adversarial=not (
-            args.boundaries_only or args.graph_identity_only
+            args.boundaries_only or args.graph_identity_only or args.quantity_laws_only
         ),
     )
-    required_ids = expected_contract_ids(selected, **qualification_selection)
+    qualification_selection["include_quantity_laws"] = not (
+        args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only
+    )
+    required_ids = expected_contract_ids(
+        selected, full=args.full, **qualification_selection
+    )
     rows, references = [], {}
     try:
         references = _preflight(args)
@@ -981,6 +1008,8 @@ def main(argv=None):
             integrated_extensions.invoke(
                 "bngir-adversarial", args, rows, env, run_stage
             )
+        if qualification_selection["include_quantity_laws"]:
+            integrated_extensions.invoke("quantity-laws", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1022,6 +1051,12 @@ def main(argv=None):
         case_id = row.get("integration_case")
         row["command"] = (
             replay_base
+            + (["--full"] if args.full else [])
+            + (
+                ["--quantity-laws-only"]
+                if row.get("qualification") == "quantity-laws"
+                else []
+            )
             + (
                 ["--boundaries-only"]
                 if row.get("qualification") == "boundaries"
@@ -1073,6 +1108,7 @@ def main(argv=None):
                     "boundaries": "tests/validation/integrated_boundaries.py",
                     "protocol": "tests/validation/integrated_protocol.py",
                     "nf-marginals": "tests/validation/integrated_marginals.py",
+                    "quantity-laws": "tests/validation/integrated_marginals.py",
                     "bngir-adversarial": "tests/validation/bngir_adversarial.py",
                     "graph-identity": "tests/validation/graph_identity.py",
                 }[row["stage"]]
@@ -1094,7 +1130,7 @@ def main(argv=None):
                 issues = [157, 158, 160, 161, 164]
             elif stage == "protocol":
                 issues = [138, 139, 140, 141, 143, 171, 172]
-            elif stage == "nf-marginals":
+            elif stage in {"nf-marginals", "quantity-laws"}:
                 issues = [143, 146, 151, 167]
             elif stage == "graph-identity":
                 issues = [142]
