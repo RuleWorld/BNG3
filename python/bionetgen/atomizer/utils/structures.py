@@ -7,8 +7,7 @@ Created on Wed May 30 11:44:17 2012
 
 from copy import copy as shallow_copy
 import difflib
-import hashlib
-import numpy
+import os
 from collections import Counter, defaultdict
 
 
@@ -258,12 +257,12 @@ class Molecule:
         self.compartment = ""
         self.trueName = ""
 
-        a = numpy.random.rand(10, 100)
-        self.hash = hashlib.sha1(a).digest()
+        # ⚡ Bolt: Replace expensive numpy rand/hashlib overhead with direct fast bytes allocation
+        self.hash = os.urandom(20)
 
     def copy(self):
         if type(self) is Molecule:
-            molecule = Molecule.__new__(Molecule)
+            molecule = self.__class__.__new__(self.__class__)
             molecule.__dict__ = self.__dict__.copy()
         else:
             # Subclasses may carry slots or implement their own copy protocol.
