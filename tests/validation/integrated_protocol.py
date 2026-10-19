@@ -210,13 +210,14 @@ def _requested_grid_difference(result, requested):
 def _copy_result(result):
     import numpy as np
 
+    concentrations = getattr(result, "concentrations", None)
     return (
         np.asarray(result.time).copy(),
         {
             name: np.asarray(values).copy()
             for name, values in result.observables.items()
         },
-        np.asarray(result.concentrations).copy(),
+        None if concentrations is None else np.asarray(concentrations).copy(),
     )
 
 
@@ -228,7 +229,9 @@ def _result_receipt(result, **context):
         "observables": {
             name: values.astype(float).tolist() for name, values in observables.items()
         },
-        "concentrations": concentrations.astype(float).tolist(),
+        "concentrations": (
+            None if concentrations is None else concentrations.astype(float).tolist()
+        ),
     }
 
 
@@ -253,7 +256,10 @@ def _snapshot_difference(before, after, label):
     for name in before_observables:
         if not np.array_equal(before_observables[name], after_observables[name]):
             return {"field": label + "." + name}
-    if not np.array_equal(before_concentrations, after_concentrations):
+    if before_concentrations is None or after_concentrations is None:
+        if before_concentrations is not after_concentrations:
+            return {"field": label + ".concentrations"}
+    elif not np.array_equal(before_concentrations, after_concentrations):
         return {"field": label + ".concentrations"}
     return None
 
@@ -429,11 +435,13 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
                             [(left, 1729), (right, 8123)],
                         )
                     )
-                left_saved, right_saved = _copy_result(left_result), _copy_result(
-                    right_result
+                left_saved, right_saved = (
+                    _copy_result(left_result),
+                    _copy_result(right_result),
                 )
-                fresh_left, fresh_right = bionetgen.load(ssa_source), bionetgen.load(
-                    ssa_source
+                fresh_left, fresh_right = (
+                    bionetgen.load(ssa_source),
+                    bionetgen.load(ssa_source),
                 )
                 fresh_left.set_parameter(rate_name, baseline_rate * 0.73)
                 fresh_right.set_parameter(rate_name, baseline_rate * 1.31)
@@ -789,7 +797,7 @@ def _lifecycle_construction_isolation(bionetgen, case, directory):
                 directory, "lifecycle-construction-isolation", receipts
             )
             return difference
-        difference = replay(*settings[1 - index], f"interleave-{1-index}")
+        difference = replay(*settings[1 - index], f"interleave-{1 - index}")
         if difference:
             _write_lifecycle_receipt(
                 directory, "lifecycle-construction-isolation", receipts

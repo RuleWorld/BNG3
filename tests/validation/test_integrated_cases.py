@@ -52,6 +52,25 @@ def test_generated_families_preserve_decay_ids_and_bound_pairwise_matrix():
     )
 
 
+def test_transformed_decay_cases_keep_machine_readable_quantity_basis():
+    from tests.validation.integrated_marginals import source_marginal_mass
+
+    transformed = [
+        case for case in integrated_cases.generated_cases() if case.get("transform")
+    ]
+
+    assert {case["quantity_basis"] for case in transformed} == {"amount"}
+    assert {case["transform"] for case in transformed} == {
+        "function-shadowing",
+        "concentration-coordinate",
+        "shadow-global-decoy",
+    }
+    for case in transformed:
+        assert case["quantity_description"]
+        mass = source_marginal_mass(case)
+        assert mass.shape == (11, case["initial"] + 1)
+
+
 def test_generated_sbml_has_correct_amount_and_rate_units():
     cases = integrated_cases.generated_cases(full=True)
     ns = {"s": "http://www.sbml.org/sbml/level3/version2/core"}

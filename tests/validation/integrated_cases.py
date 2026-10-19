@@ -105,11 +105,11 @@ def source_law_bngl(case):
         if case["quantity_basis"] == "concentration"
         else ""
     )
-    return f"""# Source-law basis: {case['rate_convention']} ({case['source_units']}); physical rates are prelowered to BNGL count units.
+    return f"""# Source-law basis: {case["rate_convention"]} ({case["source_units"]}); physical rates are prelowered to BNGL count units.
 {source_coordinate_comment}begin model
 begin parameters
-  k {case['rate']:.17g}
-  V {case['volume']:.17g}
+  k {case["rate"]:.17g}
+  V {case["volume"]:.17g}
 {coordinate_parameter}end parameters
 begin compartments
   cell 3 V
@@ -177,7 +177,8 @@ def generated_cases(full=False):
                     id=f"{transform}-{base['id']}",
                     base_case_id=base["id"],
                     transform=transform,
-                    quantity_basis=(
+                    quantity_basis=base.get("quantity_basis", "amount"),
+                    quantity_description=(
                         "initialConcentration=N0/V; kinetic law k*cell*A"
                         if transform == "concentration-coordinate"
                         else "item amount; function formal shadows global rate"
@@ -193,7 +194,10 @@ def generated_cases(full=False):
         base_case_id=decay_bases[0]["id"],
         transform="shadow-global-decoy",
         shadow_global_rate=13.0,
-        quantity_basis="amount; function formal rate shadows adversarial global rate=13",
+        quantity_basis=shadow.get("quantity_basis", "amount"),
+        quantity_description=(
+            "item amount; function formal rate shadows adversarial global rate=13"
+        ),
     )
     cases.append(shadow)
     return cases
@@ -218,7 +222,7 @@ def _concentration_species(name, initial, volume):
 
 
 def _math(expression):
-    return '<math xmlns="http://www.w3.org/1998/Math/MathML">' f"{expression}</math>"
+    return f'<math xmlns="http://www.w3.org/1998/Math/MathML">{expression}</math>'
 
 
 def sbml_text(case):
@@ -272,12 +276,12 @@ def sbml_text(case):
         reactions = f"""<reaction id="forward" reversible="false">
 <listOfReactants><speciesReference species="A" stoichiometry="1" constant="true"/></listOfReactants>
 <listOfProducts><speciesReference species="B" stoichiometry="1" constant="true"/></listOfProducts>
-<kineticLaw>{_math('<apply><times/><ci>k</ci><ci>A</ci></apply>')}</kineticLaw>
+<kineticLaw>{_math("<apply><times/><ci>k</ci><ci>A</ci></apply>")}</kineticLaw>
 </reaction>
 <reaction id="backward" reversible="false">
 <listOfReactants><speciesReference species="B" stoichiometry="1" constant="true"/></listOfReactants>
 <listOfProducts><speciesReference species="A" stoichiometry="1" constant="true"/></listOfProducts>
-<kineticLaw>{_math('<apply><times/><ci>kr</ci><ci>B</ci></apply>')}</kineticLaw>
+<kineticLaw>{_math("<apply><times/><ci>kr</ci><ci>B</ci></apply>")}</kineticLaw>
 </reaction>"""
     elif family == "dimerization":
         amounts = (("A", case["initial"]), ("D", 0))
@@ -289,7 +293,7 @@ def sbml_text(case):
         reactions = f"""<reaction id="dimerize" reversible="false">
 <listOfReactants><speciesReference species="A" stoichiometry="2" constant="true"/></listOfReactants>
 <listOfProducts><speciesReference species="D" stoichiometry="1" constant="true"/></listOfProducts>
-<kineticLaw>{_math('<apply><divide/><apply><times/><ci>k</ci><ci>A</ci><ci>A</ci></apply><ci>cell</ci></apply>')}</kineticLaw>
+<kineticLaw>{_math("<apply><divide/><apply><times/><ci>k</ci><ci>A</ci><ci>A</ci></apply><ci>cell</ci></apply>")}</kineticLaw>
 </reaction>"""
     else:
         raise ValueError(f"unknown generated model family: {family!r}")
@@ -309,7 +313,7 @@ def sbml_text(case):
 <model id="{family}" timeUnits="second" substanceUnits="item" extentUnits="item">
 {function_definitions}
 <listOfUnitDefinitions>{definitions}</listOfUnitDefinitions>
-<listOfCompartments><compartment id="cell" spatialDimensions="3" units="litre" size="{case['volume']}" constant="true"/></listOfCompartments>
+<listOfCompartments><compartment id="cell" spatialDimensions="3" units="litre" size="{case["volume"]}" constant="true"/></listOfCompartments>
 <listOfSpecies>{species}</listOfSpecies>
 <listOfParameters>{parameter_units}</listOfParameters>
 <listOfReactions>{reactions}</listOfReactions>
@@ -396,8 +400,8 @@ def reuse_bngl(case, *, rate=RATE):
 begin parameters
   k {rate:.17g}
   kr {REVERSE_RATE:.17g}
-  N {case['initial']}
-  V {case['volume']}
+  N {case["initial"]}
+  V {case["volume"]}
 end parameters
 begin compartments
   cell 3 V

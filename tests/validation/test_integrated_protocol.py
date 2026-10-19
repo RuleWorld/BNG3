@@ -152,6 +152,22 @@ def test_saved_result_snapshot_detects_mutation():
     ) == {"field": "saved.A"}
 
 
+def test_public_route_receipt_allows_results_without_concentration_matrix():
+    result = SimpleNamespace(
+        time=np.array([0.0, 1.0]), observables={"A": np.array([2.0, 1.0])}
+    )
+
+    receipt = protocol._result_receipt(result, route="cli")
+
+    assert receipt["concentrations"] is None
+    assert (
+        protocol._snapshot_difference(
+            protocol._copy_result(result), protocol._copy_result(result), "saved"
+        )
+        is None
+    )
+
+
 def test_lifecycle_baseline_detector_catches_stale_mutated_run():
     baseline = SimpleNamespace(
         time=np.array([0.0, 1.0]),
