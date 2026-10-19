@@ -1,0 +1,860 @@
+{
+  "schema_version": 1,
+  "issue": 141,
+  "issue_url": "https://github.com/RuleWorld/BNG3/issues/141",
+  "title": "B04: Qualify compile-once model reuse and independent trajectory state",
+  "disposition": "incomplete",
+  "closure_eligible": false,
+  "reconciled_at_utc": "2026-10-19T23:41:04Z",
+  "source_identity": {
+    "implementation_base": "9af03d79d48c7488a1ffe98ced270053b27478bd",
+    "qualification_checkpoint": "aae3bfcebae5addfa28d107d6c57a004c231bdd7",
+    "issue_body_sha256": "2b06a72fc9ead82926823a598c880478973e48e5343d6bf5b7ed3a19fcac48c4",
+    "product_changes": false,
+    "compiled_model_reuse": "NOT_IMPLEMENTED; public native ODE/SSA constructs OdeIntegrator per call; GeneratedNetwork cache is not a compiled handle",
+    "publishing_revision": "The publishing commit adds receipt files only; hosted checks must match the PR head, not an earlier SHA."
+  },
+  "acceptance_criteria": [
+    {
+      "id": "issue:141:acceptance:1",
+      "text": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
+      "status": "INCOMPLETE",
+      "evidence": "Prior reset, seeded-repeat and construction-isolation slices are demonstrated. Current lifecycle worker is diagnostic-only because native binary lineage is unverified. New late-failure C++ test is unbuilt locally; exact-head ASan/LSan pending."
+    },
+    {
+      "id": "issue:141:acceptance:2",
+      "text": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
+      "status": "INCOMPLETE",
+      "evidence": "Parameter source controls match fresh output only in diagnostic-only runs; set_parameter clears GeneratedNetwork. Public topology/compartment mutation is unavailable. No compiled-model reuse is implemented."
+    },
+    {
+      "id": "issue:141:acceptance:3",
+      "text": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+      "status": "PARTIAL",
+      "evidence": "Base, qualification checkpoint, local commands, snapshots and limits are recorded. Final PR head and exact-head native evidence remain pending."
+    }
+  ],
+  "obligations_source": {
+    "path": "/private/tmp/bng3-bounded-release/provenance/issue-obligations.json",
+    "sha256": "665899c1dee760ff3f954e8b7e2e4423db183f6591a520072093f616ab03a11f",
+    "all_named_obligations_preserved": true
+  },
+  "obligations": [
+    {
+      "id": "issue:141:repeated-instantiation",
+      "required_check": "qualification:issue:141:repeated-instantiation",
+      "assessment": "NOT_TESTED",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:concurrent-instantiation",
+      "required_check": "qualification:issue:141:concurrent-instantiation",
+      "assessment": "DIAGNOSTIC_ONLY",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:independent-rng-ownership",
+      "required_check": "qualification:issue:141:independent-rng-ownership",
+      "assessment": "DIAGNOSTIC_ONLY",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:independent-caches",
+      "required_check": "qualification:issue:141:independent-caches",
+      "assessment": "DIAGNOSTIC_ONLY",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:independent-solver-state",
+      "required_check": "qualification:issue:141:independent-solver-state",
+      "assessment": "DIAGNOSTIC_ONLY",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:exception-cleanup",
+      "required_check": "qualification:issue:141:exception-cleanup",
+      "detail": "Late lazy stop_if throws after CVODE allocation and bypasses cleanup; focused native test added, exact-head ASan/LSan pending.",
+      "assessment": "SOURCE_CONFIRMED_TEST_PENDING",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:parameter-only-reuse",
+      "required_check": "qualification:issue:141:parameter-only-reuse",
+      "detail": "Fresh-output controls only; set_parameter invalidates network and compiled model reuse is absent.",
+      "assessment": "DIAGNOSTIC_ONLY",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:topology-invalidation",
+      "required_check": "qualification:issue:141:topology-invalidation",
+      "detail": "No public in-place topology mutation API; unsupported is not successful invalidation.",
+      "assessment": "UNSUPPORTED",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:compartment-invalidation",
+      "required_check": "qualification:issue:141:compartment-invalidation",
+      "detail": "Volume-parameter invalidation/regeneration and fresh-result comparisons have diagnostic coverage. Structural compartment editing is unavailable. Neither qualifies the complete obligation.",
+      "assessment": "UNSUPPORTED",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:implementation-or-disposition",
+      "required_check": "qualification:issue:141:implementation-or-disposition",
+      "assessment": "PARTIAL",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:exact-revision",
+      "required_check": "qualification:issue:141:exact-revision",
+      "detail": "Base and qualification checkpoint pinned; final PR head pending.",
+      "assessment": "PARTIAL",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:validation-receipt",
+      "required_check": "qualification:issue:141:validation-receipt",
+      "assessment": "PARTIAL",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:remaining-limits",
+      "required_check": "qualification:issue:141:remaining-limits",
+      "assessment": "PARTIAL",
+      "required_check_status": "NOT_TESTED"
+    },
+    {
+      "id": "issue:141:slice:mutation-fresh",
+      "status": "DIAGNOSTIC_ONLY",
+      "required_check": "v1-n20-r0-a0:reuse:mutation-fresh"
+    },
+    {
+      "id": "issue:141:slice:reset",
+      "status": "DEMONSTRATED",
+      "required_check": "v1-n20-r0-a0:reuse:reset"
+    },
+    {
+      "id": "issue:141:slice:seeded-repeat",
+      "status": "DEMONSTRATED",
+      "required_check": "v1-n20-r0-a0:reuse:seeded-repeat"
+    },
+    {
+      "id": "issue:141:executed-slice:lifecycle-construction-isolation",
+      "status": "DEMONSTRATED_SUBSET",
+      "required_check": "v1-n20-r0-a0:protocol:lifecycle-construction-isolation",
+      "detail": "Prior audit slice demonstrated; current source-control run is diagnostic-only and does not imply compiled-model reuse."
+    }
+  ],
+  "local_validation": {
+    "status": "PASS_WITH_LIMITS",
+    "python_command": "python -m pytest -q tests/validation/test_integrated_protocol.py tests/validation/test_integrated_wiring.py tests/validation/test_acceptance_queue.py tests/test_ci_contract.py tests/validation/test_parity_workflow_wiring.py",
+    "python_result": "110 passed",
+    "verified_test_bytes_commit": "aae3bfcebae5addfa28d107d6c57a004c231bdd7",
+    "format_lint": "Black target py312, Ruff and diff checks passed for changed files.",
+    "structural_validator": "Passed with baseline pending-approval warning.",
+    "native_regression": "Added in tests/cpp/test_ode_options.cpp; not locally built or run.",
+    "unrelated_baseline_failure": "Black --check --target-version py312 tests/python/test_atomizer_copy_regressions.py fails; existing repair owned by PRs #310/#311, separate from this receipt."
+  },
+  "exception_cleanup": {
+    "classification": "SOURCE_CONFIRMED_CLEANUP_BYPASS; DIAGNOSTIC_RSS_CORROBORATION; EXACT_HEAD_SANITIZER_PENDING",
+    "reproducer": "stop_if='if(time > 0, missing_name, 0)'",
+    "source": [
+      "cpp/ast/Expression.cpp:703-705",
+      "cpp/engine/OdeIntegrator.cpp:2632-2635",
+      "cpp/engine/OdeIntegrator.cpp:2650-2683",
+      "cpp/engine/OdeIntegrator.cpp:2944-2950",
+      "cpp/engine/OdeIntegrator.cpp:2994-3001"
+    ],
+    "test": "OdeIntegrator recovers after late stop condition failure",
+    "asan_workflow": "Existing CI ASan job narrowed to CTest regex '^OdeIntegrator recovers after late stop condition failure$' with ASAN_OPTIONS detect_leaks=1; exact-head hosted execution pending.",
+    "diagnostic_binary": {
+      "sha256": "3c17f1a145ab56dca0c5cf0bd0da21997dee93b8c03cbf2a20c8d8b26c9d53af",
+      "lineage": "UNVERIFIED",
+      "late_rss_bytes": [
+        47923200,
+        60751872
+      ],
+      "late_failures": 1001,
+      "early_and_valid_controls": "Nearly flat; diagnostic only."
+    },
+    "minimal_bngl": "begin model\nbegin parameters\nk 0.4\nN 20\nend parameters\nbegin molecule types\nA()\nend molecule types\nbegin seed species\nA() N\nend seed species\nbegin observables\nMolecules A A()\nend observables\nbegin reaction rules\nA() -> 0 k\nend reaction rules\nend model\n",
+    "minimal_python": "import bionetgen\nm = bionetgen.load('decay.bngl')\ntry:\n    m.simulate(method='ode', t_end=1, n_steps=2, stop_if='if(time > 0, missing_name, 0)')\nexcept RuntimeError as exc:\n    print(exc)\nm.simulate(method='ode', t_end=1, n_steps=2)\n# Recovery succeeds despite bypassed native cleanup; use focused LSan test to check resources.\n",
+    "diagnostic_controls": {
+      "late": {
+        "mode": "late",
+        "python": "/opt/anaconda3/bin/python",
+        "package": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/__init__.py",
+        "native": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so",
+        "native_sha256": "3c17f1a145ab56dca0c5cf0bd0da21997dee93b8c03cbf2a20c8d8b26c9d53af",
+        "maxrss_bytes": [
+          [
+            0,
+            47923200
+          ],
+          [
+            100,
+            49070080
+          ],
+          [
+            500,
+            54181888
+          ],
+          [
+            1000,
+            60751872
+          ]
+        ],
+        "network_retained": true,
+        "recovered": true
+      },
+      "early": {
+        "mode": "early",
+        "python": "/opt/anaconda3/bin/python",
+        "package": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/__init__.py",
+        "native": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so",
+        "native_sha256": "3c17f1a145ab56dca0c5cf0bd0da21997dee93b8c03cbf2a20c8d8b26c9d53af",
+        "maxrss_bytes": [
+          [
+            0,
+            47316992
+          ],
+          [
+            100,
+            47382528
+          ],
+          [
+            500,
+            47398912
+          ],
+          [
+            1000,
+            47398912
+          ]
+        ],
+        "network_retained": true,
+        "recovered": true
+      },
+      "valid": {
+        "mode": "valid",
+        "python": "/opt/anaconda3/bin/python",
+        "package": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/__init__.py",
+        "native": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so",
+        "native_sha256": "3c17f1a145ab56dca0c5cf0bd0da21997dee93b8c03cbf2a20c8d8b26c9d53af",
+        "maxrss_bytes": [
+          [
+            0,
+            47431680
+          ],
+          [
+            100,
+            47431680
+          ],
+          [
+            500,
+            47431680
+          ],
+          [
+            1000,
+            47448064
+          ]
+        ],
+        "network_retained": true,
+        "recovered": true
+      }
+    }
+  },
+  "diagnostic_runs": {
+    "source_control": {
+      "path": "/private/tmp/bng3-packet4-141-evidence/source-control/report.json",
+      "sha256": "7ae3778540d1c2f1313c9947201ef7fe021a1979e64194f69df7c43a3cc5091b",
+      "status_counts": {
+        "PASS": 8,
+        "UNSUPPORTED": 1
+      },
+      "qualification_changes": "uncommitted during run",
+      "native_lineage": "UNVERIFIED",
+      "evidence_kind": "diagnostic-only"
+    },
+    "parameter_controls": {
+      "path": "/private/tmp/bng3-packet4-141-evidence/source-control/reuse-controls.json",
+      "sha256": "f899a5d3acec68e25b3a5cd8e5ccc492621d230aaabe3caa65bd58a6f53e207c",
+      "status": "diagnostic-only; fresh-output comparison does not prove reuse"
+    },
+    "dimer_control": {
+      "path": "/private/tmp/bng3-packet4-141-evidence/dimer-control/report.json",
+      "sha256": "d5573bc39bc15a55ac9a977c898274599cdd9f70e107041e1cfd6a9230d3090c",
+      "status": "two lifecycle checks; no first differences; diagnostic-only, no independent scientific qualification",
+      "qualification_changes": "uncommitted during run"
+    }
+  },
+  "github_snapshots": {
+    "captured_before_receipt": true,
+    "snapshot_files_timestamp_utc": "2026-10-19T23:39:06Z/23:39:09Z",
+    "new_github_refresh_claimed": false,
+    "prs": [
+      {
+        "number": 310,
+        "state": "OPEN",
+        "owner": "native BNGIR/multi-pattern and NFsim normalization",
+        "head": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+        "checks": {
+          "SUCCESS": 9,
+          "QUEUED": 12,
+          "SKIPPED": 1
+        },
+        "pr_snapshot": "/private/tmp/bng3-packet4-141-evidence/pr310.json",
+        "pr_sha256": "a3fd6b4eee421d8f4543d1061f00e86b5d9d9a3135009b4f249c82977a230214",
+        "runs_snapshot": "/private/tmp/bng3-packet4-141-evidence/runs310.json",
+        "runs_sha256": "8ed99fe559fa8a44c78584ab7c6709a3682513a0e945f76c2a89c07f18a0bec9",
+        "url": "https://github.com/RuleWorld/BNG3/pull/310",
+        "author": "akutuva21",
+        "exact_head_runs": [
+          {
+            "conclusion": "success",
+            "databaseId": 39337585456,
+            "event": "pull_request",
+            "headSha": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+            "status": "completed",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585456",
+            "workflowName": "Official SBML conformance subset"
+          },
+          {
+            "conclusion": "success",
+            "databaseId": 39337585345,
+            "event": "pull_request",
+            "headSha": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+            "status": "completed",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585345",
+            "workflowName": "Lean semantic kernel"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39337585282,
+            "event": "pull_request",
+            "headSha": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282",
+            "workflowName": "CI"
+          },
+          {
+            "conclusion": "success",
+            "databaseId": 39337585296,
+            "event": "pull_request",
+            "headSha": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+            "status": "completed",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585296",
+            "workflowName": "CodeQL"
+          },
+          {
+            "conclusion": "success",
+            "databaseId": 39337585421,
+            "event": "pull_request",
+            "headSha": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+            "status": "completed",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585421",
+            "workflowName": "Formatting patch"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39337585279,
+            "event": "pull_request",
+            "headSha": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279",
+            "workflowName": "Cross-tool parity"
+          }
+        ],
+        "checks_at_snapshot": [
+          {
+            "name": "Lint & Format",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836230"
+          },
+          {
+            "name": "Analyze (cpp)",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585296/job/118350835437"
+          },
+          {
+            "name": "Validate parity source lock",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118350835250"
+          },
+          {
+            "name": "Check formatting and suggest patch",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585421/job/118350836066"
+          },
+          {
+            "name": "Lean 4.33.1 kernel and NFnext contracts",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585345/job/118350835783"
+          },
+          {
+            "name": "Official SBML references (128 PR cases; full scheduled suite)",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585456/job/118350836416"
+          },
+          {
+            "name": "Analyze (python)",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585296/job/118350835722"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, gcc-12)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836487"
+          },
+          {
+            "name": "BNG3 numerical, expression and export parity",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988241"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, clang-15)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836509"
+          },
+          {
+            "name": "C++ (macos-14, clang-arm64)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836758"
+          },
+          {
+            "name": "C++ (windows-2022, msvc)",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836530"
+          },
+          {
+            "name": "C++ ASan (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836448"
+          },
+          {
+            "name": "Integrated semantic validation (Atomizer, BNG3, BNG2, PyBioNetGen, NFsim)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988081"
+          },
+          {
+            "name": "C++ batch SSA (CUDA backend, Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836417"
+          },
+          {
+            "name": "BNG3 vs independent NFsim",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988074"
+          },
+          {
+            "name": "Batch SSA CPU reference parity (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350835967"
+          },
+          {
+            "name": "NFsim historical validation (scheduled)",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361990228"
+          },
+          {
+            "name": "Optional JAX CPU (ODE and SSA availability)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836192"
+          },
+          {
+            "name": "PyBioNetGen API compatibility",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988105"
+          },
+          {
+            "name": "Common evidence and selection contracts",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836302"
+          },
+          {
+            "name": "CodeQL",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/runs/118355037189"
+          }
+        ]
+      },
+      {
+        "number": 311,
+        "state": "OPEN",
+        "owner": "reporting/oracle/release qualification",
+        "head": "684af43846d99175707a42912dc6d1b547aeb074",
+        "checks": {
+          "QUEUED": 16
+        },
+        "pr_snapshot": "/private/tmp/bng3-packet4-141-evidence/pr311.json",
+        "pr_sha256": "d87e508fc30b86e35ce9c0a849e8206410df07ba75dd3c17c2ea9af684f77e20",
+        "runs_snapshot": "/private/tmp/bng3-packet4-141-evidence/runs311.json",
+        "runs_sha256": "59fd63d8c588e6853880f0aa13f5ad1c16b281335f271c5f34347f032e94efa4",
+        "url": "https://github.com/RuleWorld/BNG3/pull/311",
+        "author": "akutuva21",
+        "exact_head_runs": [
+          {
+            "conclusion": "",
+            "databaseId": 39342114188,
+            "event": "pull_request",
+            "headSha": "684af43846d99175707a42912dc6d1b547aeb074",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342114188",
+            "workflowName": "CodeQL"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342114323,
+            "event": "pull_request",
+            "headSha": "684af43846d99175707a42912dc6d1b547aeb074",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342114323",
+            "workflowName": "Formatting patch"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342114068,
+            "event": "pull_request",
+            "headSha": "684af43846d99175707a42912dc6d1b547aeb074",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342114068",
+            "workflowName": "Official SBML conformance subset"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342114087,
+            "event": "pull_request",
+            "headSha": "684af43846d99175707a42912dc6d1b547aeb074",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342114087",
+            "workflowName": "Cross-tool parity"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342114121,
+            "event": "pull_request",
+            "headSha": "684af43846d99175707a42912dc6d1b547aeb074",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121",
+            "workflowName": "CI"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342114233,
+            "event": "pull_request",
+            "headSha": "684af43846d99175707a42912dc6d1b547aeb074",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342114233",
+            "workflowName": "Lean semantic kernel"
+          }
+        ],
+        "checks_at_snapshot": [
+          {
+            "name": "Lint & Format",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365908953"
+          },
+          {
+            "name": "Analyze (cpp)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114188/job/118365909813"
+          },
+          {
+            "name": "Validate parity source lock",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114087/job/118365908777"
+          },
+          {
+            "name": "Check formatting and suggest patch",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114323/job/118365909301"
+          },
+          {
+            "name": "Lean 4.33.1 kernel and NFnext contracts",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114233/job/118365909013"
+          },
+          {
+            "name": "Official SBML references (128 PR cases; full scheduled suite)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114068/job/118365908697"
+          },
+          {
+            "name": "Analyze (python)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114188/job/118365909482"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, gcc-12)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909339"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, clang-15)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909195"
+          },
+          {
+            "name": "C++ (macos-14, clang-arm64)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909270"
+          },
+          {
+            "name": "C++ (windows-2022, msvc)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909242"
+          },
+          {
+            "name": "C++ ASan (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909260"
+          },
+          {
+            "name": "C++ batch SSA (CUDA backend, Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909249"
+          },
+          {
+            "name": "Batch SSA CPU reference parity (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909230"
+          },
+          {
+            "name": "Optional JAX CPU (ODE and SSA availability)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909146"
+          },
+          {
+            "name": "Common evidence and selection contracts",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342114121/job/118365909529"
+          }
+        ]
+      },
+      {
+        "number": 312,
+        "state": "OPEN",
+        "owner": "dimension diagnostic",
+        "head": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+        "checks": {
+          "QUEUED": 16
+        },
+        "pr_snapshot": "/private/tmp/bng3-packet4-141-evidence/pr312.json",
+        "pr_sha256": "ec77b66a37e649993c7bf91d9e4b800bbdeed0ec0b4bd2b1aa72ad5cbd01eeb4",
+        "runs_snapshot": "/private/tmp/bng3-packet4-141-evidence/runs312.json",
+        "runs_sha256": "1631e9f03e57df3afd0bc1d2c2886accb421059f4cc337adfe996b4d18a743d3",
+        "url": "https://github.com/RuleWorld/BNG3/pull/312",
+        "author": "akutuva21",
+        "exact_head_runs": [
+          {
+            "conclusion": "",
+            "databaseId": 39342023480,
+            "event": "pull_request",
+            "headSha": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342023480",
+            "workflowName": "Lean semantic kernel"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342023552,
+            "event": "pull_request",
+            "headSha": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342023552",
+            "workflowName": "Official SBML conformance subset"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342023513,
+            "event": "pull_request",
+            "headSha": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342023513",
+            "workflowName": "Cross-tool parity"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342023483,
+            "event": "pull_request",
+            "headSha": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342023483",
+            "workflowName": "CodeQL"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342023506,
+            "event": "pull_request",
+            "headSha": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342023506",
+            "workflowName": "Formatting patch"
+          },
+          {
+            "conclusion": "",
+            "databaseId": 39342023482,
+            "event": "pull_request",
+            "headSha": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+            "status": "queued",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482",
+            "workflowName": "CI"
+          }
+        ],
+        "checks_at_snapshot": [
+          {
+            "name": "Lint & Format",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608647"
+          },
+          {
+            "name": "Analyze (cpp)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023483/job/118365608023"
+          },
+          {
+            "name": "Validate parity source lock",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023513/job/118365608896"
+          },
+          {
+            "name": "Check formatting and suggest patch",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023506/job/118365607930"
+          },
+          {
+            "name": "Lean 4.33.1 kernel and NFnext contracts",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023480/job/118365608252"
+          },
+          {
+            "name": "Official SBML references (128 PR cases; full scheduled suite)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023552/job/118365608804"
+          },
+          {
+            "name": "Analyze (python)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023483/job/118365607709"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, gcc-12)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608686"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, clang-15)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608628"
+          },
+          {
+            "name": "C++ (macos-14, clang-arm64)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608640"
+          },
+          {
+            "name": "C++ (windows-2022, msvc)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608630"
+          },
+          {
+            "name": "C++ ASan (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608594"
+          },
+          {
+            "name": "C++ batch SSA (CUDA backend, Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608245"
+          },
+          {
+            "name": "Batch SSA CPU reference parity (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608486"
+          },
+          {
+            "name": "Optional JAX CPU (ODE and SSA availability)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608525"
+          },
+          {
+            "name": "Common evidence and selection contracts",
+            "status": "QUEUED",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/RuleWorld/BNG3/actions/runs/39342023482/job/118365608562"
+          }
+        ]
+      }
+    ]
+  },
+  "remaining_limits": [
+    "Exact-head native execution and ASan/LSan cleanup result.",
+    "Concurrent parameter mutation during simulation.",
+    "Independent native NFsim lifecycle/oracle checks.",
+    "General cache ownership under ThreadSanitizer.",
+    "Stochastic distributional parity and other solvers/features.",
+    "Public topology and compartment mutation semantics.",
+    "Compile-once public compiled-model reuse remains unimplemented."
+  ],
+  "compile_contract_source": {
+    "model_cache": "python/bionetgen/model.py:66,118-125,182-184,437-438",
+    "per_call_integrator": "cpp/bindings/bind_engine.cpp:547,608; cpp/engine/OdeIntegrator.cpp:190-208",
+    "local_rng": "cpp/engine/OdeIntegrator.cpp:3077-3082",
+    "scan_reconstruction": "python/bionetgen/scan.py:115-121,217-233,479-496",
+    "scope": "Native ODE/SSA public routes only; this is source inspection, not an instrumented compilation count."
+  },
+  "prior_audit": "https://github.com/RuleWorld/BNG3/blob/684af43846d99175707a42912dc6d1b547aeb074/docs/release-audit-2026-10-19.json",
+  "historical_demonstrated_slices_source": "https://github.com/RuleWorld/BNG3/actions/runs/39330889076/artifacts/12225369672"
+}
