@@ -43,6 +43,30 @@ native import boundary names that boundary in the established
 "native BNGIR does not support ..." wording so the consumer reports a
 support boundary instead of a harness failure.
 
+## Non-finite rate coefficients are refused where they enter the engine
+
+A rate law with no runtime dependency is folded into a constant rate
+coefficient when the engine compiles the generated network. When that number
+was not finite — a model function such as `f() = ln(-1)`, a parameter
+expression, or a derived rate — the coefficient reached the simulator as a NaN
+or an infinity: the SSA drew the next reaction from a NaN propensity table
+and the ODE integrated NaN derivatives, so both engines ran a model that
+cannot be simulated and reported nothing. The engine now refuses such a model
+while it compiles the network, which is where the constant coefficient first
+enters it, and the refusal reuses the established "non-finite functional rate
+coefficient" wording. Because every simulator on that integrator compiles the
+network first, the refusal covers the SSA, the batch SSA and the ODE methods,
+as well as the rate-coefficient validation hook, which used to report the
+non-finite value instead of refusing it. A coefficient that is non-finite only
+at some later time belongs to a functional rate: the SSA already refuses that
+case when it evaluates the rate, and the compile-time check leaves those
+models alone.
+
+`tests/validation/test_ssa_functional_rates.py` was not executed by any CI
+job, which is why the gap stayed invisible. It now runs in the required
+parity step, and it covers the ODE counterpart of the SSA refusal, the
+parameter-expression case, and a finite-function model that must still run.
+
 ## Integrated semantic validation repairs (2026-10-19 candidate)
 
 The hosted integrated semantic validation job failed on `main` with sixteen
