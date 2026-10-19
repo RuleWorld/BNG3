@@ -418,7 +418,7 @@ TEST(Driver_AsymmetricHomotypicPairMatchesEitherOrientation) {
     EXPECT_EQ(d.state().molecules(c).liveCount(), 1u);
 }
 
-TEST(Driver_GuardsAgainstCombinatorialExplosion) {
+TEST(Driver_EnumeratesLargeReactantSet) {
     ExecutableModel e;
     const MoleculeTypeId a = addType(e, "A");
     const MoleculeTypeId d = addType(e, "D");
@@ -451,13 +451,10 @@ TEST(Driver_GuardsAgainstCombinatorialExplosion) {
     std::vector<SsaMemberSignature> sigs;
     sigs.push_back(s);
     SsaDriver driver(e, sigs);
-    // 101 molecules per root -> 101^3 > 1,000,000 combinations.
+    // 101 molecules per root: enumerate all injective unordered
+    // combinations without the former complexity guard.
     seed(e, driver, a, 101);
-    bool threw = false;
-    try {
-        driver.initialize();
-    } catch (const std::runtime_error&) {
-        threw = true;
-    }
-    EXPECT_TRUE(threw);
+    driver.initialize();
+    // C(101,3) unordered combinations of three distinct molecules.
+    EXPECT_EQ(driver.tupleCount(fid, 0), 166650u);
 }

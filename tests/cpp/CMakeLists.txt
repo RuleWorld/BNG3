@@ -382,6 +382,7 @@ target_include_directories(test_nfcore2_parity PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
     ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore2
 )
+target_compile_definitions(test_nfcore2_parity PRIVATE BNG_NFCORE2_PROTOTYPE)
 target_link_libraries(test_nfcore2_parity PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2
     bionetgen_core

@@ -74,6 +74,17 @@ struct SsaDriverResult {
 // whose reactant types changed live count. This stays correct even where
 // the lowered dependency index omits existence features; incremental
 // per-member refresh is follow-up work once parity holds.
+#ifndef BNG_NFCORE2_PROTOTYPE
+#error "NFcore2::SsaDriver is a non-production prototype (see STATUS above); \ define BNG_NFCORE2_PROTOTYPE to acknowledge its limited scope."
+#endif
+
+// Production blockers (why this is not a delivered execution path):
+//  - no production call site (pybind simulate_nf, ActionDispatch, CLI use NFcore::System);
+//  - LEGACY_RATE_EXPRESSION rate laws are rejected (reactant-count tracking missing);
+//  - stochastic equivalence against native NFcore is only established for the
+//    single reversible-isomerization case plus focused transform coverage;
+//  - refresh is O(families) per fire (not incremental);
+//  - homotypic orientation handling for >=3 roots is enumeration-order dependent.
 class SsaDriver {
 public:
     SsaDriver(const ExecutableModel& executable,

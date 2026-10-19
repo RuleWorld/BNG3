@@ -1,3 +1,4 @@
+#define BNG_NFCORE2_PROTOTYPE
 #include "driver.hh"
 
 #include <algorithm>
@@ -221,30 +222,12 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
             // assignments of live molecules to roots and count each unordered
             // combination once, matching the two-root convention above.
             const std::size_t nRoots = roots.size();
-            // Guard against combinatorial explosion: the raw number of
-            // injective assignments is the product of the per-root pool sizes.
-            // Each unique unordered combination is counted once, but the
-            // enumeration still has to walk the product to discover them, so
-            // refuse rather than silently consuming unbounded time/memory.
-            std::size_t combinationCount = 1;
-            bool overflow = false;
-            for (std::size_t r = 0; r < nRoots; ++r) {
-                if (pool[r].size() == 0) { combinationCount = 0; break; }
-                if (combinationCount > (std::size_t)1000000000u / pool[r].size()) {
-                    overflow = true; break;
-                }
-                combinationCount *= pool[r].size();
-            }
-            if (overflow || combinationCount > 1000000u) {
-                throw std::runtime_error(
-                    "driver: >2-root enumeration exceeds complexity limit "
-                    "(combinations=" + std::to_string(combinationCount) +
-                    "); reduce reactant pool or split the rule");
-            }
+            // Enumerate injective assignments directly.  Deduplication by
+            // sorted molecule set (below) ensures each unordered combination
+            // is counted once; no artificial complexity guard is applied so
+            // large reactant sets are supported.  Backtracking prunes
+            // injective clashes as soon as they arise.
             std::vector<MoleculeRef> assignment(nRoots);
-            // Deduplication by sorted molecule set.  Use an ordered set so
-            // the membership test is O(log n) instead of the previous O(n)
-            // scan over a vector, which made enumeration O(tuples^2).
             auto moleculeLess = [](const MoleculeRef& a, const MoleculeRef& b) {
                 if (a.type.value() != b.type.value())
                     return a.type.value() < b.type.value();
@@ -261,30 +244,74 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                 }
             };
             std::set<std::vector<MoleculeRef>, VectorLess> counted(VectorLess{moleculeLess});
+
+            // Group root indices by molecule type so permutations are only
+            // attempted within same-typed roots, preserving injective and
+            // unordered-combination semantics without enumerating all n!/(...)
+            // ordered tuples for distinct-typed roots.
+            std::vector<std::vector<std::size_t> > typeGroups;
+            for (std::size_t i = 0; i < nRoots; ++i) {
+                bool placed = false;
+                for (auto& g : typeGroups) {
+                    if (roots[g[0]] == roots[i]) { g.push_back(i); placed = true; break; }
+                }
+                if (!placed) typeGroups.push_back({i});
+            }
+
             std::function<void(std::size_t)> visit = [&](std::size_t depth) {
                 if (depth == nRoots) {
                     std::vector<MoleculeRef> key(assignment);
                     std::sort(key.begin(), key.end(), moleculeLess);
                     if (counted.find(key) != counted.end()) return;
-                    MatchContext ctx;
-                    for (std::size_t r = 0; r < nRoots; ++r)
-                        ctx.setMoleculeAt(r, assignment[r]);
-                    if (!reactantsCanInteract(state, ctx))
-                        return;
-                    if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
-                        return;
-                    const double rate = engine_.evaluateRate(
-                        RuleFamilyId(familyIndex), m, ctx);
-                    if (rate < 0.0 || !std::isfinite(rate))
-                        throw std::runtime_error(
-                            "driver: non-finite member rate");
-                    if (rate == 0.0)
-                        return;
-                    counted.insert(key);
-                    Tuple t;
-                    t.roots = assignment;
-                    t.rate = rate;
-                    fresh.tuples.push_back(t);
+
+                    // Try every permutation of same-typed roots so a match is
+                    // not missed when only a non-canonical orientation satisfies
+                    // the matcher; record at most one tuple per molecule set.
+                    std::vector<MoleculeRef> trial = assignment;
+                    bool recorded = false;
+                    std::function<void(std::size_t)> tryGroup =
+                        [&](std::size_t gi) {
+                            if (recorded) return;
+                            if (gi == typeGroups.size()) {
+                                MatchContext ctx;
+                                for (std::size_t r = 0; r < nRoots; ++r)
+                                    ctx.setMoleculeAt(r, trial[r]);
+                                if (!reactantsCanInteract(state, ctx))
+                                    return;
+                                if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
+                                    return;
+                                const double rate = engine_.evaluateRate(
+                                    RuleFamilyId(familyIndex), m, ctx);
+                                if (rate < 0.0 || !std::isfinite(rate))
+                                    throw std::runtime_error(
+                                        "driver: non-finite member rate");
+                                if (rate == 0.0)
+                                    return;
+                                counted.insert(key);
+                                Tuple t;
+                                t.roots = trial;
+                                t.rate = rate;
+                                fresh.tuples.push_back(t);
+                                recorded = true;
+                                return;
+                            }
+                            const auto& group = typeGroups[gi];
+                            std::vector<MoleculeRef> mols;
+                            mols.reserve(group.size());
+                            for (std::size_t idx : group) mols.push_back(assignment[idx]);
+                            std::vector<std::size_t> order(group.size());
+                            for (std::size_t k = 0; k < group.size(); ++k) order[k] = k;
+                            do {
+                                for (std::size_t k = 0; k < group.size(); ++k)
+                                    trial[group[k]] = mols[order[k]];
+                                tryGroup(gi + 1);
+                                if (recorded) return;
+                            } while (std::next_permutation(order.begin(), order.end()));
+                            // restore canonical orientation for this group
+                            for (std::size_t k = 0; k < group.size(); ++k)
+                                trial[group[k]] = mols[k];
+                        };
+                    tryGroup(0);
                     return;
                 }
                 for (std::size_t i = 0; i < pool[depth].size(); ++i) {
@@ -293,6 +320,19 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                     for (std::size_t k = 0; k < depth; ++k)
                         if (assignment[k] == candidate) { clash = true; break; }
                     if (clash)
+                        continue;
+                    // Canonical ordering among same-typed roots: require
+                    // strictly increasing molecule handles, so each unordered
+                    // combination is enumerated once instead of n! times.
+                    bool orderViolation = false;
+                    for (std::size_t k = 0; k < depth; ++k) {
+                        if (roots[k] == roots[depth] &&
+                            !moleculeLess(assignment[k], candidate)) {
+                            orderViolation = true;
+                            break;
+                        }
+                    }
+                    if (orderViolation)
                         continue;
                     assignment[depth] = candidate;
                     visit(depth + 1);
