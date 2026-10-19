@@ -246,6 +246,24 @@ ParsedPattern parsePattern(const std::string& text) {
             pattern.compartment = input.substr(1, colonPos - 1);
             input = input.substr(colonPos + separatorLength);
             hadLeadingCompartmentPrefix = true;
+        } else {
+            // BNGL source spells the species-level compartment with a single
+            // colon (`@EC:A()`). Accept it when the colon precedes any
+            // molecule text; otherwise leave the input untouched.
+            const auto single = input.find(':');
+            if (single != std::string::npos) {
+                const std::string candidate = input.substr(1, single - 1);
+                const bool plausible = !candidate.empty() &&
+                    std::all_of(candidate.begin(), candidate.end(),
+                        [](unsigned char ch) {
+                            return std::isalnum(ch) || ch == '_';
+                        });
+                if (plausible) {
+                    pattern.compartment = candidate;
+                    input = input.substr(single + 1);
+                    hadLeadingCompartmentPrefix = true;
+                }
+            }
         }
     }
 
@@ -1645,7 +1663,13 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
 
             xml << "      <Species id=\"" << spId
                 << "\" concentration=\"" << amountValue
-                << "\" name=\"" << escapeXml(patternStr) << "\">\n";
+                << "\" name=\"" << escapeXml(patternStr) << "\"";
+            // NFsim seeds molecules into this compartment unless a Molecule
+            // carries its own; BNG2 emits the species-level compartment here.
+            if (!parsed.compartment.empty()) {
+                xml << " compartment=\"" << escapeXml(parsed.compartment) << "\"";
+            }
+            xml << ">\n";
 
             xml << patternToXml(parsed, spId, "        ");
 

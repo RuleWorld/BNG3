@@ -1958,7 +1958,8 @@ TemplateMolecule *readPatternT(
 		map <string, component> &comps,
 		map <string, component> &symMap,
 		bool verbose,
-		int &suggestedTraversalLimit);
+		int &suggestedTraversalLimit,
+		Compartment *defaultCompartment);
 template <class Element>
 bool readProductMoleculeT(
 		Element * pMol,
@@ -1969,7 +1970,8 @@ bool readProductMoleculeT(
 		vector <MoleculeCreator *> & moleculeCreatorsList,
 		map <string, component> & comps,
 		vector <Compartment *> & productCompartments,
-		bool verbose );
+		bool verbose,
+		Compartment *defaultCompartment);
 template <class Element>
 int readTemplatePatternT(
 		Element * pListOfMol,
@@ -1979,7 +1981,38 @@ int readTemplatePatternT(
 		map <string , TemplateMolecule *> &templates,
 		map <string, component> &comps,
 		map <string, component> &symMap,
-		bool verbose);
+		bool verbose,
+		Compartment *defaultCompartment);
+
+/* Resolves the species-level compartment of a <Pattern>, <ReactantPattern>,
+ * or <ProductPattern> element (emitted by BNG for `@comp:...` patterns).
+ * Molecules without an explicit Molecule/@compartment inherit this default,
+ * mirroring the direct AST/compiled lowering where an empty per-molecule
+ * compartment falls back to the pattern compartment.  Unknown compartment
+ * names fail closed.  Explicit per-molecule compartments keep precedence
+ * (each TemplateMolecule carries its own compartment, so mixed patterns
+ * remain representable). */
+template <class Element>
+bool resolvePatternDefaultCompartment(
+		Element *pPatternElem,
+		System *s,
+		const string &patternName,
+		const string &patternKind,
+		Compartment* &defaultCompartment)
+{
+	defaultCompartment = NULL;
+	if (pPatternElem && pPatternElem->Attribute("compartment")) {
+		string compartmentId = pPatternElem->Attribute("compartment");
+		Compartment *c = s->getCompartment(compartmentId);
+		if (!c) {
+			cerr << "!!!Error. " << patternKind << " '" << patternName
+			     << "' refers to unknown compartment '" << compartmentId << "'. Quitting" << endl;
+			return false;
+		}
+		defaultCompartment = c;
+	}
+	return true;
+}
 
 template <class Element, class Cursor>
 static bool initReactionRulesBody(
@@ -2141,7 +2174,11 @@ static bool initReactionRulesBody(
 					Element *pListOfMols = pReactant->FirstChildElement("ListOfMolecules");
 					if(pListOfMols) {
 						/* At this point, only the first reactant molecule is sent back as a template - rasi */
-						TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, reactantName, reactants, comps, symMap, verbose, suggestedTraversalLimit);
+						/* A species-level ReactantPattern/@compartment (e.g. `@EC:A()`)
+						 * defaults molecules lacking Molecule/@compartment. */
+						Compartment *patternCompartment = NULL;
+						if (!resolvePatternDefaultCompartment(pReactant, s, string(reactantName), "ReactantPattern", patternCompartment)) return false;
+						TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, reactantName, reactants, comps, symMap, verbose, suggestedTraversalLimit, patternCompartment);
 						if(tm==NULL) return false;
 						templates.push_back(tm);
 						reactantIndexMap[string(reactantName)] = templates.size() - 1;
@@ -2278,6 +2315,11 @@ static bool initReactionRulesBody(
 						// If this isn't the pattern we're looking for, go onto the next pattern
 						if ( productName != patt_id ) continue;
 
+						// Species-level ProductPattern/@compartment (e.g. `@EC:A()`)
+						// defaults created molecules lacking Molecule/@compartment.
+						Compartment *addProductCompartment = NULL;
+						if (!resolvePatternDefaultCompartment(pProduct, s, productName, "ProductPattern", addProductCompartment)) return false;
+
 						Element *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
 
 						if( pListOfMols==NULL )
@@ -2311,7 +2353,7 @@ static bool initReactionRulesBody(
 							bool ok = readProductMoleculeT(
 									      pMolecule, s, parameter, allowedStates,
 										  productName, moleculeCreatorsList,
-										  comps, productCompartments, verbose );
+										  comps, productCompartments, verbose, addProductCompartment );
 
 							if( !ok )
 							{
@@ -2362,8 +2404,11 @@ static bool initReactionRulesBody(
 						/* Product templates (and the reactant/product partner links set
 						 * from the Map below) are only read by connectivity inference
 						 * (-connect); skip building them otherwise. */
-						if (buildProductTemplates)
-							readTemplatePatternT(pListOfMols, s, allowedStates, productName, products, comps, symMap, verbose);
+						if (buildProductTemplates) {
+							Compartment *productPatternCompartment = NULL;
+							if (!resolvePatternDefaultCompartment(pProduct, s, string(productName), "ProductPattern", productPatternCompartment)) return false;
+							readTemplatePatternT(pListOfMols, s, allowedStates, productName, products, comps, symMap, verbose, productPatternCompartment);
+						}
 					}
 					else {
 						cerr<<"Product pattern "<<productName <<" in reaction "<<rxnName<<" without a valid 'ListOfMolecules'!  Quiting."<<endl;
@@ -2469,7 +2514,9 @@ static bool initReactionRulesBody(
 						if (pListOfMols) {
 							map<string, component> dummyComps, dummySymMap;
 							map<string, TemplateMolecule*> dummyTemplates;
-							TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit);
+							Compartment *filterPatternCompartment = NULL;
+							if (!resolvePatternDefaultCompartment(pPat, s, patternId, "Pattern", filterPatternCompartment)) return false;
+							TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit, filterPatternCompartment);
 							if (tm != NULL) {
 								ts->addExcludeReactant(reactantIndex, tm, dummyTemplates);
 							} else {
@@ -2505,7 +2552,9 @@ static bool initReactionRulesBody(
 						if (pListOfMols) {
 							map<string, component> dummyComps, dummySymMap;
 							map<string, TemplateMolecule*> dummyTemplates;
-							TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit);
+							Compartment *filterPatternCompartment = NULL;
+							if (!resolvePatternDefaultCompartment(pPat, s, patternId, "Pattern", filterPatternCompartment)) return false;
+							TemplateMolecule *tm = readPatternT(pListOfMols, s, parameter, allowedStates, patternId, dummyTemplates, dummyComps, dummySymMap, verbose, suggestedTraversalLimit, filterPatternCompartment);
 							if (tm != NULL) {
 								ts->addIncludeReactant(reactantIndex, tm, dummyTemplates);
 							} else {
@@ -3927,6 +3976,10 @@ bool NFinput::readObservableForTemplateMolecules(TiXmlElement *pObs,
 		}
 
 		//cout<<"   --- reading pattern "<<patternName<<" for symmetry"<<endl;
+		// Species-level Pattern/@compartment (e.g. `@EC:A()`): molecules
+		// lacking Molecule/@compartment inherit this default.
+		Compartment *observablePatternCompartment = NULL;
+		if (!NFinput::resolvePatternDefaultCompartment(pPattern, s, string(patternName), "Pattern", observablePatternCompartment)) return false;
 		TiXmlElement *pListOfMols = pPattern->FirstChildElement("ListOfMolecules");
 		if(pListOfMols) {
 
@@ -3951,7 +4004,7 @@ bool NFinput::readObservableForTemplateMolecules(TiXmlElement *pObs,
 				{
 					map <string,component> symMap = permutations.at(p);
 					map <string,TemplateMolecule *> allTemplatesMap;
-					TemplateMolecule *tm = readPattern(pListOfMols, s, parameter, allowedStates, patternName, allTemplatesMap, comps, symMap, verbose, suggestedTraversalLimit);
+					TemplateMolecule *tm = readPattern(pListOfMols, s, parameter, allowedStates, patternName, allTemplatesMap, comps, symMap, verbose, suggestedTraversalLimit, observablePatternCompartment);
 					if(tm==NULL) return false;
 					tmList.push_back(tm);
 
@@ -3970,7 +4023,7 @@ bool NFinput::readObservableForTemplateMolecules(TiXmlElement *pObs,
 				map <string, component> comps;
 				map <string, component> symMap;
 
-				TemplateMolecule *tm = readPattern(pListOfMols, s, parameter, allowedStates, patternName, allTemplatesMap, comps, symMap, verbose, suggestedTraversalLimit);
+				TemplateMolecule *tm = readPattern(pListOfMols, s, parameter, allowedStates, patternName, allTemplatesMap, comps, symMap, verbose, suggestedTraversalLimit, observablePatternCompartment);
 				if(tm==NULL) return false;
 				tmList.push_back(tm);
 				stochRelation.push_back(relation);
@@ -4147,7 +4200,8 @@ TemplateMolecule *readPatternT(
 		map <string, component> &comps,
 		map <string, component> &symMap,
 		bool verbose,
-		int &suggestedTraversalLimit)
+		int &suggestedTraversalLimit,
+		Compartment *defaultCompartment)
 {
 	try {
 
@@ -4214,6 +4268,11 @@ TemplateMolecule *readPatternT(
 					cerr << "!!!Error. Pattern '" << patternName << "' refers to unknown compartment '" << compartmentId << "' in molecule '" << molUid << "'. Quitting" << endl;
 					return NULL;
 				}
+			} else if (defaultCompartment != NULL) {
+				// Species-level Pattern/@compartment (e.g. `@EC:A()`): an explicit
+				// Molecule/@compartment keeps precedence (molecule wins, as in the
+				// direct AST/compiled lowering); otherwise inherit the default.
+				tempmol->setCompartment(defaultCompartment);
 			}
 			if(verbose) cout<<"\t\t\t\tIncluding Molecule of type: "<<molName<<" with local id: " << molUid<<endl;
 
@@ -4672,9 +4731,10 @@ TemplateMolecule *NFinput::readPattern(
 		map <string, component> &comps,
 		map <string, component> &symMap,
 		bool verbose,
-		int &suggestedTraversalLimit)
+		int &suggestedTraversalLimit,
+		Compartment *defaultCompartment)
 {
-	return readPatternT<TiXmlElement>(pListOfMol, s, parameter, allowedStates, patternName, templates, comps, symMap, verbose, suggestedTraversalLimit);
+	return readPatternT<TiXmlElement>(pListOfMol, s, parameter, allowedStates, patternName, templates, comps, symMap, verbose, suggestedTraversalLimit, defaultCompartment);
 }
 
 bool NFinput::readProductPattern(
@@ -4685,10 +4745,19 @@ bool NFinput::readProductPattern(
 		vector <MoleculeType *> &productMoleculeTypes,
 		vector < vector <int> > &stateInformation,
 		vector < vector <int> > &bindingSiteInformation,
-		bool verbose)
+		bool verbose,
+		Compartment *defaultCompartment)
 {
 	//cout<<"reading the product pattern!"<<endl;
 	try {
+
+		// This legacy overload records only molecule types, so compartment
+		// constraints are unrepresentable here: fail closed rather than
+		// silently dropping a species-level Pattern/@compartment.
+		if (defaultCompartment != NULL) {
+			cerr << "!!!Error. Product pattern '" << patternName << "' carries a species-level compartment that readProductPattern cannot represent. Quitting" << endl;
+			return false;
+		}
 
 		//Variables to remember the index of things
 		const int proMolTypeIndex = 0;
@@ -4749,6 +4818,14 @@ bool NFinput::readProductPattern(
 				if(verbose) cout<<"\t\t\t\tskipping a trash molecule in product pattern..."<<endl;
 				foundTrash=true;
 				continue;
+			}
+
+			// This legacy overload records only molecule types, so a per-molecule
+			// compartment is unrepresentable here: fail closed rather than
+			// silently ignoring it.
+			if (pMol->Attribute("compartment")) {
+				cerr << "!!!Error. Product pattern '" << patternName << "' molecule '" << molUid << "' carries a compartment that readProductPattern cannot represent. Quitting" << endl;
+				return false;
 			}
 
 			//Retrieve the moleculeType and remember it
@@ -4934,7 +5011,8 @@ bool readProductMoleculeT(
 		vector <MoleculeCreator *> & moleculeCreatorsList,
 		map <string, component> & comps,
 		vector <Compartment *> & productCompartments,
-		bool verbose )
+		bool verbose,
+		Compartment *defaultCompartment)
 {
 	//cout<<"reading the product molecule!"<<endl;
 	try
@@ -4993,6 +5071,14 @@ bool readProductMoleculeT(
 				cerr << "!!!Error. Pattern '" << patternName << "' refers to unknown compartment '" << compartmentId << "' in product molecule '" << molUid << "'. Quitting" << endl;
 				return false;
 			}
+		} else if (defaultCompartment != NULL) {
+			// Species-level ProductPattern/@compartment (e.g. `@EC:A()`): an
+			// explicit Molecule/@compartment keeps precedence (molecule wins,
+			// as in the direct AST/compiled lowering); otherwise inherit the
+			// default and record it for zero-order volume conversion.
+			comp = defaultCompartment;
+			tempmol->setCompartment(comp);
+			productCompartments.push_back(comp);
 		}
 
 		// Create a component object for this molecule
@@ -5172,9 +5258,10 @@ bool NFinput::readProductMolecule(
 		vector <MoleculeCreator *> & moleculeCreatorsList,
 		map <string, component> & comps,
 		vector <Compartment *> & productCompartments,
-		bool verbose )
+		bool verbose,
+		Compartment *defaultCompartment)
 {
-	return readProductMoleculeT<TiXmlElement>(pMol, s, parameter, allowedStates, patternName, moleculeCreatorsList, comps, productCompartments, verbose);
+	return readProductMoleculeT<TiXmlElement>(pMol, s, parameter, allowedStates, patternName, moleculeCreatorsList, comps, productCompartments, verbose, defaultCompartment);
 }
 
 namespace NFinput {
@@ -5187,7 +5274,8 @@ int readTemplatePatternT(
 		map <string , TemplateMolecule *> &templates,
 		map <string, component> &comps,
 		map <string, component> &symMap,
-		bool verbose)
+		bool verbose,
+		Compartment *defaultCompartment)
 {
 	try {
 
@@ -5258,6 +5346,11 @@ int readTemplatePatternT(
 					cerr << "!!!Error. Pattern '" << patternName << "' refers to unknown compartment '" << compartmentId << "' in molecule '" << molUid << "'. Quitting" << endl;
 					return 0;
 				}
+			} else if (defaultCompartment != NULL) {
+				// Species-level Pattern/@compartment (e.g. `@EC:A()`): an explicit
+				// Molecule/@compartment keeps precedence (molecule wins, as in the
+				// direct AST/compiled lowering); otherwise inherit the default.
+				tempmol->setCompartment(defaultCompartment);
 			}
 			if(verbose) cout<<"\t\t\t\tIncluding Molecule of type: "<<molName<<" with local id: " << molUid<<endl;
 
@@ -5676,7 +5769,8 @@ int NFinput::readTemplatePattern(
 		map <string , TemplateMolecule *> &templates,
 		map <string, component> &comps,
 		map <string, component> &symMap,
-		bool verbose)
+		bool verbose,
+		Compartment *defaultCompartment)
 {
-	return readTemplatePatternT<TiXmlElement>(pListOfMol, s, allowedStates, patternName, templates, comps, symMap, verbose);
+	return readTemplatePatternT<TiXmlElement>(pListOfMol, s, allowedStates, patternName, templates, comps, symMap, verbose, defaultCompartment);
 }
