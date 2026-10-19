@@ -64,6 +64,40 @@ def test_unexpected_not_tested_is_red_but_explicit_inapplicability_is_reported(
     assert publish(d, tmp_path / "b", strict=True, revision="abc") == 0
 
 
+def test_unsupported_aggregate_only_exempts_its_declared_missing_children(tmp_path):
+    d = report()
+    d["results"] = [
+        {
+            "id": "parent",
+            "status": "UNSUPPORTED",
+            "aggregate": True,
+            "child_ids": ["native", "network"],
+        },
+        {"id": "native", "status": "UNSUPPORTED"},
+        {"id": "network", "status": "NOT_TESTED"},
+    ]
+    assert publish(d, tmp_path / "a", strict=True, revision="abc") == 0
+    d["results"].append({"id": "unrelated", "status": "NOT_TESTED"})
+    assert publish(d, tmp_path / "b", strict=True, revision="abc") == 1
+    d["results"][-1]["blocked_by"] = ["network"]
+    assert publish(d, tmp_path / "c", strict=True, revision="abc") == 0
+    d["results"][-1]["support_required"] = True
+    assert publish(d, tmp_path / "d", strict=True, revision="abc") == 1
+
+
+def test_unsupported_is_reported_without_failing_unless_support_is_required(
+    tmp_path, capsys
+):
+    d = report()
+    d["results"][0]["status"] = "UNSUPPORTED"
+    assert publish(d, tmp_path / "a", strict=True, revision="abc") == 0
+    assert "::warning" in capsys.readouterr().out
+    assert "UNSUPPORTED" in (tmp_path / "a").read_text()
+    d["results"][0]["support_required"] = True
+    assert publish(d, tmp_path / "required", strict=True, revision="abc") == 1
+    assert "::error" in capsys.readouterr().out
+
+
 def test_unknown_status_cannot_pass(tmp_path):
     d = report()
     d["results"][0]["status"] = "GREEN"
@@ -74,6 +108,7 @@ def test_unknown_status_cannot_pass(tmp_path):
 def test_unqualified_selected_case_cannot_make_diagnostic_check_green(tmp_path, status):
     d = report()
     d["results"][0]["status"] = status
+    d["results"][0]["support_required"] = True
     assert publish(d, tmp_path / "a", strict=True, revision="abc") == 1
 
 

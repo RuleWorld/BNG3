@@ -610,6 +610,7 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
                     "NOT_TESTED",
                     "no parameter dependency in translated reaction rates; numeric folding is allowed",
                 )
+                | {"applicability": "no-rate-parameter-dependency"}
             )
         else:
             old_rate = source.get_parameter(rate_name).value
