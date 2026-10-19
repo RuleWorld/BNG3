@@ -1417,3 +1417,52 @@ def test_native_import_rejects_unsupported_observable_keys():
     document["model"]["observables"][0]["future_semantics"] = True
     with pytest.raises(ValueError, match="unsupported"):
         bionetgen.from_bngir(document, native=True)
+
+
+
+def test_observable_python_binding_round_trips():
+    """The Python-exposed Observable constructor + Model.addObservable must
+    produce the same structured snapshot as a native BNGL-parsed model."""
+    source = OBSERVABLES_SOURCE
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    reference = json.loads(source_model.to_bngir(version="0.2"))
+
+    from bionetgen._bionetgen_cpp import Observable
+
+    model = _cpp.parse_string(SOURCE)
+    model.addObservable(Observable("a_count", "Molecules", ["A()"]))
+    model.addObservable(Observable("b_count", "Species", ["B()"]))
+    restored = bionetgen.BioNetGenModel(model)
+    assert json.loads(restored.to_bngir(version="0.2")) == reference
+
+
+
+def test_native_import_reconstructs_multi_term_observables():
+    """An observable with multiple terms (e.g. A(), B()) must round-trip."""
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["terms"].append(
+        {
+            "pattern": {
+                "compartment_prefix": False,
+                "molecules": [
+                    {"occurrence": 0, "sites": [], "type": "A", "type_id": 0}
+                ],
+            },
+            "quantity": 0,
+        }
+    )
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+
+def test_native_import_rejects_neq_relation():
+    """The v0.2 schema restricts relations to {==, >, >=, <, <=}; ``!=``
+    is explicitly unsupported and must be rejected fail-closed rather than
+    approximated."""
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = "!="
+    document["model"]["observables"][0]["terms"][0]["quantity"] = 2
+    with pytest.raises(ValueError, match="unsupported count relation"):
+        bionetgen.from_bngir(document, native=True)

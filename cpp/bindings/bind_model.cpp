@@ -63,6 +63,8 @@ void bind_model(py::module_& m) {
         });
 
     py::class_<Observable>(m, "Observable")
+        .def(py::init<std::string, std::string, std::vector<std::string>>(),
+             py::arg("name"), py::arg("type"), py::arg("patterns"))
         .def_property_readonly("name", &Observable::getName)
         .def_property_readonly("type", &Observable::getType)
         .def_property_readonly("patterns", &Observable::getPatterns,
@@ -212,8 +214,8 @@ void bind_model(py::module_& m) {
         .def_property_readonly("substance_units", &Model::getSubstanceUnits)
         .def_property_readonly("unit_defaults", &Model::getUnitDefaults)
         .def_property_readonly("options", &Model::getOptions)
-        .def("set_model_name", &Model::setModelName,
-             py::arg("name"))
+        .def("set_model_name", &Model::setModelName, py::arg("name"))
+        .def("addObservable", &Model::addObservable, py::arg("observable"))
         .def("define_unit", &Model::defineUnit,
              py::arg("name"), py::arg("expression"))
         .def("set_unit_default", &Model::setUnitDefault,
