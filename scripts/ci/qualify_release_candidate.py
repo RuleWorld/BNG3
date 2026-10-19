@@ -91,7 +91,7 @@ def main() -> int:
         return 1
     print(
         "Required exact-main workflow runs passed for candidate SHA "
-        f"{args.sha} (four push workflows and bounded official SBML manual run)."
+        f"{args.sha} (four push workflows and official SBML manual evidence)."
     )
     return 0
 
