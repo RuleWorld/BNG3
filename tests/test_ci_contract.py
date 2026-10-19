@@ -959,7 +959,7 @@ def test_release_workflow_requires_exact_main_sha_qualification():
     assert "fetch-depth: 0" in qualify
     assert "git merge-base --is-ancestor" in qualify
     assert "gh api" in qualify
-    assert 'event=workflow_dispatch' in qualify
+    assert "event=workflow_dispatch" in qualify
     assert "--sbml-runs-json" in qualify
 
     qualification_script = (
@@ -1018,7 +1018,10 @@ def test_release_run_qualification_requires_success_for_each_exact_main_push():
     "overrides, expected",
     [
         (None, ["Official SBML conformance subset"]),
-        ({"status": "in_progress", "conclusion": None}, ["Official SBML conformance subset"]),
+        (
+            {"status": "in_progress", "conclusion": None},
+            ["Official SBML conformance subset"],
+        ),
         ({"conclusion": "failure"}, ["Official SBML conformance subset"]),
         ({"head_sha": "b" * 40}, ["Official SBML conformance subset"]),
         ({"head_branch": "release"}, ["Official SBML conformance subset"]),
@@ -1042,12 +1045,15 @@ def test_release_run_qualification_requires_official_sbml_manual_run(
     if overrides is not None:
         run.update(overrides)
     payload = {"workflow_runs": [] if overrides is None else [run]}
-    assert qualify_workflow_runs(
-        payload,
-        "a" * 40,
-        ["Official SBML conformance subset"],
-        event="workflow_dispatch",
-    ) == expected
+    assert (
+        qualify_workflow_runs(
+            payload,
+            "a" * 40,
+            ["Official SBML conformance subset"],
+            event="workflow_dispatch",
+        )
+        == expected
+    )
 
 
 def test_release_qualification_cli_consumes_both_workflow_payloads(tmp_path):

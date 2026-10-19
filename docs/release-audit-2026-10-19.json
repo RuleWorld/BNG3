@@ -2837,6 +2837,75 @@
       "result": "60 passed in 1.31s",
       "strict_provenance": "14 unchanged approval errors; compared exactly with original audit",
       "limitation": "No new exact-head hosted result claimed."
+    },
+    "technical_work_authorization": {
+      "scope": "User authorized remaining technical work; reviewer assignments and distribution policy excluded. Retain bounded support and corpus restrictions; no merges or issue closures.",
+      "approval_effect": "Authorization to work; no fabricated source/build acceptance or frozen release SHA."
+    },
+    "technical_pin_refresh": {
+      "checked_at": "2026-10-19 23:28:21 UTC",
+      "checks": [
+        {
+          "name": "bionetgen",
+          "repository": "RuleWorld/bionetgen",
+          "locked_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+          "exit_code": 0,
+          "observed": "9601746f8884ed19ab2acea49fe87fc4660ace46"
+        },
+        {
+          "name": "nfsim",
+          "repository": "RuleWorld/NFsim",
+          "locked_revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+          "exit_code": 0,
+          "observed": "9b00d42f734dcc3e695205600f12cae5b44d1daa"
+        },
+        {
+          "name": "nfsim-rasi",
+          "repository": "akutuva21/nfsim",
+          "locked_revision": "d13086bd3cf2fd268be5efea4d83089301479de3",
+          "exit_code": 0,
+          "observed": "d13086bd3cf2fd268be5efea4d83089301479de3"
+        },
+        {
+          "name": "bngplayground",
+          "repository": "RuleWorld/bngplayground",
+          "locked_revision": "ba781d690512b964711a3ca2df059be95e01561d",
+          "exit_code": 0,
+          "observed": "ba781d690512b964711a3ca2df059be95e01561d"
+        }
+      ],
+      "limit": "Commit reachability only; not new branch-cutoff acceptance, native build identity or behavior qualification."
+    },
+    "authorized_technical_repairs": {
+      "product": {
+        "pr": 312,
+        "head": "6c94f3d369dcb84721dc063a70ddb2e1982adc97",
+        "scope": "Truthful compartment geometry diagnostic only; existing guard/severity/admission retained.",
+        "red_green": "4 expected diagnostic failures with original parser; 5 new tests pass with repair.",
+        "root_verification": "8 passed, 110 deselected with --noconftest pure Python; Black py312 and Ruff pass.",
+        "replay_source": "/private/tmp/bng3-01133-repaired/report.json",
+        "replay_result": "UNSUPPORTED with corrected reason; source/settings/results hashes and numerical settings unchanged.",
+        "runtime_limit": "Installed local native source lineage unverified; diagnostic evidence only."
+      },
+      "release_gate": {
+        "code_commits": [
+          "6c4c4512",
+          "11514b27"
+        ],
+        "scope": "Existing release qualifier now consumes exact-main successful completed official SBML workflow_dispatch evidence in addition to unchanged four exact-main push gates.",
+        "defect_reproduced": "Original CLI accepts four green pushes with no official SBML evidence; repaired CLI rejects.",
+        "root_verification": "10 passed, 63 deselected; Black py312 and Ruff pass.",
+        "limits": "Event metadata does not prove bounded input; workflow gate is bounded scientific evidence, not full conformance. No manual campaign dispatched."
+      },
+      "unchanged_restrictions": [
+        "no merge",
+        "no issue closure",
+        "no corpus expansion",
+        "no tolerance change",
+        "no new geometry support",
+        "no approval-status fabrication"
+      ],
+      "hosted_evidence": "New candidates pending; older hosted evidence is not relabeled."
     }
   }
 }
