@@ -14,6 +14,7 @@
 #include "ast/Expression.hpp"
 #include "ast/Model.hpp"
 #include "ast/MoleculeType.hpp"
+#include "ast/Observable.hpp"
 #include "ast/Parameter.hpp"
 #include "ast/ReactionRule.hpp"
 #include "ast/SeedSpecies.hpp"
@@ -123,7 +124,7 @@ void requireExpressionProperties(const py::dict& expression,
 
 void rejectUnsupportedModelSections(const py::dict& document) {
     static const std::vector<std::string> sections = {
-        "compartments", "observables", "functions", "energy_patterns",
+        "functions", "energy_patterns",
         "barrier_patterns", "population_maps", "population_types",
     };
     for (const auto& section : sections) {
@@ -192,18 +193,42 @@ Expression expressionFromBngir(const py::dict& value,
     throw std::runtime_error("unsupported native BNGIR expression kind: " + kind);
 }
 
-BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
-    // Keep the native boundary as narrow as the public parser-free contract.
-    // Qualifiers and redundant identities must not disappear during rebuilding.
-    static const std::vector<std::string> patternKeys = {
+SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
+    static const std::vector<std::string> requiredPatternKeys = {
         "compartment_prefix", "molecules",
     };
-    requireObjectKeys(pattern, patternKeys, patternKeys, "pattern");
+    static const std::vector<std::string> allowedPatternKeys = {
+        "compartment", "compartment_prefix", "molecules",
+    };
+    requireObjectKeys(pattern, requiredPatternKeys, allowedPatternKeys, "pattern");
     const py::handle prefix = pattern["compartment_prefix"];
-    if (!PyBool_Check(prefix.ptr()) || py::cast<bool>(prefix)) {
+    if (!PyBool_Check(prefix.ptr())) {
         throw std::runtime_error(
-            "native BNGIR pattern does not support compartment prefixes");
+            "native BNGIR pattern compartment_prefix must be boolean");
     }
+    const bool isPrefix = py::cast<bool>(prefix);
+
+    std::string outerCompartment;
+    if (pattern.contains(py::str("compartment"))) {
+        if (!py::isinstance<py::str>(pattern["compartment"])) {
+            throw std::runtime_error(
+                "native BNGIR pattern compartment must be a string");
+        }
+        outerCompartment = py::cast<std::string>(pattern["compartment"]);
+        if (outerCompartment.empty()) {
+            throw std::runtime_error(
+                "native BNGIR pattern compartment must not be empty");
+        }
+        const auto& compartments = model.getCompartments();
+        if (std::find_if(compartments.begin(), compartments.end(),
+                          [&](const Compartment& compartment) {
+                              return compartment.getName() == outerCompartment;
+                          }) == compartments.end()) {
+            throw std::runtime_error(
+                "native BNGIR pattern references an unknown compartment");
+        }
+    }
+
     BNGcore::PatternGraph graph;
     const auto molecules = py::cast<py::list>(pattern["molecules"]);
     if (molecules.size() != 1) {
@@ -212,10 +237,15 @@ BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
     }
     for (const auto& rawMolecule : molecules) {
         const auto molecule = py::cast<py::dict>(rawMolecule);
-        static const std::vector<std::string> moleculeKeys = {
+        static const std::vector<std::string> requiredMoleculeKeys = {
             "occurrence", "sites", "type", "type_id",
         };
-        requireObjectKeys(molecule, moleculeKeys, moleculeKeys, "pattern molecule");
+        static const std::vector<std::string> allowedMoleculeKeys = {
+            "compartment", "compartment_id", "occurrence", "sites",
+            "type", "type_id",
+        };
+        requireObjectKeys(molecule, requiredMoleculeKeys, allowedMoleculeKeys,
+                          "pattern molecule");
         if (indexFromBngir(molecule["occurrence"], "molecule occurrence") != 0) {
             throw std::runtime_error(
                 "native BNGIR pattern requires molecule occurrence zero");
@@ -238,9 +268,51 @@ BNGcore::PatternGraph patternFromBngir(Model& model, const py::dict& pattern) {
         }
         const auto& nodeType = model.getGraphTypeRegistry().ensureMoleculeType(moleculeType);
         BNGcore::Node node(nodeType);
+
+        std::string moleculeCompartment;
+        if (molecule.contains(py::str("compartment"))) {
+            if (!py::isinstance<py::str>(molecule["compartment"])) {
+                throw std::runtime_error(
+                    "native BNGIR pattern molecule compartment must be a string");
+            }
+            moleculeCompartment = py::cast<std::string>(molecule["compartment"]);
+            if (moleculeCompartment.empty()) {
+                throw std::runtime_error(
+                    "native BNGIR pattern molecule compartment must not be empty");
+            }
+        } else if (molecule.contains(py::str("compartment_id"))) {
+            const auto compartmentId = indexFromBngir(
+                molecule["compartment_id"], "pattern molecule compartment id");
+            const auto& compartments = model.getCompartments();
+            if (compartmentId >= compartments.size()) {
+                throw std::runtime_error(
+                    "native BNGIR pattern molecule compartment id is out of range");
+            }
+            moleculeCompartment = compartments[compartmentId].getName();
+        }
+        // The compiled snapshot includes a resolved compartment id even when
+        // it is inherited from the enclosing pattern. Preserve inheritance
+        // when only that redundant id is present, while retaining an explicit
+        // molecule compartment string from the BNGIR document.
+        if (!moleculeCompartment.empty() &&
+            (molecule.contains(py::str("compartment")) ||
+             moleculeCompartment != outerCompartment)) {
+            const auto& compartments = model.getCompartments();
+            if (std::find_if(compartments.begin(), compartments.end(),
+                              [&](const Compartment& compartment) {
+                                  return compartment.getName() == moleculeCompartment;
+                              }) == compartments.end()) {
+                throw std::runtime_error(
+                    "native BNGIR pattern molecule references an unknown compartment");
+            }
+            node.set_compartment(moleculeCompartment);
+        }
+
         graph.add_node(node);
     }
-    return graph;
+    SpeciesGraph result(graph, outerCompartment);
+    result.setCompartmentIsPrefix(isPrefix);
+    return result;
 }
 
 std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
@@ -321,13 +393,89 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             name, {}, false));
     }
 
+    std::set<std::string> uniqueCompartmentNames;
+    const auto compartments = py::cast<py::list>(document["compartments"]);
+    requireDenseOrderedIds(compartments, "compartment");
+    std::vector<std::string> compartmentNames;
+    compartmentNames.reserve(compartments.size());
+    for (const auto& rawCompartment : compartments) {
+        const auto compartment = py::cast<py::dict>(rawCompartment);
+        static const std::vector<std::string> required = {
+            "id", "name", "dimension", "volume",
+        };
+        static const std::vector<std::string> allowed = {
+            "id", "name", "dimension", "volume", "unit",
+            "declared_unit", "normalized_volume", "parent_id", "parent",
+        };
+        requireObjectKeys(compartment, required, allowed, "compartment");
+        const auto name = py::cast<std::string>(compartment["name"]);
+        if (!uniqueCompartmentNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR compartment names must be unique");
+        }
+        compartmentNames.push_back(name);
+    }
+
+    for (std::size_t index = 0; index < compartments.size(); ++index) {
+        const auto compartment = py::cast<py::dict>(compartments[index]);
+        const auto name = compartmentNames[index];
+        const auto volume = finiteNumberFromBngir(
+            compartment["volume"], "compartment volume");
+        const auto dimension = py::cast<int>(compartment["dimension"]);
+        if (dimension < 1 || dimension > 3) {
+            throw std::runtime_error(
+                "native BNGIR compartment dimension must be 1, 2, or 3");
+        }
+        std::string parent;
+        if (compartment.contains(py::str("parent"))) {
+            if (!py::isinstance<py::str>(compartment["parent"])) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent must be a string");
+            }
+            parent = py::cast<std::string>(compartment["parent"]);
+            if (!parent.empty() &&
+                std::find(compartmentNames.begin(), compartmentNames.end(), parent) ==
+                    compartmentNames.end()) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent references an unknown compartment");
+            }
+        }
+        if (compartment.contains(py::str("parent_id"))) {
+            const auto parentId =
+                indexFromBngir(compartment["parent_id"], "compartment parent id");
+            if (parentId >= compartmentNames.size()) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent id is out of range");
+            }
+            const auto& parentById = compartmentNames[parentId];
+            if (!parent.empty() && parent != parentById) {
+                throw std::runtime_error(
+                    "native BNGIR compartment parent name and id disagree");
+            }
+            parent = parentById;
+        }
+        if (parent == name) {
+            throw std::runtime_error(
+                "native BNGIR compartment cannot be its own parent");
+        }
+        model->addCompartment(Compartment(name, volume, dimension, parent));
+    }
+
     for (const auto& rawSeed : seeds) {
         const auto seed = py::cast<py::dict>(rawSeed);
         auto graph = patternFromBngir(*model, py::cast<py::dict>(seed["pattern"]));
         auto amount = expressionFromBngir(
             py::cast<py::dict>(seed["amount"]), parameterNames);
+        std::string seedCompartment;
+        if (seed.contains(py::str("compartment")) &&
+            py::isinstance<py::str>(seed["compartment"])) {
+            seedCompartment = py::cast<std::string>(seed["compartment"]);
+        } else {
+            seedCompartment = graph.getCompartment();
+        }
         model->addSeedSpecies(SeedSpecies(
-            {}, std::move(amount), py::cast<bool>(seed["constant"]), {}, std::move(graph)));
+            {}, std::move(amount), py::cast<bool>(seed["constant"]),
+            seedCompartment, graph.getGraph()));
     }
 
     for (const auto& rawRule : rules) {
@@ -373,6 +521,47 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             py::cast<std::string>(rule["label"]),
             std::move(rates),
             std::move(reactantGraphs), std::move(productGraphs)));
+    }
+
+    const auto observables = py::cast<py::list>(document["observables"]);
+    std::set<std::string> uniqueObservableNames;
+    for (const auto& rawObservable : observables) {
+        const auto observable = py::cast<py::dict>(rawObservable);
+        static const std::vector<std::string> observableKeys = {
+            "name", "type", "patterns",
+        };
+        requireObjectKeys(
+            observable, observableKeys, observableKeys, "observable");
+        if (!py::isinstance<py::str>(observable["name"]) ||
+            !py::isinstance<py::str>(observable["type"])) {
+            throw std::runtime_error(
+                "native BNGIR observable name and type must be strings");
+        }
+        const auto name = py::cast<std::string>(observable["name"]);
+        const auto type = py::cast<std::string>(observable["type"]);
+        if (name.empty() || !uniqueObservableNames.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR observable names must be nonempty and unique");
+        }
+        if (type != "Molecules" && type != "Species") {
+            throw std::runtime_error(
+                "native BNGIR observable type must be Molecules or Species");
+        }
+        if (!py::isinstance<py::list>(observable["patterns"])) {
+            throw std::runtime_error(
+                "native BNGIR observable patterns must be an array of strings");
+        }
+        const auto rawPatterns = py::cast<py::list>(observable["patterns"]);
+        std::vector<std::string> patterns;
+        patterns.reserve(rawPatterns.size());
+        for (const auto& rawPattern : rawPatterns) {
+            if (!py::isinstance<py::str>(rawPattern)) {
+                throw std::runtime_error(
+                    "native BNGIR observable patterns must be strings");
+            }
+            patterns.push_back(py::cast<std::string>(rawPattern));
+        }
+        model->addObservable(Observable(name, type, std::move(patterns)));
     }
     return model;
 }

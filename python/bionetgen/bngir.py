@@ -1390,16 +1390,49 @@ def _native_pattern_v02(
     pattern: Mapping[str, Any], where: str, molecule_ids: set[int]
 ) -> None:
     pattern = _require_mapping(pattern, where)
-    _native_exact_keys(pattern, {"compartment_prefix", "molecules"}, where)
-    if pattern["compartment_prefix"] is not False:
-        raise ValueError(f"native BNGIR {where} does not support compartment prefixes")
+    _native_required_optional_keys(
+        pattern,
+        {"compartment_prefix", "molecules"},
+        {"compartment", "compartment_prefix", "molecules"},
+        where,
+    )
+    if not isinstance(pattern["compartment_prefix"], bool):
+        raise ValueError(f"native BNGIR {where} compartment_prefix must be boolean")
+    if (
+        pattern["compartment_prefix"] is not False
+        and pattern["compartment_prefix"] is not True
+    ):
+        raise ValueError(f"native BNGIR {where} compartment_prefix must be boolean")
+    if "compartment" in pattern:
+        if not isinstance(pattern["compartment"], str) or not pattern["compartment"]:
+            raise ValueError(
+                f"native BNGIR {where} compartment must be a nonempty string"
+            )
     molecules = pattern["molecules"]
     if not isinstance(molecules, list) or len(molecules) != 1:
         raise ValueError(f"native BNGIR {where} requires exactly one molecule")
     molecule = _require_mapping(molecules[0], f"{where}.molecules[0]")
-    _native_exact_keys(
-        molecule, {"occurrence", "sites", "type", "type_id"}, f"{where}.molecules[0]"
+    _native_required_optional_keys(
+        molecule,
+        {"occurrence", "sites", "type", "type_id"},
+        {"compartment", "compartment_id", "occurrence", "sites", "type", "type_id"},
+        f"{where}.molecules[0]",
     )
+    if "compartment" in molecule:
+        if not isinstance(molecule["compartment"], str) or not molecule["compartment"]:
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].compartment must be a nonempty string"
+            )
+    if "compartment_id" in molecule:
+        compartment_id = molecule["compartment_id"]
+        if (
+            isinstance(compartment_id, bool)
+            or not isinstance(compartment_id, int)
+            or compartment_id < 0
+        ):
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].compartment_id must be a nonnegative integer"
+            )
     if (
         isinstance(molecule["occurrence"], bool)
         or not isinstance(molecule["occurrence"], int)
@@ -1446,8 +1479,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     }
     _native_exact_keys(model, sections, "model")
     for section in (
-        "compartments",
-        "observables",
         "functions",
         "energy_patterns",
         "barrier_patterns",
@@ -1554,9 +1585,18 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         raise ValueError("native BNGIR requires at least one seed")
     for index, raw in enumerate(model["seeds"]):
         seed = _require_mapping(raw, f"model.seeds[{index}]")
-        _native_exact_keys(
-            seed, {"id", "pattern", "amount", "constant"}, f"model.seeds[{index}]"
+        _native_required_optional_keys(
+            seed,
+            {"id", "pattern", "amount", "constant"},
+            {"amount", "compartment", "constant", "id", "pattern"},
+            f"model.seeds[{index}]",
         )
+        if "compartment" in seed and (
+            not isinstance(seed["compartment"], str) or not seed["compartment"]
+        ):
+            raise ValueError(
+                f"native BNGIR model.seeds[{index}].compartment must be a nonempty string"
+            )
         if (
             isinstance(seed["id"], bool)
             or not isinstance(seed["id"], int)
@@ -1573,6 +1613,18 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         _native_expression_v02(
             seed["amount"], parameter_ids, f"model.seeds[{index}].amount"
         )
+
+    for index, raw in enumerate(model["observables"]):
+        observable = _require_mapping(raw, f"model.observables[{index}]")
+        for term_index, raw_term in enumerate(observable["terms"]):
+            term = _require_mapping(
+                raw_term, f"model.observables[{index}].terms[{term_index}]"
+            )
+            _native_pattern_v02(
+                term["pattern"],
+                f"model.observables[{index}].terms[{term_index}].pattern",
+                molecule_ids,
+            )
 
     rule_names: set[str] = set()
     for index, raw in enumerate(model["rules"]):
@@ -1748,6 +1800,8 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         raise ValueError("native BNGIR does not support protocol actions")
     expected_used = sorted(
         ["structured_patterns", "structured_expressions"]
+        + (["compartments"] if model.get("compartments") else [])
+        + (["observables"] if model["observables"] else [])
         + (["rules"] if model["rules"] else [])
         + (["seeds"] if model["seeds"] else [])
     )
@@ -1974,6 +2028,19 @@ def _pattern_v02(
     return body
 
 
+def _observable_term_v02(term: Mapping[str, Any]) -> str:
+    pattern_data = _require_mapping(term.get("pattern"), "observable pattern")
+    pattern = _pattern_v02(pattern_data)
+    relation = str(term.get("relation", ""))
+    if not relation:
+        return pattern
+    quantity = int(term.get("quantity", 0))
+    if relation == ">":
+        return f"{pattern}>{quantity}"
+    molecule = _require_mapping(pattern_data["molecules"][0], "observable molecule")
+    return f"{molecule['type']}{relation}{quantity}"
+
+
 def _direction_pattern_strings_v02(
     direction: Mapping[str, Any], side: str
 ) -> list[str]:
@@ -2110,21 +2177,9 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         lines.append("begin observables")
         for item in observables:
             kind = "Molecules" if item.get("kind") == "molecules" else "Species"
-            rendered_terms = []
-            for term in item.get("terms", []):
-                pattern = _pattern_v02(term["pattern"])
-                relation = str(term.get("relation", ""))
-                quantity = int(term.get("quantity", 0))
-                if relation and relation != ">":
-                    # BNGL spells count restrictions other than '>' only after
-                    # a bare molecule name, so the structured pattern renders
-                    # as its type; validation guarantees that shape.
-                    bare = term["pattern"]["molecules"][0]["type"]
-                    rendered_terms.append(f"{bare}{relation}{quantity}")
-                else:
-                    rendered_terms.append(
-                        f"{pattern}{relation}{quantity}" if relation else pattern
-                    )
+            rendered_terms = [
+                _observable_term_v02(term) for term in item.get("terms", [])
+            ]
             lines.append(f"  {kind} {item['name']} {','.join(rendered_terms)}")
         lines.append("end observables")
 
@@ -2248,7 +2303,20 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
         root = _load_document_v02(root)
         _validate_native_v02(root)
         model_data = _require_mapping(root["model"], "model")
-        result = BioNetGenModel(_cpp._model_from_bngir_v02(dict(model_data)))
+        native_data = dict(model_data)
+        native_data["observables"] = [
+            {
+                "name": observable["name"],
+                "type": (
+                    "Molecules" if observable["kind"] == "molecules" else "Species"
+                ),
+                "patterns": [
+                    _observable_term_v02(term) for term in observable["terms"]
+                ],
+            }
+            for observable in model_data["observables"]
+        ]
+        result = BioNetGenModel(_cpp._model_from_bngir_v02(native_data))
         rebuilt = _parse_document(to_bngir(result, version=STRUCTURAL_VERSION))
         if rebuilt != root:
             raise ValueError(

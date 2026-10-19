@@ -1,6 +1,8 @@
 import copy
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 import jsonschema
 import pytest
@@ -13,6 +15,18 @@ SCHEMA = Path(__file__).parents[2] / "provenance/schemas/bngir-0.2.schema.json"
 
 def test_native_bngir_adversarial_operation_is_registered():
     assert "bngir-adversarial" in integrated_extensions.OPERATIONS
+
+
+def test_integrated_worker_cli_accepts_native_bngir_adversarial_operation():
+    worker = Path(__file__).with_name("integrated_worker.py")
+    result = subprocess.run(
+        [sys.executable, str(worker), "bngir-adversarial", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "bngir-adversarial" in result.stdout
 
 
 def test_generated_documents_are_independent_schema_valid_and_exactly_named():
