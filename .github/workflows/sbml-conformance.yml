@@ -145,7 +145,7 @@ jobs:
           directory.mkdir(exist_ok=True)
           report_path = directory / 'report.json'
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              summary.write('PRs select the first 128 locked semantic cases; scheduled/manual runs select the complete semantic and stochastic inventory. Partial runs retain false full-suite aggregate flags.\n\n')
+              summary.write('PRs and bounded manual runs select a 128-case semantic feature cover; scheduled and unbounded manual runs select the complete semantic and stochastic inventory. Partial runs retain false full-suite aggregate flags.\n\n')
               if report_path.exists():
                   report = json.loads(report_path.read_text())
                   summary.write('Separate observed stages: ' + json.dumps(report['stage_counts']) + '\n\n')

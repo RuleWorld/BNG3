@@ -2107,5 +2107,736 @@
     "strict gate requires compiler_images.status=locked",
     "strict gate requires python_lock.status=locked"
   ],
-  "authorization": "Reporting/validation repairs only. No merge, closure, corpus expansion, product repair or PR #310 edits."
+  "authorization": "Reporting/validation repairs only. No merge, closure, corpus expansion, product repair or PR #310 edits.",
+  "continuation": {
+    "observed_at": "2026-10-19T23:23:26Z",
+    "scope": "Existing audit continued without rerunning the 43-issue audit. No product repair, scope expansion, approval, merge or closure.",
+    "candidate_snapshots": {
+      "310": {
+        "head": "58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433",
+        "checks": [
+          {
+            "name": "Lint & Format",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836230"
+          },
+          {
+            "name": "Analyze (cpp)",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585296/job/118350835437"
+          },
+          {
+            "name": "Validate parity source lock",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118350835250"
+          },
+          {
+            "name": "Check formatting and suggest patch",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585421/job/118350836066"
+          },
+          {
+            "name": "Lean 4.33.1 kernel and NFnext contracts",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585345/job/118350835783"
+          },
+          {
+            "name": "Official SBML references (128 PR cases; full scheduled suite)",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585456/job/118350836416"
+          },
+          {
+            "name": "Analyze (python)",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585296/job/118350835722"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, gcc-12)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836487"
+          },
+          {
+            "name": "BNG3 numerical, expression and export parity",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988241"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, clang-15)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836509"
+          },
+          {
+            "name": "C++ (macos-14, clang-arm64)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836758"
+          },
+          {
+            "name": "C++ (windows-2022, msvc)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836530"
+          },
+          {
+            "name": "C++ ASan (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836448"
+          },
+          {
+            "name": "Integrated semantic validation (Atomizer, BNG3, BNG2, PyBioNetGen, NFsim)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988081"
+          },
+          {
+            "name": "C++ batch SSA (CUDA backend, Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836417"
+          },
+          {
+            "name": "BNG3 vs independent NFsim",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988074"
+          },
+          {
+            "name": "Batch SSA CPU reference parity (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350835967"
+          },
+          {
+            "name": "NFsim historical validation (scheduled)",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361990228"
+          },
+          {
+            "name": "Optional JAX CPU (ODE and SSA availability)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836192"
+          },
+          {
+            "name": "PyBioNetGen API compatibility",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585279/job/118361988105"
+          },
+          {
+            "name": "Common evidence and selection contracts",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39337585282/job/118350836302"
+          },
+          {
+            "name": "CodeQL",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/runs/118355037189"
+          }
+        ]
+      },
+      "311": {
+        "head": "4e3eb3d7d58384b57dc22e0c8e82f153a9b87121",
+        "checks": [
+          {
+            "name": "Analyze (cpp)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340714173/job/118361268156"
+          },
+          {
+            "name": "Validate parity source lock",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713991/job/118361267820"
+          },
+          {
+            "name": "Lint & Format",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268222"
+          },
+          {
+            "name": "Check formatting and suggest patch",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713988/job/118361268498"
+          },
+          {
+            "name": "Lean 4.33.1 kernel and NFnext contracts",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713970/job/118361267838"
+          },
+          {
+            "name": "Analyze (python)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340714173/job/118361268426"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, gcc-12)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268434"
+          },
+          {
+            "name": "C++ (ubuntu-22.04, clang-15)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268512"
+          },
+          {
+            "name": "C++ (macos-14, clang-arm64)",
+            "status": "IN_PROGRESS",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268438"
+          },
+          {
+            "name": "C++ (windows-2022, msvc)",
+            "status": "IN_PROGRESS",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268406"
+          },
+          {
+            "name": "C++ ASan (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268293"
+          },
+          {
+            "name": "C++ batch SSA (CUDA backend, Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268395"
+          },
+          {
+            "name": "Batch SSA CPU reference parity (Ubuntu)",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268557"
+          },
+          {
+            "name": "Optional JAX CPU (ODE and SSA availability)",
+            "status": "IN_PROGRESS",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268064"
+          },
+          {
+            "name": "Common evidence and selection contracts",
+            "status": "QUEUED",
+            "conclusion": "",
+            "url": "https://github.com/RuleWorld/BNG3/actions/runs/39340713968/job/118361268473"
+          }
+        ]
+      }
+    },
+    "ownership_overlap": {
+      "path": "tests/python/test_atomizer_copy_regressions.py",
+      "reason": "Already-published formatting-only repair in #311 4e3eb3d7; native BNGIR multi-pattern and NFsim normalization remain #310 only."
+    },
+    "bounded_sbml": {
+      "run_id": 39338950867,
+      "artifact_id": 12227859494,
+      "archive_digest": "sha256:d0ff7b3057f593aba58d946795a4ed5d3a05052225570717902d45b41c39d8b5",
+      "file_manifest_verified": true,
+      "manifest_entries": 1151,
+      "report_sha256": "81863938bfe6f17dfb12ce89143648e59c3e62c8f85e4b56b8cbe51cafcad527",
+      "source_provenance": {
+        "bng3_commit": "17e50652c4f5dc29c2057c72f44b7f5675fc0d08",
+        "bng3_tracked_worktree_clean": true,
+        "bng3_worktree_clean_for_report": true,
+        "bng3_changed_files": [],
+        "bng3_untracked_files": [],
+        "bng3_source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "excluded_coordination_files": [
+          "lane-status.json"
+        ]
+      },
+      "runtime_provenance": {
+        "python_executable": "/home/runner/work/_temp/ssts-venv/bin/python",
+        "python_version": "3.12.15",
+        "platform": "Linux-6.8.0-1070-azure-x86_64-with-glibc2.35",
+        "bionetgen_version": "3.0.0a1",
+        "bionetgen_package_path": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py",
+        "python_package_source_sha256": "460702cc14c82fae1d050524f71ac1c44ed95d3e201540b58b46ecff0395720e",
+        "native_extension_path": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/_bionetgen_cpp.cpython-312-x86_64-linux-gnu.so",
+        "native_extension_resolved_path": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/_bionetgen_cpp.cpython-312-x86_64-linux-gnu.so",
+        "native_extension_sha256": "00491cfa17e0b1d7d8f1adc39897f9f84b6568f45d39d4826a59caa699c736f5",
+        "numpy_version": "2.5.3",
+        "libsbml_version": "5.21.2",
+        "roadrunner_version": "2.10.0"
+      },
+      "suite_commit": "cf38585fac5de8e0e90112febb62851ee2181816",
+      "suite_source_lock": {
+        "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+        "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+        "source_lock_status": "observed",
+        "source_lock_path": "/home/runner/work/BNG3/BNG3/provenance/upstreams.lock.yml",
+        "source_lock_sha256": "01ef836f4d8af178916b0f27b6a5f3963b2f25005e211a5f770ed4d79065bd30",
+        "clean": true
+      },
+      "command": {
+        "executable": "/home/runner/work/_temp/ssts-venv/bin/python",
+        "arguments": [
+          "/home/runner/work/BNG3/BNG3/scripts/ci/validate_sbml_test_suite.py",
+          "--suite-dir",
+          "/home/runner/work/_temp/official-ssts",
+          "--categories",
+          "semantic",
+          "--max-cases",
+          "128",
+          "--selection-strategy",
+          "feature-cover",
+          "--isolate-cases",
+          "--case-timeout",
+          "60",
+          "--jobs",
+          "4",
+          "--artifacts-dir",
+          "/home/runner/work/_temp/ssts-artifacts/cases",
+          "--gate-selected-cases",
+          "--json",
+          "/home/runner/work/_temp/ssts-artifacts/report.json"
+        ],
+        "working_directory": "/home/runner/work/BNG3/BNG3"
+      },
+      "simulation": {
+        "t_start": 0.0,
+        "t_end": 1.0,
+        "n_steps": 10,
+        "rtol": 1e-07,
+        "atol": 1e-12,
+        "comparison": "all generated BNGL observables on the same time grid",
+        "engines": [
+          "BNG3 CVODE",
+          "libRoadRunner CVODE"
+        ]
+      },
+      "selected_cases": 128,
+      "partial_run": true,
+      "selected_surface_passed": true,
+      "stage_counts": {
+        "conversion": {
+          "unsupported": 6,
+          "passed": 122
+        },
+        "roundtrip_structure": {
+          "not-tested": 6,
+          "passed": 122
+        },
+        "independent_comparison": {
+          "not-tested": 6,
+          "passed": 122
+        },
+        "official_reference": {
+          "unsupported": 15,
+          "passed": 113
+        }
+      },
+      "counts": {
+        "passed": 122,
+        "unsupported": 6,
+        "failed": 0,
+        "timeout": 0
+      },
+      "official_reference_counts": {
+        "passed": 113,
+        "unsupported": 15,
+        "failed": 0,
+        "timed-out": 0,
+        "invalid-source": 0,
+        "pending": 0,
+        "missing": 0
+      },
+      "feature_selection": {
+        "strategy": "official-metadata-greedy-cover-v1",
+        "budget": 128,
+        "unselected_feature_classes": []
+      },
+      "observed_feature_classes": 78,
+      "limits": "Earlier head 17e50652, not 4e3eb3d7 or a later reporting commit; full-suite flags false."
+    },
+    "nonpass_classification": [
+      {
+        "cases": [
+          "semantic/00026",
+          "semantic/00041",
+          "semantic/00071",
+          "semantic/00072",
+          "semantic/00073",
+          "semantic/00074",
+          "semantic/01169",
+          "semantic/01518",
+          "semantic/01592"
+        ],
+        "layer": "harness",
+        "disposition": "Existing official-grid runner refuses scheduled actions; no support expansion."
+      },
+      {
+        "cases": [
+          "semantic/01191",
+          "semantic/01195",
+          "semantic/01628"
+        ],
+        "layer": "source/reference-scope and translation",
+        "disposition": "No time-course reference for FBC; translation independently reports unsupported FBC/constraints."
+      },
+      {
+        "cases": [
+          "semantic/01000"
+        ],
+        "layer": "translation",
+        "disposition": "Untranslated event assignments; retain refusal."
+      },
+      {
+        "cases": [
+          "semantic/01565"
+        ],
+        "layer": "translation",
+        "disposition": "Fast reactions and MathML limitations; retain refusal."
+      },
+      {
+        "cases": [
+          "semantic/01133"
+        ],
+        "layer": "translation-diagnostic",
+        "disposition": "False Level 3 validity explanation confirmed. No native support or runtime failure established."
+      }
+    ],
+    "first_product_repair_packet": {
+      "component": "Python Atomizer translation diagnostic",
+      "target": "python/bionetgen/atomizer/modern/parser.py::SBMLParser._parse_xml_model",
+      "included_product_patch": false,
+      "proposal": "Correct the Level 3 validity explanation while preserving truthful unsupported-geometry refusal. Add level-specific regressions on a separate product branch; do not remove the guard to admit unqualified geometry.",
+      "reference": "https://sbml.org/libsbml/class_compartment.html",
+      "source_input_hashes": {
+        "sbml": "3ad9ad26a8cb6d243f2de2730f2de43baeb75e18e9e6dbc2d7fcd75468564e4b",
+        "settings": "ad1b42e5a8320a65684f8ff3d2f9c3084fe321d72469188e5833635e077c48d6",
+        "results": "670fa18e3406f4043ae526ebcf351b1b3543f7a9864615a06c7421f4375554ae"
+      },
+      "existing_runner_replay": {
+        "source_provenance": {
+          "bng3_commit": "17e50652c4f5dc29c2057c72f44b7f5675fc0d08",
+          "bng3_tracked_worktree_clean": true,
+          "bng3_worktree_clean_for_report": true,
+          "bng3_changed_files": [],
+          "bng3_untracked_files": [],
+          "bng3_source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "excluded_coordination_files": [
+            "lane-status.json"
+          ]
+        },
+        "runtime_provenance": {
+          "python_executable": "/opt/anaconda3/bin/python",
+          "python_version": "3.14.6",
+          "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+          "bionetgen_version": "3.0.0a1",
+          "bionetgen_package_path": "/private/tmp/bng3-bounded-release/python/bionetgen/__init__.py",
+          "python_package_source_sha256": "460702cc14c82fae1d050524f71ac1c44ed95d3e201540b58b46ecff0395720e",
+          "native_extension_path": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so",
+          "native_extension_resolved_path": "/opt/anaconda3/lib/python3.14/site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so",
+          "native_extension_sha256": "3c17f1a145ab56dca0c5cf0bd0da21997dee93b8c03cbf2a20c8d8b26c9d53af",
+          "numpy_version": "2.5.2",
+          "libsbml_version": "5.21.1",
+          "roadrunner_version": "2.10.0"
+        },
+        "command": {
+          "executable": "/opt/anaconda3/bin/python",
+          "arguments": [
+            "/private/tmp/bng3-bounded-release/scripts/ci/validate_sbml_test_suite.py",
+            "--suite-dir",
+            "/private/tmp/bng3-ssts-20261016",
+            "--only-case",
+            "semantic/01133",
+            "--isolate-cases",
+            "--case-timeout",
+            "60",
+            "--jobs",
+            "1",
+            "--simulation-t-end",
+            "1",
+            "--simulation-n-steps",
+            "10",
+            "--simulation-rtol",
+            "1e-7",
+            "--simulation-atol",
+            "1e-12",
+            "--json",
+            "/private/tmp/bng3-01133-reduction/report.json",
+            "--artifacts-dir",
+            "/private/tmp/bng3-01133-reduction/artifacts"
+          ],
+          "working_directory": "/private/tmp/bng3-bounded-release"
+        },
+        "simulation": {
+          "t_start": 0.0,
+          "t_end": 1.0,
+          "n_steps": 10,
+          "rtol": 1e-07,
+          "atol": 1e-12,
+          "comparison": "all generated BNGL observables on the same time grid",
+          "engines": [
+            "BNG3 CVODE",
+            "libRoadRunner CVODE"
+          ]
+        },
+        "counts": {
+          "passed": 0,
+          "unsupported": 1,
+          "failed": 0,
+          "timeout": 0
+        },
+        "stage_counts": {
+          "conversion": {
+            "unsupported": 1
+          },
+          "roundtrip_structure": {
+            "not-tested": 1
+          },
+          "independent_comparison": {
+            "not-tested": 1
+          },
+          "official_reference": {
+            "unsupported": 1
+          }
+        }
+      },
+      "native_lineage_limit": "Local extension source lineage unverified; hash retained. Diagnostic replay only, not current candidate acceptance.",
+      "independent_reduction": {
+        "purpose": "diagnostic source/translation reduction only; no exact-candidate native qualification",
+        "python": "3.14.6 | packaged by Anaconda, Inc. | (main, Jul  9 2026, 14:30:20) [Clang 20.1.8 ]",
+        "libsbml_version": "5.21.1",
+        "roadrunner_version": "2.10.0",
+        "numpy_version": "2.5.2",
+        "source_sha256": "3ad9ad26a8cb6d243f2de2730f2de43baeb75e18e9e6dbc2d7fcd75468564e4b",
+        "settings_sha256": "ad1b42e5a8320a65684f8ff3d2f9c3084fe321d72469188e5833635e077c48d6",
+        "results_sha256": "670fa18e3406f4043ae526ebcf351b1b3543f7a9864615a06c7421f4375554ae",
+        "source_validation": {
+          "passed": true,
+          "validator": "libsbml",
+          "errors": 0
+        },
+        "source_reference": {
+          "start": 0.0,
+          "duration": 1.0,
+          "steps": 10,
+          "absolute": 0.0001,
+          "relative": 0.0001,
+          "amount": [],
+          "concentration": [
+            "S1",
+            "sub1__S1",
+            "sub2__S1",
+            "sub3__S1",
+            "sub3__sub1__S1",
+            "sub3__sub2__S1"
+          ]
+        },
+        "independent_solver": {
+          "engine": "libRoadRunner CVODE",
+          "rtol": 1e-09,
+          "atol": 1e-14,
+          "selections": [
+            "time",
+            "[S1]",
+            "[sub1__S1]",
+            "[sub2__S1]",
+            "[sub3__S1]",
+            "[sub3__sub1__S1]",
+            "[sub3__sub2__S1]"
+          ]
+        },
+        "independent_official_comparison": {
+          "passed": true,
+          "tolerance_formula": "abs(expected-actual) <= absolute + relative*abs(expected)",
+          "absolute": 0.0001,
+          "relative": 0.0001,
+          "sample_count": 66,
+          "passed_points": 66,
+          "failed_points": 0,
+          "failed_variables": [],
+          "variables": {
+            "S1": {
+              "passed": true,
+              "sample_count": 11,
+              "passed_points": 11,
+              "failed_points": 0,
+              "failed_sample_index_count": 0,
+              "failed_sample_indices": [],
+              "failed_sample_indices_truncated": false,
+              "failed_sample_examples": [],
+              "finite_points": 11,
+              "nonfinite_points": 0,
+              "max_abs_difference": 0.0,
+              "max_scaled_error": 0.0
+            },
+            "sub1__S1": {
+              "passed": true,
+              "sample_count": 11,
+              "passed_points": 11,
+              "failed_points": 0,
+              "failed_sample_index_count": 0,
+              "failed_sample_indices": [],
+              "failed_sample_indices_truncated": false,
+              "failed_sample_examples": [],
+              "finite_points": 11,
+              "nonfinite_points": 0,
+              "max_abs_difference": 0.0,
+              "max_scaled_error": 0.0
+            },
+            "sub2__S1": {
+              "passed": true,
+              "sample_count": 11,
+              "passed_points": 11,
+              "failed_points": 0,
+              "failed_sample_index_count": 0,
+              "failed_sample_indices": [],
+              "failed_sample_indices_truncated": false,
+              "failed_sample_examples": [],
+              "finite_points": 11,
+              "nonfinite_points": 0,
+              "max_abs_difference": 0.0,
+              "max_scaled_error": 0.0
+            },
+            "sub3__S1": {
+              "passed": true,
+              "sample_count": 11,
+              "passed_points": 11,
+              "failed_points": 0,
+              "failed_sample_index_count": 0,
+              "failed_sample_indices": [],
+              "failed_sample_indices_truncated": false,
+              "failed_sample_examples": [],
+              "finite_points": 11,
+              "nonfinite_points": 0,
+              "max_abs_difference": 0.0,
+              "max_scaled_error": 0.0
+            },
+            "sub3__sub1__S1": {
+              "passed": true,
+              "sample_count": 11,
+              "passed_points": 11,
+              "failed_points": 0,
+              "failed_sample_index_count": 0,
+              "failed_sample_indices": [],
+              "failed_sample_indices_truncated": false,
+              "failed_sample_examples": [],
+              "finite_points": 11,
+              "nonfinite_points": 0,
+              "max_abs_difference": 0.0,
+              "max_scaled_error": 0.0
+            },
+            "sub3__sub2__S1": {
+              "passed": true,
+              "sample_count": 11,
+              "passed_points": 11,
+              "failed_points": 0,
+              "failed_sample_index_count": 0,
+              "failed_sample_indices": [],
+              "failed_sample_indices_truncated": false,
+              "failed_sample_examples": [],
+              "finite_points": 11,
+              "nonfinite_points": 0,
+              "max_abs_difference": 0.0,
+              "max_scaled_error": 0.0
+            }
+          }
+        },
+        "minimal_source": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<sbml xmlns=\"http://www.sbml.org/sbml/level3/version2/core\" level=\"3\" version=\"2\">\n  <model id=\"dimension7\">\n    <listOfCompartments><compartment id=\"C\" spatialDimensions=\"7\" size=\"1\" constant=\"true\"/></listOfCompartments>\n    <listOfSpecies><species id=\"S\" compartment=\"C\" initialConcentration=\"2.5\" hasOnlySubstanceUnits=\"false\" boundaryCondition=\"true\" constant=\"true\"/></listOfSpecies>\n  </model>\n</sbml>\n",
+        "minimal_sha256": "2994359491d9007c05e857a4f468125393f54347db57099c933d59bf1c629f02",
+        "minimal_validation": {
+          "passed": true,
+          "validator": "libsbml",
+          "errors": 0
+        },
+        "minimal_translation_warnings": [
+          {
+            "category": "units",
+            "message": "Model omits substanceUnits and volumeUnits; preserved source numeric scale and skipped unit normalization.",
+            "count": 1,
+            "severity": "info"
+          },
+          {
+            "category": "compartment",
+            "message": "Compartment \"C\" has spatialDimensions 7; SBML core permits only values 0 through 3.",
+            "count": 1,
+            "severity": "dropped"
+          }
+        ],
+        "minimal_independent_values": [
+          [
+            0.0,
+            2.5
+          ],
+          [
+            0.1,
+            2.5
+          ],
+          [
+            0.2,
+            2.5
+          ],
+          [
+            0.30000000000000004,
+            2.5
+          ],
+          [
+            0.4,
+            2.5
+          ],
+          [
+            0.5,
+            2.5
+          ],
+          [
+            0.6000000000000001,
+            2.5
+          ],
+          [
+            0.7000000000000001,
+            2.5
+          ],
+          [
+            0.8,
+            2.5
+          ],
+          [
+            0.9,
+            2.5
+          ],
+          [
+            1.0,
+            2.5
+          ]
+        ],
+        "minimal_analytic_law": "[S](t)=2.5 for 0<=t<=1; static boundary species, no reactions",
+        "minimal_analytic_max_abs_error": 0.0
+      },
+      "independent_replay_script": "import hashlib,json,sys\nfrom dataclasses import asdict\nfrom pathlib import Path\nimport libsbml,roadrunner,numpy as np\nfrom scripts.ci import validate_sbml_test_suite as runner\nfrom bionetgen.atomizer.modern.parser import SBMLParser\nout=Path('/private/tmp/bng3-01133-reduction')\nsource=Path('/private/tmp/bng3-ssts-20261016/cases/semantic/01133/01133-sbml-l3v2.xml')\nreference=runner._read_reference_case({'category':'semantic','id':'01133','path':source})\nrr=roadrunner.RoadRunner(str(source))\nrr.integrator.relative_tolerance=1e-9\nrr.integrator.absolute_tolerance=1e-14\nselections=['time',*[f'[{v}]' for v in reference['variables']]]\ndata=np.asarray(rr.simulate(times=reference['times'].tolist(),selections=selections))\ncomparison=runner._compare_reference_series(reference['expected'],{v:data[:,i+1] for i,v in enumerate(reference['variables'])},absolute=reference['absolute'],relative=reference['relative'],sample_times=reference['times'])\nminimal='''<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<sbml xmlns=\"http://www.sbml.org/sbml/level3/version2/core\" level=\"3\" version=\"2\">\n  <model id=\"dimension7\">\n    <listOfCompartments><compartment id=\"C\" spatialDimensions=\"7\" size=\"1\" constant=\"true\"/></listOfCompartments>\n    <listOfSpecies><species id=\"S\" compartment=\"C\" initialConcentration=\"2.5\" hasOnlySubstanceUnits=\"false\" boundaryCondition=\"true\" constant=\"true\"/></listOfSpecies>\n  </model>\n</sbml>\n'''\n(out/'dimension7.xml').write_text(minimal)\nparsed=SBMLParser().parse(minimal)\ncontrol=roadrunner.RoadRunner(minimal)\ncontrol.integrator.relative_tolerance=1e-9\ncontrol.integrator.absolute_tolerance=1e-14\nvalues=np.asarray(control.simulate(0,1,11,selections=['time','[S]']))\nreport={\n 'purpose':'diagnostic source/translation reduction only; no exact-candidate native qualification',\n 'python':sys.version,'libsbml_version':libsbml.getLibSBMLDottedVersion(),'roadrunner_version':roadrunner.__version__,'numpy_version':np.__version__,\n 'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),\n 'settings_sha256':reference['settings_sha256'],'results_sha256':reference['results_sha256'],\n 'source_validation':runner._validate_xml(source.read_text(),'source'),\n 'source_reference':{'start':reference['start'],'duration':reference['duration'],'steps':reference['steps'],'absolute':reference['absolute'],'relative':reference['relative'],'amount':reference['amount'],'concentration':reference['concentration']},\n 'independent_solver':{'engine':'libRoadRunner CVODE','rtol':1e-9,'atol':1e-14,'selections':selections},\n 'independent_official_comparison':comparison,\n 'minimal_source':minimal,'minimal_sha256':hashlib.sha256(minimal.encode()).hexdigest(),\n 'minimal_validation':runner._validate_xml(minimal,'minimal'),\n 'minimal_translation_warnings':[asdict(w) for w in parsed.import_warnings],\n 'minimal_independent_values':values.tolist(),\n 'minimal_analytic_law':'[S](t)=2.5 for 0<=t<=1; static boundary species, no reactions',\n 'minimal_analytic_max_abs_error':float(np.max(np.abs(values[:,1]-2.5))),\n}\n(out/'independent.json').write_text(json.dumps(report,indent=2)+'\\n')\nprint(json.dumps(report,indent=2))\n"
+    },
+    "approval_status": "PROPOSED_ONLY; all 14 strict provenance blockers remain; no owners or approvals invented.",
+    "support_boundary": "Retain current implemented guarded behavior; defer backend replacement, broad refactoring, extended formal/CRNT proofs, general event queues, hybrid promotion, GPU expansion and full BioModels. First-order typed NFsim units optional and deferred by default.",
+    "validation": "Focused local reporting/CI checks are recorded in the continuation commit and PR description. Hosted results for any newer candidate remain separate.",
+    "local_reporting_verification": {
+      "command": "/private/tmp/bng3-release-audit-venv/bin/python -m pytest -q tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/validation/test_acceptance_queue.py tests/validation/test_conformance_ci_wiring.py",
+      "result": "60 passed in 1.31s",
+      "strict_provenance": "14 unchanged approval errors; compared exactly with original audit",
+      "limitation": "No new exact-head hosted result claimed."
+    }
+  }
 }
