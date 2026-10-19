@@ -959,12 +959,15 @@ def test_release_workflow_requires_exact_main_sha_qualification():
     assert "fetch-depth: 0" in qualify
     assert "git merge-base --is-ancestor" in qualify
     assert "gh api" in qualify
+    assert 'event=workflow_dispatch' in qualify
+    assert "--sbml-runs-json" in qualify
 
     qualification_script = (
         REPO / "scripts" / "ci" / "qualify_release_candidate.py"
     ).read_text(encoding="utf-8")
     for workflow_name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"):
         assert f'"{workflow_name}"' in qualification_script
+    assert '"Official SBML conformance subset"' in qualification_script
 
 
 def test_release_binaries_smoke_before_packaging():
@@ -1009,6 +1012,90 @@ def test_release_run_qualification_requires_success_for_each_exact_main_push():
 
     failed = [dict(run, conclusion="failure") for run in runs]
     assert qualify_workflow_runs({"workflow_runs": failed}, sha, names) == names
+
+
+@pytest.mark.parametrize(
+    "run, expected",
+    [
+        (None, ["Official SBML conformance subset"]),
+        (
+            {
+                "name": "Official SBML conformance subset",
+                "head_sha": "a" * 40,
+                "head_branch": "main",
+                "event": "workflow_dispatch",
+                "status": "in_progress",
+                "conclusion": None,
+            },
+            ["Official SBML conformance subset"],
+        ),
+        (
+            {
+                "name": "Official SBML conformance subset",
+                "head_sha": "a" * 40,
+                "head_branch": "main",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "failure",
+            },
+            ["Official SBML conformance subset"],
+        ),
+        (
+            {
+                "name": "Official SBML conformance subset",
+                "head_sha": "b" * 40,
+                "head_branch": "main",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            ["Official SBML conformance subset"],
+        ),
+        (
+            {
+                "name": "Official SBML conformance subset",
+                "head_sha": "a" * 40,
+                "head_branch": "release",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            ["Official SBML conformance subset"],
+        ),
+        (
+            {
+                "name": "Official SBML conformance subset",
+                "head_sha": "a" * 40,
+                "head_branch": "main",
+                "event": "push",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            ["Official SBML conformance subset"],
+        ),
+        (
+            {
+                "name": "Official SBML conformance subset",
+                "head_sha": "a" * 40,
+                "head_branch": "main",
+                "event": "workflow_dispatch",
+                "status": "completed",
+                "conclusion": "success",
+            },
+            [],
+        ),
+    ],
+)
+def test_release_run_qualification_requires_bounded_sbml_manual_run(run, expected):
+    from scripts.ci.qualify_release_candidate import qualify_workflow_runs
+
+    payload = {"workflow_runs": [] if run is None else [run]}
+    assert qualify_workflow_runs(
+        payload,
+        "a" * 40,
+        ["Official SBML conformance subset"],
+        event="workflow_dispatch",
+    ) == expected
 
 
 def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):
