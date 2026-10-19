@@ -1386,7 +1386,7 @@ def test_native_import_rejects_unknown_observable_kind():
 
 def test_native_import_rejects_invalid_observable_relation():
     document = _document(OBSERVABLES_SOURCE)
-    document["model"]["observables"][0]["terms"][0]["relation"] = "!="
+    document["model"]["observables"][0]["terms"][0]["relation"] = "="
     with pytest.raises(ValueError, match="unsupported count relation"):
         bionetgen.from_bngir(document, native=True)
 
@@ -1457,12 +1457,13 @@ def test_native_import_reconstructs_multi_term_observables():
 
 
 
-def test_native_import_rejects_neq_relation():
-    """The v0.2 schema restricts relations to {==, >, >=, <, <=}; ``!=``
-    is explicitly unsupported and must be rejected fail-closed rather than
-    approximated."""
+def test_neq_observable_round_trips():
+    """The ``!=`` count relation is supported by the C++ matcher
+    (``splitObservablePattern`` / ``observablePatternCountMatches``) and is
+    included in the native v0.2 accepted-relation set."""
     document = _document(OBSERVABLES_SOURCE)
     document["model"]["observables"][0]["terms"][0]["relation"] = "!="
     document["model"]["observables"][0]["terms"][0]["quantity"] = 2
-    with pytest.raises(ValueError, match="unsupported count relation"):
-        bionetgen.from_bngir(document, native=True)
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document

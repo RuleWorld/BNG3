@@ -1118,7 +1118,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             relation = term.get("relation")
             if relation is None:
                 continue
-            if relation not in {"==", ">", ">=", "<", "<="}:
+            if relation not in {"==", "!=", ">", ">=", "<", "<="}:
                 raise ValueError(
                     f"BNGIR model.observables[{i}].terms[{j}] has unsupported "
                     f"count relation: {relation!r}"
@@ -1679,7 +1679,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             if relation is not None:
                 if (
                     not isinstance(relation, str)
-                    or relation not in {"==", ">", ">=", "<", "<="}
+                    or relation not in {"==", "!=", ">", ">=", "<", "<="}
                 ):
                     raise ValueError(
                         f"native BNGIR model.observables[{index}].terms[{term_index}] "
@@ -2357,6 +2357,7 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
         raise TypeError("native must be a bool")
     root = _parse_document(document)
     from .model import BioNetGenModel, _cpp
+    from bionetgen._bionetgen_cpp import Observable
 
     if native:
         if root["version"] != STRUCTURAL_VERSION:
@@ -2365,19 +2366,21 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
         _validate_native_v02(root)
         model_data = _require_mapping(root["model"], "model")
         native_data = dict(model_data)
-        native_data["observables"] = [
-            {
-                "name": observable["name"],
-                "type": (
-                    "Molecules" if observable["kind"] == "molecules" else "Species"
-                ),
-                "patterns": [
-                    _observable_term_v02(term) for term in observable["terms"]
-                ],
-            }
-            for observable in model_data["observables"]
-        ]
-        result = BioNetGenModel(_cpp._model_from_bngir_v02(native_data))
+        # Strip observables from the C++ input — they are added
+        # post-construction via the Python Observable + addObservable
+        # bindings, making those bindings the creation mechanism on the
+        # critical path.
+        native_data["observables"] = []
+        result_cpp = _cpp._model_from_bngir_v02(native_data)
+        for observable in model_data["observables"]:
+            result_cpp.addObservable(
+                Observable(
+                    observable["name"],
+                    "Molecules" if observable["kind"] == "molecules" else "Species",
+                    [_observable_term_v02(term) for term in observable["terms"]],
+                )
+            )
+        result = BioNetGenModel(result_cpp)
         rebuilt = _parse_document(to_bngir(result, version=STRUCTURAL_VERSION))
         if rebuilt != root:
             raise ValueError(
