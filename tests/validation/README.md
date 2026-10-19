@@ -452,3 +452,73 @@ own classifications, and do not stop later cases.
 
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.
+
+### Acceptance obligations and next work
+
+`issue_queue.py` joins the live issue snapshot to the reviewed inventory in
+`provenance/issue-obligations.json`. Each obligation has a stable ID, the exact
+acceptance sentence, bounded semantic scope, dependencies, producer/consumer
+boundaries, relevant test references, required named checks, and a completion
+condition. Tests linked at issue level establish relevance only. Missing
+`qualification:*` checks explicitly identify work that has no reviewed executable
+contract yet. They are not generated tests or evidence of execution.
+
+The initial vertical slice covers #141 model reuse, #151 count/rate qualification,
+and #155 native BNGIR import. Existing generated checks assess narrow parts of
+those issues; broad lifecycle independence, physical-unit semantics, migration,
+and serialization requirements remain separate. A count-law baseline without
+physical-unit annotations cannot qualify the unit bridge. A native refusal can
+only demonstrate its named rejection obligation, with a positive native reader
+control as a dependency. These are issue-specific contracts, not universal gates.
+
+The inventory then extends across the 43 open issues observed on 2026-10-18.
+Scope without reviewed boundaries or executable evidence remains explicitly
+unmapped. New acceptance text creates unmapped obligations; any changed issue
+body invalidates the reviewed scope until reconciled. Maintainer decisions and
+support-policy choices require explicit review; checkboxes are never execution.
+
+Generate the dashboard using the current checkout and downloaded or locally
+retained evidence:
+
+```bash
+gh issue list --state open --limit 1000 \
+  --json number,title,body,state,url,updatedAt > /tmp/issues.json
+python -m tests.validation.issue_queue \
+  --issues-json /tmp/issues.json \
+  --report /path/to/integrated/report.json \
+  --report /path/to/integrated/matrix-report.json \
+  --revision "$(git rev-parse HEAD)" --output-dir /tmp/acceptance-queue
+```
+
+Use a new output directory. `issue-queue.json` and `issue-queue.md` contain each
+issue's demonstrated obligations, named failures, unsupported and unexecuted
+checks, scope decisions, and explained ranking. `obligation-assessment.json`
+retains every required consumer independently of observed execution, including
+untested routes/combinations and missing candidate/oracle identity evidence.
+Stale, dirty/unverifiable, duplicate, or conflicting evidence is audited
+separately and cannot demonstrate current obligations. Failures lacking required
+oracle identities remain observations with evidence gaps, not confirmed defects.
+
+`campaign-selection.json` ranks bounded plans using uncovered exact check IDs
+from existing integrated families and known failing obligations. Plans record
+shared issues, target obligations, case/check budgets and limits. They authorize
+no new execution, full corpus sweep, GPU use, or budget expansion. Representatives
+never establish complete corpus coverage. Requirements without an executable
+family remain visible instead of receiving a speculative runner.
+
+Pass the assessment into the existing repair-packet builder:
+
+```bash
+python -m tests.validation.triage /path/to/integrated/report.json \
+  --output /tmp/acceptance-triage \
+  --obligations-json /tmp/acceptance-queue/obligation-assessment.json
+```
+
+Packets associate failures by exact check ID, retain independent expectations,
+candidate/oracle identities, affected obligations, missing evidence and the first
+observed boundary. Retention is labeled `RETAINED_NOT_MINIMIZED` unless separate
+reduction evidence exists; matching symptoms never establish a shared cause.
+Missing required consumers or identities prevent repair eligibility. Product
+repairs remain separate. The common parity workflow builds the dashboard before
+packet generation and uploads both, including on scientific failures. No command
+in this workflow merges PRs or closes issues.

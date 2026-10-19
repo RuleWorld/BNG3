@@ -59,6 +59,7 @@ jobs:
             tests/validation/test_integrated_matrix.py \
             tests/validation/test_integrated_consumers.py \
             tests/validation/test_issue_queue.py \
+            tests/validation/test_acceptance_queue.py \
             tests/validation/test_reporting.py \
             tests/validation/test_triage.py \
             tests/validation/test_replay.py \
@@ -575,7 +576,8 @@ jobs:
             args+=(--replicate "$report")
           done
           python -m tests.validation.triage "$evidence/report.json" \
-            --output "$evidence/triage" "${args[@]}" --issues-json "$RUNNER_TEMP/bng3-issues.json"
+            --output "$evidence/triage" "${args[@]}" --issues-json "$RUNNER_TEMP/bng3-issues.json" \
+            --obligations-json "$RUNNER_TEMP/bng3-issue-queue/obligation-assessment.json"
           cat "$evidence/triage/summary.md" >> "$GITHUB_STEP_SUMMARY"
           mkdir -p "$RUNNER_TEMP/triage-integrated-validation-history"
           cp "$evidence/triage/ledger.json" "$RUNNER_TEMP/triage-integrated-validation-history/ledger.json"

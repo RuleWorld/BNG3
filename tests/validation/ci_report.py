@@ -34,6 +34,54 @@ def _escape(value):
     )
 
 
+def acceptance_markdown(report):
+    """Render named acceptance gaps without percentages or closure decisions."""
+
+    def safe(value):
+        return str(value).replace("|", "&#124;").replace("<", "&lt;").replace("\n", " ")
+
+    lines = [
+        "# Issue acceptance dashboard",
+        "",
+        f"Candidate: `{report['revision']}`. No automatic closure. Campaigns are plans only.",
+        "",
+        "| Rank | Issue | Obligation outcomes | Next concrete obligations |",
+        "| --- | --- | --- | --- |",
+    ]
+    for row in report["queue"]:
+        lines.append(
+            f"| {row['rank']} | #{row['number']} | {safe(row['obligation_outcomes'])} | {safe(', '.join(row['remaining_obligations']))} |"
+        )
+    lines += [
+        "",
+        "Ranking: confirmed failing obligations, shared selected-family impact, then remaining obligations. Counts are not completion percentages.",
+        "",
+        "## Evidence audit",
+        "",
+    ]
+    for item in report["acceptance"]["evidence_audit"]:
+        lines.append("- " + safe(item))
+    for row in report["queue"]:
+        lines += [
+            "",
+            f"## #{row['number']}",
+            "",
+            safe(row["ranking_basis"]) + ". " + row["ranking_explanation"],
+            "",
+        ]
+        for obligation in row["obligations"]:
+            checks = ", ".join(f"{c['id']}={c['status']}" for c in obligation["checks"])
+            lines.append(
+                f"- `{safe(obligation['id'])}` **{obligation['status']}**: {safe(obligation['scope'])}. Checks: {safe(checks)}. Decisions: {safe(obligation.get('decisions', []))}. Unmapped: {safe(obligation.get('unmapped_scope', []))}."
+            )
+    lines += ["", "## Bounded campaign plans", ""]
+    for family in report["campaign_selection"]:
+        lines.append(
+            f"- `{family['id']}`: {safe(family['reason'])} Issues {family['issues']}; budget {safe(family['budget'])}. Cannot establish: {safe(family['limits'])}"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def publish(report, summary, *, strict=False, revision=None):
     rows = report.get("results", [])
     bad = [r for r in reporting.gate_failures(rows) if not r.get("aggregate")]

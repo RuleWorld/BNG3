@@ -263,6 +263,49 @@ def test_packet_retains_inputs_prompt_hashes_and_missing_artifact_uncertainty(tm
     value = report()
     value["results"][0]["evidence"] = ["input.bngl", "absent.log"]
     value["results"][0]["source_locations"] = ["cpp/engine.cpp"]
+    value["acceptance"] = {
+        "obligations": [
+            {
+                "id": "issue-143.amount-preservation",
+                "status": "FAIL",
+                "required_checks": [
+                    {
+                        "id": "case:rhs",
+                        "evidence_kind": "trajectory",
+                        "expectation": "Match the independent source law.",
+                        "identity_requirements": [
+                            "source.revision",
+                            "references.oracle.revision",
+                        ],
+                    },
+                    {
+                        "id": "consumer:reload",
+                        "evidence_kind": "net-reload",
+                        "expectation": "Consume the retained network.",
+                        "identity_requirements": ["source.revision"],
+                    },
+                ],
+                "checks": [
+                    {
+                        "id": "case:rhs",
+                        "status": "FAIL",
+                        "evidence_kind": "trajectory",
+                        "expectation": "Match the independent source law.",
+                        "identity_requirements": [
+                            "source.revision",
+                            "references.oracle.revision",
+                        ],
+                        "candidate_identity": {"revision": "a" * 40, "dirty": False},
+                        "oracle_identities": {"oracle": {"revision": "b" * 40}},
+                        "missing_evidence": [],
+                        "observation": "expected 2, actual 3",
+                        "first_observed_boundary": "rhs",
+                    }
+                ],
+                "missing_evidence": ["consumer:reload"],
+            }
+        ]
+    }
     path = source / "report.json"
     path.write_text(json.dumps(value))
     output = tmp_path / "packets"
@@ -271,6 +314,16 @@ def test_packet_retains_inputs_prompt_hashes_and_missing_artifact_uncertainty(tm
     packet = json.loads((output / task / "task.json").read_text())
     assert packet["source"]["dirty"] is False
     assert packet["confirmed_root_cause"] is None
+    assert packet["affected_obligations"][0]["id"] == "issue-143.amount-preservation"
+    assert packet["affected_obligations"][0]["missing_required_checks"] == [
+        "consumer:reload"
+    ]
+    assert packet["affected_obligations"][0]["first_observed_boundary"] == "rhs"
+    assert (
+        packet["affected_obligations"][0]["retained_reproducer_status"]
+        == "RETAINED_NOT_MINIMIZED"
+    )
+    assert packet["repair_eligible"] is False
     assert (
         packet["expected"]
         == "Pass the named contract case:rhs against its recorded oracle and configuration."

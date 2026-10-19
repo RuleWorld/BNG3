@@ -45,7 +45,8 @@
         "tests/validation/test_integrated_boundaries.py",
         "tests/validation/test_integrated_protocol.py",
         "tests/validation/test_integrated_marginals.py",
-        "tests/validation/test_integrated_extensions.py"
+        "tests/validation/test_integrated_extensions.py",
+        "tests/validation/test_acceptance_queue.py"
       ],
       "question": "harness-self-test"
     },

@@ -7,6 +7,7 @@ and unexecuted claims stay visible; the tool never closes issues or approves loc
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -178,6 +179,425 @@ def build_queue(issues, reports, revision):
     return result
 
 
+def obligation_inventory(issues, catalog=None):
+    """Bind reviewed scope to live text; additions and changed scope stay visible."""
+    catalog = catalog or json.loads(
+        (ROOT / "provenance/issue-obligations.json").read_text()
+    )
+    known = {row["number"]: row for row in catalog["issues"]}
+    obligations = []
+    for issue in issues:
+        number = issue["number"]
+        body = issue.get("body") or ""
+        digest = hashlib.sha256(body.encode()).hexdigest()
+        entry = known.get(number, {})
+        current = entry.get("body_sha256") == digest
+        criteria = acceptance_criteria(issue)
+        texts = [row["text"] for row in criteria] or [
+            body or issue.get("title", "Scope absent")
+        ]
+        reviewed = entry.get("obligations", [])
+        for item in reviewed:
+            row = dict(
+                item, issue=number, scope_status="CURRENT" if current else "STALE_SCOPE"
+            )
+            if not current:
+                row["unmapped_scope"] = list(row.get("unmapped_scope", [])) + [
+                    "Live issue body differs from reviewed scope; reconcile before demonstrating acceptance."
+                ]
+            obligations.append(row)
+        for text in texts:
+            if current and any(row.get("criterion") == text for row in reviewed):
+                continue
+            identity = hashlib.sha256(text.encode()).hexdigest()[:16]
+            obligations.append(
+                dict(
+                    id=f"issue:{number}:unmapped:{identity}",
+                    issue=number,
+                    criterion=text,
+                    scope=text,
+                    scope_status="UNMAPPED",
+                    dependencies=[],
+                    boundaries=[],
+                    required_checks=[],
+                    test_references=[],
+                    completion_condition="Maintainer-reviewed mapping and named evidence required.",
+                    decisions=[
+                        "Map remaining live scope without narrowing acceptance."
+                    ],
+                    unmapped_scope=[text],
+                )
+            )
+    ids = [row["id"] for row in obligations]
+    if len(ids) != len(set(ids)):
+        raise ValueError("duplicate obligation identity")
+    return obligations
+
+
+def _identity_value(report, path):
+    value = report
+    for part in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _report_status(report, revision):
+    if not isinstance(report, dict):
+        raise ValueError("evidence report must be an object")
+    source = report.get("source")
+    if (
+        not isinstance(source, dict)
+        or not isinstance(source.get("revision"), str)
+        or not re.fullmatch("[0-9a-f]{40}", source["revision"])
+        or source.get("dirty") is not False
+    ):
+        return "UNVERIFIABLE"
+    return "STALE" if source["revision"] != revision else None
+
+
+def assess_obligations(obligations, reports, revision):
+    """Audit exact leaf checks; missing evidence is never inferred from issue links."""
+    observations, audit, conflicts = {}, [], set()
+    for index, report in enumerate(reports):
+        source = report.get("source", {})
+        reason = _report_status(report, revision)
+        if reason:
+            audit.append(dict(report=index, status=reason, source=source))
+            continue
+        seen = set()
+        for row in report.get("results", []):
+            key = row.get("id")
+            if not key or row.get("status") not in campaign.STATUSES:
+                raise ValueError("invalid result identity/status")
+            if key in seen:
+                conflicts.add(key)
+                audit.append(
+                    dict(
+                        report=index,
+                        id=key,
+                        status="CONFLICT",
+                        reason="duplicate leaf identity",
+                    )
+                )
+            seen.add(key)
+            if row.get("aggregate"):
+                continue
+            evidence = dict(
+                observation=row,
+                candidate_identity=source,
+                oracle_identities=report.get("references", {}),
+            )
+            if key in observations and observations[key][0] != evidence:
+                conflicts.add(key)
+                audit.append(
+                    dict(
+                        report=index,
+                        id=key,
+                        status="CONFLICT",
+                        reason="different exact-revision observations or identities",
+                    )
+                )
+            observations[key] = (evidence, report)
+    assessed = []
+    for obligation in obligations:
+        for name in ("id", "criterion", "scope", "completion_condition"):
+            if not isinstance(obligation.get(name), str) or not obligation[name]:
+                raise ValueError("missing obligation field: " + name)
+        for name in (
+            "dependencies",
+            "boundaries",
+            "required_checks",
+            "test_references",
+            "decisions",
+            "unmapped_scope",
+        ):
+            if not isinstance(obligation.get(name), list):
+                raise ValueError("invalid obligation list: " + name)
+        checks = obligation["required_checks"]
+        if len({c["id"] for c in checks}) != len(checks):
+            raise ValueError("duplicate required check identity")
+        for check in checks:
+            if check.get("evidence_kind") not in {
+                "supported-execution",
+                "diagnostic-only",
+                "disposition",
+                "native-bngir-semantic-control",
+            } or not check.get("expectation"):
+                raise ValueError(
+                    "required check needs evidence kind and independent expectation"
+                )
+    ids = [o["id"] for o in obligations]
+    if len(ids) != len(set(ids)):
+        raise ValueError("duplicate obligation identity")
+    for obligation in obligations:
+        checks = []
+        for required in obligation["required_checks"]:
+            key = required["id"]
+            record = dict(required, status="NOT_TESTED", missing_evidence=[])
+            if key in conflicts:
+                record["status"] = "CONFLICT"
+            elif key in observations:
+                evidence, report = observations[key]
+                row = evidence["observation"]
+                record.update(evidence)
+                record["status"] = row["status"]
+                if row["status"] == "PASS":
+                    kind = required["evidence_kind"]
+                    if kind in {
+                        "supported-execution",
+                        "native-bngir-semantic-control",
+                    } and (
+                        row.get("supported_execution") is not True
+                        or row.get("evidence_kind") != kind
+                    ):
+                        record["missing_evidence"].append(
+                            "explicit supported-execution evidence"
+                        )
+                    elif (
+                        kind != "supported-execution"
+                        and row.get("evidence_kind") != kind
+                    ):
+                        record["missing_evidence"].append("evidence_kind:" + kind)
+                if row["status"] not in {"NOT_TESTED", "UNSUPPORTED", "INVALID_INPUT"}:
+                    for path in required.get("identity_requirements", []):
+                        if not _identity_value(report, path):
+                            record["missing_evidence"].append(path)
+                    if record["missing_evidence"]:
+                        record["status"] = "EVIDENCE_GAP"
+            else:
+                record["missing_evidence"].append(key)
+            checks.append(record)
+        for check in checks:
+            check["executed"] = (
+                bool(check.get("observation")) and check["status"] != "NOT_TESTED"
+            )
+        statuses = {c["status"] for c in checks}
+        if (
+            obligation.get("scope_status") in {"STALE_SCOPE", "UNMAPPED"}
+            or obligation.get("unmapped_scope")
+            or obligation.get("decisions")
+        ):
+            status = "DECISION_REQUIRED"
+        else:
+            status = "DEMONSTRATED" if checks else "EVIDENCE_GAP"
+        for candidate in (
+            "NOT_TESTED",
+            "EVIDENCE_GAP",
+            "UNSUPPORTED",
+            "INVALID_INPUT",
+            "TIMEOUT",
+            "FAIL",
+            "HARNESS_ERROR",
+            "CONFLICT",
+        ):
+            if candidate in statuses:
+                status = candidate
+        if status == "DEMONSTRATED" and statuses != {"PASS"}:
+            status = "EVIDENCE_GAP"
+        assessed.append(
+            dict(
+                obligation,
+                status=status,
+                checks=checks,
+                test_reference_status=(
+                    "RELEVANT_TEST_EXISTS"
+                    if obligation.get("test_references")
+                    else "NO_TEST_REFERENCE"
+                ),
+                missing_evidence=[m for c in checks for m in c["missing_evidence"]],
+                untested_routes=[
+                    dict(
+                        check=c["id"],
+                        boundaries=obligation["boundaries"],
+                        feature_combinations=obligation.get(
+                            "feature_combinations",
+                            [
+                                "Only explicitly named check scope; broader combinations unspecified."
+                            ],
+                        ),
+                    )
+                    for c in checks
+                    if not c["executed"]
+                ],
+            )
+        )
+    # Fixed-point dependency audit also blocks cycles; do not interpret a cycle as proof.
+    demonstrated = set()
+    while True:
+        added = {
+            o["id"]
+            for o in assessed
+            if o["status"] == "DEMONSTRATED" and set(o["dependencies"]) <= demonstrated
+        } - demonstrated
+        if not added:
+            break
+        demonstrated.update(added)
+    for row in assessed:
+        row["blocked_dependencies"] = sorted(set(row["dependencies"]) - demonstrated)
+        if row["status"] == "DEMONSTRATED" and row["id"] not in demonstrated:
+            row["status"] = "BLOCKED"
+    return dict(obligations=assessed, evidence_audit=audit)
+
+
+def select_campaign(obligations, *, findings=(), max_families=3):
+    """Choose plans from existing generators; this never authorizes execution."""
+    if type(max_families) is not int or not 0 <= max_families <= 10:
+        raise ValueError("campaign family budget must be between zero and ten")
+    from .integrated_cases import generated_cases
+    from .integrated import expected_contract_ids
+    from .bngir_adversarial import check_ids
+
+    cases = generated_cases(full=False)
+    families = []
+    for family in ("decay", "reversible", "dimerization"):
+        selected = [case for case in cases if case["family"] == family]
+        families.append(
+            dict(
+                id="generated-" + family,
+                case_ids=[c["id"] for c in selected],
+                check_ids=expected_contract_ids(
+                    selected,
+                    include_boundaries=False,
+                    include_graph_identity=False,
+                    include_bngir_adversarial=False,
+                ),
+                runner="tests.validation.integrated",
+                budget=dict(
+                    cases=len(selected), stage_timeout_seconds=60, ensemble_runs=32
+                ),
+                limits="PR representatives only; no full corpus, lifecycle concurrency, or universal physical-unit qualification.",
+            )
+        )
+    families.append(
+        dict(
+            id="native-bngir-adversarial",
+            case_ids=[],
+            check_ids=check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(check_ids()), stage_timeout_seconds=60),
+            limits="Bounded generated native reader shapes; no complete migration or arbitrary graph coverage.",
+        )
+    )
+    selected = []
+    for family in families:
+        available = set(family["check_ids"])
+        targets = [
+            o
+            for o in obligations
+            if o.get("status") != "DEMONSTRATED"
+            and any(c["id"] in available for c in o["required_checks"])
+        ]
+        known = [
+            r
+            for r in findings
+            if r.get("id") in available
+            and not r.get("aggregate")
+            and r.get("status") in {"FAIL", "HARNESS_ERROR", "TIMEOUT"}
+        ]
+        if not targets and not known:
+            continue
+        family.update(
+            obligation_ids=sorted(o["id"] for o in targets),
+            issues=sorted(
+                {o.get("issue", int(o["id"].split(":")[1])) for o in targets}
+                | {number for row in known for number in row.get("related_issues", [])}
+            ),
+            known_finding_ids=sorted({r["id"] for r in known}),
+            reason="Existing family contains uncovered exact obligation checks or named failing observations; finding issue links are investigation hints only and establish no additional obligation coverage.",
+            authorization="PLAN_ONLY",
+            complete_corpus_coverage=False,
+        )
+        family["selection_arguments"] = (
+            ["--bngir-adversarial-only"]
+            if family["id"] == "native-bngir-adversarial"
+            else [
+                argument
+                for case_id in family["case_ids"]
+                for argument in ("--case", case_id)
+            ]
+        )
+        family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
+        selected.append(family)
+    return sorted(
+        selected,
+        key=lambda f: (
+            -f["confirmed_failures"],
+            -len(f["known_finding_ids"]),
+            -len(f["issues"]),
+            -len(f["obligation_ids"]),
+            f["id"],
+        ),
+    )[:max_families]
+
+
+def acceptance_dashboard(queue, assessment, campaigns):
+    for row in queue:
+        obligations = [
+            o for o in assessment["obligations"] if o.get("issue") == row["number"]
+        ]
+        row["obligations"] = obligations
+        row["obligation_outcomes"] = dict(Counter(o["status"] for o in obligations))
+        row["demonstrated_obligations"] = [
+            o["id"] for o in obligations if o["status"] == "DEMONSTRATED"
+        ]
+        row["remaining_obligations"] = [
+            o["id"] for o in obligations if o["status"] != "DEMONSTRATED"
+        ]
+        row["selected_families"] = [
+            f["id"] for f in campaigns if row["number"] in f["issues"]
+        ]
+        row["confirmed_failures"] = [
+            c["id"] for o in obligations for c in o["checks"] if c["status"] == "FAIL"
+        ]
+        row["unexecuted_checks"] = [
+            c["id"] for o in obligations for c in o["checks"] if not c["executed"]
+        ]
+        row["unsupported_boundaries"] = [
+            dict(check=c["id"], boundaries=o["boundaries"])
+            for o in obligations
+            for c in o["checks"]
+            if c["status"] == "UNSUPPORTED"
+        ]
+        row["decisions_required"] = [
+            dict(
+                obligation=o["id"],
+                decisions=o["decisions"],
+                unmapped_scope=o["unmapped_scope"],
+            )
+            for o in obligations
+            if o["decisions"] or o["unmapped_scope"]
+        ]
+        row["ranking_basis"] = dict(
+            confirmed_failures=sum(o["status"] == "FAIL" for o in obligations),
+            remaining=len(row["remaining_obligations"]),
+            shared_issues=len(
+                {
+                    i
+                    for f in campaigns
+                    if row["number"] in f["issues"]
+                    for i in f["issues"]
+                }
+            ),
+        )
+        row["ranking_explanation"] = (
+            "Confirmed failing obligations first, then shared selected-family impact, then concrete remaining obligations; decisions and unmapped scope remain blocking."
+        )
+    ranked = sorted(
+        queue,
+        key=lambda r: (
+            -r["ranking_basis"]["confirmed_failures"],
+            -r["ranking_basis"]["shared_issues"],
+            -r["ranking_basis"]["remaining"],
+            r["number"],
+        ),
+    )
+    for index, row in enumerate(ranked, 1):
+        row["rank"] = index
+    return ranked
+
+
 def source_drift(lock, heads):
     rows = []
     for name, source in lock["sources"].items():
@@ -301,6 +721,12 @@ def provenance_debt(heads=None):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--issues-json", type=Path, required=True)
+    parser.add_argument(
+        "--obligations-json",
+        type=Path,
+        default=ROOT / "provenance/issue-obligations.json",
+    )
+    parser.add_argument("--max-families", type=int, default=3)
     parser.add_argument("--report", action="append", type=Path, default=[])
     parser.add_argument("--revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -326,7 +752,30 @@ def main(argv=None):
                 )
             lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
             heads = collect_heads(lock, args.output_dir / "upstream-commands")
-        queue = build_queue(issues, reports, args.revision)
+        catalog = json.loads(args.obligations_json.read_text())
+        obligations = obligation_inventory(issues, catalog)
+        assessment = assess_obligations(obligations, reports, args.revision)
+        conflicts = {
+            a["id"] for a in assessment["evidence_audit"] if a["status"] == "CONFLICT"
+        }
+        usable = [
+            dict(
+                r,
+                results=[
+                    row for row in r.get("results", []) if row["id"] not in conflicts
+                ],
+            )
+            for r in reports
+            if _report_status(r, args.revision) is None
+        ]
+        campaigns = select_campaign(
+            assessment["obligations"],
+            findings=[row for r in usable for row in r.get("results", [])],
+            max_families=args.max_families,
+        )
+        queue = acceptance_dashboard(
+            build_queue(issues, usable, args.revision), assessment, campaigns
+        )
         report = dict(
             schema_version=1,
             revision=args.revision,
@@ -336,6 +785,10 @@ def main(argv=None):
                 dict(path=str(p), sha256=inventory.sha256(p)) for p in args.report
             ],
             queue=queue,
+            acceptance=assessment,
+            campaign_selection=campaigns,
+            obligations_sha256=inventory.sha256(args.obligations_json),
+            authorization="Existing campaign limits remain in force; selections are plans only.",
             provenance=provenance_debt(heads),
         )
         (args.output_dir / "issues-input.json").write_bytes(issues_bytes)
@@ -346,18 +799,14 @@ def main(argv=None):
         (args.output_dir / "issue-queue.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
-        lines = [
-            "# Issue evidence queue",
-            "",
-            f"Candidate: `{args.revision}`. No issue is automatically qualified for closure.",
-            "",
-            "| Issue | Disposition | Executed outcomes | Acceptance criteria to verify | Next action |",
-            "| --- | --- | --- | --- | --- |",
-        ]
-        for row in queue:
-            lines.append(
-                f"| [#{row['number']}](https://github.com/RuleWorld/BNG3/issues/{row['number']}) | {row['disposition']} | {row['outcomes']} | {len(row['acceptance_criteria'])} | {row['next_action']} |"
-            )
+        for filename, value in (
+            ("obligation-assessment.json", assessment),
+            ("campaign-selection.json", campaigns),
+        ):
+            (args.output_dir / filename).write_text(json.dumps(value, indent=2) + "\n")
+        from .ci_report import acceptance_markdown
+
+        lines = acceptance_markdown(report).splitlines()
         debt = report["provenance"]
         lines += [
             "",
