@@ -43,6 +43,28 @@ native import boundary names that boundary in the established
 "native BNGIR does not support ..." wording so the consumer reports a
 support boundary instead of a harness failure.
 
+## Native NFsim runs on the same model the embedded engine executes
+
+The native NFsim stage ran the pinned oracle on BNG2's XML verbatim. The oracle
+applies a compartment size only to zero-order synthesis, so for a
+reactant-bearing rule it sampled a different model than BNG2's network and
+than the embedded engine: the equal-seed comparison was not exact for any
+compartment model, and the harness recorded the difference as a rounding
+concern.
+
+The stage now normalises BNG2's XML into BNG2's count-rate convention first,
+the same conversion the XML rate probe already applies, so the oracle samples
+the model the embedded engine executes. The rewrite reads the compartment of a
+rule pattern, drops the symmetry factor the coefficient now carries, and
+removes the compartment factor the oracle applies itself for a zero-order rule
+whose product molecule states a compartment. An export the rewrite cannot
+state is an explicit refusal rather than an approximation.
+
+With the oracle on the same model, the seeded native and embedded NFsim
+trajectories compare exactly for every generated case, so the exact
+native-versus-embedded comparison covers the compartment and reversible
+families as well.
+
 ## Native BNGIR rule directions with several patterns
 
 The native importer rebuilt exactly one reactant and one product pattern, so
