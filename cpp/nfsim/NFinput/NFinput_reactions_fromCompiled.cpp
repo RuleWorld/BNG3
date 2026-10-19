@@ -2,7 +2,6 @@
 
 #include "compile/Capabilities.hpp"
 #include "compile/CompiledModel.hpp"
-#include "compile/RuleUnitConversion.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
@@ -2303,8 +2302,10 @@ bool lowerDirection(const CompiledModel& model,
                 if (name.empty()) continue;
                 auto* compartment = resolveCompartment(system, name, diagnostic);
                 if (compartment == nullptr) { delete reaction; return false; }
-                if (productCompartment == nullptr) productCompartment = compartment;
-                else if (productCompartment != compartment) same = false;
+                if (productCompartment == nullptr ||
+                    compartment->getSpatialDimensions() <
+                        productCompartment->getSpatialDimensions())
+                    productCompartment = compartment;
                 auto compartmentId = molecule.compartmentId;
                 if (!compartmentId.has_value()) compartmentId = pattern.compartmentId();
                 if (!compartmentId.has_value()) same = false;
@@ -2354,7 +2355,7 @@ bool lowerDirection(const CompiledModel& model,
                     reaction->setBaseRate(reaction->getBaseRate() * factor, "");
             }
         } else {
-            if (productCompartment != nullptr && same) {
+            if (productCompartment != nullptr) {
                 reaction->applyZeroOrderVolumeScaling(productCompartment);
             } else {
                 // No single product compartment: keep the default factor of
@@ -2373,28 +2374,73 @@ bool lowerDirection(const CompiledModel& model,
         // Physical-unit rates never reach here: nfSimPhysicalUnitBridgeRejection
         // rejects reactant-bearing typed rates before construction, and the
         // unit.has_value() guard keeps this a no-op if that ever changes.
-        std::vector<bng::compile::ReactantCompartment> reactantCompartments;
+        std::vector<NFcore::Compartment*> runtimeCompartments;
+        bool hasWildcardCompartment = false;
+        if (!model.compartments().empty()) {
+            for (const auto& pattern : direction.reactantPatterns) {
+                if (reactantCompartmentDeclaration(model, pattern) == nullptr)
+                    hasWildcardCompartment = true;
+            }
+        }
+        bool staticUnitVolumes = system.getNumberPerQuantityUnit() <= 0.0 ||
+                                 system.getNumberPerQuantityUnit() == 1.0;
+        for (const auto& declaration : model.compartments()) {
+            if (declaration.volume != 1.0 || declaration.volumeTimeDependent ||
+                !declaration.volumeParameterName.empty())
+                staticUnitVolumes = false;
+        }
+        if (hasWildcardCompartment && !staticUnitVolumes) {
+            diagnostic = "bare multi-reactant rule has a wildcard reactant compartment; "
+                         "NFsim requires statically unit-sized compartments to preserve its rate conversion";
+            delete reaction;
+            return false;
+        }
         for (const auto& pattern : direction.reactantPatterns) {
             const auto* declaration = reactantCompartmentDeclaration(model, pattern);
             if (declaration == nullptr) continue;
-            double size = declaration->volume;
-            if (system.getNumberPerQuantityUnit() > 0.0)
-                size *= system.getNumberPerQuantityUnit();
-            reactantCompartments.push_back({declaration->dimension, size});
+            auto* runtimeCompartment = system.getCompartment(declaration->name);
+            if (runtimeCompartment == nullptr) {
+                diagnostic = "reactant compartment '" + declaration->name + "' is unavailable in NFsim";
+                delete reaction;
+                return false;
+            }
+            runtimeCompartments.push_back(runtimeCompartment);
         }
-        if (const auto factor =
-                bng::compile::reactantUnitConversionFactor(reactantCompartments)) {
+        if (!hasWildcardCompartment && !runtimeCompartments.empty()) {
+            std::vector<NFcore::Compartment*> surfaces, volumes, converted;
+            for (auto* compartment : runtimeCompartments) {
+                if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
+                else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
+                else {
+                    diagnostic = "reactant compartment '" + compartment->getId() +
+                                 "' has a dimension unsupported by NFsim volume conversion";
+                    delete reaction;
+                    return false;
+                }
+            }
+            if (!surfaces.empty()) {
+                converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
+                converted.insert(converted.end(), volumes.begin(), volumes.end());
+            } else if (!volumes.empty()) {
+                converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
+            }
+            for (auto* compartment : converted) {
+                double size = compartment->getSize();
+                if (system.getNumberPerQuantityUnit() > 0.0)
+                    size *= system.getNumberPerQuantityUnit();
+                if (!std::isfinite(size) || size <= 0.0) {
+                    diagnostic = "reactant compartment '" + compartment->getId() +
+                                 "' has a non-positive or non-finite volume";
+                    delete reaction;
+                    return false;
+                }
+            }
             // Only bare mass-action (BasicRxnClass) rates are converted here.
             // Functional/saturating rates carry their own count-rate semantics
             // and the XML writer leaves their (non-numeric) rate objects
             // untouched, so scaling only Basic keeps the two paths in lockstep.
-            if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN) {
-                reaction->volumeConversionFactor = *factor;
-                // BasicRxnClass::update_a() ignores volumeConversionFactor, and
-                // setBaseRate() would re-apply the constructor's symmetry
-                // factor. Scale the already-symmetrized base rate exactly once.
-                reaction->scaleBaseRate(*factor);
-            }
+            if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN)
+                reaction->setReactantVolumeCompartments(converted);
         }
     }
 

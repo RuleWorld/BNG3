@@ -702,6 +702,16 @@ Compartment * System::getCompartment(string id) const
 	return NULL;
 }
 
+bool System::hasStaticUnitSizedCompartments() const {
+	if (numberPerQuantityUnit > 0.0 && numberPerQuantityUnit != 1.0) return false;
+	for (map<string, Compartment*>::const_iterator it = compartments.begin(); it != compartments.end(); ++it) {
+		const Compartment *compartment = it->second;
+		if (compartment == NULL || compartment->getSize() != 1.0 ||
+			!compartment->getSizeParameterName().empty()) return false;
+	}
+	return true;
+}
+
 void System::addCompartment(Compartment* comp)
 {
 	if (comp == NULL) return;
@@ -2489,6 +2499,7 @@ void System::updateSystemWithNewParameters() {
 	//Refresh zero-order synthesis volume factors from current sizes.
 	for(unsigned int r=0; r<allReactions.size(); r++) {
 		allReactions.at(r)->refreshZeroOrderVolumeFactor();
+		allReactions.at(r)->refreshReactantVolumeFactor();
 	}
 
 	//Update all reactions
