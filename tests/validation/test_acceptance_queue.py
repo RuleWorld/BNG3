@@ -159,7 +159,7 @@ def test_scope_edits_and_new_issue_remain_visible():
 
 
 def test_dashboard_ranks_named_failures_and_keeps_closure_disabled():
-    issue = dict(number=141, body="")
+    issue = dict(number=141, state="OPEN", body="")
     row = dict(id="consumer:values", status="FAIL")
     assessment = assess([row])
     assessment["obligations"][0]["issue"] = 141
@@ -223,6 +223,7 @@ def test_live_slice_runs_inventory_audit_selection_packets_and_dashboard(tmp_pat
     issues = [
         dict(
             number=i["number"],
+            state="OPEN",
             body="**Acceptance criteria**\n"
             + "\n".join(
                 "- [ ] " + text
@@ -400,3 +401,48 @@ def test_undeclared_finding_does_not_select_an_unexecutable_check():
         )
     ]
     assert q.select_campaign([obligation()], findings=rows, max_families=1) == []
+
+
+def test_closed_and_unobserved_issues_retain_evidence_without_active_ranks():
+    from tests.validation.ci_report import acceptance_markdown
+
+    issues = [dict(number=141, state="OPEN"), dict(number=151, state="CLOSED")]
+    rows = [dict(id="closed:failure", status="FAIL", related_issues=[151, 155])]
+    queue = q.acceptance_dashboard(
+        q.build_queue(
+            issues, [dict(source=dict(revision=REV, dirty=False), results=rows)], REV
+        ),
+        dict(obligations=[], evidence_audit=[]),
+        [],
+    )
+    assert [(r["number"], r["rank"]) for r in queue] == [
+        (141, 1),
+        (151, None),
+        (155, None),
+    ]
+    assert queue[1]["outcomes"] == {"FAIL": 1}
+    markdown = acceptance_markdown(
+        dict(
+            revision=REV,
+            queue=queue,
+            acceptance=dict(evidence_audit=[]),
+            campaign_selection=[],
+        )
+    )
+    table = [line for line in markdown.splitlines() if line.startswith("| ")]
+    assert any("#141" in line for line in table)
+    assert not any("#151" in line or "#155" in line for line in table)
+
+
+def test_campaign_does_not_schedule_closed_only_obligations_or_findings():
+    closed = obligation(
+        issue=151,
+        required_checks=[
+            dict(id="v1-n20-r0-a0:reuse:reset", evidence_kind="supported-execution")
+        ],
+    )
+    finding = dict(id="v1-n20-r0-a0:reuse:reset", status="FAIL", related_issues=[151])
+    assert q.select_campaign([closed], findings=[finding], active_issues={141}) == []
+    shared = dict(finding, related_issues=[141, 151])
+    plans = q.select_campaign([], findings=[shared], active_issues={141})
+    assert plans and plans[0]["issues"] == [141]

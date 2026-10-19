@@ -109,3 +109,22 @@ def test_bng2_conformance_job_installs_source_law_oracle_dependency():
     job = workflow["jobs"]["bng2-parity"]
     commands = "\n".join(str(step.get("run", "")) for step in job["steps"])
     assert "scipy" in commands
+
+
+def test_bng2_conformance_provisions_required_independent_nfsim_before_harness():
+    workflow = parse_workflow(ROOT / ".github/workflows/parity.yml")
+    steps = workflow["jobs"]["bng2-parity"]["steps"]
+    build = next((s for s in steps if "--name nfsim" in s.get("run", "")), None)
+    assert (
+        build is not None
+    ), "Required native marginal check has no pinned NFsim oracle"
+    command = build["run"]
+    assert "--target NFsim" in command
+    assert 'test -x "$nfsim"' in command
+    assert "NFSIM_BIN=$nfsim" in command and '"$GITHUB_ENV"' in command
+    assert "sha256sum" in command and '"$GITHUB_STEP_SUMMARY"' in command
+    harness = next(
+        s for s in steps if "scripts/validate.py --tier smoke" in s.get("run", "")
+    )
+    assert steps.index(build) < steps.index(harness)
+    assert not build.get("continue-on-error")
