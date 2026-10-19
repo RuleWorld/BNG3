@@ -277,9 +277,8 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
         try:
             document = source.to_bngir(version=version)
         except ValueError as exc:
-            if (
-                version != "0.1"
-                or "cannot represent physical-unit metadata" not in str(exc)
+            if version != "0.1" or "cannot represent physical-unit metadata" not in str(
+                exc
             ):
                 raise
             checks.extend(
@@ -610,6 +609,7 @@ def _run_consumer(operation, source_path, case_id, bionetgen):
                     "NOT_TESTED",
                     "no parameter dependency in translated reaction rates; numeric folding is allowed",
                 )
+                | {"applicability": "no-rate-parameter-dependency"}
             )
         else:
             old_rate = source.get_parameter(rate_name).value

@@ -10,6 +10,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from . import reporting
+
 STATUSES = {
     "PASS",
     "FAIL",
@@ -34,25 +36,25 @@ def _escape(value):
 
 def publish(report, summary, *, strict=False, revision=None):
     rows = report.get("results", [])
-    bad = [
-        r
-        for r in rows
-        if not r.get("aggregate")
-        and r["status"] != "PASS"
-        and not (
-            r["status"] == "NOT_TESTED" and r.get("applicability") == "no-observables"
-        )
-    ]
+    bad = [r for r in reporting.gate_failures(rows) if not r.get("aggregate")]
     errors = []
     ids = Counter(r["id"] for r in rows)
     missing = set(report.get("expected_contract_ids", [])) - ids.keys()
     duplicates = [name for name, count in ids.items() if count > 1]
+    invalid_statuses = sorted(
+        {r.get("status") for r in rows if r.get("status") not in STATUSES},
+        key=str,
+    )
     if missing:
         errors.append(
             "Missing selected contract evidence: " + ", ".join(sorted(missing))
         )
     if duplicates:
         errors.append("Duplicate case identities: " + ", ".join(sorted(duplicates)))
+    if invalid_statuses:
+        errors.append(
+            "Invalid result statuses: " + ", ".join(map(str, invalid_statuses))
+        )
     if not rows:
         errors.append("No executed contract evidence; discovery alone cannot pass CI.")
     if revision and report.get("source", {}).get("revision") != revision:
@@ -68,10 +70,16 @@ def publish(report, summary, *, strict=False, revision=None):
         "UNSUPPORTED": 4,
         "NOT_TESTED": 5,
     }
+    reported = [r for r in rows if not r.get("aggregate") and r not in bad]
     for row in sorted(bad, key=lambda r: (priority.get(r["status"], 0), r["id"]))[:50]:
         print(
-            f'::{severity} title={_escape(row["id"])}::{_escape(row["status"]+": "+(row.get("failure_summary") or row.get("detail", ""))[:1000])}; inspect investigation-tasks.json and recorded receipts'
+            f"::{severity} title={_escape(row['id'])}::{_escape(row['status'] + ': ' + (row.get('failure_summary') or row.get('detail', ''))[:1000])}; inspect investigation-tasks.json and recorded receipts"
         )
+    for row in sorted(reported, key=lambda r: (r["status"], r["id"]))[:50]:
+        if row.get("status") != "PASS":
+            print(
+                f"::warning title={_escape(row['id'])}::{_escape(row['status'] + ': ' + (row.get('failure_summary') or row.get('detail', ''))[:1000])}; classification retained, not a required-support failure"
+            )
     counts = Counter(r["status"] for r in rows if not r.get("aggregate"))
     lines = [
         "## Conformance contract findings",
@@ -84,7 +92,7 @@ def publish(report, summary, *, strict=False, revision=None):
     lines += [f"| {status} | {counts[status]} |" for status in sorted(counts)]
     lines += [
         "",
-        f'**{"FAIL" if bad or errors else "PASS"}** for the selected contracts. Unknown/unexecuted inventory entries remain unqualified; this check does not approve a release.',
+        f"**{'FAIL' if bad or errors else 'PASS'}** for the selected contracts. Unsupported boundaries and their declared blocked children remain classified; unexplained missing execution, invalid input and missed explicitly required support fail this check. Unknown/unexecuted inventory entries remain unqualified; this check does not approve a release.",
         "",
     ]
     lines += [f"- {e}" for e in errors]

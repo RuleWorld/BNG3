@@ -209,7 +209,10 @@ def _checks(case, stage, checks, rows, dependencies):
         )
         if blocked:
             local = [blocked] if isinstance(blocked, str) else blocked
-            row["blocked_by"] = [f"{case}:{stage}:{name}" for name in local]
+            row["blocked_by"] = [
+                name if name.startswith(f"{case}:") else f"{case}:{stage}:{name}"
+                for name in local
+            ]
         rows.append(row)
 
 
@@ -791,7 +794,11 @@ def run_case(case, args, rows, env):
         *consumers,
         *qualifications,
     ]
-    blocked = [r["id"] for r in identity_stages if r["status"] != "PASS"]
+    blocked = [
+        r["id"]
+        for r in identity_stages
+        if not (work / r["stage"] / "identity.json").is_file()
+    ]
     if blocked:
         check = dict(
             check="same-installed-build",
@@ -1178,7 +1185,7 @@ def main(argv=None):
     (args.report_dir / "artifacts.json").write_text(
         json.dumps(artifacts, indent=2) + "\n"
     )
-    return int(any(r["status"] != "PASS" for r in rows))
+    return int(bool(reporting.gate_failures(rows)))
 
 
 if __name__ == "__main__":

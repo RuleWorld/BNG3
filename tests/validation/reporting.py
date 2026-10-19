@@ -14,6 +14,74 @@ from .campaign import STATUSES
 BAD = {"FAIL", "TIMEOUT", "HARNESS_ERROR"}
 
 
+def gate_failures(results):
+    """Keep unsupported coverage visible; fail unexplained missing execution.
+
+    A NOT_TESTED child is nonfatal only when an unsupported aggregate explicitly
+    lists it, or its recorded prerequisites are all known unsupported boundaries.
+    Explicit support requirements always remain gating.
+    """
+    results = list(results)
+    allowed = {
+        row["id"]
+        for row in results
+        if row.get("status") == "UNSUPPORTED" and not row.get("support_required")
+    }
+    allowed.update(
+        row["id"]
+        for row in results
+        if row.get("status") == "NOT_TESTED"
+        and row.get("applicability")
+        in {"no-observables", "no-rate-parameter-dependency"}
+        and not row.get("support_required")
+    )
+    passed = {row["id"] for row in results if row.get("status") == "PASS"}
+    for row in results:
+        if row.get("aggregate") and row.get("id") in allowed:
+            allowed.update(row.get("child_ids", []))
+    changed = True
+    while changed:
+        changed = False
+        for row in results:
+            blocked = row.get("blocked_by", [])
+            children = row.get("child_ids", [])
+            if (
+                row.get("aggregate")
+                and row.get("status") == "NOT_TESTED"
+                and children
+                and all(item in allowed or item in passed for item in children)
+                and row.get("id") not in allowed
+            ):
+                allowed.add(row["id"])
+                changed = True
+            if (
+                row.get("status") == "NOT_TESTED"
+                and blocked
+                and all(item in allowed for item in blocked)
+                and row.get("id") not in allowed
+            ):
+                allowed.add(row["id"])
+                changed = True
+    return [
+        row
+        for row in results
+        if row.get("status") != "PASS"
+        and not (
+            not row.get("support_required")
+            and (
+                row.get("status") == "UNSUPPORTED"
+                or (
+                    row.get("status") == "NOT_TESTED"
+                    and (
+                        row.get("id") in allowed
+                        or row.get("applicability") == "no-observables"
+                    )
+                )
+            )
+        )
+    ]
+
+
 def attach_coverage(capabilities: list[dict], results: list[dict]) -> None:
     for capability in capabilities:
         matched = []
@@ -464,7 +532,7 @@ def markdown(report: dict) -> str:
     ]
     for task in report.get("investigation_tasks", [])[:50]:
         lines += [
-            f"- **{safe(task['case_id'])} / {task['status']}**: {safe(task['observation'])[:600]}. Packet `{task['id']}` in `investigation-tasks.json`; inspect {', '.join('`'+p+'`' for p in task['source_locations']) or 'recorded source/test location'}. Pass this exact check against its pinned reference; preserve neighboring checks."
+            f"- **{safe(task['case_id'])} / {task['status']}**: {safe(task['observation'])[:600]}. Packet `{task['id']}` in `investigation-tasks.json`; inspect {', '.join('`' + p + '`' for p in task['source_locations']) or 'recorded source/test location'}. Pass this exact check against its pinned reference; preserve neighboring checks."
         ]
     for group in report["failure_clusters"][:25]:
         lines += [
