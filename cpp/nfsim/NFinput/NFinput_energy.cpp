@@ -56,6 +56,10 @@ bool parseEnergyPatterns(
 
     if (verbose) cout << "\n\tReading list of Energy Patterns..." << endl;
 
+    // Legacy XML path only: an explicit RT parameter rescales the Arrhenius
+    // divisor (default 2.478, kJ/mol at ~298K). The canonical BNG3
+    // AST/Compiled adapters do NOT read RT and always use RT == 1, matching
+    // BNG2 where energies are already in RT units.
     double phi = 0.5;
     double RT = 2.478;
 

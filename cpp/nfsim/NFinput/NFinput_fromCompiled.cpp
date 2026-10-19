@@ -990,14 +990,23 @@ bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
     }
     if (model.energyFactors().empty()) return true;
 
+    // Canonical BNG3 path: energies arrive evaluated in RT units, matching
+    // BNG2 RateLaw::evaluate_local which builds exp(-(Ea0+phi*dG)) with no RT
+    // divisor. A model-level /RT is already folded into the evaluated Ea0/dG
+    // values, so the effective RT is 1 (no extra scaling). An explicit RT
+    // parameter is honored only on the legacy XML path (parseEnergyPatterns);
+    // here it is ignored.
     double phi = 0.5;
-    double rt = 2.478;
+    constexpr double rt = 1.0;
     for (const auto& parameter : model.parameters()) {
         if (!parameter.constantValue.has_value()) continue;
         if (parameter.name == "phi") phi = *parameter.constantValue;
-        else if (parameter.name == "RT") rt = *parameter.constantValue;
+        else if (parameter.name == "RT" && verbose) {
+            std::cerr << "[nfsim/compiled] ignoring explicit RT=" << *parameter.constantValue
+                      << " (canonical path uses RT=1; RT is legacy-XML only)\n";
+        }
     }
-    if (!std::isfinite(phi) || !std::isfinite(rt) || rt == 0.0) return false;
+    if (!std::isfinite(phi)) return false;
 
     auto* energyFunction = new NFcore::EnergyFunction(phi, rt);
     std::set<std::string> ids;

@@ -9,6 +9,7 @@
 #include "compile/energy/BarrierTable.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
 #include "compile/energy/ThermodynamicConstraints.hpp"
+#include "NFcore/energyPattern.hh"
 
 using namespace bng::compile::energy;
 
@@ -190,4 +191,45 @@ TEST_CASE("folding a barrier into the compact base rate is exact") {
     // With no barrier the folded base rate is bit-identical to the original.
     CHECK(std::exp(-(activationEnergy + 0.0) / RT) ==
           std::exp(-activationEnergy / RT));
+}
+
+TEST_CASE("canonical Arrhenius expansion matches BNG2 with no extra RT scaling") {
+    // BNG2 RateLaw::evaluate_local builds exp(-(Ea0+phi*dG)) with no RT
+    // divisor: energies are already in RT units. The canonical BNG3
+    // AST/Compiled adapters therefore construct EnergyFunction with RT == 1,
+    // so the shared helper at RT == 1 must equal the BNG2 closed form, and
+    // the Sekar expansion at RT == 1 must reproduce it per context.
+    const double Ea0 = 1.2;
+    const double phi = 0.4;
+    const double dG = 2.0;
+
+    CHECK(drivenArrheniusRate(Ea0, 0.0, dG, 0.0, phi, 1.0, true) ==
+          Catch::Approx(std::exp(-(Ea0 + phi * dG))));
+    CHECK(drivenArrheniusRate(Ea0, 0.0, dG, 0.0, phi, 1.0, false) ==
+          Catch::Approx(std::exp(-(Ea0 + (phi - 1.0) * dG))));
+
+    NFcore::EnergyFunction energy(phi, 1.0);
+    NFcore::EnergyPatternInfo pattern;
+    pattern.id = "Abond";
+    pattern.energyValue = dG;
+    NFcore::EpMolecule moleculeA;
+    moleculeA.typeName = "A";
+    moleculeA.xmlId = "a";
+    moleculeA.components.push_back({"x", "b", true, ""});
+    NFcore::EpMolecule moleculeB;
+    moleculeB.typeName = "B";
+    moleculeB.xmlId = "b";
+    moleculeB.components.push_back({"y", "a", true, ""});
+    pattern.molecules = {moleculeA, moleculeB};
+    pattern.bonds.push_back({0, 0, 1, 0});
+    energy.addEnergyPattern(pattern);
+
+    const auto expanded = energy.expandBindingRule("r", Ea0, phi, "A", "x", "B", "y");
+    REQUIRE(expanded.size() == 2);
+    const auto* fwd = expanded[0].isForward ? &expanded[0] : &expanded[1];
+    const auto* rev = expanded[0].isForward ? &expanded[1] : &expanded[0];
+    CHECK(fwd->isForward);
+    CHECK_FALSE(rev->isForward);
+    CHECK(fwd->rate == Catch::Approx(std::exp(-(Ea0 + phi * dG))));
+    CHECK(rev->rate == Catch::Approx(std::exp(-(Ea0 + (phi - 1.0) * dG))));
 }

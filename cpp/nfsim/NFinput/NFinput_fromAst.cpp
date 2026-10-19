@@ -3743,13 +3743,24 @@ bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
     const auto& energyPatterns = model.getEnergyPatterns();
     if (energyPatterns.empty()) return true;
 
+    // Canonical BNG3 path: energies arrive evaluated in RT units, matching
+    // BNG2 RateLaw::evaluate_local which builds exp(-(Ea0+phi*dG)) with no RT
+    // divisor. A model-level /RT is already folded into the evaluated Ea0/dG
+    // values, so the effective RT is 1 (no extra scaling). An explicit RT
+    // parameter is honored only on the legacy XML path (parseEnergyPatterns);
+    // here it is ignored.
     double phi = 0.5;
-    double rt = 2.478;
+    constexpr double rt = 1.0;
     if (const auto iter = parameters.find("phi"); iter != parameters.end()) phi = iter->second;
-    if (const auto iter = parameters.find("RT"); iter != parameters.end()) rt = iter->second;
-    if (!std::isfinite(phi) || !std::isfinite(rt) || rt == 0.0) {
-        std::cerr << "[nfsim/ast] energy expansion requires finite phi and nonzero RT\n";
+    if (!std::isfinite(phi)) {
+        std::cerr << "[nfsim/ast] energy expansion requires finite phi\n";
         return false;
+    }
+    if (const auto iter = parameters.find("RT"); iter != parameters.end()) {
+        if (verbose) {
+            std::cerr << "[nfsim/ast] ignoring explicit RT=" << iter->second
+                      << " (canonical path uses RT=1; RT is legacy-XML only)\n";
+        }
     }
 
     auto* energyFunction = new EnergyFunction(phi, rt);

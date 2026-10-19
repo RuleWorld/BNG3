@@ -12,6 +12,13 @@
 // function and the network writer, because the two paths use different energy
 // conventions (explicit RT versus RT folded into the parameters) and must not
 // drift apart.
+//
+// Convention note: the canonical BNG3 AST/Compiled adapters always construct
+// the NFsim EnergyFunction with RT == 1, matching BNG2 (RateLaw::
+// evaluate_local builds exp(-(Ea0+phi*dG)) with no RT divisor; energies are
+// already in RT units and a model-level /RT arrives pre-folded into the
+// evaluated Ea0/dG values). An explicit RT divisor survives only on the legacy
+// XML path (parseEnergyPatterns, default 2.478) for backward compatibility.
 
 #include <string>
 

@@ -1308,6 +1308,32 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
         diagnostic = "compiled Arrhenius lowering supports one reaction-center edit";
         return false;
     }
+    // The caller skips lowering the reverse half because the expansion below
+    // generates both traversal directions from this forward center (with the
+    // reverse gated on rule.isBidirectional()). That skip is only valid when
+    // the reverse half is the genuine mirror of this forward edit: a
+    // bidirectional AddBond/ChangeState pair, or no reverse half at all for a
+    // one-way rule. Anything else (e.g. a one-way DeleteBond unbind, or a
+    // mismatched reverse program) fails closed here rather than silently
+    // dropping or duplicating a direction.
+    if (rule.isBidirectional() != rule.reverse().has_value()) {
+        diagnostic = "Arrhenius rule directionality is inconsistent";
+        return false;
+    }
+    if (rule.isBidirectional()) {
+        const auto& reverseMutations = rule.reverse()->mutations;
+        const auto forwardKind = direction.mutations.front().kind;
+        const bool mirrored =
+            reverseMutations.size() == 1 &&
+            ((forwardKind == MutationKind::AddBond &&
+              reverseMutations.front().kind == MutationKind::DeleteBond) ||
+             (forwardKind == MutationKind::ChangeState &&
+              reverseMutations.front().kind == MutationKind::ChangeState));
+        if (!mirrored) {
+            diagnostic = "Arrhenius reverse half is not the mirror of its forward center";
+            return false;
+        }
+    }
 
     // Reservoir work is signed per traversal direction: the direction being
     // built here is always the rule's forward direction (the reverse is
