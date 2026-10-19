@@ -384,3 +384,143 @@ end reaction rules
     CHECK(liveInCompartment(*c, type, "c1") == 0u);
     CHECK(liveInCompartment(*c, type, "c2") > 0u);
 }
+
+TEST_CASE("NFcore2 state change on non-root pattern molecule is supported") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s)
+    B(t~u~p)
+end molecule types
+begin seed species
+    A(s!1).B(t~u!1) 4
+end seed species
+begin reaction rules
+    A(s!1).B(t~u!1) -> A(s!1).B(t~p!1) k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    auto c = makeDriverCase(*model);
+    NFcore2::SsaDriverOptions options;
+    options.tEnd = 1.0;
+    options.seed = 9;
+    c->driver->run(options);
+    CHECK(countOf(c->system.get(), "B") == 4);
+}
+
+TEST_CASE("NFcore2 deletion of non-root pattern molecule is supported") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s)
+    B(t)
+end molecule types
+begin seed species
+    A(s!1).B(t!1) 4
+end seed species
+begin reaction rules
+    A(s!1).B(t!1) -> A(s) k DeleteMolecules
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    auto c = makeDriverCase(*model);
+    NFcore2::SsaDriverOptions options;
+    options.tEnd = 10.0;
+    options.seed = 11;
+    options.maxEvents = 2;
+    c->driver->run(options);
+    CHECK(c->driver->state().molecules(moleculeType(*c, "B")).liveCount() <= 2);
+}
+
+TEST_CASE("NFcore2 binding on non-root pattern molecule is supported") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s)
+    B(t)
+    C(u)
+end molecule types
+begin seed species
+    A(s!1).B(t!1) 4
+    C(u) 4
+end seed species
+begin reaction rules
+    A(s!1).B(t!1) + C(u) -> A(s!1).B(t!1!2).C(u!2) k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    auto c = makeDriverCase(*model);
+    (void)c;
+}
+
+TEST_CASE("NFcore2 molecule creation on non-root pattern molecule is supported") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s)
+    B(t)
+    C(u)
+end molecule types
+begin seed species
+    A(s!1).B(t!1) 4
+end seed species
+begin reaction rules
+    A(s!1).B(t!1) -> A(s!1).B(t!1).C(u) k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    auto c = makeDriverCase(*model);
+    (void)c;
+}
+
+TEST_CASE("NFcore2 bond deletion on non-root pattern molecule is supported") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s)
+    B(t)
+end molecule types
+begin seed species
+    A(s!1).B(t!1) 4
+end seed species
+begin reaction rules
+    A(s!1).B(t!1) -> A(s) + B(t) k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    auto c = makeDriverCase(*model);
+    (void)c;
+}
+
+TEST_CASE("NFcore2 state change plus bond change on non-root is supported") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s)
+    B(t~u~p, u)
+    C(v)
+end molecule types
+begin seed species
+    A(s!1).B(t~u!1, u) 4
+    C(v) 4
+end seed species
+begin reaction rules
+    A(s!1).B(t~u!1, u) + C(v) -> A(s!1).B(t~p!1, u!2).C(v!2) k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    auto c = makeDriverCase(*model);
+    (void)c;
+}

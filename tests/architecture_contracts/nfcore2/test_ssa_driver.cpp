@@ -417,3 +417,47 @@ TEST(Driver_AsymmetricHomotypicPairMatchesEitherOrientation) {
     EXPECT_EQ(d.state().molecules(a).liveCount(), 0u);
     EXPECT_EQ(d.state().molecules(c).liveCount(), 1u);
 }
+
+TEST(Driver_GuardsAgainstCombinatorialExplosion) {
+    ExecutableModel e;
+    const MoleculeTypeId a = addType(e, "A");
+    const MoleculeTypeId d = addType(e, "D");
+    TransformProgram p;
+    for (std::uint16_t root = 0; root < 3; ++root) {
+        TransformInstruction del{TRANSFORM_DELETE_MOLECULE};
+        del.target = root;
+        p.add(del);
+    }
+    TransformInstruction mk{TRANSFORM_CREATE_MOLECULE};
+    mk.target = 3;
+    mk.a = d.value();
+    p.add(mk);
+    p.add(TransformInstruction(TRANSFORM_END));
+    const TransformProgramId t = e.buildTransforms().add(p);
+    RuleFamilyDescriptor f;
+    f.name = "big";
+    f.matcher = alwaysMatcher(e);
+    f.transform = t;
+    RuleMember rm;
+    rm.rate = 1.0;
+    f.members.push_back(rm);
+    const RuleFamilyId fid = e.buildMetadata().addRuleFamily(f);
+    SsaMemberSignature s;
+    s.family = fid;
+    s.member = 0;
+    s.reactantTypes.push_back(a);
+    s.reactantTypes.push_back(a);
+    s.reactantTypes.push_back(a);
+    std::vector<SsaMemberSignature> sigs;
+    sigs.push_back(s);
+    SsaDriver driver(e, sigs);
+    // 101 molecules per root -> 101^3 > 1,000,000 combinations.
+    seed(e, driver, a, 101);
+    bool threw = false;
+    try {
+        driver.initialize();
+    } catch (const std::runtime_error&) {
+        threw = true;
+    }
+    EXPECT_TRUE(threw);
+}

@@ -1,6 +1,7 @@
 #include "driver.hh"
 
 #include <algorithm>
+#include <set>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -220,8 +221,30 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
             // assignments of live molecules to roots and count each unordered
             // combination once, matching the two-root convention above.
             const std::size_t nRoots = roots.size();
+            // Guard against combinatorial explosion: the raw number of
+            // injective assignments is the product of the per-root pool sizes.
+            // Each unique unordered combination is counted once, but the
+            // enumeration still has to walk the product to discover them, so
+            // refuse rather than silently consuming unbounded time/memory.
+            std::size_t combinationCount = 1;
+            bool overflow = false;
+            for (std::size_t r = 0; r < nRoots; ++r) {
+                if (pool[r].size() == 0) { combinationCount = 0; break; }
+                if (combinationCount > (std::size_t)1000000000u / pool[r].size()) {
+                    overflow = true; break;
+                }
+                combinationCount *= pool[r].size();
+            }
+            if (overflow || combinationCount > 1000000u) {
+                throw std::runtime_error(
+                    "driver: >2-root enumeration exceeds complexity limit "
+                    "(combinations=" + std::to_string(combinationCount) +
+                    "); reduce reactant pool or split the rule");
+            }
             std::vector<MoleculeRef> assignment(nRoots);
-            std::vector<std::vector<MoleculeRef> > counted;
+            // Deduplication by sorted molecule set.  Use an ordered set so
+            // the membership test is O(log n) instead of the previous O(n)
+            // scan over a vector, which made enumeration O(tuples^2).
             auto moleculeLess = [](const MoleculeRef& a, const MoleculeRef& b) {
                 if (a.type.value() != b.type.value())
                     return a.type.value() < b.type.value();
@@ -229,12 +252,20 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                     return a.handle.slot < b.handle.slot;
                 return a.handle.generation < b.handle.generation;
             };
+            struct VectorLess {
+                const decltype(moleculeLess)& cmp;
+                bool operator()(const std::vector<MoleculeRef>& a,
+                                const std::vector<MoleculeRef>& b) const {
+                    return std::lexicographical_compare(
+                        a.begin(), a.end(), b.begin(), b.end(), cmp);
+                }
+            };
+            std::set<std::vector<MoleculeRef>, VectorLess> counted(VectorLess{moleculeLess});
             std::function<void(std::size_t)> visit = [&](std::size_t depth) {
                 if (depth == nRoots) {
                     std::vector<MoleculeRef> key(assignment);
                     std::sort(key.begin(), key.end(), moleculeLess);
-                    for (std::size_t k = 0; k < counted.size(); ++k)
-                        if (counted[k] == key) return;
+                    if (counted.find(key) != counted.end()) return;
                     MatchContext ctx;
                     for (std::size_t r = 0; r < nRoots; ++r)
                         ctx.setMoleculeAt(r, assignment[r]);
@@ -249,7 +280,7 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                             "driver: non-finite member rate");
                     if (rate == 0.0)
                         return;
-                    counted.push_back(key);
+                    counted.insert(key);
                     Tuple t;
                     t.roots = assignment;
                     t.rate = rate;
