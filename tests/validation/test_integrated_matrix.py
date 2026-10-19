@@ -237,6 +237,33 @@ def test_audit_keeps_unsupported_and_not_tested_distinct_from_pass(tmp_path):
         assert audited["cells"][0]["status"] == status
 
 
+def test_lane_fails_on_failures_and_not_on_documented_support_boundaries(tmp_path):
+    """The matrix audits receipts; a support boundary is reported, not failed.
+
+    A consumer that refuses a construct, or a check that was never
+    applicable, keeps its own status in the report.  Only a failed or
+    malformed result fails the lane.
+    """
+    report = _minimal_report(tmp_path)
+    assert matrix.audit_report(report, revision="abc123")["status"] == "PASS"
+    assert matrix._lane_failures(matrix.audit_report(report, revision="abc123")) == []
+
+    for status in ("UNSUPPORTED", "NOT_TESTED"):
+        boundary = copy.deepcopy(report)
+        boundary["results"][0]["status"] = status
+        boundary["results"][0]["detail"] = "explicit test classification"
+        audited = matrix.audit_report(boundary, revision="abc123")
+        assert audited["status"] == status
+        assert matrix._lane_failures(audited) == []
+
+    for status in ("FAIL", "HARNESS_ERROR", "INVALID_INPUT", "TIMEOUT"):
+        failed = copy.deepcopy(report)
+        failed["results"][0]["status"] = status
+        failed["results"][0]["detail"] = "explicit test classification"
+        audited = matrix.audit_report(failed, revision="abc123")
+        assert matrix._lane_failures(audited)
+
+
 def test_adversarial_case_reaches_execution_matrix_with_conflicting_bindings():
     decoy = matrix.selected_cases()[-1]
     from tests.validation.integrated_cases import sbml_text

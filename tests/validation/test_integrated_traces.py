@@ -1,5 +1,7 @@
 """Mutation controls for source-to-compiled rate/unit traces."""
 
+import pytest
+
 from tests.validation import integrated_traces
 from tests.validation import integrated
 from tests.validation.integrated_cases import generated_cases, sbml_text
@@ -94,7 +96,7 @@ def test_net_parser_export_probe_detects_missing_or_repeated_volume(tmp_path):
         )
 
 
-def test_bng_xml_probe_records_constants_and_keeps_unresolved_rates_not_tested(
+def test_bngxml_probe_records_constants_and_keeps_unresolved_rates_not_tested(
     tmp_path,
 ):
     case = _dimer_case()
@@ -120,6 +122,81 @@ def test_bng_xml_probe_records_constants_and_keeps_unresolved_rates_not_tested(
         "diagnostic_only": True,
         "supported_execution": False,
     }
+
+
+def test_bng_xml_coefficient_uses_the_same_compartment_convention_as_the_net(
+    tmp_path,
+):
+    """The XML and the NET serializations must state the same rate.
+
+    The NET export folds BNG2's compartment unit conversion into the
+    coefficient (`0.166666666667*0.8` for a 2A->D rule in a compartment of
+    size 3), while the BNG-XML export keeps the rule rate constant, the
+    symmetry factor and the compartment size apart.  Comparing the raw XML
+    coefficient with the NET coefficient compares two different conventions,
+    so the XML coefficient is converted the same way before it is compared.
+    """
+    case = _dimer_case()
+    source = integrated_traces.source_rate_trace(sbml_text(case))
+    path = tmp_path / "model.xml"
+    path.write_text(
+        '<Model><ListOfCompartments>'
+        '<Compartment id="cell" spatialDimensions="3" size="3"/>'
+        "</ListOfCompartments>"
+        '<ListOfReactionRules><ReactionRule id="R" name="dimer" symmetry_factor="0.5">'
+        "<ListOfReactantPatterns>"
+        '<ReactantPattern compartment="cell"/><ReactantPattern compartment="cell"/>'
+        "</ListOfReactantPatterns>"
+        '<RateLaw type="Ele"><ListOfRateConstants>'
+        '<RateConstant value="0.8"/></ListOfRateConstants></RateLaw>'
+        "</ReactionRule></ListOfReactionRules></Model>"
+    )
+    observed = integrated_traces.exported_bng_xml(path, source)
+    assert observed["rules"][0]["compartment_unit_conversion"] == pytest.approx(1 / 3)
+    assert observed["effective_rates"] == [pytest.approx(0.4 / 3)]
+    # The NET export states the same rate in its own convention.
+    net = tmp_path / "model.net"
+    net.write_text(
+        "begin parameters\n    k 0.4\nend parameters\n"
+        "begin species\n    1 A() 2\n    2 D() 0\nend species\n"
+        "begin reactions\n    1 1,1 2 0.166666666667*0.8\nend reactions\n"
+    )
+    exported = integrated_traces.exported_net_rates(net)
+    assert (
+        integrated_traces.compare_rate_values(
+            exported["effective_rates"], observed["effective_rates"], "BNG-XML", rtol=5e-11
+        )["status"]
+        == "PASS"
+    )
+
+
+def test_bng_xml_coefficient_is_not_comparable_without_a_static_compartment_size(
+    tmp_path,
+):
+    """A parameter-backed compartment size cannot be folded in here.
+
+    The BNG-XML export keeps the rule rate constant and lets the consumer
+    apply the conversion, so a compartment whose size is a parameter has no
+    static conversion and the two serializations cannot be compared.
+    """
+    case = _dimer_case()
+    source = integrated_traces.source_rate_trace(sbml_text(case))
+    path = tmp_path / "model.xml"
+    path.write_text(
+        '<Model><ListOfCompartments>'
+        '<Compartment id="cell" spatialDimensions="3" sizeParameter="V"/>'
+        "</ListOfCompartments>"
+        '<ListOfReactionRules><ReactionRule id="R" name="dimer" symmetry_factor="0.5">'
+        "<ListOfReactantPatterns>"
+        '<ReactantPattern compartment="cell"/><ReactantPattern compartment="cell"/>'
+        "</ListOfReactantPatterns>"
+        '<RateLaw type="Ele"><ListOfRateConstants>'
+        '<RateConstant value="0.8"/></ListOfRateConstants></RateLaw>'
+        "</ReactionRule></ListOfReactionRules></Model>"
+    )
+    observed = integrated_traces.exported_bng_xml(path, source)
+    assert observed["rules"][0]["compartment_unit_conversion"] is None
+    assert observed["effective_rates"] is None
 
 
 def test_bngxml_report_row_marks_coefficient_evidence_diagnostic_only():

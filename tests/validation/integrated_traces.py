@@ -405,8 +405,85 @@ def exported_net_rates(path) -> dict:
     )
 
 
+def _compartment_geometry(root):
+    """Map each XML compartment to its dimension and statically known size.
+
+    A compartment whose size is a parameter or expression is reported with a
+    ``None`` size: the count-rate conversion then cannot be evaluated here.
+    """
+    geometry = {}
+    for node in root.iter():
+        if _tag(node) != "Compartment":
+            continue
+        dimension = node.get("spatialDimensions") or node.get("dimension") or "3"
+        size = node.get("size")
+        try:
+            size = float(size) if size is not None else None
+        except ValueError:
+            size = None
+        geometry[node.get("id")] = (dimension, size)
+    return geometry
+
+
+def _compartment_unit_conversion(
+    reactant_compartments, product_compartments, geometry
+):
+    """BNG2's intensive-to-extensive count-rate conversion for one rule.
+
+    ``bng2/Perl2/Rxn.pm`` (get_intensive_to_extensive_units_conversion) anchors
+    the first surface reactant, else the first volume reactant, and divides by
+    the sizes of the remaining reactant compartments.  Zero-order synthesis
+    multiplies by the product compartment size instead.  ``None`` means the
+    conversion is not statically determinable, so the two serializations
+    cannot be compared in one convention.
+    """
+    reactants = [c for c in reactant_compartments if c]
+    if reactants:
+        sizes = []
+        for name in reactants:
+            entry = geometry.get(name)
+            if entry is None or entry[1] is None:
+                return None
+            sizes.append(entry)
+        surfaces = [item for item in sizes if item[0] == "2"]
+        volumes = [item for item in sizes if item[0] == "3"]
+        if len(surfaces) + len(volumes) != len(sizes):
+            # BNG2 rejects 1-D/0-D reactant compartments at parse time.
+            return None
+        anchored = surfaces or volumes
+        remaining = anchored[1:] if anchored else []
+        remaining += [item for item in sizes if item not in anchored]
+        if not remaining:
+            return 1.0
+        denominator = 1.0
+        for _dimension, size in remaining:
+            denominator *= size
+        if denominator == 0.0:
+            return None
+        return 1.0 / denominator
+    products = [c for c in product_compartments if c]
+    if products:
+        sizes = set()
+        for name in products:
+            entry = geometry.get(name)
+            if entry is None or entry[1] is None:
+                return None
+            sizes.add(entry[1])
+        if len(sizes) != 1:
+            # BNG2 cannot scale synthesis products spread over compartments.
+            return None
+        return float(next(iter(sizes)))
+    return 1.0
+
+
 def exported_bng_xml(path, source: dict | None = None) -> dict:
-    """Capture and evaluate elementary constant BNG-XML coefficients only."""
+    """Capture and evaluate elementary constant BNG-XML coefficients only.
+
+    The coefficient is reported in the same count-rate convention the NET
+    export uses, so the two serializations can be compared: the raw rule rate
+    constant is combined with the rule's symmetry factor and with BNG2's
+    compartment unit conversion.
+    """
     import xml.etree.ElementTree as ET
 
     try:
@@ -417,6 +494,7 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
             detail=f"BNG-XML export unavailable: {type(exc).__name__}: {exc}",
             rules=[],
         )
+    geometry = _compartment_geometry(root)
     rules = []
     effective_rates = []
     complete = True
@@ -428,6 +506,17 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
         ]
         law = next((item for item in node if _tag(item) == "RateLaw"), None)
         law_type = law.get("type") if law is not None else None
+        reactant_patterns = [
+            item for item in node.iter() if _tag(item) == "ReactantPattern"
+        ]
+        product_patterns = [
+            item for item in node.iter() if _tag(item) == "ProductPattern"
+        ]
+        conversion = _compartment_unit_conversion(
+            [item.get("compartment") for item in reactant_patterns],
+            [item.get("compartment") for item in product_patterns],
+            geometry,
+        )
         try:
             symmetry = float(node.get("symmetry_factor", "1"))
             if (
@@ -437,9 +526,10 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
                 or not math.isfinite(float(rates[0]))
                 or not math.isfinite(symmetry)
                 or symmetry <= 0
+                or conversion is None
             ):
                 raise ValueError("rate law is not one constant elementary coefficient")
-            coefficient = float(rates[0]) * symmetry
+            coefficient = float(rates[0]) * symmetry * conversion
             effective_rates.append(coefficient)
         except (TypeError, ValueError):
             complete = False
@@ -451,9 +541,14 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
                 symmetry_factor=node.get("symmetry_factor"),
                 rate_constants=rates,
                 rate_law_type=law_type,
-                reactant_pattern_count=sum(
-                    1 for item in node.iter() if _tag(item) == "ReactantPattern"
-                ),
+                reactant_pattern_count=len(reactant_patterns),
+                reactant_compartments=[
+                    item.get("compartment") for item in reactant_patterns
+                ],
+                product_compartments=[
+                    item.get("compartment") for item in product_patterns
+                ],
+                compartment_unit_conversion=conversion,
                 observed_elementary_coefficient=coefficient,
             )
         )

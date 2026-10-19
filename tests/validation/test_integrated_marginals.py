@@ -191,3 +191,74 @@ def test_poisson_source_cdf_tail_does_not_treat_support_overflow_as_unit_error()
         if row["check"] == "source-cdf"
     )
     assert cdf["status"] == "PASS"
+
+
+def test_native_oracle_cannot_reach_a_volume_dependent_bimolecular_source_law():
+    """The pinned native oracle does not apply BNG2's compartment conversion.
+
+    BNG2 divides a reactant-bearing rate constant by the reaction
+    compartment's size; the pinned native NFsim applies a compartment size
+    only to zero-order synthesis, so for a bimolecular rule in a compartment
+    of size 3 it samples a different model.  The comparison is then a missing
+    prerequisite, not a failed comparison, while the embedded engine still
+    carries the authoritative comparison.
+    """
+    dimer_v3 = dict(
+        law="second-order",
+        family="second-order",
+        initial=12,
+        rate=0.4,
+        volume=3,
+        rate_convention="physical_source_law",
+        quantity_basis="amount",
+    )
+    assert not integrated_marginals.native_oracle_realizes_source_law(dimer_v3)
+    # A compartment of size 1 needs no conversion.
+    assert integrated_marginals.native_oracle_realizes_source_law(
+        dict(dimer_v3, volume=1)
+    )
+    for law in ("zero-order", "first-order"):
+        assert integrated_marginals.native_oracle_realizes_source_law(
+            dict(dimer_v3, law=law, volume=3)
+        )
+    assert integrated_marginals.native_oracle_realizes_source_law(
+        dict(family="dimerization", initial=20, volume=1)
+    )
+    assert not integrated_marginals.native_oracle_realizes_source_law(
+        dict(family="dimerization", initial=20, volume=3)
+    )
+
+
+def test_native_marginal_rows_report_the_missing_prerequisite(tmp_path):
+    """The native rows are NOT_TESTED with the reason, not silently failed."""
+    from tests.validation import reporting
+
+    case = next(
+        item
+        for item in integrated_cases.source_law_cases()
+        if item["law"] == "second-order" and item["rate_convention"] == "bngl_count"
+    )
+    source = tmp_path / "model.bngl"
+    source.write_text(integrated_cases.source_law_bngl(case))
+    rows = integrated_marginals.run(
+        source,
+        case,
+        tmp_path / "missing-native-binary",
+        tmp_path / "model.xml",
+        tmp_path / "ensembles",
+        runs=8,
+        cases=1,
+    )
+    native = [row for row in rows if row["check"].startswith("native.")]
+    embedded = [row for row in rows if row["check"].startswith("embedded.")]
+    assert len(native) == len(embedded) == len(integrated_marginals.CHECKS)
+    assert all(row["status"] == "NOT_TESTED" for row in native)
+    assert all(
+        row["applicability"] == "native-oracle-unit-conversion-unsupported"
+        for row in native
+    )
+    assert all("compartment unit conversion" in row["detail"] for row in native)
+    # The explained absence of execution is not a gating failure.
+    for index, row in enumerate(native):
+        row["id"] = f"case:nf-marginals:{row['check']}"
+    assert reporting.gate_failures(native) == []

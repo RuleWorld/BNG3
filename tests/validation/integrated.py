@@ -531,7 +531,7 @@ def run_case(case, args, rows, env):
         xml_result = integrated_traces.compare_rate_values(
             net_export.get("effective_rates"),
             xml_export.get("effective_rates"),
-            "BNG-XML elementary coefficients vs NET",
+            "BNG-XML compartment-converted coefficients vs NET",
             rtol=5e-11,
         )
     except Exception as exc:

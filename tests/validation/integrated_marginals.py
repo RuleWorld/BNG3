@@ -301,6 +301,26 @@ def assess_samples(samples, case, *, alpha=1e-6):
     ]
 
 
+def native_oracle_realizes_source_law(case):
+    """Whether the pinned native NFsim oracle can express this source law.
+
+    BNG2's count-rate convention divides a reactant-bearing rate constant by
+    the reaction compartment's size (``bng2/Perl2/Rxn.pm:100-197``), and the
+    pinned native NFsim applies a compartment size only to zero-order
+    synthesis (``src/NFinput/NFinput.cpp`` sets ``volumeConversion`` for
+    ``ts->getNreactants() == 0``).  A bimolecular source law whose rate
+    therefore depends on that size is unreachable by the native oracle: the
+    oracle would sample a different model, not a noisy estimate of this one.
+    Unimolecular and zero-order laws are reachable and stay comparable.
+    """
+    law = case.get("law", case.get("family"))
+    if law not in ("dimerization", "second-order", "second_order"):
+        return True
+    if float(case.get("rate", 0.4)) == 0.0:
+        return True
+    return float(case.get("volume", 1.0)) == 1.0
+
+
 def run(
     source: Path,
     case,
@@ -321,7 +341,21 @@ def run(
     output = []
     for engine in ("embedded", "native"):
         samples, failure = [], None
-        if engine == "native" and not Path(native_binary).is_file():
+        if engine == "native" and not native_oracle_realizes_source_law(case):
+            # The comparison prerequisite is missing rather than failed: the
+            # oracle cannot realize this source law at all.
+            failure = dict(
+                status="NOT_TESTED",
+                detail=(
+                    "the pinned native NFsim oracle does not apply BNG2's "
+                    "compartment unit conversion to reactant-bearing rules, so "
+                    "it cannot realize this source law; the embedded engine "
+                    "comparison against the independent count law remains the "
+                    "authoritative one"
+                ),
+                applicability="native-oracle-unit-conversion-unsupported",
+            )
+        elif engine == "native" and not Path(native_binary).is_file():
             failure = dict(
                 status="HARNESS_ERROR",
                 detail=f"native NFsim executable is unavailable: {native_binary}",
@@ -428,10 +462,16 @@ def run(
                     status=(
                         failure["status"]
                         if check == "sample-validity"
+                        and not failure.get("applicability")
                         else "NOT_TESTED"
                     ),
                     detail=failure["detail"],
                     related_issues=list(ISSUES),
+                    **(
+                        {"applicability": failure["applicability"]}
+                        if failure.get("applicability")
+                        else {}
+                    ),
                 )
                 for check in CHECKS
             ]

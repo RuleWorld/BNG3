@@ -161,6 +161,14 @@ def test_structural_loss_detector_rejects_missing_compartment():
     assert difference["field"] == "seed.species"
 
 
+def test_species_name_normalization_is_independent_of_the_compartment_spelling():
+    """The three compartment spellings name one compartmented species."""
+    assert adversarial._canonical_species_name("@cell::A()") == "A()@cell"
+    assert adversarial._canonical_species_name("@cell:A()") == "A()@cell"
+    assert adversarial._canonical_species_name("A()") == "A()"
+    assert adversarial._canonical_species_name("A()@cell") == "A()@cell"
+
+
 def test_optional_supported_structure_refusal_is_unsupported_not_pass():
     case = {
         "id": "future-compartment",

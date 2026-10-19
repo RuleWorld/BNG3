@@ -66,3 +66,6 @@ bng3-offline-bundle/
 # Local agent notes and throwaway diagnostics
 .jules/
 scratch/
+
+# Local test build directory
+build-tests/

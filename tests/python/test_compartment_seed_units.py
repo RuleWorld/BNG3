@@ -169,7 +169,9 @@ def test_generated_network_stores_the_seed_amount_with_a_unit_group_weight(tmp_p
     raw state, which is why no volume factor appears in an SSA result.
     """
     model, net = _model(tmp_path, 2.0)
-    assert list(net.species_names) == ["A()"] or "A()" in net.species_names
+    # The species identity carries its compartment, exactly as the .net line
+    # recorded above spells it.
+    assert list(net.species_names) == ["@V::A()"]
     species = np.asarray(
         _cpp.simulate_ssa(model, net, t_end=0.0, n_steps=1, seed=SEED)["concentrations"]
     )
@@ -200,6 +202,37 @@ def test_bng2_stores_the_same_seed_amount_at_the_same_volumes(tmp_path):
         assert (
             got == oracle_amount
         ), f"V={vol}: BNG3 stores {got}, BNG2 2.9.3 stores {oracle_amount}"
+
+
+def test_species_identity_carries_the_compartment(tmp_path):
+    """A species name names one compartmented species, not a bare pattern.
+
+    BNG2 2.9.3 writes `1 @V::A() 100` into its `.net`, so the compartment is
+    part of the species identity there too.  BNG3's public network API used to
+    report the bare graph label, which made two species that differ only by
+    compartment indistinguishable.
+    """
+    model, net = _model(tmp_path, 2.0)
+    assert list(net.species_names) == ["@V::A()"]
+
+    path = tmp_path / "net.bngl"
+    path.write_text(
+        "begin model\n"
+        "begin compartments\n"
+        "  V 3 2\n"
+        "  W 3 2\n"
+        "end compartments\n"
+        "begin molecule types\n"
+        "  A()\n"
+        "end molecule types\n"
+        "begin seed species\n"
+        "  A()@V 1\n"
+        "  A()@W 2\n"
+        "end seed species\n"
+        "end model\n"
+    )
+    two = _cpp.generate_network(_cpp.parse_file(str(path)))
+    assert list(two.species_names) == ["@V::A()", "@W::A()"]
 
 
 # ---------------------------------------------------------------------------

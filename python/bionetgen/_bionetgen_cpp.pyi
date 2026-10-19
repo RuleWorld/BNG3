@@ -175,7 +175,13 @@ class GeneratedNetwork:
     @property
     def num_reactions(self) -> int: ...
     @property
-    def species_names(self) -> List[str]: ...
+    def species_names(self) -> List[str]:
+        """BNG2-canonical species identities, in network order.
+
+        A compartmented species is named ``@compartment::Pattern``, the way
+        the ``.net`` export names it, so two species that differ only by
+        compartment stay distinct.
+        """
     @property
     def reaction_strings(self) -> List[str]: ...
     def __repr__(self) -> str: ...

@@ -132,3 +132,14 @@ def mark_process_summary(parent, validated_checks):
     )
     if parent["status"] == outcome:
         parent.update(aggregate=True, child_ids=[row["id"] for row in validated_checks])
+        if outcome != "PASS" and not parent.get("detail"):
+            # A rollup that is not a pass has to state why, the way its
+            # children do.  The children carry the reason for the outcome.
+            reasons = sorted(
+                {
+                    row.get("detail", "")
+                    for row in validated_checks
+                    if row.get("status") == outcome and row.get("detail")
+                }
+            )
+            parent["detail"] = "; ".join(reasons) or f"stage outcome {outcome}"

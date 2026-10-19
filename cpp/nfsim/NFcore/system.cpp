@@ -737,8 +737,13 @@ bool System::hasPlacementIndependentCompartmentSizes(double& size, int& dimensio
 	// one shared parameter name refreshes in lockstep.  Expression- and
 	// time-backed sets are refused because NFsim cannot prove two evaluators
 	// stay equal.
+	//
+	// The compartment dimensions are deliberately not compared here.  The
+	// dimension selects which reactant compartment is the anchor, but the
+	// conversion factor is the product of the remaining compartment sizes, so
+	// one shared size makes the factor size^(n-1) for every placement whatever
+	// mix of 2-D, 3-D and other compartments a placement spans.
 	const int firstDimension = firstCompartment->getSpatialDimensions();
-	if (firstDimension != 2 && firstDimension != 3) return false;
 	if (firstCompartment->hasSizeExpression() || firstCompartment->isDynamicSize() !=
 			!firstCompartment->getSizeParameterName().empty()) return false;
 	const bool sharedParameter = !firstCompartment->getSizeParameterName().empty();
@@ -746,7 +751,6 @@ bool System::hasPlacementIndependentCompartmentSizes(double& size, int& dimensio
 	for (map<string, Compartment*>::const_iterator it = compartments.begin(); it != compartments.end(); ++it) {
 		const Compartment *compartment = it->second;
 		if (compartment == NULL) return false;
-		if (compartment->getSpatialDimensions() != firstDimension) return false;
 		if (compartment->getSize() != firstSize) return false;
 		if (compartment->hasSizeExpression() || compartment->isDynamicSize()) return false;
 		if (sharedParameter && compartment->getSizeParameterName() != firstParameter) return false;

@@ -143,3 +143,31 @@ def test_process_summaries_do_not_duplicate_findings_or_hide_process_errors():
     missing = dict(id="case:stage", status="FAIL")
     consumers.mark_process_summary(missing, [])
     assert not missing.get("aggregate")
+
+
+def test_non_pass_rollup_states_the_reason_its_children_give():
+    """A rollup that is not a pass must explain itself.
+
+    The consumer matrix requires every non-pass cell to carry an
+    explanation, and the rollup row is the cell the matrix reads.
+    """
+    parent = dict(id="case:stage", status="UNSUPPORTED", detail="")
+    consumers.mark_process_summary(
+        parent,
+        [
+            dict(
+                id="case:stage:semantic-equality",
+                status="UNSUPPORTED",
+                detail="native BNGIR does not support model.functions",
+            ),
+            dict(id="case:stage:simulation", status="NOT_TESTED", detail="blocked"),
+        ],
+    )
+    assert parent["aggregate"] is True
+    assert parent["detail"] == "native BNGIR does not support model.functions"
+
+    passing = dict(id="case:stage", status="PASS", detail="")
+    consumers.mark_process_summary(
+        passing, [dict(id="case:stage:values", status="PASS", detail="ok")]
+    )
+    assert passing["detail"] == ""
