@@ -418,7 +418,7 @@ void ReactionClass::applyZeroOrderVolumeScaling(Compartment *productCompartment)
 	zeroOrderCompartment = productCompartment;
 	zeroOrderVolumeScaling = (productCompartment != 0);
 	refreshZeroOrderVolumeFactor();
-	if (reactionType != OBS_DEPENDENT_RXN && zeroOrderVolumeScaling) {
+	if (!appliesVolumeConversionFactor() && zeroOrderVolumeScaling) {
 		// baseRate already carries any symmetry correction from setBaseRate();
 		// scale it directly so the parameter name stays intact for later
 		// refreshes (ruleworld/nfsim#105).
@@ -469,12 +469,12 @@ void ReactionClass::resetBaseRateFromSystemParamter() {
 		this->baseRate = updatedBaseRate;
 		this->update_a();
 	}
-	else if (reactionType != OBS_DEPENDENT_RXN &&
+	else if (!appliesVolumeConversionFactor() &&
 			zeroOrderVolumeScaling && n_reactants == 0) {
 		this->baseRate = zeroOrderUnscaledBaseRate * volumeConversionFactor;
 		this->update_a();
 	}
-	else if (reactionType != OBS_DEPENDENT_RXN && reactantVolumeScaling) {
+	else if (!appliesVolumeConversionFactor() && reactantVolumeScaling) {
 		this->baseRate = reactantUnscaledBaseRate * reactantVolumeConversionFactor;
 		this->update_a();
 	}
@@ -500,9 +500,12 @@ void ReactionClass::refreshReactantVolumeFactor() {
 	}
 	if (!std::isfinite(denominator) || denominator <= 0.0) return;
 	reactantVolumeConversionFactor = 1.0 / denominator;
-	if (reactionType == OBS_DEPENDENT_RXN) volumeConversionFactor = reactantVolumeConversionFactor;
+	// Reaction classes whose update_a() multiplies volumeConversionFactor
+	// (functional/DOR-rate, Sat, Hill, MM) must keep the factor there;
+	// Basic/DOR classes fold it into baseRate.
+	if (appliesVolumeConversionFactor()) volumeConversionFactor = reactantVolumeConversionFactor;
 	else baseRate = reactantUnscaledBaseRate * reactantVolumeConversionFactor;
-	update_a();
+	if (propensityUpdatesEnabled) update_a();
 }
 
 

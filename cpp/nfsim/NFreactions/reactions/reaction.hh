@@ -74,6 +74,9 @@ namespace NFcore
 			virtual ~FunctionalRxnClass();
 
 			virtual double update_a();
+			// update_a() multiplies volumeConversionFactor directly, so the
+			// reactant compartment conversion is stored there.
+			virtual bool appliesVolumeConversionFactor() const { return true; }
 			virtual bool propensityDependsOnlyOnMembership() const {
 				if (hasPopulationReactant()) return false;
 				return (gf != 0 && gf->isRuntimeInvariant()) ||
@@ -103,6 +106,9 @@ namespace NFcore
 			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
+			// MM builds its propensity from kcat/Km and applies the reactant
+			// compartment conversion through volumeConversionFactor.
+			virtual bool appliesVolumeConversionFactor() const { return true; }
 			virtual bool propensityDependsOnlyOnMembership() const { return !hasPopulationReactant(); }
 				virtual double exactRuleMonkey_a();
 				virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
@@ -126,6 +132,8 @@ namespace NFcore
 			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
+			// Sat's update_a() already multiplies volumeConversionFactor.
+			virtual bool appliesVolumeConversionFactor() const { return true; }
 			virtual double exactRuleMonkey_a();
 			virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
 			virtual void printDetails() const;
@@ -145,6 +153,8 @@ namespace NFcore
 			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
+			// Hill's update_a() already multiplies volumeConversionFactor.
+			virtual bool appliesVolumeConversionFactor() const { return true; }
 			virtual double exactRuleMonkey_a();
 			virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
 			virtual void printDetails() const;

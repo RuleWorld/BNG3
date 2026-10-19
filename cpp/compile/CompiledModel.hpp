@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "CompiledRule.hpp"
+#include "ast/Expression.hpp"
 #include "energy/BarrierTable.hpp"
 #include "SemanticIds.hpp"
 #include "SymbolTable.hpp"
@@ -91,6 +92,10 @@ struct CompiledCompartment {
     std::string unitName;
     std::optional<double> normalizedVolume;
     std::string volumeParameterName;
+    // General arithmetic volume expression (non-identifier, non-time-dependent).
+    // Consumers that support runtime refresh re-evaluate it when a referenced
+    // parameter changes; the numeric `volume` is only a snapshot.
+    std::optional<ast::Expression> volumeExpression;
 };
 
 enum class ObservableKind {

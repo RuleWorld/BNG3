@@ -1560,10 +1560,20 @@ std::string XmlWriter::writeCompartments(const ast::Model& model) {
             << "\" spatialDimensions=\"" << comp.getDimension()
             << "\" size=\"" << comp.getVolume() << "\"";
         if (const auto& expression = comp.getVolumeExpression();
-            expression.has_value() &&
-            expression->kind() == ast::ExpressionKind::Identifier &&
-            model.getParameters().contains(expression->name())) {
-            xml << " sizeParameter=\"" << escapeXml(expression->name()) << "\"";
+            expression.has_value()) {
+            if (expression->kind() == ast::ExpressionKind::Identifier &&
+                model.getParameters().contains(expression->name())) {
+                // Plain parameter-backed volume: the attribute names a real
+                // System parameter, which native NFsim already understands.
+                xml << " sizeParameter=\"" << escapeXml(expression->name()) << "\"";
+            } else if (!expression->getDependencies().empty()) {
+                // General arithmetic volume expression with parameter
+                // dependencies: keep the provenance so a reader can refresh the
+                // size when any referenced parameter changes instead of
+                // snapshotting the numeric size attribute.  A constant
+                // expression stays a plain numeric size.
+                xml << " sizeExpression=\"" << escapeXml(expression->toString()) << "\"";
+            }
         }
         if (!comp.getParent().empty()) {
             xml << " outside=\"" << escapeXml(comp.getParent()) << "\"";

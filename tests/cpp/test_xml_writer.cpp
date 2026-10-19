@@ -413,6 +413,23 @@ TEST_CASE("reactant unit conversion helper mirrors NetWriter") {
     // Two surfaces anchor one, keeping the other.
     CHECK(reactantUnitConversionFactor({{2, 2.0}, {2, 5.0}}) ==
           Catch::Approx(1.0 / 5.0));
+    // 1-D/0-D compartments: BNG2 2.9.3 rejects these at parse time, so Perl has
+    // no rule. This helper deliberately generalizes the anchor rule to any
+    // dimension instead of silently dropping the conversion (which would
+    // understate a length/point-based count rate).
+    CHECK(reactantUnitConversionFactor({{1, 4.0}, {1, 4.0}}) ==
+          Catch::Approx(1.0 / 4.0));
+    CHECK(reactantUnitConversionFactor({{0, 4.0}, {0, 4.0}}) ==
+          Catch::Approx(1.0 / 4.0));
+    // Mixed: the 3-D volume is the anchor, so the 1-D length stays.
+    CHECK(reactantUnitConversionFactor({{1, 4.0}, {3, 5.0}}) ==
+          Catch::Approx(1.0 / 4.0));
+    // A surface still wins the anchor over lower-dimensional reactants.
+    CHECK(reactantUnitConversionFactor({{2, 2.0}, {1, 3.0}, {1, 3.0}}) ==
+          Catch::Approx(1.0 / 9.0));
+    // Three 1-D reactants: one anchors, two remain.
+    CHECK(reactantUnitConversionFactor({{1, 2.0}, {1, 3.0}, {1, 4.0}}) ==
+          Catch::Approx(1.0 / 12.0));
 }
 
 TEST_CASE("XmlWriter preserves reactant volume provenance for runtime conversion") {
@@ -471,6 +488,55 @@ end model
 )");
     CHECK_THAT(unitVolumeXml, Catch::Matchers::ContainsSubstring(
         "<RateConstant value=\"k\"/>"));
+}
+
+TEST_CASE("XmlWriter records non-constant compartment size provenance") {
+    // A general arithmetic size keeps its expression so a reader can refresh
+    // the size when a referenced parameter changes. A constant literal must not
+    // claim expression provenance: it is already a static size.
+    const std::string expressionXml = writeXml(R"(
+begin model
+begin parameters
+    V1 2
+    V2 3
+end parameters
+begin compartments
+    cell 3 V1*V2
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @cell:A() 0
+end seed species
+begin reaction rules
+    @cell:A() -> @cell:A() 0.1
+end reaction rules
+end model
+)");
+    CHECK_THAT(expressionXml, Catch::Matchers::ContainsSubstring(
+        "sizeExpression=\"(V1 * V2)\""));
+    CHECK(expressionXml.find("sizeParameter=") == std::string::npos);
+
+    const std::string literalXml = writeXml(R"(
+begin model
+begin compartments
+    cell 3 4
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @cell:A() 0
+end seed species
+begin reaction rules
+    @cell:A() -> @cell:A() 0.1
+end reaction rules
+end model
+)");
+    CHECK_THAT(literalXml, Catch::Matchers::ContainsSubstring("size=\"4\""));
+    CHECK(literalXml.find("sizeExpression=") == std::string::npos);
+    CHECK(literalXml.find("sizeParameter=") == std::string::npos);
 }
 
 TEST_CASE("XmlWriter parses single-colon prefix compartments in observables and rules") {

@@ -2,6 +2,7 @@
 
 #include "compile/CompiledModel.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
+#include "compartment_size_expression.hh"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
 #include "NFcore/energyPattern.hh"
@@ -506,8 +507,9 @@ bool addCompartmentsFromCompiled(const bng::compile::CompiledModel& model,
     for (const auto& compartment : model.compartments()) {
         if (compartment.name.empty() || !seen.insert(compartment.name).second ||
             system->getCompartment(compartment.name) != nullptr) return false;
-        system->addCompartment(new NFcore::Compartment(
-            compartment.name, compartment.dimension, compartment.volume));
+        auto* runtimeCompartment = new NFcore::Compartment(
+            compartment.name, compartment.dimension, compartment.volume);
+        system->addCompartment(runtimeCompartment);
         if (!compartment.volumeParameterName.empty() &&
             (!system->hasParameter(compartment.volumeParameterName) ||
              !system->setCompartmentSizeParameter(
@@ -516,6 +518,16 @@ bool addCompartmentsFromCompiled(const bng::compile::CompiledModel& model,
                       << "' refers to unknown size parameter '"
                       << compartment.volumeParameterName << "'\n";
             return false;
+        }
+        if (compartment.volumeExpression.has_value()) {
+            runtimeCompartment->setSizeExpression(
+                makeCompartmentSizeExpression(*compartment.volumeExpression));
+        }
+        if (compartment.volumeTimeDependent) {
+            // NFsim has no time-dependent volume support; mark the size dynamic
+            // so wildcard placement proofs fail closed rather than treating the
+            // load-time snapshot as static.
+            runtimeCompartment->setSizeDynamic(true);
         }
         if (verbose) std::cerr << "[nfsim/compiled] compartment " << compartment.name << "\n";
     }

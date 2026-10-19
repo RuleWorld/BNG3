@@ -630,6 +630,15 @@ namespace NFcore
 			const map<string, Compartment*>& getCompartments() const { return compartments; }
 			void addCompartment(Compartment* comp);
 			bool hasStaticUnitSizedCompartments() const;
+			/* True when a wildcard reactant's placement cannot change the
+			 * Rxn.pm 1/product(sizes) factor, so the conversion is
+			 * representable without knowing where the pattern matches:
+			 *   * a single compartment forces the placement (any size); or
+			 *   * every compartment shares one finite positive size, so the
+			 *     factor is 1/size^(n-1) for every match.
+			 * Multiple compartments must also be static, since NFsim cannot
+			 * prove two dynamic sizes stay equal. */
+			bool hasPlacementIndependentCompartmentSizes(double& size, int& dimension) const;
 			int getNumCompartments() const { return compartments.size(); }
 			Compartment * getDefaultCompartment() const;  // For backwards compatibility
 			/* Explicit rescale path for parameter-backed volumes
@@ -2489,6 +2498,18 @@ namespace NFcore
 			void refreshZeroOrderVolumeFactor();
 			void setReactantVolumeCompartments(const vector<Compartment*>& compartments);
 			void refreshReactantVolumeFactor();
+			/* True for reaction classes whose update_a() itself multiplies
+			 * volumeConversionFactor, so the reactant conversion must be
+			 * stored there instead of folded into baseRate.  Basic/DOR build
+			 * their propensity from baseRate and return false. */
+			virtual bool appliesVolumeConversionFactor() const { return false; }
+			/* refreshReactantVolumeFactor() ends with update_a(), which for a
+			 * functional/DOR class evaluates a global/composite function.  Those
+			 * parsers are only built in System::prepareForSimulation(), so a
+			 * load-time setReactantVolumeCompartments() must set the factor
+			 * without evaluating a not-yet-prepared function.  Runtime parameter
+			 * refreshes happen after preparation and do update the propensity. */
+			void enablePropensityUpdates() { propensityUpdatesEnabled = true; }
 			bool usesZeroOrderVolumeScaling() const { return zeroOrderVolumeScaling; }
 			Compartment* getZeroOrderCompartment() const { return zeroOrderCompartment; }
 
@@ -2742,6 +2763,7 @@ namespace NFcore
 			double reactantVolumeConversionFactor = 1.0;
 			double reactantUnscaledBaseRate = 0.0;
 			bool reactantVolumeScaling = false;
+			bool propensityUpdatesEnabled = false;
 			vector<Compartment*> reactantVolumeCompartments;
 			double a;
 			unsigned int fireCounter;

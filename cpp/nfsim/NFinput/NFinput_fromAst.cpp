@@ -45,6 +45,7 @@
 #include "NFinput_fromCompiled.hh"
 #include "compile/Document.hpp"
 #include "NFinput.hh"
+#include "compartment_size_expression.hh"
 
 #include "ast/Compartment.hpp"
 #include "ast/Function.hpp"
@@ -196,10 +197,27 @@ bool addCompartmentsFromAst(const bng::ast::Model& model, System* s, bool verbos
             name, compartment.getDimension(), compartment.getVolume());
         s->addCompartment(nfCompartment);
         if (const auto& expression = compartment.getVolumeExpression();
-            expression.has_value() &&
-            expression->kind() == bng::ast::ExpressionKind::Identifier &&
-            model.getParameters().contains(expression->name())) {
-            s->setCompartmentSizeParameter(name, expression->name());
+            expression.has_value()) {
+            if (expression->kind() == bng::ast::ExpressionKind::Identifier &&
+                model.getParameters().contains(expression->name())) {
+                // Plain parameter-backed volume: track the parameter name so
+                // the XML writer can emit a native-compatible sizeParameter.
+                s->setCompartmentSizeParameter(name, expression->name());
+            } else if (!compartment.isVolumeTimeDependent() &&
+                       !expression->getDependencies().empty()) {
+                // General arithmetic volume expression: install an evaluator
+                // so a change to any referenced parameter refreshes the size
+                // instead of snapshotting the load-time numeric volume.  A
+                // constant expression (no dependencies) stays a static literal.
+                nfCompartment->setSizeExpression(
+                    makeCompartmentSizeExpression(*expression));
+            }
+        }
+        if (compartment.isVolumeTimeDependent()) {
+            // NFsim has no time-dependent volume support; mark the size
+            // dynamic so wildcard placement proofs fail closed rather than
+            // treating the snapshot as static.
+            nfCompartment->setSizeDynamic(true);
         }
         if (!compartment.getParent().empty()) {
             parentByChild.emplace(name, compartment.getParent());
@@ -5903,8 +5921,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 reaction->volumeConversionFactor = 1.0;
             }
         } else if (!typedRate.unit.has_value() &&
-                   reaction->getRxnType() == ReactionClass::BASIC_RXN &&
                    !model.getCompartments().empty()) {
+            // BNG2 applies the Rxn.pm 1/product(remaining sizes) unit_conversion
+            // to every rate law type, so functional/DOR/Sat/Hill/MM reactions
+            // need it as well as elementary ones.
             std::vector<Compartment*> reactantCompartments;
             bool hasWildcardCompartment = false;
             const auto& reactantPatterns = rule.getReactantPatterns();
@@ -5929,56 +5949,60 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 reactantCompartments.push_back(selected);
             }
 
-            bool staticUnitVolumes = s->getNumberPerQuantityUnit() <= 0.0 ||
-                                     s->getNumberPerQuantityUnit() == 1.0;
-            for (const auto& compartment : model.getCompartments()) {
-                if (compartment.getVolume() != 1.0 || compartment.isVolumeTimeDependent() ||
-                    compartment.getVolumeExpression().has_value())
-                    staticUnitVolumes = false;
-            }
-            if (hasWildcardCompartment && !staticUnitVolumes) {
-                std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
-                          << "': wildcard reactant compartments require statically unit-sized compartments\n";
-                delete reaction;
-                delete transformationSet;
-                cleanupDirectProducts();
-                return false;
-            }
-            if (!hasWildcardCompartment) {
-                std::vector<Compartment*> surfaces, volumes, converted;
+            std::vector<Compartment*> converted;
+            if (hasWildcardCompartment) {
+                // A wildcard reactant may match any compartment.  The factor is
+                // placement-independent only when every compartment shares one
+                // static size (e.g. a single compartment), so repeat one
+                // representative to reproduce 1/size^(n-1).
+                double uniformSize = 0.0;
+                int uniformDimension = 0;
+                if (!s->hasPlacementIndependentCompartmentSizes(uniformSize, uniformDimension)) {
+                    std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                              << "': wildcard reactant compartments require a single compartment "
+                              << "or one shared static size\n";
+                    delete reaction;
+                    delete transformationSet;
+                    cleanupDirectProducts();
+                    return false;
+                }
+                Compartment* representative = s->getCompartments().begin()->second;
+                converted.assign(reactantCompartments.size() - 1, representative);
+            } else {
+                // Anchor preference (Rxn.pm): first surface, else first volume,
+                // else first reactant of any other dimension.  Remaining
+                // reactant compartments multiply the denominator.
+                std::vector<Compartment*> surfaces, volumes, others;
                 for (Compartment* compartment : reactantCompartments) {
                     if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
                     else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
-                    else {
-                        std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
-                                  << "': reactant compartment uses an unsupported dimension\n";
-                        delete reaction;
-                        delete transformationSet;
-                        cleanupDirectProducts();
-                        return false;
-                    }
+                    else others.push_back(compartment);
                 }
                 if (!surfaces.empty()) {
                     converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
                     converted.insert(converted.end(), volumes.begin(), volumes.end());
+                    converted.insert(converted.end(), others.begin(), others.end());
                 } else if (!volumes.empty()) {
                     converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
+                    converted.insert(converted.end(), others.begin(), others.end());
+                } else {
+                    converted.insert(converted.end(), others.begin() + 1, others.end());
                 }
-                for (Compartment* compartment : converted) {
-                    double size = compartment->getSize();
-                    if (s->getNumberPerQuantityUnit() > 0.0)
-                        size *= s->getNumberPerQuantityUnit();
-                    if (!std::isfinite(size) || size <= 0.0) {
-                        std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
-                                  << "': reactant compartment has a non-positive or non-finite volume\n";
-                        delete reaction;
-                        delete transformationSet;
-                        cleanupDirectProducts();
-                        return false;
-                    }
-                }
-                reaction->setReactantVolumeCompartments(converted);
             }
+            for (Compartment* compartment : converted) {
+                double size = compartment->getSize();
+                if (s->getNumberPerQuantityUnit() > 0.0)
+                    size *= s->getNumberPerQuantityUnit();
+                if (!std::isfinite(size) || size <= 0.0) {
+                    std::cerr << "[nfsim/ast] cannot map reaction '" << rule.getRuleName()
+                              << "': reactant compartment has a non-positive or non-finite volume\n";
+                    delete reaction;
+                    delete transformationSet;
+                    cleanupDirectProducts();
+                    return false;
+                }
+            }
+            reaction->setReactantVolumeCompartments(converted);
         }
 
         // Keep zero-rate elementary rules out of the live reaction list, as the

@@ -1,6 +1,7 @@
 #include "NFinput.hh"
 #include "NFinput_energy.hh"
 #include "../NFcore/compartment.hh"
+#include "compartment_size_expression.hh"
 #include "parser/BNGAstVisitor.hpp"
 
 
@@ -705,6 +706,21 @@ bool NFinput::initCompartments(TiXmlElement *pListOfCompartments, System *s, boo
 		if (pCompElement->Attribute("sizeParameter") &&
 			!s->setCompartmentSizeParameter(id, pCompElement->Attribute("sizeParameter"))) {
 			return false;
+		} else if (pCompElement->Attribute("sizeExpression")) {
+			/* BNG3 writes a general arithmetic volume expression here; the
+			 * numeric size attribute is only a snapshot.  Re-evaluate it on
+			 * update so a change to any referenced parameter refreshes the
+			 * compartment instead of leaving the load-time value stale. */
+			const std::string expressionText = pCompElement->Attribute("sizeExpression");
+			try {
+				const auto expression = bng::parser::parseExpression(expressionText);
+				c->setSizeExpression(makeCompartmentSizeExpression(expression));
+			} catch (const std::exception &e) {
+				cerr << "Error: compartment '" << id
+					 << "' has an invalid sizeExpression '" << expressionText
+					 << "': " << e.what() << endl;
+				return false;
+			}
 		}
 
 		// Record outside compartment for second pass
@@ -3034,7 +3050,6 @@ static bool initReactionRulesBody(
 				bool totalRateFlag=false;
 
 				double volumeConversion = 1.0;
-				bool bareElementaryRate = false;
 				Compartment *zeroOrderProductComp = NULL;
 				if (ts->getNreactants() == 0) {
 					Compartment *productComp = NULL;
@@ -3088,7 +3103,6 @@ static bool initReactionRulesBody(
 				else {
 					string rateLawName = pRateLaw->Attribute("id");
 					string rateLawType = pRateLaw->Attribute("type");
-					bareElementaryRate = rateLawType == "Ele";
 
 					if(verbose) cout<<"\t\t\tRate Law for Reaction is: "<<rateLawType<<endl;
 
@@ -3879,43 +3893,64 @@ static bool initReactionRulesBody(
 								}
 							}
 						}
-						else if (bareElementaryRate && ts->getNreactants() > 1 && s->getNumCompartments() > 0) {
+						else if (ts->getNreactants() > 1 && s->getNumCompartments() > 0) {
+							// BNG2 applies the Rxn.pm 1/product(remaining sizes)
+							// unit_conversion to every rate law type, not just
+							// elementary ones, so functional/DOR/Sat/Hill/MM
+							// reactions need it too.
 							const bool hasWildcardCompartment =
 								reactantCompartments.size() != static_cast<size_t>(ts->getNreactants()) ||
 								std::find(reactantCompartments.begin(), reactantCompartments.end(), static_cast<Compartment *>(NULL)) != reactantCompartments.end();
-							if (hasWildcardCompartment && !s->hasStaticUnitSizedCompartments()) {
-								cerr << "Error: reaction " << rxnName << " has wildcard reactant compartments; "
-									 << "NFsim requires static unit-sized compartments to preserve its volume-dependent rate conversion." << endl;
-								return false;
-							}
-							if (!hasWildcardCompartment) {
-								vector<Compartment *> surfaces, volumes, converted;
+							vector<Compartment *> converted;
+							if (hasWildcardCompartment) {
+								// A wildcard reactant may match any compartment.  The
+								// conversion is placement-independent only when every
+								// compartment shares one static size (e.g. a single
+								// compartment); then the factor is 1/size^(n-1) for
+								// every match, so repeat one representative.
+								double uniformSize = 0.0;
+								int uniformDimension = 0;
+								if (!s->hasPlacementIndependentCompartmentSizes(uniformSize, uniformDimension)) {
+									cerr << "Error: reaction " << rxnName << " has wildcard reactant compartments; "
+										 << "NFsim cannot preserve its volume-dependent rate conversion unless the model "
+										 << "has a single compartment or every compartment shares one static size." << endl;
+									return false;
+								}
+								Compartment *representative = s->getCompartments().begin()->second;
+								converted.assign(static_cast<size_t>(ts->getNreactants()) - 1, representative);
+							} else {
+								// Anchor preference (Rxn.pm): first surface, else first
+								// volume, else first reactant of any other dimension.
+								// The remaining reactant compartments multiply the
+								// denominator, generalizing Perl's 2-D/3-D-only rule.
+								vector<Compartment *> surfaces, volumes, others;
 								for (Compartment *compartment : reactantCompartments) {
 									if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
 									else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
-									else {
-										cerr << "Error: reaction " << rxnName << " uses an unsupported reactant compartment dimension." << endl;
-										return false;
-									}
+									else others.push_back(compartment);
 								}
 								if (!surfaces.empty()) {
 									converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
 									converted.insert(converted.end(), volumes.begin(), volumes.end());
+									converted.insert(converted.end(), others.begin(), others.end());
 								} else if (!volumes.empty()) {
 									converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
+									converted.insert(converted.end(), others.begin(), others.end());
+								} else {
+									converted.insert(converted.end(), others.begin() + 1, others.end());
 								}
-								for (Compartment *compartment : converted) {
-									double size = compartment->getSize();
-									double npqu = s->getNumberPerQuantityUnit();
-									if (npqu > 0.0) size *= npqu;
-									if (!std::isfinite(size) || size <= 0.0) {
-										cerr << "Error: reaction " << rxnName
-											 << " uses a non-positive or non-finite reactant compartment volume." << endl;
-										return false;
-									}
-								}
-								r->setReactantVolumeCompartments(converted);
 							}
+							for (Compartment *compartment : converted) {
+								double size = compartment->getSize();
+								double npqu = s->getNumberPerQuantityUnit();
+								if (npqu > 0.0) size *= npqu;
+								if (!std::isfinite(size) || size <= 0.0) {
+									cerr << "Error: reaction " << rxnName
+										 << " uses a non-positive or non-finite reactant compartment volume." << endl;
+									return false;
+								}
+							}
+							r->setReactantVolumeCompartments(converted);
 						}
 
 					//Finally, add the completed rxn rule to the system only
