@@ -88,11 +88,11 @@ def test_direct_expression_rhs_parity(model_name, api, work_dir):
 
     assert len(generated.species_names) == test_net.n_species
     assert ref_net.n_species > 0
-    # NetWriter emits each internal species at getIndex()+1. It marks the
-    # synthetic pool species with '$' only in serialization; compare the
-    # remaining graph spelling with the public C++ graph labels by index.
+    # NetWriter emits each internal species at getIndex()+1, and the public
+    # species identity is the same BNG2-canonical name the .net carries, so
+    # the constant marker and the compartment prefix are on both sides.
     for index, generated_name in enumerate(generated.species_names, 1):
-        serialized_name = test_net.species_by_index[index].removeprefix("$")
+        serialized_name = test_net.species_by_index[index]
         assert compare.species_isomorphic(
             serialized_name, generated_name
         ), f"network serialization order changed at species {index} [{model_name}]"
