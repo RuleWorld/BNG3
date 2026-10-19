@@ -178,9 +178,10 @@ class GeneratedNetwork:
     def species_names(self) -> List[str]:
         """BNG2-canonical species identities, in network order.
 
-        A compartmented species is named ``@compartment::Pattern``, the way
-        the ``.net`` export names it, so two species that differ only by
-        compartment stay distinct.
+        The names are the ones the ``.net`` export carries: a compartmented
+        species is named ``@compartment::Pattern`` and a constant species
+        carries the ``$`` marker, so two species that differ only by
+        compartment or by constancy stay distinct.
         """
 
     @property
