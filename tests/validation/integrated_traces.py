@@ -409,12 +409,14 @@ def exported_net_rates(path) -> dict:
 def _compartment_geometry(root):
     """Map each XML compartment to its dimension and statically known size.
 
-    A compartment whose size is a parameter or expression is reported with a
-    ``None`` size: the count-rate conversion then cannot be evaluated here.
+    BNG2 writes the element in lower case and BNG3 in upper case, and both
+    spellings name the same compartment.  A compartment whose size is a
+    parameter or expression is reported with a ``None`` size: the count-rate
+    conversion then cannot be evaluated here.
     """
     geometry = {}
     for node in root.iter():
-        if _tag(node) != "Compartment":
+        if _tag(node) not in ("Compartment", "compartment"):
             continue
         dimension = node.get("spatialDimensions") or node.get("dimension") or "3"
         size = node.get("size")
@@ -612,6 +614,36 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
     )
 
 
+def _oracle_zero_order_conversion(element, geometry):
+    """The compartment factor the pinned oracle applies to a rule itself.
+
+    The oracle multiplies a zero-order rule's rate by the product molecule's
+    compartment size, and only when the molecule states the compartment
+    (``src/NFinput/NFinput.cpp`` reads the product molecule's compartment
+    attribute). Every other rule gets a factor of one.
+    """
+    reactant_patterns = [
+        item for item in element.iter() if _tag(item) == "ReactantPattern"
+    ]
+    if reactant_patterns:
+        return 1.0
+    product_patterns = [
+        item for item in element.iter() if _tag(item) == "ProductPattern"
+    ]
+    for pattern in product_patterns:
+        for molecule in pattern.iter():
+            if _tag(molecule) != "Molecule":
+                continue
+            name = molecule.get("compartment")
+            if not name:
+                continue
+            entry = geometry.get(name)
+            if entry is None or entry[1] is None:
+                return None
+            return entry[1]
+    return 1.0
+
+
 def native_count_rate_xml(source_xml, target_xml) -> dict:
     """Rewrite a BNG-XML export into BNG2's count-rate convention.
 
@@ -663,7 +695,9 @@ def native_count_rate_xml(source_xml, target_xml) -> dict:
             detail="the exported model declares no reaction rule to normalise",
         )
     compartments = {
-        node.get("id") for node in root.iter() if _tag(node) == "Compartment"
+        node.get("id")
+        for node in root.iter()
+        if _tag(node) in ("Compartment", "compartment")
     }
     if len(compartments) > 1:
         return dict(
@@ -674,21 +708,27 @@ def native_count_rate_xml(source_xml, target_xml) -> dict:
                 "reactants across compartments"
             ),
         )
-    if any(node.get("compartment") for node in root.iter() if _tag(node) == "Molecule"):
-        return dict(
-            status="UNSUPPORTED",
-            detail=(
-                "the exported model states a molecule compartment, which makes "
-                "the pinned oracle apply the product compartment's size to a "
-                "zero-order rule itself"
-            ),
-        )
+    geometry = _compartment_geometry(root)
     elements = [node for node in root.iter() if _tag(node) == "ReactionRule"]
     if len(elements) != len(rules):
         return dict(
             status="UNSUPPORTED",
             detail="the exported model's reaction rules could not be matched to their parsed evidence",
         )
+    for element in elements:
+        for pattern in element.iter():
+            if _tag(pattern) not in ("ReactantPattern", "ProductPattern"):
+                continue
+            for molecule in pattern.iter():
+                if _tag(molecule) == "Molecule" and molecule.get("compartment"):
+                    return dict(
+                        status="UNSUPPORTED",
+                        detail=(
+                            "the exported model states a molecule compartment "
+                            "inside a rule pattern, which makes the pinned oracle "
+                            "apply that compartment's size itself"
+                        ),
+                    )
     normalised = []
     for element, rule in zip(elements, rules):
         if element.get("id") != rule["id"]:
@@ -723,7 +763,19 @@ def native_count_rate_xml(source_xml, target_xml) -> dict:
                 ),
             )
         symmetry = float(rule["symmetry_factor"] or 1.0)
-        coefficient = value * symmetry * conversion
+        # The pinned oracle applies a compartment size itself for a zero-order
+        # rule whose product molecule states one, so that factor is removed
+        # from the coefficient the oracle is handed.
+        oracle_conversion = _oracle_zero_order_conversion(element, geometry)
+        if oracle_conversion is None:
+            return dict(
+                status="UNSUPPORTED",
+                detail=(
+                    f"reaction rule {rule['id']} has a product compartment whose "
+                    "size the pinned oracle applies itself"
+                ),
+            )
+        coefficient = value * symmetry * conversion / oracle_conversion
         # The count-rate coefficient goes into the rate constant, and the
         # symmetry factor it already carries becomes redundant.
         rate_constant = next(
@@ -737,6 +789,7 @@ def native_count_rate_xml(source_xml, target_xml) -> dict:
                 rate_constant=value,
                 symmetry_factor=symmetry,
                 compartment_unit_conversion=conversion,
+                oracle_zero_order_conversion=oracle_conversion,
                 count_rate_coefficient=coefficient,
                 reactant_pattern_count=rule["reactant_pattern_count"],
             )

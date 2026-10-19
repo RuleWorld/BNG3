@@ -43,6 +43,57 @@ native import boundary names that boundary in the established
 "native BNGIR does not support ..." wording so the consumer reports a
 support boundary instead of a harness failure.
 
+## A skipped test case is a declared absence
+
+The conformance gate requires every selected applicable diagnostic contract. A
+pytest case that skipped states that it does not apply in this environment, and
+the record said so, but the report classified it as an unexplained gap and the
+strict gate failed on it. A skipped or expected-failure case is now recorded
+with the applicability `not-applicable` and is not a gating failure. The record
+stays visible in the report, and a case that was never executed at all still
+gates.
+
+## Native NFsim runs on the same model the embedded engine executes
+
+The native NFsim stage ran the pinned oracle on BNG2's XML verbatim. The oracle
+applies a compartment size only to zero-order synthesis, so for a
+reactant-bearing rule it sampled a different model than BNG2's network and
+than the embedded engine: the equal-seed comparison was not exact for any
+compartment model, and the harness recorded the difference as a rounding
+concern.
+
+The stage now normalises BNG2's XML into BNG2's count-rate convention first,
+the same conversion the XML rate probe already applies, so the oracle samples
+the model the embedded engine executes. The rewrite reads the compartment of a
+rule pattern, drops the symmetry factor the coefficient now carries, and
+removes the compartment factor the oracle applies itself for a zero-order rule
+whose product molecule states a compartment. An export the rewrite cannot
+state is an explicit refusal rather than an approximation.
+
+With the oracle on the same model, the seeded native and embedded NFsim
+trajectories compare exactly for every generated case, so the exact
+native-versus-embedded comparison covers the compartment and reversible
+families as well.
+
+## Native BNGIR rule directions with several patterns
+
+The native importer rebuilt exactly one reactant and one product pattern, so
+every generated dimerization case of the integrated semantic validation
+reported `UNSUPPORTED` even though the document states a rule the importer can
+rebuild. The importer now rebuilds every pattern the direction states.
+
+A direction with more than one pattern is only rebuilt faithfully when the
+document states the same operations the pattern structure implies: every
+reactant molecule deleted and every product molecule added, with no molecule
+carried over. A direction that declares a molecule mapping, states different
+operations, or has a product molecule whose type matches a reactant molecule is
+an explicit refusal at the native boundary, in the Python gate and in the
+native importer alike. The reconstructed rule consumes both reactants and
+creates the product, and the reconstructed model produces the same numbers as
+the same model written in BNGL. The `bngir-v02` consumer changes from
+`UNSUPPORTED` to `PASS` for the dimerization family: 25 case families now
+qualify, 19 before.
+
 ## Non-finite rate coefficients are refused where they enter the engine
 
 A rate law with no runtime dependency is folded into a constant rate

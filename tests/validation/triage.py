@@ -364,7 +364,11 @@ def analyze(report, *, previous=None, baseline=None, replicates=(), report_root=
         and not (
             r["status"] == "NOT_TESTED"
             and r.get("applicability")
-            in {"no-observables", "native-oracle-unit-conversion-unsupported"}
+            in {
+                "no-observables",
+                "native-oracle-unit-conversion-unsupported",
+                "not-applicable",
+            }
         )
     )
     failure = (
