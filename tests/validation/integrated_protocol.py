@@ -496,30 +496,58 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
             )
         )
 
-    # Exercise an evaluation-time failure, then compare the recovered instance
-    # against a fresh model on the same valid protocol.
+    # Functional recovery is separate from native allocation cleanup. The late
+    # conditional reaches CVODE's output loop; an unknown name alone fails
+    # before solver allocation and cannot qualify that exception boundary.
     try:
         recovered = bionetgen.load(source)
         options = dict(method="ode", t_end=1.0, n_steps=2)
-        try:
-            recovered.simulate(
-                stop_if="__integrated_protocol_missing_name__ > 0", **options
+        baseline = recovered.simulate(**options)
+        saved = _copy_result(baseline)
+        network = recovered._network
+        receipts = []
+        difference = None
+        for phase, condition in (
+            ("before-allocation", "__integrated_protocol_missing_name__ > 0"),
+            (
+                "after-allocation",
+                "if(time > 0, __integrated_protocol_missing_name__, 0)",
+            ),
+        ):
+            try:
+                recovered.simulate(stop_if=condition, **options)
+            except RuntimeError as exc:
+                if "__integrated_protocol_missing_name__" not in str(exc):
+                    raise
+            else:
+                raise AssertionError("invalid stop_if did not raise RuntimeError")
+            if recovered._network is not network:
+                raise AssertionError("exception discarded the generated network")
+            actual = recovered.simulate(**options)
+            expected = bionetgen.load(source).simulate(**options)
+            difference = _result_difference(actual, expected)
+            if difference is None:
+                difference = _snapshot_difference(
+                    saved, _copy_result(baseline), "saved"
+                )
+            receipts.append(
+                _result_receipt(
+                    actual,
+                    phase=phase,
+                    generated_network_retained=True,
+                    native_resource_cleanup="NOT_TESTED; requires leak sanitizer",
+                )
             )
-        except RuntimeError:
-            pass
-        else:
-            raise AssertionError(
-                "invalid stop_if expression did not raise RuntimeError"
-            )
-        actual = recovered.simulate(**options)
-        expected = bionetgen.load(source).simulate(**options)
-        difference = _result_difference(actual, expected)
+            if difference:
+                break
+        _write_lifecycle_receipt(directory, "exception-recovery", receipts)
         rows.append(
             _row(
                 case_id,
                 "exception-recovery",
                 "FAIL" if difference else "PASS",
-                "valid simulation after evaluation exception matched a fresh model",
+                "functional recovery before/after solver allocation matched fresh model; "
+                "network and saved outputs retained; native resource cleanup not qualified",
                 difference,
             )
         )
@@ -757,9 +785,12 @@ def _lifecycle_construction_isolation(bionetgen, case, directory):
         (right, RATE * 1.31, case["initial"] + 11, 8123, "right"),
     )
     receipts = []
+    networks = {}
 
     def replay(model, rate, initial, seed, model_name, suffix):
         actual = model.simulate(seed=seed, **options)
+        previous = networks.setdefault(model_name, model._network)
+        retained = previous is model._network and previous is not None
         expected_case = dict(case, initial=initial)
         reference = directory / f"lifecycle-isolation-{model_name}-{suffix}.bngl"
         reference.write_text(reuse_bngl(expected_case, rate=rate))
@@ -773,8 +804,12 @@ def _lifecycle_construction_isolation(bionetgen, case, directory):
                 initial=initial,
                 seed=seed,
                 phase=suffix,
+                generated_network_retained=retained,
+                reuse_scope="generated-network identity only; compilation count unmeasured",
             )
         )
+        if not retained:
+            return {"field": "network_cache_rebuilt", "model": model_name}
         return _result_difference(actual, expected, atol=0.0, rtol=0.0)
 
     # Two independent native instances run concurrently, then are interleaved
@@ -790,6 +825,8 @@ def _lifecycle_construction_isolation(bionetgen, case, directory):
             directory, "lifecycle-construction-isolation", receipts
         )
         return initial_differences[0] or initial_differences[1]
+    if networks["left"] is networks["right"]:
+        return {"field": "independent_models_share_network_cache"}
     for index in range(2):
         difference = replay(*settings[index], f"interleave-{index}")
         if difference:
@@ -839,8 +876,11 @@ def _lifecycle_mutation_baseline(bionetgen, case, directory):
                 return difference
         for parameter, changed_value in parameters:
             old_value = float(model.get_parameter(parameter).value)
+            previous_network = model._network
             model.set_parameter(parameter, changed_value)
+            invalidated = model._network is None
             actual = model.simulate(**options)
+            regenerated = model._network is not previous_network
             changed_case = dict(case)
             if parameter == "N":
                 changed_case["initial"] = int(changed_value)
@@ -880,6 +920,8 @@ def _lifecycle_mutation_baseline(bionetgen, case, directory):
                     phase="mutated",
                     parameter=parameter,
                     value=changed_value,
+                    generated_network_invalidated=invalidated,
+                    generated_network_regenerated=regenerated,
                     seed=options["seed"],
                 )
             )

@@ -1167,3 +1167,28 @@ TEST_CASE("CVODE executes recurring native events between output times", "[OdeOp
     const auto repeated = integrator.integrate(options);
     CHECK(repeated.observables == result.observables);
 }
+
+TEST_CASE("OdeIntegrator recovers after late stop condition failure", "[OdeOptions][Lifecycle]") {
+    auto model = parseDecayModel();
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 2;
+    // Lazy if succeeds at t=0, then throws after CVODE allocated its state.
+    options.stopIf = "if(time > 0, missing_name, 0)";
+    REQUIRE_THROWS_WITH(
+        engine::OdeIntegrator(*model, network).integrate(options),
+        Catch::Matchers::ContainsSubstring("Unknown parameter 'missing_name'"));
+    options.stopIf.clear();
+    const auto recovered = engine::OdeIntegrator(*model, network).integrate(options);
+    auto freshModel = parseDecayModel();
+    engine::NetworkGenerator freshGenerator(*freshModel);
+    auto freshNetwork = freshGenerator.generateNative();
+    const auto fresh = engine::OdeIntegrator(*freshModel, freshNetwork).integrate(options);
+    CHECK(recovered.timePoints == fresh.timePoints);
+    CHECK(recovered.concentrations == fresh.concentrations);
+    // The existing ASan job runs this test alone with leak detection enabled.
+    // Functional recovery does not itself demonstrate native resource cleanup.
+}

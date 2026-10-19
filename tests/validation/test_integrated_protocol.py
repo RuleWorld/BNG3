@@ -218,3 +218,33 @@ def test_rate_parameter_follows_functions_and_parameter_dependencies():
         reaction_rules=[SimpleNamespace(rates=["flux() * 3"])],
     )
     assert protocol._rate_parameter(model) == "k"
+
+
+def test_lifecycle_detects_rebuilt_network_despite_equal_outputs(tmp_path):
+    class RebuildingModel:
+        def __init__(self):
+            self._network = None
+
+        def set_parameter(self, *args):
+            self._network = None
+
+        def simulate(self, **kwargs):
+            self._network = object()
+            return SimpleNamespace(
+                time=np.array([0.0, 2.0]),
+                observables={"A": np.array([20.0, 19.0])},
+            )
+
+    difference = protocol._lifecycle_construction_isolation(
+        SimpleNamespace(load=lambda path: RebuildingModel()),
+        dict(
+            id="v1-n20-r0-a0",
+            family="decay",
+            volume=1,
+            initial=20,
+            reverse=False,
+            atomize=False,
+        ),
+        tmp_path,
+    )
+    assert difference == {"field": "network_cache_rebuilt", "model": "left"}
