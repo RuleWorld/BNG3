@@ -43,6 +43,25 @@ native import boundary names that boundary in the established
 "native BNGIR does not support ..." wording so the consumer reports a
 support boundary instead of a harness failure.
 
+## Native BNGIR rule directions with several patterns
+
+The native importer rebuilt exactly one reactant and one product pattern, so
+every generated dimerization case of the integrated semantic validation
+reported `UNSUPPORTED` even though the document states a rule the importer can
+rebuild. The importer now rebuilds every pattern the direction states.
+
+A direction with more than one pattern is only rebuilt faithfully when the
+document states the same operations the pattern structure implies: every
+reactant molecule deleted and every product molecule added, with no molecule
+carried over. A direction that declares a molecule mapping, states different
+operations, or has a product molecule whose type matches a reactant molecule is
+an explicit refusal at the native boundary, in the Python gate and in the
+native importer alike. The reconstructed rule consumes both reactants and
+creates the product, and the reconstructed model produces the same numbers as
+the same model written in BNGL. The `bngir-v02` consumer changes from
+`UNSUPPORTED` to `PASS` for the dimerization family: 25 case families now
+qualify, 19 before.
+
 ## Non-finite rate coefficients are refused where they enter the engine
 
 A rate law with no runtime dependency is folded into a constant rate
