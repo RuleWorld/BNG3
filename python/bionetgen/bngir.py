@@ -1576,6 +1576,61 @@ def _native_pattern_v02(
         raise ValueError(f"native BNGIR {where} does not support molecule sites")
 
 
+def _native_multi_pattern_direction_v02(
+    rule: Mapping[str, Any],
+    direction: Mapping[str, Any],
+    index: int,
+    model: Mapping[str, Any],
+    molecule_ids: set[int],
+) -> None:
+    """Check a rule direction that rebuilds more than one pattern.
+
+    The native importer rebuilds a direction from its patterns, and the pattern
+    structure decides the rule's operations. A direction with more than one
+    reactant or product pattern is only rebuilt faithfully when the document
+    states the same operations: every reactant molecule deleted and every
+    product molecule added, with no molecule carried over. Anything else is an
+    explicit refusal rather than an approximation.
+    """
+    reactants = direction["reactants"]
+    products = direction["products"]
+    if len(reactants) <= 1 and len(products) <= 1:
+        return
+    if rule["molecule_mappings"] != []:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] carries a molecule mapping that "
+            "a multi-pattern rule direction cannot rebuild"
+        )
+    expected = [
+        ("delete_molecule", "reactant", pattern_index)
+        for pattern_index in range(len(reactants))
+    ] + [
+        ("add_molecule", "product", pattern_index)
+        for pattern_index in range(len(products))
+    ]
+    observed = [
+        (
+            mutation["kind"],
+            mutation["molecule"]["side"],
+            mutation["molecule"]["pattern"],
+        )
+        for mutation in direction["mutations"]
+    ]
+    if sorted(observed) != sorted(expected):
+        raise ValueError(
+            f"native BNGIR model.rules[{index}].forward.mutations do not state "
+            "the delete-and-add operations of a multi-pattern rule direction"
+        )
+    reactant_types = {pattern["molecules"][0]["type_id"] for pattern in reactants}
+    for pattern in products:
+        if pattern["molecules"][0]["type_id"] in reactant_types:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] has a product pattern whose "
+                "molecule type matches a reactant pattern; the rule direction "
+                "carries a transformation the native slice cannot rebuild"
+            )
+
+
 def _validate_native_v02(root: Mapping[str, Any]) -> None:
     """Fail-closed input gate for the first graph-native compatibility slice."""
     _native_exact_keys(
@@ -1936,18 +1991,23 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             )
         for side in ("reactants", "products"):
             patterns = direction[side]
-            if not isinstance(patterns, list) or len(patterns) != 1:
-                # The native slice rebuilds one reactant and one product
-                # pattern. A rule outside that slice is an explicit refusal,
-                # so the message names the boundary the consumer classifies on.
+            if not isinstance(patterns, list) or not patterns:
+                # The native slice rebuilds a rule direction from its reactant
+                # and product patterns. A direction without any is an explicit
+                # refusal, so the message names the boundary the consumer
+                # classifies on.
                 side_name = "reactant" if side == "reactants" else "product"
                 raise ValueError(
-                    "native BNGIR does not support a rule direction without "
-                    f"exactly one {side_name} pattern"
+                    "native BNGIR does not support a rule direction without a "
+                    f"{side_name} pattern"
                 )
-            _native_pattern_v02(
-                patterns[0], f"model.rules[{index}].{side}[0]", molecule_ids
-            )
+            for pattern_index, pattern in enumerate(patterns):
+                _native_pattern_v02(
+                    pattern,
+                    f"model.rules[{index}].{side}[{pattern_index}]",
+                    molecule_ids,
+                )
+        _native_multi_pattern_direction_v02(rule, direction, index, model, molecule_ids)
         if len(rule["molecule_mappings"]) > 1:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] has too many molecule mappings"
@@ -2036,10 +2096,16 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 {"side", "pattern", "molecule"},
                 f"model.rules[{index}].forward.mutations[{mutation_index}].molecule",
             )
+            side_patterns = (
+                direction["reactants"]
+                if kind == "delete_molecule"
+                else direction["products"]
+            )
             if (
                 ref["side"] != ("reactant" if kind == "delete_molecule" else "product")
                 or isinstance(ref["pattern"], bool)
-                or ref["pattern"] != 0
+                or not isinstance(ref["pattern"], int)
+                or not 0 <= ref["pattern"] < len(side_patterns)
                 or isinstance(ref["molecule"], bool)
                 or ref["molecule"] != 0
             ):

@@ -217,6 +217,7 @@ def read_pytest_events(path: Path, suite: str) -> list[dict]:
     for nodeid, case in cases.items():
         phases = case["phases"]
         status, detail = "NOT_TESTED", "case not executed before interruption"
+        applicability = None
         failed = [p for p in phases if p["outcome"] == "failed"]
         skipped = [p for p in phases if p["outcome"] == "skipped" or p.get("xfail")]
         if failed:
@@ -226,27 +227,30 @@ def read_pytest_events(path: Path, suite: str) -> list[dict]:
             detail = "\n".join(p["detail"] for p in failed)
         elif skipped:
             detail = "\n".join(p.get("xfail") or p["detail"] for p in skipped)
+            # A skipped or expected-failure case is a declared absence: the
+            # test itself states that it does not apply here. It is recorded and
+            # visible, but it is not an unexplained gap.
+            applicability = "not-applicable"
         elif any(
             p["when"] == "call" and p["outcome"] == "passed" for p in phases
         ) and any(p["when"] == "teardown" and p["outcome"] == "passed" for p in phases):
             status, detail = "PASS", ""
         elif phases:
             status, detail = "TIMEOUT", "case did not finish; inspect process outcome"
-        rows.append(
-            {
-                "id": suite + ":" + nodeid,
-                "name": nodeid,
-                "suite": suite,
-                "stage": "test",
-                "status": status,
-                "detail": detail,
-                "failure_summary": "\n".join(
-                    p.get("summary", p["detail"]) for p in failed
-                ),
-                "test_file": case["file"],
-                "elapsed_seconds": sum(p["duration"] for p in phases),
-            }
-        )
+        row = {
+            "id": suite + ":" + nodeid,
+            "name": nodeid,
+            "suite": suite,
+            "stage": "test",
+            "status": status,
+            "detail": detail,
+            "failure_summary": "\n".join(p.get("summary", p["detail"]) for p in failed),
+            "test_file": case["file"],
+            "elapsed_seconds": sum(p["duration"] for p in phases),
+        }
+        if applicability is not None:
+            row["applicability"] = applicability
+        rows.append(row)
     if not rows:
         raise ValueError("pytest event log contains no test cases")
     return rows
