@@ -325,19 +325,27 @@ bool ReactionClass::isReactionConnected(ReactionClass * rxn) {
 	// one of the reactant templates of rxn.
 	if (this->transformationSet->checkConnection(rxn)) return true;
 
-	// Full membership refresh revisits every explicit reactant template in the
-	// fired rule, not only templates that carry direct transformations. Treat
-	// any compatible explicit template as connected so the fast path preserves
-	// the same reachable update set.
+	// Component-gated fallback (ruleworld/nfsim#107): the full-membership
+	// refresh added for #74 revisits every explicit reactant template of the
+	// fired rule, but isTemplateCompatible() alone returns true for templates
+	// constraining disjoint component sets, over-connecting rules that share a
+	// molecule type while touching unrelated sites (e.g. polymer initiation vs
+	// elongation). Mirroring the TransformationSet::checkConnection gate, a
+	// compatible explicit template only connects basic (own-list-dependent)
+	// reactions when the reactions also share a specified component, while
+	// observable-dependent rate laws keep the broad fallback since any
+	// compatible firing can move their observables. The deterministic
+	// full-list-in-order iteration in MoleculeType::updateConnectedRxnMembership
+	// is unchanged, so seeded-trajectory parity (the #74 goal) is preserved.
 	for (unsigned int i=0; i<allReactantTemplates.size(); i++) {
-		if (rxn->isTemplateCompatible(allReactantTemplates[i])) return true;
+		if (rxn->isTemplateCompatibleWithSharedComponent(allReactantTemplates[i])) return true;
 	}
 
 	// Product templates can also create new compatible mappings, but avoid
 	// broadening synthesis rules where this would over-connect add-only paths.
 	if (n_reactants > 0) {
 		for (unsigned int i=0; i<allProductTemplates.size(); i++) {
-			if (rxn->isTemplateCompatible(allProductTemplates[i])) return true;
+			if (rxn->isTemplateCompatibleWithSharedComponent(allProductTemplates[i])) return true;
 		}
 	}
 	return false;
@@ -1018,6 +1026,25 @@ bool ReactionClass::isTemplateCompatible(TemplateMolecule * t) {
 	for (unsigned int i=0; i<allReactantTemplates.size(); i++) {
 		t2 = allReactantTemplates[i];
 		if (t->isTemplateCompatible(t2)) return true;
+	}
+
+	return false;
+}
+
+bool ReactionClass::isTemplateCompatibleWithSharedComponent(TemplateMolecule * t) {
+	// Reactions with observable-dependent rate laws (functional, DOR and
+	// energy reactions) can change propensity whenever a compatible firing
+	// alters the observables their rates read, even without a shared
+	// specified component, so keep the broad compatibility fallback for them.
+	// Basic (mass-action, MM, saturation, Hill) propensities only depend on
+	// their own reactant lists, which a firing can only change through a
+	// shared specified component.
+	bool broadRateLaw = (reactionType != BASIC_RXN);
+	TemplateMolecule * t2;
+	for (unsigned int i=0; i<allReactantTemplates.size(); i++) {
+		t2 = allReactantTemplates[i];
+		if (!t->isTemplateCompatible(t2)) continue;
+		if (broadRateLaw || t->sharesSpecifiedComponentWith(t2)) return true;
 	}
 
 	return false;

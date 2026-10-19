@@ -6980,6 +6980,143 @@ end reaction rules
     std::filesystem::remove(onPath, error);
 }
 
+TEST_CASE("NFsim connectivity prunes rules touching disjoint components") {
+    // Regression test for ruleworld/nfsim#107: the fallback added for #74
+    // treated every template-compatible explicit template as connected, but
+    // TemplateMolecule::isTemplateCompatible returns true for templates that
+    // constrain disjoint component sets, so rules sharing a molecule type
+    // while touching unrelated sites ended up mutually connected. The fallback
+    // now additionally requires a shared specified component, so this
+    // v21-style multi-site model stays sparse while seeded connect/non-connect
+    // trajectories still agree.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    k1 1
+    k2 2
+    k3 3
+    k4 4
+    k5 0.5
+end parameters
+begin molecule types
+    M(s1~u~p,s2~u~p,s3~u~p)
+end molecule types
+begin seed species
+    M(s1~u,s2~u,s3~u) 100
+end seed species
+begin observables
+    Molecules Mtot M()
+    Molecules Mp1 M(s1~p)
+end observables
+begin reaction rules
+    r1: M(s1~u) -> M(s1~p) k1
+    r2: M(s2~u) -> M(s2~p) k2
+    r3: M(s3~u) -> M(s3~p) k3
+    r4: M(s1~p) -> M(s1~u) k4
+    deg: M(s1~p) -> 0 k5
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    const auto xml = bng::io::XmlWriter::write(*model);
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto xmlPath = std::filesystem::temp_directory_path() /
+                         ("bng3-disjoint-connectivity-" + std::to_string(token) + ".xml");
+    std::ofstream xmlFile(xmlPath);
+    REQUIRE(xmlFile.good());
+    xmlFile << xml;
+    xmlFile.close();
+
+    int suggestedTraversalLimit = NFcore::ReactionClass::NO_LIMIT;
+    auto* system = NFinput::initializeFromXML(
+        xmlPath.string(), false, 100000, false, suggestedTraversalLimit,
+        true, true);
+    REQUIRE(system != nullptr);
+
+    const auto reactions = system->getAllReactions();
+    // Rule labels are not preserved through the XML bridge (reactions are
+    // named R1..R5 in rule order), so map positionally. Each one-way rule
+    // produces exactly one reaction.
+    REQUIRE(reactions.size() == 5);
+    system->setUniversalTraversalLimit(suggestedTraversalLimit);
+    system->prepareForSimulation();
+    const int r1 = reactions.at(0)->getRxnId();
+    const int r2 = reactions.at(1)->getRxnId();
+    const int r3 = reactions.at(2)->getRxnId();
+    const int r4 = reactions.at(3)->getRxnId();
+    const int deg = reactions.at(4)->getRxnId();
+
+    auto connected = [&](int fired, int other) {
+        return system->areReactionsConnected(fired, other);
+    };
+    // r1 shares s1 with r4 and deg (via its s1~p product), but only its
+    // molecule type with r2/r3, which constrain disjoint sites.
+    CHECK(connected(r1, r1));
+    CHECK(connected(r1, r4));
+    CHECK(connected(r1, deg));
+    CHECK_FALSE(connected(r1, r2));
+    CHECK_FALSE(connected(r1, r3));
+    // r2 only touches s2, so it connects to nothing but itself.
+    CHECK(connected(r2, r2));
+    CHECK_FALSE(connected(r2, r1));
+    CHECK_FALSE(connected(r2, r3));
+    CHECK_FALSE(connected(r2, r4));
+    CHECK_FALSE(connected(r2, deg));
+    // Degradation refreshes the rules matching its reactant, but must not
+    // drag in the disjoint-site rules (molecule removal itself is handled
+    // unconditionally by MoleculeType::removeFromRxns).
+    CHECK(connected(deg, deg));
+    CHECK(connected(deg, r4));
+    CHECK_FALSE(connected(deg, r2));
+    CHECK_FALSE(connected(deg, r3));
+
+    int edgeCount = 0;
+    for (auto* fired : reactions)
+        for (auto* other : reactions)
+            if (system->areReactionsConnected(
+                    fired->getRxnId(), other->getRxnId()))
+                ++edgeCount;
+    // Fully connected would be 25 edges; the pruned matrix has 10
+    // (r1:3, r2:1, r3:1, r4:3, deg:2).
+    CHECK(edgeCount == 10);
+
+    auto run = [&](bool connectivity, const std::filesystem::path& outputPath) {
+        int traversalLimit = NFcore::ReactionClass::NO_LIMIT;
+        auto* runSystem = NFinput::initializeFromXML(
+            xmlPath.string(), false, 100000, false, traversalLimit,
+            true, connectivity);
+        REQUIRE(runSystem != nullptr);
+        runSystem->setUniversalTraversalLimit(traversalLimit);
+        runSystem->registerOutputFileLocation(outputPath.string());
+        runSystem->outputAllObservableNames();
+        runSystem->prepareForSimulation();
+        runSystem->seedRNG(1);
+        runSystem->sim(0.05, 5, false);
+        delete runSystem;
+    };
+    const auto offPath = std::filesystem::temp_directory_path() /
+                         ("bng3-disjoint-off-" + std::to_string(token) + ".gdat");
+    const auto onPath = std::filesystem::temp_directory_path() /
+                        ("bng3-disjoint-on-" + std::to_string(token) + ".gdat");
+    run(false, offPath);
+    run(true, onPath);
+    delete system;
+
+    std::ifstream offFile(offPath);
+    std::ifstream onFile(onPath);
+    REQUIRE(offFile.good());
+    REQUIRE(onFile.good());
+    const std::string offData((std::istreambuf_iterator<char>(offFile)),
+                              std::istreambuf_iterator<char>());
+    const std::string onData((std::istreambuf_iterator<char>(onFile)),
+                             std::istreambuf_iterator<char>());
+    CHECK(offData == onData);
+
+    std::error_code error;
+    std::filesystem::remove(xmlPath, error);
+    std::filesystem::remove(offPath, error);
+    std::filesystem::remove(onPath, error);
+}
+
 TEST_CASE("NFsim XML bridge preserves functional symmetry around TotalRate") {
     // Source-derived from akutuva21/nfsim commit 1b19611 and its
     // test/symmetry/symmetry_factor_total_rate fixture.  XML carries the
