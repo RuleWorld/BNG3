@@ -288,3 +288,21 @@ def test_adversarial_registry_can_be_selected_without_other_campaigns():
     assert "campaign:graph-identity" not in ids
     assert "campaign:boundaries" not in ids
     assert len(ids) > 10
+
+
+def test_checks_preserve_cross_stage_prerequisite_ids():
+    rows = []
+    integrated._checks(
+        "case",
+        "worker-identity",
+        [
+            {
+                "check": "same-build",
+                "status": "NOT_TESTED",
+                "blocked_by": ["case:bngir-v02"],
+            }
+        ],
+        rows,
+        [],
+    )
+    assert rows[0]["blocked_by"] == ["case:bngir-v02"]

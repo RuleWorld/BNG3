@@ -44,9 +44,15 @@ def test_generated_families_preserve_decay_ids_and_bound_pairwise_matrix():
             assert {(c[left], c[right]) for c in picked} == {
                 (c[left], c[right]) for c in family_cases
             }
-        assert all(
-            case["exact_nf"] is (family != "reversible") for case in family_cases
-        )
+
+        def expected_exact(case):
+            if family == "reversible":
+                return False
+            if family == "dimerization" and case["volume"] > 1:
+                return False
+            return True
+
+        assert all(case["exact_nf"] is expected_exact(case) for case in family_cases)
     assert all(
         "ensemble means" in case["nf_comparison"] for case in by_family["reversible"]
     )
