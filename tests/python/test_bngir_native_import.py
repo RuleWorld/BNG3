@@ -1630,3 +1630,124 @@ def test_native_import_refuses_a_rule_direction_outside_the_native_slice():
 
     with pytest.raises(ValueError, match="native BNGIR does not support"):
         bionetgen.from_bngir(document, native=True)
+
+
+OBSERVABLES_SOURCE = SOURCE.replace(
+    "begin seed species",
+    "begin observables\n"
+    "    Molecules a_count A()\n"
+    "    Species b_count B()\n"
+    "end observables\n"
+    "begin seed species",
+)
+
+
+def test_native_import_reconstructs_observables():
+    document = _document(OBSERVABLES_SOURCE)
+    assert "observables" in document["features"]["used"]
+    restored = bionetgen.from_bngir(document, native=True)
+    assert [(item.name, item.type) for item in restored.observables] == [
+        ("a_count", "Molecules"),
+        ("b_count", "Species"),
+    ]
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+@pytest.mark.parametrize("relation", [">", ">=", "<", "<=", "=="])
+def test_native_import_reconstructs_observable_relations(relation):
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = relation
+    document["model"]["observables"][0]["terms"][0]["quantity"] = 3
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+def test_native_import_rejects_unknown_observable_kind():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["kind"] = "unknown"
+    with pytest.raises(ValueError, match="unsupported.*kind"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_invalid_observable_relation():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = "="
+    with pytest.raises(ValueError, match="unsupported count relation"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_non_dense_observable_ids():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["id"] = 5
+    with pytest.raises(ValueError, match="observable ids must be dense"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_duplicate_observable_names():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["name"] = "a_count"
+    with pytest.raises(ValueError, match="duplicate"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_empty_observable_terms():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"] = []
+    with pytest.raises(ValueError, match="at least one term"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_unsupported_observable_keys():
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["future_semantics"] = True
+    with pytest.raises(ValueError, match="unsupported"):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_observable_python_binding_round_trips():
+    """The Python-exposed Observable constructor + Model.addObservable must
+    produce the same structured snapshot as a native BNGL-parsed model."""
+    source = OBSERVABLES_SOURCE
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    reference = json.loads(source_model.to_bngir(version="0.2"))
+
+    from bionetgen._bionetgen_cpp import Observable
+
+    model = _cpp.parse_string(SOURCE)
+    model.addObservable(Observable("a_count", "Molecules", ["A()"]))
+    model.addObservable(Observable("b_count", "Species", ["B()"]))
+    restored = bionetgen.BioNetGenModel(model)
+    assert json.loads(restored.to_bngir(version="0.2")) == reference
+
+
+def test_native_import_reconstructs_multi_term_observables():
+    """An observable with multiple terms (e.g. A(), B()) must round-trip."""
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][1]["terms"].append(
+        {
+            "pattern": {
+                "compartment_prefix": False,
+                "molecules": [
+                    {"occurrence": 0, "sites": [], "type": "A", "type_id": 0}
+                ],
+            },
+            "quantity": 0,
+        }
+    )
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
+
+
+def test_neq_observable_round_trips():
+    """The ``!=`` count relation is supported by the C++ matcher
+    (``splitObservablePattern`` / ``observablePatternCountMatches``) and is
+    included in the native v0.2 accepted-relation set."""
+    document = _document(OBSERVABLES_SOURCE)
+    document["model"]["observables"][0]["terms"][0]["relation"] = "!="
+    document["model"]["observables"][0]["terms"][0]["quantity"] = 2
+    restored = bionetgen.from_bngir(document, native=True)
+    rebuilt = json.loads(restored.to_bngir(version="0.2"))
+    assert rebuilt == document
