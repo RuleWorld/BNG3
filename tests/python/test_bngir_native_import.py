@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import importlib
+from itertools import permutations
 import json
 from pathlib import Path
 
@@ -86,6 +87,28 @@ end model
 def _document(source: str = SOURCE) -> dict:
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
     return json.loads(source_model.to_bngir(version="0.2"))
+
+
+def _reorder_parameter_ids(model: dict, names: tuple[str, ...]) -> None:
+    """Reorder declarations and remap all parameter symbol references."""
+    declarations = {item["name"]: item for item in model["parameters"]}
+    old_to_new = {declarations[name]["id"]: new_id for new_id, name in enumerate(names)}
+    model["parameters"] = [declarations[name] for name in names]
+    for new_id, parameter in enumerate(model["parameters"]):
+        parameter["id"] = new_id
+
+    def remap(value):
+        if isinstance(value, dict):
+            symbol = value.get("symbol")
+            if isinstance(symbol, dict) and symbol.get("kind") == "parameter":
+                symbol["index"] = old_to_new[symbol["index"]]
+            for child in value.values():
+                remap(child)
+        elif isinstance(value, list):
+            for child in value:
+                remap(child)
+
+    remap(model)
 
 
 def test_direct_native_builder_refuses_schema_valid_population_type():
@@ -591,8 +614,6 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
 @pytest.mark.parametrize(
     "section",
     [
-        "compartments",
-        "observables",
         "functions",
         "energy_patterns",
         "barrier_patterns",
@@ -618,6 +639,23 @@ def test_direct_native_builder_rejects_nonempty_unsupported_sections(section):
         RuntimeError, match=f"native BNGIR model.{section} is not supported"
     ):
         _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_reconstructs_rendered_observables():
+    document = _document()
+    document["model"]["observables"] = [
+        {"name": "A_total", "type": "Molecules", "patterns": ["A()"]},
+        {"name": "all_species", "type": "Species", "patterns": ["A()", "B()"]},
+    ]
+
+    restored = _cpp._model_from_bngir_v02(document["model"])
+
+    assert [
+        (item.name, item.type, list(item.patterns)) for item in restored.observables
+    ] == [
+        ("A_total", "Molecules", ["A()"]),
+        ("all_species", "Species", ["A()", "B()"]),
+    ]
 
 
 def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypatch):
@@ -652,6 +690,146 @@ def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypa
     assert nf_result.time.tolist() == pytest.approx([0.0, 0.1])
     assert nf_result.construction_path == "direct"
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+def test_native_import_reconstructs_observables_without_source_parsing(monkeypatch):
+    source = SOURCE.replace(
+        "begin seed species",
+        "begin observables\n"
+        "    Molecules A_molecules A()\n"
+        "    Species A_species A()\n"
+        "    Species A_exact A==1\n"
+        "    Species A_at_least A>=1\n"
+        "    Species A_more A>0\n"
+        "end observables\n"
+        "begin seed species",
+    )
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert [(item.name, item.type) for item in restored._model.observables] == [
+        ("A_molecules", "Molecules"),
+        ("A_species", "Species"),
+        ("A_exact", "Species"),
+        ("A_at_least", "Species"),
+        ("A_more", "Species"),
+    ]
+    network = restored.generate_network()
+    assert network.num_species == 2
+    assert network.num_reactions == 1
+    result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    assert result.observables["A_molecules"][0] == pytest.approx(100.0)
+    assert result.observables["A_species"][0] == pytest.approx(100.0)
+    assert result.observables["A_exact"][0] == pytest.approx(100.0)
+    assert result.observables["A_at_least"][0] == pytest.approx(100.0)
+    assert result.observables["A_more"][0] == pytest.approx(100.0)
+    assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+
+def test_native_import_reconstructs_compartmented_observables_without_source_parsing(
+    monkeypatch,
+):
+    source = """
+begin model
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @cell:A() 10
+end seed species
+begin observables
+    Molecules A_molecules @cell:A()
+    Species A_species @cell:A()
+end observables
+end model
+"""
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert [(item.name, item.type) for item in restored._model.observables] == [
+        ("A_molecules", "Molecules"),
+        ("A_species", "Species"),
+    ]
+    network = restored.generate_network()
+    assert network.num_species == 1
+    assert network.num_reactions == 0
+    source_result = source_model.simulate(method="ode", t_end=0.1, n_steps=1)
+    result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
+    for name in ("A_molecules", "A_species"):
+        assert result.observables[name] == pytest.approx(
+            source_result.observables[name]
+        )
+    assert bionetgen.semantic_equal(source_model, restored, version="0.2")
+
+    explicit_compartments = copy.deepcopy(document)
+    for pattern in [
+        explicit_compartments["model"]["seeds"][0]["pattern"],
+        *[
+            term["pattern"]
+            for observable in explicit_compartments["model"]["observables"]
+            for term in observable["terms"]
+        ],
+    ]:
+        pattern["molecules"][0]["compartment"] = "cell"
+    explicit_restored = bionetgen.from_bngir(explicit_compartments, native=True)
+    assert (
+        json.loads(explicit_restored.to_bngir(version="0.2")) == explicit_compartments
+    )
+
+
+@pytest.mark.parametrize(
+    ("parent", "parent_id", "expected"),
+    [
+        ("missing", None, "compartment parent references an unknown compartment"),
+        ("cell", 7, "compartment parent id is out of range"),
+    ],
+)
+def test_direct_native_builder_rejects_invalid_compartment_parent_reference(
+    parent, parent_id, expected
+):
+    document = _document("""
+begin model
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    @cell:A() 1
+end seed species
+end model
+""")
+    compartment = document["model"]["compartments"][0]
+    compartment["parent"] = parent
+    if parent_id is not None:
+        compartment["parent_id"] = parent_id
+
+    with pytest.raises(RuntimeError, match=f"native BNGIR {expected}"):
+        _cpp._model_from_bngir_v02(document["model"])
 
 
 @pytest.mark.parametrize("method", ["ode", "ssa"])
@@ -769,7 +947,7 @@ def test_source_backed_model_legacy_exports_remain_available(tmp_path):
     bngl = model.to_bngl()
     xml = model.to_xml()
     assert "A() 100" in bngl
-    assert "R1: A() -> B() k" in bngl
+    assert "convert: A() -> B() k" in bngl
     assert "<Molecule id=" in xml
 
     bngl_path = tmp_path / "source.bngl"
@@ -860,6 +1038,67 @@ def test_native_import_reconstructs_arithmetic_parameter_expressions():
     restored = bionetgen.from_bngir(document, native=True)
     assert json.loads(restored.to_bngir(version="0.2")) == document
 
+    network = restored.generate_network()
+    state = [100.0 if name == "A()" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, state)
+    by_species = dict(zip(network.species_names, derivative))
+    assert by_species["A()"] == pytest.approx(-10.0)
+    assert by_species["B()"] == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize("duplicate_index", [0, 1])
+def test_direct_native_builder_rejects_duplicate_parameter_names(duplicate_index):
+    source = SOURCE.replace(
+        "    k 0.1",
+        "    k1 0.1\n    k2 0.2",
+    ).replace("A() -> B() k", "A() -> B() k1")
+    document = _document(source)
+    parameters = document["model"]["parameters"]
+    parameters[duplicate_index]["name"] = parameters[1 - duplicate_index]["name"]
+
+    # The wire IDs still distinguish k1 (0.1) from k2 (0.2), and the rule
+    # still references ID 0. Name-based reconstruction must refuse this
+    # alias instead of collapsing both IDs onto one native parameter.
+    document["model"]["rules"][0]["forward"]["rate"]["expression"] = {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 0},
+    }
+    with pytest.raises(RuntimeError, match="parameter names must be unique"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_rejects_duplicate_molecule_type_names():
+    document = _document()
+    molecule_types = document["model"]["molecule_types"]
+    molecule_types[1]["name"] = molecule_types[0]["name"]
+
+    with pytest.raises(RuntimeError, match="molecule type names must be unique"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    "parameter_order",
+    list(permutations(("base", "scaled", "rate"))),
+    ids=lambda order: "-".join(order),
+)
+def test_native_import_parameter_id_reordering_preserves_transitive_dependencies(
+    monkeypatch, parameter_order
+):
+    source = SOURCE.replace(
+        "    k 0.1",
+        "    base 0.025\n    scaled 2*base\n    rate 2*scaled",
+    ).replace("A() -> B() k", "A() -> B() rate")
+    document = _document(source)
+    _reorder_parameter_ids(document["model"], parameter_order)
+
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    restored = bionetgen.from_bngir(document, native=True)
     network = restored.generate_network()
     state = [100.0 if name == "A()" else 0.0 for name in network.species_names]
     derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, state)
@@ -1010,3 +1249,97 @@ def test_direct_native_builder_refuses_unknown_direction_semantics():
         RuntimeError, match="rule direction has unsupported future_semantics"
     ):
         _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize("location", ["seed", "reactant", "product"])
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("pattern-extra", "pattern has unsupported future_semantics"),
+        ("pattern-compartment", "references an unknown compartment"),
+        ("prefix-integer", "compartment_prefix must be boolean"),
+        ("molecule-extra", "pattern molecule has unsupported future_semantics"),
+        ("molecule-compartment", "pattern molecule references an unknown compartment"),
+        ("molecule-compartment-id", "pattern molecule compartment id is out of range"),
+        ("occurrence-boolean", "non-boolean integer index"),
+        ("occurrence-nonzero", "requires molecule occurrence zero"),
+        ("type-name", "molecule type name does not match type_id"),
+        ("empty-pattern", "requires exactly one molecule"),
+        ("multiple-molecules", "requires exactly one molecule"),
+    ],
+)
+def test_direct_native_builder_refuses_lossy_pattern_identity(
+    location, mutation, expected
+):
+    document = _document()
+    model = document["model"]
+    pattern = (
+        model["seeds"][0]["pattern"]
+        if location == "seed"
+        else model["rules"][0]["forward"][
+            "reactants" if location == "reactant" else "products"
+        ][0]
+    )
+    molecule = pattern["molecules"][0]
+    if mutation == "pattern-extra":
+        pattern["future_semantics"] = True
+    elif mutation == "pattern-compartment":
+        pattern["compartment"] = "cell"
+    elif mutation == "prefix-true":
+        pattern["compartment_prefix"] = True
+    elif mutation == "prefix-integer":
+        pattern["compartment_prefix"] = 0
+    elif mutation == "molecule-extra":
+        molecule["future_semantics"] = True
+    elif mutation == "molecule-compartment":
+        molecule["compartment"] = "cell"
+    elif mutation == "molecule-compartment-id":
+        molecule["compartment_id"] = 0
+    elif mutation == "occurrence-boolean":
+        molecule["occurrence"] = False
+    elif mutation == "occurrence-nonzero":
+        molecule["occurrence"] = 7
+    elif mutation == "type-name":
+        molecule["type"] = "B" if molecule["type"] == "A" else "A"
+    elif mutation == "empty-pattern":
+        pattern["molecules"] = []
+    else:
+        pattern["molecules"].append(copy.deepcopy(molecule))
+
+    # Call the native boundary itself: Python validation/round-trip comparison
+    # must not be the only protection against silently discarded graph data.
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(model)
+
+
+@pytest.mark.parametrize("type_order", [("A", "B"), ("B", "A")])
+def test_native_molecule_id_reordering_preserves_downstream_rhs(
+    monkeypatch, type_order
+):
+    document = _document()
+    model = document["model"]
+    declarations = {item["name"]: item for item in model["molecule_types"]}
+    model["molecule_types"] = [declarations[name] for name in type_order]
+    for new_id, molecule_type in enumerate(model["molecule_types"]):
+        molecule_type["id"] = new_id
+    patterns = [model["seeds"][0]["pattern"]]
+    for side in ("reactants", "products"):
+        patterns.extend(model["rules"][0]["forward"][side])
+    for pattern in patterns:
+        molecule = pattern["molecules"][0]
+        molecule["type_id"] = type_order.index(molecule["type"])
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(
+        importlib.import_module("bionetgen.bngir"), "_as_bngl_v02", forbidden
+    )
+    restored = bionetgen.from_bngir(document, native=True)
+    network = restored.generate_network()
+    state = [100.0 if name == "A()" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, state)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A()": -10.0, "B()": 10.0}
+    )

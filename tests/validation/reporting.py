@@ -14,6 +14,74 @@ from .campaign import STATUSES
 BAD = {"FAIL", "TIMEOUT", "HARNESS_ERROR"}
 
 
+def gate_failures(results):
+    """Keep unsupported coverage visible; fail unexplained missing execution.
+
+    A NOT_TESTED child is nonfatal only when an unsupported aggregate explicitly
+    lists it, or its recorded prerequisites are all known unsupported boundaries.
+    Explicit support requirements always remain gating.
+    """
+    results = list(results)
+    allowed = {
+        row["id"]
+        for row in results
+        if row.get("status") == "UNSUPPORTED" and not row.get("support_required")
+    }
+    allowed.update(
+        row["id"]
+        for row in results
+        if row.get("status") == "NOT_TESTED"
+        and row.get("applicability")
+        in {"no-observables", "no-rate-parameter-dependency"}
+        and not row.get("support_required")
+    )
+    passed = {row["id"] for row in results if row.get("status") == "PASS"}
+    for row in results:
+        if row.get("aggregate") and row.get("id") in allowed:
+            allowed.update(row.get("child_ids", []))
+    changed = True
+    while changed:
+        changed = False
+        for row in results:
+            blocked = row.get("blocked_by", [])
+            children = row.get("child_ids", [])
+            if (
+                row.get("aggregate")
+                and row.get("status") == "NOT_TESTED"
+                and children
+                and all(item in allowed or item in passed for item in children)
+                and row.get("id") not in allowed
+            ):
+                allowed.add(row["id"])
+                changed = True
+            if (
+                row.get("status") == "NOT_TESTED"
+                and blocked
+                and all(item in allowed for item in blocked)
+                and row.get("id") not in allowed
+            ):
+                allowed.add(row["id"])
+                changed = True
+    return [
+        row
+        for row in results
+        if row.get("status") != "PASS"
+        and not (
+            not row.get("support_required")
+            and (
+                row.get("status") == "UNSUPPORTED"
+                or (
+                    row.get("status") == "NOT_TESTED"
+                    and (
+                        row.get("id") in allowed
+                        or row.get("applicability") == "no-observables"
+                    )
+                )
+            )
+        )
+    ]
+
+
 def attach_coverage(capabilities: list[dict], results: list[dict]) -> None:
     for capability in capabilities:
         matched = []
@@ -59,6 +127,80 @@ def attach_coverage(capabilities: list[dict], results: list[dict]) -> None:
                     set(result.get("source_locations", []))
                     | {capability["implementation"]["path"]}
                 )
+
+
+def issue_coverage(
+    capabilities: list[dict], results: list[dict], issues: list[dict] | None = None
+) -> list[dict]:
+    """Roll up observed leaf evidence; neither closed issues nor PASS imply done.
+
+    Without a supplied issue snapshot the denominator is only mapped issues,
+    not the repository backlog. Callers retain the snapshot and its digest.
+    """
+    metadata = {}
+    for issue in issues or []:
+        if not isinstance(issue, dict):
+            raise ValueError("issue snapshot entries must be objects")
+        number = issue.get("number")
+        if type(number) is not int or number < 1 or number in metadata:
+            raise ValueError("issue snapshot requires unique positive integer numbers")
+        if "title" in issue and not isinstance(issue["title"], str):
+            raise ValueError("issue snapshot titles must be strings")
+        if "state" in issue and issue["state"] not in {"OPEN", "CLOSED"}:
+            raise ValueError("issue snapshot state must be OPEN or CLOSED")
+        metadata[number] = issue
+    identities = [result["id"] for result in results]
+    if len(set(identities)) != len(identities):
+        raise ValueError("duplicate result identities cannot be issue evidence")
+    if any(result["status"] not in STATUSES for result in results):
+        raise ValueError("unknown result status cannot be issue evidence")
+    claims = [c for c in capabilities if c.get("kind") == "semantic-claim"]
+    numbers = set(metadata)
+    for row in claims:
+        numbers.update(row.get("issues", []))
+    for row in results:
+        numbers.update(row.get("related_issues", []))
+
+    rows = []
+    for number in sorted(numbers):
+        mapped = [c for c in claims if number in c.get("issues", [])]
+        mapped_ids = {
+            identity for c in mapped for identity in c.get("evidence_ids", [])
+        }
+        evidence = [
+            r
+            for r in results
+            if not r.get("aggregate")
+            and (r["id"] in mapped_ids or number in r.get("related_issues", []))
+        ]
+        executed = {r["id"] for r in evidence if r["status"] != "NOT_TESTED"}
+        rows.append(
+            {
+                "number": number,
+                "title": metadata.get(number, {}).get("title"),
+                "state": metadata.get(number, {}).get("state"),
+                "coverage": "PARTIAL" if executed else "NOT_TESTED",
+                "capabilities": sorted(c["id"] for c in mapped),
+                "test_references": sorted(
+                    {p for c in mapped for p in c.get("existing_tests", [])}
+                ),
+                "evidence_ids": sorted(r["id"] for r in evidence),
+                "result_counts": dict(
+                    sorted(Counter(r["status"] for r in evidence).items())
+                ),
+                "unexecuted_capabilities": sorted(
+                    c["id"]
+                    for c in mapped
+                    if not (set(c.get("evidence_ids", [])) & executed)
+                ),
+                "remaining_qualification": {
+                    c["id"]: c["missing_tests"]
+                    for c in mapped
+                    if c.get("missing_tests")
+                },
+            }
+        )
+    return rows
 
 
 def cluster_failures(results: list[dict]) -> list[dict]:
@@ -113,8 +255,19 @@ def history(current: dict, previous: dict | None) -> dict:
             "comparable": False,
             "reason": "configuration, corpus, tests or reference identity changed",
         }
-    old = {r["id"]: r["status"] for r in previous["results"]}
-    new = {r["id"]: r["status"] for r in current["results"]}
+
+    def leaf_statuses(report):
+        statuses = {}
+        for row in report["results"]:
+            if row.get("aggregate"):
+                continue
+            if row["id"] in statuses:
+                raise ValueError("duplicate history result identity: " + row["id"])
+            statuses[row["id"]] = row["status"]
+        return statuses
+
+    old = leaf_statuses(previous)
+    new = leaf_statuses(current)
     return {
         "comparable": True,
         "new_failures": sorted(
@@ -123,11 +276,175 @@ def history(current: dict, previous: dict | None) -> dict:
         "resolved": sorted(k for k in old if old[k] in BAD and new.get(k) == "PASS"),
         "newly_executed": sorted(new.keys() - old.keys()),
         "no_longer_executed": sorted(old.keys() - new.keys()),
+        # A newly admitted semantic failure differs from a broken harness.
+        "newly_admitted_failures": sorted(
+            k for k in new if old.get(k) == "UNSUPPORTED" and new[k] == "FAIL"
+        ),
+        "unsupported_to_supported": sorted(
+            k for k in new if old.get(k) == "UNSUPPORTED" and new[k] == "PASS"
+        ),
+        "coverage_regressions": sorted(
+            k
+            for k in old
+            if old[k] == "PASS" and new.get(k) in {None, "NOT_TESTED", "UNSUPPORTED"}
+        ),
     }
 
 
-def investigation_tasks(report: dict, directory: Path) -> list[dict]:
+def _obligation_list(obligations):
+    if obligations is None:
+        return []
+    if isinstance(obligations, dict):
+        if "obligations" in obligations:
+            obligations = obligations["obligations"]
+        else:
+            acceptance = obligations.get("acceptance", {})
+            obligations = (
+                acceptance.get("obligations", [])
+                if isinstance(acceptance, dict)
+                else []
+            )
+    if not isinstance(obligations, list):
+        raise ValueError("obligations must be a list or an obligations object")
+    return [item for item in obligations if isinstance(item, dict)]
+
+
+def _identity_present(requirement, check, report):
+    """Resolve explicit dotted identity paths without guessing aliases."""
+    if not isinstance(requirement, str) or not requirement:
+        return False
+    pieces = requirement.split(".")
+    roots = {
+        **report,
+        "source": check.get("candidate_identity", report.get("source", {})),
+        "candidate_identity": check.get("candidate_identity", report.get("source", {})),
+        "references": check.get("oracle_identities", report.get("references", {})),
+        "oracle_identities": check.get(
+            "oracle_identities", report.get("references", {})
+        ),
+    }
+    value = roots.get(pieces[0])
+    if value is None:
+        return False
+    for piece in pieces[1:]:
+        if not isinstance(value, dict) or piece not in value:
+            return False
+        value = value[piece]
+    return value is not None and value != ""
+
+
+def _affected_obligations(row, obligations, report):
+    """Attach only obligations whose evaluated check ID exactly names the leaf."""
+    affected = []
+    for obligation in obligations:
+        checks = obligation.get("checks", [])
+        required = obligation.get("required_checks", [])
+        if not isinstance(checks, list):
+            continue
+        exact = [
+            check
+            for check in checks
+            if isinstance(check, dict)
+            and check.get("id") == row.get("id")
+            and check.get("status") in BAD
+        ]
+        if not exact:
+            continue
+        check = exact[0]
+        required_by_id = {
+            item.get("id"): item
+            for item in required
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+        required_ids = [
+            item.get("id")
+            for item in required
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        ]
+        evaluated_by_id = {
+            item.get("id"): item
+            for item in checks
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        }
+        missing_checks = {
+            check_id
+            for check_id in required_ids
+            if check_id not in evaluated_by_id
+            or evaluated_by_id[check_id].get("status") in {"NOT_TESTED", "UNSUPPORTED"}
+        }
+        declared_missing = obligation.get("missing_evidence", [])
+        if isinstance(declared_missing, list):
+            missing_checks.update(
+                item
+                for item in declared_missing
+                if isinstance(item, str) and item in required_by_id
+            )
+        missing_identities = set()
+        if check.get("candidate_identity") != report.get("source"):
+            missing_identities.add("assessment:candidate-identity")
+        if check.get("oracle_identities") is not None and check.get(
+            "oracle_identities"
+        ) != report.get("references", {}):
+            missing_identities.add("assessment:oracle-identities")
+        for check_id in required_ids:
+            metadata = required_by_id[check_id]
+            evaluated = evaluated_by_id.get(check_id)
+            if evaluated is None:
+                continue
+            requirements = metadata.get("identity_requirements", [])
+            if not isinstance(requirements, list):
+                continue
+            for identity in requirements:
+                if not _identity_present(identity, evaluated, report):
+                    missing_identities.add(f"{check_id}:{identity}")
+            gaps = evaluated.get("missing_evidence", [])
+            if isinstance(gaps, list):
+                missing_identities.update(
+                    gap.removeprefix("identity:")
+                    for gap in gaps
+                    if isinstance(gap, str) and gap.startswith("identity:")
+                )
+        if isinstance(declared_missing, list):
+            for gap in declared_missing:
+                if isinstance(gap, str) and "." in gap:
+                    missing_identities.add(gap)
+        metadata = required_by_id.get(row.get("id"), check)
+        boundary = (
+            check.get("first_observed_boundary")
+            or check.get("boundary")
+            or row.get("stage")
+        )
+        affected.append(
+            {
+                "id": obligation.get("id"),
+                "required_check": row.get("id"),
+                "evidence_kind": metadata.get("evidence_kind"),
+                "expectation": metadata.get("expectation"),
+                "missing_required_checks": sorted(missing_checks),
+                "missing_identities": sorted(missing_identities),
+                "missing_evidence": (
+                    sorted(item for item in declared_missing if isinstance(item, str))
+                    if isinstance(declared_missing, list)
+                    else []
+                ),
+                "first_observed_boundary": boundary,
+                "retained_reproducer_status": "PENDING_PACKET_RETENTION",
+                "candidate_identity": check.get("candidate_identity"),
+                "oracle_identities": check.get("oracle_identities"),
+            }
+        )
+    return affected
+
+
+def investigation_tasks(
+    report: dict, directory: Path, *, obligations=None
+) -> list[dict]:
     """One bounded work packet per observed leaf failure; no inferred diagnosis."""
+    obligations = _obligation_list(
+        report.get("acceptance", {}).get("obligations", [])
+        if obligations is None and isinstance(report.get("acceptance"), dict)
+        else obligations
+    )
     tasks = []
     for row in report["results"]:
         if row["status"] not in BAD or row.get("aggregate"):
@@ -142,8 +459,14 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
         ):
             continue
         check = row.get("check", row["stage"])
-        command = []
-        if row.get("model"):
+        explicit_command = row.get("command")
+        command = (
+            list(explicit_command)
+            if isinstance(explicit_command, list)
+            and all(isinstance(part, str) for part in explicit_command)
+            else []
+        )
+        if not command and row.get("model"):
             root = Path(__file__).resolve().parents[2]
             command = [
                 sys.executable,
@@ -185,7 +508,9 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
                     "--simulation-steps",
                     str(config["simulation_protocol"]["n_steps"]),
                 ]
-        elif row.get("test_file", "").endswith(".py") and row.get("name"):
+        elif (
+            not command and row.get("test_file", "").endswith(".py") and row.get("name")
+        ):
             node = row["test_file"] + (
                 "::" + row["name"].split("::", 1)[1] if "::" in row["name"] else ""
             )
@@ -193,7 +518,7 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             if row["test_file"].startswith("tests/validation/"):
                 command[3:3] = ["-c", "tests/validation/pytest.ini"]
                 command += ["--bng-cpp", report["subject"]["binary"]]
-        elif row.get("command"):
+        elif not command and row.get("command"):
             command = row["command"]
         replay_env = {"BNG3_CI_STRICT_ORACLES": "1"}
         replay_env.update(
@@ -212,12 +537,46 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             )
             if reference.get("network_binary_sha256"):
                 replay_env["BNG2_NETWORK_SHA256"] = reference["network_binary_sha256"]
-        receipts = row.get("receipts", []) + (
+        receipts = list(row.get("receipts", [])) + (
             [row["receipt"]] if row.get("receipt") else []
         )
-        recorded = [
-            json.loads(Path(p).read_text()) for p in receipts if Path(p).is_file()
-        ]
+        recorded = []
+        receipt_records = []
+        for receipt in receipts:
+            if not isinstance(receipt, (str, Path)):
+                receipt_records.append(
+                    {
+                        "path": repr(receipt),
+                        "resolved_path": None,
+                        "status": "malformed",
+                        "error": "receipt path must be a string or path",
+                    }
+                )
+                continue
+            path = Path(receipt)
+            resolved = path if path.is_absolute() else directory / path
+            record = {"path": str(receipt), "resolved_path": str(resolved)}
+            try:
+                value = json.loads(resolved.read_text())
+            except FileNotFoundError:
+                record.update(status="missing", error="receipt file not found")
+            except json.JSONDecodeError as exc:
+                record.update(status="malformed", error=f"invalid JSON: {exc}")
+            except UnicodeError as exc:
+                record.update(
+                    status="malformed", error=f"invalid receipt encoding: {exc}"
+                )
+            except OSError as exc:
+                record.update(status="error", error=f"could not read receipt: {exc}")
+            else:
+                if not isinstance(value, dict):
+                    record.update(
+                        status="malformed", error="receipt JSON must be an object"
+                    )
+                else:
+                    record["status"] = "loaded"
+                    recorded.append(value)
+            receipt_records.append(record)
         task = dict(
             id=hashlib.sha256(row["id"].encode()).hexdigest()[:16],
             case_id=row["id"],
@@ -226,14 +585,22 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             status=row["status"],
             model=row.get("model"),
             source_revision=report["source"]["revision"],
+            source=report["source"],
+            source_dirty=report["source"].get("dirty"),
+            subject=report["subject"],
+            references=report["references"],
+            configuration=report["configuration"],
+            platform=report.get("platform"),
             diagnosis_confidence="observed-contract-failure",
             confirmed_root_cause=None,
             observation=row.get(
                 "first_difference", row.get("failure_summary") or row.get("detail", "")
             ),
             evidence=row.get("evidence", []),
+            affected_obligations=_affected_obligations(row, obligations, report),
             receipts=receipts,
             recorded_commands=recorded,
+            receipt_records=receipt_records,
             reproduce_command=command,
             reproduce_environment=replay_env,
             reproduce_cwd=str(Path(__file__).resolve().parents[2]),
@@ -283,6 +650,22 @@ def markdown(report: dict) -> str:
     ]
     lines += [
         "",
+        "## Issue evidence coverage",
+        "",
+        "Closed issues and passing tests do not establish complete acceptance. "
+        "PARTIAL means some mapped leaf evidence was executed. "
+        f"Inventory scope: `{report.get('issue_inventory', {}).get('scope', 'mapped-only')}`.",
+        "",
+        "| Issue | Title | Recorded state | Coverage | Mapped claims | Unexecuted claims | Outcomes |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    lines += [
+        f"| #{row['number']} | {safe(row.get('title') or '')} | {safe(row.get('state') or 'unknown')} | "
+        f"{row['coverage']} | {len(row['capabilities'])} | {len(row['unexecuted_capabilities'])} | {safe(row['result_counts'])} |"
+        for row in report.get("issue_coverage", [])
+    ]
+    lines += [
+        "",
         "## Compatibility matrix",
         "",
         "| Case / component | Reference / question | First observed stage | Outcome |",
@@ -302,7 +685,7 @@ def markdown(report: dict) -> str:
     ]
     for task in report.get("investigation_tasks", [])[:50]:
         lines += [
-            f"- **{safe(task['case_id'])} / {task['status']}**: {safe(task['observation'])[:600]}. Packet `{task['id']}` in `investigation-tasks.json`; inspect {', '.join('`'+p+'`' for p in task['source_locations']) or 'recorded source/test location'}. Pass this exact check against its pinned reference; preserve neighboring checks."
+            f"- **{safe(task['case_id'])} / {task['status']}**: {safe(task['observation'])[:600]}. Packet `{task['id']}` in `investigation-tasks.json`; inspect {', '.join('`' + p + '`' for p in task['source_locations']) or 'recorded source/test location'}. Pass this exact check against its pinned reference; preserve neighboring checks."
         ]
     for group in report["failure_clusters"][:25]:
         lines += [

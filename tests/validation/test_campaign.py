@@ -13,10 +13,13 @@ from tests.validation import campaign
 
 def test_successful_process_with_missing_output_is_harness_error(tmp_path):
     result = campaign.run_command(
-        [sys.executable, "-c", "print('success')"], tmp_path, 5, required=["result.net"]
+        [sys.executable, "-c", "print('success')"],
+        tmp_path,
+        5,
+        required=["required_output"],
     )
     assert result["status"] == "HARNESS_ERROR"
-    assert "result.net" in result["detail"]
+    assert "required_output" in result["detail"]
     assert (tmp_path / "stdout.log").read_text().strip() == "success"
 
 

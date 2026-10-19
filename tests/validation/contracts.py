@@ -124,7 +124,41 @@ def strict_network(path):
     return net
 
 
-def network_contracts(reference, subject):
+def _numeric_rates_equal(ref, test, ref_identity, test_identity, rtol):
+    """Allow only a declared relative serialization error on finite constants.
+
+    Topology, multiplicities and symbolic expressions retain exact identity.
+    Zero gets no absolute allowance, so a small nonzero rate stays significant.
+    """
+
+    def buckets(net, identity):
+        view, _ = compare._reaction_view(net, identity, compare_rates=True)
+        numeric, symbolic = {}, Counter()
+        for (reactants, products, rate), count in view.items():
+            try:
+                value = float(rate)
+            except ValueError:
+                symbolic[(reactants, products, rate)] += count
+            else:
+                if not np.isfinite(value):
+                    return None, None
+                numeric.setdefault((reactants, products), []).extend([value] * count)
+        return numeric, symbolic
+
+    left, ls = buckets(ref, ref_identity)
+    right, rs = buckets(test, test_identity)
+    if left is None or right is None or ls != rs or left.keys() != right.keys():
+        return False
+    for key in left:
+        a, b = sorted(left[key]), sorted(right[key])
+        if len(a) != len(b) or not np.all(np.isclose(a, b, atol=0, rtol=rtol)):
+            return False
+    return True
+
+
+def network_contracts(reference, subject, *, numeric_rate_rtol=0):
+    if not np.isfinite(numeric_rate_rtol) or not 0 <= numeric_rate_rtol <= 1e-6:
+        raise ValueError("numeric rate serialization tolerance must be in [0, 1e-6]")
     try:
         ref, test = strict_network(reference), strict_network(subject)
     except (ValueError, OSError) as exc:
@@ -189,8 +223,13 @@ def network_contracts(reference, subject):
         ),
         _row(
             "reaction-rates",
-            not diff.reactions_only_ref and not diff.reactions_only_test,
+            (not diff.reactions_only_ref and not diff.reactions_only_test)
+            or (
+                numeric_rate_rtol > 0
+                and _numeric_rates_equal(ref, test, ri, ti, numeric_rate_rtol)
+            ),
             diff.summary(),
+            numeric_rate_rtol=numeric_rate_rtol,
             blocked_by=blocked or (None if multiplicity else "reaction-multiplicity"),
         ),
         _row(

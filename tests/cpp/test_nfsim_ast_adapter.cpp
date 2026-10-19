@@ -1352,7 +1352,7 @@ begin observables
     Molecules Cnt_W W()
 end observables
 begin functions
-    locs(x) = k*Obs_Src + 0*Cnt_W(x)
+    locs(x) = k + 0*Cnt_W(x)
 end functions
 begin reaction rules
     C(s~0) + W(d!1)%x.W(d!1) -> C(s~1) + W(d!1)%x.W(d!1) locs(x)
@@ -2573,6 +2573,89 @@ end reaction rules
     xml->prepareForSimulation();
     CHECK(xml->getReaction(0)->get_a() == Catch::Approx(80.0));
     delete xml;
+}
+TEST_CASE("NFsim AST adapter applies reactant volume conversion for bare bimolecular rates") {
+    // Source law: a dimerization extent k*A^2/V with species in items gives the
+    // count hazard k*n*(n-1)/V (self-pair proposals are rejected as null
+    // events). NFsim's default propensity omits the 1/V, so both the direct
+    // embedded path and the in-memory XML path must apply the Perl-faithful
+    // Rxn.pm factor. The proposal propensity is k*N^2/2*(1/V); after the fix the
+    // embedded and XML legs agree exactly, and equal the volume-scaled
+    // no-volume propensity (k*N^2/2 = 160 at V=1 -> 160/3 here).
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 0.8
+end parameters
+begin compartments
+    cell 3 3
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:D() 0
+end seed species
+begin reaction rules
+    @cell:A() + @cell:A() -> @cell:D() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const double expected = 0.8 * 20.0 * 20.0 / 2.0 / 3.0;
+
+    int directTraversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, directTraversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete direct;
+
+    int xmlTraversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, xmlTraversalLimit);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getAllReactions().size() == 1);
+    xml->prepareForSimulation();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete xml;
+}
+
+TEST_CASE("NFsim AST adapter leaves unit-volume reactant propensities unchanged") {
+    // Volume 1 must reduce to the bare proposal law k*N^2/2 (=160 here); the
+    // effective count hazard k*N*(N-1)/2 emerges from rejected self-pairs.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 0.8
+end parameters
+begin compartments
+    cell 3 1
+end compartments
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:D() 0
+end seed species
+begin reaction rules
+    @cell:A() + @cell:A() -> @cell:D() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const double expected = 0.8 * 20.0 * 20.0 / 2.0;
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    delete direct;
 }
 
 TEST_CASE("NFsim AST adapter converts static zero-order physical rates exactly once") {
@@ -7184,4 +7267,98 @@ end reaction rules
     REQUIRE(direct != nullptr);
     checkCompartmentConstrainedCounts(direct);
     delete direct;
+}
+
+TEST_CASE("NFsim destructive identical reactants retain BNG2 permutation symmetry") {
+    // BNG2 emits symmetry_factor="0.5" for A()+A()->D(). Canonical
+    // NFsim 9b00d42f's XML loader installs that factor on TransformationSet.
+    // The proposal propensity is k*N^2/2; same-molecule selections are null
+    // events, giving the source count hazard k*N*(N-1)/2.
+    auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.8
+end parameters
+begin molecule types
+  A()
+  D()
+end molecule types
+begin seed species
+  A() 20
+end seed species
+begin reaction rules
+  dimerize: A() + A() -> D() k
+end reaction rules
+)BNGL");
+    REQUIRE(model != nullptr);
+    int traversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, true, false, 100, false, traversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+    REQUIRE(system->getAllReactions().size() == 1);
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(160.0));
+    delete system;
+    const auto xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("symmetry_factor=\"0.5\"") != std::string::npos);
+}
+
+TEST_CASE("NFsim parameter updates rescale zero-order volumes and MM rates", "[issue-105]") {
+    // ruleworld/nfsim#105: compartment size was baked at load,
+    // setParameter()+update() never rescaled zero-order propensities, the
+    // zero-order rate parameter name was dropped ("/"), and MM kcat/Km were
+    // frozen load-time doubles.
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+    Vc 1.0
+    kp 2.0
+    kcat 1.0
+    Km 10.0
+end parameters
+begin compartments
+    cell 3 Vc
+end compartments
+begin molecule types
+    A()
+    S()
+    E()
+    P()
+end molecule types
+begin seed species
+    S()@cell 100
+    E()@cell 100
+end seed species
+begin reaction rules
+    0 -> A()@cell kp
+    S()@cell + E()@cell -> P()@cell + E()@cell MM(kcat,Km)
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+    int suggestedTraversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 1000, false, suggestedTraversalLimit);
+    REQUIRE(system != nullptr);
+    system->prepareForSimulation();
+    REQUIRE(system->getAllReactions().size() == 2);
+    // BNGL auto-names unlabeled rules R1, R2 in declaration order.
+    auto* synth = system->getReactionByName("R1");
+    auto* mm = system->getReactionByName("R2");
+    REQUIRE(synth != nullptr);
+    REQUIRE(mm != nullptr);
+    // Zero-order propensity is kp * Vc = 2 * 1; the rate parameter name must
+    // survive volume scaling.
+    CHECK(synth->getBaseRateParameterName() == "kp");
+    CHECK(synth->get_a() == Catch::Approx(2.0));
+    const double mmBefore = mm->get_a();
+    CHECK(mmBefore > 0.0);
+
+    system->setParameter("Vc", 3.0);
+    system->setParameter("kp", 4.0);
+    system->setParameter("kcat", 2.0);
+    system->setParameter("Km", 20.0);
+    system->updateSystemWithNewParameters();
+
+    CHECK(system->getCompartment("cell")->getSize() == Catch::Approx(3.0));
+    CHECK(synth->get_a() == Catch::Approx(12.0));
+    CHECK(mm->get_a() != Catch::Approx(mmBefore));
+    delete system;
 }

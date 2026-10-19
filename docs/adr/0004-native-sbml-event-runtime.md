@@ -108,15 +108,21 @@ ODE solver, event queue, stochastic engine, and conformance tests.
 3. [ ] Add trigger transition, delayed execution, persistence, snapshot, and
    priority tests grounded in official SBML cases.
 4. [ ] Add stochastic event-queue semantics and seeded random ordering.
-5. [x] Round-trip the event block through the BNGL parser/writer. [x] Verify
-   through the installed CLI and retain explicit rejection diagnostics
-   outside the supported semantic surface. Covered by
-   `tests/python/test_event_block_cli_contract.py`: a model carrying a
-   `bng3_events` block round-trips through `BnglWriter` unchanged, and every
-   execution path (`execute`, the `simulate` action, the ODE/SSA/PLA/PSA
-   bindings, and the `bionetgen run` / `bionetgen execute` CLI commands)
-   fails with `ast::kUnsupportedEventExecutionMessage` before producing any
-   output.
+5. [x] Round-trip the event block through the BNGL parser/writer. The public
+   Python CVODE path executes one immediate event with simultaneous species
+   assignments and an enforceably monotone threshold surface. Time triggers
+   compare `time` with a static threshold; species triggers identify one
+   weight-one species with constant-rate unary dynamics of consistent sign.
+   Canonical compilation retains resolved event expressions and flags.
+   `tests/python/test_native_events.py` checks analytic and independent
+   RoadRunner behavior, initial edges, recurrence, simultaneous assignments,
+   output-grid independence and explicit tangent-surface refusal.
+   Delays, priorities, multiple events, parameter/compartment assignments,
+   stochastic execution and strict initial-threshold equality remain
+   unsupported. Exporters and alternate execution backends explicitly reject
+   event-bearing models when they cannot preserve the event semantics;
+   `tests/python/test_event_backend_boundaries.py` checks these boundaries.
+   The legacy unsupported CLI fixture retains explicit rejection.
 6. [ ] Re-run full SSTS only after a meaningful implementation batch; keep
    BioModels validation stopped until requested.
 

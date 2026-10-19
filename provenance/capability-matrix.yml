@@ -1079,3 +1079,16 @@ validation_capabilities:
   reference: bionetgen-and-molecular-unit-conservation
   support: partial
   notes: A named identical-reactant dimer probe checks k/2, distinct Molecules/Species weights, full cdat agreement and conservation; does not qualify arbitrary automorphisms.
+
+- id: integration.cross-component
+  sources:
+  - python/bionetgen/sbml.py
+  - python/bionetgen/model.py
+  - python/bionetgen/compat/runner.py
+  - cpp/actions/ActionDispatch.cpp
+  - cpp/nfsim/NFinput/NFinput_fromAst.cpp
+  tests: []
+  issues: []
+  reference: generated-analytic-source-and-independent-BNG2-PyBioNetGen-NFsim
+  support: partial
+  notes: Executed only by tests.validation.integrated. Its bounded first-order generated cases test linked handoffs; harness self-tests do not establish scientific execution or complete upstream equivalence.

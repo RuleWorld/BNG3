@@ -329,6 +329,9 @@ BngsimLoweringCheck checkBngsimLowering(
         check.blockers.push_back(blocker);
     };
 
+    if (model.getEventFormatVersion().has_value()) {
+        reject("BNGsim adapter rejected model: native events are unsupported");
+    }
     if (!model.getCompartments().empty()) {
         reject("BNGsim adapter rejected model: compartments require a volume-aware bridge");
     }

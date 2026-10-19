@@ -490,6 +490,11 @@ def main(argv=None):
     )
     parser.add_argument("--baseline", type=Path)
     parser.add_argument(
+        "--issues-json",
+        type=Path,
+        help="retained gh issue snapshot for coverage denominator",
+    )
+    parser.add_argument(
         "--bng-cpp",
         type=Path,
         default=ROOT
@@ -551,6 +556,23 @@ def main(argv=None):
     if directory.exists() and any(directory.iterdir()):
         parser.error("report directory must be empty; stale outputs cannot be evidence")
     directory.mkdir(parents=True, exist_ok=True)
+    issue_snapshot = None
+    issue_inventory = {"scope": "mapped-only"}
+    if args.issues_json:
+        try:
+            issue_bytes = args.issues_json.read_bytes()
+            issue_snapshot = json.loads(issue_bytes)
+            if not isinstance(issue_snapshot, list):
+                raise ValueError("issue snapshot must be a list")
+            reporting.issue_coverage([], [], issue_snapshot)
+        except (OSError, ValueError, TypeError, AttributeError) as exc:
+            parser.error(f"invalid issue snapshot: {exc}")
+        (directory / "issues-input.json").write_bytes(issue_bytes)
+        issue_inventory = {
+            "scope": "provided-snapshot",
+            "path": "issues-input.json",
+            "sha256": hashlib.sha256(issue_bytes).hexdigest(),
+        }
     args.bng_cpp = args.bng_cpp.resolve()
     args.plan = args.plan.resolve()
     args.build_dir = args.build_dir.resolve()
@@ -912,6 +934,10 @@ def main(argv=None):
             "sha256": subject_digest,
         },
         "capabilities": capabilities,
+        "issue_inventory": issue_inventory,
+        "issue_coverage": reporting.issue_coverage(
+            capabilities, results, issue_snapshot
+        ),
         "corpus": inventory.discover_models(ROOT),
         "results": results,
         "expected_contract_ids": expected_contract_ids,
@@ -946,6 +972,7 @@ def main(argv=None):
     report["investigation_tasks"] = reporting.investigation_tasks(report, directory)
     _json(directory / "investigation-tasks.json", report["investigation_tasks"])
     _json(directory / "report.json", report)
+    _json(directory / "issue-coverage.json", report["issue_coverage"])
     _json(
         directory / "inventory.json",
         {"schema_version": 1, "source": source, "capabilities": capabilities},

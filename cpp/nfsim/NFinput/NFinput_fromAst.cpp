@@ -3743,13 +3743,24 @@ bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
     const auto& energyPatterns = model.getEnergyPatterns();
     if (energyPatterns.empty()) return true;
 
+    // Canonical BNG3 path: energies arrive evaluated in RT units, matching
+    // BNG2 RateLaw::evaluate_local which builds exp(-(Ea0+phi*dG)) with no RT
+    // divisor. A model-level /RT is already folded into the evaluated Ea0/dG
+    // values, so the effective RT is 1 (no extra scaling). An explicit RT
+    // parameter is honored only on the legacy XML path (parseEnergyPatterns);
+    // here it is ignored.
     double phi = 0.5;
-    double rt = 2.478;
+    constexpr double rt = 1.0;
     if (const auto iter = parameters.find("phi"); iter != parameters.end()) phi = iter->second;
-    if (const auto iter = parameters.find("RT"); iter != parameters.end()) rt = iter->second;
-    if (!std::isfinite(phi) || !std::isfinite(rt) || rt == 0.0) {
-        std::cerr << "[nfsim/ast] energy expansion requires finite phi and nonzero RT\n";
+    if (!std::isfinite(phi)) {
+        std::cerr << "[nfsim/ast] energy expansion requires finite phi\n";
         return false;
+    }
+    if (const auto iter = parameters.find("RT"); iter != parameters.end()) {
+        if (verbose) {
+            std::cerr << "[nfsim/ast] ignoring explicit RT=" << iter->second
+                      << " (canonical path uses RT=1; RT is legacy-XML only)\n";
+        }
     }
 
     auto* energyFunction = new EnergyFunction(phi, rt);
@@ -5639,6 +5650,18 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             double kcat = 0.0;
             double km = 0.0;
+            std::string kcatParameterName;
+            std::string kmParameterName;
+            if (rate.args().size() == 2) {
+                for (int constantIndex = 0; constantIndex < 2; ++constantIndex) {
+                    const auto& argument = rate.args()[static_cast<std::size_t>(constantIndex)];
+                    if (argument.kind() == bng::ast::ExpressionKind::Identifier &&
+                        parameters.count(argument.name()) != 0) {
+                        if (constantIndex == 0) kcatParameterName = argument.name();
+                        else kmParameterName = argument.name();
+                    }
+                }
+            }
             if (!evaluateStaticReactionRate(rate.args()[0], parameters, kcat, diagnostic) ||
                 !evaluateStaticReactionRate(rate.args()[1], parameters, km, diagnostic) ||
                 km < 0.0) {
@@ -5650,6 +5673,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             transformationSet->finalize();
             reaction = new MMRxnClass(rule.getRuleName(), kcat, km, transformationSet, s);
+            static_cast<MMRxnClass*>(reaction)->setRateParameterNames(
+                kcatParameterName, kmParameterName);
         } else if (saturationRate || hillRate) {
             if (reactantRoots.empty()) {
                 std::cerr << "[nfsim/ast] reaction '" << rule.getRuleName()
@@ -5668,7 +5693,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 return false;
             }
             std::vector<double> constants;
+            std::vector<std::string> constantParameterNames;
             constants.reserve(rate.args().size());
+            constantParameterNames.reserve(rate.args().size());
             for (const auto& argument : rate.args()) {
                 double value = 0.0;
                 if (!evaluateStaticReactionRate(argument, parameters, value, diagnostic)) {
@@ -5678,16 +5705,26 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                     return false;
                 }
                 constants.push_back(value);
+                if (argument.kind() == bng::ast::ExpressionKind::Identifier &&
+                    parameters.count(argument.name()) != 0) {
+                    constantParameterNames.push_back(argument.name());
+                } else {
+                    constantParameterNames.emplace_back();
+                }
             }
             if (saturationRate) {
                 transformationSet->finalize();
                 reaction = new SatRxnClass(
                     rule.getRuleName(), std::move(constants), transformationSet, s);
+                static_cast<SatRxnClass*>(reaction)->setConstantParameterNames(
+                    constantParameterNames);
             } else {
                 transformationSet->finalize();
                 reaction = new HillRxnClass(
                     rule.getRuleName(), constants[0], constants[1], constants[2],
                     transformationSet, s);
+                static_cast<HillRxnClass*>(reaction)->setConstantParameterNames(
+                    constantParameterNames);
             }
         } else if (functionProductRate) {
             auto* composite1 = s->getCompositeFunctionByName(functionProductOperand1.name);
@@ -5853,18 +5890,17 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 }
             }
 
-            double volumeConversion = 1.0;
+            // Preserve the rate parameter name so setParameter()+update()
+            // rescales (ruleworld/nfsim#105).  applyZeroOrderVolumeScaling()
+            // keeps the name and links the product compartment for later
+            // refreshes, including functional reactions.
             if (productCompartment != nullptr && allSameCompartment) {
-                volumeConversion = productCompartment->getSize();
-                const double numberPerQuantity = s->getNumberPerQuantityUnit();
-                if (numberPerQuantity > 0.0) {
-                    volumeConversion *= numberPerQuantity;
-                }
-            }
-            reaction->volumeConversionFactor = volumeConversion;
-            if (reaction->getRxnType() != ReactionClass::OBS_DEPENDENT_RXN) {
-                reaction->setBaseRate(
-                    reaction->getBaseRate() * volumeConversion, "");
+                reaction->applyZeroOrderVolumeScaling(productCompartment);
+            } else {
+                // No single product compartment: keep the default factor of
+                // 1.0 and leave the base rate (and its parameter name)
+                // untouched so later updates still refresh it.
+                reaction->volumeConversionFactor = 1.0;
             }
         }
 

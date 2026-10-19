@@ -273,6 +273,140 @@ def test_the_selector_check_itself_is_not_vacuous():
     )
 
 
+def _workflow_triggers(doc: dict) -> dict:
+    """Return workflow events across PyYAML's YAML 1.1 `on` key spelling."""
+    value = doc.get("on", doc.get(True, {}))
+    return value if isinstance(value, dict) else {}
+
+
+def _path_filter_matches(path: str, patterns: list[str]) -> bool:
+    """Apply ordered GitHub path globs (`*` stays within a path segment)."""
+    included = False
+    for pattern in patterns:
+        negative = pattern.startswith("!")
+        glob = pattern[1:] if negative else pattern
+        if re.fullmatch(_github_glob_regex(glob), path):
+            included = not negative
+    return included
+
+
+def _github_glob_regex(pattern: str) -> str:
+    """Translate the GitHub `*`, `**`, and `?` path wildcards to a regex."""
+    pieces = ["^"]
+    index = 0
+    while index < len(pattern):
+        char = pattern[index]
+        if char == "*":
+            if pattern[index : index + 2] == "**":
+                if pattern[index + 2 : index + 3] == "/":
+                    # GitHub's **/ also matches zero directory levels.
+                    pieces.append("(?:.*/)?")
+                    index += 3
+                    continue
+                pieces.append(".*")
+                index += 2
+                continue
+            pieces.append("[^/]*")
+        elif char == "?":
+            pieces.append("[^/]")
+        else:
+            pieces.append(re.escape(char))
+        index += 1
+    pieces.append("$")
+    return "".join(pieces)
+
+
+@pytest.mark.parametrize(
+    ("path", "patterns", "expected"),
+    [
+        ("tests/test_one.py", ["tests/*"], True),
+        ("tests/nested/test_one.py", ["tests/*"], False),
+        ("tests/nested/test_one.py", ["tests/**"], True),
+        (
+            "tests/private/allowed.py",
+            ["tests/**", "!tests/private/**", "tests/private/allowed.py"],
+            True,
+        ),
+        ("tests/private/denied.py", ["tests/**", "!tests/private/**"], False),
+    ],
+)
+def test_github_path_globs_respect_segment_depth_and_order(
+    path: str, patterns: list[str], expected: bool
+):
+    assert _path_filter_matches(path, patterns) is expected
+
+
+@pytest.mark.parametrize(
+    ("workflow", "required_events"),
+    [
+        ("ci.yml", {"pull_request", "push", "workflow_dispatch"}),
+        ("parity.yml", {"pull_request", "push", "schedule", "workflow_dispatch"}),
+        ("formal.yml", {"pull_request", "push", "schedule", "workflow_dispatch"}),
+        ("sbml-conformance.yml", {"pull_request", "schedule", "workflow_dispatch"}),
+    ],
+)
+def test_required_validation_workflows_keep_their_expected_triggers(
+    workflow: str, required_events: set[str]
+):
+    """A removed event silently removes the gate for every change on that lane."""
+    path = REPO / ".github" / "workflows" / workflow
+    triggers = _workflow_triggers(parse_workflow(path))
+    missing = required_events - set(triggers)
+    assert not missing, f"{workflow} is missing required trigger(s): {sorted(missing)}"
+
+
+@pytest.mark.parametrize(
+    ("workflow", "job"),
+    [
+        ("ci.yml", "lint"),
+        ("parity.yml", "bng2-parity"),
+        ("parity.yml", "nfsim-parity"),
+        ("formal.yml", "lean-kernel"),
+        ("sbml-conformance.yml", "conformance"),
+    ],
+)
+def test_pull_request_path_filters_cover_every_explicit_pytest_file(
+    workflow: str, job: str
+):
+    """An explicitly run test must be able to trigger its own workflow.
+
+    Path-filtered workflows can otherwise skip when a selected regression test
+    changes by itself, even though the workflow still names and runs that test
+    whenever some unrelated source path happens to trigger it.
+    """
+    path = REPO / ".github" / "workflows" / workflow
+    doc = parse_workflow(path)
+    assert job in (doc.get("jobs") or {}), f"{workflow} lacks protected job {job!r}"
+    triggers = _workflow_triggers(doc)
+    pull_request = triggers.get("pull_request") or {}
+    patterns = pull_request.get("paths")
+    if not patterns:
+        return
+
+    commands = []
+    for step in doc.get("jobs", {}).get(job, {}).get("steps") or []:
+        if isinstance(step, dict) and isinstance(step.get("run"), str):
+            commands.extend(_logical_commands(step["run"]))
+    invoked = set()
+    for command in commands:
+        argv = _pytest_argv(command)
+        if argv is None:
+            continue
+        for target in argv:
+            target = target.split("::", 1)[0]
+            if target.startswith("tests/") and target.endswith(".py"):
+                invoked.add(target)
+
+    assert invoked, f"{workflow}:{job} has no explicit pytest files to protect"
+    uncovered = sorted(
+        target for target in invoked if not _path_filter_matches(target, patterns)
+    )
+    assert not uncovered, (
+        f"{workflow}:{job} runs test files that cannot trigger its pull_request "
+        f"path filter: {uncovered}"
+    )
+
+
 # --------------------------------------------------------------------------
 # 3. Retired runner labels
 # --------------------------------------------------------------------------

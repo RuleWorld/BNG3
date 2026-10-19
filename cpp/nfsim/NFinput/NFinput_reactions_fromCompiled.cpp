@@ -2,6 +2,7 @@
 
 #include "compile/Capabilities.hpp"
 #include "compile/CompiledModel.hpp"
+#include "compile/RuleUnitConversion.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
@@ -148,6 +149,36 @@ NFcore::Compartment* resolveCompartment(NFcore::System& system,
     auto* compartment = system.getCompartment(name);
     if (compartment == nullptr) diagnostic = "unknown compartment '" + name + "'";
     return compartment;
+}
+// Resolve a reactant pattern's declaration so the shared count-rate helper can
+// read its dimension and volume. Prefer the typed compartment id (canonical
+// for compiled patterns) and fall back to the human-readable name.
+const bng::compile::CompiledCompartment* reactantCompartmentDeclaration(
+    const CompiledModel& model, const Pattern& pattern) {
+    for (const auto& molecule : pattern.molecules()) {
+        if (molecule.compartmentId.has_value()) {
+            if (const auto* declaration = model.compartment(*molecule.compartmentId))
+                return declaration;
+        }
+    }
+    if (pattern.compartmentId().has_value()) {
+        if (const auto* declaration = model.compartment(*pattern.compartmentId()))
+            return declaration;
+    }
+
+    const auto byName = [&](const std::string& name) -> const bng::compile::CompiledCompartment* {
+        if (name.empty()) return nullptr;
+        for (const auto& declaration : model.compartments()) {
+            if (declaration.name == name) return &declaration;
+        }
+        return nullptr;
+    };
+    for (const auto& molecule : pattern.molecules()) {
+        if (const auto* declaration =
+                byName(compartmentName(model, pattern, molecule)))
+            return declaration;
+    }
+    return byName(pattern.compartment());
 }
 
 std::optional<double> evaluateStatic(const CompiledModel& model,
@@ -1277,6 +1308,32 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
         diagnostic = "compiled Arrhenius lowering supports one reaction-center edit";
         return false;
     }
+    // The caller skips lowering the reverse half because the expansion below
+    // generates both traversal directions from this forward center (with the
+    // reverse gated on rule.isBidirectional()). That skip is only valid when
+    // the reverse half is the genuine mirror of this forward edit: a
+    // bidirectional AddBond/ChangeState pair, or no reverse half at all for a
+    // one-way rule. Anything else (e.g. a one-way DeleteBond unbind, or a
+    // mismatched reverse program) fails closed here rather than silently
+    // dropping or duplicating a direction.
+    if (rule.isBidirectional() != rule.reverse().has_value()) {
+        diagnostic = "Arrhenius rule directionality is inconsistent";
+        return false;
+    }
+    if (rule.isBidirectional()) {
+        const auto& reverseMutations = rule.reverse()->mutations;
+        const auto forwardKind = direction.mutations.front().kind;
+        const bool mirrored =
+            reverseMutations.size() == 1 &&
+            ((forwardKind == MutationKind::AddBond &&
+              reverseMutations.front().kind == MutationKind::DeleteBond) ||
+             (forwardKind == MutationKind::ChangeState &&
+              reverseMutations.front().kind == MutationKind::ChangeState));
+        if (!mirrored) {
+            diagnostic = "Arrhenius reverse half is not the mirror of its forward center";
+            return false;
+        }
+    }
 
     // Reservoir work is signed per traversal direction: the direction being
     // built here is always the rule's forward direction (the reverse is
@@ -1430,6 +1487,17 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
     return true;
 }
 
+std::string compiledParameterName(const CompiledModel& model,
+                                    const ResolvedExpression& expression) {
+    if (expression.kind == ResolvedExpressionKind::ParameterRef &&
+        expression.symbol.has_value()) {
+        if (const auto* parameter = model.parameter(
+                bng::compile::ParameterId::fromDenseIndex(expression.symbol->index)))
+            return parameter->name;
+    }
+    return {};
+}
+
 NFcore::ReactionClass* makeReactionForRate(
     const CompiledModel& model,
     const CompiledRule& rule,
@@ -1461,25 +1529,35 @@ NFcore::ReactionClass* makeReactionForRate(
         const auto km = evaluateStatic(model, expression.arguments[1], diagnostic);
         if (!kcat.has_value() || !km.has_value() || *km < 0.0) return nullptr;
         transformations->finalize();
-        return new NFcore::MMRxnClass(reactionName, *kcat, *km, transformations, &system);
+        auto* mmReaction = new NFcore::MMRxnClass(reactionName, *kcat, *km, transformations, &system);
+        mmReaction->setRateParameterNames(
+            compiledParameterName(model, expression.arguments[0]),
+            compiledParameterName(model, expression.arguments[1]));
+        return mmReaction;
     }
     if (rate.kind == RateKind::Saturation || rate.kind == RateKind::Hill) {
         std::vector<double> constants;
+        std::vector<std::string> constantParameterNames;
         for (const auto& argument : expression.arguments) {
             const auto value = evaluateStatic(model, argument, diagnostic);
             if (!value.has_value()) return nullptr;
             constants.push_back(*value);
+            constantParameterNames.push_back(compiledParameterName(model, argument));
         }
         if (rate.kind == RateKind::Saturation) {
             if (constants.size() < 2 || constants.size() > direction.reactantPatterns.size() + 1) {
                 diagnostic = "Sat has invalid constant count"; return nullptr;
             }
             transformations->finalize();
-            return new NFcore::SatRxnClass(reactionName, std::move(constants), transformations, &system);
+            auto* satReaction = new NFcore::SatRxnClass(reactionName, std::move(constants), transformations, &system);
+            satReaction->setConstantParameterNames(constantParameterNames);
+            return satReaction;
         }
         if (constants.size() != 3) { diagnostic = "Hill requires three constants"; return nullptr; }
         transformations->finalize();
-        return new NFcore::HillRxnClass(reactionName, constants[0], constants[1], constants[2], transformations, &system);
+        auto* hillReaction = new NFcore::HillRxnClass(reactionName, constants[0], constants[1], constants[2], transformations, &system);
+        hillReaction->setConstantParameterNames(constantParameterNames);
+        return hillReaction;
     }
     if (rate.kind == RateKind::ArrheniusEnergy || rate.kind == RateKind::Hybrid) {
         diagnostic = "specialized compiled rate requires dedicated NFsim lowering";
@@ -2034,6 +2112,9 @@ bool lowerDirection(const CompiledModel& model,
                                 : new NFcore::TransformationSet(roots, addTemplates);
     transformations->setComplexBookkeeping(blockSameComplexBinding || hasDisjointSets);
     transformations->setNumProductPatterns(static_cast<unsigned int>(direction.productPatterns.size()));
+    const double permutationFactor = rule.modifiers().empty()
+        ? direction.wholeReactantPermutationFactor() : 1.0;
+    if (permutationFactor != 1.0) transformations->setSymmetryFactor(permutationFactor);
     for (auto* creator : creators)
         if (!transformations->addAddMolecule(creator)) { delete transformations; return false; }
 
@@ -2274,13 +2355,46 @@ bool lowerDirection(const CompiledModel& model,
             }
         } else {
             if (productCompartment != nullptr && same) {
-                factor = productCompartment->getSize();
-                if (system.getNumberPerQuantityUnit() > 0.0)
-                    factor *= system.getNumberPerQuantityUnit();
+                reaction->applyZeroOrderVolumeScaling(productCompartment);
+            } else {
+                // No single product compartment: keep the default factor of
+                // 1.0 and leave the base rate (and its parameter name)
+                // untouched so later updates still refresh it.
+                reaction->volumeConversionFactor = 1.0;
             }
-            reaction->volumeConversionFactor = factor;
-            if (reaction->getRxnType() != NFcore::ReactionClass::OBS_DEPENDENT_RXN)
-                reaction->setBaseRate(reaction->getBaseRate() * factor, "");
+        }
+    } else if (!compiledRate.unit.has_value()) {
+        // Reactant-bearing bare rate. NFsim's default propensity is the
+        // mass-action count law, which already carries BNG2's identical-reactant
+        // permutation factor but does not divide by compartment volume. Apply
+        // the Perl-faithful Rxn.pm conversion so the count hazard matches the
+        // source law and the deterministic path (NetWriter::unitConversionFactor
+        // writes the same 1/product(sizes) factor as unit_conversion in .net).
+        // Physical-unit rates never reach here: nfSimPhysicalUnitBridgeRejection
+        // rejects reactant-bearing typed rates before construction, and the
+        // unit.has_value() guard keeps this a no-op if that ever changes.
+        std::vector<bng::compile::ReactantCompartment> reactantCompartments;
+        for (const auto& pattern : direction.reactantPatterns) {
+            const auto* declaration = reactantCompartmentDeclaration(model, pattern);
+            if (declaration == nullptr) continue;
+            double size = declaration->volume;
+            if (system.getNumberPerQuantityUnit() > 0.0)
+                size *= system.getNumberPerQuantityUnit();
+            reactantCompartments.push_back({declaration->dimension, size});
+        }
+        if (const auto factor =
+                bng::compile::reactantUnitConversionFactor(reactantCompartments)) {
+            // Only bare mass-action (BasicRxnClass) rates are converted here.
+            // Functional/saturating rates carry their own count-rate semantics
+            // and the XML writer leaves their (non-numeric) rate objects
+            // untouched, so scaling only Basic keeps the two paths in lockstep.
+            if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN) {
+                reaction->volumeConversionFactor = *factor;
+                // BasicRxnClass::update_a() ignores volumeConversionFactor, and
+                // setBaseRate() would re-apply the constructor's symmetry
+                // factor. Scale the already-symmetrized base rate exactly once.
+                reaction->scaleBaseRate(*factor);
+            }
         }
     }
 

@@ -1143,3 +1143,27 @@ TEST_CASE("NetWriter evaluated parameters round trip binary64 values",
     std::filesystem::remove(outputPath);
     CHECK(found);
 }
+
+TEST_CASE("CVODE executes recurring native events between output times", "[OdeOptions][Events]") {
+    auto model = parseDecayModel();
+    ast::Event event;
+    event.id = "reset";
+    event.trigger = ast::Expression::binary("<=", ast::Expression::identifier("Xtot"),
+                                           ast::Expression::number(50));
+    event.assignments.push_back({"Xtot", ast::Expression::number(100)});
+    model->setEventFormatVersion(1);
+    model->addEvent(std::move(event));
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 20;
+    options.nSteps = 1;
+    const auto result = integrator.integrate(options);
+    REQUIRE(result.timePoints.size() == 2);
+    REQUIRE(result.observables.back().size() == 1);
+    CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinRel(400 * std::exp(-2.0), 2e-6));
+    const auto repeated = integrator.integrate(options);
+    CHECK(repeated.observables == result.observables);
+}

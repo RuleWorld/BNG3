@@ -181,9 +181,9 @@ def gdat(model_name: str, work_dir: Path) -> tuple[Path | None, str]:
 
 
 def ensemble(
-    model_name: str, *, min_runs: int = 200
+    model_name: str, *, min_runs: int = 200, work_dir: Path | None = None
 ) -> tuple[list[tuple[object, list[str]]], str]:
-    """Load a committed fixed-seed Perl ensemble; never substitute one gdat.
+    """Load a fixed-seed ensemble; opt into scratch generation for live CI.
 
     The returned arrays are intentionally typed loosely here to avoid making
     the oracle module depend on NumPy at import time; ``compare.parse_gdat``
@@ -191,7 +191,25 @@ def ensemble(
     """
     from .compare import parse_gdat
 
-    directory = golden_ensemble(model_name)
+    if os.environ.get("BNG3_LIVE_SSA_ENSEMBLES") == "1":
+        if work_dir is None:
+            raise ValueError("live SSA ensembles require a scratch work_dir")
+        from scripts import regen_golden
+        import json
+
+        identity = regen_golden._ensemble_oracle_identity()
+        receipt = regen_golden._generate_ensemble(
+            model_name, min_runs, identity, destination_root=work_dir
+        )
+        (work_dir / "ensemble-receipt.json").write_text(
+            json.dumps({"oracle": identity, "ensemble": receipt}, indent=2) + "\n"
+        )
+        directory = Path(receipt["reference_path"])
+        source = "live pinned BNG2 ensemble"
+    else:
+        directory = golden_ensemble(model_name)
+        source = "golden ensemble"
+
     if directory is None:
         return [], "no committed ensemble directory"
     paths = sorted(directory.glob("*.gdat"))
@@ -205,7 +223,8 @@ def ensemble(
         if data is None or columns is None:
             return [], f"invalid ensemble member: {path.name}"
         runs.append((data, columns))
-    return runs, f"golden ensemble ({len(runs)} members)"
+    qualify_model_ensemble(model_name, runs, label=f"BNG2 {source}")
+    return runs, f"{source} ({len(runs)} members)"
 
 
 def paths_to_runs(paths):
@@ -218,3 +237,26 @@ def paths_to_runs(paths):
         if data is not None and columns is not None:
             runs.append((data, columns))
     return runs
+
+
+def qualify_model_ensemble(model_name, runs, *, label):
+    """Check the fixed michment corpus's independent conformation marginal."""
+    if Path(model_name).stem != "michment":
+        return
+    import hashlib
+    import numpy as np
+    from .compare import qualify_binomial_marginal
+
+    source = corpus.resolve(model_name)
+    expected_source = "9e1e8103324d49032b682ecb24e640258c82cd7cf988fba86f2a2cc09df203a2"
+    assert (
+        source
+        and hashlib.sha256(Path(source).read_bytes()).hexdigest() == expected_source
+    ), "michment source changed; re-establish the analytic conformation marginal"
+    qualify_binomial_marginal(
+        runs,
+        "ScT",
+        population=100,
+        probability=lambda time: (2 / 3) * (1 - np.exp(-3 * time)),
+        label=label,
+    )

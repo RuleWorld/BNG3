@@ -2,7 +2,10 @@
 
 #include "compile/CompiledModel.hpp"
 #include "nfnext/compiler.hpp"
+#include "nfnext/counter_rng.hpp"
+#include "nfnext/generic_matcher.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -89,7 +92,8 @@ std::optional<double> constantExpression(
         if (expression.symbol && expression.symbol->kind == bng::compile::SymbolKind::Parameter) {
             const auto* parameter = model.parameter(
                 bng::compile::ParameterId::fromDenseIndex(expression.symbol->index));
-            if (parameter && parameter->constantValue) return parameter->constantValue;
+            if (parameter && !parameter->timeDependent && parameter->constantValue)
+                return parameter->constantValue;
         }
         return std::nullopt;
     case Kind::Unary: {
@@ -810,6 +814,11 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
               "BioNetGen compiled model contains semantic errors");
         return result;
     }
+    if (source.metadata().hasNativeEvents) {
+        issue(result, BngLoweringSeverity::Error, source.metadata().name,
+              "native events are not executable by NFnext");
+        return result;
+    }
     if (!validateNFnextIdPacking(source, result)) return result;
     if (!source.compartments().empty())
         issue(result, BngLoweringSeverity::Warning, source.metadata().name,
@@ -850,6 +859,172 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
     ModelCompiler compiler;
     compiler.compile(result.model);
     return result;
+}
+
+BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& source,
+                                      const BngExecutionRequest& request) {
+    const auto refuse = [](const std::string& reason) {
+        throw std::runtime_error("NFnext unary execution unsupported: " + reason);
+    };
+    if (request.sample_times.empty()) refuse("sample_times must not be empty");
+    double previous = -1.0;
+    for (double time : request.sample_times) {
+        if (!std::isfinite(time) || time < 0.0 || time <= previous)
+            refuse("sample_times must be finite, nonnegative and strictly increasing");
+        previous = time;
+    }
+    if (!source.compartments().empty() || !source.barrierFactors().empty() ||
+        !source.populationTypes().empty() || !source.functions().empty() ||
+        !source.metadata().unitDefaults.empty() ||
+        !source.metadata().unitDefinitions.empty() ||
+        !source.metadata().substanceUnits.empty() ||
+        !source.metadata().options.empty())
+        refuse("compartments, units, functions, options and population types");
+    if (source.features().contains(bng::compile::Feature::Units))
+        refuse("physical units");
+    for (const auto& rule : source.rules()) {
+        const auto checkRate = [&](const bng::compile::CompiledRuleDirection& direction) {
+            if (!direction.rateLaw ||
+                direction.rateLaw->kind != bng::compile::RateLawKind::Expression)
+                refuse("only elementary expression rates");
+        };
+        checkRate(rule.forward());
+        if (rule.reverse()) checkRate(*rule.reverse());
+    }
+    auto lowered = lowerFromBioNetGen(source);
+    if (!lowered.ok()) {
+        for (const auto& issue : lowered.issues)
+            if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
+    }
+    const auto& model = lowered.model;
+    for (const auto& rule : model.expanded_rules) {
+        if (rule.pattern.nodes.size() != 1 || !rule.pattern.bonds.empty() ||
+            rule.actions.empty()) refuse("only unary site-state rules are executable");
+        for (const auto& action : rule.actions)
+            if (action.kind != ActionKind::SetSiteState || action.target_node != 0)
+                refuse("only unary site-state actions are executable");
+    }
+    if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
+        refuse("particle budget exceeds native index capacity");
+    GenericGraphState state(model);
+    for (const auto& seed : source.seeds()) {
+        const auto amount = constantExpression(seed.amount, source);
+        if (seed.constant || seed.declaredUnit || !seed.compartment.empty() ||
+            !amount || !std::isfinite(*amount) || *amount < 0.0 ||
+            std::floor(*amount) != *amount ||
+            *amount > static_cast<double>(request.max_particles - state.liveCount()))
+            refuse("seeds require bounded static integer particle counts");
+        for (const auto& molecule : seed.pattern.molecules())
+            for (const auto& site : molecule.sites) {
+                const auto freeBond = [](bng::compile::BondConstraintKind kind) {
+                    return kind == bng::compile::BondConstraintKind::Unspecified ||
+                           kind == bng::compile::BondConstraintKind::Unbound;
+                };
+                if (!freeBond(site.bondKind)) refuse("seed bond wildcards");
+                for (const auto& bond : site.bondConstraints)
+                    if (!freeBond(bond.kind)) refuse("seed bond wildcards");
+            }
+        BngLoweringResult validation;
+        const auto pattern = flattenReactants({seed.pattern}, validation, "seed");
+        if (!pattern || !validation.ok() || pattern->pattern.nodes.size() != 1 ||
+            !pattern->pattern.bonds.empty()) refuse("seeds require isolated molecules");
+        const auto& node = pattern->pattern.nodes.front();
+        const auto& type = model.molecule_types.at(node.molecule_type);
+        std::vector<std::optional<std::int32_t>> states(type.sites.size());
+        for (const auto& constraint : node.constraints) {
+            if (constraint.kind == PatternIR::SiteConstraintKind::State)
+                states.at(constraint.site) = constraint.state;
+            else if (constraint.kind != PatternIR::SiteConstraintKind::Free)
+                refuse("seeds require exact states and free sites");
+        }
+        for (std::size_t site = 0; site < type.sites.size(); ++site)
+            if (!type.sites[site].states.empty() && !states[site])
+                refuse("seeds must explicitly initialize every stateful site");
+        for (std::size_t count = 0; count < static_cast<std::size_t>(*amount); ++count) {
+            const auto particle = state.create(node.molecule_type);
+            for (std::size_t site = 0; site < states.size(); ++site)
+                if (states[site]) state.setSiteState(particle, site, *states[site]);
+        }
+    }
+    std::vector<std::vector<PatternIR>> observables;
+    BngExecutionResult output;
+    output.columns.push_back("time");
+    for (const auto& observable : source.observables()) {
+        if (observable.kind != bng::compile::ObservableKind::Molecules ||
+            observable.terms.empty()) refuse("only unary Molecules observables");
+        std::vector<PatternIR> terms;
+        for (const auto& term : observable.terms) {
+            BngLoweringResult validation;
+            const auto pattern = flattenReactants({term.pattern}, validation, observable.name);
+            if (!term.relation.empty() || !pattern || !validation.ok() ||
+                pattern->pattern.nodes.size() != 1 || !pattern->pattern.bonds.empty())
+                refuse("only unary Molecules observable patterns");
+            terms.push_back(pattern->pattern);
+        }
+        if (std::find(output.columns.begin(), output.columns.end(), observable.name) !=
+            output.columns.end()) refuse("duplicate output column names");
+        output.columns.push_back(observable.name);
+        observables.push_back(std::move(terms));
+    }
+    GenericMatcher matcher(model);
+    CounterRng rng(request.seed, 0);
+    const auto layout = RngLayout::exactSSA();
+    double time = 0.0;
+    double next_time = std::numeric_limits<double>::infinity();
+    std::size_t selected_rule = 0;
+    ParticleId selected_particle;
+    bool pending = false;
+    for (const double sample : request.sample_times) {
+        for (;;) {
+            if (!pending) {
+                std::vector<std::vector<Embedding>> matches;
+                double total = 0.0;
+                for (const auto& rule : model.expanded_rules) {
+                    matches.push_back(matcher.enumerate(rule.pattern, state));
+                    total += rule.rate * matches.back().size();
+                }
+                if (!std::isfinite(total)) refuse("nonfinite total propensity");
+                next_time = total > 0.0
+                    ? time + rng.exponential(layout.word(RngPurpose::WaitingTime, output.event_count), total)
+                    : std::numeric_limits<double>::infinity();
+                if (total > 0.0) {
+                    double choice = rng.uniformOpen01(
+                        layout.word(RngPurpose::FamilyChoice, output.event_count)) * total;
+                    bool found = false;
+                    for (std::size_t index = 0; index < matches.size() && !found; ++index) {
+                        const auto& rule = model.expanded_rules[index];
+                        for (const auto& match : matches[index]) {
+                            choice -= rule.rate;
+                            if (choice < 0.0) {
+                                selected_rule = index;
+                                selected_particle = match.particle(0);
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found) refuse("reaction selection lost floating-point mass");
+                }
+                pending = true;
+            }
+            if (next_time > sample) break;
+            if (output.event_count >= request.max_events) refuse("event budget exhausted");
+            if (!(next_time > time)) refuse("event clock cannot advance");
+            time = next_time;
+            for (const auto& action : model.expanded_rules[selected_rule].actions)
+                state.setSiteState(selected_particle, action.site, action.value);
+            ++output.event_count;
+            pending = false;
+        }
+        std::vector<double> row{sample};
+        for (const auto& terms : observables) {
+            double value = 0.0;
+            for (const auto& term : terms) value += matcher.enumerate(term, state).size();
+            row.push_back(value);
+        }
+        output.rows.push_back(std::move(row));
+    }
+    return output;
 }
 
 } // namespace nfnext

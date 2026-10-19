@@ -136,7 +136,10 @@ end actions
     with pytest.raises(RuntimeError) as excinfo:
         model.execute()
 
-    assert str(excinfo.value) == UNSUPPORTED_EVENT_EXECUTION_MESSAGE
+    assert str(excinfo.value) == (
+        UNSUPPORTED_EVENT_EXECUTION_MESSAGE
+        + ": trigger requires one time or species observable against a static threshold"
+    )
 
 
 @pytest.mark.parametrize(
@@ -152,7 +155,10 @@ def test_every_engine_binding_rejects_event_models(tmp_path, method):
     with pytest.raises(RuntimeError) as excinfo:
         getattr(_cpp, method)(event_model, network, 10.0, 10)
 
-    assert str(excinfo.value) == UNSUPPORTED_EVENT_EXECUTION_MESSAGE
+    expected = UNSUPPORTED_EVENT_EXECUTION_MESSAGE
+    if method in {"simulate_ode", "simulate_ssa"}:
+        expected += ": trigger requires one time or species observable against a static threshold"
+    assert str(excinfo.value) == expected
 
 
 def _cli_text(result):

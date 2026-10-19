@@ -2,6 +2,7 @@
 
 
 #include "NFcore.hh"
+#include "compartment.hh"
 #include <cmath>
 #include <stdexcept>
 #include <unordered_set>
@@ -389,6 +390,12 @@ void ReactionClass::setBaseRate(double newBaseRate,string newBaseRateName) {
 	update_a();
 };
 
+void ReactionClass::scaleBaseRate(double factor, string newBaseRateName) {
+	this->baseRate *= factor;
+	this->baseRateParameterName = newBaseRateName;
+	update_a();
+};
+
 void ReactionClass::setBaseRateParameterConversionFactor(double factor) {
 	if (!std::isfinite(factor) || factor < 0.0) {
 		throw std::invalid_argument("NFsim parameter-rate conversion factor must be finite and non-negative");
@@ -398,6 +405,29 @@ void ReactionClass::setBaseRateParameterConversionFactor(double factor) {
 	resetBaseRateFromSystemParamter();
 }
 
+
+void ReactionClass::applyZeroOrderVolumeScaling(Compartment *productCompartment) {
+	zeroOrderCompartment = productCompartment;
+	zeroOrderVolumeScaling = (productCompartment != 0);
+	refreshZeroOrderVolumeFactor();
+	if (reactionType != OBS_DEPENDENT_RXN && zeroOrderVolumeScaling) {
+		// baseRate already carries any symmetry correction from setBaseRate();
+		// scale it directly so the parameter name stays intact for later
+		// refreshes (ruleworld/nfsim#105).
+		baseRate *= volumeConversionFactor;
+		update_a();
+	}
+}
+
+void ReactionClass::refreshZeroOrderVolumeFactor() {
+	if (!zeroOrderVolumeScaling || zeroOrderCompartment == 0) return;
+	double scaledVolume = zeroOrderCompartment->getSize();
+	if (system != 0) {
+		const double numberPerQuantity = system->getNumberPerQuantityUnit();
+		if (numberPerQuantity > 0.0) scaledVolume *= numberPerQuantity;
+	}
+	volumeConversionFactor = scaledVolume;
+}
 
 void ReactionClass::resetBaseRateFromSystemParamter() {
 
@@ -410,6 +440,12 @@ void ReactionClass::resetBaseRateFromSystemParamter() {
 		}
 		else if (isDimerStyle) {
 			updatedBaseRate = 0.5 * parameterRate;
+		}
+		if (zeroOrderVolumeScaling && n_reactants == 0) {
+			// refreshZeroOrderVolumeFactor() runs first in
+			// updateSystemWithNewParameters(); reapply the current volume
+			// so a setParameter(Vc)+update() rescales zero-order rates.
+			updatedBaseRate *= volumeConversionFactor;
 		}
 		if (usesBaseRateParameterConversion &&
 			(!std::isfinite(updatedBaseRate) || updatedBaseRate < 0.0)) {

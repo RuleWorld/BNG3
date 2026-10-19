@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include "SscWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
@@ -13,6 +14,7 @@
 namespace bng::io {
 std::string SscWriter::writeConfig(const ast::Model& model) {
     requireNoEnergySemantics(model, "SSC");
+    compile::requireNoNativeEvents(model, "SSC export");
     std::ostringstream out;
     out << "# SSC cfg file for model " << model.getModelName()
         << " created by BioNetGen\n";
@@ -26,6 +28,7 @@ std::string SscWriter::writeConfig(const ast::Model& model) {
 
 std::string SscWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
     requireNoEnergySemantics(model, "SSC");
+    compile::requireNoNativeEvents(model, "SSC export");
     std::ostringstream out;
 
     const std::string modelName = model.getModelName();

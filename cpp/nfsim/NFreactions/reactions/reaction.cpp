@@ -258,6 +258,8 @@ MMRxnClass::MMRxnClass(string name, double kcat, double Km, TransformationSet *t
 	this->Km = Km;
 	this->kcat = kcat;
 	this->sFree=0;
+	this->kcatParameterName = "";
+	this->kmParameterName = "";
 	if(n_reactants!=2) {
 		cerr<<"You have tried to create a reaction with a Michaelis-Menten rate law (named: '"+name+"'\n')";
 		cerr<<"but you don't have the correct number of reactants!  Michaelis-Menten reactions require\n";
@@ -266,6 +268,55 @@ MMRxnClass::MMRxnClass(string name, double kcat, double Km, TransformationSet *t
 		exit(1);
 	}
 }
+MMRxnClass::MMRxnClass(string name, double kcat, double Km, TransformationSet *transformationSet,System *s,
+		const string& kcatParameterName, const string& kmParameterName) :
+	BasicRxnClass(name,1,"",transformationSet,s)
+{
+	this->Km = Km;
+	this->kcat = kcat;
+	this->sFree=0;
+	this->kcatParameterName = kcatParameterName;
+	this->kmParameterName = kmParameterName;
+	if(n_reactants!=2) {
+		cerr<<"You have tried to create a reaction with a Michaelis-Menten rate law (named: '"+name+"'\n')";
+		cerr<<"but you don't have the correct number of reactants!  Michaelis-Menten reactions require\n";
+		cerr<<"exactly 2 reactants.  A substrate (always given first) and an enzyme (always given second)\n";
+		cerr<<"Read your tutorial next time... now I will quit."<<endl;
+		exit(1);
+	}
+}
+
+void MMRxnClass::setRateParameterNames(const string& kcatName, const string& kmName) {
+	this->kcatParameterName = kcatName;
+	this->kmParameterName = kmName;
+}
+
+void MMRxnClass::resetBaseRateFromSystemParamter() {
+	// Refresh parameter-backed kcat/Km so setParameter()+update() rescales
+	// the propensity instead of leaving load-time constants frozen
+	// (ruleworld/nfsim#105).  Literal constants (empty names) stay as-is.
+	bool refreshed = false;
+	if (!kcatParameterName.empty()) {
+		double *value = system->getParameterPtr(kcatParameterName);
+		if (value == 0) {
+			cerr << "Warning! MM reaction '" << name << "': kcat parameter '" << kcatParameterName << "' does not exist; keeping value " << kcat << "." << endl;
+		} else {
+			kcat = *value;
+			refreshed = true;
+		}
+	}
+	if (!kmParameterName.empty()) {
+		double *value = system->getParameterPtr(kmParameterName);
+		if (value == 0) {
+			cerr << "Warning! MM reaction '" << name << "': Km parameter '" << kmParameterName << "' does not exist; keeping value " << Km << "." << endl;
+		} else {
+			Km = *value;
+			refreshed = true;
+		}
+	}
+	if (refreshed) update_a();
+}
+
 MMRxnClass::~MMRxnClass() {};
 
 double FunctionalRxnClass::exactRuleMonkey_a()
@@ -345,6 +396,26 @@ SatRxnClass::SatRxnClass(string name, vector<double> saturationConstants,
 
 SatRxnClass::~SatRxnClass() {}
 
+void SatRxnClass::setConstantParameterNames(const vector<string>& names) {
+	constantParameterNames = names;
+}
+
+void SatRxnClass::resetBaseRateFromSystemParamter() {
+	if (constantParameterNames.size() != saturationConstants.size()) return;
+	bool refreshed = false;
+	for (size_t i = 0; i < saturationConstants.size(); ++i) {
+		if (constantParameterNames[i].empty()) continue;
+		double *value = system->getParameterPtr(constantParameterNames[i]);
+		if (value == 0) {
+			cerr << "Warning! Sat reaction '" << name << "': parameter '" << constantParameterNames[i] << "' does not exist; keeping value " << saturationConstants[i] << "." << endl;
+			continue;
+		}
+		saturationConstants[i] = *value;
+		refreshed = true;
+	}
+	if (refreshed) update_a();
+}
+
 double SatRxnClass::update_a()
 {
     // BNG2's Sat(k0,K1,...,KN) law is a total rate:
@@ -404,6 +475,31 @@ HillRxnClass::HillRxnClass(string name, double vmax, double kh, double exponent,
 }
 
 HillRxnClass::~HillRxnClass() {}
+
+void HillRxnClass::setConstantParameterNames(const vector<string>& names) {
+	constantParameterNames = names;
+}
+
+void HillRxnClass::resetBaseRateFromSystemParamter() {
+	if (constantParameterNames.size() != 3) return;
+	bool refreshed = false;
+	double *vmaxValue = constantParameterNames[0].empty() ? 0 : system->getParameterPtr(constantParameterNames[0]);
+	double *khValue = constantParameterNames[1].empty() ? 0 : system->getParameterPtr(constantParameterNames[1]);
+	double *exponentValue = constantParameterNames[2].empty() ? 0 : system->getParameterPtr(constantParameterNames[2]);
+	if (!constantParameterNames[0].empty()) {
+		if (vmaxValue == 0) cerr << "Warning! Hill reaction '" << name << "': parameter '" << constantParameterNames[0] << "' does not exist; keeping value " << vmax << "." << endl;
+		else { vmax = *vmaxValue; refreshed = true; }
+	}
+	if (!constantParameterNames[1].empty()) {
+		if (khValue == 0) cerr << "Warning! Hill reaction '" << name << "': parameter '" << constantParameterNames[1] << "' does not exist; keeping value " << kh << "." << endl;
+		else { kh = *khValue; refreshed = true; }
+	}
+	if (!constantParameterNames[2].empty()) {
+		if (exponentValue == 0) cerr << "Warning! Hill reaction '" << name << "': parameter '" << constantParameterNames[2] << "' does not exist; keeping value " << exponent << "." << endl;
+		else { exponent = *exponentValue; refreshed = true; }
+	}
+	if (refreshed) update_a();
+}
 
 double HillRxnClass::update_a()
 {

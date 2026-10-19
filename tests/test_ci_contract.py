@@ -52,6 +52,46 @@ SSA_ENSEMBLE_MANIFEST = (
 CPP_CMAKE = REPO / "cpp" / "CMakeLists.txt"
 TOP_LEVEL_CMAKE = REPO / "CMakeLists.txt"
 
+
+@pytest.mark.parametrize("job_id", ["cpp-build", "python-test"])
+def test_semantic_test_jobs_retain_reports_on_failure(job_id):
+    steps = parse_workflow(CI_WORKFLOW)["jobs"][job_id]["steps"]
+    report_tests = [
+        step
+        for step in steps
+        if (
+            "ctest " in step.get("run", "")
+            or "pytest tests/python" in step.get("run", "")
+        )
+    ]
+    assert report_tests, f"{job_id}: no semantic tests selected"
+    for step in report_tests:
+        command = step["run"]
+        assert "--output-junit" in command or "--junitxml=" in command, step["name"]
+    uploads = [
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+        and "test-results" in step.get("with", {}).get("name", "")
+    ]
+    assert len(uploads) == 1, f"{job_id}: missing test result artifact"
+    upload = uploads[0]
+    assert upload.get("if") == "always()"
+    paths = upload["with"]["path"].split()
+    reports = []
+    for step in report_tests:
+        match = re.search(r"(?:--output-junit\s+|--junitxml=)(\S+)", step["run"])
+        assert match, f"{step['name']}: no report destination"
+        report = match.group(1)
+        reports.append(report)
+        expected_path = f"build/{report}" if job_id == "cpp-build" else report
+        assert expected_path in paths, f"report {expected_path} is not retained"
+    assert len(set(reports)) == len(reports), "test invocations overwrite their reports"
+    assert steps.index(upload) > max(steps.index(step) for step in report_tests)
+    if job_id == "cpp-build":
+        assert "build/Testing/Temporary/" in paths
+
+
 # The flags that embed a second copy of the C++ runtime into a binary. They are
 # correct for a CLI executable, which owns its process, and wrong for the
 # Python extension, which is loaded into a process someone else owns.
@@ -274,6 +314,22 @@ def test_ssts_report_source_provenance_records_revision_and_tracked_changes(
     assert dirty["bng3_worktree_clean_for_report"] is False
     assert dirty["bng3_changed_files"] == ["model.py"]
     assert dirty["bng3_source_diff_sha256"] != clean_digest
+
+
+def test_reconciliation_ledger_test_references_stay_live():
+    """The upstream map must not retain stale pytest/CTest/Catch2 evidence."""
+    from scripts.validate_reconciliation_tests import (
+        load_ledgers,
+        validate_test_references,
+    )
+
+    ledgers = load_ledgers()
+    assert {ledger["source"] for _, ledger in ledgers} == {
+        "bionetgen",
+        "nfsim",
+        "pybionetgen",
+    }, "all locked upstream reconciliation ledgers must be checked"
+    assert validate_test_references(ledgers) == []
 
 
 def _locked_ssts_checkout(tmp_path: Path) -> tuple[Path, Path, str]:
@@ -1011,7 +1067,7 @@ def test_project_declares_click_and_packaging_as_runtime_dependencies():
 
 
 def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
-    """No-deps wheel install must run after click is installed explicitly.
+    """No-deps wheel install must include runtime and exercised test dependencies.
 
     The wheel job intentionally uses ``--no-deps``.  Therefore its test
     environment must install every runtime dependency required at collection
@@ -1029,6 +1085,10 @@ def test_python_matrix_installs_runtime_dependencies_before_no_deps_wheel():
     assert any(
         re.search(r"\bclick(?:[<>=!~].*)?\b", line) for line in install_lines
     ), "python-test no-deps wheel path must install declared click dependency"
+    assert any(re.search(r"\bscipy(?:[<>=!~].*)?\b", line) for line in install_lines)
+    assert any(
+        re.search(r"\blibroadrunner(?:[<>=!~].*)?\b", line) for line in install_lines
+    )
 
 
 def test_wheel_and_sdist_python_tests_prove_installed_package_identity():

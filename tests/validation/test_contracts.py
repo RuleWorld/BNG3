@@ -187,3 +187,46 @@ def test_cdat_accepts_graph_labels_emitted_by_native_writer(tmp_path):
         nets,
     )
     assert all(r["status"] == "PASS" for r in rows.values())
+
+
+def test_numeric_rate_precision_is_explicit_bounded_and_keeps_multiplicity(tmp_path):
+    ref, subject = networks(tmp_path)
+    ref.write_text(NET.replace("1 k 2", "1 k 0.16666667"))
+    subject.write_text(NET.replace("1 k 2", "1 k 0.16666666666666666"))
+    assert checks(network_contracts(ref, subject))["reaction-rates"]["status"] == "FAIL"
+    assert (
+        checks(network_contracts(ref, subject, numeric_rate_rtol=5e-8))[
+            "reaction-rates"
+        ]["status"]
+        == "PASS"
+    )
+    subject.write_text(NET.replace("1 k 2", "1 k 0.1667"))
+    assert (
+        checks(network_contracts(ref, subject, numeric_rate_rtol=5e-8))[
+            "reaction-rates"
+        ]["status"]
+        == "FAIL"
+    )
+    subject.write_text(
+        NET.replace("1 k 2", "1 k 0.16666666666666666").replace(
+            "1 1 2 k", "1 1 2 k\n2 1 2 k"
+        )
+    )
+    assert (
+        checks(network_contracts(ref, subject, numeric_rate_rtol=5e-8))[
+            "reaction-multiplicity"
+        ]["status"]
+        == "FAIL"
+    )
+
+
+def test_numeric_rate_precision_preserves_small_rates_and_zero(tmp_path):
+    ref, subject = networks(tmp_path)
+    ref.write_text(NET.replace("1 k 2", "1 k 1e-20"))
+    subject.write_text(NET.replace("1 k 2", "1 k 0"))
+    assert (
+        checks(network_contracts(ref, subject, numeric_rate_rtol=5e-8))[
+            "reaction-rates"
+        ]["status"]
+        == "FAIL"
+    )

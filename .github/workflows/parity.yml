@@ -8,6 +8,12 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+    inputs:
+      bounded:
+        description: Use the finite PR scientific selection instead of the scheduled matrix
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   # Preserve the evidence for each exact PR head.  A later documentation push
@@ -17,6 +23,7 @@ concurrency:
 
 permissions:
   contents: read
+  issues: read
 
 env:
   CMAKE_BUILD_TYPE: Release
@@ -38,7 +45,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install CI contract dependencies
-        run: python -m pip install pytest numpy pyyaml
+        run: python -m pip install pytest numpy pyyaml scipy jsonschema
 
       - name: Validate locked sources
         run: python scripts/ci/checkout_oracle.py --validate-only
@@ -51,6 +58,24 @@ jobs:
           python -m pytest \
             tests/test_ci_contract.py \
             tests/validation/test_parity_workflow_wiring.py \
+            tests/validation/test_integrated_wiring.py \
+            tests/validation/test_integrated.py \
+            tests/validation/test_integrated_traces.py \
+            tests/validation/test_integrated_cases.py \
+            tests/validation/test_integrated_matrix.py \
+            tests/validation/test_integrated_consumers.py \
+            tests/validation/test_issue_queue.py \
+            tests/validation/test_acceptance_queue.py \
+            tests/validation/test_reporting.py \
+            tests/validation/test_triage.py \
+            tests/validation/test_replay.py \
+            tests/validation/test_minimize.py \
+            tests/validation/test_bngir_adversarial.py \
+            tests/validation/test_integrated_boundaries.py \
+            tests/validation/test_integrated_protocol.py \
+            tests/validation/test_integrated_marginals.py \
+            tests/validation/test_integrated_extensions.py \
+            tests/validation/test_graph_identity.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
@@ -77,7 +102,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake ninja-build perl
           python -m venv .venv
-          .venv/bin/python -m pip install scikit-build-core pybind11 pytest numpy
+          .venv/bin/python -m pip install scikit-build-core pybind11 pytest numpy scipy
 
       - name: Checkout locked BioNetGen oracle
         run: |
@@ -134,14 +159,33 @@ jobs:
           .venv/bin/python -m pytest -c tests/validation/pytest.ini \
             tests/validation/test_worker_package_identity.py -q -ra
 
+      - name: Snapshot backlog metadata for issue evidence coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 10000 \
+            --json number,title,state,url > "$RUNNER_TEMP/bng3-issues.tmp"; then
+            mv "$RUNNER_TEMP/bng3-issues.tmp" "$RUNNER_TEMP/bng3-issues.json"
+          else
+            rm -f "$RUNNER_TEMP/bng3-issues.tmp"
+            echo 'Backlog metadata query failed; semantic gates will still execute with mapped-only issue coverage.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Publish capability-linked bounded conformance evidence
         shell: bash
         run: |
+          issue_args=()
+          if [[ -s "$RUNNER_TEMP/bng3-issues.json" ]]; then
+            issue_args=(--issues-json "$RUNNER_TEMP/bng3-issues.json")
+          else
+            echo 'Backlog snapshot unavailable; issue evidence scope is mapped-only.' >> "$GITHUB_STEP_SUMMARY"
+          fi
           corpus_tier=s
           if [[ "${{ github.event_name }}" == "schedule" ]]; then
             corpus_tier=p
           fi
           .venv/bin/python scripts/validate.py --tier smoke \
+            "${issue_args[@]}" \
             --corpus-tier "$corpus_tier" --report-only --simulate --net-reload \
             --bng-cpp build/cpp/bng_cpp \
             --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
@@ -155,6 +199,43 @@ jobs:
             "$RUNNER_TEMP/bng3-conformance/report.json" \
             --summary "$GITHUB_STEP_SUMMARY" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Restore previous main conformance observations
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/triage-conformance-history
+          key: triage-conformance-main-${{ github.sha }}
+          restore-keys: triage-conformance-main-
+
+      - name: Bounded named-check replay and portable conformance repair tasks
+        if: always()
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/bng3-conformance"
+          test -s "$evidence/report.json"
+          python -m tests.validation.replay "$evidence/report.json" \
+            --execute --output "$evidence/replays" --max-cases 2 --runs 1 --timeout 40 --budget 90
+          args=()
+          if [[ -f "$RUNNER_TEMP/triage-conformance-history/ledger.json" ]]; then
+            args+=(--previous "$RUNNER_TEMP/triage-conformance-history/ledger.json")
+          fi
+          shopt -s nullglob
+          for report in "$evidence"/replays/replicate-*.json; do
+            args+=(--replicate "$report")
+          done
+          python -m tests.validation.triage "$evidence/report.json" \
+            --output "$evidence/triage" "${args[@]}"
+          cat "$evidence/triage/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/triage-conformance-history"
+          cp "$evidence/triage/ledger.json" "$RUNNER_TEMP/triage-conformance-history/ledger.json"
+
+      - name: Retain main conformance observation history
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/triage-conformance-history
+          key: triage-conformance-main-${{ github.sha }}
 
       - name: Upload conformance diagnostics and inventory
         if: always()
@@ -213,7 +294,7 @@ jobs:
             -q -ra \
             --junitxml="$RUNNER_TEMP/issue182-required-parity.xml"
 
-      - name: Run frozen 200-member SSA ensemble parity (scheduled)
+      - name: Run live pinned 200-member SSA ensemble parity (scheduled)
         id: ssa_ensemble_parity
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         shell: bash
@@ -224,16 +305,22 @@ jobs:
             -m "stochastic and slow" \
             --bng-cpp build/cpp/bng_cpp \
             -q -ra \
+            --basetemp="$RUNNER_TEMP/ssa-live-ensembles" \
             --junitxml="$RUNNER_TEMP/issue182-ssa-ensemble.xml"
         env:
           BNG_ENSEMBLE_WORKERS: "2"
+          BNG3_LIVE_SSA_ENSEMBLES: "1"
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
 
       - name: Upload Issue 182 parity test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: issue182-parity-${{ github.event_name }}-${{ github.run_id }}
-          path: ${{ runner.temp }}/issue182-*.xml
+          path: |
+            ${{ runner.temp }}/issue182-*.xml
+            ${{ runner.temp }}/ssa-live-ensembles
           if-no-files-found: warn
           retention-days: 14
 
@@ -275,7 +362,7 @@ jobs:
           rows = []
           for label, outcome_key, report_key in (
               ("Required RHS/ODE/SSA-determinism/export modules", "REQUIRED_OUTCOME", "REQUIRED_REPORT"),
-              ("Scheduled 200-member SSA ensembles", "ENSEMBLE_OUTCOME", "ENSEMBLE_REPORT"),
+              ("Scheduled live 200-member SSA ensembles", "ENSEMBLE_OUTCOME", "ENSEMBLE_REPORT"),
           ):
               outcome = os.environ[outcome_key]
               result = counts(os.environ[report_key])
@@ -290,11 +377,238 @@ jobs:
               summary.write(f"- Exact BNG3 candidate revision: {os.environ['BNG3_SOURCE_REVISION']}\n")
               summary.write(f"- Installed package identity: {os.environ['IDENTITY_OUTCOME']}; spawned worker identity: {os.environ['WORKER_OUTCOME']}.\n")
               summary.write('- Per-PR required modules: RHS, ODE, SSA determinism, and export (`-m "not slow"`).\n')
-              summary.write('- Scheduled/manual-only: the unchanged 200-member SSA ensemble for `gene_expr`, `michment`, and `simple_system`. No additional model-name filter is applied; missing required engines/oracles fail under strict mode.\n\n')
+              summary.write('- Scheduled/manual-only: live pinned BNG2 200-member SSA ensembles with deterministic spread seeds for `gene_expr`, `michment`, and `simple_system`. No additional model-name filter is applied; missing required engines/oracles fail under strict mode.\n\n')
               summary.write("| Lane | Step outcome | Pytest counts |\n| --- | --- | --- |\n")
               for label, outcome, detail in rows:
                   summary.write(f"| {label} | {outcome} | {detail} |\n")
               summary.write("\n`pytest -ra` records individual skip reasons in the log; JUnit reports are attached as an Issue 182 workflow artifact.\n")
+
+  integrated-semantic-validation:
+    name: Integrated semantic validation (Atomizer, BNG3, BNG2, PyBioNetGen, NFsim)
+    needs: oracle-lock
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      BNG3_PYTHON_TEST_MODE: installed
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Snapshot bounded GitHub issue backlog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --repo "$GITHUB_REPOSITORY" --state all --limit 1000 \
+            --json number,title,state,body,updatedAt > "$RUNNER_TEMP/bng3-issues.json"
+
+      - name: Install native build and validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build perl
+          python -m pip install scikit-build-core pybind11 pytest numpy scipy pyyaml python-libsbml libroadrunner
+
+      - name: Checkout locked BioNetGen oracle
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name bionetgen \
+            --destination "$RUNNER_TEMP/oracle-bionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Build locked BNG2 Network3 oracle
+        run: |
+          set -euo pipefail
+          network3="$RUNNER_TEMP/oracle-bionetgen/bng2/Network3"
+          make -C "$network3" -f Makefile.cmake
+          run_network="$RUNNER_TEMP/oracle-bionetgen/bng2/bin/run_network"
+          test -x "$run_network"
+          digest=$(sha256sum "$run_network" | cut -d ' ' -f 1)
+          echo "BNG2_NETWORK_SHA256=$digest" >> "$GITHUB_ENV"
+          echo "- Integrated lane BNG2 Network3 SHA-256: $digest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout and build locked native NFsim oracle
+        run: |
+          set -euo pipefail
+          python scripts/ci/checkout_oracle.py \
+            --name nfsim \
+            --destination "$RUNNER_TEMP/oracle-nfsim" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          cmake -S "$RUNNER_TEMP/oracle-nfsim" \
+            -B "$RUNNER_TEMP/oracle-nfsim/build" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DNFSIM_BUILD_EXECUTABLE=ON \
+            -DNFSIM_BUILD_LIBRARY=OFF
+          cmake --build "$RUNNER_TEMP/oracle-nfsim/build" --target NFsim --parallel 2
+          nfsim="$RUNNER_TEMP/oracle-nfsim/build/NFsim"
+          test -x "$nfsim"
+          digest=$(sha256sum "$nfsim" | cut -d ' ' -f 1)
+          echo "NFSIM_SHA256=$digest" >> "$GITHUB_ENV"
+          echo "- Integrated lane native NFsim SHA-256: $digest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout locked PyBioNetGen source
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name pybionetgen \
+            --destination "$RUNNER_TEMP/oracle-pybionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Create isolated upstream PyBioNetGen interpreter
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/pybionetgen-venv"
+          "$RUNNER_TEMP/pybionetgen-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/pybionetgen-venv/bin/python" -m pip install -r \
+            "$RUNNER_TEMP/oracle-pybionetgen/requirements.txt"
+          echo "PYBIONETGEN_PYTHON=$RUNNER_TEMP/pybionetgen-venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Install BNG3 CLI and full Python package
+        id: candidate_install
+        run: |
+          python -m pip install --no-build-isolation \
+            --config-settings=build-dir=build \
+            --config-settings=cmake.define.BUILD_CLI=ON \
+            ".[full,dev]"
+        env:
+          CMAKE_ARGS: "-DBUILD_CLI=ON -DBUILD_NFSIM_CLI=OFF -DBUILD_TESTS=OFF"
+
+      - name: Verify installed BNG3 package identity
+        id: candidate_identity
+        run: |
+          python scripts/ci/check_python_package_identity.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --require-source-head \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          test -x build/cpp/bng_cpp
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Verify spawned scientific worker identity
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: python -m pytest -c tests/validation/pytest.ini tests/validation/test_worker_package_identity.py -q
+
+      - name: Run integrated cross-component cases
+        id: integrated_cases
+        run: |
+          set -euo pipefail
+          full_args=()
+          if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
+            full_args=(--full)
+          fi
+          python -m tests.validation.integrated \
+            --bng-cpp build/cpp/bng_cpp \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --bng2-network-sha256 "$BNG2_NETWORK_SHA256" \
+            --nfsim-root "$RUNNER_TEMP/oracle-nfsim" \
+            --nfsim-binary "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            --nfsim-sha256 "$NFSIM_SHA256" \
+            --pybionetgen-root "$RUNNER_TEMP/oracle-pybionetgen" \
+            --pybionetgen-python "$PYBIONETGEN_PYTHON" \
+            --report-dir "$RUNNER_TEMP/bng3-integrated-validation" \
+            "${full_args[@]}"
+
+      - name: Check independently authored native BNGIR controls
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: python -m pytest tests/validation/test_bngir_adversarial_native.py -q
+
+      - name: Audit generated consumer matrix receipts
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$RUNNER_TEMP/bng3-integrated-validation/report.json"
+          python -m tests.validation.integrated_matrix \
+            --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
+            --output "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Summarize integrated findings for the exact candidate
+        if: always()
+        run: |
+          python -m tests.validation.ci_report \
+            "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
+            --strict --summary "$GITHUB_STEP_SUMMARY" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}"
+
+      - name: Build exact-revision issue and provenance evidence queue
+        if: always()
+        run: |
+          head_args=()
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            head_args=(--collect-upstream-heads)
+          fi
+          python -m tests.validation.issue_queue \
+            --issues-json "$RUNNER_TEMP/bng3-issues.json" \
+            --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
+            --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
+          cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload issue queue and provenance observations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bng3-issue-queue-${{ github.event_name }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/bng3-issue-queue/
+            ${{ runner.temp }}/bng3-issues.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Restore previous main integrated-validation observations
+        if: always()
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/triage-integrated-validation-history
+          key: triage-integrated-validation-main-${{ github.sha }}
+          restore-keys: triage-integrated-validation-main-
+
+      - name: Bounded named-check replay and portable integrated-validation repair tasks
+        if: always()
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/bng3-integrated-validation"
+          test -s "$evidence/report.json"
+          python -m tests.validation.replay "$evidence/report.json" \
+            --execute --output "$evidence/replays" --max-cases 2 --runs 1 --timeout 40 --budget 90
+          args=()
+          if [[ -f "$RUNNER_TEMP/triage-integrated-validation-history/ledger.json" ]]; then
+            args+=(--previous "$RUNNER_TEMP/triage-integrated-validation-history/ledger.json")
+          fi
+          shopt -s nullglob
+          for report in "$evidence"/replays/replicate-*.json; do
+            args+=(--replicate "$report")
+          done
+          python -m tests.validation.triage "$evidence/report.json" \
+            --output "$evidence/triage" "${args[@]}" --issues-json "$RUNNER_TEMP/bng3-issues.json" \
+            --obligations-json "$RUNNER_TEMP/bng3-issue-queue/obligation-assessment.json"
+          cat "$evidence/triage/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/triage-integrated-validation-history"
+          cp "$evidence/triage/ledger.json" "$RUNNER_TEMP/triage-integrated-validation-history/ledger.json"
+
+      - name: Retain main integrated-validation observation history
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/triage-integrated-validation-history
+          key: triage-integrated-validation-main-${{ github.sha }}
+
+      - name: Upload integrated reports and replay artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bng3-integrated-validation-${{ github.event_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-integrated-validation/
+          if-no-files-found: warn
+          retention-days: 30
 
   conformance-findings:
     name: Conformance findings (network, cdat, gdat)

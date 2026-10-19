@@ -2318,6 +2318,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 }
 
 void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model, const engine::GeneratedNetwork& network, const NetWriterOptions& writerOpts) {
+    compile::requireNoNativeEvents(model, "NET export");
     const compile::CompiledModel compiledModel(model);
     const engine::ObservableProjection projection(compiledModel);
 

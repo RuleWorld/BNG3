@@ -2425,6 +2425,42 @@ void System::setParameter(const string& name, double value) {
 	}
 	this->paramMap[name]=value;
 }
+bool System::setCompartmentSizeParameter(const string& compartmentId, const string& parameterName) {
+	Compartment *comp = getCompartment(compartmentId);
+	if (comp == NULL) {
+		cout << "Warning! Compartment: '" << compartmentId << "' does not exist; cannot track parameter '" << parameterName << "'." << endl;
+		return false;
+	}
+	comp->setSizeParameterName(parameterName);
+	return true;
+}
+
+bool System::setCompartmentSize(const string& compartmentId, double size) {
+	Compartment *comp = getCompartment(compartmentId);
+	if (comp == NULL) {
+		cout << "Warning! Compartment: '" << compartmentId << "' does not exist and its size will not be updated." << endl;
+		return false;
+	}
+	comp->setSize(size);
+	return true;
+}
+
+void System::updateCompartmentSizesFromParameters() {
+	for (map<string, Compartment*>::iterator it = compartments.begin(); it != compartments.end(); ++it) {
+		Compartment *comp = it->second;
+		if (comp == NULL) continue;
+		const string &tracked = comp->getSizeParameterName();
+		map<string, double>::iterator param = paramMap.end();
+		if (!tracked.empty()) param = paramMap.find(tracked);
+		if (param == paramMap.end() && paramMap.find(comp->getId()) != paramMap.end()) {
+			// Fallback convention: a parameter sharing the compartment id
+			// (e.g. setParameter("Vc", ...) for compartment Vc) rescales it.
+			param = paramMap.find(comp->getId());
+		}
+		if (param != paramMap.end()) comp->setSize(param->second);
+	}
+}
+
 void System::updateSystemWithNewParameters() {
 	invalidatePendingEvent();
 
@@ -2446,9 +2482,24 @@ void System::updateSystemWithNewParameters() {
 	this->evaluateAllLocalFunctions();
 
 
+	//Refresh parameter-backed compartment sizes first so zero-order
+	// volume factors below observe the new volumes (ruleworld/nfsim#105).
+	this->updateCompartmentSizesFromParameters();
+
+	//Refresh zero-order synthesis volume factors from current sizes.
+	for(unsigned int r=0; r<allReactions.size(); r++) {
+		allReactions.at(r)->refreshZeroOrderVolumeFactor();
+	}
+
 	//Update all reactions
 	for(unsigned int r=0; r<allReactions.size(); r++) {
 		allReactions.at(r)->resetBaseRateFromSystemParamter();
+		// Functional (observable-dependent) zero-order reactions carry no
+		// baseRateParameterName, so resetBaseRateFromSystemParamter() is a
+		// no-op for them; still refresh the rescaled propensity.
+		if (allReactions.at(r)->usesZeroOrderVolumeScaling()) {
+			allReactions.at(r)->update_a();
+		}
 	}
 
 

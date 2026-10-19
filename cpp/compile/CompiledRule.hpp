@@ -122,6 +122,23 @@ struct CompiledRuleDirection {
     std::vector<CompiledFilter> filters;
     std::vector<CompiledLocalScope> localScopes;
 
+    // Permutations of identical, wholly deleted reactants have no surviving
+    // source mapping that could distinguish their positions. This bounded
+    // correction is shared by direct NFsim and XML, not a general symmetry count.
+    double wholeReactantPermutationFactor() const noexcept {
+        if (reactantPatterns.size() < 2 || !localScopes.empty() || !filters.empty() ||
+            wholeSpeciesDeletions.size() != reactantPatterns.size()) return 1.0;
+        double factor = 1.0;
+        for (std::size_t index = 0; index < reactantPatterns.size(); ++index) {
+            std::size_t count = 1;
+            for (std::size_t previous = 0; previous < index; ++previous) {
+                if (reactantPatterns[index] == reactantPatterns[previous]) ++count;
+            }
+            factor /= static_cast<double>(count);
+        }
+        return factor;
+    }
+
     const CompiledLocalScope* findLocalScope(const std::string& name) const noexcept {
         const auto it = std::find_if(localScopes.begin(), localScopes.end(),
             [&](const auto& scope) { return scope.name == name; });

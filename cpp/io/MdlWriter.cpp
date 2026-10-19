@@ -1,3 +1,4 @@
+#include "compile/CompiledModel.hpp"
 #include "MdlWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
@@ -14,6 +15,7 @@ namespace bng::io {
 
 std::string MdlWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
     requireNoEnergySemantics(model, "MCell MDL");
+    compile::requireNoNativeEvents(model, "MCell export");
     std::ostringstream out;
 
     const std::string modelName = model.getModelName();

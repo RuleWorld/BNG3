@@ -84,12 +84,13 @@ _SWEEP_CHILD = """
 import json, os, sys
 
 sys.path.insert(0, os.getcwd())
-sys.path.insert(0, os.path.join(os.getcwd(), "python"))
 
 import numpy as np
 
-from tests.validation import compare, corpus
+from tests.validation import compare, corpus, runner
+runner._ensure_source_python_path()
 import bionetgen
+import bionetgen.model
 
 model_name, t_end, n_steps, seed = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 
@@ -119,7 +120,8 @@ def trajectory(result):
     data = np.column_stack([time] + [np.asarray(obs[n], float) for n in names])
     return data, ["time"] + names
 
-record = {"model": model_name}
+record = {"model": model_name, "package": bionetgen.__file__,
+          "native_extension": bionetgen.model._cpp.__file__}
 direct = None
 try:
     direct = run(model_name)

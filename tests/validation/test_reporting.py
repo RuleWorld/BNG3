@@ -1,4 +1,109 @@
 from tests.validation import reporting
+import pytest
+
+
+def test_history_exposes_admission_failures_and_lost_coverage():
+    old = {
+        "comparison_key": "same",
+        "results": [
+            {"id": "admitted", "status": "UNSUPPORTED"},
+            {"id": "supported", "status": "UNSUPPORTED"},
+            {"id": "lost", "status": "PASS"},
+            {"id": "missing", "status": "PASS"},
+            {"id": "blocked", "status": "UNSUPPORTED"},
+        ],
+    }
+    new = {
+        "comparison_key": "same",
+        "results": [
+            {"id": "admitted", "status": "FAIL"},
+            {"id": "supported", "status": "PASS"},
+            {"id": "lost", "status": "NOT_TESTED"},
+            {"id": "blocked", "status": "HARNESS_ERROR"},
+        ],
+    }
+    change = reporting.history(new, old)
+    assert change["newly_admitted_failures"] == ["admitted"]
+    assert change["unsupported_to_supported"] == ["supported"]
+    assert change["coverage_regressions"] == ["lost", "missing"]
+    assert change["new_failures"] == []
+
+
+def test_history_rejects_duplicate_leaf_identities_and_ignores_rollups():
+    baseline = {"comparison_key": "same", "results": []}
+    report = {
+        "comparison_key": "same",
+        "results": [{"id": "rollup", "status": "FAIL", "aggregate": True}],
+    }
+    assert reporting.history(report, baseline)["newly_executed"] == []
+    report["results"] = [{"id": "duplicate", "status": "PASS"}] * 2
+    with pytest.raises(ValueError, match="duplicate"):
+        reporting.history(report, baseline)
+
+
+def test_issue_coverage_keeps_closed_unmapped_and_unexecuted_issues_visible():
+    capabilities = [
+        {
+            "id": "rates",
+            "kind": "semantic-claim",
+            "issues": [143],
+            "existing_tests": ["tests/rates.py"],
+            "evidence_ids": ["one", "blocked"],
+            "missing_tests": ["independent local scopes"],
+        },
+        {
+            "id": "scopes",
+            "kind": "semantic-claim",
+            "issues": [143],
+            "existing_tests": ["tests/scopes.py"],
+            "evidence_ids": [],
+        },
+    ]
+    results = [
+        {"id": "one", "status": "PASS", "related_issues": [143]},
+        {"id": "blocked", "status": "NOT_TESTED", "related_issues": [143]},
+        {"id": "suite", "status": "FAIL", "related_issues": [143], "aggregate": True},
+    ]
+    issues = [
+        {"number": 143, "title": "Rates", "state": "CLOSED"},
+        {"number": 162, "title": "Campaign", "state": "OPEN"},
+    ]
+    rows = reporting.issue_coverage(capabilities, results, issues)
+    assert [row["number"] for row in rows] == [143, 162]
+    rates, campaign = rows
+    assert rates["coverage"] == "PARTIAL"
+    assert rates["state"] == "CLOSED"
+    assert rates["result_counts"] == {"PASS": 1, "NOT_TESTED": 1}
+    assert rates["unexecuted_capabilities"] == ["scopes"]
+    assert rates["remaining_qualification"] == {"rates": ["independent local scopes"]}
+    assert campaign["coverage"] == "NOT_TESTED"
+    assert campaign["capabilities"] == []
+
+
+@pytest.mark.parametrize(
+    "issues",
+    [
+        [{"number": True}],
+        [{"number": 0}],
+        [{"number": 1}, {"number": 1}],
+        [None],
+        [{"number": 1, "title": []}],
+        [{"number": 1, "state": "done"}],
+    ],
+)
+def test_issue_coverage_rejects_ambiguous_issue_identities(issues):
+    with pytest.raises(ValueError):
+        reporting.issue_coverage([], [], issues)
+
+
+def test_issue_coverage_rejects_duplicate_result_identities():
+    with pytest.raises(ValueError, match="duplicate"):
+        reporting.issue_coverage([], [{"id": "same", "status": "PASS"}] * 2)
+
+
+def test_issue_coverage_rejects_unknown_outcomes():
+    with pytest.raises(ValueError, match="status"):
+        reporting.issue_coverage([], [{"id": "one", "status": "success-ish"}])
 
 
 def test_similar_failures_are_hypotheses_not_confirmed_causes():
@@ -86,6 +191,93 @@ def test_task_packets_are_leaf_failures_with_replay_and_bounded_acceptance(tmp_p
     assert task["evidence"] == ["reference.net", "subject.net"]
 
 
+def test_investigation_packet_links_only_exact_failed_obligation_check(tmp_path):
+    report = {
+        "source": {"revision": "abc"},
+        "subject": {"binary": "/bng_cpp"},
+        "configuration": {},
+        "references": {"oracle": {"revision": "oracle-revision"}},
+        "results": [
+            {
+                "id": "case:amounts",
+                "check": "oracle:amounts",
+                "stage": "network.amounts",
+                "status": "FAIL",
+                "detail": "amount mismatch",
+            },
+            {
+                "id": "neighbor:amounts",
+                "check": "another:amounts",
+                "stage": "network.amounts",
+                "status": "FAIL",
+                "detail": "amount mismatch",
+            },
+        ],
+    }
+    obligations = [
+        {
+            "id": "issue-143.amount-preservation",
+            "status": "FAIL",
+            "required_checks": [
+                {
+                    "id": "case:amounts",
+                    "evidence_kind": "trajectory",
+                    "expectation": "Match initial amount against the independent source oracle.",
+                    "identity_requirements": [
+                        "source.revision",
+                        "references.nfsim.revision",
+                    ],
+                },
+                {
+                    "id": "consumer:reload",
+                    "evidence_kind": "net-reload",
+                    "expectation": "Consume the retained network in reload mode.",
+                    "identity_requirements": ["source.revision"],
+                },
+            ],
+            "checks": [
+                {
+                    "id": "case:amounts",
+                    "status": "FAIL",
+                    "evidence_kind": "trajectory",
+                    "expectation": "Match initial amount against the independent source oracle.",
+                    "identity_requirements": [
+                        "source.revision",
+                        "references.nfsim.revision",
+                    ],
+                    "first_observed_boundary": "network.amounts",
+                    "candidate_identity": {"revision": "abc"},
+                    "oracle_identities": {"oracle": {"revision": "oracle-revision"}},
+                    "missing_evidence": [],
+                    "observation": "amount mismatch",
+                }
+            ],
+            "missing_evidence": ["consumer:reload"],
+        }
+    ]
+
+    tasks = reporting.investigation_tasks(report, tmp_path, obligations=obligations)
+
+    linked = next(task for task in tasks if task["case_id"] == "case:amounts")
+    unlinked = next(task for task in tasks if task["case_id"] == "neighbor:amounts")
+    assert linked["affected_obligations"] == [
+        {
+            "id": "issue-143.amount-preservation",
+            "required_check": "case:amounts",
+            "evidence_kind": "trajectory",
+            "expectation": "Match initial amount against the independent source oracle.",
+            "missing_required_checks": ["consumer:reload"],
+            "missing_identities": ["case:amounts:references.nfsim.revision"],
+            "missing_evidence": ["consumer:reload"],
+            "first_observed_boundary": "network.amounts",
+            "retained_reproducer_status": "PENDING_PACKET_RETENTION",
+            "candidate_identity": {"revision": "abc"},
+            "oracle_identities": {"oracle": {"revision": "oracle-revision"}},
+        }
+    ]
+    assert unlinked["affected_obligations"] == []
+
+
 def test_node_specific_mapping_never_attributes_neighbor_failure_to_capability():
     cap = {
         "id": "actions.amounts",
@@ -145,3 +337,82 @@ def test_named_pytest_task_uses_repository_path_and_pinned_oracle_environment(tm
     )
     assert task["reproduce_environment"]["BNG2_PERL"] == "/oracle/bng2/BNG2.pl"
     assert task["reproduce_environment"]["BNG2_NETWORK_SHA256"] == "digest"
+
+
+def test_explicit_list_command_takes_precedence_over_model_fallback(tmp_path):
+    report = {
+        "source": {"revision": "abc"},
+        "subject": {"binary": "/engine"},
+        "configuration": {},
+        "references": {},
+        "results": [
+            {
+                "id": "integrated:case:consumer",
+                "model": "would-use-generic-replay",
+                "command": [
+                    "python",
+                    "-m",
+                    "tests.validation.integrated",
+                    "--case",
+                    "x",
+                ],
+                "stage": "consumer",
+                "status": "FAIL",
+            }
+        ],
+    }
+    task = reporting.investigation_tasks(report, tmp_path)[0]
+    assert task["reproduce_command"] == report["results"][0]["command"]
+
+
+def test_task_packets_pin_report_identities_and_receipt_load_errors(tmp_path):
+    valid = tmp_path / "receipts" / "command.json"
+    valid.parent.mkdir()
+    valid.write_text('{"status": "FAIL"}')
+    malformed = tmp_path / "receipts" / "broken.json"
+    malformed.write_text("not json")
+    report = {
+        "source": {"revision": "abc", "dirty": True, "tree_sha256": "tree"},
+        "subject": {"binary": "/engine", "sha256": "engine-digest"},
+        "configuration": {"tier": ["smoke"]},
+        "references": {
+            "bionetgen": {
+                "path": "/oracle",
+                "script": "/oracle/bng2/BNG2.pl",
+                "revision": "ref",
+            }
+        },
+        "platform": {"system": "test-os", "python": "test-python"},
+        "results": [
+            {
+                "id": "case:unit",
+                "stage": "test",
+                "status": "FAIL",
+                "command": ["pytest", "test_case.py"],
+                "receipts": [
+                    "receipts/command.json",
+                    "receipts/missing.json",
+                    "receipts/broken.json",
+                ],
+            }
+        ],
+    }
+
+    task = reporting.investigation_tasks(report, tmp_path)[0]
+
+    assert task["source"] == report["source"]
+    assert task["source_dirty"] is True
+    assert task["subject"] == report["subject"]
+    assert task["references"] == report["references"]
+    assert task["configuration"] == report["configuration"]
+    assert task["platform"] == report["platform"]
+    assert task["recorded_commands"] == [{"status": "FAIL"}]
+    records = task["receipt_records"]
+    assert [record["status"] for record in records] == [
+        "loaded",
+        "missing",
+        "malformed",
+    ]
+    assert records[0]["resolved_path"] == str(valid)
+    assert "not found" in records[1]["error"]
+    assert "JSON" in records[2]["error"] or "json" in records[2]["error"]

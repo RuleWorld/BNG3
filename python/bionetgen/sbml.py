@@ -6,15 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from bionetgen.core.exc import BNGError
-from bionetgen.model import BioNetGenModel
-
-try:
-    from bionetgen import _bionetgen_cpp as _cpp
-except ImportError:
-    try:
-        import _bionetgen_cpp as _cpp
-    except ImportError:
-        _cpp = None
+from bionetgen.model import BioNetGenModel, _cpp
 
 
 class BioNetGenError(BNGError):
