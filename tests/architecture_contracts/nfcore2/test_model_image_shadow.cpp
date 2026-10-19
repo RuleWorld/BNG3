@@ -162,6 +162,33 @@ TEST(ModelImage_RoundTripTransformBytecode){
     EXPECT_EQ(c[0].feature,FeatureId(0));
 }
 
+TEST(ModelImage_RoundTripMoveTransformTargets){
+    ExecutableModel e;
+    TransformProgram tp;
+    TransformInstruction mv(TRANSFORM_MOVE_SPECIES);
+    mv.target=0;
+    mv.a=7;
+    mv.target_is_graph_node=true;
+    mv.target_graph_node=3;
+    mv.excluded_graph_nodes={2,4};
+    tp.add(mv);
+    tp.add(TransformInstruction(TRANSFORM_END));
+    e.buildTransforms().add(tp);
+    ExecutableModel b=readBytes(writeBytes(e));
+    EXPECT_EQ(b.transforms().size(),1u);
+    if (b.transforms().size()!=1u) return;
+    const std::vector<TransformInstruction>& c=b.transforms().at(TransformProgramId(0)).code();
+    EXPECT_EQ(c.size(),2u);
+    if (c.empty()) return;
+    EXPECT_TRUE(c[0].target_is_graph_node);
+    EXPECT_EQ(c[0].target_graph_node,3u);
+    EXPECT_EQ(c[0].excluded_graph_nodes.size(),2u);
+    if (c[0].excluded_graph_nodes.size()==2u) {
+        EXPECT_EQ(c[0].excluded_graph_nodes[0],2u);
+        EXPECT_EQ(c[0].excluded_graph_nodes[1],4u);
+    }
+}
+
 TEST(ModelImage_RoundTripRuleFamiliesAndMembers){
     ExecutableModel a=imageModel();
     ExecutableModel b=readBytes(writeBytes(a));

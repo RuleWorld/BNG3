@@ -153,16 +153,26 @@ struct NativeTransformSnapshot {
     int new_value;
     int removal_type;
     std::uint32_t added_molecule_type;
+    std::uint32_t added_molecule_compartment;
     std::int64_t population_delta;
     std::uint32_t destination_compartment;
     bool move_connected;
+    // Non-root pattern molecules are addressed by their reactant-graph node
+    // index rather than by reactant index.
+    bool target_is_graph_node;
+    std::uint32_t target_graph_node;
+    // Reactant-graph nodes that MoveConnected must leave in place because the
+    // rule maps them separately (native NFsim excludedMappingIndices).
+    std::vector<std::uint32_t> excluded_graph_nodes;
     // Scope identifier used by the LocalFunctionReference transform (the
     // referenced function itself belongs to the legacy function table).
     std::string local_function_pointer;
     int local_function_scope;
     NativeTransformSnapshot() : kind(NATIVE_EMPTY), reactant(0), other_reactant(0), component(0),
-        other_component(0), new_value(0), removal_type(-1), added_molecule_type(0), population_delta(0),
-        destination_compartment(0), move_connected(false), local_function_scope(-1) {}
+        other_component(0), new_value(0), removal_type(-1), added_molecule_type(0),
+        added_molecule_compartment(std::numeric_limits<std::uint32_t>::max()), population_delta(0),
+        destination_compartment(0), move_connected(false), target_is_graph_node(false),
+        target_graph_node(0), local_function_scope(-1) {}
 };
 
 struct NativeGraphNodeSnapshot {

@@ -482,7 +482,10 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
         for (std::size_t di=0;di<nr.dependencies.size();++di) {
             const NativeDependencySnapshot& d=nr.dependencies[di];
             std::uint32_t type=reactantType(source,nr,d.reactant);
-            validateComponent(source,type,d.component);
+            if (d.kind==NATIVE_STATE_REQUIRED || d.kind==NATIVE_STATE_EXCLUDED ||
+                d.kind==NATIVE_BOND_FREE || d.kind==NATIVE_BOND_BOUND ||
+                d.kind==NATIVE_BOND_TO)
+                validateComponent(source,type,d.component);
             LegacyPredicateIR p;
             switch(d.kind) {
                 case NATIVE_STATE_REQUIRED:
@@ -542,7 +545,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
             std::uint32_t type = 0;
             if (has_reactant) {
                 type=reactantType(source,nr,x.reactant);
-                if (x.kind!=NATIVE_EMPTY && x.kind!=NATIVE_LOCAL_FUNCTION_REFERENCE && x.kind!=NATIVE_MOVE &&
+                if (x.kind!=NATIVE_EMPTY && x.kind!=NATIVE_ADD && x.kind!=NATIVE_LOCAL_FUNCTION_REFERENCE && x.kind!=NATIVE_MOVE &&
                     x.kind!=NATIVE_INCREMENT_POPULATION && x.kind!=NATIVE_DECREMENT_POPULATION &&
                     x.kind!=NATIVE_REMOVE)
                     validateComponent(source,type,x.component);
@@ -586,6 +589,7 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     if (x.added_molecule_type >= source.molecule_types.size() || source.molecule_types[x.added_molecule_type].population)
                         throw std::invalid_argument("NFsim synthesis molecule type");
                     t=transform(LEGACY_TRANSFORM_CREATE_MOLECULE,x.reactant,x.added_molecule_type,fmap.existence[x.added_molecule_type]);
+                    t.b=x.added_molecule_compartment;
                     r.transforms.push_back(t);break;
                 case NATIVE_INCREMENT_POPULATION:
                     t=transform(LEGACY_TRANSFORM_POPULATION_ADD,x.reactant,0,fmap.population[type]);
@@ -597,12 +601,17 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                     if (x.move_connected) {
                         t=transform(LEGACY_TRANSFORM_MOVE_SPECIES,x.reactant,0,fmap.compartment[type]);
                         t.a=x.destination_compartment;
+                        t.target_is_graph_node=x.target_is_graph_node;
+                        t.target_graph_node=x.target_graph_node;
+                        t.excluded_graph_nodes=x.excluded_graph_nodes;
                         r.transforms.push_back(t);
                         r.changes_topology=true;
                         r.topology_change_is_local=true;
                     } else {
                         t=transform(LEGACY_TRANSFORM_MOVE_MOLECULE,x.reactant,0,fmap.compartment[type]);
                         t.a=x.destination_compartment;
+                        t.target_is_graph_node=x.target_is_graph_node;
+                        t.target_graph_node=x.target_graph_node;
                         r.transforms.push_back(t);
                     }
                     break;

@@ -3,6 +3,33 @@
 #include <stdexcept>
 namespace NFcore2 {
 namespace {
+std::uint32_t reactionCompartment(const SimulationState& state,
+                                 const MatchContext& context) {
+    const auto& compartments = state.model().compartments();
+    if (compartments.empty()) return std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t surface = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t volume = std::numeric_limits<std::uint32_t>::max();
+    for (const MoleculeRef ref : context.reactants) {
+        if (!ref.valid() || !state.molecules(ref.type).alive(ref.handle)) continue;
+        const std::uint32_t id = state.molecules(ref.type).compartment(ref.handle);
+        for (const auto& descriptor : compartments) {
+            if (descriptor.id != id) continue;
+            if (descriptor.dimensions == 2) {
+                if (surface != std::numeric_limits<std::uint32_t>::max() && surface != id)
+                    return std::numeric_limits<std::uint32_t>::max();
+                surface = id;
+            } else if (descriptor.dimensions == 3) {
+                if (volume != std::numeric_limits<std::uint32_t>::max() && volume != id)
+                    return std::numeric_limits<std::uint32_t>::max();
+                volume = id;
+            }
+        }
+    }
+    if (surface != std::numeric_limits<std::uint32_t>::max()) return surface;
+    return volume;
+}
+}
+namespace {
 FeatureId bondFeature(const SimulationState& state, MoleculeTypeId type, std::uint32_t component) {
     const std::vector<FeatureDescriptor>& features = state.model().features();
     for (std::size_t i = 0; i < features.size(); ++i) {
@@ -36,7 +63,7 @@ void reportMoleculeFeatures(const SimulationState& state, MoleculeTypeId type,
     }
 }
 }
-void TransformProgram::execute(SimulationState&s,ScaffoldStore&sc,MatchContext&c,FeatureDelta&d)const{for(std::size_t i=0;i<code_.size();++i){const TransformInstruction&x=code_[i];MoleculeRef r=c.moleculeAt(x.target);switch(x.opcode){
+void TransformProgram::execute(SimulationState&s,ScaffoldStore&sc,MatchContext&c,FeatureDelta&d)const{for(std::size_t i=0;i<code_.size();++i){const TransformInstruction&x=code_[i];MoleculeRef r=x.target_is_graph_node?(x.target_graph_node<c.graph_nodes.size()?c.graph_nodes[x.target_graph_node]:MoleculeRef()):c.moleculeAt(x.target);switch(x.opcode){
 case TRANSFORM_SET_STATE_WORD:s.molecules(r.type).setStateWord(r.handle,(std::uint16_t)x.a,x.value);d.add(x.feature.valid()?x.feature:FeatureId(x.b));break;
 case TRANSFORM_ADD_STATE_WORD:{
  std::uint64_t old=s.molecules(r.type).stateWord(r.handle,(std::uint16_t)x.a); std::int64_t delta=static_cast<std::int64_t>(x.value);
@@ -78,17 +105,19 @@ case TRANSFORM_UNBIND:{
 case TRANSFORM_CREATE_MOLECULE:{
  MoleculeTypeId t(x.a); MoleculeHandle h=s.molecules(t).create();
  MoleculeRef created(t,h);
- // NFsim synthesis inherits the compartment of its mapped template when a
- // product is created inside a reaction; zero-reactant synthesis keeps the
- // model's default compartment.
- if (r.valid() && !s.model().compartments().empty())
-  s.molecules(t).setCompartment(h, s.molecules(r.type).compartment(r.handle));
+ // Explicit product compartments are authoritative; otherwise unplaced
+ // products inherit the reaction's canonical compartment. For a
+ // surface-volume reaction this is the surface (lowest spatial dimension).
+ const std::uint32_t inherited = x.b != std::numeric_limits<std::uint32_t>::max()
+     ? x.b : reactionCompartment(s, c);
+ if (inherited != std::numeric_limits<std::uint32_t>::max())
+  s.molecules(t).setCompartment(h, inherited);
  c.setMoleculeAt(x.target, created);
  if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_DELETE_MOLECULE:{if(r.valid()){std::vector<MoleculeRef> neighbors;const MoleculeStore& source=s.molecules(r.type);for(std::uint16_t slot=0;slot<source.bondSlotCount();++slot){MoleculeRef p=source.bondRef(r.handle,slot);if(p.valid()&&s.molecules(p.type).alive(p.handle))neighbors.push_back(p);}s.eraseMolecule(r);reportMoleculeFeatures(s,r.type,d);for(const auto& p:neighbors)reportMoleculeFeatures(s,p.type,d);}if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_DELETE_SPECIES:{std::vector<MoleculeRef> removed=s.eraseSpecies(r);for(std::size_t j=0;j<removed.size();++j)reportMoleculeFeatures(s,removed[j].type,d);if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_MOVE_MOLECULE:s.moveMolecule(r,x.a);if(x.feature.valid())d.add(x.feature);break;
-case TRANSFORM_MOVE_SPECIES:{s.moveSpecies(r,x.a);const std::vector<MoleculeRef> members=s.connectedComponent(r);for(const auto& member:members)reportMoleculeFeatures(s,member.type,d);if(x.feature.valid())d.add(x.feature);break;}
+case TRANSFORM_MOVE_SPECIES:{std::vector<MoleculeRef> excluded;for(const auto target:x.excluded_graph_nodes){if(target<c.graph_nodes.size()){const MoleculeRef other=c.graph_nodes[target];if(other.valid())excluded.push_back(other);}}s.moveSpecies(r,x.a,excluded);const std::vector<MoleculeRef> members=s.connectedComponent(r);for(const auto& member:members)reportMoleculeFeatures(s,member.type,d);if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_DELETE_MOLECULE_CONDITIONAL:{if(!r.valid()||s.wouldEraseSplitSpecies(r))break;const std::vector<MoleculeRef> members=s.connectedComponent(r);if(s.eraseMolecule(r)){for(const auto& member:members)reportMoleculeFeatures(s,member.type,d);}if(x.feature.valid())d.add(x.feature);break;}
 case TRANSFORM_END:return;default:throw std::logic_error("invalid transform opcode");}}}
 }

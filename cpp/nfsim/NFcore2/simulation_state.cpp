@@ -1,6 +1,7 @@
 #include "simulation_state.hh"
 #include <limits>
 #include <cmath>
+#include <algorithm>
 
 namespace NFcore2 {
 
@@ -192,6 +193,11 @@ void SimulationState::moveMolecule(MoleculeRef ref, std::uint32_t destination) {
 }
 
 void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
+    moveSpecies(ref, destination, std::vector<MoleculeRef>());
+}
+
+void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination,
+                                  const std::vector<MoleculeRef>& excluded) {
     if (!ref.valid() || !molecules(ref.type).alive(ref.handle))
         throw std::out_of_range("move target missing");
     // Models without an explicit compartment table retain the historical
@@ -201,6 +207,10 @@ void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
         throw std::out_of_range("move destination compartment is unknown");
     if (!model_.compartments().empty()) (void)compartmentSize(destination);
     const std::vector<MoleculeRef> members = connectedComponent(ref);
+    const std::uint32_t sourceCompartment = molecules(ref.type).compartment(ref.handle);
+    const auto isExcluded = [&](MoleculeRef candidate) {
+        return std::find(excluded.begin(), excluded.end(), candidate) != excluded.end();
+    };
     for (const auto& member : members)
         if (!member.valid() || !molecules(member.type).alive(member.handle))
             throw std::logic_error("species contains a stale molecule");
@@ -210,6 +220,9 @@ void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
             if (compartment.id == destination) { destinationDescriptor = &compartment; break; }
         if (!destinationDescriptor) throw std::out_of_range("move destination compartment is unknown");
         for (const auto& member : members) {
+            if (isExcluded(member) ||
+                molecules(member.type).compartment(member.handle) != sourceCompartment)
+                continue;
             const std::uint32_t source = molecules(member.type).compartment(member.handle);
             for (const auto& compartment : model_.compartments()) {
                 if (compartment.id == source &&
@@ -219,7 +232,9 @@ void SimulationState::moveSpecies(MoleculeRef ref, std::uint32_t destination) {
         }
     }
     for (const auto& member : members)
-        molecules(member.type).setCompartment(member.handle, destination);
+        if (!isExcluded(member) &&
+            molecules(member.type).compartment(member.handle) == sourceCompartment)
+            molecules(member.type).setCompartment(member.handle, destination);
 }
 
 bool SimulationState::wouldEraseSplitSpecies(MoleculeRef ref) const {

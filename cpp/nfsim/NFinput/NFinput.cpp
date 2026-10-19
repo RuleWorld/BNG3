@@ -1260,6 +1260,8 @@ static string initStartSpeciesBody(
 			// Now loop through the molecules
 			bool found_population = false;
 			bool found_particle = false;
+			Compartment *fixedCompartment = speciesCompartment;
+			bool firstMolecule = true;
 			Element *pMol;
 			for ( pMol = pListOfMol->FirstChildElement("Molecule"); pMol != 0; pMol = pMol->NextSiblingElement("Molecule"))
 			{
@@ -1296,6 +1298,10 @@ static string initStartSpeciesBody(
 						     << compartmentId << "'. Quitting" << endl;
 						return "";
 					}
+				}
+				if (firstMolecule) {
+					fixedCompartment = moleculeCompartment;
+					firstMolecule = false;
 				}
 
 				//Skip anything that is null or trash molecule
@@ -1618,7 +1624,7 @@ static string initStartSpeciesBody(
 						string moleculeTypeName = pFirstMol->Attribute("name");
 						MoleculeType *mt = s->getMoleculeTypeByName(moleculeTypeName);
 						if (mt != nullptr) {
-							mt->setFixed(true, specCountInteger, speciesCompartment);
+							mt->setFixed(true, specCountInteger, fixedCompartment);
 							if (verbose) {
 								cout << "\t\tSpecies '" << moleculeTypeName
 									 << "' marked as FIXED with count " << specCountInteger << endl;

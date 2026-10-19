@@ -5,6 +5,39 @@
 #include <stdexcept>
 
 namespace NFcore2 {
+namespace {
+const CompartmentDescriptor* findCompartment(const CompiledModel& model,
+                                            std::uint32_t id) {
+    for (const auto& compartment : model.compartments())
+        if (compartment.id == id) return &compartment;
+    return nullptr;
+}
+
+bool adjacent(const CompartmentDescriptor& a, const CompartmentDescriptor& b) {
+    return a.id == b.id || a.parent == b.id || b.parent == a.id;
+}
+
+bool reactantsCanInteract(const SimulationState& state,
+                          const MatchContext& context) {
+    if (context.reactants.size() < 2 || state.model().compartments().empty())
+        return true;
+    const auto unplaced = std::numeric_limits<std::uint32_t>::max();
+    const std::uint32_t firstId = state.molecules(context.reactants[0].type)
+        .compartment(context.reactants[0].handle);
+    const std::uint32_t secondId = state.molecules(context.reactants[1].type)
+        .compartment(context.reactants[1].handle);
+    if (firstId == unplaced || secondId == unplaced)
+        return firstId == secondId;
+    const auto* first = findCompartment(state.model(), firstId);
+    const auto* second = findCompartment(state.model(), secondId);
+    if (!first || !second) return false;
+    if (first->dimensions == second->dimensions) return firstId == secondId;
+    const auto* volume = first->dimensions == 3 ? first : second;
+    const auto* surface = first->dimensions == 2 ? first : second;
+    return volume->dimensions == 3 && surface->dimensions == 2 &&
+           adjacent(*volume, *surface);
+}
+}
 
 SsaDriver::SsaDriver(const ExecutableModel& executable,
                      const std::vector<SsaMemberSignature>& signatures)
@@ -97,7 +130,8 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
             for (std::size_t i = 0; i < pool[0].size(); ++i) {
                 MatchContext ctx;
                 ctx.setMoleculeAt(0, pool[0][i]);
-                if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
+                if (!reactantsCanInteract(state, ctx) ||
+                    !matcher.evaluate(state, engine_.scaffolds(), ctx))
                     continue;
                 const double rate =
                     engine_.evaluateRate(RuleFamilyId(familyIndex), m, ctx);
@@ -130,7 +164,7 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                     MatchContext ctx;
                     ctx.setMoleculeAt(0, first);
                     ctx.setMoleculeAt(1, second);
-                    bool matched =
+                    bool matched = reactantsCanInteract(state, ctx) &&
                         matcher.evaluate(state, engine_.scaffolds(), ctx);
                     if (!matched && first.type == second.type) {
                         first = pool[1][j];
@@ -138,8 +172,8 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                         ctx = MatchContext();
                         ctx.setMoleculeAt(0, first);
                         ctx.setMoleculeAt(1, second);
-                        matched = matcher.evaluate(state, engine_.scaffolds(),
-                                                  ctx);
+                        matched = reactantsCanInteract(state, ctx) &&
+                            matcher.evaluate(state, engine_.scaffolds(), ctx);
                     }
                     if (!matched)
                         continue;

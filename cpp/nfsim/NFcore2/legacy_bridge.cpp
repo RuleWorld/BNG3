@@ -352,6 +352,9 @@ TransformInstruction lowerTransform(const LegacyTransformIR& t) {
         default: throw std::logic_error("unsupported legacy transform reached lowerer");
     }
     TransformInstruction x(op); x.target=t.target; x.other=t.other; x.a=t.a; x.b=t.b; x.feature=t.changed_feature;
+    x.target_is_graph_node=t.target_is_graph_node;
+    x.target_graph_node=t.target_graph_node;
+    x.excluded_graph_nodes=t.excluded_graph_nodes;
     // Existing bytecode stores both unsigned state values and signed population
     // deltas in the 64-bit payload; preserve the bit pattern here.
     x.value=static_cast<std::uint64_t>(t.value);
@@ -411,7 +414,10 @@ std::string LegacyLowerer::transformSignature(const LegacyRuleIR& r) {
     for (std::size_t i=0;i<r.transforms.size();++i) {
         const LegacyTransformIR& t=r.transforms[i];
         os << static_cast<int>(t.kind) << ':' << t.target << ':' << t.other << ':' << t.a << ':' << t.b << ':'
-           << t.value << ':' << t.changed_feature.value() << ';';
+           << t.value << ':' << t.changed_feature.value() << ':' << t.target_is_graph_node
+           << ':' << t.target_graph_node << ':';
+        for (const std::uint32_t node : t.excluded_graph_nodes) os << 'x' << node << ',';
+        os << ';';
     }
     os << "rate:" << static_cast<int>(r.rate_law.kind) << ':' << r.rate_law.target << ':'
        << r.rate_law.partner_target << ':' << r.rate_law.component << ':'

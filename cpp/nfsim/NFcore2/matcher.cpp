@@ -4,7 +4,7 @@
 #include <functional>
 namespace NFcore2 {
 namespace {
-bool graphMatch(const SimulationState& s, const GraphPattern& graph, const MatchContext& c) {
+bool graphMatch(const SimulationState& s, const GraphPattern& graph, MatchContext& c) {
  if (graph.nodes.empty()) return false;
  for (const auto& node : graph.nodes)
   if (node.molecule_type >= s.model().moleculeTypes().size()) return false;
@@ -151,6 +151,7 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
   if (next==graph.nodes.size()) {
    for (std::size_t i=0; i<graph.nodes.size(); ++i)
     if (!nodeOk(i, mapping[i]) || !symmetricOk(i, mapping[i], true)) return false;
+   c.graph_nodes = mapping;
    return true;
   }
   const auto handles=s.molecules(MoleculeTypeId(graph.nodes[next].molecule_type)).liveHandles();
@@ -168,7 +169,7 @@ bool graphMatch(const SimulationState& s, const GraphPattern& graph, const Match
  return search(0);
 }
 }
-bool MatcherProgram::evaluate(const SimulationState&s,const ScaffoldStore&sc,const MatchContext&c)const{
+bool MatcherProgram::evaluate(const SimulationState&s,const ScaffoldStore&sc,MatchContext&c)const{
  for(std::size_t i=0;i<code_.size();++i){const MatchInstruction&x=code_[i];MoleculeRef r=c.moleculeAt(x.target);switch(x.opcode){
  case MATCH_TYPE_EXISTS: if(!r.valid()||!s.molecules(r.type).alive(r.handle))return false; if(x.a!=MoleculeTypeId::invalid_value()&&r.type.value()!=x.a)return false;break;
  case MATCH_STATE_MASK: if(!r.valid()||((s.molecules(r.type).stateWord(r.handle,(std::uint16_t)x.a)&x.mask)!=x.value))return false;break;

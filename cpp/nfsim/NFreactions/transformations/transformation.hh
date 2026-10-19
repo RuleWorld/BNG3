@@ -354,14 +354,17 @@ namespace NFcore
 			virtual int getComponentIndex() const { cerr<<"You should not get a component index from an AddMoleculeTransform!!"<<endl; return -1;};
 
 			// adds molecule and points mapping set to that new molecule
-			void apply_and_map( MappingSet * ms );
+			void apply_and_map( MappingSet * ms, Compartment * inheritedCompartment = NULL );
 			// AS2023 - alternative call sig to store a log of the transform
-			void apply_and_map( MappingSet * ms, string & logstr );
+			void apply_and_map( MappingSet * ms, string & logstr,
+				Compartment * inheritedCompartment = NULL );
 			// is this a population type?
 			bool isPopulationType() const;
 			MoleculeType * getMoleculeType() const;
 			// get pointer to population molecule
 			Molecule * get_population_pointer() const;
+			// explicit product compartment, or NULL when inherited
+			Compartment * getNewCompartment() const;
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 
 		protected:
@@ -441,7 +444,8 @@ namespace NFcore
 	class MoveTransformation : public Transformation {
 		public:
 			MoveTransformation(Compartment * newCompartment, bool moveConnected = false);
-			MoveTransformation(Compartment * newCompartment, TemplateMolecule * tm, bool moveConnected = false);
+			MoveTransformation(Compartment * newCompartment, TemplateMolecule * tm, bool moveConnected = false,
+				int reactantIndex = -1, const vector<int> &excludedMappingIndices = vector<int>());
 			virtual ~MoveTransformation() {};
 			virtual void apply(Mapping *m, MappingSet **ms);
 			// AS2023 - alternative call sig to store a log of the transform
@@ -451,11 +455,16 @@ namespace NFcore
 
 			bool isMoveConnected() const { return moveConnected; }
 			string getNewCompartmentId() const;
+			const vector<int> & getExcludedMappingIndices() const {
+				return excludedMappingIndices;
+			}
 
 		protected:
 			Compartment * newCompartment;
 			TemplateMolecule * tm;
 			bool moveConnected;
+			int reactantIndex;
+			vector<int> excludedMappingIndices;
 	};
 
 }
