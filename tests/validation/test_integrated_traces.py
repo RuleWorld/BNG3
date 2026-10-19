@@ -314,6 +314,63 @@ def test_bng_xml_coefficient_is_not_comparable_without_a_static_compartment_size
     assert observed["effective_rates"] is None
 
 
+def test_native_count_rate_xml_states_the_model_the_embedded_engine_executes(
+    tmp_path,
+):
+    """The oracle is handed BNG2's model in BNG2's count-rate convention.
+
+    BNG2's XML states a reactant-bearing rule at the rule rate constant, the
+    symmetry factor and the compartment size apart, and the pinned oracle
+    applies no compartment conversion to such a rule. The rewrite folds the
+    conversion into the rate constant, so the oracle samples the same model the
+    embedded engine executes.
+    """
+    path = tmp_path / "model.xml"
+    path.write_text(
+        "<Model><ListOfCompartments>"
+        '<compartment id="cell" spatialDimensions="3" size="3"/>'
+        "</ListOfCompartments>"
+        '<ListOfReactionRules><ReactionRule id="RR1" name="dimer" symmetry_factor="0.5">'
+        "<ListOfReactantPatterns>"
+        '<ReactantPattern compartment="cell"/><ReactantPattern compartment="cell"/>'
+        "</ListOfReactantPatterns>"
+        '<RateLaw type="Ele"><ListOfRateConstants>'
+        '<RateConstant value="0.8"/></ListOfRateConstants></RateLaw>'
+        "</ReactionRule></ListOfReactionRules></Model>"
+    )
+    target = tmp_path / "count-rate-model.xml"
+    observed = integrated_traces.native_count_rate_xml(path, target)
+    assert observed["status"] == "NORMALISED"
+    rule = observed["rules"][0]
+    assert rule["compartment_unit_conversion"] == pytest.approx(1 / 3)
+    assert rule["count_rate_coefficient"] == pytest.approx(0.4 / 3)
+    text = target.read_text()
+    # The count-rate coefficient replaces the rule rate constant, and the
+    # symmetry factor it already carries becomes redundant.
+    assert 'value="0.13333333333333333"' in text
+    assert "symmetry_factor" not in text
+    # A molecule compartment inside a rule pattern would make the oracle apply
+    # that compartment's size itself.
+    path.write_text(
+        "<Model><ListOfCompartments>"
+        '<compartment id="cell" spatialDimensions="3" size="3"/>'
+        "</ListOfCompartments>"
+        '<ListOfReactionRules><ReactionRule id="RR1" name="dimer" symmetry_factor="0.5">'
+        "<ListOfReactantPatterns>"
+        '<ReactantPattern compartment="cell">'
+        '<Molecule name="M_A" compartment="cell"/>'
+        "</ReactantPattern>"
+        '<ReactantPattern compartment="cell"/>'
+        "</ListOfReactantPatterns>"
+        '<RateLaw type="Ele"><ListOfRateConstants>'
+        '<RateConstant value="0.8"/></ListOfRateConstants></RateLaw>'
+        "</ReactionRule></ListOfReactionRules></Model>"
+    )
+    refused = integrated_traces.native_count_rate_xml(path, tmp_path / "refused.xml")
+    assert refused["status"] == "UNSUPPORTED"
+    assert "molecule compartment" in refused["detail"]
+
+
 def test_bngxml_report_row_marks_coefficient_evidence_diagnostic_only():
     row = integrated._rate_trace_row(
         "case",

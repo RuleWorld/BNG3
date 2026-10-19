@@ -19,6 +19,7 @@ NON_GATING_APPLICABILITY = {
     "no-observables",
     "no-rate-parameter-dependency",
     "native-oracle-unit-conversion-unsupported",
+    "not-applicable",
 }
 
 

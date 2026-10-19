@@ -772,14 +772,75 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         }
         const auto reactants = py::cast<py::list>(direction["reactants"]);
         const auto products = py::cast<py::list>(direction["products"]);
-        if (reactants.size() != 1 || products.size() != 1) {
+        if (reactants.empty() || products.empty()) {
             throw std::runtime_error(
-                "native BNGIR rule direction requires exactly one reactant and product pattern");
+                "native BNGIR does not support a rule direction without a "
+                "reactant and product pattern");
         }
         std::vector<SpeciesGraph> reactantGraphs;
         std::vector<SpeciesGraph> productGraphs;
-        reactantGraphs.emplace_back(patternFromBngir(*model, py::cast<py::dict>(reactants[0])));
-        productGraphs.emplace_back(patternFromBngir(*model, py::cast<py::dict>(products[0])));
+        for (const auto& rawReactant : reactants) {
+            reactantGraphs.push_back(
+                patternFromBngir(*model, py::cast<py::dict>(rawReactant)));
+        }
+        for (const auto& rawProduct : products) {
+            productGraphs.push_back(
+                patternFromBngir(*model, py::cast<py::dict>(rawProduct)));
+        }
+        if (reactantGraphs.size() > 1 || productGraphs.size() > 1) {
+            // The rule is rebuilt from its patterns, and the pattern structure
+            // decides the rule's operations. A direction with more than one
+            // pattern is only rebuilt faithfully when the document states the
+            // same operations: every reactant molecule deleted and every
+            // product molecule added, with no molecule carried over.
+            if (!py::cast<py::list>(rule["molecule_mappings"]).empty()) {
+                throw std::runtime_error(
+                    "native BNGIR rule carries a molecule mapping that a "
+                    "multi-pattern rule direction cannot rebuild");
+            }
+            std::vector<std::string> expected;
+            for (std::size_t index = 0; index < reactantGraphs.size(); ++index) {
+                expected.push_back("delete_molecule:reactant:" +
+                                   std::to_string(index));
+            }
+            for (std::size_t index = 0; index < productGraphs.size(); ++index) {
+                expected.push_back("add_molecule:product:" +
+                                   std::to_string(index));
+            }
+            std::vector<std::string> observed;
+            for (const auto& rawMutation :
+                 py::cast<py::list>(direction["mutations"])) {
+                const auto mutation = py::cast<py::dict>(rawMutation);
+                const auto reference = py::cast<py::dict>(mutation["molecule"]);
+                observed.push_back(
+                    py::cast<std::string>(mutation["kind"]) + ":" +
+                    py::cast<std::string>(reference["side"]) + ":" +
+                    std::to_string(indexFromBngir(
+                        reference["pattern"], "mutation pattern reference")));
+            }
+            std::sort(expected.begin(), expected.end());
+            std::sort(observed.begin(), observed.end());
+            if (observed != expected) {
+                throw std::runtime_error(
+                    "native BNGIR rule direction does not state the "
+                    "delete-and-add operations of a multi-pattern direction");
+            }
+            std::set<std::string> reactantTypes;
+            for (const auto& graph : reactantGraphs) {
+                for (const auto* node : graph.getGraph()) {
+                    reactantTypes.insert(node->get_type().get_type_name());
+                }
+            }
+            for (const auto& graph : productGraphs) {
+                for (const auto* node : graph.getGraph()) {
+                    if (reactantTypes.count(node->get_type().get_type_name())) {
+                        throw std::runtime_error(
+                            "native BNGIR rule direction carries a "
+                            "transformation the native slice cannot rebuild");
+                    }
+                }
+            }
+        }
         const auto rate = py::cast<py::dict>(direction["rate"]);
         std::vector<Expression> rates;
         rates.push_back(expressionFromBngir(

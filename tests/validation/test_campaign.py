@@ -131,6 +131,42 @@ def test_truncated_stream_tail_does_not_erase_completed_failure(tmp_path):
     assert any(r["status"] == "HARNESS_ERROR" for r in rows)
 
 
+def test_a_skipped_case_is_a_declared_absence_and_not_a_gating_failure(tmp_path):
+    """A skip states that the case does not apply here.
+
+    The record stays visible, but it must not fail the conformance gate the
+    way an interrupted or unexplained case does.
+    """
+    from tests.validation import reporting
+
+    path = tmp_path / "events.jsonl"
+    events = [
+        {
+            "event": "collection",
+            "cases": [{"nodeid": "test_a.py::test_interrupted", "file": "test_a.py"}],
+        },
+        {
+            "event": "case",
+            "nodeid": "test_a.py::test_skipped",
+            "file": "test_a.py",
+            "when": "call",
+            "outcome": "skipped",
+            "duration": 0.0,
+            "detail": "native NFsim binary not available",
+        },
+    ]
+    path.write_text("\n".join(json.dumps(event) for event in events) + "\n")
+    rows = campaign.read_pytest_events(path, "suite")
+    skipped = next(row for row in rows if "test_skipped" in row["id"])
+    assert skipped["status"] == "NOT_TESTED"
+    assert skipped["applicability"] == "not-applicable"
+    assert reporting.gate_failures([skipped]) == []
+    # A case that was never executed stays an unexplained gap.
+    interrupted = next(row for row in rows if "test_interrupted" in row["id"])
+    assert "applicability" not in interrupted
+    assert reporting.gate_failures([interrupted]) == [interrupted]
+
+
 def test_reference_source_checks_revision_remote_and_dirty_tree(tmp_path):
     def git(*args):
         return subprocess.check_output(

@@ -152,25 +152,14 @@ def generated_cases(full=False):
                 initial=initial,
                 reverse=reverse,
                 atomize=atomize,
-                exact_nf=family != "reversible"
-                and not (family == "dimerization" and volume > 1),
+                # The native oracle is handed the model in BNG2's count-rate
+                # convention, so it samples the same model the embedded
+                # engine executes and the seeded trajectories compare exactly.
+                exact_nf=True,
             )
             if family == "decay":
                 decay_bases[index] = case
-            if family == "reversible" or (
-                family == "dimerization" and case["volume"] > 1
-            ):
-                # For dimerization with volume > 1, the rate law k*A*A/V
-                # involves 0.4/3 which is not exactly representable in IEEE 754;
-                # embedded and native NFsim may round differently, causing
-                # seeded paths to diverge. Use distributional comparison.
-                case["nf_comparison"] = (
-                    "Use equal-seed comparison only when both routes preserve "
-                    "reaction ordering; otherwise compare ensemble means and "
-                    "the conserved A+2D total."
-                )
-            else:
-                case["nf_comparison"] = "Equal-seed native/embedded NFsim comparison."
+            case["nf_comparison"] = "Equal-seed native/embedded NFsim comparison."
             cases.append(case)
     perturbation_indices = PAIRWISE_INDICES if full else PERTURBATION_PR_INDICES
     for transform in ("function-shadowing", "concentration-coordinate"):
