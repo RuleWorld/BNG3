@@ -101,8 +101,10 @@ def test_smallstructures_molecule_copy_preserves_metadata_without_new_identifier
     ("molecule_type", "args"),
     [(structures.Molecule, ("M",)), (smallStructures.Molecule, ("M", 3))],
 )
-def test_molecule_copy_preserves_subclass_slots_and_dynamic_metadata(monkeypatch,
-    molecule_type, args,
+def test_molecule_copy_preserves_subclass_slots_and_dynamic_metadata(
+    monkeypatch,
+    molecule_type,
+    args,
 ):
     class SpecializedMolecule(molecule_type):
         __slots__ = ("tag",)
