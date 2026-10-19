@@ -43,6 +43,16 @@ native import boundary names that boundary in the established
 "native BNGIR does not support ..." wording so the consumer reports a
 support boundary instead of a harness failure.
 
+## A skipped test case is a declared absence
+
+The conformance gate requires every selected applicable diagnostic contract. A
+pytest case that skipped states that it does not apply in this environment, and
+the record said so, but the report classified it as an unexplained gap and the
+strict gate failed on it. A skipped or expected-failure case is now recorded
+with the applicability `not-applicable` and is not a gating failure. The record
+stays visible in the report, and a case that was never executed at all still
+gates.
+
 ## Native NFsim runs on the same model the embedded engine executes
 
 The native NFsim stage ran the pinned oracle on BNG2's XML verbatim. The oracle
