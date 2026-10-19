@@ -1352,7 +1352,7 @@ begin observables
     Molecules Cnt_W W()
 end observables
 begin functions
-    locs(x) = k*Obs_Src + 0*Cnt_W(x)
+    locs(x) = k + 0*Cnt_W(x)
 end functions
 begin reaction rules
     C(s~0) + W(d!1)%x.W(d!1) -> C(s~1) + W(d!1)%x.W(d!1) locs(x)

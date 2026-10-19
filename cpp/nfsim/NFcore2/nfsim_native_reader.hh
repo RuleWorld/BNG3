@@ -1,6 +1,6 @@
 #pragma once
 #include "nfsim_system_reader.hh"
-namespace NFcore { class System; }
+namespace NFcore { class System; class LocalFunction; }
 namespace NFcore2 {
 class NativeNFsimSystemReader : public NFsimSystemReader {
 public:
@@ -17,6 +17,12 @@ private:
     NFcore::System& system_;
 };
 NativeModelSnapshot snapshotLegacyNFsim(NFcore::System& system);
+// ruleworld/nfsim#104: a local function that reads both a locally-scoped
+// observable and a global observable goes stale under legacy evaluation
+// (fire() only re-evaluates type-II molecules on product complexes).
+// Throws instead of silently falling back to the stale evaluation.
+// Testable directly; both native append paths call it.
+void requireNoMixedLocalGlobalScopes(NFcore::LocalFunction* local);
 // Build the executable NFcore2 representation from the real NFsim object
 // graph. Unsupported legacy semantics remain represented in the returned
 // per-rule fallback records; callers must route those rules to NFsim.
