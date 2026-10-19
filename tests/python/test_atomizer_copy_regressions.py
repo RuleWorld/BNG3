@@ -45,7 +45,9 @@ def test_structures_molecule_copy_avoids_random_hash_allocation(monkeypatch):
     def unexpected_random_allocation(*args, **kwargs):
         pytest.fail("copying a molecule must not allocate a random hash array")
 
-    monkeypatch.setattr(structures.numpy.random, "rand", unexpected_random_allocation)
+    import os
+
+    monkeypatch.setattr(os, "urandom", unexpected_random_allocation)
 
     copied = molecule.copy()
 
@@ -74,6 +76,13 @@ def test_smallstructures_molecule_copy_preserves_metadata_without_new_identifier
 
     monkeypatch.setattr(smallStructures, "randint", unexpected_identifier)
 
+    def unexpected_random_allocation(*args, **kwargs):
+        pytest.fail("copying a molecule must not allocate a random hash array")
+
+    import os
+
+    monkeypatch.setattr(os, "urandom", unexpected_random_allocation)
+
     copied = molecule.copy()
 
     assert copied is not molecule
@@ -92,8 +101,8 @@ def test_smallstructures_molecule_copy_preserves_metadata_without_new_identifier
     ("molecule_type", "args"),
     [(structures.Molecule, ("M",)), (smallStructures.Molecule, ("M", 3))],
 )
-def test_molecule_copy_preserves_subclass_slots_and_dynamic_metadata(
-    molecule_type, args
+def test_molecule_copy_preserves_subclass_slots_and_dynamic_metadata(monkeypatch,
+    molecule_type, args,
 ):
     class SpecializedMolecule(molecule_type):
         __slots__ = ("tag",)
@@ -101,6 +110,14 @@ def test_molecule_copy_preserves_subclass_slots_and_dynamic_metadata(
     molecule = SpecializedMolecule(*args)
     molecule.tag = "specialized"
     molecule.metadata = {"source": "input"}
+
+    def unexpected_random_allocation(*args, **kwargs):
+        pytest.fail("copying a molecule must not allocate a random hash array")
+
+    import os
+
+    monkeypatch.setattr(os, "urandom", unexpected_random_allocation)
+
     copied = molecule.copy()
     assert type(copied) is SpecializedMolecule
     assert copied.tag == "specialized"

@@ -489,7 +489,7 @@ class Molecule:
 
     def copy(self):
         if type(self) is Molecule:
-            molecule = Molecule.__new__(Molecule)
+            molecule = self.__class__.__new__(self.__class__)
             molecule.__dict__ = self.__dict__.copy()
         else:
             # Subclasses may carry slots or implement their own copy protocol.
