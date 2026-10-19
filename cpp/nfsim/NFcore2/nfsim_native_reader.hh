@@ -14,11 +14,14 @@ public:
     virtual void collectTransforms(std::size_t reaction_index,std::vector<NativeTransformSnapshot>& out) const;
     virtual void collectCompartments(std::vector<NativeCompartmentSnapshot>& out) const;
     virtual void collectGraphPatterns(std::size_t reaction_index,std::vector<NativeGraphPatternSnapshot>& out) const;
-private:
-    void collectGraphPatternsWithIndices(
+protected:
+    // Connectivity extraction is virtual so tests can simulate a reader that
+    // cannot supply a graph snapshot and verify the refusal fallback.
+    virtual void collectGraphPatternsWithIndices(
         std::size_t reaction_index,
         std::vector<NativeGraphPatternSnapshot>& out,
         std::map<NFcore::TemplateMolecule*, std::uint32_t>* node_indices) const;
+private:
     NFcore::System& system_;
 };
 NativeModelSnapshot snapshotLegacyNFsim(NFcore::System& system);

@@ -72,11 +72,15 @@ struct LegacyTransformIR {
     // rather than a reactant root.
     bool target_is_graph_node;
     std::uint32_t target_graph_node;
+    // A binding partner can likewise be addressed by its graph node.
+    bool other_is_graph_node;
+    std::uint32_t other_graph_node;
     std::vector<std::uint32_t> excluded_graph_nodes;
     FeatureId changed_feature;
     LegacyTransformIR()
         : kind(LEGACY_TRANSFORM_UNSUPPORTED), target(0), other(0), a(0), b(0), value(0),
-          target_is_graph_node(false), target_graph_node(0), changed_feature() {}
+          target_is_graph_node(false), target_graph_node(0), other_is_graph_node(false),
+          other_graph_node(0), changed_feature() {}
 };
 
 struct LegacyRuleIR {

@@ -6,7 +6,7 @@ namespace NFcore2 {
 class ModelImage {
 public:
     // Version 13 adds graph negation/molecularity and native TFUN metadata.
-    static const std::uint32_t FORMAT_VERSION = 14;
+    static const std::uint32_t FORMAT_VERSION = 15;
     static void write(const ExecutableModel& model, std::ostream& out);
     static ExecutableModel read(std::istream& in);
     static void writeFile(const ExecutableModel& model, const std::string& path);

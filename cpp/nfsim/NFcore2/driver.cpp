@@ -1,6 +1,8 @@
 #include "driver.hh"
 
+#include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 
@@ -22,26 +24,45 @@ bool reactantsCanInteract(const SimulationState& state,
     if (context.reactants.size() < 2 || state.model().compartments().empty())
         return true;
     const auto unplaced = std::numeric_limits<std::uint32_t>::max();
-    const std::uint32_t firstId = state.molecules(context.reactants[0].type)
-        .compartment(context.reactants[0].handle);
-    const std::uint32_t secondId = state.molecules(context.reactants[1].type)
-        .compartment(context.reactants[1].handle);
-    if (firstId == unplaced || secondId == unplaced)
-        return firstId == secondId;
-    const auto* first = findCompartment(state.model(), firstId);
-    const auto* second = findCompartment(state.model(), secondId);
-    if (!first || !second) return false;
-    // NFsim anchors a multi-reactant rule in a 2-D surface or 3-D volume
-    // (selectReactionCompartment); any other dimensionality cannot establish
-    // a placement rule and is refused rather than assumed compatible.
-    if ((first->dimensions != 2 && first->dimensions != 3) ||
-        (second->dimensions != 2 && second->dimensions != 3))
-        return false;
-    if (first->dimensions == second->dimensions) return firstId == secondId;
-    const auto* volume = first->dimensions == 3 ? first : second;
-    const auto* surface = first->dimensions == 2 ? first : second;
-    return volume->dimensions == 3 && surface->dimensions == 2 &&
-           adjacent(*volume, *surface);
+    std::uint32_t volume = unplaced;
+    std::uint32_t surface = unplaced;
+    bool missing = false;
+    for (std::size_t i = 0; i < context.reactants.size(); ++i) {
+        const MoleculeRef& ref = context.reactants[i];
+        if (!ref.valid()) return false;
+        const std::uint32_t id =
+            state.molecules(ref.type).compartment(ref.handle);
+        if (id == unplaced) {
+            missing = true;
+            continue;
+        }
+        const CompartmentDescriptor* compartment =
+            findCompartment(state.model(), id);
+        if (!compartment) return false;
+        // NFsim anchors a multi-reactant rule in a 2-D surface or 3-D volume
+        // (selectReactionCompartment); any other dimensionality cannot
+        // establish a placement rule and is refused rather than assumed
+        // compatible.  Volumes must agree, surfaces must agree, and a mixed
+        // volume/surface pair must be adjacent.
+        if (compartment->dimensions == 3) {
+            if (volume != unplaced && volume != id) return false;
+            volume = id;
+        } else if (compartment->dimensions == 2) {
+            if (surface != unplaced && surface != id) return false;
+            surface = id;
+        } else {
+            return false;
+        }
+    }
+    if (missing && (volume != unplaced || surface != unplaced)) return false;
+    if (volume != unplaced && surface != unplaced) {
+        const CompartmentDescriptor* v =
+            findCompartment(state.model(), volume);
+        const CompartmentDescriptor* s =
+            findCompartment(state.model(), surface);
+        if (!v || !s || !adjacent(*v, *s)) return false;
+    }
+    return true;
 }
 }
 
@@ -63,9 +84,6 @@ SsaDriver::SsaDriver(const ExecutableModel& executable,
         const RuleFamilyDescriptor& fam = families[sig.family.value()];
         if (sig.member >= fam.members.size())
             throw std::out_of_range("driver signature references unknown member");
-        if (sig.reactantTypes.size() > 2)
-            throw std::invalid_argument(
-                "driver v1 supports at most two reactant roots per member");
         const RateLawDescriptor& law = fam.members[sig.member].rate_law;
         if (law.kind == LEGACY_RATE_EXPRESSION)
             throw std::invalid_argument(
@@ -150,7 +168,7 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                 t.rate = rate;
                 fresh.tuples.push_back(t);
             }
-        } else {
+        } else if (roots.size() == 2) {
             for (std::size_t i = 0; i < pool[0].size(); ++i) {
                 for (std::size_t j = 0; j < pool[1].size(); ++j) {
                     if (pool[0][i] == pool[1][j])
@@ -197,6 +215,59 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                     fresh.tuples.push_back(t);
                 }
             }
+        } else {
+            // Arbitrary number of reactant roots.  Enumerate injective
+            // assignments of live molecules to roots and count each unordered
+            // combination once, matching the two-root convention above.
+            const std::size_t nRoots = roots.size();
+            std::vector<MoleculeRef> assignment(nRoots);
+            std::vector<std::vector<MoleculeRef> > counted;
+            auto moleculeLess = [](const MoleculeRef& a, const MoleculeRef& b) {
+                if (a.type.value() != b.type.value())
+                    return a.type.value() < b.type.value();
+                if (a.handle.slot != b.handle.slot)
+                    return a.handle.slot < b.handle.slot;
+                return a.handle.generation < b.handle.generation;
+            };
+            std::function<void(std::size_t)> visit = [&](std::size_t depth) {
+                if (depth == nRoots) {
+                    MatchContext ctx;
+                    for (std::size_t r = 0; r < nRoots; ++r)
+                        ctx.setMoleculeAt(r, assignment[r]);
+                    if (!reactantsCanInteract(state, ctx))
+                        return;
+                    if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
+                        return;
+                    std::vector<MoleculeRef> key(assignment);
+                    std::sort(key.begin(), key.end(), moleculeLess);
+                    for (std::size_t k = 0; k < counted.size(); ++k)
+                        if (counted[k] == key) return;
+                    const double rate = engine_.evaluateRate(
+                        RuleFamilyId(familyIndex), m, ctx);
+                    if (rate < 0.0 || !std::isfinite(rate))
+                        throw std::runtime_error(
+                            "driver: non-finite member rate");
+                    if (rate == 0.0)
+                        return;
+                    counted.push_back(key);
+                    Tuple t;
+                    t.roots = assignment;
+                    t.rate = rate;
+                    fresh.tuples.push_back(t);
+                    return;
+                }
+                for (std::size_t i = 0; i < pool[depth].size(); ++i) {
+                    const MoleculeRef& candidate = pool[depth][i];
+                    bool clash = false;
+                    for (std::size_t k = 0; k < depth; ++k)
+                        if (assignment[k] == candidate) { clash = true; break; }
+                    if (clash)
+                        continue;
+                    assignment[depth] = candidate;
+                    visit(depth + 1);
+                }
+            };
+            visit(0);
         }
         members_[familyIndex][m] = fresh;
         double activity = 0.0;

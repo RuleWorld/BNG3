@@ -166,6 +166,10 @@ struct NativeTransformSnapshot {
     // index rather than by reactant index.
     bool target_is_graph_node;
     std::uint32_t target_graph_node;
+    // A binding transform's partner can likewise be an internal pattern
+    // molecule; it is addressed by its graph node when set.
+    bool other_is_graph_node;
+    std::uint32_t other_graph_node;
     // Reactant-graph nodes that MoveConnected must leave in place because the
     // rule maps them separately (native NFsim excludedMappingIndices).
     std::vector<std::uint32_t> excluded_graph_nodes;
@@ -177,7 +181,8 @@ struct NativeTransformSnapshot {
         other_component(0), new_value(0), removal_type(-1), added_molecule_type(0),
         added_molecule_compartment(std::numeric_limits<std::uint32_t>::max()), population_delta(0),
         destination_compartment(0), move_connected(false), target_is_graph_node(false),
-        target_graph_node(0), local_function_scope(-1) {}
+        target_graph_node(0), other_is_graph_node(false), other_graph_node(0),
+        local_function_scope(-1) {}
 };
 
 struct NativeGraphNodeSnapshot {

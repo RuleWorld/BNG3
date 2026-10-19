@@ -20,6 +20,10 @@ std::vector<NativeTransformSnapshot> NFsimTransformDecoder::decode(const std::ve
                 const NFsimPublicTransformView& second=other[static_cast<std::size_t>(x.other_mapping_index)];
                 if(!second.second_binding_half)throw std::logic_error("binding partner mapping is not second half");
                 n.other_reactant=static_cast<std::uint16_t>(x.other_reactant);n.other_component=second.component;
+                n.other_is_graph_node=second.target_is_graph_node;n.other_graph_node=second.target_graph_node;
+                // The partner molecule could not be resolved to a graph node,
+                // so the binding cannot address it; refuse the whole binding.
+                if(second.kind==NATIVE_UNSUPPORTED)n.kind=NATIVE_UNSUPPORTED;
             }
             out.push_back(n);
         }

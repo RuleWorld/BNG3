@@ -9,7 +9,7 @@
 
 namespace NFcore2 {
 
-// One reactant root per entry; v1 supports at most two roots per member.
+// One reactant root per entry; any number of roots per member is supported.
 // The driver does not infer roots from bytecode: lowered models provide
 // them from NativeReactionSnapshot::reactant_types via
 // LegacyLoweringResult::rules[i] (rule order is shared), hand-built models
@@ -53,12 +53,13 @@ struct SsaDriverResult {
 // a homotypic pair carry independent constraints.  enumerateFamily()
 // therefore tries the canonical orientation first and falls back to the
 // swapped one; a pair that matches in both orientations is still counted
-// once, and a pair that matches in neither contributes nothing.
+// once, and a pair that matches in neither contributes nothing.  Rules with
+// three or more reactant roots are enumerated over injective assignments and
+// deduplicated by molecule set with the same once-per-combination rule.
 //
 // Direct-method SSA over an ExecutableModel.
 //
 // v1 scope (fail-closed, anything else throws):
-// - at most two reactant roots per member;
 // - rate laws LEGACY_RATE_CONSTANT, LEGACY_RATE_LOCAL_LINEAR,
 //   LEGACY_RATE_DOR_PRODUCT (EXPRESSION needs reactant-count tracking and
 //   is rejected until it exists).
@@ -87,6 +88,14 @@ public:
     SimulationState& state() { return engine_.state(); }
     const SimulationState& state() const { return engine_.state(); }
     const Engine& engine() const { return engine_; }
+    // Number of currently enumerated tuples for one member.  Exposed for
+    // tests to assert reactant-combination counting directly.
+    std::size_t tupleCount(RuleFamilyId family, std::uint32_t member) const {
+        if (!family.valid() || family.value() >= members_.size() ||
+            member >= members_[family.value()].size())
+            return 0;
+        return members_[family.value()][member].tuples.size();
+    }
 
 private:
     struct Tuple {

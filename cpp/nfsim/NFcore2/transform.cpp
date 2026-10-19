@@ -78,7 +78,7 @@ case TRANSFORM_MOVE_OCCUPANT:{
  if(from!=to&&sc.occupant(c.scaffold,to).valid())throw std::logic_error("cannot overwrite scaffold occupant");
  sc.setOccupant(c.scaffold,from,MoleculeHandle());sc.setOccupant(c.scaffold,to,h);c.coordinate=to;d.add(x.feature.valid()?x.feature:FeatureId((std::uint32_t)x.value));break;}
 case TRANSFORM_POPULATION_ADD:s.populations().addTo(PopulationId(x.a),(std::int64_t)x.value);d.add(x.feature.valid()?x.feature:FeatureId(x.b));break;
-case TRANSFORM_BIND:{MoleculeRef q=c.moleculeAt(x.other);
+case TRANSFORM_BIND:{MoleculeRef q=x.other_is_graph_node?(x.other_graph_node<c.graph_nodes.size()?c.graph_nodes[x.other_graph_node]:MoleculeRef()):c.moleculeAt(x.other);
  if(!r.valid()||!q.valid())throw std::out_of_range("bind target missing");
  if(s.molecules(r.type).bondRef(r.handle,(std::uint16_t)x.a).valid()||s.molecules(q.type).bondRef(q.handle,(std::uint16_t)x.b).valid())throw std::logic_error("cannot bind occupied site");
  s.molecules(r.type).setBondRef(r.handle,(std::uint16_t)x.a,q);s.molecules(q.type).setBondRef(q.handle,(std::uint16_t)x.b,r);reportBondDelta(s,r,x.a,q,x.b,x.feature,d);break;}
