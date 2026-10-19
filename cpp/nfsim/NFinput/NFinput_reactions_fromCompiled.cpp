@@ -2382,19 +2382,6 @@ bool lowerDirection(const CompiledModel& model,
                     hasWildcardCompartment = true;
             }
         }
-        bool staticUnitVolumes = system.getNumberPerQuantityUnit() <= 0.0 ||
-                                 system.getNumberPerQuantityUnit() == 1.0;
-        for (const auto& declaration : model.compartments()) {
-            if (declaration.volume != 1.0 || declaration.volumeTimeDependent ||
-                !declaration.volumeParameterName.empty())
-                staticUnitVolumes = false;
-        }
-        if (hasWildcardCompartment && !staticUnitVolumes) {
-            diagnostic = "bare multi-reactant rule has a wildcard reactant compartment; "
-                         "NFsim requires statically unit-sized compartments to preserve its rate conversion";
-            delete reaction;
-            return false;
-        }
         for (const auto& pattern : direction.reactantPatterns) {
             const auto* declaration = reactantCompartmentDeclaration(model, pattern);
             if (declaration == nullptr) continue;
@@ -2406,42 +2393,60 @@ bool lowerDirection(const CompiledModel& model,
             }
             runtimeCompartments.push_back(runtimeCompartment);
         }
-        if (!hasWildcardCompartment && !runtimeCompartments.empty()) {
-            std::vector<NFcore::Compartment*> surfaces, volumes, converted;
+        std::vector<NFcore::Compartment*> converted;
+        if (hasWildcardCompartment) {
+            // A wildcard reactant may match any compartment, so the factor is
+            // placement-independent only when every compartment shares one
+            // static size (e.g. a single compartment).  Then the factor is
+            // 1/size^(n-1) for every match, reproduced by repeating one
+            // representative compartment.
+            double uniformSize = 0.0;
+            int uniformDimension = 0;
+            if (!system.hasPlacementIndependentCompartmentSizes(uniformSize, uniformDimension)) {
+                diagnostic = "bare multi-reactant rule has a wildcard reactant compartment; "
+                             "NFsim requires a single compartment or one shared static size to "
+                             "preserve its rate conversion";
+                delete reaction;
+                return false;
+            }
+            NFcore::Compartment* representative = system.getCompartments().begin()->second;
+            converted.assign(direction.reactantPatterns.size() - 1, representative);
+        } else if (!runtimeCompartments.empty()) {
+            // Anchor preference (Rxn.pm): first surface, else first volume, else
+            // first reactant of any other dimension.  Remaining reactant
+            // compartments multiply the denominator.
+            std::vector<NFcore::Compartment*> surfaces, volumes, others;
             for (auto* compartment : runtimeCompartments) {
                 if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
                 else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
-                else {
-                    diagnostic = "reactant compartment '" + compartment->getId() +
-                                 "' has a dimension unsupported by NFsim volume conversion";
-                    delete reaction;
-                    return false;
-                }
+                else others.push_back(compartment);
             }
             if (!surfaces.empty()) {
                 converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
                 converted.insert(converted.end(), volumes.begin(), volumes.end());
+                converted.insert(converted.end(), others.begin(), others.end());
             } else if (!volumes.empty()) {
                 converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
+                converted.insert(converted.end(), others.begin(), others.end());
+            } else {
+                converted.insert(converted.end(), others.begin() + 1, others.end());
             }
-            for (auto* compartment : converted) {
-                double size = compartment->getSize();
-                if (system.getNumberPerQuantityUnit() > 0.0)
-                    size *= system.getNumberPerQuantityUnit();
-                if (!std::isfinite(size) || size <= 0.0) {
-                    diagnostic = "reactant compartment '" + compartment->getId() +
-                                 "' has a non-positive or non-finite volume";
-                    delete reaction;
-                    return false;
-                }
-            }
-            // Only bare mass-action (BasicRxnClass) rates are converted here.
-            // Functional/saturating rates carry their own count-rate semantics
-            // and the XML writer leaves their (non-numeric) rate objects
-            // untouched, so scaling only Basic keeps the two paths in lockstep.
-            if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN)
-                reaction->setReactantVolumeCompartments(converted);
         }
+        for (auto* compartment : converted) {
+            double size = compartment->getSize();
+            if (system.getNumberPerQuantityUnit() > 0.0)
+                size *= system.getNumberPerQuantityUnit();
+            if (!std::isfinite(size) || size <= 0.0) {
+                diagnostic = "reactant compartment '" + compartment->getId() +
+                             "' has a non-positive or non-finite volume";
+                delete reaction;
+                return false;
+            }
+        }
+        // BNG2 applies the Rxn.pm 1/product(remaining sizes) unit_conversion to
+        // every rate law type (functional/DOR/Sat/Hill/MM included), not just
+        // bare mass-action, so the count hazard matches the source law.
+        reaction->setReactantVolumeCompartments(converted);
     }
 
     if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN &&

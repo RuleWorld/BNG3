@@ -2791,18 +2791,85 @@ end reaction rules
     delete xml;
 }
 
-TEST_CASE("NFsim refuses wildcard reactant volumes it cannot convert") {
+TEST_CASE("NFsim converts wildcard reactant volumes a single compartment forces") {
+    // A wildcard reactant `A()` (no compartment) may match in any compartment.
+    // With a single compartment its placement is forced, so the Rxn.pm factor
+    // 1/size^(n-1) is well defined even though the compartment size is
+    // parameter-backed and refreshes. BNG2 resolves the same wildcard to the
+    // one compartment (unit_conversion=1/Vc in the generated network).
     auto model = bng::parser::parseModel(R"(
 begin parameters
     k 0.8
+    Vc 3
 end parameters
 begin compartments
-    cell 3 3
+    cell 3 Vc
+end compartments
+begin molecule types
+    A()
+    B()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:B() 10
+    @cell:D() 0
+end seed species
+begin reaction rules
+    @cell:A() + B() -> @cell:D() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    const double expected = 0.8 * 20.0 * 10.0 / 3.0;
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    direct->setParameter("Vc", 6.0);
+    direct->updateSystemWithNewParameters();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
+    delete direct;
+
+    traversalLimit = 0;
+    auto* xml = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    REQUIRE(xml != nullptr);
+    REQUIRE(xml->getAllReactions().size() == 1);
+    xml->prepareForSimulation();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected));
+    xml->setParameter("Vc", 6.0);
+    xml->updateSystemWithNewParameters();
+    CHECK(xml->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
+    delete xml;
+}
+
+TEST_CASE("NFsim refuses wildcard reactant volumes with unequal compartment sizes") {
+    // Two compartments of different sizes: a wildcard reactant could match in
+    // either, so the 1/product(sizes) factor depends on placement. NFsim has no
+    // per-match placement information at rule-load time, so it must fail closed
+    // rather than snapshot one compartment's size.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 0.8
+    Vc 3
+    Vn 5
+end parameters
+begin compartments
+    cell 3 Vc
+    nuc 3 Vn
 end compartments
 begin molecule types
     A()
     D()
 end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:D() 0
+end seed species
 begin reaction rules
     @cell:A() + A() -> @cell:D() k
 end reaction rules
@@ -2820,6 +2887,175 @@ end reaction rules
         static_cast<void*>(model.get()), false, 100, false, traversalLimit);
     CHECK(xml == nullptr);
     delete xml;
+}
+
+TEST_CASE("NFsim refreshes general compartment size expressions end to end") {
+    // A non-identifier compartment size (V1*V2) must keep its provenance
+    // through XML and re-evaluate when either parameter changes. Snapshotting
+    // only the numeric size would silently freeze the volume conversion.
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 0.8
+    V1 2
+    V2 3
+end parameters
+begin compartments
+    cell 3 V1*V2
+end compartments
+begin molecule types
+    A()
+    B()
+    D()
+end molecule types
+begin seed species
+    @cell:A() 20
+    @cell:B() 10
+    @cell:D() 0
+end seed species
+begin reaction rules
+    @cell:A() + @cell:B() -> @cell:D() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+
+    const std::string xml = bng::io::XmlWriter::write(*model);
+    CHECK(xml.find("sizeExpression=\"(V1 * V2)\"") != std::string::npos);
+    CHECK(xml.find("sizeParameter=\"V1\"") == std::string::npos);
+
+    const double expected = 0.8 * 20.0 * 10.0 / 6.0;
+
+    int traversalLimit = 0;
+    auto* direct = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    REQUIRE(direct != nullptr);
+    REQUIRE(direct->getAllReactions().size() == 1);
+    direct->prepareForSimulation();
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected));
+    direct->setParameter("V1", 4.0);
+    direct->updateSystemWithNewParameters();
+    CHECK(direct->getCompartment("cell")->getSize() == Catch::Approx(12.0));
+    CHECK(direct->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
+    delete direct;
+
+    traversalLimit = 0;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        static_cast<void*>(model.get()), false, 100, false, traversalLimit);
+    REQUIRE(xmlSystem != nullptr);
+    REQUIRE(xmlSystem->getAllReactions().size() == 1);
+    xmlSystem->prepareForSimulation();
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(expected));
+    xmlSystem->setParameter("V2", 6.0);
+    xmlSystem->updateSystemWithNewParameters();
+    CHECK(xmlSystem->getCompartment("cell")->getSize() == Catch::Approx(12.0));
+    CHECK(xmlSystem->getReaction(0)->get_a() == Catch::Approx(expected / 2.0));
+    delete xmlSystem;
+}
+
+namespace {
+// Build a two-reactant model with a parameter-backed volume and the given rate
+// law, then return the prepared propensity. Used to check that the Rxn.pm
+// 1/product(sizes) conversion reaches every rate law type.
+double nonElementaryPropensity(const std::string& rateLaw, double volume) {
+    std::ostringstream source;
+    source << R"(
+begin parameters
+    Vc )" << volume << R"(
+    k 0.8
+    kcat 1.0
+    Km 5.0
+    k0 1.0
+    K1 5.0
+    vmax 1.0
+    Kh 5.0
+    n 2.0
+end parameters
+begin compartments
+    cell 3 Vc
+end compartments
+begin molecule types
+    S(s)
+    T(t)
+    P()
+end molecule types
+begin seed species
+    @cell:S(s) 20
+    @cell:T(t) 10
+    @cell:P() 0
+end seed species
+begin observables
+    Molecules Sobs S(s)
+end observables
+begin reaction rules
+    @cell:S(s) + @cell:T(t) -> @cell:P() )" << rateLaw << R"(
+end reaction rules
+)";
+    auto model = bng::parser::parseModel(source.str());
+    REQUIRE(model != nullptr);
+    int traversalLimit = 0;
+    std::string unsupportedReason;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit, {}, &unsupportedReason);
+    INFO("unsupported: " << unsupportedReason);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    const double propensity = system->getReaction(0)->get_a();
+    delete system;
+    return propensity;
+}
+} // namespace
+
+TEST_CASE("NFsim applies reactant volume conversion to non-elementary rate laws") {
+    // BNG2 attaches unit_conversion=1/product(sizes) to functional, MM, Sat,
+    // and Hill rate laws too, not only elementary ones. Each propensity must
+    // therefore scale as 1/V when the single compartment grows from 1 to 3.
+    for (const std::string rateLaw : {"MM(kcat,Km)", "Sat(k0,K1)",
+                                      "Hill(vmax,Kh,n)", "k*Sobs"}) {
+        CAPTURE(rateLaw);
+        const double unitVolume = nonElementaryPropensity(rateLaw, 1.0);
+        const double tripleVolume = nonElementaryPropensity(rateLaw, 3.0);
+        CHECK(unitVolume > 0.0);
+        CHECK(tripleVolume == Catch::Approx(unitVolume / 3.0));
+    }
+}
+
+TEST_CASE("NFsim refreshes non-elementary volume conversion when the size changes") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    Vc 1.0
+    kcat 1.0
+    Km 5.0
+end parameters
+begin compartments
+    cell 3 Vc
+end compartments
+begin molecule types
+    S(s)
+    E(e)
+    P()
+end molecule types
+begin seed species
+    @cell:S(s) 20
+    @cell:E(e) 10
+    @cell:P() 0
+end seed species
+begin reaction rules
+    @cell:S(s) + @cell:E(e) -> @cell:E(e) + @cell:P() MM(kcat,Km)
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    int traversalLimit = 0;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    const double unitVolume = system->getReaction(0)->get_a();
+    CHECK(unitVolume > 0.0);
+    system->setParameter("Vc", 3.0);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(unitVolume / 3.0));
+    delete system;
 }
 
 TEST_CASE("NFsim AST adapter converts static zero-order physical rates exactly once") {

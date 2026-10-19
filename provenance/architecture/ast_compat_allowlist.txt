@@ -35,6 +35,7 @@ cpp/io/SbmlWriter.hpp
 cpp/io/SscWriter.hpp
 cpp/io/XmlWriter.hpp
 cpp/nfsim/NFcore2/legacy_bridge.cpp
+cpp/nfsim/NFinput/compartment_size_expression.hh
 cpp/nfsim/NFinput/NFinput.cpp
 cpp/nfsim/NFinput/NFinput_fromAst.cpp
 cpp/nfsim/NFinput/NFinput_fromModel.cpp

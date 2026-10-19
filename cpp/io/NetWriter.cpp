@@ -26,6 +26,7 @@
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
 #include "compile/CompiledModel.hpp"
+#include "compile/RuleUnitConversion.hpp"
 #include "compile/UnitAnalysis.hpp"
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/energy/BarrierTable.hpp"
@@ -1290,34 +1291,22 @@ std::optional<double> unitConversionFactor(const ast::Rxn& reaction, const ast::
     if (npqIt != model.getOptions().end()) npq = std::stod(npqIt->second);
 
     if (!reaction.getReactants().empty()) {
-        // Order >= 1: collect reactant compartments
-        std::vector<std::string> surfaces, volumes;
+        // Order >= 1: collect reactant compartment geometry in reactant order
+        // and defer to the shared helper, which anchors the first surface, else
+        // the first volume, else the first reactant of any other dimension and
+        // divides by the sizes of the rest.  Sizes carry the NumberPerQuantity
+        // bridge here because the helper is a pure geometry function.
+        std::vector<compile::ReactantCompartment> reactants;
         for (const auto idx : reaction.getReactants()) {
             const auto& comp = network.species.get(idx).getCompartment();
             if (comp.empty()) continue;
             auto dimIt = compDim.find(comp);
             if (dimIt == compDim.end()) continue;
-            if (dimIt->second == 2) surfaces.push_back(comp);
-            else if (dimIt->second == 3) volumes.push_back(comp);
+            double size = compSize[comp];
+            if (npq) size *= *npq;
+            reactants.push_back({dimIt->second, size});
         }
-        // Pick and toss anchor: surface first, else volume
-        if (!surfaces.empty()) surfaces.erase(surfaces.begin());
-        else if (!volumes.empty()) volumes.erase(volumes.begin());
-
-        // Remaining compartments contribute to denominator
-        if (surfaces.empty() && volumes.empty()) return std::nullopt;
-        double denom = 1.0;
-        for (const auto& s : surfaces) {
-            double sz = compSize[s];
-            if (npq) sz *= *npq;
-            denom *= sz;
-        }
-        for (const auto& v : volumes) {
-            double sz = compSize[v];
-            if (npq) sz *= *npq;
-            denom *= sz;
-        }
-        return 1.0 / denom;
+        return compile::reactantUnitConversionFactor(reactants);
     } else if (!reaction.getProducts().empty()) {
         // Zero-order synthesis: multiply by product compartment size
         std::string prodComp;

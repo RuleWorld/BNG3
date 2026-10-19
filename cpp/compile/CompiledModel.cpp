@@ -681,10 +681,14 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.dimension = compartment.getDimension();
         compiled.parentName = compartment.getParent();
         if (const auto& expression = compartment.getVolumeExpression();
-            expression.has_value() &&
-            expression->kind() == ast::ExpressionKind::Identifier &&
-            model.getParameters().contains(expression->name())) {
-            compiled.volumeParameterName = expression->name();
+            expression.has_value()) {
+            if (expression->kind() == ast::ExpressionKind::Identifier &&
+                model.getParameters().contains(expression->name())) {
+                compiled.volumeParameterName = expression->name();
+            } else if (!compartment.isVolumeTimeDependent() &&
+                       !expression->getDependencies().empty()) {
+                compiled.volumeExpression = *expression;
+            }
         }
         if (compartment.hasUnit()) {
             compiled.declaredUnit = compartment.getUnit();

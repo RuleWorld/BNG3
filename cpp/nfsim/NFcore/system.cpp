@@ -7,6 +7,7 @@
 #include "compartment.hh"
 #include "systemSnapshot.hh"
 
+#include <cmath>
 #include <math.h>
 #include <fstream>
 #include <stdexcept>
@@ -707,8 +708,51 @@ bool System::hasStaticUnitSizedCompartments() const {
 	for (map<string, Compartment*>::const_iterator it = compartments.begin(); it != compartments.end(); ++it) {
 		const Compartment *compartment = it->second;
 		if (compartment == NULL || compartment->getSize() != 1.0 ||
-			!compartment->getSizeParameterName().empty()) return false;
+			compartment->isDynamicSize()) return false;
 	}
+	return true;
+}
+
+bool System::hasPlacementIndependentCompartmentSizes(double& size, int& dimension) const {
+	if (compartments.empty()) return false;
+	map<string, Compartment*>::const_iterator first = compartments.begin();
+	const Compartment *firstCompartment = first->second;
+	if (firstCompartment == NULL) return false;
+	const double firstSize = firstCompartment->getSize();
+	if (!std::isfinite(firstSize) || firstSize <= 0.0) return false;
+
+	if (compartments.size() == 1) {
+		// A single compartment forces the wildcard's placement, so the factor
+		// is 1/size^(n-1) regardless of how the size is tracked.  Time-dependent
+		// sizes cannot be refreshed by NFsim, so they are refused here.
+		if (firstCompartment->isTimeDependentSize()) return false;
+		size = firstSize;
+		dimension = firstCompartment->getSpatialDimensions();
+		return true;
+	}
+
+	// Multiple compartments: the placement only cancels if every compartment
+	// shares one size AND refreshes identically.  A static set (no parameter,
+	// expression, or time dependence) is trivially consistent; a set backed by
+	// one shared parameter name refreshes in lockstep.  Expression- and
+	// time-backed sets are refused because NFsim cannot prove two evaluators
+	// stay equal.
+	const int firstDimension = firstCompartment->getSpatialDimensions();
+	if (firstDimension != 2 && firstDimension != 3) return false;
+	if (firstCompartment->hasSizeExpression() || firstCompartment->isDynamicSize() !=
+			!firstCompartment->getSizeParameterName().empty()) return false;
+	const bool sharedParameter = !firstCompartment->getSizeParameterName().empty();
+	const string firstParameter = firstCompartment->getSizeParameterName();
+	for (map<string, Compartment*>::const_iterator it = compartments.begin(); it != compartments.end(); ++it) {
+		const Compartment *compartment = it->second;
+		if (compartment == NULL) return false;
+		if (compartment->getSpatialDimensions() != firstDimension) return false;
+		if (compartment->getSize() != firstSize) return false;
+		if (compartment->hasSizeExpression() || compartment->isDynamicSize()) return false;
+		if (sharedParameter && compartment->getSizeParameterName() != firstParameter) return false;
+	}
+	size = firstSize;
+	dimension = firstDimension;
 	return true;
 }
 
@@ -853,8 +897,12 @@ void System::prepareForSimulation()
   	//cout<<"here 4..."<<endl;
 
 	//This means we aren't going to add any more molecules to the system, so prep the rxns
-	for(rxnIter = allReactions.begin(); rxnIter != allReactions.end(); rxnIter++ )
+	for(rxnIter = allReactions.begin(); rxnIter != allReactions.end(); rxnIter++ ) {
+		// Functions are prepared above, so functional/DOR propensities can now
+		// be evaluated safely by later volume-factor refreshes.
+		(*rxnIter)->enablePropensityUpdates();
 		(*rxnIter)->prepareForSimulation();
+	}
 
 	//cout<<"here 5..."<<endl;
 
@@ -2459,6 +2507,15 @@ void System::updateCompartmentSizesFromParameters() {
 	for (map<string, Compartment*>::iterator it = compartments.begin(); it != compartments.end(); ++it) {
 		Compartment *comp = it->second;
 		if (comp == NULL) continue;
+		if (comp->hasSizeExpression()) {
+			// General arithmetic volume expression: re-evaluate it against the
+			// current parameter map so a change to any referenced parameter
+			// refreshes the size.  A non-finite/non-positive result (e.g. an
+			// unresolved name) leaves the last finite size in place.
+			const double evaluated = comp->getSizeExpression()(paramMap);
+			if (std::isfinite(evaluated) && evaluated > 0.0) comp->setSize(evaluated);
+			continue;
+		}
 		const string &tracked = comp->getSizeParameterName();
 		map<string, double>::iterator param = paramMap.end();
 		if (!tracked.empty()) param = paramMap.find(tracked);

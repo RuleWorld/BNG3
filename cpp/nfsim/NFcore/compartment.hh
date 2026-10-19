@@ -5,7 +5,11 @@
 #ifndef COMPARTMENT_HH_
 #define COMPARTMENT_HH_
 
+#include <functional>
+#include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 using namespace std;
 
@@ -78,6 +82,37 @@ namespace NFcore
 			*/
 			void setSizeParameterName(const string& name) { sizeParameterName = name; }
 			string getSizeParameterName() const { return sizeParameterName; }
+
+			//! Evaluator for a general (non-identifier) volume expression
+			/*!
+			    Loaders install one when the source compartment size is an
+			    arithmetic expression rather than a single parameter, so
+			    System::updateCompartmentSizesFromParameters() can re-evaluate
+			    it when any referenced parameter changes.  The evaluator
+			    resolves identifiers from the System parameter map and returns
+			    NaN for an unknown name so callers fail closed instead of
+			    snapshotting a stale size.
+			*/
+			using SizeExpression = std::function<double(const std::map<string, double>&)>;
+			void setSizeExpression(SizeExpression expression) {
+				sizeExpression = std::move(expression);
+			}
+			bool hasSizeExpression() const { return static_cast<bool>(sizeExpression); }
+			const SizeExpression& getSizeExpression() const { return sizeExpression; }
+
+			//! True when the size cannot be treated as a static literal
+			/*!
+			    Set for time-dependent volumes that NFsim cannot refresh from
+			    the parameter map.  Parameter- and expression-backed sizes are
+			    already dynamic through their tracked name/evaluator.
+			*/
+			void setSizeDynamic(bool value) { dynamicSize = value; }
+			bool isDynamicSize() const {
+				return dynamicSize || !sizeParameterName.empty() ||
+				       static_cast<bool>(sizeExpression);
+			}
+			//! True only for time-dependent (non-refreshable) sizes.
+			bool isTimeDependentSize() const { return dynamicSize; }
 			
 			//! Check if this compartment is inside another
 			/*!
@@ -95,6 +130,8 @@ namespace NFcore
 			int spatialDimensions;        //!< 2 for membrane, 3 for volume
 			double size;                  //!< Volume (3D) or area (2D)
 			string sizeParameterName;     //!< System parameter tracked by size ("" = static)
+			SizeExpression sizeExpression; //!< General volume-expression evaluator
+			bool dynamicSize = false;     //!< Size is time-dependent (cannot refresh)
 			Compartment* parent;          //!< Parent compartment for nesting (optional)
 	};
 }

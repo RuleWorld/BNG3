@@ -352,6 +352,10 @@ double MMRxnClass::update_a()
 	a = (denominator > 0.0 && std::isfinite(denominator))
 		? kcat * sFree * E / denominator
 		: 0.0;
+	// Reactant compartment conversion (Rxn.pm unit_conversion): MM is a
+	// concentration-based law, so the count propensity needs the same
+	// 1/product(remaining sizes) factor as Basic/Sat/Hill.
+	a *= volumeConversionFactor;
 	return a;
 }
 
