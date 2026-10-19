@@ -231,6 +231,10 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
             };
             std::function<void(std::size_t)> visit = [&](std::size_t depth) {
                 if (depth == nRoots) {
+                    std::vector<MoleculeRef> key(assignment);
+                    std::sort(key.begin(), key.end(), moleculeLess);
+                    for (std::size_t k = 0; k < counted.size(); ++k)
+                        if (counted[k] == key) return;
                     MatchContext ctx;
                     for (std::size_t r = 0; r < nRoots; ++r)
                         ctx.setMoleculeAt(r, assignment[r]);
@@ -238,10 +242,6 @@ void SsaDriver::enumerateFamily(std::uint32_t familyIndex) {
                         return;
                     if (!matcher.evaluate(state, engine_.scaffolds(), ctx))
                         return;
-                    std::vector<MoleculeRef> key(assignment);
-                    std::sort(key.begin(), key.end(), moleculeLess);
-                    for (std::size_t k = 0; k < counted.size(); ++k)
-                        if (counted[k] == key) return;
                     const double rate = engine_.evaluateRate(
                         RuleFamilyId(familyIndex), m, ctx);
                     if (rate < 0.0 || !std::isfinite(rate))

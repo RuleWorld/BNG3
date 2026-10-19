@@ -1526,6 +1526,15 @@ TEST_CASE("native NFcore2 reader refuses MoveConnected exclusions without a grap
         });
     REQUIRE(refusedMove != refused.rules[0].transforms.end());
     CHECK(refusedMove->excluded_graph_nodes.empty());
+
+    // The refused rule must not be lowered as supported: it falls back
+    // instead of executing with dropped exclusions.
+    GraphlessReader loweredReader(*system);
+    const auto loweredSnapshot = NFcore2::readNFsimSystem(loweredReader);
+    const auto loweredLegacy = NFcore2::NFsimSnapshotAdapter::toLegacy(loweredSnapshot);
+    const auto lowered = NFcore2::LegacyLowerer::lower(loweredLegacy);
+    CHECK(lowered.supported_rule_count == 0);
+    CHECK(lowered.fallback_rule_count == 1);
 }
 
 TEST_CASE("direct NFsim construction refuses a local function mixing global and local observables") {
