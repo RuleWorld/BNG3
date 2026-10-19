@@ -646,12 +646,26 @@ def run_case(case, args, rows, env):
         deps=[atomizer],
         required=("nf.gdat", "identity.json"),
     )
+    # The pinned oracle applies a compartment size only to zero-order
+    # synthesis, so BNG2's XML states a reactant-bearing rule at a rate the
+    # oracle reads without the compartment unit conversion. The XML is
+    # normalised into BNG2's count-rate convention first, so the oracle
+    # samples the model the embedded engine executes.
+    native_xml = work / "bng2/model.xml"
+    normalised = integrated_traces.native_count_rate_xml(
+        native_xml, work / "native-nf/count-rate-model.xml"
+    )
+    if normalised["status"] != "NORMALISED":
+        raise RuntimeError(
+            "the native NFsim oracle could not be handed BNG2's model in its "
+            "count-rate convention: " + normalised["detail"]
+        )
     native = stage(
         "native-nf",
         [
             str(args.nfsim_binary),
             "-xml",
-            str(work / "bng2/model.xml"),
+            str(work / "native-nf/count-rate-model.xml"),
             "-o",
             str(work / "native-nf/nf.gdat"),
             "-sim",
