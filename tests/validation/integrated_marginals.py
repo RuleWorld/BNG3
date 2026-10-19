@@ -567,8 +567,11 @@ def run_source_laws(directory, native_binary, *, full=False, runs=32):
                 method="ode",
                 t_end=float(times[-1]),
                 n_steps=len(times) - 1,
-                rtol=1e-10,
-                atol=1e-12,
+                # BDF tolerances bound local error, whereas the analytic check
+                # below bounds accumulated trajectory error. Leave headroom for
+                # the second-order pure-death controls without relaxing it.
+                rtol=1e-12,
+                atol=1e-14,
             )
             observed = np.asarray(result.observables[case["observable"]], dtype=float)
             observed_times = np.asarray(result.time, dtype=float)
