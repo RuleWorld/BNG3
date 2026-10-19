@@ -2,9 +2,11 @@
 
 from argparse import Namespace
 import json
+import hashlib
 from pathlib import Path
 
 from tests.validation import (
+    bngir_adversarial,
     graph_identity,
     integrated_extensions as extensions,
     integrated_cases,
@@ -23,6 +25,11 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
     assert len(ids) == len(set(ids))
     assert "campaign:boundaries" in ids
     assert "campaign:graph-identity" in ids
+    assert "campaign:bngir-adversarial" in ids
+    assert set(bngir_adversarial.check_ids()).issubset(ids)
+    assert not set(
+        extensions.expected_ids(cases, include_bngir_adversarial=False)
+    ).intersection({"campaign:bngir-adversarial", *bngir_adversarial.check_ids()})
     assert set(extensions.check_ids("graph-identity")) == {
         f"graph-identity:{case['id']}" for case in graph_identity.CASES
     }
@@ -31,6 +38,46 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
         assert (f"{case['id']}:nf-marginals" in ids) == (
             case["family"] in ("decay", "reversible", "dimerization")
         )
+
+
+def test_bngir_adversarial_extension_requires_exact_issue_linked_checks(tmp_path):
+    rows = []
+
+    def worker(case_id, operation, command, directory, results, **kwargs):
+        directory.mkdir(parents=True)
+        (directory / "identity.json").write_text("{}")
+        checks = [
+            {
+                "id": identity,
+                "check": identity.rsplit(":", 1)[-1],
+                "status": "PASS",
+                "detail": "native structural control",
+                "related_issues": [153, 154, 155, 156],
+                "evidence_kind": "diagnostic-only",
+                "supported_execution": False,
+                "source_artifact": identity.rsplit(":", 1)[-1] + ".bngir.json",
+                "source_sha256": hashlib.sha256(b"{}\n").hexdigest(),
+            }
+            for identity in extensions.check_ids("bngir-adversarial")
+        ]
+        for row in checks:
+            (directory / row["source_artifact"]).write_bytes(b"{}\n")
+        (directory / "checks.json").write_text(json.dumps(checks))
+        row = dict(
+            id=f"{case_id}:{operation}",
+            stage=operation,
+            status="PASS",
+            receipt="receipt",
+        )
+        results.append(row)
+        return row
+
+    parent = extensions.invoke("bngir-adversarial", args(tmp_path), rows, {}, worker)
+
+    assert parent["status"] == "PASS"
+    assert parent["qualification"] == "bngir-adversarial"
+    assert [row["id"] for row in rows[1:]] == extensions.check_ids("bngir-adversarial")
+    assert all(row["related_issues"] == [153, 154, 155, 156] for row in rows[1:])
 
 
 def test_graph_identity_receipt_links_each_generated_observation_to_issue_142(

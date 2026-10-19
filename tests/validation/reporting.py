@@ -307,8 +307,14 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
         ):
             continue
         check = row.get("check", row["stage"])
-        command = []
-        if row.get("model"):
+        explicit_command = row.get("command")
+        command = (
+            list(explicit_command)
+            if isinstance(explicit_command, list)
+            and all(isinstance(part, str) for part in explicit_command)
+            else []
+        )
+        if not command and row.get("model"):
             root = Path(__file__).resolve().parents[2]
             command = [
                 sys.executable,
@@ -350,7 +356,9 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
                     "--simulation-steps",
                     str(config["simulation_protocol"]["n_steps"]),
                 ]
-        elif row.get("test_file", "").endswith(".py") and row.get("name"):
+        elif (
+            not command and row.get("test_file", "").endswith(".py") and row.get("name")
+        ):
             node = row["test_file"] + (
                 "::" + row["name"].split("::", 1)[1] if "::" in row["name"] else ""
             )
@@ -358,7 +366,7 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             if row["test_file"].startswith("tests/validation/"):
                 command[3:3] = ["-c", "tests/validation/pytest.ini"]
                 command += ["--bng-cpp", report["subject"]["binary"]]
-        elif row.get("command"):
+        elif not command and row.get("command"):
             command = row["command"]
         replay_env = {"BNG3_CI_STRICT_ORACLES": "1"}
         replay_env.update(
@@ -377,12 +385,46 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             )
             if reference.get("network_binary_sha256"):
                 replay_env["BNG2_NETWORK_SHA256"] = reference["network_binary_sha256"]
-        receipts = row.get("receipts", []) + (
+        receipts = list(row.get("receipts", [])) + (
             [row["receipt"]] if row.get("receipt") else []
         )
-        recorded = [
-            json.loads(Path(p).read_text()) for p in receipts if Path(p).is_file()
-        ]
+        recorded = []
+        receipt_records = []
+        for receipt in receipts:
+            if not isinstance(receipt, (str, Path)):
+                receipt_records.append(
+                    {
+                        "path": repr(receipt),
+                        "resolved_path": None,
+                        "status": "malformed",
+                        "error": "receipt path must be a string or path",
+                    }
+                )
+                continue
+            path = Path(receipt)
+            resolved = path if path.is_absolute() else directory / path
+            record = {"path": str(receipt), "resolved_path": str(resolved)}
+            try:
+                value = json.loads(resolved.read_text())
+            except FileNotFoundError:
+                record.update(status="missing", error="receipt file not found")
+            except json.JSONDecodeError as exc:
+                record.update(status="malformed", error=f"invalid JSON: {exc}")
+            except UnicodeError as exc:
+                record.update(
+                    status="malformed", error=f"invalid receipt encoding: {exc}"
+                )
+            except OSError as exc:
+                record.update(status="error", error=f"could not read receipt: {exc}")
+            else:
+                if not isinstance(value, dict):
+                    record.update(
+                        status="malformed", error="receipt JSON must be an object"
+                    )
+                else:
+                    record["status"] = "loaded"
+                    recorded.append(value)
+            receipt_records.append(record)
         task = dict(
             id=hashlib.sha256(row["id"].encode()).hexdigest()[:16],
             case_id=row["id"],
@@ -391,6 +433,12 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             status=row["status"],
             model=row.get("model"),
             source_revision=report["source"]["revision"],
+            source=report["source"],
+            source_dirty=report["source"].get("dirty"),
+            subject=report["subject"],
+            references=report["references"],
+            configuration=report["configuration"],
+            platform=report.get("platform"),
             diagnosis_confidence="observed-contract-failure",
             confirmed_root_cause=None,
             observation=row.get(
@@ -399,6 +447,7 @@ def investigation_tasks(report: dict, directory: Path) -> list[dict]:
             evidence=row.get("evidence", []),
             receipts=receipts,
             recorded_commands=recorded,
+            receipt_records=receipt_records,
             reproduce_command=command,
             reproduce_environment=replay_env,
             reproduce_cwd=str(Path(__file__).resolve().parents[2]),

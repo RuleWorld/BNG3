@@ -735,6 +735,7 @@ def main():
             "protocol",
             "nf-marginals",
             "graph-identity",
+            "bngir-adversarial",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -824,6 +825,7 @@ def main():
         "protocol",
         "nf-marginals",
         "graph-identity",
+        "bngir-adversarial",
     ):
         from tests.validation.integrated_extensions import run_worker
 

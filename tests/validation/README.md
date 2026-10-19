@@ -191,6 +191,80 @@ match. Deselecting a failure never counts as resolving it. Failure clusters are
 signature hypotheses, not confirmed shared causes. Official SBML conformance,
 round trips and libRoadRunner agreement remain separate report rows.
 
+## Deterministic triage and repair packets
+
+Triage adds a novelty and evidence gate to an existing validation report. It
+does not rerun commands from the report, change scientific outcomes, approve
+support, or close issues. Give `--replicate` one or more separately generated
+reports from the same clean source revision, candidate binary, configuration,
+inputs and references. A named failure is `REPRODUCED` after at least two
+matching observations; a pass or a different failure makes it
+`NONDETERMINISTIC`, and a missing selected case remains `INCOMPLETE_REPLAY`.
+Missing unrelated rows do not change a case's reproduction classification.
+
+```bash
+python -m tests.validation.triage report.json \
+  --output /tmp/bng3-triage \
+  --previous /path/to/previous-ledger.json \
+  --replicate /path/to/repeat-report.json \
+  --baseline /path/to/reviewed-baseline.json \
+  --issues-json /path/to/issues.json --strict
+```
+
+`--strict` returns nonzero for unresolved novelty or evidence gaps. Outcomes
+remain separate: `FAIL`, `TIMEOUT`, and `HARNESS_ERROR` are not interchangeable;
+`UNSUPPORTED`, `INVALID_INPUT`, and `NOT_TESTED` remain visible and cannot be
+counted as scientific passes. Diagnostic refusal failures may receive an
+investigation packet, but they are never eligible for a product repair task as
+supported scientific execution. The gate also remains failing when a known
+failure is accompanied by another unresolved outcome.
+
+The tool never creates or updates a reviewed baseline. A maintainer must review
+the exact case, issue, configuration and two matching reports from the same
+revision before adding an entry. This is a schema example only; the placeholders
+are not evidence:
+
+```json
+{
+  "schema_version": 1,
+  "entries": [{
+    "comparison_key": "<64-hex configuration and oracle identity>",
+    "case_id": "<exact leaf result id>",
+    "fingerprint": "<64-hex observed failure identity>",
+    "issue": 151,
+    "reviewed_by": "<maintainer>",
+    "reason": "<why the same observed contract failure is accepted as known>",
+    "evidence": [
+      {
+        "report_sha256": "<64-hex report digest>",
+        "source_revision": "<40- or 64-hex commit>",
+        "comparison_key": "<same 64-hex value as above>",
+        "fingerprint": "<same 64-hex value as above>"
+      },
+      {
+        "report_sha256": "<different 64-hex report digest>",
+        "source_revision": "<same commit as above>",
+        "comparison_key": "<same 64-hex value as above>",
+        "fingerprint": "<same 64-hex value as above>"
+      }
+    ]
+  }]
+}
+```
+
+Repair eligibility is narrower than a failure finding: the source must be
+clean, the named result must be an application or contract `FAIL`, at least two
+reports must reproduce its exact fingerprint, a replay command must be
+recorded, and every referenced artifact must be retained within the packet
+limits. These conditions only mark a bounded candidate for human assignment;
+they do not confirm a root cause or establish issue closure. Each packet keeps
+the report identity, source dirty state, candidate and reference identities,
+configuration, platform, receipt load errors and hashes of retained artifacts.
+Artifact collection is capped at 128 files per task, 2 MB per file, 12 MB per
+task, 50 MB for the source report, and 200 task packages per run. Files outside
+the report directory, missing files and oversized files remain listed as
+missing evidence.
+
 For an actual recorded network mismatch, an opt-in reducer removes complete
 single-line reaction rules, retaining only candidates for which both engines
 emit valid networks with the same observed mismatch category:

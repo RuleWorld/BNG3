@@ -75,7 +75,11 @@ NETWORK_CHECKS = (
 
 
 def expected_contract_ids(
-    cases, *, include_boundaries=True, include_graph_identity=True
+    cases,
+    *,
+    include_boundaries=True,
+    include_graph_identity=True,
+    include_bngir_adversarial=True,
 ):
     return [
         f"{c['id']}:{suffix}"
@@ -119,6 +123,7 @@ def expected_contract_ids(
         cases,
         include_boundaries=include_boundaries,
         include_graph_identity=include_graph_identity,
+        include_bngir_adversarial=include_bngir_adversarial,
     )
 
 
@@ -875,9 +880,19 @@ def main(argv=None):
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--boundaries-only", action="store_true")
     parser.add_argument("--graph-identity-only", action="store_true")
+    parser.add_argument("--bngir-adversarial-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
-    if args.boundaries_only and args.graph_identity_only:
+    if (
+        sum(
+            (
+                args.boundaries_only,
+                args.graph_identity_only,
+                args.bngir_adversarial_only,
+            )
+        )
+        > 1
+    ):
         parser.error("select at most one focused qualification")
     args.ensemble_runs = (
         args.ensemble_runs
@@ -894,7 +909,7 @@ def main(argv=None):
         if args.case
         else generated_cases(args.full)
     )
-    if args.boundaries_only or args.graph_identity_only:
+    if args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only:
         selected = []
     for name in (
         "bng_cpp",
@@ -920,14 +935,30 @@ def main(argv=None):
     )
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "0"
+    qualification_selection = dict(
+        include_boundaries=not (
+            args.graph_identity_only or args.bngir_adversarial_only
+        ),
+        include_graph_identity=not (
+            args.boundaries_only or args.bngir_adversarial_only
+        ),
+        include_bngir_adversarial=not (
+            args.boundaries_only or args.graph_identity_only
+        ),
+    )
+    required_ids = expected_contract_ids(selected, **qualification_selection)
     rows, references = [], {}
     try:
         references = _preflight(args)
         subject_digest = inventory.sha256(args.bng_cpp)
-        if not args.graph_identity_only:
+        if qualification_selection["include_boundaries"]:
             integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
-        if not args.boundaries_only:
+        if qualification_selection["include_graph_identity"]:
             integrated_extensions.invoke("graph-identity", args, rows, env, run_stage)
+        if qualification_selection["include_bngir_adversarial"]:
+            integrated_extensions.invoke(
+                "bngir-adversarial", args, rows, env, run_stage
+            )
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -938,13 +969,7 @@ def main(argv=None):
             raise ValueError(
                 "runtime or reference identity changed during integration run"
             )
-        missing = set(
-            expected_contract_ids(
-                selected,
-                include_boundaries=not args.graph_identity_only,
-                include_graph_identity=not args.boundaries_only,
-            )
-        ) - {r["id"] for r in rows}
+        missing = set(required_ids) - {r["id"] for r in rows}
         if missing and all(r["status"] == "PASS" for r in rows):
             raise ValueError(
                 "missing semantic integration evidence: " + ", ".join(sorted(missing))
@@ -979,9 +1004,13 @@ def main(argv=None):
                 ["--boundaries-only"]
                 if row.get("qualification") == "boundaries"
                 else (
-                    ["--graph-identity-only"]
-                    if row.get("qualification") == "graph-identity"
-                    else (["--case", case_id] if case_id else [])
+                    ["--bngir-adversarial-only"]
+                    if row.get("qualification") == "bngir-adversarial"
+                    else (
+                        ["--graph-identity-only"]
+                        if row.get("qualification") == "graph-identity"
+                        else (["--case", case_id] if case_id else [])
+                    )
                 )
             )
             + [
@@ -1022,6 +1051,7 @@ def main(argv=None):
                     "boundaries": "tests/validation/integrated_boundaries.py",
                     "protocol": "tests/validation/integrated_protocol.py",
                     "nf-marginals": "tests/validation/integrated_marginals.py",
+                    "bngir-adversarial": "tests/validation/bngir_adversarial.py",
                     "graph-identity": "tests/validation/graph_identity.py",
                 }[row["stage"]]
             ]
@@ -1036,7 +1066,9 @@ def main(argv=None):
             row["question"] = "source-sbml-rate-and-unit-scaling-vs-bng3-compiled-rhs"
         stage = row["stage"]
         if "related_issues" not in row:
-            if stage == "boundaries":
+            if stage == "bngir-adversarial":
+                issues = [153, 154, 155, 156]
+            elif stage == "boundaries":
                 issues = [157, 158, 160, 161, 164]
             elif stage == "protocol":
                 issues = [138, 139, 140, 141, 143, 171, 172]
@@ -1114,6 +1146,7 @@ def main(argv=None):
                 Path(integrated_extensions.__file__),
                 Path(integrated_traces.__file__),
                 ROOT / "tests/validation/integrated_protocol.py",
+                ROOT / "tests/validation/bngir_adversarial.py",
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
@@ -1127,7 +1160,7 @@ def main(argv=None):
         results=rows,
         capabilities=capabilities,
         issue_coverage=reporting.issue_coverage(capabilities, rows),
-        expected_contract_ids=expected_contract_ids(selected),
+        expected_contract_ids=required_ids,
         failure_clusters=reporting.cluster_failures(rows),
     )
     report["investigation_tasks"] = reporting.investigation_tasks(
