@@ -3069,7 +3069,9 @@ class SBMLParser:
             dimension = compartment.spatial_dimensions
             if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
                 if not math.isfinite(dimension) or dimension < 0:
-                    reason = "BNG3 requires finite, non-negative compartment dimensions."
+                    reason = (
+                        "BNG3 requires finite, non-negative compartment dimensions."
+                    )
                 elif result.level == 2:
                     reason = "SBML Level 2 permits only values 0 through 3."
                 else:
