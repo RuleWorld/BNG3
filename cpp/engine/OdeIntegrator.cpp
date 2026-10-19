@@ -1005,6 +1005,28 @@ void OdeIntegrator::compile() {
         ++rxnIndex;
     }
 
+    // A rate coefficient that is not a finite number cannot be simulated.
+    // The SSA would draw the next reaction from a NaN propensity table and
+    // the ODE would integrate NaN derivatives, so both engines have to
+    // refuse the model instead of running it.
+    //
+    // This is the first point at which a constant coefficient enters the
+    // engine: a rate law with no runtime dependency -- a model function such
+    // as `f() = ln(-1)`, a parameter expression, or a derived rate -- is
+    // folded into a number here, whatever the reason that number is not
+    // finite.  A coefficient that is non-finite only at some later time
+    // belongs to a functional rate and is checked when the engine evaluates
+    // it.
+    for (std::size_t i = 0; i < compiledRxns_.size(); ++i) {
+        const auto& rxn = compiledRxns_[i];
+        if (rxn.isFunctional) continue;
+        if (!std::isfinite(rxn.rateConstant)) {
+            throw std::runtime_error(
+                "Model has a non-finite functional rate coefficient for reaction " +
+                std::to_string(i + 1));
+        }
+    }
+
     // Compile observable groups
     compileGroups();
 

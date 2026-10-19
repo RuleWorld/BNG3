@@ -289,6 +289,7 @@ jobs:
             tests/validation/test_parity_ode.py \
             tests/validation/test_parity_stochastic.py \
             tests/validation/test_export_formats.py \
+            tests/validation/test_ssa_functional_rates.py \
             -m "not slow" \
             --bng-cpp build/cpp/bng_cpp \
             -q -ra \
