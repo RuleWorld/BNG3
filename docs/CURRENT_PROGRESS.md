@@ -68,14 +68,18 @@ anything was changed.
   in one convention, and reports a parameter-backed compartment size as not
   comparable.
 - The pinned native NFsim applies a compartment size only to zero-order
-  synthesis, so it cannot realize a bimolecular source law in a compartment
-  whose size is not one. Running the pinned binary on BNG2's own XML at two
+  synthesis, so it would sample a bimolecular rule in a compartment whose
+  size is not one at `rate constant x symmetry factor` rather than at BNG2's
+  count-rate coefficient. Running the pinned binary on BNG2's own XML at two
   compartment sizes produces identical trajectories, while BNG2's own `cvode`
-  run on BNG2's `.net` matches the independent count law. Those native marginal
-  rows are now reported as not tested with that reason, and the embedded
-  engine's comparison against the independent count law remains the
-  authoritative one. This narrows the native evidence; it does not establish
-  native NFsim parity for those models.
+  run on BNG2's `.net` matches the independent count law. The marginal stage
+  now normalises the model it hands the oracle before it runs: it folds the
+  same compartment unit conversion the XML probe applies into the rule's rate
+  constant and drops the now-redundant symmetry factor, so the oracle samples
+  the model the embedded engine executes and its marginals are compared
+  against the independent count law again. An export whose compartment size
+  is not statically determinable states no count-rate coefficient, and those
+  native rows stay explicitly not tested with that reason.
 
 The same candidate repairs a C++ regression that `main` carried: the
 wildcard-compartment conversion guard introduced by `6e6a5a88` compared
@@ -88,10 +92,12 @@ the six placement tests pass again.
 A non-pass stage rollup now states the reason its children give, and the
 consumer matrix lane fails on failed or malformed results rather than on a
 documented support boundary, which it reports distinctly. The remaining
-openings are unchanged: the native NFsim gap for compartment models, the
-#151/#146/#155 obligations that these rows feed, and the native BNGIR support
-boundary that the newer model-function section above reduces to rules with
-more than one reactant pattern.
+openings are unchanged: the exact native-versus-embedded NFsim parity lane,
+which still compares the pinned oracle on BNG2's own XML, the native BNGIR
+rule-direction boundary behind the dimerization cases' `UNSUPPORTED` outcome,
+and the #151/#146/#155 obligations that these rows feed.
+
+
 
 ## Generated dependency and native identity gates (2026-10-17)
 

@@ -124,6 +124,118 @@ def test_bngxml_probe_records_constants_and_keeps_unresolved_rates_not_tested(
     }
 
 
+def test_bngxml_probe_resolves_a_parameter_backed_rate_constant(tmp_path):
+    """A constant rate law may name a parameter instead of a literal.
+
+    The exported parameter list states the value the parameter was given, so
+    the count-rate coefficient is still a constant.
+    """
+    path = tmp_path / "model.xml"
+    path.write_text(
+        "<Model><ListOfParameters>"
+        '<Parameter id="k" type="Constant" value="0.8"/>'
+        "</ListOfParameters>"
+        "<ListOfCompartments>"
+        '<Compartment id="cell" spatialDimensions="3" size="3"/>'
+        "</ListOfCompartments>"
+        '<ListOfReactionRules><ReactionRule id="R" name="dimer" symmetry_factor="0.5">'
+        "<ListOfReactantPatterns>"
+        '<ReactantPattern compartment="cell"/><ReactantPattern compartment="cell"/>'
+        "</ListOfReactantPatterns>"
+        '<RateLaw type="Ele"><ListOfRateConstants>'
+        '<RateConstant value="k"/></ListOfRateConstants></RateLaw>'
+        "</ReactionRule></ListOfReactionRules></Model>"
+    )
+    observed = integrated_traces.exported_bng_xml(path)
+    assert observed["rules"][0]["rate_constant_value"] == pytest.approx(0.8)
+    assert observed["rules"][0]["observed_elementary_coefficient"] == pytest.approx(
+        0.8 * 0.5 / 3
+    )
+    source = integrated_traces.source_rate_trace(sbml_text(_dimer_case()))
+    observed = integrated_traces.exported_bng_xml(path, source)
+    assert observed["effective_rates"] == [pytest.approx(0.8 * 0.5 / 3)]
+
+
+def _dimer_xml(compartment='<Compartment id="cell" spatialDimensions="3" size="3"/>'):
+    return (
+        '<sbml xmlns="http://www.sbml.org/sbml/level3" level="3" version="1">'
+        "<model id=''>"
+        f"<ListOfCompartments>{compartment}</ListOfCompartments>"
+        '<ListOfReactionRules><ReactionRule id="R" name="dimer" symmetry_factor="0.5">'
+        "<ListOfReactantPatterns>"
+        '<ReactantPattern compartment="cell"/><ReactantPattern compartment="cell"/>'
+        "</ListOfReactantPatterns>"
+        '<RateLaw type="Ele"><ListOfRateConstants>'
+        '<RateConstant value="0.8"/></ListOfRateConstants></RateLaw>'
+        "</ReactionRule></ListOfReactionRules></model></sbml>"
+    )
+
+
+def test_native_count_rate_xml_states_the_count_rate_coefficient(tmp_path):
+    """The oracle is handed BNG2's count-rate coefficient, not its own rate.
+
+    The pinned native NFsim applies a compartment size only to zero-order
+    synthesis, so a reactant-bearing rule would be sampled at
+    ``rate constant x symmetry factor``.  The rewrite folds BNG2's
+    compartment unit conversion into the rate constant and drops the
+    now-redundant symmetry factor.
+    """
+    source = tmp_path / "model.xml"
+    source.write_text(_dimer_xml())
+    target = tmp_path / "native-count-rate.xml"
+    result = integrated_traces.native_count_rate_xml(source, target)
+    assert result["status"] == "NORMALISED"
+    rule = result["rules"][0]
+    assert rule["compartment_unit_conversion"] == pytest.approx(1 / 3)
+    assert rule["count_rate_coefficient"] == pytest.approx(0.8 * 0.5 / 3)
+    text = target.read_text()
+    assert 'value="0.13333333333333333"' in text
+    assert "symmetry_factor" not in text
+    # The document keeps its own default namespace.
+    assert "ns0:" not in text
+    assert 'xmlns="http://www.sbml.org/sbml/level3"' in text
+
+
+def test_native_count_rate_xml_refuses_a_model_it_cannot_state(tmp_path):
+    """A model without a static conversion states no count-rate coefficient."""
+    source = tmp_path / "model.xml"
+    source.write_text(
+        _dimer_xml('<Compartment id="cell" spatialDimensions="3" sizeParameter="V"/>')
+    )
+    result = integrated_traces.native_count_rate_xml(
+        source, tmp_path / "native-count-rate.xml"
+    )
+    assert result["status"] == "UNSUPPORTED"
+    assert "compartment unit conversion" in result["detail"]
+
+    # The oracle applies the product compartment's size to a zero-order rule
+    # itself when the model states the compartment on the molecule, so the
+    # coefficient would be counted twice.
+    source.write_text(
+        _dimer_xml()
+        .replace(
+            '<Molecule id="M" name="A"/>',
+            '<Molecule id="M" name="A" compartment="cell"/>',
+        )
+        .replace(
+            "<ListOfReactantPatterns>"
+            '<ReactantPattern compartment="cell"/><ReactantPattern compartment="cell"/>'
+            "</ListOfReactantPatterns>",
+            "<ListOfReactantPatterns>"
+            '<ReactantPattern compartment="cell"/>'
+            '<ReactantPattern compartment="cell">'
+            '<ListOfMolecules><Molecule id="M" name="A" compartment="cell"/>'
+            "</ListOfMolecules></ReactantPattern>"
+            "</ListOfReactantPatterns>",
+        )
+    )
+    result = integrated_traces.native_count_rate_xml(
+        source, tmp_path / "native-count-rate.xml"
+    )
+    assert result["status"] == "UNSUPPORTED"
+    assert "molecule compartment" in result["detail"]
+
+
 def test_bng_xml_coefficient_uses_the_same_compartment_convention_as_the_net(
     tmp_path,
 ):

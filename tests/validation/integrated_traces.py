@@ -6,6 +6,7 @@ import math
 import hashlib
 import json
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 
 def _tag(element):
@@ -474,6 +475,24 @@ def _compartment_unit_conversion(reactant_compartments, product_compartments, ge
     return 1.0
 
 
+def _parameter_values(root):
+    """Map each exported parameter id to the constant value it states.
+
+    A parameter whose value is not a plain number is reported as ``None``:
+    the count-rate coefficient of a rule that depends on it cannot be
+    determined here.
+    """
+    values = {}
+    for node in root.iter():
+        if _tag(node) != "Parameter":
+            continue
+        try:
+            values[node.get("id")] = float(node.get("value"))
+        except (TypeError, ValueError):
+            values[node.get("id")] = None
+    return values
+
+
 def exported_bng_xml(path, source: dict | None = None) -> dict:
     """Capture and evaluate elementary constant BNG-XML coefficients only.
 
@@ -493,6 +512,7 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
             rules=[],
         )
     geometry = _compartment_geometry(root)
+    parameters = _parameter_values(root)
     rules = []
     effective_rates = []
     complete = True
@@ -515,19 +535,27 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
             [item.get("compartment") for item in product_patterns],
             geometry,
         )
+        value = None
+        if rates and rates[0]:
+            try:
+                value = float(rates[0])
+            except ValueError:
+                # A parameter-backed constant rate law; the exported
+                # parameter list states the value it was given.
+                value = parameters.get(rates[0])
         try:
             symmetry = float(node.get("symmetry_factor", "1"))
             if (
                 law_type != "Ele"
                 or len(rates) != 1
-                or not rates[0]
-                or not math.isfinite(float(rates[0]))
+                or value is None
+                or not math.isfinite(value)
                 or not math.isfinite(symmetry)
                 or symmetry <= 0
                 or conversion is None
             ):
                 raise ValueError("rate law is not one constant elementary coefficient")
-            coefficient = float(rates[0]) * symmetry * conversion
+            coefficient = value * symmetry * conversion
             effective_rates.append(coefficient)
         except (TypeError, ValueError):
             complete = False
@@ -538,6 +566,7 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
                 name=node.get("name"),
                 symmetry_factor=node.get("symmetry_factor"),
                 rate_constants=rates,
+                rate_constant_value=value,
                 rate_law_type=law_type,
                 reactant_pattern_count=len(reactant_patterns),
                 reactant_compartments=[
@@ -572,6 +601,7 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
         ),
         rules=rules,
         effective_rates=effective_rates if complete and rules and qualified else None,
+        parameters=parameters,
         source_molecularities=source_molecularities,
         xml_molecularities=xml_molecularities,
         compartment_sizes=[
@@ -580,6 +610,140 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
             if _tag(node) == "Compartment"
         ],
     )
+
+
+def native_count_rate_xml(source_xml, target_xml) -> dict:
+    """Rewrite a BNG-XML export into BNG2's count-rate convention.
+
+    BNG2's count-rate convention divides a reactant-bearing rate constant by
+    the reaction compartment's size (``bng2/Perl2/Rxn.pm:100-197``).  The
+    pinned native NFsim applies a compartment size only to zero-order
+    synthesis (``src/NFinput/NFinput.cpp`` sets ``volumeConversion`` for
+    ``ts->getNreactants() == 0``), and only when the model states the
+    compartment on the molecule.  This export states it on the pattern, so
+    the oracle samples every rule at ``rate constant x symmetry factor``
+    rather than at the count-rate coefficient the .net export and the
+    embedded engine use.
+
+    The rewrite hands the oracle the model the embedded engine executes: the
+    compartment unit conversion is folded into the rule's rate constant and
+    the now-redundant symmetry factor is dropped.  The conversion is the one
+    ``exported_bng_xml`` already computes for this export, so the oracle and
+    the embedded engine are stated in the same convention rather than in two
+    divergent ones.  An export that does state a molecule compartment is
+    refused rather than counted twice.
+
+    The result is ``status`` "NORMALISED" with the written path and the
+    per-rule coefficients, "UNSUPPORTED" with the reason the count-rate
+    convention cannot be stated for this export, or "UNAVAILABLE" when the
+    exported model itself cannot be read.
+    """
+    target = Path(target_xml)
+    try:
+        tree = ET.parse(source_xml)
+    except (OSError, ET.ParseError) as exc:
+        return dict(
+            status="UNAVAILABLE",
+            detail=(
+                "the exported model is unavailable: " f"{type(exc).__name__}: {exc}"
+            ),
+        )
+    root = tree.getroot()
+    namespace = root.tag[1:].split("}")[0] if root.tag.startswith("{") else ""
+    if namespace:
+        # Keep the document's own default namespace.  The pinned oracle reads
+        # namespace-insensitive XML, but a prefixed rewrite would still change
+        # the artefact it is handed.
+        ET.register_namespace("", namespace)
+    exported = exported_bng_xml(source_xml)
+    rules = exported.get("rules") or []
+    if not rules:
+        return dict(
+            status="UNSUPPORTED",
+            detail="the exported model declares no reaction rule to normalise",
+        )
+    compartments = {
+        node.get("id") for node in root.iter() if _tag(node) == "Compartment"
+    }
+    if len(compartments) > 1:
+        return dict(
+            status="UNSUPPORTED",
+            detail=(
+                "the exported model states more than one compartment, which the "
+                "pinned oracle does not read from this export, so it would match "
+                "reactants across compartments"
+            ),
+        )
+    if any(node.get("compartment") for node in root.iter() if _tag(node) == "Molecule"):
+        return dict(
+            status="UNSUPPORTED",
+            detail=(
+                "the exported model states a molecule compartment, which makes "
+                "the pinned oracle apply the product compartment's size to a "
+                "zero-order rule itself"
+            ),
+        )
+    elements = [node for node in root.iter() if _tag(node) == "ReactionRule"]
+    if len(elements) != len(rules):
+        return dict(
+            status="UNSUPPORTED",
+            detail="the exported model's reaction rules could not be matched to their parsed evidence",
+        )
+    normalised = []
+    for element, rule in zip(elements, rules):
+        if element.get("id") != rule["id"]:
+            return dict(
+                status="UNSUPPORTED",
+                detail="the exported model's reaction rule identity changed while it was parsed",
+            )
+        if rule["rate_law_type"] != "Ele" or len(rule["rate_constants"]) != 1:
+            return dict(
+                status="UNSUPPORTED",
+                detail=(
+                    f"reaction rule {rule['id']} does not declare one elementary "
+                    "constant rate"
+                ),
+            )
+        value = rule.get("rate_constant_value")
+        if value is None or not math.isfinite(value):
+            return dict(
+                status="UNSUPPORTED",
+                detail=(
+                    f"reaction rule {rule['id']} has no statically determinable "
+                    "rate constant"
+                ),
+            )
+        conversion = rule["compartment_unit_conversion"]
+        if conversion is None:
+            return dict(
+                status="UNSUPPORTED",
+                detail=(
+                    f"reaction rule {rule['id']} has no statically determinable "
+                    "compartment unit conversion"
+                ),
+            )
+        symmetry = float(rule["symmetry_factor"] or 1.0)
+        coefficient = value * symmetry * conversion
+        # The count-rate coefficient goes into the rate constant, and the
+        # symmetry factor it already carries becomes redundant.
+        rate_constant = next(
+            item for item in element.iter() if _tag(item) == "RateConstant"
+        )
+        rate_constant.set("value", repr(coefficient))
+        element.attrib.pop("symmetry_factor", None)
+        normalised.append(
+            dict(
+                id=rule["id"],
+                rate_constant=value,
+                symmetry_factor=symmetry,
+                compartment_unit_conversion=conversion,
+                count_rate_coefficient=coefficient,
+                reactant_pattern_count=rule["reactant_pattern_count"],
+            )
+        )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tree.write(target, encoding="utf-8", xml_declaration=True)
+    return dict(status="NORMALISED", path=str(target), rules=normalised)
 
 
 def boundary_metadata(name: str) -> dict:

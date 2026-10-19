@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import campaign, contracts
+from . import campaign, contracts, integrated_traces
 from .integrated_cases import (
     TIMES,
     expected_trajectory,
@@ -304,21 +304,26 @@ def assess_samples(samples, case, *, alpha=1e-6):
 def native_oracle_realizes_source_law(case):
     """Whether the pinned native NFsim oracle can express this source law.
 
-    BNG2's count-rate convention divides a reactant-bearing rate constant by
-    the reaction compartment's size (``bng2/Perl2/Rxn.pm:100-197``), and the
-    pinned native NFsim applies a compartment size only to zero-order
-    synthesis (``src/NFinput/NFinput.cpp`` sets ``volumeConversion`` for
-    ``ts->getNreactants() == 0``).  A bimolecular source law whose rate
-    therefore depends on that size is unreachable by the native oracle: the
-    oracle would sample a different model, not a noisy estimate of this one.
-    Unimolecular and zero-order laws are reachable and stay comparable.
+    The oracle is handed the model the embedded engine executes, stated in
+    BNG2's count-rate convention (``integrated_traces.native_count_rate_xml``
+    folds the compartment unit conversion into the rule's rate constant),
+    so every source law the independent count law covers is reachable.  A
+    model whose compartment unit conversion cannot be determined statically
+    is not: the export then states no count-rate coefficient, and the
+    comparison stays explicitly not tested.
     """
     law = case.get("law", case.get("family"))
-    if law not in ("dimerization", "second-order", "second_order"):
-        return True
-    if float(case.get("rate", 0.4)) == 0.0:
-        return True
-    return float(case.get("volume", 1.0)) == 1.0
+    return law in (
+        "decay",
+        "reversible",
+        "dimerization",
+        "zero-order",
+        "zero_order",
+        "first-order",
+        "first_order",
+        "second-order",
+        "second_order",
+    )
 
 
 def run(
@@ -341,21 +346,49 @@ def run(
     output = []
     for engine in ("embedded", "native"):
         samples, failure = [], None
-        if engine == "native" and not native_oracle_realizes_source_law(case):
-            # The comparison prerequisite is missing rather than failed: the
-            # oracle cannot realize this source law at all.
-            failure = dict(
-                status="NOT_TESTED",
-                detail=(
-                    "the pinned native NFsim oracle does not apply BNG2's "
-                    "compartment unit conversion to reactant-bearing rules, so "
-                    "it cannot realize this source law; the embedded engine "
-                    "comparison against the independent count law remains the "
-                    "authoritative one"
-                ),
-                applicability="native-oracle-unit-conversion-unsupported",
-            )
-        elif engine == "native" and not Path(native_binary).is_file():
+        oracle_model = None
+        if engine == "native":
+            # The oracle samples BNG2's count-rate convention, so it is handed
+            # the same model the embedded engine executes.
+            if not native_oracle_realizes_source_law(case):
+                failure = dict(
+                    status="NOT_TESTED",
+                    detail=(
+                        "the native NFsim oracle cannot be handed this model in "
+                        "BNG2's compartment unit conversion convention: the "
+                        "harness states no independent count law for this family; "
+                        "the embedded engine comparison against the independent "
+                        "count law remains the authoritative one"
+                    ),
+                    applicability="native-oracle-unit-conversion-unsupported",
+                )
+            else:
+                normalisation = integrated_traces.native_count_rate_xml(
+                    native_xml, directory / "native-count-rate.xml"
+                )
+                if normalisation["status"] == "UNAVAILABLE":
+                    failure = dict(
+                        status="HARNESS_ERROR",
+                        detail=(
+                            "the model handed to the native NFsim oracle is "
+                            f"unavailable: {normalisation['detail']}"
+                        ),
+                    )
+                elif normalisation["status"] != "NORMALISED":
+                    failure = dict(
+                        status="NOT_TESTED",
+                        detail=(
+                            "the native NFsim oracle cannot be handed this model "
+                            "in BNG2's compartment unit conversion convention: "
+                            f"{normalisation['detail']}; the embedded engine "
+                            "comparison against the independent count law remains "
+                            "the authoritative one"
+                        ),
+                        applicability="native-oracle-unit-conversion-unsupported",
+                    )
+                else:
+                    oracle_model = normalisation
+        if failure is None and engine == "native" and not Path(native_binary).is_file():
             failure = dict(
                 status="HARNESS_ERROR",
                 detail=f"native NFsim executable is unavailable: {native_binary}",
@@ -392,7 +425,7 @@ def run(
                         [
                             str(native_binary),
                             "-xml",
-                            str(native_xml),
+                            str(oracle_model["path"]),
                             "-o",
                             str(work / "trajectory.gdat"),
                             "-sim",
@@ -481,6 +514,17 @@ def run(
                 case,
                 alpha=alpha if alpha is not None else 1e-6 / (2 * cases),
             )
+            if engine == "native":
+                # Say plainly that the oracle sampled the model: the rows of a
+                # native comparison that could not be expressed at all carry an
+                # applicability instead.
+                for row in rows:
+                    row["detail"] = (
+                        "the native oracle sampled the model in BNG2's count-rate "
+                        "convention (rule rate constant x symmetry factor x "
+                        "compartment unit conversion); " + row["detail"]
+                    )
+                    row["oracle_count_rate_rules"] = oracle_model["rules"]
         for row in rows:
             row["check"] = engine + "." + row["check"]
             row["ensemble_runs_requested"] = runs
