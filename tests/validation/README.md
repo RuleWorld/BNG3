@@ -66,7 +66,10 @@ then compares both the mutated instance and a fresh compilation with the
 closed-form changed-rate trajectory; a missing mutable dependency remains
 `NOT_TESTED`. The separate `matrix-report.json` is uploaded with the integrated
 report and makes missing cells, stale artifacts, and shared wrong mutation
-references visible.
+references visible. The matrix lane fails on a failed, malformed or missing
+result; a consumer that explicitly refuses a construct, or a check that was
+never applicable, keeps that status in the report and stays distinct from a
+pass, the same distinction the integrated report's gate makes.
 
 `tests.validation.issue_queue` joins one or more exact-revision reports to a retained `gh issue list` snapshot. It rejects stale/conflicting observations and avoids counting a successful process as a passed behavior. Every issue remains explicitly ineligible for automatic closure. The queue includes strict provenance approval debt, reconciliation claims without test references, stale named references, and optional upstream branch observations. A reference resolving in source never counts as executed qualification. CI collects a bounded 1,000-issue snapshot and checks upstream branch drift only on scheduled/manual runs; unavailable or unobserved branches are not treated as matching the lock.
 

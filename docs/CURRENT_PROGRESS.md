@@ -1,5 +1,54 @@
 # BNG3 current progress
 
+## Integrated semantic validation repairs (2026-10-19 candidate)
+
+The hosted integrated semantic validation job failed on `main` with sixteen
+failing results in three clusters, and the C++ suite failed with six placement
+tests. Every cause was established against an independent oracle before
+anything was changed.
+
+- The native BNGIR compartment controls accepted a compartmented document, but
+  the public network API reported the bare graph label, so the analytic control
+  could not observe the compartment. `ast::Species::canonicalName()` now
+  produces the BNG2-canonical identity (`@compartment::Pattern`, with the
+  constant marker and per-molecule suffixes) and the `.net` writer and the
+  network API share one implementation of it. `GeneratedNetwork.species_names`
+  therefore names a compartmented species the way BNG2's `.net` and
+  `SpeciesGraph::StringExact` do, and two species that differ only by
+  compartment stay distinct. The control states the compartment spelling
+  independently of the prefix, suffix and molecule spellings.
+- The BNG-XML and NET rate comparison compared two conventions. The NET export
+  folds BNG2's compartment unit conversion into the coefficient; the BNG-XML
+  export keeps the rule rate constant, the symmetry factor and the compartment
+  size apart, exactly as BNG2's `writeXML` does. The XML probe now applies the
+  same conversion before the two are compared, so the boundary states one rate
+  in one convention, and reports a parameter-backed compartment size as not
+  comparable.
+- The pinned native NFsim applies a compartment size only to zero-order
+  synthesis, so it cannot realize a bimolecular source law in a compartment
+  whose size is not one. Running the pinned binary on BNG2's own XML at two
+  compartment sizes produces identical trajectories, while BNG2's own `cvode`
+  run on BNG2's `.net` matches the independent count law. Those native marginal
+  rows are now reported as not tested with that reason, and the embedded
+  engine's comparison against the independent count law remains the
+  authoritative one. This narrows the native evidence; it does not establish
+  native NFsim parity for those models.
+
+The same candidate repairs a C++ regression that `main` carried: the
+wildcard-compartment conversion guard introduced by `6e6a5a88` compared
+compartment dimensions as well as sizes, so a model with several compartments of
+one size but mixed dimensions was refused. The dimension selects the anchor
+compartment, not the factor, so the guard now states the criterion it
+documents, "every compartment shares one size and refreshes identically", and
+the six placement tests pass again.
+
+A non-pass stage rollup now states the reason its children give, and the
+consumer matrix lane fails on failed or malformed results rather than on a
+documented support boundary, which it reports distinctly. The remaining
+openings are unchanged: the native NFsim gap for compartment models, the
+native BNGIR function boundary behind the BNGIR consumer's `UNSUPPORTED`
+outcome, and the #151/#146/#155 obligations that these rows feed.
+
 ## Generated dependency and native identity gates (2026-10-17)
 
 Continuation from `e4394172` on PR #288, with bounded implementation work

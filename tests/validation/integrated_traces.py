@@ -425,9 +425,7 @@ def _compartment_geometry(root):
     return geometry
 
 
-def _compartment_unit_conversion(
-    reactant_compartments, product_compartments, geometry
-):
+def _compartment_unit_conversion(reactant_compartments, product_compartments, geometry):
     """BNG2's intensive-to-extensive count-rate conversion for one rule.
 
     ``bng2/Perl2/Rxn.pm`` (get_intensive_to_extensive_units_conversion) anchors

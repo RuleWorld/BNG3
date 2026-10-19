@@ -140,7 +140,7 @@ def test_bng_xml_coefficient_uses_the_same_compartment_convention_as_the_net(
     source = integrated_traces.source_rate_trace(sbml_text(case))
     path = tmp_path / "model.xml"
     path.write_text(
-        '<Model><ListOfCompartments>'
+        "<Model><ListOfCompartments>"
         '<Compartment id="cell" spatialDimensions="3" size="3"/>'
         "</ListOfCompartments>"
         '<ListOfReactionRules><ReactionRule id="R" name="dimer" symmetry_factor="0.5">'
@@ -164,7 +164,10 @@ def test_bng_xml_coefficient_uses_the_same_compartment_convention_as_the_net(
     exported = integrated_traces.exported_net_rates(net)
     assert (
         integrated_traces.compare_rate_values(
-            exported["effective_rates"], observed["effective_rates"], "BNG-XML", rtol=5e-11
+            exported["effective_rates"],
+            observed["effective_rates"],
+            "BNG-XML",
+            rtol=5e-11,
         )["status"]
         == "PASS"
     )
@@ -183,7 +186,7 @@ def test_bng_xml_coefficient_is_not_comparable_without_a_static_compartment_size
     source = integrated_traces.source_rate_trace(sbml_text(case))
     path = tmp_path / "model.xml"
     path.write_text(
-        '<Model><ListOfCompartments>'
+        "<Model><ListOfCompartments>"
         '<Compartment id="cell" spatialDimensions="3" sizeParameter="V"/>'
         "</ListOfCompartments>"
         '<ListOfReactionRules><ReactionRule id="R" name="dimer" symmetry_factor="0.5">'

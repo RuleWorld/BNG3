@@ -182,6 +182,7 @@ class GeneratedNetwork:
         the ``.net`` export names it, so two species that differ only by
         compartment stay distinct.
         """
+
     @property
     def reaction_strings(self) -> List[str]: ...
     def __repr__(self) -> str: ...

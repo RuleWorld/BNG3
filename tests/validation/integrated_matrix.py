@@ -174,11 +174,7 @@ def _lane_failures(audit):
     same distinction the integrated report's gate makes.
     """
     failing = {"FAIL", "HARNESS_ERROR", "INVALID_INPUT", "TIMEOUT"}
-    failures = [
-        row
-        for row in audit.get("results", [])
-        if row.get("status") in failing
-    ]
+    failures = [row for row in audit.get("results", []) if row.get("status") in failing]
     if audit.get("errors"):
         failures.append(
             {
