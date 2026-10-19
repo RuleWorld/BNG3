@@ -274,6 +274,38 @@ end reaction rules
     CHECK(liveInCompartment(*c, moleculeType(*c, "B"), "c1") == 1u);
 }
 
+TEST_CASE("NFcore2 MoveConnected can relocate a non-root pattern molecule") {
+    auto model = bng::parser::parseModel(R"(
+begin parameters
+    k 1.0
+end parameters
+begin compartments
+    c1 3 1.0
+    c2 3 1.0
+end compartments
+begin molecule types
+    A(site)
+    B(site)
+end molecule types
+begin seed species
+    A(site!1)@c1.B(site!1)@c1 1
+end seed species
+begin reaction rules
+    A(site!1)@c1.B(site!1)@c1 -> A(site!1)@c1.B(site!1)@c2 k MoveConnected
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    auto c = makeDriverCase(*model);
+    NFcore2::SsaDriverOptions options;
+    options.tEnd = 10.0;
+    options.seed = 17;
+    c->driver->run(options);
+    // B is the primary molecule and moves to c2.  A is an explicitly mapped
+    // pattern molecule, so MoveConnected excludes it and it stays in c1.
+    CHECK(liveInCompartment(*c, moleculeType(*c, "B"), "c2") == 1u);
+    CHECK(liveInCompartment(*c, moleculeType(*c, "A"), "c1") == 1u);
+}
+
 TEST_CASE("NFcore2 binds only compartment-compatible reactants") {
     const auto bound = [](const std::string& bCompartment) {
         auto model = bng::parser::parseModel("\n"
@@ -292,6 +324,34 @@ TEST_CASE("NFcore2 binds only compartment-compatible reactants") {
     };
     CHECK(bound("PM") > 0u); // directly adjacent surface/volume pair
     CHECK(bound("CP") == 0u); // separated by PM
+}
+
+TEST_CASE("NFcore2 refuses mixed, non-adjacent, and unusual-dimension placements") {
+    const auto bound = [](const std::string& compartments,
+                          const std::string& seedA,
+                          const std::string& seedB) {
+        auto model = bng::parser::parseModel(std::string(
+            "begin parameters\n k 1.0\nend parameters\n") +
+            "begin compartments\n" + compartments + "end compartments\n" +
+            "begin molecule types\n A(b)\n B(a)\nend molecule types\n" +
+            "begin seed species\n " + seedA + " 10\n " + seedB +
+            " 10\nend seed species\n" +
+            "begin reaction rules\n bind: A(b) + B(a) -> A(b!1).B(a!1) k\nend reaction rules\n");
+        REQUIRE(model != nullptr);
+        auto c = makeDriverCase(*model);
+        NFcore2::SsaDriverOptions options;
+        options.tEnd = 1.0;
+        options.seed = 7;
+        c->driver->run(options);
+        return bondedMolecules(*c, moleculeType(*c, "A"));
+    };
+    // V1/PM1 is one adjacent volume/surface pair; V2 is a separate volume.
+    const std::string pair = " V1 3 1.0\n PM1 2 1.0 V1\n V2 3 1.0\n";
+    CHECK(bound(pair, "A(b)@V1", "B(a)") == 0u);       // placed/unplaced mix
+    CHECK(bound(pair, "A(b)@V1", "B(a)@PM1") > 0u);    // adjacent surface/volume
+    CHECK(bound(pair, "A(b)@V2", "B(a)@PM1") == 0u);   // non-adjacent surface/volume
+    CHECK(bound(" L 1 1.0\n", "A(b)@L", "B(a)@L") == 0u); // 1-D compartment
+    CHECK(bound(" L 0 1.0\n", "A(b)@L", "B(a)@L") == 0u); // 0-D compartment
 }
 
 TEST_CASE("NFcore2 honors explicit product compartments") {

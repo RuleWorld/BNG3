@@ -1705,6 +1705,53 @@ TEST_CASE("NFsim binds only compartment-compatible reactants") {
     }
 }
 
+TEST_CASE("NFsim refuses mixed, non-adjacent, and unusual-dimension placements") {
+    const auto boundCount = [](const std::string& compartments,
+                               const std::string& seedA,
+                               const std::string& seedB,
+                               bool xmlPath) {
+        auto model = bng::parser::parseModel(std::string(
+            "begin parameters\n k 1.0\nend parameters\n") +
+            "begin compartments\n" + compartments + "end compartments\n" +
+            "begin molecule types\n A(b)\n B(a)\nend molecule types\n" +
+            "begin seed species\n " + seedA + " 10\n " + seedB +
+            " 10\nend seed species\n" +
+            "begin observables\n Molecules Bound A(b!1).B(a!1)\nend observables\n" +
+            "begin reaction rules\n bind: A(b) + B(a) -> A(b!1).B(a!1) k\nend reaction rules\n");
+        REQUIRE(model != nullptr);
+        int traversalLimit = 0;
+        auto* system = xmlPath
+            ? NFinput::initializeFromModel(
+                  static_cast<void*>(model.get()), false, 100, false,
+                  traversalLimit)
+            : NFinput::buildSystemFromAst(
+                  *model, false, 100, false, traversalLimit);
+        REQUIRE(system != nullptr);
+        system->prepareForSimulation();
+        system->seedRNG(7);
+        system->stepTo(1.0);
+        const int bound = system->getObservableByName("Bound")->getCount();
+        delete system;
+        return bound;
+    };
+    // V1/PM1 is one adjacent volume/surface pair; V2 is a separate volume.
+    const std::string pair = " V1 3 1.0\n PM1 2 1.0 V1\n V2 3 1.0\n";
+    for (const bool xmlPath : {false, true}) {
+        // A placed reactant must not bind an unplaced reactant.
+        CHECK(boundCount(pair, "A(b)@V1", "B(a)", xmlPath) == 0);
+        // An adjacent volume/surface pair still binds.
+        CHECK(boundCount(pair, "A(b)@V1", "B(a)@PM1", xmlPath) > 0);
+        // A surface and a volume that are not adjacent must not bind.
+        CHECK(boundCount(pair, "A(b)@V2", "B(a)@PM1", xmlPath) == 0);
+    }
+    // Compartments whose dimension is neither 2-D nor 3-D cannot establish a
+    // placement rule for a multi-reactant reaction.
+    for (const bool xmlPath : {false, true}) {
+        CHECK(boundCount(" L 1 1.0\n", "A(b)@L", "B(a)@L", xmlPath) == 0);
+        CHECK(boundCount(" L 0 1.0\n", "A(b)@L", "B(a)@L", xmlPath) == 0);
+    }
+}
+
 TEST_CASE("NFsim AST adapter maps direct binding reaction rules") {
     auto model = bng::parser::parseModel(R"(
 begin parameters

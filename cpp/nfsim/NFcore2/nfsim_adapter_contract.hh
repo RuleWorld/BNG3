@@ -61,7 +61,12 @@ enum NativeTransformKind {
     NATIVE_LOCAL_FUNCTION_REFERENCE = 8,
     NATIVE_INCREMENT_POPULATION = 9,
     NATIVE_DECREMENT_POPULATION = 10,
-    NATIVE_MOVE = 11
+    NATIVE_MOVE = 11,
+    // Explicit refusal marker: the reader produced a rule it cannot express
+    // faithfully (for example a MoveConnected target that needs a graph node
+    // but no graph snapshot is available).  The adapter lowers it to an
+    // unsupported transform so the rule is not executed.
+    NATIVE_UNSUPPORTED = 12
 };
 
 enum NativeRateLawKind {

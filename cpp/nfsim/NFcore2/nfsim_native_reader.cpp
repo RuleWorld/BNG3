@@ -1226,13 +1226,17 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
             graphLoaded = true;
         }
     };
-    auto excludedGraphNode = [&](TemplateMolecule* molecule) {
+    auto excludedGraphNode = [&](TemplateMolecule* molecule) -> std::uint32_t {
+        // A missing graph snapshot (extraction failure or a reader that
+        // disables connectivity) must not abort the whole model.  Without an
+        // exclusion node the engine falls back to the base MoveConnected
+        // semantics: move every connected molecule still in the primary's
+        // original compartment, leaving unrelated molecules alone.
         loadGraph();
-        if (graphPatterns.empty())
-            throw std::logic_error("MoveConnected pattern has no graph snapshot");
+        if (graphPatterns.empty()) return std::numeric_limits<std::uint32_t>::max();
         auto found = graphNodeIndices.find(molecule);
         if (found == graphNodeIndices.end())
-            throw std::logic_error("MoveConnected exclusion is outside the pattern graph");
+            return std::numeric_limits<std::uint32_t>::max();
         return found->second;
     };
     // A reactant index addresses only a connected component's root.  Other
@@ -1310,6 +1314,13 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
                     if (targetNode != std::numeric_limits<std::uint32_t>::max()) {
                         v.target_is_graph_node = true;
                         v.target_graph_node = targetNode;
+                    } else if (graphPatterns.empty() &&
+                               q->getTemplateMolecule() != r->getReactantTemplate(p)) {
+                        // The moved molecule is not the reactant root, so a
+                        // reactant index cannot address it and no graph node is
+                        // available.  Refuse the rule instead of relocating the
+                        // wrong molecule.
+                        v.kind = NATIVE_UNSUPPORTED;
                     }
                     for (int mappingIndex : q->getExcludedMappingIndices()) {
                         if (mappingIndex < 0 ||
@@ -1318,8 +1329,10 @@ void NativeNFsimSystemReader::collectTransforms(std::size_t i,std::vector<Native
                         Transformation* excluded = ts->getTransformation(p, mappingIndex);
                         if (!excluded || !excluded->getTemplateMolecule())
                             throw std::logic_error("MoveConnected exclusion has no pattern molecule");
-                        v.excluded_graph_nodes.push_back(
-                            excludedGraphNode(excluded->getTemplateMolecule()));
+                        const std::uint32_t excludedNode =
+                            excludedGraphNode(excluded->getTemplateMolecule());
+                        if (excludedNode != std::numeric_limits<std::uint32_t>::max())
+                            v.excluded_graph_nodes.push_back(excludedNode);
                     }
                 }
             }else if(t->getType()==TransformationFactory::LOCAL_FUNCTION_REFERENCE){

@@ -772,6 +772,47 @@ TEST(NFsimAdapter_SpeciesMoveRejectsUnknownDestinationAtomically){
     EXPECT_EQ(engine.state().molecules(MoleculeTypeId(0)).compartment(a),17u); EXPECT_EQ(engine.state().molecules(MoleculeTypeId(1)).compartment(b),17u);
 }
 
+TEST(NFsimAdapter_SpeciesMoveWithoutGraphSnapshotMovesConnectedSpecies){
+    // The reactant-graph snapshot is unavailable, so the recorded exclusion
+    // nodes cannot be resolved.  MoveConnected must still relocate every
+    // molecule connected to the primary that shares its original compartment,
+    // and must leave unrelated molecules untouched.
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",1));
+    NativeCompartmentSnapshot source; source.id=2; source.size=10.0;
+    NativeCompartmentSnapshot destination; destination.id=3; destination.size=5.0;
+    n.compartments={source,destination};
+    NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(0);
+    NativeTransformSnapshot t=tr(NATIVE_MOVE,0); t.destination_compartment=3; t.move_connected=true;
+    t.excluded_graph_nodes={4,5}; r.transforms.push_back(t); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    EXPECT_EQ(lowered.supported_rule_count,1u);
+    Engine engine(lowered.executable);
+    MoleculeHandle a=engine.state().molecules(MoleculeTypeId(0)).create();
+    MoleculeHandle b=engine.state().molecules(MoleculeTypeId(1)).create();
+    MoleculeHandle lone=engine.state().molecules(MoleculeTypeId(1)).create();
+    engine.state().molecules(MoleculeTypeId(0)).setCompartment(a,2);
+    engine.state().molecules(MoleculeTypeId(1)).setCompartment(b,2);
+    engine.state().molecules(MoleculeTypeId(1)).setCompartment(lone,2);
+    engine.state().molecules(MoleculeTypeId(0)).setBondRef(a,0,MoleculeRef(MoleculeTypeId(1),b));
+    engine.state().molecules(MoleculeTypeId(1)).setBondRef(b,0,MoleculeRef(MoleculeTypeId(0),a));
+    MatchContext context; context.setMoleculeAt(0,MoleculeRef(MoleculeTypeId(0),a)); FeatureDelta delta;
+    EXPECT_TRUE(engine.fire(lowered.rules[0].family,lowered.rules[0].member,context,delta));
+    EXPECT_EQ(engine.state().molecules(MoleculeTypeId(0)).compartment(a),3u);
+    EXPECT_EQ(engine.state().molecules(MoleculeTypeId(1)).compartment(b),3u);
+    EXPECT_EQ(engine.state().molecules(MoleculeTypeId(1)).compartment(lone),2u);
+}
+
+TEST(NFsimAdapter_UnsupportedTransformMarksRuleFallback){
+    NativeModelSnapshot n; n.molecule_types.push_back(mol("R",1));
+    NativeReactionSnapshot r=rxn();
+    NativeTransformSnapshot t; t.kind=NATIVE_UNSUPPORTED; t.reactant=0;
+    r.transforms.push_back(t); n.rules.push_back(r);
+    LegacyLoweringResult lowered=LegacyLowerer::lower(NFsimSnapshotAdapter::toLegacy(n));
+    EXPECT_EQ(lowered.supported_rule_count,0u);
+    EXPECT_EQ(lowered.fallback_rule_count,1u);
+    EXPECT_FALSE(lowered.rules[0].supported());
+}
+
 TEST(NFsimAdapter_ConditionalDeletionKeepsSpeciesIntactWhenItWouldSplit){
     NativeModelSnapshot n; n.molecule_types.push_back(mol("A",1)); n.molecule_types.push_back(mol("B",2)); n.molecule_types.push_back(mol("C",1));
     NativeReactionSnapshot r=rxn(); r.reactant_types.push_back(1); NativeTransformSnapshot t=tr(NATIVE_REMOVE,0); t.removal_type=NATIVE_DELETE_MOLECULE_CONDITIONAL; r.transforms.push_back(t); n.rules.push_back(r);

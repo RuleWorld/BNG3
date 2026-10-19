@@ -31,6 +31,12 @@ bool reactantsCanInteract(const SimulationState& state,
     const auto* first = findCompartment(state.model(), firstId);
     const auto* second = findCompartment(state.model(), secondId);
     if (!first || !second) return false;
+    // NFsim anchors a multi-reactant rule in a 2-D surface or 3-D volume
+    // (selectReactionCompartment); any other dimensionality cannot establish
+    // a placement rule and is refused rather than assumed compatible.
+    if ((first->dimensions != 2 && first->dimensions != 3) ||
+        (second->dimensions != 2 && second->dimensions != 3))
+        return false;
     if (first->dimensions == second->dimensions) return firstId == secondId;
     const auto* volume = first->dimensions == 3 ? first : second;
     const auto* surface = first->dimensions == 2 ? first : second;

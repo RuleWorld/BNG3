@@ -541,7 +541,8 @@ LegacyModelIR NFsimSnapshotAdapter::toLegacy(const NativeModelSnapshot& source) 
                 (x.kind == NATIVE_INCREMENT_POPULATION ||
                  x.kind == NATIVE_DECREMENT_POPULATION);
             const bool has_reactant =
-                x.kind != NATIVE_ADD && !zero_reactant_population_transform;
+                x.kind != NATIVE_ADD && x.kind != NATIVE_UNSUPPORTED &&
+                !zero_reactant_population_transform;
             std::uint32_t type = 0;
             if (has_reactant) {
                 type=reactantType(source,nr,x.reactant);
