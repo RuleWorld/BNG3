@@ -231,6 +231,13 @@ def test_native_oracle_cannot_reach_a_volume_dependent_bimolecular_source_law():
 
 def test_native_marginal_rows_report_the_missing_prerequisite(tmp_path):
     """The native rows are NOT_TESTED with the reason, not silently failed."""
+    import pytest
+
+    try:
+        import bionetgen  # noqa: F401
+    except ImportError:
+        pytest.skip("installed BNG3 package/native binding is unavailable")
+
     from tests.validation import reporting
 
     case = next(
