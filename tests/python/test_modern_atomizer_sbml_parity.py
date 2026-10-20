@@ -35,8 +35,11 @@ def test_sbml_empty_boolean_identities_and_empty_math_are_safe():
     assert model.rules[0].math == "1"
     assert model.function_definitions["empty"].math == "0"
     assert model.initial_assignments == []
+    # SBML Level 3 Version 1 requires the math element, so the empty <math/>
+    # elements name an invalid source document rather than a construct the
+    # converter declines to support.
     assert (
-        sum(warning["category"] == "missingMath" for warning in model.import_warnings)
+        sum(warning["category"] == "invalidSource" for warning in model.import_warnings)
         == 2
     )
 

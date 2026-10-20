@@ -243,7 +243,7 @@ def test_missing_math_in_older_levels_is_reported_as_an_invalid_document(
     )
     atomizer, _ = _atomize(sbml)
 
-    warnings = _warnings(atomizer)
+    warnings = _warnings(atomizer, category="invalidSource")
     assert len(warnings) == 1
     assert warnings[0]["severity"] == "dropped"
     assert "does not conform to the SBML" in warnings[0]["message"]
@@ -349,11 +349,7 @@ def test_cn_with_separator_and_an_impermissible_type_is_reported_as_invalid():
         """)
     atomizer, _ = _atomize(sbml)
 
-    warnings = [
-        warning
-        for warning in atomizer.model.import_warnings
-        if warning["category"] == "mathml"
-    ]
+    warnings = _warnings(atomizer, category="invalidSource")
     assert len(warnings) == 1
     assert "not valid SBML" in warnings[0]["message"]
     assert _limitations(atomizer)

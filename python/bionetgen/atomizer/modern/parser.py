@@ -2891,10 +2891,14 @@ class SBMLParser:
     def _mathml_import_warnings(root: Any) -> List[Dict[str, Any]]:
         """Collect the source parser's diagnostics for lossy MathML constructs."""
 
-        messages: "OrderedDict[str, int]" = OrderedDict()
+        messages: "OrderedDict[str, List[Any]]" = OrderedDict()
 
-        def add(message: str) -> None:
-            messages[message] = messages.get(message, 0) + 1
+        def add(message: str, category: str = "mathml") -> None:
+            entry = messages.get(message)
+            if entry is None:
+                entry = [0, category]
+                messages[message] = entry
+            entry[0] += 1
 
         # A MathML ``<apply>`` names its operator with its first child.  When
         # that child is a ``<ci>``, the operator is a function call, and SBML
@@ -2966,20 +2970,21 @@ class SBMLParser:
                     # any other type is a malformed source document.
                     if number_type not in {"rational", "e-notation", "enotation"}:
                         add(
-                            "<cn> with <sep/> and a MathML type outside the "
+                            "<cn> with <sep/> and a type outside the "
                             "SBML-permitted set (e-notation, real, integer, "
                             "rational) is not valid SBML; it is read as a "
-                            "rational number."
+                            "rational number.",
+                            category="invalidSource",
                         )
 
         return [
             {
-                "category": "mathml",
+                "category": category,
                 "message": message,
                 "count": count,
                 "severity": "approximated",
             }
-            for message, count in messages.items()
+            for message, (count, category) in messages.items()
         ]
 
     @staticmethod
@@ -4575,7 +4580,7 @@ class SBMLParser:
                         # element, so the source document itself is invalid.
                         warnings.append(
                             {
-                                "category": "missingMath",
+                                "category": "invalidSource",
                                 "message": (
                                     f"{kind} rule{target} has no MathML "
                                     "expression; the math element is required in "
@@ -4732,7 +4737,7 @@ class SBMLParser:
                         # element, so the source document itself is invalid.
                         warnings.append(
                             {
-                                "category": "missingMath",
+                                "category": "invalidSource",
                                 "message": (
                                     f'Function definition "{item_id}" has no MathML '
                                     "expression; the math element is required in "
@@ -4885,7 +4890,7 @@ class SBMLParser:
                             # element, so the source document itself is invalid.
                             warnings.append(
                                 {
-                                    "category": "missingMath",
+                                    "category": "invalidSource",
                                     "message": (
                                         f'Initial assignment "{symbol}" has no MathML '
                                         "expression; the math element is required in "
