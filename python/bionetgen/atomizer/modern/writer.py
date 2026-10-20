@@ -790,6 +790,33 @@ def _piecewise_expression(args: List[str]) -> str:
     return result
 
 
+def _substitute_formal_arguments(
+    body: str, formals: Sequence[str], actuals: Sequence[str]
+) -> str:
+    """Bind a function definition's formal arguments in a single pass.
+
+    SBML function definitions are lambdas: the caller's argument expressions
+    are evaluated in the caller's scope and only then bound to the callee's
+    ``bvar`` names (SBML Level 3 Version 2 Core, Sec. 4.3.5).  Substituting
+    the formals one at a time would re-scan text that a previous
+    substitution had just inserted, so a caller argument that happens to
+    spell a formal of the callee (or of a function called by the callee)
+    would be captured by the wrong binding.  A single regex pass leaves the
+    inserted argument text untouched.
+    """
+
+    mapping = {
+        str(formal): str(actual)
+        for formal, actual in zip(formals, actuals)
+        if str(formal)
+    }
+    if not mapping:
+        return body
+    names = tuple(sorted(mapping, key=len, reverse=True))
+    pattern = _formal_pattern(names)
+    return pattern.sub(lambda match: f"({mapping[match.group(0)]})", body)
+
+
 def extend_function(
     function_string: str,
     parameter_dict: Mapping[str, object],
@@ -820,11 +847,7 @@ def extend_function(
                     return f"{call_name}()"
                 if len(args) != len(arguments):
                     return f"{call_name}({', '.join(args)})"
-                expanded = body
-                for formal, actual in zip(arguments, args):
-                    expanded = re.sub(
-                        rf"\b{re.escape(formal)}\b", f"({actual})", expanded
-                    )
+                expanded = _substitute_formal_arguments(body, arguments, args)
                 return f"({expanded})"
 
             function_names = [name]
@@ -4346,12 +4369,31 @@ def _seed_symbol_values(
             value in species_ids or standardize_name(value) in standardized_species_ids
         )
 
+    compartment_names = {
+        str(compartment_id): standardize_name(str(compartment_id))
+        for compartment_id in model.compartments
+    }
+
     def set_resolved(identifier: object, expression: object) -> bool:
         """Resolve an expression and (re)set its symbol, overriding any prior value."""
         if identifier is None or not expression:
             return False
         value = _substitute_seed_symbols(str(expression), symbols)
-        return _set_seed_symbol_if_changed(symbols, identifier, value)
+        changed = _set_seed_symbol_if_changed(symbols, identifier, value)
+        # An assignment rule (or an initial assignment) on a compartment replaces
+        # its ``size`` attribute for every simulation time, including t=0 (SBML
+        # Level 3 Version 2 Core, Sec. 4.8.5).  The seed expressions of the
+        # species in that compartment use the volume parameter, so it has to
+        # carry the resolved size rather than the ignored attribute value.
+        compartment_name = compartment_names.get(str(identifier))
+        if compartment_name is not None:
+            changed = (
+                _set_seed_symbol_if_changed(
+                    symbols, f"__compartment_{compartment_name}__", value
+                )
+                or changed
+            )
+        return changed
 
     for _ in range(12):
         changed = False
@@ -6911,6 +6953,8 @@ def generate_bngl(
             if getattr(assignment, "variable", None)
         )
 
+        constant_check_stack: set[str] = set()
+
         def is_compile_time_constant(identifier: str) -> bool:
             if identifier in {"__Avogadro__", "exponentiale", "pi"}:
                 return True
@@ -6918,11 +6962,29 @@ def generate_bngl(
             if parameter is not None:
                 rules = [rule for rule in model.rules if rule.variable == identifier]
                 if rules:
-                    return (
-                        len(rules) == 1
-                        and rules[0].type == "assignment"
-                        and resolve_event_parameter(identifier) is not None
-                    )
+                    if (
+                        len(rules) != 1
+                        or rules[0].type != "assignment"
+                        or resolve_event_parameter(identifier) is None
+                    ):
+                        return False
+                    # An assignment rule is only a compile-time constant when
+                    # everything it reads is one.  A rule that copies a
+                    # rate-ruled or event-driven symbol changes over the run,
+                    # so folding its value would silently freeze the symbol.
+                    if identifier in constant_check_stack:
+                        return False
+                    constant_check_stack.add(identifier)
+                    try:
+                        expression = extend_function(
+                            rules[0].math, {}, model.function_definitions
+                        )
+                        return (
+                            fold_numeric(expression, resolve_constant_symbol)
+                            is not None
+                        )
+                    finally:
+                        constant_check_stack.discard(identifier)
                 # SBML permits a parameter with constant="false" to be
                 # changed, but it remains fixed throughout this model unless
                 # a rule or event actually changes it. An initial assignment
@@ -6931,6 +6993,23 @@ def generate_bngl(
                 return identifier not in mutable_event_ids
             compartment = model.compartments.get(identifier)
             return bool(compartment is not None and identifier not in mutable_event_ids)
+
+        def resolve_constant_symbol(identifier: str) -> Optional[float]:
+            """Resolve a symbol, refusing a value that changes during the run.
+
+            ``is_compile_time_constant`` classifies parameters and
+            compartments; every other symbol keeps the historical resolution
+            so that the check only withdraws values that are known to vary.
+            """
+
+            value = resolve_event_parameter(identifier)
+            if value is None:
+                return None
+            if (
+                identifier in model.parameters or identifier in model.compartments
+            ) and not is_compile_time_constant(identifier):
+                return None
+            return value
 
         initial_assignment_values = {
             str(assignment.symbol): str(assignment.math or "")

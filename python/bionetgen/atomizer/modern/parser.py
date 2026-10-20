@@ -101,6 +101,17 @@ _SBML_CSYMBOL_URLS = {
     "symbols/rateof": "rateOf",
 }
 
+# The SBML ``time`` csymbol denotes the current simulation time, and its
+# spelling is also a legal SBML SId: a model may declare a parameter whose
+# id is ``time`` (SBML Level 3 Version 2 Core, Sec. 3.1.2 defines no reserved
+# SIds, and Sec. 4.3.5 defines the ``time`` csymbol in the MathML namespace
+# only).  The MathML reader therefore spells the csymbol with a token that no
+# model symbol can use, so that a ``<ci>`` reference to a parameter named
+# ``time`` and a ``<csymbol>`` reference to the simulation time stay
+# distinguishable.  ``_normalize_formula_identifiers`` maps the token back to
+# the plain ``time`` spelling once the ``<ci>`` references have been resolved.
+_SBML_CSYMBOL_TIME = "__sbml_csymbol_time__"
+
 # Function names that carry no free symbol, so an expression that mentions one
 # is not dependent on an unknown model quantity.  The MathML built-ins come
 # from the shared table so that the set of names the evaluator understands and
@@ -708,7 +719,7 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
         if tag == "csymbol":
             kind = _csymbol_kind(element)
             if kind == "time":
-                return "time"
+                return _SBML_CSYMBOL_TIME
             if kind == "avogadro":
                 return format(_SBML_AVOGADRO_VALUE, ".15g")
             if kind == "delay":
@@ -716,7 +727,7 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
             if kind == "rateOf":
                 return "rateOf"
         if "symbols/time" in definition_url:
-            return "time"
+            return _SBML_CSYMBOL_TIME
         if "symbols/avogadro" in definition_url:
             return format(_SBML_AVOGADRO_VALUE, ".15g")
         if "symbols/delay" in definition_url:
@@ -3042,16 +3053,22 @@ class SBMLParser:
                 canonical = str(canonical or "").strip()
                 if alias and canonical and alias != canonical:
                     mapping.setdefault(alias, canonical)
-        if not mapping:
-            return normalized
-        # Longest alternative first. The trailing lookahead already makes
-        # the match unambiguous, but ordering by length keeps the engine from
-        # backtracking through every shorter prefix of a longer alias.
-        alternatives = "|".join(
-            re.escape(alias) for alias in sorted(mapping, key=len, reverse=True)
-        )
-        pattern = re.compile(rf"(?<![A-Za-z0-9_])(?:{alternatives})(?![A-Za-z0-9_])")
-        return pattern.sub(lambda match: mapping[match.group(0)], normalized)
+        if mapping:
+            # Longest alternative first. The trailing lookahead already makes
+            # the match unambiguous, but ordering by length keeps the engine from
+            # backtracking through every shorter prefix of a longer alias.
+            alternatives = "|".join(
+                re.escape(alias) for alias in sorted(mapping, key=len, reverse=True)
+            )
+            pattern = re.compile(
+                rf"(?<![A-Za-z0-9_])(?:{alternatives})(?![A-Za-z0-9_])"
+            )
+            normalized = pattern.sub(lambda match: mapping[match.group(0)], normalized)
+        # The ``time`` csymbol is restored to its plain spelling only after the
+        # alias substitution, so that a model parameter whose id is ``time``
+        # keeps its own meaning while the csymbol keeps denoting the
+        # simulation time.
+        return normalized.replace(_SBML_CSYMBOL_TIME, "time")
 
     @staticmethod
     def _parse_xml_model(
