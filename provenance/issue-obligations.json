@@ -5188,8 +5188,8 @@
           "required_checks": [
             {
               "id": "qualification:issue:162:keep-the-existing-full-biomodels-stop-in-effect-until-the-user-e",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "evidence_kind": "disposition",
+              "expectation": "Maintainer decision required: whether the full BioModels stop stays in effect is the user's decision; this inventory records no decision.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5197,9 +5197,10 @@
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
+          "decisions": [
+            "Maintainer decision required: whether the full BioModels stop stays in effect is the user's decision; this inventory records no decision."
+          ],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:162:keep-the-existing-full-biomodels-stop-in-effect-until-the-user-e.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -5948,8 +5949,8 @@
           "required_checks": [
             {
               "id": "qualification:issue:170:define-requested-model-classes-exported-mathematical-objects-ass",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "evidence_kind": "disposition",
+              "expectation": "Maintainer decision required: the requested model classes, the exported mathematical objects, the assumptions and the theorem targets are a specification the maintainer owns; this inventory records no decision.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5957,9 +5958,10 @@
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
+          "decisions": [
+            "Maintainer decision required: the requested model classes, the exported mathematical objects, the assumptions and the theorem targets are a specification the maintainer owns; this inventory records no decision."
+          ],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:170:define-requested-model-classes-exported-mathematical-objects-ass.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -7068,8 +7070,8 @@
           "required_checks": [
             {
               "id": "qualification:issue:179:obtain-actual-decisions-and-evidence-for-the-baseline-nine-sourc",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "evidence_kind": "disposition",
+              "expectation": "Maintainer decision required: the baseline decision, the nine source cutoffs, the two oracles and the compiler implementation decision are the maintainer's; this inventory records no decision.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -7077,9 +7079,10 @@
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
+          "decisions": [
+            "Maintainer decision required: the baseline decision, the nine source cutoffs, the two oracles and the compiler implementation decision are the maintainer's; this inventory records no decision."
+          ],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:179:obtain-actual-decisions-and-evidence-for-the-baseline-nine-sourc.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
