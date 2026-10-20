@@ -1,5 +1,0 @@
-if(EXISTS "/private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_xml_writer_tests-b12d07c.cmake")
-  include("/private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_xml_writer_tests-b12d07c.cmake")
-else()
-  add_test(test_xml_writer_NOT_BUILT-b12d07c test_xml_writer_NOT_BUILT-b12d07c)
-endif()

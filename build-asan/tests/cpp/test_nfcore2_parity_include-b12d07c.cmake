@@ -1,5 +1,0 @@
-if(EXISTS "/private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_nfcore2_parity_tests-b12d07c.cmake")
-  include("/private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_nfcore2_parity_tests-b12d07c.cmake")
-else()
-  add_test(test_nfcore2_parity_NOT_BUILT-b12d07c test_nfcore2_parity_NOT_BUILT-b12d07c)
-endif()

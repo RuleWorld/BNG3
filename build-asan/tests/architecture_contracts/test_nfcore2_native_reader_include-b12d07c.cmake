@@ -1,5 +1,0 @@
-if(EXISTS "/private/tmp/bng3-issue-reconcile/build-asan/tests/architecture_contracts/test_nfcore2_native_reader_tests-b12d07c.cmake")
-  include("/private/tmp/bng3-issue-reconcile/build-asan/tests/architecture_contracts/test_nfcore2_native_reader_tests-b12d07c.cmake")
-else()
-  add_test(test_nfcore2_native_reader_NOT_BUILT-b12d07c test_nfcore2_native_reader_NOT_BUILT-b12d07c)
-endif()

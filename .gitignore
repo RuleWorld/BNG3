@@ -69,3 +69,4 @@ scratch/
 
 # Local test build directory
 build-tests/
+build-asan/

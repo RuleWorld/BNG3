@@ -1,5 +1,0 @@
-add_test( [==[PSA reaction selection samples competing channels by propensity]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_psa_simulator [==[PSA reaction selection samples competing channels by propensity]==]  )
-set_tests_properties( [==[PSA reaction selection samples competing channels by propensity]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
-add_test( [==[PsaSimulator rejects BNG3 events until event execution is implemented]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_psa_simulator [==[PsaSimulator rejects BNG3 events until event execution is implemented]==]  )
-set_tests_properties( [==[PsaSimulator rejects BNG3 events until event execution is implemented]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
-set( test_psa_simulator_TESTS [==[PSA reaction selection samples competing channels by propensity]==] [==[PsaSimulator rejects BNG3 events until event execution is implemented]==])

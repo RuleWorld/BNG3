@@ -1,5 +1,0 @@
-if(EXISTS "/private/tmp/bng3-issue-reconcile/build-asan/tests/energy/tests/cpp/test_energy_compiler_original_tests-b12d07c.cmake")
-  include("/private/tmp/bng3-issue-reconcile/build-asan/tests/energy/tests/cpp/test_energy_compiler_original_tests-b12d07c.cmake")
-else()
-  add_test(test_energy_compiler_original_NOT_BUILT-b12d07c test_energy_compiler_original_NOT_BUILT-b12d07c)
-endif()

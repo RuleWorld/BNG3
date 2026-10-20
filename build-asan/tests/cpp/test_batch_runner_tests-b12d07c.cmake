@@ -1,5 +1,0 @@
-add_test( [==[bng_cpp parallel mode isolates model outputs]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_batch_runner [==[bng_cpp parallel mode isolates model outputs]==]  )
-set_tests_properties( [==[bng_cpp parallel mode isolates model outputs]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
-add_test( [==[bng_cpp parallel mode propagates child failures]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_batch_runner [==[bng_cpp parallel mode propagates child failures]==]  )
-set_tests_properties( [==[bng_cpp parallel mode propagates child failures]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
-set( test_batch_runner_TESTS [==[bng_cpp parallel mode isolates model outputs]==] [==[bng_cpp parallel mode propagates child failures]==])

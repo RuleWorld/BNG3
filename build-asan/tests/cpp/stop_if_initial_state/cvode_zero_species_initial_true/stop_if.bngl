@@ -1,9 +1,0 @@
-begin model
-begin parameters
-  N 4
-end parameters
-begin molecule types
-  A()
-end molecule types
-simulate({method=>"cvode",t_start=>0,t_end=>1,n_steps=>2,stop_if=>"2^N"})
-end model

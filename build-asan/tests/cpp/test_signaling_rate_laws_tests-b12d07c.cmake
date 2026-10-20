@@ -1,7 +1,0 @@
-add_test( [==[a unidirectional arrow with two rate laws is refused]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_signaling_rate_laws [==[a unidirectional arrow with two rate laws is refused]==]  )
-set_tests_properties( [==[a unidirectional arrow with two rate laws is refused]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
-add_test( [==[a unidirectional arrow with one rate law is still accepted]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_signaling_rate_laws [==[a unidirectional arrow with one rate law is still accepted]==]  )
-set_tests_properties( [==[a unidirectional arrow with one rate law is still accepted]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
-add_test( [==[a bidirectional arrow still carries both rate laws]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_signaling_rate_laws [==[a bidirectional arrow still carries both rate laws]==]  )
-set_tests_properties( [==[a bidirectional arrow still carries both rate laws]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
-set( test_signaling_rate_laws_TESTS [==[a unidirectional arrow with two rate laws is refused]==] [==[a unidirectional arrow with one rate law is still accepted]==] [==[a bidirectional arrow still carries both rate laws]==])
