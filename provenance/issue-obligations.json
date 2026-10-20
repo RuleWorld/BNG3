@@ -1680,22 +1680,29 @@
           "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
           "scope": "Define conversion between supported amount and count representations.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified typed subset states elementary zero-order, first-order and identical-reactant bimolecular rules in one declared three-dimensional compartment; unit-bearing seed amounts remain outside the direct NFsim subset."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:amount-count-conversion",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The typed mole-basis and item-basis statements of one physical reaction reproduce the same independent count law, so the mole-to-item bridge is applied exactly once.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:amount-count-conversion.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1704,22 +1711,29 @@
           "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
           "scope": "Define conversion for supported elementary rate units.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Only static elementary rate constants with a typed unit are qualified; dynamic, compound-parameter and time-dependent rates stay refused."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:elementary-rate-conversion",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Every generated typed rate constant converts to the count rate of the independent source count law under the recorded seed and run budget.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:elementary-rate-conversion.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1728,22 +1742,29 @@
           "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
           "scope": "Conversion must account for reaction molecularity.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified subset covers molecularity one and two with single-molecule reactant patterns; higher orders and multi-molecule patterns stay refused."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:molecularity",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The converted count law is the law of the reaction's molecularity and is separated from the laws of the neighbouring reaction orders.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:molecularity.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1752,22 +1773,29 @@
           "criterion": "Define supported amount/count and elementary-rate conversion using molecularity and compartment context.",
           "scope": "Conversion must account for compartment context.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified subset uses a static declared three-dimensional compartment; time-dependent volumes and non-three-dimensional compartments stay refused."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:compartment-context",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The converted count rate uses the declared reaction compartment and is separated from the law of the same reaction without that compartment.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:compartment-context.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1776,23 +1804,30 @@
           "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
           "scope": "Compare converted behavior against independent count-based models.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The comparison is distributional over the recorded ensemble; it is not a pathwise claim and it does not compare two engines seed by seed."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:independent-count-model-comparison",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The typed model's sampled count marginals match the independent source count law, not the product's own output.",
               "identity_requirements": [
                 "source.revision",
                 "references.nfsim.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:independent-count-model-comparison.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1801,22 +1836,29 @@
           "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
           "scope": "Reject conversion when required context is missing.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The refusal is qualified for a missing mole-to-item bridge; a missing compartment volume unit is refused by the same boundary."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:missing-context-refusal",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A typed model whose mole-to-item bridge is missing is refused with a physical-unit diagnostic instead of being executed.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:missing-context-refusal.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1825,22 +1867,29 @@
           "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
           "scope": "Reject unsupported physical dimensions.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The refusal is qualified for a two-dimensional reaction compartment."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:unsupported-dimension-refusal",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A typed model whose reaction compartment is not three-dimensional is refused with a physical-unit diagnostic instead of being executed.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:unsupported-dimension-refusal.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1849,22 +1898,29 @@
           "criterion": "Compare against independent count-based models and reject missing context, unsupported dimensions or double scaling.",
           "scope": "Reject or detect duplicate volume scaling.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The detection is qualified for the compartment volume of a typed rate conversion; the zero-order and bimolecular cases carry that volume."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:151:double-scaling-refusal",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The observed count law is separated from the law a second application of the compartment volume would produce.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_marginals.py",
+            "tests/validation/integrated_cases.py",
+            "tests/validation/test_integrated_marginals.py",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/cpp/test_nfsim_ast_adapter.cpp"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:151:double-scaling-refusal.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
