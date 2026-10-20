@@ -4287,22 +4287,192 @@
           "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
           "scope": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The tier covers the BNGL, NET and SBML round trips with independent consumers, plus the eBNGL energy refusal boundary for SBML, SBML-Multi, MATLAB and LaTeX.",
+            "Structural and visualization exporters (contact map, rule/influence/process graphs) carry no rate laws, so their absence of a kinetic feature is not a loss and they are outside this tier's kinetics scope.",
+            "The generated cases are two bounded first-order conversion models; this does not qualify rule-pattern, stochastic, multi-compartment or unit-annotated export semantics."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:163:populate-a-nonempty-format-tier-and-verify-semantic-round-trips",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "export-format-tier:conversion:bngl:roundtrip-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported bngl of the generated conversion case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:conversion:bngl:downstream-consumption",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported bngl (the BioNetGen parser and engine execute the re-imported model) uses the exported form and reproduces the closed-form law of the generated source case.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:conversion:net:roundtrip-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported net of the generated conversion case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:conversion:net:downstream-consumption",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported net (the BioNetGen native CLI in a separate process reads the .net back) uses the exported form and reproduces the closed-form law of the generated source case.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:conversion:sbml:roundtrip-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported sbml of the generated conversion case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:conversion:sbml:downstream-consumption",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported sbml (libRoadRunner, an independent SBML simulator, loads the document) uses the exported form and reproduces the closed-form law of the generated source case.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:reversible:bngl:roundtrip-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported bngl of the generated reversible case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:reversible:bngl:downstream-consumption",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported bngl (the BioNetGen parser and engine execute the re-imported model) uses the exported form and reproduces the closed-form law of the generated source case.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:reversible:net:roundtrip-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported net of the generated reversible case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:reversible:net:downstream-consumption",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported net (the BioNetGen native CLI in a separate process reads the .net back) uses the exported form and reproduces the closed-form law of the generated source case.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:reversible:sbml:roundtrip-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported sbml of the generated reversible case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:reversible:sbml:downstream-consumption",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported sbml (libRoadRunner, an independent SBML simulator, loads the document) uses the exported form and reproduces the closed-form law of the generated source case.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:refusal:sbml:explicit-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The sbml export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:refusal:sbml-multi:explicit-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The sbml-multi export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:refusal:matlab:explicit-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The matlab export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:refusal:latex:explicit-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The latex export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:energy-control:bngl:feature-preserved",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bngl export of the same eBNGL energy model does not refuse and carries the energy patterns into the exported artifact, so the refusal of the other formats is format-specific rather than a blanket rejection of the model.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:energy-control:bng-xml:feature-preserved",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bng-xml export of the same eBNGL energy model does not refuse and carries the energy patterns into the exported artifact, so the refusal of the other formats is format-specific rather than a blanket rejection of the model.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "export-format-tier:energy-control:net:feature-preserved",
+              "evidence_kind": "supported-execution",
+              "expectation": "The net export of the same eBNGL energy model does not refuse and carries the energy patterns into the exported artifact, so the refusal of the other formats is format-specific rather than a blanket rejection of the model.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/export_format_tier.py",
+            "tests/validation/test_export_format_tier.py",
+            "tests/validation/test_export_formats.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:163:populate-a-nonempty-format-tier-and-verify-semantic-round-trips.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },

@@ -534,6 +534,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_graph_identity=False,
                     include_bngir_adversarial=False,
                     include_quantity_laws=False,
+                    include_export_format_tier=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -554,6 +555,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     from .integrated_marginals import source_law_check_ids
     from .integrated_cases import source_law_cases
+    from .export_format_tier import check_ids as export_format_tier_check_ids
 
     families.append(
         dict(
@@ -567,6 +569,19 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                 stage_timeout_seconds=900,
             ),
             limits="Finite prelowered physical-law and bare BNGL count controls; no unit-annotation ingestion or joint-law qualification.",
+        )
+    )
+    families.append(
+        dict(
+            id="export-format-tier",
+            case_ids=[],
+            check_ids=export_format_tier_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(export_format_tier_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits="Bounded generated export-format tier: BNGL/NET/SBML round trips with independent consumers and the eBNGL energy refusal boundary; no exhaustive format matrix and no structural/graph exporter qualification.",
         )
     )
     selected = []
@@ -604,11 +619,15 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             else (
                 ["--quantity-laws-only"]
                 if family["id"] == "quantity-source-laws"
-                else [
-                    argument
-                    for case_id in family["case_ids"]
-                    for argument in ("--case", case_id)
-                ]
+                else (
+                    ["--export-format-tier-only"]
+                    if family["id"] == "export-format-tier"
+                    else [
+                        argument
+                        for case_id in family["case_ids"]
+                        for argument in ("--case", case_id)
+                    ]
+                )
             )
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)

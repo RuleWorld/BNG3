@@ -542,6 +542,14 @@ jobs:
         if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest tests/validation/test_bngir_adversarial_native.py -q
 
+      - name: Check the export-format tier against independent consumers
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_export_format_tier.py \
+            --bng-cpp build/cpp/bng_cpp \
+            -q -ra
+
       - name: Audit generated consumer matrix receipts
         if: always()
         run: |
