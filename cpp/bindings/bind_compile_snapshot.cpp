@@ -541,6 +541,20 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         } else {
             item["value"] = py::none();
         }
+        // The transition's structure. The transition text above is the
+        // barrier's own representation of the same rewrite; these patterns
+        // let a consumer rebuild the transition without reading that text.
+        py::list reactants;
+        for (const auto& pattern : barrier.reactantPatterns) {
+            reactants.append(patternSnapshot(pattern, model));
+        }
+        item["reactants"] = std::move(reactants);
+        py::list products;
+        for (const auto& pattern : barrier.productPatterns) {
+            products.append(patternSnapshot(pattern, model));
+        }
+        item["products"] = std::move(products);
+        item["bidirectional"] = barrier.bidirectional;
         barrierPatterns.append(std::move(item));
     }
     root["barrier_patterns"] = std::move(barrierPatterns);

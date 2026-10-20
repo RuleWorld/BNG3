@@ -32,6 +32,13 @@ public:
 
     const std::string& getLabel() const;
 
+    // The transition text the barrier was written with. A barrier rebuilt
+    // from a structured document keeps the text it was read from, so the wire
+    // form round-trips exactly; the transition's semantics come from the
+    // backing rule, not from this text. Empty when the barrier was not read
+    // from text, in which case toString() derives the text from the rule.
+    void setSourceText(std::string text);
+
     // Transition-state energy contributed when this pattern matches.
     const Expression& expression() const;
     bool hasExpression() const;
@@ -49,6 +56,7 @@ private:
     std::unique_ptr<ReactionRule> transition_;
     Expression expression_;
     bool hasExpression_ = false;
+    std::string sourceText_;
 };
 
 } // namespace bng::ast

@@ -11,6 +11,7 @@
 
 #include <pybind11/pybind11.h>
 
+#include "ast/BarrierPattern.hpp"
 #include "ast/EnergyPattern.hpp"
 #include "ast/Expression.hpp"
 #include "ast/Function.hpp"
@@ -18,10 +19,12 @@
 #include "ast/MoleculeType.hpp"
 #include "ast/Observable.hpp"
 #include "ast/Parameter.hpp"
+#include "ast/PopulationMap.hpp"
 #include "ast/ReactionRule.hpp"
 #include "ast/SeedSpecies.hpp"
 #include "ast/SpeciesGraph.hpp"
 #include "compile/CompiledRateLaw.hpp"
+#include "compile/energy/BarrierCompiler.hpp"
 #include "core/BNGcore.hpp"
 
 namespace py = pybind11;
@@ -98,6 +101,14 @@ void requireObjectKeys(const py::dict& object,
     }
 }
 
+// Read a model section that a document may leave out. The wire format makes
+// the barrier and population-map sections optional, so an absent section
+// means the model has none of that kind rather than a malformed document.
+py::list optionalSection(const py::dict& document, const std::string& key) {
+    if (!document.contains(py::str(key))) return py::list();
+    return py::cast<py::list>(document[py::str(key)]);
+}
+
 void requireParameterKeys(const py::dict& parameter) {
     static const std::vector<std::string> required = {"id", "name", "expression"};
     static const std::vector<std::string> allowed = {
@@ -128,21 +139,6 @@ std::size_t requireSymbolIndex(const py::dict& symbol,
 void requireExpressionProperties(const py::dict& expression,
                                  const std::vector<std::string>& allowed) {
     requireObjectKeys(expression, {}, allowed, "expression");
-}
-
-void rejectUnsupportedModelSections(const py::dict& document) {
-    static const std::vector<std::string> sections = {
-        "barrier_patterns", "population_maps", "population_types",
-    };
-    for (const auto& section : sections) {
-        const py::str key(section);
-        if (!document.contains(key)) continue;
-        const auto entries = py::cast<py::list>(document[key]);
-        if (!entries.empty()) {
-            throw std::runtime_error(
-                "native BNGIR model." + section + " is not supported");
-        }
-    }
 }
 
 // The names a wire expression can point at. The compiler resolves a bare name
@@ -526,11 +522,213 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
     return result;
 }
 
+// The population map's pattern is compiled from the map's pattern text, so
+// the importer renders the document's structured pattern back to that text.
+// The compartment form the document states is preserved, because the text is
+// the only representation the compiler reads.
+std::string patternTextFromBngir(const SpeciesGraph& graph) {
+    // The per-molecule compartments belong to the pattern, so each molecule
+    // is annotated with the compartment it carries.
+    std::vector<std::string> moleculeCompartments;
+    const auto body = graph.getGraph().get_BNG2_string(moleculeCompartments);
+    std::string rendered = body;
+    bool hasMoleculeCompartment = false;
+    for (const auto& compartment : moleculeCompartments) {
+        if (!compartment.empty()) {
+            hasMoleculeCompartment = true;
+            break;
+        }
+    }
+    if (hasMoleculeCompartment) {
+        std::string annotated;
+        std::size_t moleculeIndex = 0;
+        std::size_t position = 0;
+        while (position < body.size()) {
+            int depth = 0;
+            std::size_t moleculeEnd = position;
+            while (moleculeEnd < body.size()) {
+                const auto character = body[moleculeEnd];
+                if (character == '(') {
+                    ++depth;
+                } else if (character == ')') {
+                    --depth;
+                } else if (character == '.' && depth == 0) {
+                    break;
+                }
+                ++moleculeEnd;
+            }
+            annotated.append(body, position, moleculeEnd - position);
+            if (moleculeIndex < moleculeCompartments.size() &&
+                !moleculeCompartments[moleculeIndex].empty()) {
+                annotated += "@" + moleculeCompartments[moleculeIndex];
+            }
+            ++moleculeIndex;
+            if (moleculeEnd < body.size()) {
+                annotated += '.';
+                position = moleculeEnd + 1;
+            } else {
+                position = moleculeEnd;
+            }
+        }
+        rendered = annotated;
+    }
+    const auto& compartment = graph.getCompartment();
+    if (compartment.empty()) return rendered;
+    if (graph.isCompartmentPrefix()) return "@" + compartment + ":" + rendered;
+    return rendered + "@" + compartment;
+}
+
+// Build the population map the compiler expects: the pattern, the population
+// target, its arguments, and the mapping rate. A map without a rate would
+// compile to a zero rate, so the rate is required here rather than defaulted.
+PopulationMap populationMapFromBngir(Model& model,
+                                     const py::dict& mapping,
+                                     const BngirScope& scope) {
+    static const std::vector<std::string> requiredKeys = {
+        "index", "label", "pattern", "arguments", "rate",
+    };
+    static const std::vector<std::string> allowedKeys = {
+        "arguments", "function", "index", "label", "pattern", "population",
+        "population_id", "rate",
+    };
+    requireObjectKeys(mapping, requiredKeys, allowedKeys, "population map");
+
+    PopulationMap result;
+    result.label = py::cast<std::string>(mapping["label"]);
+    const auto pattern =
+        patternFromBngir(model, py::cast<py::dict>(mapping["pattern"]));
+    result.patternText = patternTextFromBngir(pattern);
+
+    std::string populationName;
+    if (mapping.contains(py::str("population"))) {
+        populationName = py::cast<std::string>(mapping["population"]);
+    }
+    if (mapping.contains(py::str("function"))) {
+        // `function` is the legacy alias for the canonical population name.
+        const auto legacy = py::cast<std::string>(mapping["function"]);
+        if (!populationName.empty() && populationName != legacy) {
+            throw std::runtime_error(
+                "native BNGIR population map population name and function alias "
+                "disagree");
+        }
+        populationName = legacy;
+    }
+    if (populationName.empty()) {
+        throw std::runtime_error(
+            "native BNGIR population map has no population name");
+    }
+    result.populationName = populationName;
+
+    const auto rawArguments = py::cast<py::list>(mapping["arguments"]);
+    result.populationArgs.reserve(rawArguments.size());
+    for (const auto& rawArgument : rawArguments) {
+        if (!py::isinstance<py::str>(rawArgument)) {
+            throw std::runtime_error(
+                "native BNGIR population map arguments must be strings");
+        }
+        result.populationArgs.push_back(py::cast<std::string>(rawArgument));
+    }
+
+    const auto rate =
+        expressionFromBngir(py::cast<py::dict>(mapping["rate"]), scope);
+    result.rateExpression = rate;
+    result.rateText = rate.toString();
+    result.hasExplicitRate = true;
+
+    // Compatibility aliases retained for older callers while they migrate.
+    result.populationFunction = result.populationName;
+    result.functionArgs = result.populationArgs;
+    return result;
+}
+
 // A model function declared by the wire document.
 struct BngirFunction {
     std::string name;
     std::vector<std::string> arguments;
 };
+
+// Build the barrier pattern the compiler expects: a transition rule whose
+// single rewrite is the reaction center the barrier applies to, plus the
+// transition-state energy. The document's transition text is kept as the
+// barrier's own representation of that rewrite, so the wire form round-trips
+// exactly; the transition's semantics come from the structured patterns.
+BarrierPattern barrierPatternFromBngir(Model& model,
+                                       const py::dict& barrier,
+                                       const BngirScope& scope,
+                                       std::size_t index) {
+    static const std::vector<std::string> requiredKeys = {
+        "index", "label", "transition", "expression", "reaction_center",
+        "center_resolved", "value", "reactants", "products", "bidirectional",
+    };
+    static const std::vector<std::string> allowedKeys = {
+        "bidirectional", "center_resolved", "expression", "index", "label",
+        "products", "reactants", "reaction_center", "transition", "value",
+    };
+    requireObjectKeys(barrier, requiredKeys, allowedKeys, "barrier pattern");
+
+    const auto label = py::cast<std::string>(barrier["label"]);
+    const py::handle resolved = barrier["center_resolved"];
+    if (!PyBool_Check(resolved.ptr()) || !py::cast<bool>(resolved)) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern does not carry a resolved reaction center");
+    }
+    const auto reactionCenter = py::cast<std::string>(barrier["reaction_center"]);
+    if (reactionCenter.empty()) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern does not carry a resolved reaction center");
+    }
+
+    std::vector<SpeciesGraph> reactantGraphs;
+    std::vector<std::string> reactantTexts;
+    for (const auto& rawPattern :
+         py::cast<py::list>(barrier["reactants"])) {
+        const auto graph =
+            patternFromBngir(model, py::cast<py::dict>(rawPattern));
+        reactantTexts.push_back(patternTextFromBngir(graph));
+        reactantGraphs.push_back(std::move(graph));
+    }
+    std::vector<SpeciesGraph> productGraphs;
+    std::vector<std::string> productTexts;
+    for (const auto& rawPattern :
+         py::cast<py::list>(barrier["products"])) {
+        const auto graph =
+            patternFromBngir(model, py::cast<py::dict>(rawPattern));
+        productTexts.push_back(patternTextFromBngir(graph));
+        productGraphs.push_back(std::move(graph));
+    }
+    if (reactantGraphs.empty() || productGraphs.empty()) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern transition has no reactant or product pattern");
+    }
+
+    const auto bidirectional = py::cast<bool>(barrier["bidirectional"]);
+    std::vector<Expression> rates;
+    rates.push_back(expressionFromBngir(
+        py::cast<py::dict>(barrier["expression"]), scope));
+
+    ReactionRule transition(
+        "__bng3_barrier_" + std::to_string(index), label,
+        std::move(reactantTexts), std::move(productTexts), std::move(rates), {},
+        bidirectional, std::move(reactantGraphs), std::move(productGraphs));
+    BarrierPattern result(label, std::move(transition));
+
+    // The reaction center the compiler derives from the rebuilt transition
+    // must be the one the document states, or the two disagree about which
+    // rewrite the barrier applies to.
+    bng::compile::energy::ReactionCenterKey key;
+    std::string diagnostic;
+    if (!bng::compile::energy::compileBarrierCenter(
+            result.transition(), key, diagnostic)) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern transition is unsupported: " + diagnostic);
+    }
+    if (key.toString() != reactionCenter) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern reaction center does not match its transition");
+    }
+    result.setSourceText(py::cast<std::string>(barrier["transition"]));
+    return result;
+}
 
 // Read the function declarations. The compiler resolves a bare name to a
 // parameter, an observable or a function in that order, so a function whose
@@ -620,7 +818,6 @@ std::string filterModifierText(const py::dict& filter) {
 
 std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
                                         const py::object& protocol) {
-    rejectUnsupportedModelSections(document);
     const auto parameters = py::cast<py::list>(document["parameters"]);
     const auto moleculeTypes = py::cast<py::list>(document["molecule_types"]);
     const auto seeds = py::cast<py::list>(document["seeds"]);
@@ -1037,6 +1234,36 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
             py::cast<py::dict>(energyPattern["expression"]), modelScope);
         model->addEnergyPattern(bng::ast::EnergyPattern(
             label, pattern.toString(), std::move(expression), std::move(pattern)));
+    }
+
+    // The barrier patterns add a transition-state energy to the reaction
+    // center their transition lowers to. The transition is rebuilt from the
+    // document's structured patterns, so the barrier keeps its center instead
+    // of being dropped.
+    const auto barrierPatterns = optionalSection(document, "barrier_patterns");
+    for (std::size_t index = 0; index < barrierPatterns.size(); ++index) {
+        const auto barrier = py::cast<py::dict>(barrierPatterns[index]);
+        if (indexFromBngir(barrier["index"], "barrier pattern index") != index) {
+            throw std::runtime_error(
+                "native BNGIR barrier pattern ids must be dense and ordered");
+        }
+        model->addBarrierPattern(
+            barrierPatternFromBngir(*model, barrier, modelScope, index));
+    }
+
+    // The population maps bind a species pattern to a population-level target
+    // with a mapping rate. The compiler reads the map's pattern from its
+    // pattern text, so the importer renders the document's structured pattern
+    // back to that text instead of dropping the map.
+    const auto populationMaps = optionalSection(document, "population_maps");
+    for (std::size_t index = 0; index < populationMaps.size(); ++index) {
+        const auto mapping = py::cast<py::dict>(populationMaps[index]);
+        if (indexFromBngir(mapping["index"], "population map index") != index) {
+            throw std::runtime_error(
+                "native BNGIR population map ids must be dense and ordered");
+        }
+        model->addPopulationMap(
+            populationMapFromBngir(*model, mapping, modelScope));
     }
 
     // The protocol actions are execution instructions. The native model keeps

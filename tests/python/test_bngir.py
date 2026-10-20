@@ -80,7 +80,7 @@ def test_bngir_rejects_unknown_required_features():
         bionetgen.from_bngir(document)
 
 
-def test_bngir_population_reconstruction_fails_closed():
+def test_bngir_population_reconstruction_fails_closed_without_a_rate():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
     document = json.loads(model.to_bngir())
     document["model"]["population_maps"] = [
@@ -89,6 +89,32 @@ def test_bngir_population_reconstruction_fails_closed():
 
     with pytest.raises(ValueError, match="population_maps cannot be deserialized"):
         bionetgen.from_bngir(document)
+
+
+def test_bngir_population_map_keeps_its_rate():
+    source = MODEL.replace(
+        "end model\n",
+        "begin population maps\n  pop: X() -> lumped() 0.25\nend population maps\n"
+        "end model\n",
+    )
+    model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+    document = json.loads(model.to_bngir())
+
+    assert document["model"]["population_maps"] == [
+        {
+            "label": "pop",
+            "pattern": "X()",
+            "function": "lumped",
+            "args": [],
+            "rate": "0.25",
+        }
+    ]
+
+    restored = bionetgen.from_bngir(document)
+    assert [
+        (item.label, item.pattern, item.function, list(item.args), item.rate)
+        for item in restored._model.population_maps
+    ] == [("pop", "X()", "lumped", [], "0.25")]
 
 
 def test_bngir_rejects_unknown_action_scope():

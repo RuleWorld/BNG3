@@ -228,6 +228,10 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             "pattern": mapping.pattern,
             "function": mapping.function,
             "args": list(mapping.args),
+            # The mapping rate is part of the map's meaning: a map without one
+            # compiles to a zero rate, so the rate is stated explicitly rather
+            # than left to the reader's default.
+            "rate": mapping.rate if mapping.has_rate else "0",
         }
         for mapping in native.population_maps
     ]
@@ -299,6 +303,7 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
         ("functions", "functions"),
         ("observables", "observables"),
         ("population_maps", "population_maps"),
+        ("population_types", "population_types"),
         ("rules", "rules"),
         ("seeds", "seeds"),
     ):
@@ -490,21 +495,6 @@ def _action_lines(action: Mapping[str, Any]) -> str:
 
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     model = _require_mapping(root["model"], "model")
-    if model.get("population_maps"):
-        # A population map's rate is not part of the wire format, so the map
-        # cannot be rebuilt with the rate the engine needs.
-        raise ValueError(
-            "BNGIR population_maps cannot be deserialized because the wire "
-            "format does not carry a population map's rate"
-        )
-    if model.get("barrier_patterns"):
-        # The engine does not compile a barrier pattern, so a document that
-        # carries one cannot be turned into a model.
-        raise ValueError(
-            "BNGIR barrier_patterns cannot be deserialized because the engine "
-            "does not compile barrier patterns"
-        )
-
     lines: list[str] = []
     if model.get("version"):
         lines.append(f"version({_quote_string(model['version'])})")
@@ -591,6 +581,28 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
                 f"  {label}{reactants} {arrow} {products} {item['expression']}"
             )
         lines += ["end barrier patterns"]
+    population_maps = model.get("population_maps", [])
+    if population_maps:
+        lines += ["begin population maps"]
+        for item in population_maps:
+            label = f"{item['label']}: " if item.get("label") else ""
+            rate = item.get("rate")
+            if not isinstance(rate, str) or not rate:
+                # A map without a rate would be rebuilt with a zero rate, which
+                # is a different map. Refuse instead of approximating.
+                raise ValueError(
+                    "BNGIR population_maps cannot be deserialized because the "
+                    "wire format does not carry a population map's rate"
+                )
+            population = item.get("population", item.get("function"))
+            if not isinstance(population, str) or not population:
+                raise ValueError(
+                    "BNGIR population_maps cannot be deserialized because the "
+                    "wire format does not carry a population map's target"
+                )
+            args = ",".join(item.get("args", []))
+            lines.append(f"  {label}{item['pattern']} -> {population}({args}) {rate}")
+        lines += ["end population maps"]
     rules = model.get("rules", [])
     if rules:
         lines += ["begin reaction rules"]
@@ -1226,15 +1238,40 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"BNGIR model.barrier_patterns[{i}].transition must be a reaction transition"
             )
-        expression_text = barrier.get("expression")
-        if not isinstance(expression_text, str) or not expression_text:
-            raise ValueError(
-                f"BNGIR model.barrier_patterns[{i}].expression must be a non-empty string"
-            )
+        # The transition-state energy is a resolved expression tree, like
+        # every other expression in the wire object.
+        _validate_expression_v02(
+            _require_mapping(barrier.get("expression"), "barrier-pattern expression"),
+            model,
+            local_names=set(),
+            where=f"model.barrier_patterns[{i}].expression",
+        )
         if barrier.get("center_resolved") is not True:
             raise ValueError(
                 f"BNGIR model.barrier_patterns[{i}] {label!r} does not carry "
                 "a resolved reaction center"
+            )
+        # The transition's structure, when the document states it, is a
+        # structured pattern. A document that states only the transition text
+        # is still readable; the text is then the transition's representation.
+        for side in ("reactants", "products"):
+            patterns = barrier.get(side)
+            if patterns is None:
+                continue
+            if not isinstance(patterns, list):
+                raise ValueError(
+                    f"BNGIR model.barrier_patterns[{i}].{side} must be an array"
+                )
+            for j, pattern in enumerate(patterns):
+                _validate_pattern_v02(
+                    _require_mapping(pattern, "barrier-pattern transition pattern"),
+                    model,
+                    f"model.barrier_patterns[{i}].{side}[{j}]",
+                )
+        bidirectional = barrier.get("bidirectional")
+        if bidirectional is not None and not isinstance(bidirectional, bool):
+            raise ValueError(
+                f"BNGIR model.barrier_patterns[{i}].bidirectional must be a boolean"
             )
 
     population_types = _section_id_map(model, "population_types")
@@ -1245,12 +1282,25 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             model,
             f"model.population_maps[{i}].pattern",
         )
+        # `population` is the canonical target name; `function` is the legacy
+        # alias for it. Both may be present, but they must agree.
+        population = mapping.get("population")
+        legacy = mapping.get("function")
+        if population is None:
+            population = legacy
+        elif legacy is not None and legacy != population:
+            raise ValueError(
+                f"BNGIR model.population_maps[{i}] population name and function "
+                "alias disagree"
+            )
+        if not isinstance(population, str) or not population:
+            raise ValueError(f"BNGIR model.population_maps[{i}] has no population name")
         population_id = mapping.get("population_id")
         if not _is_json_integer(population_id) or population_id not in population_types:
             raise ValueError(
                 f"BNGIR model.population_maps[{i}] references unknown population type"
             )
-        if mapping.get("population") != population_types[population_id].get("name"):
+        if population != population_types[population_id].get("name"):
             raise ValueError(
                 f"BNGIR model.population_maps[{i}] population name/id disagree"
             )
@@ -1311,7 +1361,11 @@ def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     if root.get("version") != STRUCTURAL_VERSION:
         raise ValueError("expected BNGIR v0.2")
     features = _require_mapping(root.get("features"), "features")
-    supported = _FEATURES | {"structured_patterns", "structured_expressions"}
+    supported = _FEATURES | {
+        "structured_patterns",
+        "structured_expressions",
+        "population_types",
+    }
     validated: dict[str, list[str]] = {}
     for feature_kind in ("required", "used"):
         values = features.get(feature_kind, [])
@@ -1736,13 +1790,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         "rules",
     }
     _native_exact_keys(model, sections, "model")
-    for section in (
-        "barrier_patterns",
-        "population_maps",
-        "population_types",
-    ):
-        if model[section] != []:
-            raise ValueError(f"native BNGIR does not support model.{section}")
 
     metadata = _require_mapping(model["metadata"], "model.metadata")
     _native_exact_keys(
@@ -2028,6 +2075,212 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             allow_function_calls=True,
         )
 
+    # The barrier patterns add a transition-state energy to the reaction
+    # center their transition lowers to. The native reader rebuilds the
+    # transition from the document's structured patterns, so the native path
+    # requires them.
+    for index, raw in enumerate(model["barrier_patterns"]):
+        barrier = _require_mapping(raw, f"model.barrier_patterns[{index}]")
+        _native_exact_keys(
+            barrier,
+            {
+                "index",
+                "label",
+                "transition",
+                "expression",
+                "reaction_center",
+                "center_resolved",
+                "value",
+                "reactants",
+                "products",
+                "bidirectional",
+            },
+            f"model.barrier_patterns[{index}]",
+        )
+        if (
+            isinstance(barrier["index"], bool)
+            or not isinstance(barrier["index"], int)
+            or barrier["index"] != index
+        ):
+            raise ValueError(
+                "native BNGIR barrier pattern ids must be dense and ordered"
+            )
+        if not isinstance(barrier["label"], str):
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].label must be a string"
+            )
+        transition = barrier["transition"]
+        if not isinstance(transition, str) or not transition:
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].transition must be a "
+                "non-empty string"
+            )
+        if barrier["center_resolved"] is not True:
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}] does not carry a "
+                "resolved reaction center"
+            )
+        reaction_center = barrier["reaction_center"]
+        if not isinstance(reaction_center, str) or not reaction_center:
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}] does not carry a "
+                "resolved reaction center"
+            )
+        value = barrier["value"]
+        if value is not None and not _is_native_finite_number(value):
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].value must be finite"
+            )
+        if not isinstance(barrier["bidirectional"], bool):
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].bidirectional must be "
+                "a boolean"
+            )
+        for side in ("reactants", "products"):
+            patterns = barrier[side]
+            if not isinstance(patterns, list) or not patterns:
+                raise ValueError(
+                    f"native BNGIR model.barrier_patterns[{index}].{side} must hold at "
+                    "least one pattern"
+                )
+            for pattern_index, pattern in enumerate(patterns):
+                _native_pattern_v02(
+                    pattern,
+                    f"model.barrier_patterns[{index}].{side}[{pattern_index}]",
+                    molecule_ids,
+                )
+        _native_expression_v02(
+            barrier["expression"],
+            parameter_ids,
+            f"model.barrier_patterns[{index}].expression",
+            function_ids=frozenset(function_ids),
+            function_arities=function_arities,
+            allow_function_calls=True,
+        )
+
+    # The population types are the distinct targets the population maps name.
+    # The compiler derives them from the maps in first-appearance order, so the
+    # document has to state exactly that list for the native model to rebuild
+    # the same semantics.
+    population_type_names: list[str] = []
+    for index, raw in enumerate(model["population_types"]):
+        population_type = _require_mapping(raw, f"model.population_types[{index}]")
+        _native_exact_keys(
+            population_type,
+            {"id", "name"},
+            f"model.population_types[{index}]",
+        )
+        if (
+            isinstance(population_type["id"], bool)
+            or not isinstance(population_type["id"], int)
+            or population_type["id"] != index
+        ):
+            raise ValueError(
+                "native BNGIR population type ids must be dense and ordered"
+            )
+        name = population_type["name"]
+        if not isinstance(name, str) or not name or name in population_type_names:
+            raise ValueError(
+                "native BNGIR population type names must be nonempty and unique"
+            )
+        population_type_names.append(name)
+
+    for index, raw in enumerate(model["population_maps"]):
+        mapping = _require_mapping(raw, f"model.population_maps[{index}]")
+        _native_required_optional_keys(
+            mapping,
+            {
+                "index",
+                "label",
+                "pattern",
+                "population",
+                "population_id",
+                "arguments",
+                "rate",
+            },
+            {
+                "arguments",
+                "function",
+                "index",
+                "label",
+                "pattern",
+                "population",
+                "population_id",
+                "rate",
+            },
+            f"model.population_maps[{index}]",
+        )
+        if (
+            isinstance(mapping["index"], bool)
+            or not isinstance(mapping["index"], int)
+            or mapping["index"] != index
+        ):
+            raise ValueError(
+                "native BNGIR population map ids must be dense and ordered"
+            )
+        if not isinstance(mapping["label"], str):
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}].label must be a string"
+            )
+        population = mapping["population"]
+        legacy = mapping.get("function")
+        if legacy is not None and legacy != population:
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] population name and "
+                "function alias disagree"
+            )
+        if not isinstance(population, str) or not population:
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] has no population name"
+            )
+        population_id = mapping["population_id"]
+        if (
+            isinstance(population_id, bool)
+            or not isinstance(population_id, int)
+            or not 0 <= population_id < len(population_type_names)
+        ):
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] references an unknown "
+                "population type"
+            )
+        if population_type_names[population_id] != population:
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] population name/id disagree"
+            )
+        arguments = mapping["arguments"]
+        if not isinstance(arguments, list) or not all(
+            isinstance(argument, str) for argument in arguments
+        ):
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}].arguments must be strings"
+            )
+        _native_pattern_v02(
+            mapping["pattern"],
+            f"model.population_maps[{index}].pattern",
+            molecule_ids,
+        )
+        _native_expression_v02(
+            mapping["rate"],
+            parameter_ids,
+            f"model.population_maps[{index}].rate",
+            function_ids=frozenset(function_ids),
+            function_arities=function_arities,
+            allow_function_calls=True,
+        )
+
+    # The compiler derives the population types from the maps, so a document
+    # that states a different list would rebuild into a different model.
+    derived_population_types: list[str] = []
+    for mapping in model["population_maps"]:
+        name = mapping["population"]
+        if name not in derived_population_types:
+            derived_population_types.append(name)
+    if derived_population_types != population_type_names:
+        raise ValueError(
+            "native BNGIR model.population_types do not match the population "
+            "targets the population maps name"
+        )
+
     rule_names: set[str] = set()
     for index, raw in enumerate(model["rules"]):
         rule = _require_mapping(raw, f"model.rules[{index}]")
@@ -2083,9 +2336,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     f"native BNGIR model.rules[{index}] is bidirectional but has "
                     "no reverse direction"
                 )
-            reverse = _require_mapping(
-                rule["reverse"], f"model.rules[{index}].reverse"
-            )
+            reverse = _require_mapping(rule["reverse"], f"model.rules[{index}].reverse")
             _native_exact_keys(
                 reverse,
                 {
@@ -2410,6 +2661,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             )
     expected_used = sorted(
         ["structured_patterns", "structured_expressions"]
+        + (["barrier_patterns"] if model.get("barrier_patterns") else [])
         + (["compartments"] if model.get("compartments") else [])
         + (["energy_patterns"] if model.get("energy_patterns") else [])
         + (["functions"] if model["functions"] else [])
@@ -2823,10 +3075,29 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         # Follows energy patterns for the same reason as the v0.1 emitter.
         lines.append("begin barrier patterns")
         for item in barrier_patterns:
-            # The wire transition is BarrierPattern::toString(): it already
-            # carries the label prefix, the arrow, and the energy expression,
-            # so it is the whole line. Validation guaranteed it is present.
-            lines.append(f"  {item['transition']}")
+            reactants = item.get("reactants")
+            products = item.get("products")
+            if reactants is not None and products is not None:
+                # The transition's structure is stated, so the barrier is
+                # rebuilt from that structure. The native reader rebuilds the
+                # same structure, so both routes agree on the model.
+                label = f"{item['label']}: " if item.get("label") else ""
+                arrow = "<->" if item.get("bidirectional") else "->"
+                rendered_reactants = (
+                    " + ".join(_pattern_v02(pattern) for pattern in reactants) or "0"
+                )
+                rendered_products = (
+                    " + ".join(_pattern_v02(pattern) for pattern in products) or "0"
+                )
+                energy = _expression_v02(item["expression"], model)
+                lines.append(
+                    f"  {label}{rendered_reactants} {arrow} {rendered_products} {energy}"
+                )
+            else:
+                # The wire transition is BarrierPattern::toString(): it already
+                # carries the label prefix, the arrow, and the energy expression,
+                # so it is the whole line. Validation guaranteed it is present.
+                lines.append(f"  {item['transition']}")
         lines.append("end barrier patterns")
 
     population_maps = model.get("population_maps", [])
@@ -2835,10 +3106,11 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         for item in population_maps:
             label = f"{item['label']}: " if item.get("label") else ""
             args = ",".join(item.get("arguments", []))
+            population = item.get("population", item.get("function"))
             rate = _expression_v02(item["rate"], model)
             lines.append(
                 f"  {label}{_pattern_v02(item['pattern'])} -> "
-                f"{item['population']}({args}) {rate}"
+                f"{population}({args}) {rate}"
             )
         lines.append("end population maps")
 

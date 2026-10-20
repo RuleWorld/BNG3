@@ -203,6 +203,13 @@ def test_v02_refuses_builtin_unit_definitions():
         bngir._load_document_v02(document)
 
 
+def _barrier_expression() -> dict:
+    return {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 0},
+    }
+
+
 def test_v02_barrier_patterns_render_from_transition_text():
     document = minimal_document()
     # The wire transition is BarrierPattern::toString(): label, arrow, and
@@ -212,7 +219,7 @@ def test_v02_barrier_patterns_render_from_transition_text():
             "index": 0,
             "label": "slow",
             "transition": "slow: A(s~U) -> A(s~P) Gbar",
-            "expression": "Gbar",
+            "expression": _barrier_expression(),
             "reaction_center": "A|s|U->P",
             "center_resolved": True,
             "value": 1.0,
@@ -228,6 +235,56 @@ def test_v02_barrier_patterns_render_from_transition_text():
     assert source.count("slow:") == 1
 
 
+def test_v02_barrier_patterns_render_from_the_transition_structure():
+    document = minimal_document()
+    pattern = {
+        "compartment_prefix": False,
+        "molecules": [
+            {
+                "occurrence": 0,
+                "type": "A",
+                "type_id": 0,
+                "sites": [
+                    {
+                        "occurrence": 0,
+                        "component": "x",
+                        "component_index": 0,
+                        "state": {"kind": "exact", "value": "u", "index": 0},
+                        "bond": {"kind": "unbound"},
+                    }
+                ],
+            }
+        ],
+    }
+    product = json.loads(json.dumps(pattern))
+    product["molecules"][0]["sites"][0]["state"] = {
+        "kind": "exact",
+        "value": "p",
+        "index": 1,
+    }
+    document["model"]["barrier_patterns"] = [
+        {
+            "index": 0,
+            "label": "slow",
+            "transition": "slow: A(x~u) -> A(x~p) k",
+            "expression": _barrier_expression(),
+            "reaction_center": "state:A.x~p|A.x~u",
+            "center_resolved": True,
+            "value": 1.0,
+            "reactants": [pattern],
+            "products": [product],
+            "bidirectional": False,
+        }
+    ]
+
+    root = bngir._load_document_v02(document)
+    source = bngir._as_bngl_v02(root)
+
+    # The structure states an unbound site, which renders as the explicit
+    # unbound bond the pattern's graph carries.
+    assert "  slow: A(x~u.) -> A(x~p.) k\n" in source
+
+
 def test_v02_refuses_unresolved_barrier_centers():
     document = minimal_document()
     document["model"]["barrier_patterns"] = [
@@ -235,7 +292,7 @@ def test_v02_refuses_unresolved_barrier_centers():
             "index": 0,
             "label": "slow",
             "transition": "slow: A(s~U) -> A(s~P) Gbar",
-            "expression": "Gbar",
+            "expression": _barrier_expression(),
             "reaction_center": "",
             "center_resolved": False,
             "value": None,

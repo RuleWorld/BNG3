@@ -83,6 +83,29 @@ end seed species
 end model
 """
 
+# A model with a transition-state barrier. The barrier needs a matching
+# energy pattern: there is no Arrhenius expansion for a barrier to modify
+# without one.
+BARRIER_SOURCE = r"""
+begin model
+begin molecule types
+    A(s~U~P)
+end molecule types
+begin seed species
+    A(s~U) 10
+end seed species
+begin energy patterns
+    e: A(s~U) 1.0
+end energy patterns
+begin barrier patterns
+    b: A(s~U) -> A(s~P) 2.0
+end barrier patterns
+begin reaction rules
+    A(s~U) -> A(s~P) 3.0
+end reaction rules
+end model
+"""
+
 # A model whose rate law is written with model functions: one function binds
 # its own argument, one calls another model function, and one names an
 # observable the way the Playground-derived Atomizer writes its helpers.
@@ -642,21 +665,27 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
         _cpp._model_from_bngir_v02(document["model"])
 
 
-@pytest.mark.parametrize(
-    "section",
-    [
-        "barrier_patterns",
-        "population_maps",
-        "population_types",
-    ],
-)
-def test_direct_native_builder_rejects_nonempty_unsupported_sections(section):
-    document = _document()
-    document["model"][section].append({})
+def test_direct_native_builder_reconstructs_a_barrier_pattern():
+    document = _document(BARRIER_SOURCE)
+    barrier = document["model"]["barrier_patterns"][0]
+    assert barrier["center_resolved"] is True
+    assert barrier["reaction_center"]
 
-    with pytest.raises(
-        RuntimeError, match=f"native BNGIR model.{section} is not supported"
-    ):
+    model = _cpp._model_from_bngir_v02(document["model"])
+
+    barriers = list(model.barrier_patterns)
+    assert len(barriers) == 1
+    assert barriers[0].label == "b"
+    assert barriers[0].has_expression
+    assert barriers[0].transition.reactant_patterns == ["A(s~U)"]
+    assert barriers[0].transition.product_patterns == ["A(s~P)"]
+
+
+def test_direct_native_builder_rejects_a_mismatched_barrier_reaction_center():
+    document = _document(BARRIER_SOURCE)
+    document["model"]["barrier_patterns"][0]["reaction_center"] = "state:B.x~p|B.x~u"
+
+    with pytest.raises(RuntimeError, match="reaction center does not match"):
         _cpp._model_from_bngir_v02(document["model"])
 
 
@@ -675,6 +704,118 @@ def test_direct_native_builder_reconstructs_rendered_observables():
         ("A_total", "Molecules", ["A()"]),
         ("all_species", "Species", ["A()", "B()"]),
     ]
+
+
+def test_v01_population_map_and_barrier_pattern_migrate_and_import_natively():
+    """A v0.1 document with both features migrates and imports natively.
+
+    The population map carries its rate, and the barrier pattern carries the
+    matching energy pattern a barrier needs: there is no Arrhenius expansion
+    for a barrier to modify without one.
+    """
+    document = {
+        "format": "BNGIR",
+        "version": "0.1",
+        "features": {
+            "required": [],
+            "used": [
+                "barrier_patterns",
+                "energy_patterns",
+                "population_maps",
+                "rules",
+                "seeds",
+            ],
+        },
+        "model": {
+            "name": "population_and_barrier",
+            "version": "2.2",
+            "substance_units": "",
+            "options": {},
+            "parameters": [{"name": "k", "expression": "0.1"}],
+            "molecule_types": [
+                {
+                    "name": "A",
+                    "population": False,
+                    "components": [{"name": "x", "allowed_states": ["u", "p"]}],
+                },
+                {"name": "P", "population": True, "components": []},
+            ],
+            "compartments": [],
+            "seeds": [
+                {
+                    "pattern": "A(x~u)",
+                    "amount": "10",
+                    "constant": False,
+                    "compartment": "",
+                }
+            ],
+            "observables": [],
+            "functions": [],
+            "energy_patterns": [
+                {"label": "e", "pattern": "A(x~u)", "expression": "1.0"}
+            ],
+            "barrier_patterns": [
+                {
+                    "label": "b",
+                    "reactants": ["A(x~u)"],
+                    "products": ["A(x~p)"],
+                    "bidirectional": False,
+                    "expression": "1.0",
+                }
+            ],
+            "population_maps": [
+                {
+                    "label": "pm",
+                    "pattern": "A(x~u)",
+                    "function": "P",
+                    "args": [],
+                    "rate": "1.0",
+                }
+            ],
+            "rules": [
+                {
+                    "name": "convert",
+                    "label": "convert",
+                    "reactants": ["A(x~u)"],
+                    "products": ["A(x~p)"],
+                    "rates": ["k"],
+                    "modifiers": [],
+                    "bidirectional": False,
+                    "driving_work": "",
+                }
+            ],
+        },
+        "protocol": {"actions": []},
+    }
+
+    model = bionetgen.from_bngir(document)
+    migrated = json.loads(model.to_bngir(version="0.2"))
+
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(migrated, json.loads(schema_path.read_text()))
+
+    # Both features survive the migration with their semantics.
+    assert migrated["model"]["barrier_patterns"][0]["center_resolved"] is True
+    assert migrated["model"]["barrier_patterns"][0]["reaction_center"]
+    assert migrated["model"]["population_maps"][0]["population"] == "P"
+    assert migrated["model"]["population_maps"][0]["rate"] == {
+        "kind": "number",
+        "value": 1.0,
+    }
+
+    restored = bionetgen.from_bngir(migrated, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == migrated
+
+    barriers = list(restored._model.barrier_patterns)
+    assert len(barriers) == 1
+    assert barriers[0].label == "b"
+    mappings = list(restored._model.population_maps)
+    assert len(mappings) == 1
+    assert mappings[0].label == "pm"
+    assert mappings[0].function == "P"
+    assert mappings[0].rate == "1"
 
 
 def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypatch):

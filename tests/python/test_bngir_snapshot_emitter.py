@@ -498,22 +498,20 @@ def test_the_semantic_comparison_detects_a_dropped_feature():
 
 
 # --------------------------------------------------------------------------
-# Schema conformance, with the one known-and-ruled discrepancy isolated.
+# Schema conformance.
 # --------------------------------------------------------------------------
 
 
 def test_emitter_output_conforms_to_the_published_schema():
     """Every fixture must validate against provenance/schemas/bngir-0.2.schema.json.
 
-    `population_maps` is excluded here and covered by the strict-xfail below,
-    because the schema for that section is stale by pyBngir's ruling and must
-    not be allowed to fail the whole sweep.
+    The population-map section is included: the schema now states the
+    canonical `population`/`population_id`/`rate` keys the emitter produces and
+    keeps the legacy `function` alias as an optional field.
     """
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(SCHEMA_PATH.read_text())
     for name, source in ROUNDTRIP_FIXTURES.items():
-        if name == "population_maps":
-            continue
         document = json.loads(build(source).to_bngir(version="0.2"))
         try:
             jsonschema.validate(document, schema)
@@ -524,19 +522,6 @@ def test_emitter_output_conforms_to_the_published_schema():
             )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "population_maps.items in bngir-0.2.schema.json still requires a 'function' "
-        "string and forbids 'population'/'population_id'/'rate', i.e. it encodes the "
-        "pre-canonical rate-less vocabulary. pyBngir ruled the READER authoritative "
-        "and the schema stale (see PR for pyBngir's ruling); the schema rewrite is "
-        "assigned to provenance/schemas' owner. The emitter deliberately keeps the "
-        "canonical keys: dropping 'rate' would reintroduce the v0.1 lossy shape and "
-        "would remove the population_id cross-check the reader performs against "
-        "population_types. Turns green when the schema lands, with no emitter change."
-    ),
-)
 def test_population_maps_section_is_schema_valid():
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(SCHEMA_PATH.read_text())

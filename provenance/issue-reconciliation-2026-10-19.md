@@ -596,18 +596,18 @@ investigation-packet paths.
 | `functions` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `functions.v02.json` |
 | `observables` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `observables.v02.json` |
 | `energy-patterns` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `energy-patterns.v02.json` |
-| `barrier-patterns` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `barrier-patterns.v01.json` |
-| `population-maps` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-maps.v01.json` |
+| `barrier-patterns` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `barrier-patterns.v02.json` |
+| `population-maps` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-maps.v02.json` |
 | `population-types` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-types.v02.json` |
 | `protocol-actions` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `protocol-actions.v02.json` |
 | `versioned-features` | PRESERVED | `issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind` | `versioned-features.v02.json` |
 
-Nineteen cells preserve the feature and import natively. Three are refused explicitly by the
-migration or by the v0.1 reader. No cell loses a feature silently and no cell is rejected
-without an explicit reason: the migration, the v0.1 reader and the native reader all fail
-closed with a message that names the unsupported feature.
+Twenty-one cells preserve the feature and import natively. One is refused explicitly by the
+migration. No cell loses a feature silently and no cell is rejected without an explicit
+reason: the migration, the v0.1 reader and the native reader all fail closed with a message
+that names the unsupported feature.
 
-Twelve defects were found and repaired while the matrix was extended, and their records were
+Fourteen defects were found and repaired while the matrix was extended, and their records were
 removed from the obligation catalog:
 
 - The v0.2 writer silently dropped a rule's non-empty `driving_work`, because the v0.2 rule
@@ -619,9 +619,9 @@ removed from the obligation catalog:
   grammar only accepts for the other action commands. It now emits the positional form those
   actions use and keeps the named-argument hash for the rest.
 - A v0.1 document carrying barrier patterns failed with an internal snapshot error. The v0.1
-  reader now refuses barrier patterns explicitly, and every v0.1 document is checked against
-  the compiler before it is accepted, so an invalid model is refused where it is read instead
-  of failing later.
+  reader now rebuilds a barrier pattern, and every v0.1 document is checked against the
+  compiler before it is accepted, so an invalid model is refused where it is read instead of
+  failing later.
 - The native reader refused reversible rule directions and keyword rule modifiers. Both are
   now natively supported, and the native reader fails closed on a reverse direction carried by
   a forward rule and on a modifier that is not an object with a known kind.
@@ -643,14 +643,21 @@ removed from the obligation catalog:
 - The native reader refused a rule's state change. The document's state change is now checked
   against the product pattern's site state, because the native rule derives the change from
   the reactant and product patterns.
+- The v0.1 wire format carried a population map without its rate, so the reader could not
+  rebuild the map the engine needs. The rate is now part of the v0.1 population map, and a
+  map that still states no rate is refused with a message that names the missing rate.
+- The v0.2 schema for population maps still encoded the pre-canonical rate-less vocabulary,
+  so the emitter's own output did not validate against it. The schema now states the
+  canonical `population`/`population_id`/`rate` keys and keeps the legacy `function` alias as
+  an optional field, and the barrier section states the transition's structured patterns and
+  a resolved expression tree.
 
-The three remaining cells are explicit unsupported boundaries, each with an owning requirement:
-a rule's non-empty driving work, barrier patterns, and population maps. The first has no
-field in the v0.2 wire format and is refused in favour of the version that has one; the
-second is refused because the engine does not compile a barrier pattern; the third is refused
-because the wire format carries no population map's rate. The native reader also refuses rule
-local scopes, because the native rule collects them from pattern text the wire format does
-not carry.
+The one remaining cell is an explicit unsupported boundary with an owning requirement: a
+rule's non-empty driving work. It has no field in the v0.2 wire format and is refused in
+favour of the version that has one. The native reader also refuses rule local scopes,
+because the native rule collects them from pattern text the wire format does not carry, and
+it refuses a barrier pattern whose transition does not reduce to one supported reaction
+center, because such a barrier has no center to contribute to.
 
 ### Export contract scope
 

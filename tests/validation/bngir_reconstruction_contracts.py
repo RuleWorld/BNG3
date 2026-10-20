@@ -356,6 +356,51 @@ def _declaration_metadata(document):
     )
 
 
+def _add_barrier_pattern(document):
+    # A barrier contributes a transition-state energy to a reaction center, so
+    # its transition has to change something, and it needs a matching energy
+    # pattern: there is no Arrhenius expansion for a barrier to modify
+    # without one.
+    document["model"].update(
+        {
+            "energy_patterns": [
+                {"label": "e", "pattern": "A(x~u)", "expression": "1.0"}
+            ],
+            "barrier_patterns": [
+                {
+                    "label": "b",
+                    "reactants": ["A(x~u)"],
+                    "products": ["A(x~p)"],
+                    "bidirectional": False,
+                    "expression": "1.0",
+                }
+            ],
+        }
+    )
+
+
+def _add_population_map(document):
+    # A population map binds a species pattern to a population-level target
+    # with a mapping rate. The document therefore has to carry the rate, and
+    # the target has to be a declared population.
+    document["model"]["molecule_types"].append(
+        {"name": "P", "population": True, "components": []}
+    )
+    document["model"].update(
+        {
+            "population_maps": [
+                {
+                    "label": "pm",
+                    "pattern": "A(x~u)",
+                    "function": "P",
+                    "args": [],
+                    "rate": "1.0",
+                }
+            ]
+        }
+    )
+
+
 def _seed_compartment(document):
     document["model"]["seeds"][0].update({"compartment": "cell"})
     document["model"].update(
@@ -519,34 +564,16 @@ MATRIX = (
     },
     {
         "id": "barrier-patterns",
-        "mutate": lambda document: document["model"].update(
-            {
-                "barrier_patterns": [
-                    {
-                        "label": "b",
-                        "reactants": ["A()"],
-                        "products": ["A()"],
-                        "bidirectional": False,
-                        "expression": "1.0",
-                    }
-                ]
-            }
-        ),
+        "mutate": _add_barrier_pattern,
         "present": _has_barrier_patterns,
-        "site_free": True,
+        "site_free": False,
         "owner": _OWNER_EXECUTION,
     },
     {
         "id": "population-maps",
-        "mutate": lambda document: document["model"].update(
-            {
-                "population_maps": [
-                    {"label": "pm", "pattern": "A(x~u)", "function": "f", "args": []}
-                ]
-            }
-        ),
+        "mutate": _add_population_map,
         "present": _has_population_maps,
-        "site_free": True,
+        "site_free": False,
         "owner": _OWNER_EXECUTION,
     },
     {

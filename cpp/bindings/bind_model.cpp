@@ -166,7 +166,14 @@ void bind_model(py::module_& m) {
         .def_readonly("label", &PopulationMap::label)
         .def_readonly("pattern", &PopulationMap::patternText)
         .def_readonly("function", &PopulationMap::populationFunction)
-        .def_readonly("args", &PopulationMap::functionArgs);
+        .def_readonly("args", &PopulationMap::functionArgs)
+        // The canonical population target and the mapping rate. A map without
+        // an explicit rate compiles to a zero rate, so the rate is reported
+        // separately from its presence.
+        .def_readonly("population", &PopulationMap::populationName)
+        .def_readonly("population_args", &PopulationMap::populationArgs)
+        .def_readonly("rate", &PopulationMap::rateText)
+        .def_readonly("has_rate", &PopulationMap::hasExplicitRate);
 
     py::class_<Action>(m, "Action")
         .def_readonly("name", &Action::name)

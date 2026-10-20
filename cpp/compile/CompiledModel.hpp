@@ -137,6 +137,12 @@ struct CompiledBarrierFactor {
     std::string energyExpression;
     ResolvedExpression expression;
     std::optional<double> evaluatedValue;
+    // The transition's patterns, resolved against the model. They carry the
+    // barrier's structure so a consumer can rebuild the transition without
+    // reading the transition's source text.
+    std::vector<Pattern> reactantPatterns;
+    std::vector<Pattern> productPatterns;
+    bool bidirectional = false;
     // Canonical reaction center this barrier applies to. Symmetric under
     // reversal, so one entry covers both traversal directions.
     energy::ReactionCenterKey reactionCenter;
