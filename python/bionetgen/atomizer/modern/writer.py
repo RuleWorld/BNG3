@@ -208,8 +208,15 @@ def _sanitize_function_identifier(value: str) -> str:
     return standardized
 
 
+# A reaction whose SBML source carries no kinetic law has no rate defined by
+# the source model.  SBML Level 3 Version 2 Core Sec. 4.11.1 names three
+# simulator behaviours for that situation -- refuse to simulate, use an
+# effective rate of zero, or use NaN -- and states that the choice is not
+# standardized.  Zero is the only reading that keeps the rest of the
+# mathematical model intact, so it is the rate used for the emitted reaction
+# while the import reports the reaction as not supported by the source model.
 _MISSING_KINETIC_RATE_FALLBACK = (
-    os.environ.get("BNGL_MISSING_KINETIC_RATE", "1").strip() or "1"
+    os.environ.get("BNGL_MISSING_KINETIC_RATE", "0").strip() or "0"
 )
 try:
     _MISSING_KINETIC_LOG_LIMIT = int(
@@ -5168,6 +5175,12 @@ def write_functions(
         name = function_name_map.get(
             str(function_id), _sanitize_function_identifier(str(function_id))
         )
+        if not str(function.math or "").strip():
+            # SBML Level 3 Version 2 Core Sec. 4.3.2: a function definition
+            # without a math element has no mathematical meaning.  The parser
+            # keeps such a definition only when the model never calls it, so
+            # there is nothing to emit here.
+            continue
         if function.arguments and not keep_parameterized:
             # BNG2/BNGL function blocks do not consistently support
             # argument-taking SBML definitions.  Inline those definitions at

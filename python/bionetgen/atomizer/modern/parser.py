@@ -83,6 +83,20 @@ def _bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
+def _math_element_is_optional(level: Optional[int], version: Optional[int]) -> bool:
+    """Report whether the ``math`` element may be omitted on an SBML construct.
+
+    SBML Level 3 Version 2 Core relaxed the ``math`` element from required to
+    optional on ``InitialAssignment`` (Sec. 4.8.3), ``Rule`` (Sec. 4.9.1),
+    ``FunctionDefinition`` (Sec. 4.3.2) and ``KineticLaw`` (Sec. 4.11.5), and
+    gave each construct a defined meaning when the element is absent.  In
+    SBML Level 2 and Level 3 Version 1 the element is required, so a document
+    that omits it does not conform to the specification.
+    """
+
+    return level == 3 and version is not None and version >= 2
+
+
 # SBML Level 3 Version 2 Core fixes the value of the built-in ``avogadro``
 # csymbol at 6.02214179e+23 and requires every reader to use exactly that
 # number ("all software reading models expressed in this version of SBML
@@ -2946,10 +2960,16 @@ class SBMLParser:
                     # e-notation form (mantissa <sep/> exponent).  That form
                     # is already lowered exactly above; only a missing or
                     # otherwise unknown type needs the conservative
-                    # rational-interpretation diagnostic.
+                    # rational-interpretation diagnostic.  SBML Level 3
+                    # Version 2 Core validation rule 10207 permits only
+                    # "e-notation", "real", "integer" and "rational" here, so
+                    # any other type is a malformed source document.
                     if number_type not in {"rational", "e-notation", "enotation"}:
                         add(
-                            "<cn> with <sep/> and unspecified type treated as rational."
+                            "<cn> with <sep/> and a MathML type outside the "
+                            "SBML-permitted set (e-notation, real, integer, "
+                            "rational) is not valid SBML; it is read as a "
+                            "rational number."
                         )
 
         return [
@@ -3078,13 +3098,6 @@ class SBMLParser:
                 if alias not in parameter_ids:
                     parameter_aliases.pop(alias, None)
         math_warnings: List[Dict[str, Any]] = []
-        reactions = SBMLParser._parse_xml_reactions(
-            model, parameter_aliases, math_warnings
-        )
-        rules = SBMLParser._parse_xml_rules(model, parameter_aliases, math_warnings)
-        functions = SBMLParser._parse_xml_functions(
-            model, parameter_aliases, math_warnings
-        )
         level = _attribute(root, "level")
         try:
             level_value = int(level) if level is not None else None
@@ -3095,6 +3108,23 @@ class SBMLParser:
             version_value = int(version) if version is not None else None
         except (TypeError, ValueError):
             version_value = None
+        reactions = SBMLParser._parse_xml_reactions(
+            model, parameter_aliases, math_warnings
+        )
+        rules = SBMLParser._parse_xml_rules(
+            model,
+            parameter_aliases,
+            math_warnings,
+            level=level_value,
+            version=version_value,
+        )
+        functions = SBMLParser._parse_xml_functions(
+            model,
+            parameter_aliases,
+            math_warnings,
+            level=level_value,
+            version=version_value,
+        )
         events = SBMLParser._parse_xml_events(
             model,
             parameter_aliases,
@@ -3102,7 +3132,11 @@ class SBMLParser:
             version=version_value,
         )
         initial_assignments = SBMLParser._parse_xml_initial_assignments(
-            model, parameter_aliases, math_warnings
+            model,
+            parameter_aliases,
+            math_warnings,
+            level=level_value,
+            version=version_value,
         )
         species_by_compartment: Dict[str, List[str]] = OrderedDict()
         for species_id, item in species.items():
@@ -4468,8 +4502,12 @@ class SBMLParser:
                     "category": "missingMath",
                     "message": (
                         f"{len(missing_kinetic_law)} reaction(s) have no MathML "
-                        f"kinetic law ({listed}); each is emitted with a fallback "
-                        "rate that is not derived from the source model."
+                        f"kinetic law ({listed}); SBML Level 3 Version 2 Core "
+                        "Sec. 4.11.1 leaves the rate of such a reaction "
+                        "undefined and states that a simulator's choice is not "
+                        "standardized, so each is emitted with rate 0 (the "
+                        "'effective rate is zero' reading) and the model is not "
+                        "claimed to be supported."
                     ),
                     "count": len(missing_kinetic_law),
                     "severity": "dropped",
@@ -4482,6 +4520,9 @@ class SBMLParser:
         model: Any,
         parameter_aliases: Optional[Dict[str, str]] = None,
         warnings: Optional[List[Dict[str, Any]]] = None,
+        *,
+        level: Optional[int] = None,
+        version: Optional[int] = None,
     ) -> List[SBMLRule]:
         result: List[SBMLRule] = []
         parent = _first_child(model, "listOfRules")
@@ -4507,23 +4548,45 @@ class SBMLParser:
             )
             if not math.strip():
                 if warnings is not None:
-                    warnings.append(
-                        {
-                            "category": "missingMath",
-                            "message": (
-                                f"{kind} rule"
-                                + (
-                                    f' for "{_attribute(item, "variable")}"'
-                                    if _attribute(item, "variable")
-                                    else ""
-                                )
-                                + " has no MathML expression; rule was omitted "
-                                "from the executable BNGL."
-                            ),
-                            "count": 1,
-                            "severity": "dropped",
-                        }
-                    )
+                    variable = _attribute(item, "variable")
+                    target = f' for "{variable}"' if variable else ""
+                    if _math_element_is_optional(level, version):
+                        # SBML Level 3 Version 2 Core Sec. 4.9.1: a Rule with
+                        # no math element leaves the model unchanged, so the
+                        # rule carries no dynamics and omitting it preserves
+                        # the source model exactly.
+                        warnings.append(
+                            {
+                                "category": "missingMath",
+                                "message": (
+                                    f"{kind} rule{target} has no MathML "
+                                    "expression; SBML Level 3 Version 2 Core "
+                                    "Sec. 4.9.1 defines a rule without a math "
+                                    "element as leaving the model unchanged, so "
+                                    "the rule is not emitted and the source "
+                                    "dynamics are preserved."
+                                ),
+                                "count": 1,
+                                "severity": "info",
+                            }
+                        )
+                    else:
+                        # Level 2 and Level 3 Version 1 require the math
+                        # element, so the source document itself is invalid.
+                        warnings.append(
+                            {
+                                "category": "missingMath",
+                                "message": (
+                                    f"{kind} rule{target} has no MathML "
+                                    "expression; the math element is required in "
+                                    "SBML Level 2 and Level 3 Version 1, so this "
+                                    "source document does not conform to the SBML "
+                                    "specification and the rule was not emitted."
+                                ),
+                                "count": 1,
+                                "severity": "dropped",
+                            }
+                        )
                 continue
             result.append(
                 SBMLRule(
@@ -4541,15 +4604,55 @@ class SBMLParser:
         return result
 
     @staticmethod
+    def _function_is_called(
+        model: Any,
+        function_id: str,
+        definition: Any,
+        parents: Mapping[Any, Any],
+        referenced_ids: Mapping[str, int],
+    ) -> bool:
+        """Report whether the model calls a user-defined function.
+
+        A MathML ``ci`` element naming the function is the only way an SBML
+        model can call it (SBML Level 3 Version 2 Core Sec. 4.3.4).
+        """
+
+        if function_id not in referenced_ids:
+            return False
+        for element in model.iter():
+            if _local_name(element.tag) != "ci":
+                continue
+            if (element.text or "").strip() != function_id:
+                continue
+            ancestor = parents.get(element)
+            while ancestor is not None:
+                if ancestor is definition:
+                    break
+                ancestor = parents.get(ancestor)
+            else:
+                return True
+        return False
+
+    @staticmethod
     def _parse_xml_functions(
         model: Any,
         parameter_aliases: Optional[Dict[str, str]] = None,
         warnings: Optional[List[Dict[str, Any]]] = None,
+        *,
+        level: Optional[int] = None,
+        version: Optional[int] = None,
     ) -> Dict[str, SBMLFunctionDefinition]:
         result: Dict[str, SBMLFunctionDefinition] = OrderedDict()
-        for item in SBMLParser._xml_items(
-            model, "listOfFunctionDefinitions", "functionDefinition"
-        ):
+        items = SBMLParser._xml_items(model, "listOfFunctionDefinitions", "functionDefinition")
+        if not items:
+            return result
+        parents = {child: parent for parent in model.iter() for child in parent}
+        referenced_ids = {
+            (element.text or "").strip()
+            for element in model.iter()
+            if _local_name(element.tag) == "ci" and (element.text or "").strip()
+        }
+        for item in items:
             item_id = str(_attribute(item, "id", "") or "")
             if not item_id:
                 continue
@@ -4577,19 +4680,74 @@ class SBMLParser:
                 _mathml_to_formula(body), parameter_aliases
             )
             if not math.strip():
+                called = SBMLParser._function_is_called(
+                    model, item_id, item, parents, referenced_ids
+                )
                 if warnings is not None:
-                    warnings.append(
-                        {
-                            "category": "missingMath",
-                            "message": (
-                                f'Function definition "{item_id}" has no MathML '
-                                "expression; emitted as the constant zero function."
-                            ),
-                            "count": 1,
-                            "severity": "approximated",
-                        }
-                    )
-                math = "0"
+                    if _math_element_is_optional(level, version):
+                        if called:
+                            # SBML Level 3 Version 2 Core Sec. 4.3.4: a call to
+                            # a function that has no math content is
+                            # mathematically meaningless, so the source model
+                            # does not define the call's value.
+                            warnings.append(
+                                {
+                                    "category": "missingMath",
+                                    "message": (
+                                        f'Function definition "{item_id}" has no '
+                                        "MathML expression; SBML Level 3 Version 2 "
+                                        "Core Sec. 4.3.4 states that a call to a "
+                                        "function with no math content is "
+                                        "mathematically meaningless, so the call "
+                                        "site is emitted as the constant zero "
+                                        "function."
+                                    ),
+                                    "count": 1,
+                                    "severity": "approximated",
+                                }
+                            )
+                        else:
+                            # Sec. 4.3.2: the definition carries no
+                            # mathematical meaning, and the model never calls
+                            # it, so the model is unchanged without it.
+                            warnings.append(
+                                {
+                                    "category": "missingMath",
+                                    "message": (
+                                        f'Function definition "{item_id}" has no '
+                                        "MathML expression; SBML Level 3 Version 2 "
+                                        "Core Sec. 4.3.2 gives it no mathematical "
+                                        "meaning and the model never calls it, so "
+                                        "the definition is not emitted and the "
+                                        "source dynamics are preserved."
+                                    ),
+                                    "count": 1,
+                                    "severity": "info",
+                                }
+                            )
+                    else:
+                        # Level 2 and Level 3 Version 1 require the math
+                        # element, so the source document itself is invalid.
+                        warnings.append(
+                            {
+                                "category": "missingMath",
+                                "message": (
+                                    f'Function definition "{item_id}" has no MathML '
+                                    "expression; the math element is required in "
+                                    "SBML Level 2 and Level 3 Version 1, so this "
+                                    "source document does not conform to the SBML "
+                                    "specification and the definition was emitted "
+                                    "as the constant zero function."
+                                ),
+                                "count": 1,
+                                "severity": "dropped",
+                            }
+                        )
+                math = (
+                    ""
+                    if not called and _math_element_is_optional(level, version)
+                    else "0"
+                )
             result[item_id] = SBMLFunctionDefinition(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
@@ -4684,6 +4842,9 @@ class SBMLParser:
         model: Any,
         parameter_aliases: Optional[Dict[str, str]] = None,
         warnings: Optional[List[Dict[str, Any]]] = None,
+        *,
+        level: Optional[int] = None,
+        version: Optional[int] = None,
     ) -> List[SBMLInitialAssignment]:
         result: List[SBMLInitialAssignment] = []
         for item in SBMLParser._xml_items(
@@ -4696,17 +4857,45 @@ class SBMLParser:
                 )
                 if not math.strip():
                     if warnings is not None:
-                        warnings.append(
-                            {
-                                "category": "missingMath",
-                                "message": (
-                                    f'Initial assignment "{symbol}" has no MathML '
-                                    "expression; assignment was omitted."
-                                ),
-                                "count": 1,
-                                "severity": "dropped",
-                            }
-                        )
+                        if _math_element_is_optional(level, version):
+                            # SBML Level 3 Version 2 Core Sec. 4.8.3: an
+                            # initial assignment with no math element makes no
+                            # assignment, so the model keeps the value its
+                            # definition gave the symbol.
+                            warnings.append(
+                                {
+                                    "category": "missingMath",
+                                    "message": (
+                                        f'Initial assignment "{symbol}" has no MathML '
+                                        "expression; SBML Level 3 Version 2 Core "
+                                        "Sec. 4.8.3 defines an initial assignment "
+                                        "without a math element as leaving the "
+                                        "model unchanged, so the assignment is not "
+                                        "emitted and the source dynamics are "
+                                        "preserved."
+                                    ),
+                                    "count": 1,
+                                    "severity": "info",
+                                }
+                            )
+                        else:
+                            # Level 2 and Level 3 Version 1 require the math
+                            # element, so the source document itself is invalid.
+                            warnings.append(
+                                {
+                                    "category": "missingMath",
+                                    "message": (
+                                        f'Initial assignment "{symbol}" has no MathML '
+                                        "expression; the math element is required in "
+                                        "SBML Level 2 and Level 3 Version 1, so this "
+                                        "source document does not conform to the "
+                                        "SBML specification and the assignment was "
+                                        "not emitted."
+                                    ),
+                                    "count": 1,
+                                    "severity": "dropped",
+                                }
+                            )
                     continue
                 result.append(
                     SBMLInitialAssignment(

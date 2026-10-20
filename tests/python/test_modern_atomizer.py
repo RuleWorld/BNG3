@@ -2264,11 +2264,16 @@ def test_playground_writer_reports_missing_kinetic_laws():
         logger.setLevel("WARNING")
         logger.setQuietMode(False)
 
-    assert "missing: M_A() -> M_B() 1" in bngl
+    # SBML Level 3 Version 2 Core Sec. 4.11.1 leaves the rate of a reaction
+    # without a kinetic law undefined and states that a simulator's choice is
+    # not standardized.  Zero is the reading it names that leaves the rest of
+    # the mathematical model intact, so the emitted reaction must not carry
+    # an invented rate.
+    assert "missing: M_A() -> M_B() 0" in bngl
     assert [(message.code, message.message) for message in warnings] == [
         (
             "BNW011",
-            "Reaction missing missing kinetic law; using fallback rate 1",
+            "Reaction missing missing kinetic law; using fallback rate 0",
         )
     ]
 
