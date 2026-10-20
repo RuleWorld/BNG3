@@ -109,27 +109,27 @@ Derived from each case's own `componentTags` metadata in the suite's
    rates, so an amount-based law needs a factor of `V^(m-1)` for a law with
    `m` reactant factors. 19 official cases move `failed → passed`.
 
-Combined effect of PRs #316, #318 and #319 on the official-reference stage:
-**1115 → 1169 passed**, 107 → 53 failed, **0 regressions**. The conversion
-stage is unchanged at 1712 passed / 211 unsupported / 0 failed.
+The combined effect of all six changes is recorded in the integrated
+result below.
 
-## Integrated result (PRs #316, #318, #319, #320)
+## Integrated result (PRs #316, #318, #319, #320, #321, #322)
 
 Measured on the merged tree at base commit `219c76da`:
 
 | Stage | Before | After |
 | --- | --- | --- |
-| Conversion | 1712 passed / 211 unsupported / 0 failed | **unchanged** |
+| Conversion | 1712 passed / 211 unsupported / 0 failed | **1724 passed / 199 unsupported / 0 failed** |
 | Round-trip structure | 1712 passed | **unchanged** |
 | Independent libRoadRunner comparison | 1712 passed | **unchanged** |
-| Official reference | 1115 passed / 701 unsupported / 107 failed | **1172 passed / 701 unsupported / 50 failed** |
+| Official reference | 1115 passed / 701 unsupported / 107 failed | **1191 passed / 693 unsupported / 39 failed** |
 
-57 official-reference cases move `failed → passed` and **none regresses**.
-The Python suite is 1528 passed / 28 skipped / 2 xfailed, with one
-pre-existing failure (`test_generated_notebooks_execute_in_qualified_kernel`)
-that also fails on the unmodified base commit.
+81 official-reference cases change status and **none regresses**. The Python
+suite is 1551 passed / 28 skipped / 2 xfailed, with one pre-existing failure
+(`test_generated_notebooks_execute_in_qualified_kernel`) that also fails on
+the unmodified base commit.
 
-Per-change contribution:
+Per-change contribution (measured per branch, so the numbers overlap where
+one change enables another):
 
 | PR | Change | Official cases fixed |
 | --- | --- | --- |
@@ -137,6 +137,8 @@ Per-change contribution:
 | #318 | `csymbol` by `definitionURL`; static parameter initial assignments | 20 |
 | #319 | Amount-based rate laws in a non-unity compartment | 19 |
 | #320 | n-ary MathML relations | 3 |
+| #321 | Parameter assignment rules: the amount/concentration distinction | 10 |
+| #322 | MathML trigonometric reciprocals; numeric fidelity; assigned stoichiometry | 14 |
 
 ## Workstreams
 
@@ -157,7 +159,7 @@ Per-change contribution:
 | J | Time-dependent stoichiometry (rate-ruled `speciesReference`) | agent J | not started (~10 cases) |
 | — | Independent review of each implementation PR | separate reviewer | required before merge |
 
-### Remaining official-reference failures (40), by cluster
+### Remaining official-reference failures (39), by cluster
 
 | Cluster | n | Cases |
 | --- | --- | --- |
