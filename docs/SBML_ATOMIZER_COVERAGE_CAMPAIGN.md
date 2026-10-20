@@ -510,7 +510,7 @@ The Python-suite row is read from a pytest JUnit report:
 
 ```bash
 PYTHONPATH=python:build/cpp python -m pytest -q tests/python \
-  --junitxml=/tmp/bng3-campaign/pytest-main.xml
+  --junitxml=/tmp/bng3-campaign/pytest-current.xml
 ```
 
 The generator never runs the harness, never changes a verdict and never
