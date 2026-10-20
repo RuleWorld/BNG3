@@ -1,0 +1,5 @@
+add_test( [==[HybridModelGenerator tests]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_hybrid_model_generator [==[HybridModelGenerator tests]==]  )
+set_tests_properties( [==[HybridModelGenerator tests]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
+add_test( [==[HybridModelGenerator isIsomorphic error handling]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_hybrid_model_generator [==[HybridModelGenerator isIsomorphic error handling]==]  )
+set_tests_properties( [==[HybridModelGenerator isIsomorphic error handling]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
+set( test_hybrid_model_generator_TESTS [==[HybridModelGenerator tests]==] [==[HybridModelGenerator isIsomorphic error handling]==])

@@ -1,0 +1,21 @@
+begin model
+begin parameters
+  N 4
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin observables
+  Molecules A_count A()
+  Molecules B_count B()
+end observables
+begin reaction rules
+  convert: A() -> B() 1
+end reaction rules
+end model
+simulate_ode({t_start=>0,t_end=>1,n_steps=>8,stop_if=>"2^N junk"})

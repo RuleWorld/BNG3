@@ -1,0 +1,5 @@
+add_test( [==[NFsim profiler records bounded phase and reaction diagnostics]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_nfsim_profile [==[NFsim profiler records bounded phase and reaction diagnostics]==]  )
+set_tests_properties( [==[NFsim profiler records bounded phase and reaction diagnostics]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
+add_test( [==[NFsim profiler reset removes prior samples]==] /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/test_nfsim_profile [==[NFsim profiler reset removes prior samples]==]  )
+set_tests_properties( [==[NFsim profiler reset removes prior samples]==] PROPERTIES WORKING_DIRECTORY /private/tmp/bng3-issue-reconcile/build-asan/tests/cpp)
+set( test_nfsim_profile_TESTS [==[NFsim profiler records bounded phase and reaction diagnostics]==] [==[NFsim profiler reset removes prior samples]==])

@@ -1,0 +1,35 @@
+begin model
+begin parameters
+  Nd 4
+  Ne 40
+  D 3
+  E 30
+  p_mul 0
+  p_ne_mul 0
+  p_sum 0
+  p_ne_sum 0
+  p_d_sum 0
+  p_e_sum 0
+  p_fortran 0
+  k 0.4
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin reaction rules
+  convert: A() -> B() k
+end reaction rules
+end model
+setParameter("p_mul","2*Nd")
+setParameter("p_ne_mul","2*Ne")
+setParameter("p_sum","Nd+1")
+setParameter("p_ne_sum","Ne+1")
+setParameter("p_d_sum","D+1")
+setParameter("p_e_sum","E+1")
+setParameter("p_fortran","1D-3")
+generate_network({overwrite=>1})

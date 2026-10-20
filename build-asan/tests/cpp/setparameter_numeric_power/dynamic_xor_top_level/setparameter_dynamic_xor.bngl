@@ -1,0 +1,7 @@
+begin model
+begin parameters
+  k 0.4
+  N 3
+end parameters
+setParameter("k",2^N)
+end model

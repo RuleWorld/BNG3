@@ -1,0 +1,30 @@
+begin model
+begin parameters
+  N 3
+  Nd 3
+  p 1
+  k 0.4
+  q r
+  r time
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin observables
+  Molecules A_count A()
+  Molecules B_count B()
+end observables
+begin reaction rules
+  convert: A() -> B() k
+end reaction rules
+begin protocol
+setParameter("k","2^q")
+end protocol
+end model
+simulate_protocol()
+

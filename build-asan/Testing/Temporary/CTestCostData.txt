@@ -1,0 +1,678 @@
+OdeIntegrator recovers after late stop condition failure 2 0.0581013
+bng_cpp parallel mode isolates model outputs 1 0.325309
+bng_cpp parallel mode propagates child failures 1 0.322505
+calc_expressions sets correctly 1 0.0259237
+calc_observables calculates correct values 1 0.0178812
+calc_ratelaws calculates correct values 1 0.0160765
+calc_species_deriv calculates correct derivatives 1 0.0160413
+run_network print_error calls exit(1) and prints usage 1 0.0242587
+PlaConfig parsing 1 0.0375506
+PlaSimulator initialization and simulation 1 0.0229823
+PlaSimulator rejects BNG3 events until event execution is implemented 1 0.0322915
+evaluateRateString error path 1 0.0216828
+PSA reaction selection samples competing channels by propensity 1 0.0676457
+PsaSimulator rejects BNG3 events until event execution is implemented 1 0.0523275
+OdeIntegrator honors explicit nonuniform sample times 1 0.0349771
+constant rate branches are folded for network and writer outputs 1 0.0372097
+OdeIntegrator default tolerances preserve an analytic decay trajectory 1 0.0368051
+OdeIntegrator rejects malformed stop conditions 1 0.0369075
+OdeIntegrator rejects BNG3 events until event execution is implemented 1 0.0292434
+OdeIntegrator evaluates user-defined function rates 1 0.040777
+OdeIntegrator reevaluates functional rates after time and state changes 1 0.0421342
+OdeIntegrator reevaluates a rate through a time-dependent parameter 1 0.0357944
+OdeIntegrator preserves case-insensitive rate classification 1 0.0257367
+OdeIntegrator keeps function-name matching bounded 1 0.0372012
+Observable pattern compilation preserves multi-pattern weights 1 0.0357097
+NetWriter preserves repeated observable group patterns 1 0.0354272
+NetWriter associates seed amounts with compartmented species 1 0.0343347
+NetWriter emits the live amount after seed species mutation 1 0.0342174
+NetWriter does not reuse a seed expression after a sub-tolerance mutation 1 0.0356412
+NetWriter matches seed amount expressions by constant identity 1 0.0341562
+NetWriter preserves indexed and empty NET observable groups 1 0.0345341
+NetWriter does not apply pattern symmetry factor to TotalRate 1 0.0370417
+NetWriter preserves inline parameter comments from BNGL 1 0.0356877
+NetWriter keeps nested model-function rates dynamic 1 0.0392279
+finite-network FunctionProduct rates use each reaction's local scopes 1 0.0405647
+finite-network local functions can inspect product scopes 1 0.0443032
+CVODE honors steady-state stopping 1 0.0372938
+SSA honors explicit sample times 1 0.0357045
+OdeIntegrator preserves multi-species derivative updates 1 0.063026
+Batch SSA returns one species row per output time on every backend 1 0.0606629
+ParameterList re-evaluates a time-dependent parameter at each t 1 0.027457
+finite-network rates distinguish species and molecule local scopes 1 0.0377874
+NetWriter evaluated parameters round trip binary64 values 1 0.0351077
+CVODE executes recurring native events between output times 1 0.0366837
+OdeIntegrator function index observes a function added after construction 1 0.0786858
+OdeIntegrator function index distinguishes prefix-sharing names 1 0.0752494
+OdeIntegrator function index resolves a duplicate name to the first declaration 1 0.0686812
+OdeIntegrator function index excludes argument-taking functions from the payload 1 0.0522209
+OdeIntegrator function index keeps internal helper functions out of the payload 1 0.051182
+OdeIntegrator function index resolves a helper whose definition changed 1 0.0503842
+OdeIntegrator evaluates numeric and nested user-function arguments 1 0.0524298
+mixed local-scope and numeric function arguments reach network and export 1 0.0496832
+NetWriter preserves distinct local scopes in a multi-scope function rate 1 0.036352
+compiled functions reject invalid arity scope usage and recursion 1 0.0418971
+nested calls to the same nonrecursive function expand normally 1 0.0365793
+Sat with two arguments is the total-rate Michaelis-Menten law 1 0.0673131
+Sat naming its substrate is not lowered as a Hill law 1 0.212201
+a literal Hill coefficient is not silently zero 1 0.0614244
+Hill keeps its own coefficient 1 0.0514252
+every known GPU backend is reported with a stable name 1 0.0599482
+the default backend is one that is actually available 1 0.0419853
+backend names round-trip and unknown names fail closed 1 0.0221138
+selecting 'none' yields no backend instead of an error 1 0.0210264
+selecting an unavailable backend raises rather than approximating 1 0.0397099
+accelerators are only attempted above the launch-overhead threshold 1 0.0210214
+HybridModelGenerator tests 1 0.045632
+HybridModelGenerator isIsomorphic error handling 1 0.0280796
+parseBooleanLike behaves correctly 1 0.036306
+SpeciesList preserves compartment-aware deduplication 1 0.0218384
+SpeciesList checks exact keys again after canonical labeling 1 0.0200651
+MacroBNGModel num_site preserves Perl dependency semantics 1 0.0208792
+MacroBNGModel pre_macr runs the species and rule transforms 1 0.0217805
+Node::operator== 1 0.0208917
+PatternGraph canonicalization defines the empty graph 1 0.0163046
+Node canonical labels retain their exact format 1 0.0157352
+PatternGraph BNG2 strings retain their exact format 1 0.0150455
+Parameter replacement invalidates transitive dependency caches 1 0.0337797
+Adding a forward dependency invalidates its cached classification 1 0.0329634
+Declaration changes keep evaluated values readable for export 1 0.0335108
+Generated parameter graphs preserve mutation semantics 1 0.0429093
+Expression: numeric literals 1 0.0220892
+Expression numeric rendering preserves round-trip precision 1 0.0222774
+Expression: parameter references 1 0.0203844
+Expression: nested arithmetic 1 0.0221763
+Expression partial evaluation folds constants and preserves symbols 1 0.0275608
+Expression partial evaluation does not inspect an unreachable branch 1 0.0251855
+Expression partial evaluation preserves scoped observable references 1 0.0196219
+Expression partial evaluation follows nested zero-argument functions 1 0.0280522
+Expression partial evaluation folds numeric user-function arguments 1 0.0251046
+Expression partial evaluation preserves dynamic function dependencies 1 0.0277676
+Expression partial evaluation preserves dynamic functions with arguments 1 0.0237596
+Expression partial evaluation preserves dynamic scoped functions 1 0.0305212
+Expression: power operator 1 0.026034
+Legacy expression operators remain accepted 1 0.0316277
+Standalone expression parsing rejects lexer errors and trailing tokens 1 0.0327286
+Expression: built-in functions 1 0.02604
+Expression: factorial rejects non-integer and overflowing domains 1 0.0259793
+Expression: TFUN resolution via resolver 1 0.0253867
+Expression: evaluateLocal with context overrides 1 0.0247107
+Expression: checkLocalDependency 1 0.0255044
+Expression: getDependencies completeness 1 0.0244481
+Expression: time alias 't' 1 0.0269852
+ExpressionEval facade binds time and symbols 1 0.0257317
+ExpressionEval facade reports missing symbols 1 0.0265046
+Expression: rint matches the BNG2 oracle at half-integers 1 0.0252583
+Expression: sign is implemented in the shared evaluator 1 0.0238355
+Expression: 'log' is rejected with the three explicit spellings 1 0.02331
+Builtin table: the two engines agree 1 0.0246845
+Observables: the symmetric dimer pattern really has two automorphisms 1 0.0694277
+Observables: Molecules CountAll counts every match 1 0.0622513
+Observables: Molecules CountUnique divides out pattern automorphisms 1 0.0591554
+Observables: Species CountUnique counts a species once, not per pattern 1 0.0470839
+Observables: the two counting options are independent 1 0.0335594
+Observables: Molecules qualifiers are inert while Species qualifiers apply 1 0.035805
+Observables: graph prefixes filter species scope independently of node qualifiers 1 0.0360755
+Observables: all-explicit node compartments remain valid with a graph prefix 1 0.0350525
+Observables: a compartment miss still evaluates a zero-count relation 1 0.037271
+Observables: CountUnique stops after a false qualified term 1 0.0418168
+Regulatory graph observables use the candidate species compartment 1 0.0421763
+a unidirectional arrow with two rate laws is refused 1 0.0630006
+a unidirectional arrow with one rate law is still accepted 1 0.0357798
+a bidirectional arrow still carries both rate laws 1 0.0380783
+setOption: options used by the existing corpus still load 1 0.0319093
+setOption: SpeciesLabel exact values are no-ops, Quasi is unused 1 0.0223633
+setOption: observable counting modes are accepted and distinct 1 0.0224919
+setOption: deprecated and unit-shaped options 1 0.0214495
+standard units parse with SBML-compatible dimensions 1 0.0240952
+compatible metric units convert without runtime unit objects 1 0.0185993
+mole and item conversion requires an explicit bridge 1 0.0188066
+unknown unit names are rejected only in unit context 1 0.0199701
+custom unit definitions resolve through the same algebra 1 0.0179702
+explicit compartment context converts concentrations and rate constants 1 0.0167141
+context-dependent conversion fails closed without a volume 1 0.017081
+BNGL unit annotations are preserved in the canonical AST 1 0.0752923
+unit syntax does not reserve ordinary BNGL identifiers 1 0.0442187
+legacy models remain unit-free without unit annotations 1 0.0425414
+BNG3 event extension accepts a versioned event block 1 0.0423152
+BNG3 event extension rejects unknown format versions 1 0.0309491
+BNG3 event extension rejects duplicate event ids 1 0.0321587
+BNG3 event keywords remain usable as legacy model identifiers 1 0.0312439
+compiled unit metadata follows parameter dependencies 1 0.0305675
+incompatible annotated arithmetic fails closed in the compiler 1 0.0301589
+strict unit mode rejects unsupported dynamic expressions 1 0.0307585
+rule molecularity is checked against annotated rate dimensions 1 0.0389013
+priority is preserved as molecule, molecule type, and parameter name 1 0.0303905
+priority is retained as an observable name 1 0.0302082
+priority observable references do not consume rule or event priority syntax 1 0.0356992
+local-function tag at rule start needs no label 1 0.0323553
+separator lines before the model are ignored 1 0.0268203
+begin model without end model accepts trailing actions 1 0.026356
+keywords work as function names and calls 1 0.0342702
+bare-decimal-point exponents parse as floats 1 0.0260027
+line continuation allows a trailing comment 1 0.0317742
+trailing annotation after a seed amount is ignored 1 0.0363953
+SBML Core writer emits compatible unit definitions and attributes 1 0.0921267
+SBML-Multi reuses Core units without a second unit system 1 0.091407
+SBML-Multi rejects unit-aware reaction rates it cannot convert 1 0.0828263
+SBML species export uses the standard substanceUnits attribute 1 0.0752515
+SBML L2V3 carries model unit defaults in reserved unit definitions 1 0.0368067
+SBML L2V3 reader recovers reserved model defaults and species units 1 0.0355969
+SBML L2V3 rejects a distinct extent default 1 0.0248903
+SBML L2V3 rejects extent units with a near but non-unit conversion factor 1 0.024828
+SBML L2V3 rejects conflicting authored reserved unit IDs 1 0.0299318
+SBML L2V3 validates model default dimensions 1 0.0275006
+compiled unit references drive SBML unit emission 1 0.0371279
+SBML unit factors are exact for inverse and higher-order units 1 0.0290976
+SBML serializes Sat rates as MathML rather than an unresolved symbol 1 0.0353449
+unit-free SBML retains the legacy substance definition 1 0.0261994
+BNGL writer round-trips unit declarations and annotations 1 0.0351048
+unit-aware network lowering converts concentration seeds and rates once 1 0.0353236
+SBML Core preserves unit-aware first-order decay on the generated count basis 1 0.0402541
+SBML Core writer and reader preserve unit metadata together 1 0.0352765
+Rule expansion: execution caches are independent 1 0.0516855
+generate_network max_iter is compiled as a qualified typed option 1 0.0972665
+ODE and SSA n_steps compile Safe-Perl exponentiation for finite actions 1 0.0402148
+simulation n_steps diagnostics preserve raw source and defer failure 1 0.0483647
+absent n_steps stays unset and non-finite backends are not typed 1 0.0390913
+parameter-backed simulation n_steps remain execution-time values 1 0.0363889
+setParameter compiles static arithmetic while retaining dynamic values 1 0.0420092
+setParameter preserves quoted BNGL arithmetic and refuses unquoted named arithmetic 1 0.0450945
+setParameter refuses quoted negative power bases and mixed power spellings 1 0.0353218
+setParameter refuses quoted double-star expressions unsupported at runtime 1 0.0346857
+setParameter refuses quoted caret expressions outside parameter arithmetic 1 0.0404767
+unused invalid setParameter values remain deferred in compiled metadata 1 0.0367167
+BNGL network generation uses typed max_iter and explicit native overrides 1 0.0466807
+Rule expansion: pattern metadata survives reinitialization and move 1 0.0348978
+Rule expansion: simple binding A + B -> AB 1 0.0510039
+Rule expansion: unmatched product molecules cannot discard connected context 1 0.0659338
+Rule expansion: plain deletion splitting a complex yields no reaction 1 0.0473812
+Rule expansion: null self-loop reactions are pruned like BNG2 1 0.0527402
+Rule expansion: multi-type reactant pattern requires every molecule type 1 0.0398359
+Rule expansion: DeleteMolecules degradation 1 0.0473685
+compiled whole-species deletion metadata controls a non-symmetric embedding 1 0.0374625
+compiled reverse whole-species deletion remains compatible 1 0.035217
+compiled DeleteMolecules semantics preserve unmatched connected context 1 0.0414678
+Rule expansion: deleting a bound molecule preserves a free site 1 0.0436502
+Rule expansion: bidirectional rule decomposition 1 0.0454027
+Rule expansion: reverse local-rate scope remains bound 1 0.0421679
+Rule expansion: MatchOnce modifier 1 0.0547683
+generate_network max_agg is numeric and filters generated products only 1 0.0491272
+generate_network max_stoich accepts unlimited as an unbounded molecule type 1 0.0381458
+generate_network max_stoich does not trim whitespace inside quoted values 1 0.040128
+generate_network max_stoich combines finite limits with unlimited and retains seeds 1 0.0366668
+generate_network max_stoich evaluates static numeric expressions and last duplicate 1 0.0450038
+nested action-map parser preserves ordered entries and rejects trailing tokens 1 0.0269547
+max_stoich compiler handles programmatically constructed actions 1 0.0244977
+generate_network max_stoich rejects quoted non-identifier keys without aliasing 1 0.0392465
+generate_network max_stoich applies negative limits to absent product types only 1 0.0356428
+generate_network max_stoich defers unsupported numeric diagnostics 1 0.0353795
+generate_network max_stoich uses the first action that supplies the option 1 0.0350429
+generate_network max_agg compiles finite numeric expressions and defers diagnostics 1 0.0386021
+generate_network max_agg uses the first action that supplies the option 1 0.0351298
+duplicate barrier labels name their symbol kind 1 0.0294212
+HNauty: isomorphic species get same canonical label 1 0.081627
+HNauty: single-molecule species (trivial) 1 0.063367
+HNauty: non-isomorphic complexes get different labels 1 0.0593845
+HNauty: symmetric components produce single species 1 0.0572551
+Issue 214 high product symmetry parses without factorial expansion 1 1.96745
+Issue 165 sixfold symmetric complex canonicalizes 1 0.036455
+Issue 142 graph identity matches an independent isomorphism partition 1 0.040069
+Issue 142 graph identity rejects extra target edges 1 0.0259309
+Issue 142 graph identity preserves parallel-edge multiplicity 1 0.0221822
+Issue 142 native NFsim labels follow the same graph identity partition 1 0.0373623
+Ullmann: pattern matches species (positive) 1 0.0652383
+Ullmann: pattern does not match species (negative) 1 0.055731
+Ullmann: wildcard state matching 1 0.0452097
+Ullmann: bond pattern matching !+ and !? 1 0.0460992
+Compartment transport: endocytosis PM -> EM 1 0.0602912
+Concurrent compartment contexts do not cross-contaminate 1 0.0942642
+Failed network generation restores the previous compartment context 1 0.0463683
+One generated network supports repeated solver instances and rate overrides 1 0.0433235
+Fresh compiled models observe changed compartment volumes 1 0.0353433
+Compartment transport: exocytosis EM -> PM 1 0.0386504
+Compartment transport: volume-to-volume 1 0.0378875
+Compartment transport: population reaction may consume distinct volumes 1 0.0309686
+Compartment transport: cross-volume bond formation remains rejected 1 0.0317043
+Compartment transport: replacement does not dereference deleted reactant 1 0.0410586
+Issue 232 preserves both seeded reversible compartment directions 1 0.0473025
+Issue 246 does not infer adjacency for parentless compartments 1 0.033998
+Issue 124 permits parameters after rules and seed species 1 0.0384978
+NFsim compact reaction membership IDs stay sorted and unique 1 0.0464599
+BNGL parser preserves inline and file TFUN metadata 1 0.0543327
+BNGL parser accepts singular molecule type blocks 1 0.0400738
+BNGL infers numeric molecule states from all patterns 1 0.0506975
+BNGL inferred integer states ignore wildcard and transition sentinels 1 0.0463952
+BNGL inferred type ordering matches BNG2 canonical registration 1 0.0410846
+BNGL parser keeps the historical NFsim t4 gap explicit 1 0.0361922
+BNGL parser keeps the historical NFsim t5 gap explicit 1 0.0368084
+XML writer preserves the first explicit bond 1 0.0315642
+NFsim XML bridge preserves energy patterns 1 0.039969
+NFsim XML bridge expands Arrhenius state changes 1 0.0409885
+NFsim XML bridge preserves one-way Arrhenius direction 1 0.0387615
+XML writer canonicalizes seed species like BNG2 1 0.031781
+NFsim AST adapter canonicalizes seed molecule order like BNG2 1 0.0297225
+NFsim AST adapter allocates repeated seed molecules like XML 1 0.0284356
+NFsim AST adapter maps an inline time-backed TFUN directly 1 0.0472954
+NFsim AST adapter resolves file-backed TFUN beside the BNGL source 1 0.0458084
+NFsim XML bridge preserves inline TFUN metadata 1 0.0483806
+NFsim AST adapter preserves molecule-type state and symmetry metadata 1 0.0268042
+NFsim AST adapter applies the concentration conversion option 1 0.026751
+NFsim AST adapter rejects malformed concentration conversion options 1 0.0255815
+NFsim AST adapter installs compartment parents in a second pass 1 0.0271995
+NFsim AST adapter rejects population molecule types with components 1 0.0272871
+NFsim AST adapter rejects population maps before runtime construction 1 0.0281331
+NFsim AST adapter rejects a site with multiple explicit bonds 1 0.041188
+NFsim AST adapter maps parameter-backed global functions 1 0.0335377
+NFsim AST adapter maps time-dependent global functions 1 0.0445192
+NFsim XML bridge preserves time and parameter function references 1 0.0427614
+NFsim AST adapter maps observable-backed global functions 1 0.0299716
+NFsim AST adapter rejects incomplete global-function references 1 0.0288484
+NFsim AST adapter keeps local functions on the compatibility path 1 0.0245386
+NFsim AST adapter builds a direct no-rule system 1 0.0304982
+NFsim AST adapter rejects BNG3 events until event execution is implemented 1 0.0318373
+NFsim AST adapter accepts legacy single-ended seed bond metadata 1 0.0341934
+NFsim AST adapter consumes Null discard seeds 1 0.0377329
+NFsim AST adapter creates products with symmetric components 1 0.0407562
+NFsim AST adapter counts a connected observable pattern once 1 0.0284555
+NFsim AST adapter counts a pure context homodimer once per complex 1 0.0350437
+NFsim AST adapter counts pure context trimer and scaffold once 1 0.0367766
+NFsim AST adapter preserves transformed homodimer binding multiplicity 1 0.0356115
+NFsim AST adapter counts pure DOR context once per complex 1 0.0410571
+NFsim AST adapter maps bare molecule stoichiometric observables 1 0.0347223
+NFsim AST adapter maps direct state-change reaction rules 1 0.0359632
+NFsim AST adapter maps direct compartment transport 1 0.0369949
+NFsim AST adapter maps MoveConnected compartment transport 1 0.0359449
+NFsim MoveConnected honors explicit placements of every product molecule 1 0.0391881
+NFsim preserves issue 109 created molecule compartment inheritance 1 0.0529198
+NFsim XML and AST seed molecule compartments override species compartment 1 0.0398421
+NFsim binds only compartment-compatible reactants 1 0.0453375
+NFsim refuses mixed, non-adjacent, and unusual-dimension placements 1 0.0616257
+NFsim AST adapter maps direct binding reaction rules 1 0.037708
+NFsim AST adapter preserves multi-rule propensities 1 0.0659054
+NFsim AST adapter expands symmetric state-change reaction centers 1 0.035208
+NFsim AST adapter keeps dynamic symmetric state changes live 1 0.0388381
+NFsim AST adapter expands multiple symmetric state centers 1 0.0330532
+NFsim AST adapter expands symmetric state context with a center 1 0.0325648
+NFsim AST adapter expands symmetric binding reaction centers 1 0.0359954
+NFsim AST adapter keeps dynamic symmetric binding live 1 0.0556265
+NFsim AST adapter expands symmetric bond context with a center 1 0.0444188
+NFsim AST adapter expands symmetric unbinding reaction centers 1 0.0489368
+NFsim AST adapter maps a product molecule bound to a reactant 1 0.0386131
+NFsim AST adapter maps direct unbinding reaction rules 1 0.0377779
+NFsim AST adapter permits multi-bond ring-opening dissociation 1 0.0380848
+NFsim AST adapter blocks single-bond ring dissociation 1 0.0469989
+NFsim AST adapter creates direct standalone product molecules 1 0.0428574
+NFsim AST adapter binds direct product molecules to each other 1 0.0381738
+NFsim AST adapter maps intramolecular product bonds 1 0.0357283
+NFsim AST adapter expands direct reversible reaction rules 1 0.0331595
+NFsim AST adapter maps static Michaelis-Menten rate constants 1 0.0362187
+NFsim Michaelis-Menten propensity remains stable for tiny Km 1 0.0351111
+NFsim AST adapter maps Sat rates directly and through XML 1 0.0358482
+NFsim AST adapter maps Hill rates directly and through XML 1 0.0360756
+NFsim AST adapter maps zero-order product synthesis 1 0.0340344
+NFsim AST adapter applies zero-order compartment volume conversion 1 0.0312662
+NFsim XML preserves parameter-backed compartment sizes on update 1 0.0331376
+NFsim zero-order complex synthesis uses its lowest-dimensional compartment 1 0.0312537
+NFsim AST adapter applies reactant volume conversion for bare bimolecular rates 1 0.0319361
+NFsim AST adapter leaves unit-volume reactant propensities unchanged 1 0.0334304
+NFsim refreshes numeric bare bimolecular rates after volume changes 1 0.0313986
+NFsim converts wildcard reactant volumes a single compartment forces 1 0.0312999
+NFsim refuses wildcard reactant volumes with unequal compartment sizes 1 0.032934
+NFsim refreshes general compartment size expressions end to end 1 0.0347784
+NFsim applies reactant volume conversion to non-elementary rate laws 1 0.0544298
+NFsim refreshes non-elementary volume conversion when the size changes 1 0.0323807
+NFsim AST adapter converts static zero-order physical rates exactly once 1 0.038999
+NFsim XML initialization refuses unit-bearing models 1 0.0334005
+NFsim rejects rates that reference time-dependent named parameters 1 0.0347401
+NFsim raw physical-rate lowering requires a 3D product volume for count rates 1 0.0356297
+NFsim physical unit bridge refuses converted rate overflow 1 0.0355644
+NFsim AST adapter rejects unsupported physical zero-order contexts 1 0.0640004
+NFsim AST adapter maps zero-argument functional reaction rates 1 0.0493534
+NFsim AST adapter preserves source reactant-count rate references 1 0.0470859
+NFsim AST adapter maps the IfTest conditional function rates 1 0.345951
+NFsim AST adapter maps dynamic observable reaction rates directly and through XML 1 0.0433163
+NFsim AST adapter keeps time-dependent reaction rates live 1 0.0363191
+NFsim AST adapter maps dynamic rates through base global functions 1 0.0401669
+NFsim AST adapter expands composite functions in dynamic reaction rates 1 0.0409429
+NFsim AST adapter mixes direct observables with base global reaction rates 1 0.0356596
+NFsim AST adapter maps zero-argument composite function rates 1 0.0322889
+NFsim AST adapter maps a scoped local function rate 1 0.0383132
+NFsim XML writer wraps a scoped local function rate 1 0.0370173
+NFsim AST adapter maps arithmetic around a scoped local function rate 1 0.0379348
+NFsim XML bridge maps arithmetic around a scoped local function rate 1 0.038357
+NFsim AST adapter maps a bounded nested local function rate 1 0.0372713
+NFsim AST adapter updates time-dependent local rates 1 0.0376233
+NFsim Species observables refresh dependent reaction rates 1 0.0391702
+NFsim equilibrate uses the absolute current time 1 0.0351512
+NFsim AST adapter maps time-backed local TFUN rates 1 0.0409048
+NFsim AST adapter maps observable-backed local TFUN rates 1 0.037438
+NFsim AST adapter maps function-counter TFUN rates 1 0.0369735
+NFsim AST adapter maps a legacy molecule-label local scope 1 0.0344514
+NFsim AST adapter maps species-scoped local rates 1 0.035907
+NFsim compiled lowering treats a leading single-colon label as species scope 1 0.03311
+NFsim compiled lowering keeps molecule suffix labels molecule-scoped 1 0.0325921
+NFsim compiled lowering binds a non-root molecule suffix scope by occurrence 1 0.0409642
+NFsim compiled lowering still refuses suffix scopes on population-rooted reactants 1 0.047265
+NFsim compiled composite rates bind suffix scopes by molecule occurrence 1 0.0415182
+NFsim compiled lowering keeps species scopes anchored to the reactant root 1 0.0497577
+NFsim AST adapter enforces reactant include and exclude filters 1 0.0525675
+NFsim XML bridge preserves reactant filters 1 0.0592623
+NFsim AST adapter enforces bounded product filters 1 0.0406313
+NFsim AST adapter swaps bounded filters for reversible rules 1 0.0390463
+NFsim AST adapter maps a bounded FunctionProduct rate 1 0.0364617
+NFsim AST adapter rejects product-side FunctionProduct scopes 1 0.0347851
+NFsim AST adapter maps a raw local-function product rate 1 0.0349955
+NFsim AST adapter maps legacy-tagged raw local-function products 1 0.0330213
+NFsim XML bridge preserves raw local-function products 1 0.0339406
+NFsim XML bridge reads legacy composite DOR2 rate laws 1 0.037657
+NFsim XML bridge preserves bounded FunctionProduct rates 1 0.0361434
+NFsim AST adapter expands direct Arrhenius binding with energy patterns 1 0.0348572
+NFsim AST adapter preserves Arrhenius multiplicity on symmetric sites 1 0.0351735
+NFsim AST adapter expands direct Arrhenius state changes 1 0.0338042
+NFsim AST adapter expands one-way direct Arrhenius binding 1 0.034223
+NFsim AST adapter expands one-way direct Arrhenius state changes 1 0.0325717
+NFsim AST adapter retains materialized expansion for non-factorized contexts 1 0.0327757
+NFsim energy function exposes compact binding context 1 0.0197422
+NFsim energy function rejects non-factorized compact contexts 1 0.0203667
+NFsim EnergyFunction expands source-derived Arrhenius rules 1 0.0187108
+NFsim AST adapter uses compact factorized energy evaluation 1 0.0340437
+NFsim AST adapter keeps one-way compact Arrhenius forward-only 1 0.0330215
+NFsim compact energy partner memberships avoid mapping storage 1 0.0352869
+NFsim connectivity refresh clears direct endpoint identity 1 0.0340708
+NFsim compact energy caches multi-term factors 1 0.0337032
+NFsim compact energy refreshes rate factor after endpoint change 1 0.0338468
+NFsim compact reverse energy uses the weighted propensity factor 1 0.0347601
+NFsim compact partner refresh preserves mixed reaction memberships 1 0.0348166
+NFsim compact energy stale binding is a null event 1 0.0355794
+NFsim compact partner pool batches shared propensity changes 1 0.0336254
+NFsim compact selector scales shared pools during selection 1 0.0381681
+NFsim compact selector preserves seeded order across membership refresh 1 0.0371625
+NFsim sparse selector reuses cached propensities in implicit batches 1 0.0397485
+NFsim compact membership refresh preserves unrelated partner rules 1 0.0365576
+NFsim compact pool refresh preserves all-forward reaction state 1 0.0383162
+NFsim connectivity preserves the seeded t3 trajectory 1 0.150043
+NFsim connectivity prunes rules touching disjoint components 1 0.0393611
+NFsim XML bridge preserves functional symmetry around TotalRate 1 0.0353406
+NFsim fixed-point selector declines compact partner pool reactions 1 0.0335731
+NFsim direct deletion preserves pattern versus molecule scope 1 0.0493865
+Compiled reversible molecule replacement retains deletion scopes 1 0.0294425
+NFsim legacy XML honors species-level pattern compartments 1 0.0338656
+NFsim destructive identical reactants retain BNG2 permutation symmetry 1 0.0327166
+NFsim parameter updates rescale zero-order volumes and MM rates 1 0.0382634
+NFcore2 driver matches NFcore ensemble on reversible isomerization 1 0.366576
+NFcore2 creates products in the reaction compartment 1 0.105257
+NFcore2 seeds molecule compartments over the species compartment 1 0.0328453
+NFcore2 MoveConnected moves only the primary compartment 1 0.0372683
+NFcore2 MoveConnected can relocate a non-root pattern molecule 1 0.0329317
+NFcore2 binds only compartment-compatible reactants 1 0.0383204
+NFcore2 refuses mixed, non-adjacent, and unusual-dimension placements 1 0.0498553
+NFcore2 honors explicit product compartments 1 0.0359363
+NFcore2 state change on non-root pattern molecule is supported 1 0.0339513
+NFcore2 deletion of non-root pattern molecule is supported 1 0.0318302
+NFcore2 binding on non-root pattern molecule is supported 1 0.032092
+NFcore2 molecule creation on non-root pattern molecule is supported 1 0.0301593
+NFcore2 bond deletion on non-root pattern molecule is supported 1 0.0348299
+NFcore2 state change plus bond change on non-root is supported 1 0.0335256
+NFsim System rejects unsafe output names 1 0.0412845
+NFsim stepTo preserves continuous simulation checkpoints 1 0.0852133
+NFsim stepTo advances zero-propensity checkpoints 1 0.0429797
+NFsim sim stops before an event beyond the final checkpoint 1 0.0380877
+NFsim sim defers an event exactly at its endpoint 1 0.0331414
+NFsim ReactantTree preserves the compact one-leaf contract 1 0.0206878
+NFsim product collection preserves single-reactant output membership 1 0.0223204
+NFsim product collection reports complete component boundaries 1 0.0200852
+NFsim ReactantTree preserves weights across repeated expansion 1 0.0217524
+NFsim CompactPartnerPool preserves source swap-removal indexing 1 0.0210231
+NFsim MoleculeType retains pooled molecules across bulk removal 1 0.0199372
+NFsim MoleculeType exposes one compact pool per component 1 0.0196787
+NFsim profiler records bounded phase and reaction diagnostics 1 0.0238444
+NFsim profiler reset removes prior samples 1 0.0195505
+SBML reader imports a flat reaction network 1 0.0283919
+NET reader preserves expression rates and integer reaction references 1 0.0218392
+NET reader accepts a declared observable with no species weights 1 0.0218491
+SBML reader rejects atomized conversion requests 1 0.0229374
+SBML reader recognizes structured BNG2 schema independent of IDs 1 0.0221575
+SBML reader rejects fractional stoichiometry instead of rounding 1 0.0192685
+SBML reader preserves grouping in compound kinetic laws 1 0.0200912
+TinyXML parses numeric character references in source order 1 0.0195183
+SBML reader preserves Core unit metadata 1 0.0224203
+FiniteBackend capabilities are available without BNGSIM build 1 0.0539818
+FiniteBackend simple model lowering check 1 0.0768121
+FiniteBackend reports unsupported observable consistently 1 0.0639363
+FiniteBackend reports TFUN provenance blocker consistently 1 0.0689377
+FiniteBackend compartment lowering is rejected with semantic blocker 1 0.0333149
+FiniteBackend non-reference rate is rejected 1 0.0341573
+FiniteBackend backend string parsing 1 0.018967
+FiniteBackend native ODE simulation still works 1 0.0328102
+gdat numeric fields keep the %.12e byte format 1 0.0526427
+gdat rows pad to 18 columns and separate fields with one space 1 0.0466227
+cdat columns retain constant-species identity 1 0.0331323
+cdat columns distinguish same graph in different compartments 1 0.0325084
+cdat columns retain molecule compartments without an outer species compartment 1 0.0333093
+indexed NET observables use explicit weighted species references 1 0.0295535
+indexed NET observables reject an out-of-range species reference 1 0.0292568
+Molecules count filters are inert, matching BNG2 1 0.0588135
+Species count filters keep honouring the comparison 1 0.0359275
+adjacent batch base seeds do not produce identical batches 1 0.0732082
+adjacent batch base seeds do not reuse trajectory RNG keys 1 0.021419
+batch trajectory RNG keys preserve the 32-bit nonzero seed contract 1 0.0202341
+per-batch std dev still matches the analytic value 1 0.071224
+batchTrajectorySeed decorrelates adjacent base seeds 1 0.0205855
+NodeType::get_label matches the stream-built reference 1 0.0218856
+NodeType::get_BNG2_string matches the stream-built reference 1 0.0174151
+EntityType::get_BNG2_string matches the stream-built reference 1 0.0143921
+BondType::get_BNG2_string is empty in both modes 1 0.0158148
+Node::get_label keeps index, type and state segments 1 0.0158863
+XmlWriter degrades a single molecule per molecule with DeleteMolecules 1 0.0506236
+XmlWriter deletes a partial pattern per molecule without the modifier 1 0.0422206
+XmlWriter keeps whole-pattern deletion for full patterns without the modifier 1 0.0423598
+XmlWriter writes observable quantifiers as Pattern attributes 1 0.0341652
+XmlWriter orders DeleteBond before AddBond in bond-swap rules 1 0.0351871
+XmlWriter emits product AddBonds for zero-order synthesis 1 0.0349382
+XmlWriter wraps TotalRate elementary rates in a Function 1 0.0337299
+XmlWriter lists call-site tags for local function rates 1 0.0363736
+XmlWriter distinguishes leading species labels from molecule labels 1 0.0355893
+XmlWriter binds reverse species scopes to reverse reactants 1 0.029907
+XmlWriter refuses ambiguous local scope anchors 1 0.0322548
+reactant unit conversion helper mirrors NetWriter 1 0.0207489
+XmlWriter preserves reactant volume provenance for runtime conversion 1 0.036672
+XmlWriter records non-constant compartment size provenance 1 0.0329933
+XmlWriter parses single-colon prefix compartments in observables and rules 1 0.0345911
+bng3_release_lto_contract 1 0.00820879
+bng_cpp_action_errors 1 0.0351743
+bng_cpp_physical_units_xml_fallback 1 0.0560795
+signaling_action_params 1 0.0391219
+bng_cpp_setparameter_numeric_power 1 0.172902
+bng_cpp_setparameter_identifier_spelling 1 0.088873
+bng_cpp_expression_strictness 1 0.119279
+bng_cpp_stop_if_initial_state 1 1.37533
+bng_cpp_setparameter_language_boundary 1 2.05305
+psa_issue_265_reaction_order_stress 1 0.866439
+energy_validation_harness 1 0.907904
+energy::EnergyDeltaPlan evaluates conjunctive local factors 1 0.0412097
+energy::EnergyFunction compiles binding context into EnergyDeltaPlan 1 0.0206425
+energy::EnergyFunction compiles signed state-change delta plan 1 0.0214621
+energy::CompiledRateLaw types existing Arrhenius syntax without changing it 1 0.0266895
+energy::CompiledModel derives a mutation signature from ReactionRule operations 1 0.0387716
+energy::tree has no cycle constraints and one gauge freedom per component 1 0.0219882
+energy::one triangle has one fundamental cycle 1 0.0201293
+energy::driving work produces nonzero cycle affinity 1 0.0179641
+energy::barrier modifier changes kinetics but not equilibrium ratio 1 0.0241831
+energy::cycle rank obeys E minus V plus connected-components 1 0.0218317
+energy::disconnected components contribute independent gauge freedoms 1 0.019761
+energy::equilibrium state potentials reproduce edge free-energy differences 1 0.0204534
+energy::pure barrier changes do not contribute to cycle affinity 1 0.0216808
+energy::reversing driven edge reverses its contribution to cycle affinity 1 0.0195259
+energy::cycle affinity does not depend on edge insertion order 1 0.0220775
+energy::state potentials do not depend on declaration order 1 0.0207679
+energy::inconsistent parallel edges are not equilibrium compatible 1 0.0195739
+energy::a driven self-loop contributes its work as cycle affinity 1 0.0210117
+energy::reservoir work shifts local detailed balance but a barrier does not 1 0.0205818
+energy::an empty graph is equilibrium compatible and cycle free 1 0.0180184
+energy::barrier pattern parses as transition-state contribution, not state free energy 1 0.0289297
+energy::driving reservoir annotates reversible rule with signed chemical work 1 0.0316791
+energy::an ordinary model carries no barrier or driving-work metadata 1 0.031371
+energy::barrier patterns are removed from the rule list and rules renumbered 1 0.0307778
+energy::a labelled barrier pattern keeps its label 1 0.0287915
+energy::a model without either construct is returned unchanged 1 0.0197613
+energy::a barrier block becomes a reaction rules block with synthetic labels 1 0.0291325
+energy::a user label on a barrier pattern survives through the option channel 1 0.0511573
+energy::driven_by is hoisted and indexed over ordinary rules only 1 0.0505595
+energy::the driving-work index is independent of barrier block placement 1 0.0215071
+energy::a compound work expression keeps its parentheses 1 0.0187555
+energy::commented-out annotations are not scanned 1 0.0202153
+energy::an identifier merely containing the keyword is not an annotation 1 0.0178363
+energy::continuation lines keep the original source line numbering 1 0.0183742
+energy::a bidirectional barrier transition is accepted 1 0.021561
+energy::an empty barrier block is legal and produces no rules 1 0.0198791
+energy::malformed thermodynamic syntax fails closed 1 0.0199524
+energy::BnglWriter output round-trips back through normalization 1 0.0215505
+energy::a barrier key is symmetric under reversal 1 0.0202537
+energy::binding and state-change centers never collide 1 0.0190983
+energy::distinct components and states stay distinct 1 0.0201765
+energy::barrier contributions accumulate and absent centers are neutral 1 0.0199045
+energy::a non-finite barrier is rejected rather than dropped 1 0.0183353
+energy::a negative barrier is legal catalysis 1 0.0193139
+energy::canonical keys round-trip through their printable form 1 0.0194072
+energy::a malformed key is rejected rather than guessed at 1 0.0195152
+energy::the shared rate helper agrees with ThermodynamicRate 1 0.0200248
+energy::a barrier cancels in the rate ratio but reservoir work does not 1 0.0182323
+energy::reservoir work is antisymmetric under traversal direction 1 0.0196007
+energy::the general-energy gate defaults off and honours an explicit zero 1 0.017745
+energy::folding a barrier into the compact base rate is exact 1 0.0185531
+energy::canonical Arrhenius expansion matches BNG2 with no extra RT scaling 1 0.0185501
+energy::an ordinary model is left untouched by finalization 1 0.0211421
+energy::barrier rules leave the rule list and survivors are renumbered 1 0.0185303
+energy::barrier patterns are ordered by index and keep their labels 1 0.0189672
+energy::driving work is indexed over ordinary rules only 1 0.0198711
+energy::absent driving work reads as the neutral zero 1 0.018418
+energy::inconsistent thermodynamic metadata fails closed 1 0.0190435
+energy::the NFsim and network energy conventions describe the same kinetics 1 0.0213131
+energy::the reverse-direction work negation is load-bearing 1 0.0195212
+energy::a barrier is never negated by direction on the network path 1 0.019892
+energy::an ordinary kinetic model exports without complaint 1 0.0188743
+energy::an empty model exports without complaint 1 0.0188623
+energy::energy patterns are refused and the format is named 1 0.0197989
+energy::an Arrhenius rate law is refused even without energy patterns 1 0.0193341
+energy::Arrhenius detection is case-insensitive and checks every rate 1 0.0183352
+energy::barrier patterns are named ahead of accompanying energy patterns 1 0.0206508
+energy::reservoir work is refused and the offending rule is named 1 0.0195894
+energy::an unrelated function rate law is not energy semantics 1 0.0200677
+energy::compiled export guard preserves top-level Arrhenius semantics 1 0.0180083
+energy::compiled export guard preserves driving-work and energy priority 1 0.0207562
+energy::a rate symbol named Arrhenius is not a top-level Arrhenius call 1 0.0190592
+energy::an observable reference named Arrhenius is not the built-in rate law 1 0.0188398
+energy::nested Arrhenius syntax is not a top-level energy rate law 1 0.0194709
+energy::the SBML writer refuses Arrhenius-only kinetics at the export boundary 1 0.0190817
+energy::constant EnergyDeltaPlan accepts only mask zero 1 0.0177994
+energy::materialized fallback is never directly executable 1 0.0222183
+energy::factorized plan rejects zero and out-of-range term masks 1 0.0204733
+energy::factorized plan rejects nonfinite energy and excessive predicate count 1 0.0209762
+energy::mixed-reactant predicates have no single reactant index 1 0.0217574
+energy::Arrhenius forward reverse factor ratio is exp(-deltaG/RT) 1 0.0190641
+energy::lookup table equals direct evaluation for every context 1 0.019283
+energy::factorized plan validates predicate payloads rather than weakening them 1 0.0205203
+energy::Arrhenius evaluation rejects invalid thermodynamic numerics 1 0.0207886
+energy::Arrhenius overflow fails closed rather than returning infinity 1 0.0194459
+energy::lookup table obeys explicit local-context size budget 1 0.0197003
+energy::nonfinite constant energy becomes materialized fallback 1 0.0201796
+energy::empty factorized term list collapses to constant plan 1 0.0194434
+energy::predicate mask for absent reactant is zero 1 0.0201456
+energy::phi limiting cases have expected Arrhenius behavior 1 0.0187852
+energy::negative deltaG favors forward rate in correct ratio 1 0.0190108
+energy::finite energy terms whose sum overflows are rejected 1 0.0197851
+energy::unknown predicate kind cannot become executable 1 0.0209472
+energy::randomized EnergyDeltaPlan agrees with literal conjunction oracle 1 0.188162
+energy::rate-law classifier recognizes all supported top-level families 1 0.0221918
+energy::nested arithmetic containing Arrhenius is not misclassified as top-level Arrhenius 1 0.0219168
+energy::rate-law classifier is case-insensitive for builtin families 1 0.0218157
+energy::unknown top-level function remains generic expression 1 0.0219496
+energy::SBML factorial lowers as a typed builtin 1 0.0214999
+energy::rate-law references resolve through typed semantic symbols 1 0.0303603
+energy::resolved rate laws retain lexical local references 1 0.0313543
+energy::compiled rate law exposes typed dependency kinds 1 0.0312761
+energy::typed symbol table resolves names and rejects duplicate declarations 1 0.0318909
+energy::semantic feature inference and capability reports are explicit 1 0.0338183
+energy::capability preflight rejects population maps for direct NFsim 1 0.0202946
+energy::compiled entities expose namespace-specific dense IDs 1 0.0308415
+energy::compiled model resolves function bodies with lexical arguments 1 0.0248146
+energy::Document separates compiled model metadata from simulation protocol 1 0.0327153
+energy::CompiledModel preserves source rule ordering and energy-factor provenance 1 0.0376332
+energy::CompiledRule reports both endpoints of a bond mutation 1 0.0322697
+energy::CompiledRule preserves typed and unknown modifiers 1 0.0324824
+energy::state change contributes exactly one affected component 1 0.031773
+energy::unbinding reports both affected bond endpoints 1 0.0319566
+energy::implicit whole-species deletion requires conservative invalidation 1 0.0306121
+energy::bidirectional source rule remains marked bidirectional and retains both rates 1 0.027346
+energy::PatternDescriptor compiles a resolved SpeciesGraph without reparsing 1 0.0334283
+energy::Pattern can copy a parsed graph without retaining graph ownership 1 0.029301
+energy::PatternDescriptor parser preserves state and bond constraints 1 0.019658
+energy::PatternDescriptor assigns stable occurrence identities and bond groups 1 0.0203851
+energy::PatternDescriptor distinguishes wildcard bond constraints 1 0.01905
+energy::PatternDescriptor parses native unbound and compartment-prefix syntax 1 0.019035
+energy::PatternDescriptor preserves multiple bonds on one component 1 0.020286
+energy::Pattern BNGcore lowering retains multiple explicit bonds 1 0.0234486
+energy::Pattern semantic equality ignores source bond numbering 1 0.0192717
+energy::Pattern lowers to an independent BNGcore graph 1 0.0297413
+energy-original::EnergyDeltaPlan evaluates conjunctive local factors 1 0.0354058
+energy-original::EnergyFunction compiles binding context into EnergyDeltaPlan 1 0.0283864
+energy-original::EnergyFunction compiles signed state-change delta plan 1 0.0236685
+energy-original::CompiledRateLaw types existing Arrhenius syntax without changing it 1 0.0398004
+energy-original::CompiledModel derives a mutation signature from ReactionRule operations 1 0.0810744
+native-port::native NFcore2 reader preserves root state and transformation 1 0.0863756
+native-port::native NFcore2 reader resolves both halves of a binding transform 1 0.08623
+native-port::native NFcore2 reader captures internal graph topology 1 0.0607202
+native-port::native NFcore2 reader preserves symmetric internal graph automorphisms 1 0.0298081
+native-port::native NFcore2 reader preserves symmetric component automorphisms 1 0.0319943
+native-port::native NFcore2 matcher preserves multi-edge equivalent-site automorphisms 1 0.0288502
+native-port::native NFcore2 reader preserves internal graph-node state constraints 1 0.0289823
+native-port::native NFcore2 graph nodes preserve multiple state constraints and exclusions 1 0.0199624
+native-port::native NFcore2 graph patterns preserve connectedTo links 1 0.018328
+native-port::native NFcore2 reader captures dot-separated connectedTo topology 1 0.0296363
+native-port::native NFcore2 reader captures zero-reactant synthesis 1 0.0275807
+native-port::native NFcore2 lowering executes the real state-rule adapter path 1 0.0317247
+native-port::native NFcore2 lowering executes internal graph topology 1 0.0275238
+native-port::native NFcore2 reader executes a simple scoped local DOR rate 1 0.0355327
+native-port::native NFcore2 reader preserves local-function pointer scope 1 0.0337253
+native-port::native NFcore2 reader lowers a simple scoped local function descriptor 1 0.034781
+native-port::native NFcore2 reader lowers an exact complex global observable 1 0.035997
+native-port::native NFcore2 reader lowers an exact complex scoped observable 1 0.0373533
+native-port::native NFcore2 reader evaluates state-constrained scoped observables 1 0.0332505
+native-port::native NFcore2 reader evaluates state-constrained global observables 1 0.0330405
+native-port::native NFcore2 reader preserves compartment-scoped global observables 1 0.0318721
+native-port::native NFcore2 reader evaluates nested scoped local functions 1 0.036544
+native-port::native NFcore2 reader lowers a FunctionProduct of scoped local functions 1 0.0356221
+native-port::native NFcore2 reader lowers a simple global observable function 1 0.0311646
+native-port::native NFcore2 reader evaluates nested global functions 1 0.0309066
+native-port::native NFcore2 lowering executes a reciprocal binding transform 1 0.0309935
+native-port::native NFcore2 reader captures a root-local compartment move 1 0.0294443
+native-port::native NFcore2 reader exports compartment hierarchy metadata 1 0.0311957
+native-port::native NFcore2 reader captures complete species deletion 1 0.0314583
+native-port::native NFcore2 reader preserves conditional deletion metadata 1 0.0210583
+native-port::direct BNGL admission rejects implicit conditional partial deletion 1 0.0315295
+native-port::native NFcore2 reader preserves explicit DeleteMolecules deletion 1 0.0309628
+native-port::native NFcore2 reader captures population decrement 1 0.0306238
+native-port::native NFcore2 reader executes MoveConnected species relocation 1 0.0304235
+native-port::native NFcore2 reader addresses an internal molecule's state change by graph node 1 0.031354
+native-port::native NFcore2 reader addresses an internal molecule's deletion by graph node 1 0.0321889
+native-port::native NFcore2 reader addresses a binding partner's internal molecule by graph node 1 0.0324038
+native-port::native NFcore2 reader refuses MoveConnected exclusions without a graph snapshot 1 0.0306637
+native-port::direct NFsim construction refuses a local function mixing global and local observables 1 0.0358196
+native-port::native NFcore2 reader refuses a local function mixing global and local observables 1 0.0208117
+architecture_nfcore2_reference 1 2.92467
+architecture_nfnext_reference 1 0.0698571
+architecture_nfnext_bng_lowering_bridge 1 5.11355
+architecture_nfnext_canonicalization 1 0.0602125
+architecture_nfnext_dependency_scheduler 1 0.0723875
+architecture_nfnext_generic_matcher 1 0.0591695
+architecture_nfnext_transformations 1 0.0592752
+architecture_nfnext_memory_arena 1 0.490565
+architecture_nfnext_cache 1 0.194504
+architecture_nfnext_observable_function 1 0.0730472
+architecture_nfnext_lattice_interval 1 0.0962458
+architecture_nfnext_compartment_rate 1 0.0621006
+architecture_nfnext_rng_replay 1 0.0752565
+architecture_nfnext_future 1 0.247344
+architecture_layer_dependencies 1 0.0877955
+---

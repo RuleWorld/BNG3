@@ -1,0 +1,26 @@
+begin model
+begin parameters
+  k 0.4
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin observables
+  Molecules A_count A()
+  Molecules B_count B()
+end observables
+begin reaction rules
+  convert: A() -> B() k
+end reaction rules
+
+begin protocol
+  setParameter("k",2**3)
+  simulate({method=>"ode",t_start=>0,t_end=>1,n_steps=>8})
+end protocol
+simulate_protocol()
+end model

@@ -1,0 +1,27 @@
+begin model
+begin parameters
+  N 3
+  Nd 3
+  p 1
+  k 0.4
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin observables
+  Molecules A_count A()
+  Molecules B_count B()
+end observables
+begin reaction rules
+  convert: A() -> B() k
+end reaction rules
+end model
+setParameter("N",4)
+setParameter("k","time^2")
+simulate_ode({t_start=>0,t_end=>1,n_steps=>8})
+
