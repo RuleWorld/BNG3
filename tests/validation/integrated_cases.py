@@ -625,3 +625,130 @@ begin reaction rules
 end reaction rules
 end model
 """
+
+
+def lifecycle_volume_bngl(case, *, volume=None, population=None, rate=RATE, actions=""):
+    """Native control whose rate law depends on the compartment volume.
+
+    The generated decay and reversible families use first-order rules whose
+    rate does not depend on the compartment volume, so a volume override is
+    not observable there. This control keeps the dimerization shape for every
+    generated case, which gives the compartment-invalidation check an
+    observable effect and a closed-form law.
+    """
+    volume = case["volume"] if volume is None else volume
+    population = case["initial"] if population is None else population
+    action_block = f"begin actions\n{actions}\nend actions\n" if actions else ""
+    return f"""begin model
+begin parameters
+  k {rate:.17g}
+  N {population}
+  V {volume:.17g}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  D()
+end molecule types
+begin seed species
+  @cell:A() N
+  @cell:D() 0
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules D @cell:D()
+end observables
+begin reaction rules
+  dimerize: @cell:A() + @cell:A() -> @cell:D() 2*k
+end reaction rules
+{action_block}end model
+"""
+
+
+def lifecycle_topology_sources(
+    case, *, rate=RATE, fragment="lifecycle-topology-fragment.bngl"
+):
+    """Return the base, fragment and merged sources for the topology check.
+
+    The base model carries an ``include_model`` action, so executing it adds a
+    species to the compiled model under test. The fragment declares only the
+    molecule type it introduces: merging a fragment that carries its own
+    reaction rules or infers an existing molecule type would collide with the
+    base model's identifiers. The merged source states the same semantics
+    independently and is the fresh-compilation reference.
+    """
+    population = case["initial"]
+    extra = max(1, int(population) // 4)
+    base = f"""begin model
+begin parameters
+  k {rate:.17g}
+  N {population}
+  V {case["volume"]}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  @cell:A() N
+  @cell:B() 0
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules B @cell:B()
+end observables
+begin reaction rules
+  forward: @cell:A() -> @cell:B() k
+end reaction rules
+begin actions
+  include_model({{file=>"{fragment}"}})
+end actions
+end model
+"""
+    fragment_source = f"""begin model
+begin molecule types
+  D()
+end molecule types
+begin seed species
+  @cell:D() {extra}
+end seed species
+begin observables
+  Molecules D @cell:D()
+end observables
+end model
+"""
+    merged = f"""begin model
+begin parameters
+  k {rate:.17g}
+  N {population}
+  V {case["volume"]}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  B()
+  D()
+end molecule types
+begin seed species
+  @cell:A() N
+  @cell:B() 0
+  @cell:D() {extra}
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules B @cell:B()
+  Molecules D @cell:D()
+end observables
+begin reaction rules
+  forward: @cell:A() -> @cell:B() k
+end reaction rules
+end model
+"""
+    return base, fragment_source, merged

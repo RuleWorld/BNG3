@@ -682,23 +682,55 @@
           "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
           "scope": "Repeated instantiation behavior across one compiled model must be checked.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "The comparison is against an independently constructed model, never against the instance under test."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:repeated-instantiation",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-repeated-instantiation",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "One compiled model instantiated three times: every deterministic and every seeded trajectory equals a fresh compilation of the same source.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:repeated-instantiation.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -706,23 +738,55 @@
           "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
           "scope": "Concurrent instantiation must be exercised.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "The concurrency budget is four instances per case and two distinct seeds, as declared by the harness."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:concurrent-instantiation",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-concurrent-instantiation",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Four concurrently constructed and concurrently simulated instances: every seeded trajectory equals a fresh compilation with the same seed, equal seeds agree, different seeds differ, and the generated-network caches are distinct objects.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:concurrent-instantiation.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -730,23 +794,55 @@
           "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
           "scope": "Each trajectory must own an independent RNG stream.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "Pathwise equality is asserted for equal seeds on the same build; no distributional claim is made."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:independent-rng-ownership",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-independent-rng",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Interleaved seeded trajectories on one instance and on an independently constructed instance: a replayed seed reproduces its trajectory exactly, a second seed produces a different trajectory, and the seed is honoured rather than ignored.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:independent-rng-ownership.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -754,23 +850,55 @@
           "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
           "scope": "Each trajectory must own independent mutable caches.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "The mutated instance discards its own cached network; the sibling's cached network object is observed to survive the mutation."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:independent-caches",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-independent-caches",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "One instance mutated while its sibling keeps its own parameter values and its own generated-network object; both trajectories equal fresh compilations.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:independent-caches.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -778,23 +906,55 @@
           "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
           "scope": "Each trajectory must own independent solver state.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "Solver-state independence is observed through the public trajectory; no internal solver state is inspected."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:independent-solver-state",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-independent-solver-state",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Repeated, early-stopped and interleaved stochastic runs on one instance: every deterministic trajectory equals a fresh compilation.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:independent-solver-state.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -803,24 +963,54 @@
           "scope": "Exception paths must release or restore trajectory-owned state safely.",
           "dependencies": [],
           "boundaries": [
-            "Repaired: the CVODE path releases the solver state, the state vector, the linear solver, the matrix and the SUNDIALS context through one resource guard, so a stop-condition failure raised after CVODE has allocated its state no longer leaks. The native regression is the ASan job's 'OdeIntegrator recovers after late stop condition failure' test."
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "Native resource release is owned by the ASan job's 'OdeIntegrator recovers after late stop condition failure' test; this check owns the observable release or restoration of the trajectory-owned state."
           ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:exception-cleanup",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-exception-cleanup",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A stop-condition failure raised after the solver allocated its state: the instance stays usable and every recovered trajectory equals a fresh compilation.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:exception-cleanup.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -828,23 +1018,55 @@
           "criterion": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
           "scope": "Parameter-only overrides must reuse the compiled structure where valid.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "Parameter-only means an override that leaves the compiled structure unchanged; overrides that change the seed species or the compartment are separate obligations."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:parameter-only-reuse",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-parameter-only-reuse",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A rate-parameter override on a compiled model: the compiled structure is preserved, and the trajectory equals a fresh compilation with the same source edit and the closed-form law.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:parameter-only-reuse.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -852,23 +1074,56 @@
           "criterion": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
           "scope": "Topology changes must invalidate reuse and be checked against fresh compilation.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "Runtime topology editing through the public Model API remains unsupported; the qualified route is the action protocol's include_model.",
+            "Merging a fragment that carries its own reaction rules or infers an existing molecule type is outside this slice."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:topology-invalidation",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-topology-invalidation",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A topology-changing include_model action: the cached generated network is invalidated, the rebuilt network carries the merged species, and the trajectory equals a fresh compilation of the merged source and the closed-form chain law.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:topology-invalidation.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
@@ -876,23 +1131,55 @@
           "criterion": "Verify parameter-only reuse and topology/compartment invalidation against fresh compilation.",
           "scope": "Compartment or volume changes must invalidate reuse and be checked against fresh compilation.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
+            "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
+            "The volume-dependent control keeps the dimerization shape for every generated case, because the first-order families do not depend on the compartment volume."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:141:compartment-invalidation",
+              "id": "v1-n20-r0-a0:protocol:lifecycle-compartment-invalidation",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A setVolume action: the cached generated network is invalidated and the trajectory equals a fresh compilation with the new volume and the closed-form volume law.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/integrated_cases.py",
+            "tests/python/test_model_reuse_contract.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:141:compartment-invalidation.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "unmapped_scope": [],
+          "feature_combinations": [
+            {
+              "case": "v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "reversible-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v1-n20-r0-a0",
+              "volume": 1,
+              "initial": 20,
+              "atomize": false
+            },
+            {
+              "case": "dimerization-v3-n80-r0-a0",
+              "volume": 3,
+              "initial": 80,
+              "atomize": false
+            }
           ]
         },
         {
