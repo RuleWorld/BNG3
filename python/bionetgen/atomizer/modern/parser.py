@@ -1715,6 +1715,77 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         assignment.math = replace(assignment.math)
 
 
+def _delayed_read_symbols(model: SBMLModel) -> Set[str]:
+    """Return the symbols a ``delay`` call reads in the model.
+
+    A delayed read observes the value a symbol had at the delayed time.  For
+    a symbol whose only controller is an initial assignment, that value comes
+    from the assignment itself while the delayed time is still before the
+    start of the simulation (SBML Level 3 Version 2 Core Sec. 4.3, "Meaning of
+    time").  The assignment therefore has to stay in the model for such a
+    symbol; for every other symbol the assignment can be folded into the
+    symbol's value at ``t = 0``.
+    """
+
+    expressions: List[str] = []
+    expressions.extend(str(rule.math or "") for rule in model.rules)
+    expressions.extend(
+        str(getattr(assignment, "math", "") or "")
+        for assignment in model.initial_assignments
+    )
+    expressions.extend(
+        str(getattr(function, "math", "") or "")
+        for function in model.function_definitions.values()
+    )
+    for reaction in model.reactions.values():
+        law = reaction.kinetic_law
+        if law is None:
+            continue
+        expressions.append(
+            str(
+                law.get("math", "")
+                if isinstance(law, Mapping)
+                else getattr(law, "math", "") or ""
+            )
+        )
+    for event in model.events:
+        expressions.extend(
+            str(expression or "")
+            for expression in (event.trigger, event.delay, event.priority)
+        )
+        expressions.extend(
+            str(getattr(assignment, "math", "") or "")
+            for assignment in event.assignments
+        )
+
+    symbols: Set[str] = set()
+    for expression in expressions:
+        for match in re.finditer(r"\bdelay\s*\(", expression, re.IGNORECASE):
+            opening = match.end() - 1
+            depth = 1
+            separator = -1
+            closing = -1
+            for index in range(opening + 1, len(expression)):
+                character = expression[index]
+                if character == "(":
+                    depth += 1
+                elif character == ")":
+                    depth -= 1
+                    if depth == 0:
+                        closing = index
+                        break
+                elif character == "," and depth == 1 and separator < 0:
+                    separator = index
+            if closing < 0:
+                continue
+            if separator < 0:
+                separator = closing
+            first = expression[opening + 1 : separator]
+            for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first):
+                symbols.add(standardize_name(identifier))
+    return symbols
+
+
 def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
     """Lower unambiguous linear algebraic rules for a mutable parameter.
 
@@ -3314,7 +3385,9 @@ class SBMLParser:
         _expand_rate_of_from_simple_reactions(result)
         _lower_delays_of_static_expressions(result)
         SBMLParser._fold_static_species_assignments(result)
-        SBMLParser._fold_static_parameter_initial_assignments(result)
+        SBMLParser._fold_static_parameter_initial_assignments(
+            result, _delayed_read_symbols(result)
+        )
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
             if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
@@ -4070,7 +4143,9 @@ class SBMLParser:
         model.rules = [rule for rule in model.rules if id(rule) not in fold]
 
     @staticmethod
-    def _fold_static_parameter_initial_assignments(model: SBMLModel) -> None:
+    def _fold_static_parameter_initial_assignments(
+        model: SBMLModel, delayed_history_symbols: Optional[Set[str]] = None
+    ) -> None:
         """Lower static initial assignments for parameters to their values.
 
         SBML Level 3 Version 2 Core (Sec. 4.8) evaluates every
@@ -4089,6 +4164,7 @@ class SBMLParser:
 
         if not model.initial_assignments:
             return
+        delayed_history_symbols = set(delayed_history_symbols or ())
 
         species_ids = set(model.species)
         rule_targets = {str(rule.variable) for rule in model.rules if rule.variable}
@@ -4154,10 +4230,11 @@ class SBMLParser:
             return
 
         folded: List[Any] = []
+        retained: List[Any] = []
         for _ in range(len(pending) + 1):
             progressed = False
             for assignment in pending:
-                if assignment in folded:
+                if assignment in folded or assignment in retained:
                     continue
                 expression = str(getattr(assignment, "math", "") or "")
                 if not expression:
@@ -4175,7 +4252,19 @@ class SBMLParser:
                 parameter.value_set = True
                 symbols[symbol] = value
                 symbols[standardize_name(symbol)] = value
-                folded.append(assignment)
+                if (
+                    re.search(r"\btime\b", expression)
+                    and standardize_name(symbol) in delayed_history_symbols
+                ):
+                    # The assignment reads the simulation time and a delayed
+                    # read observes the symbol's pre-simulation history, where
+                    # the assignment is evaluated at the delayed time (SBML
+                    # Level 3 Version 2 Core Sec. 4.3, "Meaning of time").
+                    # The symbol's own value is the one the assignment had at
+                    # t = 0, so the assignment stays in the model.
+                    retained.append(assignment)
+                else:
+                    folded.append(assignment)
                 progressed = True
             if not progressed:
                 break
@@ -4195,6 +4284,21 @@ class SBMLParser:
                         f'Initial assignment for parameter "{assignment.symbol}" '
                         "was evaluated at the start of the simulation and "
                         "lowered to a fixed value."
+                    ),
+                    "count": 1,
+                    "severity": "info",
+                }
+            )
+        for assignment in retained:
+            model.import_warnings.append(
+                {
+                    "category": "initialAssignment",
+                    "message": (
+                        f'Initial assignment for parameter "{assignment.symbol}" '
+                        "reads the simulation time, so it keeps the "
+                        "parameter's pre-simulation history; the parameter "
+                        "itself holds the value the assignment had at the "
+                        "start of the simulation."
                     ),
                     "count": 1,
                     "severity": "info",

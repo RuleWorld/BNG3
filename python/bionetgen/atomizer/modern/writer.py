@@ -3738,7 +3738,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         expression = str(getattr(assignment, "math", "") or "")
         if not symbol or symbol in model.species:
             continue
-        if not re.search(r"\btime\b", expression, re.IGNORECASE):
+        if not re.search(r"\btime\b", expression):
             continue
         if any(rule.variable == symbol for rule in model.rules):
             continue
