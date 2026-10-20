@@ -939,7 +939,13 @@ def _scope_filter_mutation_probes():
 
     scoped = copy.deepcopy(independent_document())
     scoped["model"]["rules"][0]["forward"]["local_scopes"] = [
-        {"name": "scope", "kind": "species", "reactant_pattern": pattern}
+        {
+            "name": "scope",
+            "kind": "species",
+            "side": "reactant",
+            "pattern_index": 0,
+            "reactant_pattern": 0,
+        }
     ]
 
     mutated = copy.deepcopy(independent_document())

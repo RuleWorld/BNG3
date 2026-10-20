@@ -552,9 +552,9 @@ investigation-packet paths.
 
 | probe | native disposition | owning requirement |
 |---|---|---|
-| `rule-filters` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` |
-| `rule-local-scopes` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` |
-| `rule-mutations` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` |
+| `rule-filters` | SUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` |
+| `rule-local-scopes` | SUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` |
+| `rule-mutations` | SUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` |
 
 - `bngir-reconstruction:v02-observables-and-compartments` — the native reader has an explicit
   disposition for the v0.2 observable and compartment surface:
@@ -589,7 +589,7 @@ investigation-packet paths.
 | `rules` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rules.v02.json` |
 | `reversible-rules` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `reversible-rules.v02.json` |
 | `rule-modifiers` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rule-modifiers.v02.json` |
-| `rule-driving-work` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rule-driving-work.v01.json` |
+| `rule-driving-work` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rule-driving-work.v02.json` |
 | `declaration-metadata` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `declaration-metadata.v02.json` |
 | `substance-units` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `substance-units.v02.json` |
 | `compartments` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `compartments.v02.json` |
@@ -602,17 +602,17 @@ investigation-packet paths.
 | `protocol-actions` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `protocol-actions.v02.json` |
 | `versioned-features` | PRESERVED | `issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind` | `versioned-features.v02.json` |
 
-Nineteen cells preserve the feature and import natively. Three are refused explicitly by the
+Twenty cells preserve the feature and import natively. Two are refused explicitly by the
 migration or by the v0.1 reader. No cell loses a feature silently and no cell is rejected
 without an explicit reason: the migration, the v0.1 reader and the native reader all fail
 closed with a message that names the unsupported feature.
 
-Twelve defects were found and repaired while the matrix was extended, and their records were
+Thirteen defects were found and repaired while the matrix was extended, and their records were
 removed from the obligation catalog:
 
 - The v0.2 writer silently dropped a rule's non-empty `driving_work`, because the v0.2 rule
-  format has no field for it. It now refuses the feature and points at the version that can
-  represent it.
+  format had no field for it. The v0.2 rule format now carries the work as a resolved
+  expression tree, and the migration preserves it instead of refusing it.
 - The v0.2 writer silently dropped model-scope protocol actions, because the compiled
   snapshot only carried simulation-protocol actions. The snapshot now carries both scopes.
 - The v0.1 reader rendered the parameter actions with a named-argument hash, which the
@@ -643,14 +643,15 @@ removed from the obligation catalog:
 - The native reader refused a rule's state change. The document's state change is now checked
   against the product pattern's site state, because the native rule derives the change from
   the reactant and product patterns.
+- The native reader refused rule local scopes, because the native rule collected them from
+  pattern text the wire format does not carry. The rule now declares its local scopes
+  structurally, the compiler prefers the declaration over the pattern text, and the compiled
+  snapshot emits the scopes again.
 
-The three remaining cells are explicit unsupported boundaries, each with an owning requirement:
-a rule's non-empty driving work, barrier patterns, and population maps. The first has no
-field in the v0.2 wire format and is refused in favour of the version that has one; the
-second is refused because the engine does not compile a barrier pattern; the third is refused
-because the wire format carries no population map's rate. The native reader also refuses rule
-local scopes, because the native rule collects them from pattern text the wire format does
-not carry.
+The two remaining cells are explicit unsupported boundaries, each with an owning requirement:
+barrier patterns and population maps. The first is refused because the engine does not compile
+a barrier pattern; the second is refused because the wire format carries no population map's
+rate.
 
 ### Export contract scope
 

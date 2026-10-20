@@ -566,8 +566,21 @@
                   "molecule"
                 ]
               },
-              "reactant_pattern": {
+              "side": {
+                "enum": [
+                  "reactant",
+                  "product"
+                ]
+              },
+              "pattern_index": {
                 "type": "integer",
+                "minimum": 0
+              },
+              "reactant_pattern": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "minimum": 0
               },
               "molecule_occurrence": {
@@ -671,6 +684,9 @@
           "items": {
             "$ref": "#/$defs/mapping"
           }
+        },
+        "driving_work": {
+          "$ref": "#/$defs/expression"
         }
       }
     },

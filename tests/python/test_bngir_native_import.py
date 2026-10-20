@@ -1278,10 +1278,190 @@ def test_direct_native_builder_accepts_a_rule_modifier():
     assert list(model.reaction_rules[0].modifiers) == ["TotalRate"]
 
 
-def test_direct_native_builder_refuses_unrepresented_direction_semantics():
+DRIVEN_SCOPED_SOURCE = r"""
+begin model
+begin parameters
+    k 0.1
+    w 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    %x::A() -> %x::B() k driven_by(w)
+end reaction rules
+end model
+"""
+
+
+def _driven_scoped_document() -> dict:
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(DRIVEN_SCOPED_SOURCE))
+    return json.loads(source_model.to_bngir(version="0.2"))
+
+
+def test_native_import_round_trips_a_rule_with_driving_work_and_local_scopes():
+    """A v0.2 document with a reservoir work and local scopes reproduces itself."""
+    document = _driven_scoped_document()
+    rule = document["model"]["rules"][0]
+    assert rule["driving_work"] == {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 1},
+    }
+    assert rule["forward"]["local_scopes"] == [
+        {
+            "name": "x",
+            "kind": "species",
+            "side": "reactant",
+            "pattern_index": 0,
+            "reactant_pattern": 0,
+        }
+    ]
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert restored.reaction_rules[0].has_driving_work is True
+    assert restored.reaction_rules[0].driving_work == "w"
+
+
+def test_native_import_carries_local_scopes_and_driving_work_into_the_compiled_model():
+    document = _driven_scoped_document()
+
+    restored = bionetgen.from_bngir(document, native=True)
+    snapshot = _cpp._compiled_snapshot(restored._model)
+
+    assert snapshot["rules"][0]["forward"]["local_scopes"] == [
+        {
+            "name": "x",
+            "kind": "species",
+            "side": "reactant",
+            "pattern_index": 0,
+            "reactant_pattern": 0,
+        }
+    ]
+    assert snapshot["rules"][0]["driving_work"] == {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 1},
+    }
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("kind", "unsupported native BNGIR expression kind: unresolved"),
+        ("value", "expression value must be numeric"),
+        ("index", "parameter reference is out of range"),
+    ],
+    ids=["kind", "value", "index"],
+)
+def test_direct_native_builder_refuses_malformed_driving_work(mutation, expected):
+    document = _document()
+    work = {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 0},
+    }
+    if mutation == "kind":
+        work = {"kind": "unresolved"}
+    elif mutation == "value":
+        work = {"kind": "number", "value": "fast"}
+    elif mutation == "index":
+        work = {
+            "kind": "parameter_ref",
+            "symbol": {"kind": "parameter", "index": 7},
+        }
+    document["model"]["rules"][0]["driving_work"] = work
+
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "reactant",
+                "pattern_index": 3,
+                "reactant_pattern": 3,
+            },
+            "rule direction local scope pattern index is out of range",
+        ),
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "reactant",
+                "pattern_index": 0,
+                "reactant_pattern": 1,
+            },
+            "rule direction local scope reactant pattern does not match its "
+            "pattern index",
+        ),
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "product",
+                "pattern_index": 0,
+                "reactant_pattern": 0,
+            },
+            "rule direction local scope product-side scope must not name a "
+            "reactant pattern",
+        ),
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "reactant",
+                "pattern_index": 0,
+                "reactant_pattern": 0,
+                "molecule_occurrence": 0,
+            },
+            "rule direction local scope species scope must not name a molecule "
+            "occurrence",
+        ),
+    ],
+    ids=["pattern", "reactant-pattern", "product-side", "species-occurrence"],
+)
+def test_direct_native_builder_refuses_malformed_local_scopes(scope, expected):
+    document = _document()
+    document["model"]["rules"][0]["forward"]["local_scopes"] = [scope]
+
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_refuses_duplicate_local_scope_names():
+    document = _document()
+    scope = {
+        "name": "x",
+        "kind": "species",
+        "side": "reactant",
+        "pattern_index": 0,
+        "reactant_pattern": 0,
+    }
+    document["model"]["rules"][0]["forward"]["local_scopes"] = [scope, dict(scope)]
+
+    with pytest.raises(RuntimeError, match="local scope names must be nonempty"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_refuses_malformed_local_scopes():
     document = _document()
     document["model"]["rules"][0]["forward"]["local_scopes"] = [{}]
-    with pytest.raises(RuntimeError, match="does not support local scopes"):
+    with pytest.raises(
+        RuntimeError, match="rule direction local scope is missing name"
+    ):
         _cpp._model_from_bngir_v02(document["model"])
 
 
