@@ -163,8 +163,7 @@ _RATE_OF_LOCAL_PARAMETER_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
 
 def _warnings(atomizer) -> list[str]:
     return [
-        str(warning.get("message", ""))
-        for warning in atomizer.model.import_warnings
+        str(warning.get("message", "")) for warning in atomizer.model.import_warnings
     ]
 
 
@@ -220,10 +219,7 @@ end model
 
     model = document.getModel()
     rules = model.getListOfRules()
-    operators = {
-        rules.get(i).getMath().getType()
-        for i in range(rules.size())
-    }
+    operators = {rules.get(i).getMath().getType() for i in range(rules.size())}
     assert libsbml.AST_FUNCTION_DELAY in operators
     assert libsbml.AST_FUNCTION_RATE_OF in operators
 
@@ -279,9 +275,7 @@ def test_rate_of_a_reaction_local_parameter_is_zero():
 
     reaction_rules = result.bngl.split("begin reaction rules", 1)[1]
     j0 = [
-        line
-        for line in reaction_rules.splitlines()
-        if line.strip().startswith("J0:")
+        line for line in reaction_rules.splitlines() if line.strip().startswith("J0:")
     ]
     assert j0, result.bngl
     # The reaction flux is the zero rate of the local parameter, not the
