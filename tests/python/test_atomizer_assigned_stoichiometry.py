@@ -51,14 +51,15 @@ def _model(reference: str, assignment: str) -> str:
 
 
 def test_unresolvable_assigned_stoichiometry_is_reported():
-    # The assigned value uses a MathML built-in that the Atomizer cannot
-    # evaluate numerically, so the stoichiometry is not representable and the
-    # model must say so rather than silently use the attribute's value.
+    # The assigned value depends on the species amount, so it is not a
+    # constant the Atomizer can resolve at initialization and the
+    # stoichiometry is not representable.  The model must say so rather than
+    # silently use the attribute's value.
     atomizer = Atomizer(atomize=False, quiet_mode=True)
     result = atomizer.atomize(
         _model(
             'id="S1_sr" species="S1" stoichiometry="1" constant="true"',
-            "<apply><exp/><cn>2.7</cn></apply>",
+            "<apply><abs/><ci>S1</ci></apply>",
         )
     )
 
@@ -69,6 +70,34 @@ def test_unresolvable_assigned_stoichiometry_is_reported():
         and "S1_sr" in warning["message"]
         for warning in atomizer.model.import_warnings
     ), atomizer.model.import_warnings
+
+
+def test_a_builtin_assigned_stoichiometry_folds_to_the_writers_value():
+    # ``exp`` is one of the MathML built-ins the writer lowers exactly, so
+    # the assigned value is a constant the Atomizer can resolve.  The folded
+    # value is the value of the expression the writer emits, which uses the
+    # writer's own truncated constant.
+    atomizer = Atomizer(atomize=False, quiet_mode=True)
+    result = atomizer.atomize(
+        _model(
+            'id="S1_sr" species="S1" stoichiometry="1" constant="true"',
+            "<apply><exp/><cn>2.7</cn></apply>",
+        )
+    )
+
+    assert result.success, result.error
+    assert not [
+        warning
+        for warning in atomizer.model.import_warnings
+        if warning["category"] == "stoichiometry" and warning["severity"] == "dropped"
+    ], atomizer.model.import_warnings
+    reference = atomizer.model.reactions["J0"].reactants[0]
+    assert reference.variable_stoichiometry is False
+    assert reference.stoichiometry == 2.71828182845905**2.7
+    # The assigned value is not an integer, so the deterministic flux
+    # lowering carries it in the rate coefficient.
+    assert "2.71828182845905" not in result.bngl
+    assert f"({2.71828182845905**2.7!r})" in result.bngl
 
 
 def test_resolvable_assigned_stoichiometry_replaces_the_attribute():
