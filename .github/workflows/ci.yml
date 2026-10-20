@@ -95,16 +95,47 @@ jobs:
             tests/validation/test_conformance_ci_wiring.py
 
       - name: Discover capability inventory without qualification claims
+        id: capability_inventory
         run: python scripts/validate.py --inventory-only --report-dir "$RUNNER_TEMP/bng3-inventory"
 
       - name: Publish capability inventory
-        if: always()
+        # Publication is gated on the discovery outcome, not on the job status.
+        # Under a bare `if: always()` this step also ran when the discovery
+        # step had been skipped, and `if-no-files-found: error` then failed the
+        # job with "No files were found": a second, misleading failure naming
+        # a missing artifact instead of the check that actually failed, which
+        # buried the real cause. Gating on the outcome keeps every failure
+        # loud and attributable:
+        #   * discovery failed    -> the discovery step fails the job;
+        #   * discovery succeeded
+        #     but wrote no files -> this step still fails, via the error below;
+        #   * discovery skipped   -> nothing is published, and the earlier
+        #                            failure stays the job's only failure.
+        if: always() && steps.capability_inventory.outcome == 'success'
+        id: publish_capability_inventory
         uses: actions/upload-artifact@v4
         with:
           name: bng3-capability-inventory-${{ github.sha }}
           path: ${{ runner.temp }}/bng3-inventory/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Record the capability inventory evidence status
+        # Missing evidence stays explicit: the summary carries the discovery
+        # and publication outcomes, so an unpublished required artifact is
+        # visible in the run without a misleading upload error.
+        if: always()
+        env:
+          INVENTORY_DISCOVERY_OUTCOME: ${{ steps.capability_inventory.outcome }}
+          INVENTORY_PUBLICATION_OUTCOME: ${{ steps.publish_capability_inventory.outcome }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Capability inventory"
+            echo ""
+            echo "- Discovery outcome: \`${INVENTORY_DISCOVERY_OUTCOME:-unknown}\`"
+            echo "- Publication outcome: \`${INVENTORY_PUBLICATION_OUTCOME:-unknown}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ═══════════════════════════════════════════════════════════════════════════
   # C++ Build & Test (BNG engine with embedded NFsim library)

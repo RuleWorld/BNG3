@@ -212,7 +212,11 @@ def test_sbml_rate_of_unruled_mutable_parameter_is_zero():
 
     model = _model(xml)
 
-    assert model.initial_assignments[0].math == "(0)"
+    # SBML evaluates an initial assignment once, at the start of the
+    # simulation, so the folded value of ``rateOf(p1)`` for an unruled
+    # mutable parameter is its initial derivative, zero.
+    assert not model.initial_assignments
+    assert model.parameters["p2"].value == 0.0
 
 
 def test_sbml_rate_of_species_accounts_for_rate_ruled_compartment_volume():
@@ -4155,7 +4159,11 @@ def test_sbml_rate_of_expands_from_fixed_volume_reaction_flux():
     </sbml>"""
 
     model = _model(xml)
-    assert model.initial_assignments[0].math == "((-1) * (2))"
+    # The reaction flux at t=0 is 2, so the initial value of ``p`` is
+    # ``rateOf(A) = -2``.  SBML evaluates the initial assignment once, at the
+    # start of the simulation, so it folds into the parameter's value.
+    assert not model.initial_assignments
+    assert model.parameters["p"].value == -2.0
 
     sct = build_species_composition_table(model)
     bngl, _ = generate_bngl(
@@ -4322,7 +4330,10 @@ def test_sbml_avogadro_constant_folds_in_fixed_time_event():
         model, sct, get_molecule_types(sct), get_seed_species(sct, model)
     )
 
-    assert "t_end=>1.00002337429" in bngl
+    # SBML Level 3 Version 2 Core fixes the value of the ``avogadro``
+    # csymbol at 6.02214179e+23, so the trigger fires at
+    # 6.02214179e23 / 6.022e23.
+    assert "t_end=>1.00002354533" in bngl
     assert 'setParameter("p", "3")' in bngl
     assert not any(
         warning.get("category") == "event" and warning.get("severity") == "dropped"

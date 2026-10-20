@@ -76,6 +76,94 @@ def _bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
+# SBML Level 3 Version 2 Core fixes the value of the built-in ``avogadro``
+# csymbol at 6.02214179e+23 and requires every reader to use exactly that
+# number ("all software reading models expressed in this version of SBML
+# Level 3 should always use the value of Avogadro's constant given above").
+# The symbol is dimensionless, so it lowers to a literal rather than to
+# BNGL's ``__Avogadro__``, which is BNG's molecule-count factor and is 1.
+_SBML_AVOGADRO_VALUE = 6.02214179e23
+
+# The ``definitionURL`` of a MathML ``csymbol`` identifies the symbol; the
+# element's text is only a display label and may be empty, wrong, or shadow
+# another symbol.  SBML defines exactly these four URIs.
+_SBML_CSYMBOL_URLS = {
+    "symbols/time": "time",
+    "symbols/avogadro": "avogadro",
+    "symbols/delay": "delay",
+    "symbols/rateof": "rateOf",
+}
+
+# Function names that carry no free symbol, so an expression that mentions one
+# is not dependent on an unknown model quantity.
+_INTRINSIC_FUNCTIONS = frozenset(
+    {
+        "abs",
+        "acos",
+        "acosh",
+        "and",
+        "arcsec",
+        "arcsech",
+        "arccos",
+        "arccosh",
+        "arccot",
+        "arccsc",
+        "arccsch",
+        "arcsec",
+        "asin",
+        "asinh",
+        "atan",
+        "atanh",
+        "ceil",
+        "cos",
+        "cosh",
+        "cot",
+        "csc",
+        "exp",
+        "floor",
+        "gcd",
+        "if",
+        "lcm",
+        "ln",
+        "log",
+        "log10",
+        "max",
+        "min",
+        "not",
+        "or",
+        "pow",
+        "power",
+        "root",
+        "sec",
+        "sin",
+        "sinh",
+        "sqrt",
+        "tan",
+        "tanh",
+    }
+)
+
+# An identifier that is not part of a numeric literal.  Scientific notation
+# (``6.02214179e+23``) must not be read as the symbol ``e``.
+_IDENTIFIER_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_.$])[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_])"
+)
+
+
+def _csymbol_kind(element: Any) -> str:
+    """Return the SBML symbol a ``csymbol`` element denotes.
+
+    The ``definitionURL`` decides; the element text is ignored because SBML
+    only requires the URL and permits an empty or unrelated text body.
+    """
+
+    definition_url = str(_attribute(element, "definitionURL", "") or "").lower()
+    for needle, kind in _SBML_CSYMBOL_URLS.items():
+        if needle in definition_url:
+            return kind
+    return ""
+
+
 def _formula_from_math(math_node: Any, libsbml: Any) -> str:
     if math_node is None:
         return ""
@@ -614,25 +702,6 @@ def _flatten_comp_package(
     return flattened, None
 
 
-# MathML operators that ``_mathml_to_formula`` passes through as a call of the
-# same name and that BNGL's built-in function table does not define.  The
-# relation operators are deliberately absent: the event lowering consumes
-# their comparisons, so they are not unrepresentable.  These trigonometric
-# reciprocals have no built-in and no exact built-in spelling, so a model that
-# uses one cannot be evaluated and has to be reported.
-_MATHML_OPERATORS_WITHOUT_BNGL_FUNCTION = frozenset(
-    {
-        "sec",
-        "csc",
-        "cot",
-        "arcsec",
-        "arcsech",
-        "arccsc",
-        "arccsch",
-        "arccot",
-    }
-)
-
 # ``log`` with a base of ten is already lowered to ``log10``.  Any other base
 # becomes a ``log(base, x)`` call, which the engine does not define.
 _DECIMAL_LOG_BASES = frozenset({"10", "10.0", "1e1", "10.00"})
@@ -657,10 +726,20 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
         )
     if tag in {"ci", "csymbol"}:
         definition_url = str(_attribute(element, "definitionURL", "") or "").lower()
+        if tag == "csymbol":
+            kind = _csymbol_kind(element)
+            if kind == "time":
+                return "time"
+            if kind == "avogadro":
+                return format(_SBML_AVOGADRO_VALUE, ".15g")
+            if kind == "delay":
+                return "delay"
+            if kind == "rateOf":
+                return "rateOf"
         if "symbols/time" in definition_url:
             return "time"
         if "symbols/avogadro" in definition_url:
-            return "__Avogadro__"
+            return format(_SBML_AVOGADRO_VALUE, ".15g")
         if "symbols/delay" in definition_url:
             return "delay"
         if "symbols/rateof" in definition_url:
@@ -764,27 +843,30 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
         operator_node = children[0]
         operator = _local_name(operator_node.tag)
         if operator in {"ci", "csymbol"}:
+            definition_url = (
+                str(_attribute(operator_node, "definitionURL", "") or "").lower()
+                if operator == "csymbol"
+                else ""
+            )
             function_name = _mathml_to_formula(operator_node)
             args = [_mathml_to_formula(child, True) for child in children[1:]]
             if operator == "csymbol":
-                definition_url = str(
-                    _attribute(operator_node, "definitionURL", "") or ""
-                ).lower()
-                if (
-                    "symbols/delay" in definition_url
-                    or "symbols/rateof" in definition_url
-                ):
+                kind = _csymbol_kind(operator_node)
+                if kind == "avogadro":
+                    # The avogadro csymbol is a constant, not an operator.
+                    # Its value is fixed by the SBML specification and does
+                    # not depend on the element text.
+                    return format(_SBML_AVOGADRO_VALUE, ".15g")
+                if kind:
+                    function_name = kind
+                if kind in {"delay", "rateOf"}:
                     operand = _mathml_text(operator_node)
                     # Some libAntimony exports put the first operand in the
                     # csymbol text. ``rateOf`` has one argument, so a child
                     # already supplies it; ``delay`` has two arguments and
                     # still needs the csymbol text when only one child is
                     # present. Do not duplicate the rateOf operand.
-                    needs_operand = (
-                        not args
-                        if "symbols/rateof" in definition_url
-                        else len(args) < 2
-                    )
+                    needs_operand = not args if kind == "rateOf" else len(args) < 2
                     if (
                         needs_operand
                         and operand
@@ -2768,11 +2850,6 @@ class SBMLParser:
                     add(
                         "<notanumber> constant encountered in math; cannot be represented."
                     )
-                elif tag in _MATHML_OPERATORS_WITHOUT_BNGL_FUNCTION:
-                    add(
-                        f"<{tag}> in math; BNGL has no built-in function of that "
-                        f"name, so {tag}(...) cannot be evaluated."
-                    )
                 elif tag == "logbase":
                     if _mathml_to_formula(element).strip() not in _DECIMAL_LOG_BASES:
                         add(
@@ -3065,6 +3142,7 @@ class SBMLParser:
         _expand_rate_of_from_simple_reactions(result)
         _lower_delays_of_static_expressions(result)
         SBMLParser._fold_static_species_assignments(result)
+        SBMLParser._fold_static_parameter_initial_assignments(result)
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
             if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
@@ -3141,7 +3219,10 @@ class SBMLParser:
                         "category": "fastReaction",
                         "message": (
                             f'Reaction "{reaction_id}" is marked fast '
-                            '(fast="true"); BNGL/BNG has no fast-equilibrium '
+                            '(fast="true"); SBML Level 3 Core Sec. 4.11 asks '
+                            "for a pseudo steady-state approximation of such a "
+                            "reaction, so treating it as an ordinary reaction "
+                            "changes the trajectory. BNG3 has no fast-equilibrium "
                             "solve, so it is treated as an ordinary reaction."
                         ),
                         "count": 1,
@@ -3583,6 +3664,48 @@ class SBMLParser:
                 reference.stoichiometry = value
                 reference.variable_stoichiometry = False
 
+        # A species reference whose id is assigned by an initial assignment or
+        # rule takes its stoichiometry from that assignment, not from the
+        # ``stoichiometry`` attribute (SBML Level 3 Version 2 Core, Sec. 4.11.3:
+        # "the ``stoichiometry`` attribute in that case is ignored").  When the
+        # assigned value cannot be resolved to a number, say so instead of
+        # silently keeping the attribute's value.
+        initial_assignment_targets = {
+            str(assignment.symbol)
+            for assignment in model.initial_assignments
+            if assignment.symbol
+        }
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                reference_id = str(reference.id or "")
+                if not reference_id or reference_id not in initial_assignment_targets:
+                    continue
+                if not reference.constant:
+                    # A reference with constant="false" may be changed by a
+                    # rule or an event, and the writer has a dedicated path
+                    # for that; only a fixed reference takes its value from
+                    # the initial assignment alone.
+                    continue
+                if static_symbols.get(reference_id) is not None or (
+                    static_symbols.get(standardize_name(reference_id)) is not None
+                ):
+                    continue
+                if reference.stoichiometry_math:
+                    continue
+                model.import_warnings.append(
+                    {
+                        "category": "stoichiometry",
+                        "message": (
+                            f'The stoichiometry of species "{reference.species}" '
+                            f'in reaction "{reaction.id}" is assigned by '
+                            f'"{reference_id}", whose value could not be '
+                            "resolved to a number at initialization."
+                        ),
+                        "count": 1,
+                        "severity": "dropped",
+                    }
+                )
+
         folded_reference_ids = {
             str(reference.id)
             for reaction in model.reactions.values()
@@ -3755,6 +3878,138 @@ class SBMLParser:
         model.rules = [rule for rule in model.rules if id(rule) not in fold]
 
     @staticmethod
+    def _fold_static_parameter_initial_assignments(model: SBMLModel) -> None:
+        """Lower static initial assignments for parameters to their values.
+
+        SBML Level 3 Version 2 Core (Sec. 4.8) evaluates every
+        ``initialAssignment`` once, at the start of the simulation, where the
+        start time is zero.  An initial assignment whose target is a parameter
+        therefore fixes that parameter's value for the whole run.  Emitting it
+        as a BNGL function would instead re-evaluate the expression at every
+        time point, so a static initial assignment is folded into the
+        parameter's declared value here.
+
+        Only expressions that reduce to numbers are folded.  Anything that
+        depends on simulation time, on a species, or on a value that is not
+        known at initialization is left alone so that it keeps its existing
+        (possibly unsupported) treatment.
+        """
+
+        if not model.initial_assignments:
+            return
+
+        species_ids = set(model.species)
+        rule_targets = {str(rule.variable) for rule in model.rules if rule.variable}
+        event_targets = {
+            str(assignment.variable)
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", None)
+        }
+
+        symbols: Dict[str, float] = {}
+        # A parameter that is the target of an initial assignment takes its
+        # value from that assignment, not from its declared ``value``
+        # attribute, so it must not contribute its declared value here.
+        initial_assignment_targets = {
+            str(getattr(assignment, "symbol", "") or "")
+            for assignment in model.initial_assignments
+        }
+        for parameter_id, parameter in model.parameters.items():
+            if (
+                not parameter.constant
+                or str(parameter_id) in rule_targets
+                or str(parameter_id) in initial_assignment_targets
+            ):
+                continue
+            if math.isfinite(parameter.value):
+                symbols[str(parameter_id)] = parameter.value
+                symbols[standardize_name(str(parameter_id))] = parameter.value
+        for compartment_id, compartment in model.compartments.items():
+            if not compartment.constant or str(compartment_id) in rule_targets:
+                continue
+            if math.isfinite(compartment.size):
+                symbols[str(compartment_id)] = compartment.size
+                symbols[standardize_name(str(compartment_id))] = compartment.size
+        # SBML assumes a zero start time, so ``time`` is 0 while the initial
+        # values are established.
+        symbols["time"] = 0.0
+
+        def references_unknown_symbol(expression: str) -> bool:
+            for identifier in _IDENTIFIER_PATTERN.findall(expression):
+                if identifier.lower() in _INTRINSIC_FUNCTIONS:
+                    continue
+                if identifier in symbols or standardize_name(identifier) in symbols:
+                    continue
+                if identifier in species_ids or identifier in rule_targets:
+                    return True
+                if identifier in event_targets:
+                    return True
+                if identifier in model.function_definitions:
+                    continue
+                return True
+            return False
+
+        pending = [
+            assignment
+            for assignment in model.initial_assignments
+            if str(getattr(assignment, "symbol", "") or "") in model.parameters
+            and str(getattr(assignment, "symbol", "") or "") not in species_ids
+            and str(getattr(assignment, "symbol", "") or "") not in rule_targets
+            and str(getattr(assignment, "symbol", "") or "") not in event_targets
+        ]
+        if not pending:
+            return
+
+        folded: List[Any] = []
+        for _ in range(len(pending) + 1):
+            progressed = False
+            for assignment in pending:
+                if assignment in folded:
+                    continue
+                expression = str(getattr(assignment, "math", "") or "")
+                if not expression:
+                    continue
+                if references_unknown_symbol(expression):
+                    continue
+                value = _evaluate_static_arithmetic(
+                    expression, symbols, model.function_definitions
+                )
+                if value is None or not math.isfinite(value):
+                    continue
+                symbol = str(assignment.symbol)
+                parameter = model.parameters[symbol]
+                parameter.value = value
+                parameter.value_set = True
+                symbols[symbol] = value
+                symbols[standardize_name(symbol)] = value
+                folded.append(assignment)
+                progressed = True
+            if not progressed:
+                break
+
+        if not folded:
+            return
+        model.initial_assignments = [
+            assignment
+            for assignment in model.initial_assignments
+            if assignment not in folded
+        ]
+        for assignment in folded:
+            model.import_warnings.append(
+                {
+                    "category": "initialAssignment",
+                    "message": (
+                        f'Initial assignment for parameter "{assignment.symbol}" '
+                        "was evaluated at the start of the simulation and "
+                        "lowered to a fixed value."
+                    ),
+                    "count": 1,
+                    "severity": "info",
+                }
+            )
+
+    @staticmethod
     def _parse_xml_compartments(model: Any) -> Dict[str, SBMLCompartment]:
         result: Dict[str, SBMLCompartment] = OrderedDict()
         for item in SBMLParser._xml_items(model, "listOfCompartments", "compartment"):
@@ -3869,6 +4124,7 @@ class SBMLParser:
                 value=_float(_attribute(item, "value"), 0),
                 units=str(_attribute(item, "units", "") or ""),
                 constant=_bool(_attribute(item, "constant"), True),
+                value_set=_attribute(item, "value") is not None,
                 scope="global",
                 **_source_metadata(item),
             )

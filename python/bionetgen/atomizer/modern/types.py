@@ -48,6 +48,11 @@ class SBMLParameter:
     value: float = 0
     units: str = ""
     constant: bool = True
+    # True when the SBML ``value`` attribute was present.  A non-constant
+    # parameter without a value attribute has no defined initial value in SBML
+    # (its value is supplied by an assignment rule, if any) and must not be
+    # seeded with the default 0, which would shadow that rule.
+    value_set: bool = False
     scope: str = "global"
     metaid: Optional[str] = None
     sbo_term: Optional[str] = None
