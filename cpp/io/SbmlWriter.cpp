@@ -619,11 +619,28 @@ std::string SbmlWriter::writeEvents(
         const auto idIt = symbolIds.events.find(event.id);
         const auto id = idIt == symbolIds.events.end()
             ? makeValidSBMLId(event.id) : idIt->second;
+        // SBML Level 2 carries the delay as an event attribute, and it must
+        // be a constant there; a Level 3 delay element carries an expression.
+        std::string delayAttribute;
+        if (event.delay && level < 3) {
+            const double value = event.delay->evaluate([&](const std::string& name) {
+                return model.getParameters().evaluate(name);
+            }, 0.0);
+            if (!std::isfinite(value) || value < 0) {
+                throw std::runtime_error(
+                    "SBML export cannot preserve a non-constant event delay");
+            }
+            delayAttribute = " delay=\"" + std::to_string(value) + "\"";
+        }
+        if (event.priority && level < 3) {
+            throw std::runtime_error(
+                "SBML export cannot preserve an event priority below Level 3");
+        }
         sbml << "      <event id=\"" << escapeXml(id)
              << "\" name=\"" << escapeXml(event.id)
              << "\" useValuesFromTriggerTime=\""
              << (event.useValuesFromTriggerTime ? "true" : "false")
-             << "\">\n";
+             << "\"" << delayAttribute << ">\n";
         sbml << "        <trigger initialValue=\""
              << (event.initialValue ? "true" : "false")
              << "\" persistent=\"" << (event.persistent ? "true" : "false")
@@ -632,18 +649,12 @@ std::string SbmlWriter::writeEvents(
         sbml << exprToMathML(event.trigger, "            ", symbolIds);
         sbml << "          </math>\n";
         sbml << "        </trigger>\n";
-        if (event.delay) {
-            if (level >= 3) {
-                sbml << "        <delay>\n";
-                sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
-                sbml << exprToMathML(*event.delay, "            ", symbolIds);
-                sbml << "          </math>\n";
-                sbml << "        </delay>\n";
-            } else {
-                // SBML Level 2 carries the delay as an attribute.
-                sbml << "        <!-- delay is a Level 3 element; the exported "
-                     << "level keeps the trigger without it -->\n";
-            }
+        if (event.delay && level >= 3) {
+            sbml << "        <delay>\n";
+            sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+            sbml << exprToMathML(*event.delay, "            ", symbolIds);
+            sbml << "          </math>\n";
+            sbml << "        </delay>\n";
         }
         if (event.priority) {
             sbml << "        <priority>\n";

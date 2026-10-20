@@ -11,6 +11,7 @@ explicitly unsupported.
 import numpy as np
 import pytest
 
+from bionetgen import _bionetgen_cpp as cpp
 from bionetgen.atomizer.modern import Atomizer
 
 
@@ -232,6 +233,48 @@ def test_species_values_are_converted_into_the_observed_amount_units():
     assert "trigger: S1_amt < (0.25 * (0.75))" in result.bngl
     # The assignment sets a concentration too, so the amount is 1 * 0.25.
     assert "assignment: S2_amt = (1 * (0.25))" in result.bngl
+
+
+def test_sbml_export_preserves_the_native_event(tmp_path):
+    import libsbml
+
+    result = atomize(coupled_event_model(delay="1.5"))
+
+    model = cpp.parse_string(result.bngl)
+    network = cpp.generate_network(model, max_iter=100)
+    destination = tmp_path / "exported.xml"
+    cpp.io.write_sbml(model, network, str(destination))
+
+    document = libsbml.readSBML(str(destination))
+    assert document.getNumErrors() == 0
+    model_element = document.getModel()
+    assert model_element.getNumEvents() == 1
+    event = model_element.getEvent(0)
+    assert event.getUseValuesFromTriggerTime() is True
+    assert event.getTrigger().getInitialValue() is True
+    assert event.getTrigger().getPersistent() is True
+    assert event.getNumEventAssignments() == 1
+    # The assignment targets the network species the observable covers.
+    assignment = event.getEventAssignment(0)
+    assert assignment.getVariable() == "S2"
+
+
+def test_sbml_export_preserves_the_delayed_event(tmp_path):
+    import libsbml
+
+    result = atomize(coupled_event_model(delay="1.5"))
+
+    model = cpp.parse_string(result.bngl)
+    network = cpp.generate_network(model, max_iter=100)
+    destination = tmp_path / "exported.xml"
+    cpp.io.write_sbml(model, network, str(destination))
+
+    document = libsbml.readSBML(str(destination))
+    assert document.getNumErrors() == 0
+    event = document.getModel().getEvent(0)
+    delay = event.getDelay()
+    assert delay is not None
+    assert abs(delay.getMath().getValue() - 1.5) < 1e-12
 
 
 def _load(result, tmp_path):
