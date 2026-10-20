@@ -512,6 +512,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated import expected_contract_ids
     from . import api_surface
     from .stochastic_parity import check_ids as stochastic_parity_check_ids
+    from .semantic_identity import check_ids as semantic_identity_check_ids
+    from .graph_differential import check_ids as graph_differential_check_ids
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
@@ -666,6 +668,42 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             limits="One generated first-order decay family; the stochastic statements cover the terminal-time marginal only; notebook execution and third-party integrations are outside the family.",
         )
     )
+    families.append(
+        dict(
+            id="semantic-identity",
+            case_ids=[],
+            check_ids=semantic_identity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(semantic_identity_check_ids()), stage_timeout_seconds=300
+            ),
+            limits=(
+                "Generated models whose declarations are drawn from the parameter, "
+                "compartment, molecule-type, function, observable, seed-species and "
+                "reaction-rule blocks; the executable fixture states the "
+                "correspondence and its refinement over that domain, and the Lean "
+                "kernel-verified correspondence stays a separate artifact."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="graph-differential",
+            case_ids=[],
+            check_ids=graph_differential_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(graph_differential_check_ids()), stage_timeout_seconds=600
+            ),
+            limits=(
+                "Bounded generated differential cases: the production graph identity "
+                "and the generated network against the canonical Perl BNG2 network, "
+                "compared with the harness's own graph matcher; a case outside the "
+                "declared domain is refused, and no reaction, rate or symmetry-factor "
+                "statement is made."
+            ),
+        )
+    )
     selected = []
     for family in families:
         available = set(family["check_ids"])
@@ -695,38 +733,24 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             authorization="PLAN_ONLY",
             complete_corpus_coverage=False,
         )
-        family["selection_arguments"] = (
-            ["--bngir-adversarial-only"]
-            if family["id"] == "native-bngir-adversarial"
-            else (
-                ["--quantity-laws-only"]
-                if family["id"] == "quantity-source-laws"
-                else (
-                    ["--export-format-tier-only"]
-                    if family["id"] == "export-format-tier"
-                    else (
-                        ["--netrule-execution-only"]
-                        if family["id"] == "network-rule-execution"
-                        else (
-                            ["--bngsim-boundary-only"]
-                            if family["id"] == "bngsim-boundary"
-                            else (
-                                ["--jax-backend-measurement-only"]
-                                if family["id"] == "jax-backend-measurement"
-                                else (
-                                    ["--report-dir", "<new-empty-directory>"]
-                                    if family["id"] == "public-api-surface"
-                                    else [
-                                        argument
-                                        for case_id in family["case_ids"]
-                                        for argument in ("--case", case_id)
-                                    ]
-                                )
-                            )
-                        )
-                    )
-                )
-            )
+        family["selection_arguments"] = {
+            "native-bngir-adversarial": ["--bngir-adversarial-only"],
+            "quantity-source-laws": ["--quantity-laws-only"],
+            "export-format-tier": ["--export-format-tier-only"],
+            "network-rule-execution": ["--netrule-execution-only"],
+            "bngsim-boundary": ["--bngsim-boundary-only"],
+            "jax-backend-measurement": ["--jax-backend-measurement-only"],
+            "stochastic-parity": ["--stochastic-parity-only"],
+            "semantic-identity": ["--semantic-identity-only"],
+            "graph-differential": ["--graph-differential-only"],
+            "public-api-surface": ["--report-dir", "<new-empty-directory>"],
+        }.get(
+            family["id"],
+            [
+                argument
+                for case_id in family["case_ids"]
+                for argument in ("--case", case_id)
+            ],
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
         selected.append(family)

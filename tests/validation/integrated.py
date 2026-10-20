@@ -73,6 +73,34 @@ NETWORK_CHECKS = (
     "observable-weights",
 )
 
+# The focused qualification flags.  Each flag selects exactly one family: its
+# own.  The destinations are the argparse attribute names, so a flag the
+# parser does not define fails here instead of silently disabling a family.
+FOCUS_FLAGS = {
+    "boundaries": "boundaries_only",
+    "graph_identity": "graph_identity_only",
+    "bngir_adversarial": "bngir_adversarial_only",
+    "quantity_laws": "quantity_laws_only",
+    "export_format_tier": "export_format_tier_only",
+    "netrule_execution": "netrule_execution_only",
+    "bngsim_boundary": "bngsim_boundary_only",
+    "jax_backend_measurement": "jax_backend_measurement_only",
+    "api_surface": "api_surface_only",
+    "stochastic_parity": "stochastic_parity_only",
+    "semantic_identity": "semantic_identity_only",
+    "graph_differential": "graph_differential_only",
+}
+
+
+def focus_selection(args):
+    """Return the family selection of one campaign run.
+
+    A focused flag selects exactly one family: its own.  Without a focused
+    flag every family runs.
+    """
+    chosen = [name for name, dest in FOCUS_FLAGS.items() if getattr(args, dest)]
+    return {f"include_{name}": not chosen or name in chosen for name in FOCUS_FLAGS}
+
 
 def annotate_acceptance_evidence(rows):
     """Label registered semantic consumer checks, never process receipts."""
@@ -93,6 +121,8 @@ def annotate_acceptance_evidence(rows):
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
     consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
     consumers.update(integrated_extensions.check_ids("stochastic-parity"))
+    consumers.update(integrated_extensions.check_ids("semantic-identity"))
+    consumers.update(integrated_extensions.check_ids("graph-differential"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -118,6 +148,8 @@ def expected_contract_ids(
     include_jax_backend_measurement=True,
     include_api_surface=True,
     include_stochastic_parity=True,
+    include_semantic_identity=True,
+    include_graph_differential=True,
     full=False,
 ):
     return [
@@ -170,6 +202,8 @@ def expected_contract_ids(
         include_jax_backend_measurement=include_jax_backend_measurement,
         include_api_surface=include_api_surface,
         include_stochastic_parity=include_stochastic_parity,
+        include_semantic_identity=include_semantic_identity,
+        include_graph_differential=include_graph_differential,
         full=full,
     )
 
@@ -957,6 +991,10 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
+    parser.add_argument("--stochastic-parity-only", action="store_true")
+    parser.add_argument("--semantic-identity-only", action="store_true")
+    parser.add_argument("--graph-differential-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -970,6 +1008,10 @@ def main(argv=None):
                 args.netrule_execution_only,
                 args.bngsim_boundary_only,
                 args.jax_backend_measurement_only,
+                args.api_surface_only,
+                args.stochastic_parity_only,
+                args.semantic_identity_only,
+                args.graph_differential_only,
             )
         )
         > 1
@@ -990,18 +1032,6 @@ def main(argv=None):
         if args.case
         else generated_cases(args.full)
     )
-    if (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.export_format_tier_only
-        or args.netrule_execution_only
-        or args.bngsim_boundary_only
-        or args.jax_backend_measurement_only
-        or args.stochastic_parity_only
-    ):
-        selected = []
     for name in (
         "bng_cpp",
         "bng2_root",
@@ -1026,78 +1056,13 @@ def main(argv=None):
     )
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "0"
-    focused = (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.netrule_execution_only
-        or args.jax_backend_measurement_only
-        or args.stochastic_parity_only
-    )
-    qualification_selection = dict(
-        include_boundaries=not (
-            args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_graph_identity=not (
-            args.boundaries_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_bngir_adversarial=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-        ),
-        include_export_format_tier=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-    )
-    qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.export_format_tier_only
-        or args.netrule_execution_only
-        or args.bngsim_boundary_only
-        or args.api_surface_only
-    )
-    qualification_selection["include_bngsim_boundary"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.jax_backend_measurement_only
-        or args.api_surface_only
-    )
-    qualification_selection["include_api_surface"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.jax_backend_measurement_only
-        or args.stochastic_parity_only
-    )
-    qualification_selection["include_netrule_execution"] = not focused
-    qualification_selection["include_jax_backend_measurement"] = not focused
-    qualification_selection["include_stochastic_parity"] = not focused
+    # One focused flag selects exactly one qualification family.  The rule is
+    # uniform on purpose: a focused run must not silently include another
+    # family, and the focused family must not be excluded by its own flag.
+    chosen = [name for name, dest in FOCUS_FLAGS.items() if getattr(args, dest)]
+    if chosen:
+        selected = []
+    qualification_selection = focus_selection(args)
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1132,6 +1097,14 @@ def main(argv=None):
         if qualification_selection["include_stochastic_parity"]:
             integrated_extensions.invoke(
                 "stochastic-parity", args, rows, env, run_stage
+            )
+        if qualification_selection["include_semantic_identity"]:
+            integrated_extensions.invoke(
+                "semantic-identity", args, rows, env, run_stage
+            )
+        if qualification_selection["include_graph_differential"]:
+            integrated_extensions.invoke(
+                "graph-differential", args, rows, env, run_stage
             )
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
@@ -1179,7 +1152,12 @@ def main(argv=None):
         "graph-identity": ["--graph-identity-only"],
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
+        "bngsim-boundary": ["--bngsim-boundary-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "api-surface": ["--api-surface-only"],
+        "stochastic-parity": ["--stochastic-parity-only"],
+        "semantic-identity": ["--semantic-identity-only"],
+        "graph-differential": ["--graph-differential-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1190,28 +1168,6 @@ def main(argv=None):
             replay_base
             + (["--full"] if args.full else [])
             + selection
-            + (
-                ["--quantity-laws-only"]
-                if row.get("qualification") == "quantity-laws"
-                else (
-                    ["--bngsim-boundary-only"]
-                    if row.get("qualification") == "bngsim-boundary"
-                    else []
-                )
-            )
-            + (
-                ["--boundaries-only"]
-                if row.get("qualification") == "boundaries"
-                else (
-                    ["--bngir-adversarial-only"]
-                    if row.get("qualification") == "bngir-adversarial"
-                    else (
-                        ["--graph-identity-only"]
-                        if row.get("qualification") == "graph-identity"
-                        else (["--case", case_id] if case_id else [])
-                    )
-                )
-            )
             + [
                 "--report-dir",
                 str(args.report_dir.parent / ("replay-" + (case_id or "preflight"))),
@@ -1273,6 +1229,8 @@ def main(argv=None):
                 ],
                 "api-surface": "tests/validation/api_surface.py",
                 "stochastic-parity": "tests/validation/stochastic_parity.py",
+                "semantic-identity": "tests/validation/semantic_identity.py",
+                "graph-differential": "tests/validation/graph_differential.py",
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1288,6 +1246,12 @@ def main(argv=None):
             if row["stage"] == "jax-backend-measurement":
                 row["question"] = (
                     "jax-backend-stage-profile-vs-independent-closed-form-law"
+                )
+            if row["stage"] == "semantic-identity":
+                row["question"] = "resolved-model-serialized-identities-vs-compiled-ids"
+            if row["stage"] == "graph-differential":
+                row["question"] = (
+                    "production-graph-identity-and-network-vs-independent-construction"
                 )
         if row["stage"] == "rate-trace":
             row["source_locations"] = [
@@ -1318,6 +1282,10 @@ def main(argv=None):
                 issues = [174]
             elif stage == "stochastic-parity":
                 issues = [167]
+            elif stage == "semantic-identity":
+                issues = [166]
+            elif stage == "graph-differential":
+                issues = [168]
             elif stage == "api-surface":
                 issues = [171]
             elif stage in integrated_consumers.ISSUES:

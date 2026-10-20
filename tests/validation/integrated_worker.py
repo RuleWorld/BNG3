@@ -743,7 +743,8 @@ def main():
             "jax-backend-measurement",
             "api-surface",
             "stochastic-parity",
-            "stochastic-parity",
+            "semantic-identity",
+            "graph-differential",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -843,6 +844,8 @@ def main():
         "jax-backend-measurement",
         "api-surface",
         "stochastic-parity",
+        "semantic-identity",
+        "graph-differential",
     ):
         from tests.validation.integrated_extensions import run_worker
 

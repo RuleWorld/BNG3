@@ -5701,24 +5701,86 @@
           "criterion": "Specify correspondence between the resolved C++ model, serialized semantic IDs/packing and the Lean reference.",
           "scope": "Specify correspondence between the resolved C++ model, serialized semantic IDs/packing and the Lean reference.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The declared domain is the generated grammar: models whose declarations are drawn from the parameter, compartment, molecule-type, function, observable, seed-species and reaction-rule blocks, with explicit site states and with no energy pattern, barrier pattern or population map.",
+            "The correspondence is stated in three parts: the compiled ids of a namespace are dense (0..n-1) and follow the declaration order of that namespace; every serialized id reference denotes the declaration the serialization names beside it; and the BNGIR v0.2 model section is exactly the resolved model's compiled snapshot.",
+            "The expectation is the identity table the generator wrote before the compiler ran, so a defect in the compiler's id assignment appears as a difference against an expectation the compiler never produced.",
+            "The Lean reference (formal/lean/BNG/Ids.lean and formal/lean/BNG/NameResolution.lean) states the same name-to-id correspondence in the formal model; the executable fixture does not re-prove those theorems and the two artifacts stay distinct."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:166:specify-correspondence-between-the-resolved-c-model-serialized-s",
+              "id": "semantic-identity:single-declaration:identity-packing",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:single-declaration:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:shared-component-name:identity-packing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:shared-component-name:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:reordered-declarations:identity-packing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:reordered-declarations:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:three-of-each:identity-packing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:three-of-each:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/architecture_contracts"
+            "tests/architecture_contracts",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_semantic_identity.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:166:specify-correspondence-between-the-resolved-c-model-serialized-s.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -5727,22 +5789,54 @@
           "criterion": "Provide general refinement evidence for the stated boundary; keep executable C++ fixtures distinct from machine-checked theorems.",
           "scope": "Provide general refinement evidence for the stated boundary; keep executable C++ fixtures distinct from machine-checked theorems.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The selected refinement statement is that the compiled-id assignment refines the name-keyed declaration correspondence: within a namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the serialized identities determine the resolved model uniquely and the resolved model determines the serialized identities uniquely.",
+            "The statement is proved executively over the declared domain of the generated grammar; it is not a machine-checked theorem and it says nothing about a model outside that grammar.",
+            "The executable fixture and the Lean kernel-verified statements are separate artifacts: a passing fixture never discharges a Lean obligation.",
+            "A model the compiler refuses is reported as a harness error and is never scored as a pass."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:166:provide-general-refinement-evidence-for-the-stated-boundary-keep",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "semantic-identity:single-declaration:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:shared-component-name:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:reordered-declarations:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:three-of-each:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:166:provide-general-refinement-evidence-for-the-stated-boundary-keep.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -5769,6 +5863,210 @@
             "Missing required qualification ID: qualification:issue:166:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:166:executed-slice:single-declaration",
+          "criterion": "Specify correspondence between the resolved C++ model, serialized semantic IDs/packing and the Lean reference.",
+          "scope": "One declaration of every kind: one parameter, one molecule type with a stateful component, one compartment, one function, one observable, one seed species and one rule.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is the generated grammar: models whose declarations are drawn from the parameter, compartment, molecule-type, function, observable, seed-species and reaction-rule blocks, with explicit site states and with no energy pattern, barrier pattern or population map.",
+            "The correspondence is stated in three parts: the compiled ids of a namespace are dense (0..n-1) and follow the declaration order of that namespace; every serialized id reference denotes the declaration the serialization names beside it; and the BNGIR v0.2 model section is exactly the resolved model's compiled snapshot.",
+            "The expectation is the identity table the generator wrote before the compiler ran, so a defect in the compiler's id assignment appears as a difference against an expectation the compiler never produced.",
+            "The Lean reference (formal/lean/BNG/Ids.lean and formal/lean/BNG/NameResolution.lean) states the same name-to-id correspondence in the formal model; the executable fixture does not re-prove those theorems and the two artifacts stay distinct."
+          ],
+          "required_checks": [
+            {
+              "id": "semantic-identity:single-declaration:identity-packing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:single-declaration:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:single-declaration:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:166:executed-slice:shared-component-name",
+          "criterion": "Specify correspondence between the resolved C++ model, serialized semantic IDs/packing and the Lean reference.",
+          "scope": "Two molecule types that declare the same component name, so the compiled component ids are declaration-local, with a parented compartment, two observables and a rate law that calls a function.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is the generated grammar: models whose declarations are drawn from the parameter, compartment, molecule-type, function, observable, seed-species and reaction-rule blocks, with explicit site states and with no energy pattern, barrier pattern or population map.",
+            "The correspondence is stated in three parts: the compiled ids of a namespace are dense (0..n-1) and follow the declaration order of that namespace; every serialized id reference denotes the declaration the serialization names beside it; and the BNGIR v0.2 model section is exactly the resolved model's compiled snapshot.",
+            "The expectation is the identity table the generator wrote before the compiler ran, so a defect in the compiler's id assignment appears as a difference against an expectation the compiler never produced.",
+            "The Lean reference (formal/lean/BNG/Ids.lean and formal/lean/BNG/NameResolution.lean) states the same name-to-id correspondence in the formal model; the executable fixture does not re-prove those theorems and the two artifacts stay distinct."
+          ],
+          "required_checks": [
+            {
+              "id": "semantic-identity:shared-component-name:identity-packing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:shared-component-name:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:shared-component-name:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:166:executed-slice:reordered-declarations",
+          "criterion": "Specify correspondence between the resolved C++ model, serialized semantic IDs/packing and the Lean reference.",
+          "scope": "The shared-component model with its declarations written in another order, so the same names carry different compiled ids.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is the generated grammar: models whose declarations are drawn from the parameter, compartment, molecule-type, function, observable, seed-species and reaction-rule blocks, with explicit site states and with no energy pattern, barrier pattern or population map.",
+            "The correspondence is stated in three parts: the compiled ids of a namespace are dense (0..n-1) and follow the declaration order of that namespace; every serialized id reference denotes the declaration the serialization names beside it; and the BNGIR v0.2 model section is exactly the resolved model's compiled snapshot.",
+            "The expectation is the identity table the generator wrote before the compiler ran, so a defect in the compiler's id assignment appears as a difference against an expectation the compiler never produced.",
+            "The Lean reference (formal/lean/BNG/Ids.lean and formal/lean/BNG/NameResolution.lean) states the same name-to-id correspondence in the formal model; the executable fixture does not re-prove those theorems and the two artifacts stay distinct."
+          ],
+          "required_checks": [
+            {
+              "id": "semantic-identity:reordered-declarations:identity-packing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:reordered-declarations:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:reordered-declarations:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:166:executed-slice:three-of-each",
+          "criterion": "Specify correspondence between the resolved C++ model, serialized semantic IDs/packing and the Lean reference.",
+          "scope": "Three parameters, three molecule types, three compartments, three observables, three seed species and three rules, so the packing is checked over more than one declaration per namespace.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is the generated grammar: models whose declarations are drawn from the parameter, compartment, molecule-type, function, observable, seed-species and reaction-rule blocks, with explicit site states and with no energy pattern, barrier pattern or population map.",
+            "The correspondence is stated in three parts: the compiled ids of a namespace are dense (0..n-1) and follow the declaration order of that namespace; every serialized id reference denotes the declaration the serialization names beside it; and the BNGIR v0.2 model section is exactly the resolved model's compiled snapshot.",
+            "The expectation is the identity table the generator wrote before the compiler ran, so a defect in the compiler's id assignment appears as a difference against an expectation the compiler never produced.",
+            "The Lean reference (formal/lean/BNG/Ids.lean and formal/lean/BNG/NameResolution.lean) states the same name-to-id correspondence in the formal model; the executable fixture does not re-prove those theorems and the two artifacts stay distinct."
+          ],
+          "required_checks": [
+            {
+              "id": "semantic-identity:three-of-each:identity-packing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:three-of-each:identity-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled ids of every declared namespace are dense and follow the declaration order, the serialized model section is exactly the resolved model's snapshot, and every serialized id reference denotes the declaration the serialization names beside it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "semantic-identity:three-of-each:identity-refinement",
+              "evidence_kind": "supported-execution",
+              "expectation": "Within every declared namespace two declarations share an id exactly when they share a name, and every serialized reference resolves to exactly one declaration, so the compiled ids refine the name-keyed declaration correspondence over the declared domain.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -6090,12 +6388,57 @@
           "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
           "scope": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:168:generate-differential-cases-comparing-production-graph-identity",
+              "id": "graph-differential:symmetric-dimer-2:network-species-bijection",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:symmetric-dimer-3:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:molecule-order-swap:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:state-flip-u-p:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:state-flip-on-off:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:compartment-dimer:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -6104,12 +6447,13 @@
           "test_references": [
             "tests/architecture_contracts",
             "tests/cpp/test_hnauty.cpp",
-            "tests/cpp/test_node_label_parity.cpp"
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/test_graph_differential.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:168:generate-differential-cases-comparing-production-graph-identity.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -6118,22 +6462,72 @@
           "criterion": "State and prove the intended bounded equivalence with explicit domain and termination assumptions.",
           "scope": "State and prove the intended bounded equivalence with explicit domain and termination assumptions.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The intended bounded equivalence is that the production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation, and that the isomorphism relation between the two networks is exactly that correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+            "The termination argument: both generators are bounded (the canonical implementation stops when an iteration adds no species and the production generator stops after at most 100 rule-application iterations), the harness re-checks the size bounds after both networks exist and refuses a case that exceeds them, and the comparison is a bipartite matching over at most eight species per side.",
+            "The equivalence is claimed for the declared domain only; a case outside it is refused rather than passed.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:168:state-and-prove-the-intended-bounded-equivalence-with-explicit-d",
+              "id": "graph-differential:symmetric-dimer-2:graph-identity-relation",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:symmetric-dimer-3:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:molecule-order-swap:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:state-flip-u-p:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:state-flip-on-off:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:compartment-dimer:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/test_graph_differential.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:168:state-and-prove-the-intended-bounded-equivalence-with-explicit-d.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -6160,6 +6554,307 @@
             "Missing required qualification ID: qualification:issue:168:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:168:executed-slice:symmetric-dimer-2",
+          "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "scope": "Two molecule types, each with a self-dimerization rule over two identical reactants.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
+          "required_checks": [
+            {
+              "id": "graph-differential:symmetric-dimer-2:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:symmetric-dimer-2:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:168:executed-slice:symmetric-dimer-3",
+          "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "scope": "Three molecule types, each with a self-dimerization rule over two identical reactants.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
+          "required_checks": [
+            {
+              "id": "graph-differential:symmetric-dimer-3:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:symmetric-dimer-3:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:168:executed-slice:molecule-order-swap",
+          "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "scope": "Two rules whose products are isomorphic under a different molecule order, so the production graph identity must merge them.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
+          "required_checks": [
+            {
+              "id": "graph-differential:molecule-order-swap:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:molecule-order-swap:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:168:executed-slice:state-flip-u-p",
+          "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "scope": "A state change from u to p, whose product is not isomorphic to its reactant and must not be merged with it.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
+          "required_checks": [
+            {
+              "id": "graph-differential:state-flip-u-p:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:state-flip-u-p:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:168:executed-slice:state-flip-on-off",
+          "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "scope": "A state change from on to off, whose product is not isomorphic to its reactant and must not be merged with it.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
+          "required_checks": [
+            {
+              "id": "graph-differential:state-flip-on-off:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:state-flip-on-off:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:168:executed-slice:compartment-dimer",
+          "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "scope": "A compartmented species whose dimer keeps the compartment, so the compartment remains part of the species identity.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
+          "required_checks": [
+            {
+              "id": "graph-differential:compartment-dimer:network-species-bijection",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production network's species and the canonical implementation's species are in bijection under the independent graph-isomorphism relation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:compartment-dimer:graph-identity-relation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The isomorphism relation between the two networks is exactly the correspondence: every species has exactly one partner and neither network keeps two species the independent matcher calls identical.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:168:executed-slice:no-rule-outside-domain",
+          "criterion": "Generate differential cases comparing production graph identity/network generation with independent reference semantics.",
+          "scope": "A model without a reaction rule, which the canonical implementation refuses and which therefore leaves the declared domain.",
+          "dependencies": [],
+          "boundaries": [
+            "The declared domain is: at least one and at most four reaction rules, at most three seed species of which no two are isomorphic, no dangling bond in a seed species, at most eight species and twelve reactions per network, and at most twelve molecule and site vertices per species.",
+            "The independent construction is the canonical Perl BNG2 network for the same source, read by the harness's own reader and compared with the harness's own labeled-graph matcher, so the comparison never depends on how either implementation spells a species.",
+            "A case outside the declared domain, or one the canonical implementation refuses, is refused with its reason and reported as UNSUPPORTED; it is never scored as a pass.",
+            "The comparison covers the species sets and their graph identity only. Reaction rates, symmetry factors, stoichiometry and observable weights are outside this family and stay unqualified here."
+          ],
+          "required_checks": [
+            {
+              "id": "graph-differential:no-rule-outside-domain:network-species-bijection",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The case is outside the declared domain, so the independent construction cannot express it and the case is refused with its reason instead of being scored.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "graph-differential:no-rule-outside-domain:graph-identity-relation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The case is outside the declared domain, so the independent construction cannot express it and the case is refused with its reason instead of being scored.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/architecture_contracts",
+            "tests/architecture_contracts",
+            "tests/cpp/test_hnauty.cpp",
+            "tests/cpp/test_node_label_parity.cpp",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py",
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/test_semantic_identity.py"
+          ],
+          "completion_condition": "The refusal is demonstrated by an explicit unsupported observation; the case is never scored as a pass.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },

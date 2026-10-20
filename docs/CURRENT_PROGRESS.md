@@ -1,5 +1,59 @@
 # BNG3 current progress
 
+## Semantic-identity correspondence and differential graph identity (2026-10-20 candidate)
+
+Issue #166 asks for the production lowering correspondence to be stated: how the
+resolved C++ model, the serialized semantic identities and the compiled ids
+correspond, and what refinement that correspondence states. Issue #168 asks
+for differential cases that compare the production graph identity and the
+generated network against an independent construction, and for the intended
+bounded equivalence to be stated with an explicit domain and termination
+argument. Both issues had no named executable check for those obligations.
+
+`tests/validation/semantic_identity.py` states the correspondence as an
+executable contract over a generated family of models. Three named checks per
+case carry it: `identity-packing` (the compiled ids of every declaration
+namespace are dense and follow the declaration order, the source rule label is
+retained beside the generated rule name, and the BNGIR v0.2 model section is
+exactly the resolved model's compiled snapshot), `identity-reference` (every
+serialized id reference denotes the declaration the serialization names beside
+it) and `identity-refinement` (the compiled ids refine the name-keyed
+declaration correspondence and every reference resolves to exactly one
+declaration). The expectation is the identity table the generator wrote before
+the compiler ran, so a defect in the compiler's id assignment appears as a
+difference against an expectation the compiler never produced. The declared
+domain is the generated declaration grammar; the Lean kernel-verified
+correspondence stays a separate artifact that this fixture does not discharge.
+
+`tests/validation/graph_differential.py` compares the production network with
+the network the canonical Perl BNG2 generates for the same source. Both `.net`
+artifacts are read by the harness's own reader and the species sets are
+compared with the harness's own labeled-graph matcher, so the comparison never
+depends on how either implementation spells a species. `network-species-bijection`
+states that the two species sets are in bijection under that relation, and
+`graph-identity-relation` states that the isomorphism relation between the two
+networks is exactly that correspondence. The domain (at most four rules, at most
+three pairwise non-isomorphic seed species, no dangling bond in a seed species,
+at most eight species and twelve reactions per network, at most twelve vertices
+per species) and the termination argument (both generators bounded, the size
+bounds re-checked after both networks exist, a finite bipartite matching) are
+stated in the module. A case outside the domain, or one the canonical
+implementation refuses, is refused with its reason and reported as
+`UNSUPPORTED`; it is never scored as a pass.
+
+The qualification exposed a defect in the campaign that was to run these
+families: `tests/validation/integrated.py` consulted `args.stochastic_parity_only`
+and `args.api_surface_only`, and neither flag was defined by the argument
+parser, so every campaign run died with an `AttributeError` before a single
+check was executed. The missing flags are now defined, the focused selection is
+uniform (a focused flag selects exactly one family, its own, and never excludes
+itself), and the replay command recorded on each row names the focused flag of
+its own family. The regression is
+`tests/validation/test_integrated.py::test_every_focused_qualification_flag_is_defined_and_selects_one_family`.
+
+Both issues stay open: the machine-checked Lean statements, the governance
+closure record and the wider feature combinations are not discharged here.
+
 ## JAX backend stage profile (2026-10-20 candidate)
 
 Issue #174 asks for representative speed and memory baselines on a fixed

@@ -17,12 +17,14 @@ from . import (
     api_surface,
     stochastic_parity,
     bngsim_boundary,
+    graph_differential,
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
     export_format_tier,
     jax_backend_measurement,
     netrule_execution,
+    semantic_identity,
 )
 from .integrated_cases import generated_cases
 
@@ -41,6 +43,8 @@ OPERATIONS = (
     "jax-backend-measurement",
     "api-surface",
     "stochastic-parity",
+    "semantic-identity",
+    "graph-differential",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -51,6 +55,8 @@ FOCUS_FLAGS = {
     "graph-identity": "--graph-identity-only",
     "export-format-tier": "--export-format-tier-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "semantic-identity": "--semantic-identity-only",
+    "graph-differential": "--graph-differential-only",
 }
 
 
@@ -86,6 +92,10 @@ def check_ids(operation, case=None, *, full=False):
         return api_surface.check_ids()
     if operation == "stochastic-parity":
         return stochastic_parity.check_ids()
+    if operation == "semantic-identity":
+        return semantic_identity.check_ids()
+    if operation == "graph-differential":
+        return graph_differential.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -106,6 +116,8 @@ def expected_ids(
     include_jax_backend_measurement=True,
     include_api_surface=True,
     include_stochastic_parity=True,
+    include_semantic_identity=True,
+    include_graph_differential=True,
     full=False,
 ):
     ids = []
@@ -134,6 +146,10 @@ def expected_ids(
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
+    if include_semantic_identity:
+        ids.extend(["campaign:semantic-identity", *check_ids("semantic-identity")])
+    if include_graph_differential:
+        ids.extend(["campaign:graph-differential", *check_ids("graph-differential")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -171,6 +187,10 @@ def run_worker(operation, args):
         return api_surface.run(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
+    if operation == "semantic-identity":
+        return semantic_identity.run_worker(Path.cwd())
+    if operation == "graph-differential":
+        return graph_differential.run_worker(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)

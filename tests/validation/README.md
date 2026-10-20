@@ -457,6 +457,45 @@ files, per-case outcomes and the first identity difference stay in the report
 directory. Invalid generated inputs and evidence-harness failures retain their
 own classifications, and do not stop later cases.
 
+## Semantic identity correspondence
+
+`semantic_identity.py` states the production lowering correspondence as an
+executable contract and checks it over a generated family of models. For every
+generated case it compares the resolved C++ model, the serialized semantic
+identities (the BNGIR v0.2 model section) and the compiled ids against an
+identity table the generator wrote before the compiler ran, so the reference is
+never the product's own output. Three named checks carry the statement:
+`identity-packing` (the compiled ids are dense and follow the declaration
+order, the source rule label is retained, and the serialized model section is
+exactly the resolved model's snapshot), `identity-reference` (every serialized
+id reference denotes the declaration the serialization names beside it) and
+`identity-refinement` (the compiled ids refine the name-keyed declaration
+correspondence and every reference is well founded). The declared domain is the
+generated declaration grammar; the Lean kernel-verified correspondence stays a
+separate artifact that the fixture does not discharge. Run just this group with
+`--semantic-identity-only`.
+
+## Differential graph identity and bounded network equivalence
+
+`graph_differential.py` generates differential cases and compares the
+production graph identity and the generated network against an independent
+construction: the canonical Perl BNG2 generates the network for the same
+source, both `.net` artifacts are read by the harness's own reader, and the
+species sets are compared with the harness's own labeled-graph matcher, so the
+comparison never depends on how either implementation spells a species. Two
+named checks carry the statement: `network-species-bijection` (the two species
+sets are in bijection under the independent graph-isomorphism relation) and
+`graph-identity-relation` (the isomorphism relation between the two networks is
+exactly that correspondence, and neither network keeps two species the
+independent matcher calls identical). The domain and the termination argument
+are stated in the module: at most four rules, at most three pairwise
+non-isomorphic seed species, no dangling bond in a seed species, at most eight
+species and twelve reactions per network and at most twelve vertices per
+species, with both generators bounded and the size bounds re-checked after both
+networks exist. A case outside the domain, or one the canonical implementation
+refuses, is refused with its reason and reported as `UNSUPPORTED`; it is never
+scored as a pass. Run just this group with `--graph-differential-only`.
+
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.
 
