@@ -149,9 +149,25 @@ private:
 
     void validateEventTargets();
     double eventValue(const ast::Expression& expression, double time, const double* state) const;
+    double eventSideDerivative(const ast::Expression& expression, double time,
+                               const std::vector<double>& derivatives) const;
+    double eventRootDerivative(const ast::Expression& trigger, double time,
+                               const std::vector<double>& derivatives) const;
     void applyEvent(double time, std::vector<double>& state) const;
+    std::vector<double> eventValues(double time, const double* state) const;
+    void assignEventValues(std::vector<double>& state,
+                            const std::vector<double>& values) const;
+    double eventDelay() const;
+    // A trigger edge that is waiting for its delay to elapse.
+    struct PendingEvent {
+        double executionTime = 0.0;
+        std::vector<double> values;
+    };
     std::vector<std::size_t> eventTargets_;
     std::optional<ast::Event> nativeEvent_;
+    std::vector<PendingEvent> pendingEvents_;
+    bool useValuesFromTriggerTime_ = true;
+    double eventDelay_ = 0.0;
     void validateEventRootSurface();
     void compile();
     void compileGroups();

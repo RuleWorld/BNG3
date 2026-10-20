@@ -26,6 +26,7 @@ from urllib.parse import quote
 
 from .events import (
     EventTranslationContext,
+    NativeStateTarget,
     _event_assignment,
     fold_numeric,
     expand_cosh_assignment_rule_events,
@@ -33,6 +34,7 @@ from .events import (
     expand_static_parameter_event_system,
     parse_time_threshold,
     synthesize_event_actions,
+    synthesize_native_event_block,
 )
 from .rate_rule_constants import (
     ASSIGN_RULE_META_PREFIX,
@@ -3984,12 +3986,28 @@ def _lowerable_species_assignment_rules(
     return candidates
 
 
-def _update_event_translation_warning(model: SBMLModel, event_result: object) -> None:
+def _update_event_translation_warning(
+    model: SBMLModel, event_result: object, native_event_block: object = None
+) -> None:
     """Make the event diagnostic reflect the executable lowering result."""
 
     converted = int(getattr(event_result, "converted", 0) or 0)
     untranslated = list(getattr(event_result, "untranslated", []) or [])
     horizon_limited = int(getattr(event_result, "horizon_limited", 0) or 0)
+    if native_event_block:
+        message = (
+            f"{len(model.events)} SBML event(s) lowered to the native BNG3 "
+            "event runtime, which detects the trigger's rising edge with "
+            "continuous root finding and applies the assignments at that "
+            "instant."
+        )
+        for warning in getattr(model, "import_warnings", []) or []:
+            if warning.get("category") != "event":
+                continue
+            warning.message = message
+            warning.severity = "info"
+            warning.count = len(model.events)
+        return
     if not converted and not untranslated:
         if horizon_limited:
             message = (
@@ -7262,6 +7280,7 @@ def generate_bngl(
         )
 
     event_result = None
+    native_event_block = None
     if model.events:
         mutable_event_ids = {rule.variable for rule in model.rules if rule.variable}
         mutable_event_ids.update(
@@ -7395,6 +7414,60 @@ def generate_bngl(
         initial_assignment_stack: set[str] = set()
         assignment_rule_cache: dict[str, Optional[float]] = {}
         assignment_rule_stack: set[str] = set()
+
+        def resolve_native_state(identifier: str) -> Optional[NativeStateTarget]:
+            """Map an SBML state symbol to its BNGL observable and units.
+
+            The native ``bng3_events`` runtime observes a species amount, so
+            an SBML value has to be converted into that amount before the
+            trigger or the assignment can be expressed in BNGL.  A species
+            that reports concentrations contributes its compartment size as
+            the conversion factor; a rate-rule parameter keeps its own
+            value.
+            """
+            species = model.species.get(identifier)
+            if species is not None:
+                if species.constant or species.boundary_condition:
+                    return None
+                base = observable_map.get(identifier)
+                if base is None:
+                    return None
+                compartment_id = str(species.compartment or "")
+                factor = 1.0
+                if not species.has_only_substance_units:
+                    compartment = model.compartments.get(compartment_id)
+                    if compartment is None or not compartment.constant:
+                        return None
+                    size = _numeric_value(compartment.size)
+                    if size is None or not math.isfinite(size) or size <= 0:
+                        return None
+                    factor = float(size)
+                return NativeStateTarget(
+                    observable=f"{base}_amt",
+                    amount_factor=factor,
+                    compartment=compartment_id,
+                )
+            if identifier in synthetic_rate_rule_variables:
+                # A rate-rule parameter becomes a state species whose seed is
+                # its SBML value; a compartment would rescale that seed, so
+                # only a unit-sized default compartment preserves the value.
+                if default_compartment:
+                    compartment = model.compartments.get(default_compartment)
+                    if compartment is None or not compartment.constant:
+                        return None
+                    size = _numeric_value(compartment.size)
+                    if (
+                        size is None
+                        or not math.isfinite(size)
+                        or abs(float(size) - 1.0) > 1e-12
+                    ):
+                        return None
+                return NativeStateTarget(
+                    observable=f"{standardize_name(identifier)}_amt",
+                    amount_factor=1.0,
+                    compartment="",
+                )
+            return None
 
         def resolve_event_parameter(identifier: str) -> Optional[float]:
             # In BNGL, __Avogadro__ is normalized to 1 for molecule-count
@@ -10637,195 +10710,225 @@ def generate_bngl(
                 expression = f"({expression}) / ({float(compartment_size)!r})"
             return expression
 
-        def resolve_species_concentration_volume(
-            species_id: str, event_context: SBMLEvent, time: float
-        ) -> Optional[float]:
-            """Return the compartment volume in effect before an event fires.
+    def resolve_species_concentration_volume(
+        species_id: str, event_context: SBMLEvent, time: float
+    ) -> Optional[float]:
+        """Return the compartment volume in effect before an event fires.
 
-            SBML Level 3 Version 2 Core Sec. 4.6 relates a species' amount to
-            its concentration through the size of the species' compartment.
-            An event assignment to a species whose symbol denotes a
-            concentration therefore sets the species' amount, and SBML
-            evaluates every assignment of an event against the state before
-            the event's own assignments (SBML Test Suite 01779).  The volume
-            that scales the assigned concentration is the one in effect
-            immediately before the event fires.
-            """
+        SBML Level 3 Version 2 Core Sec. 4.6 relates a species' amount to
+        its concentration through the size of the species' compartment.
+        An event assignment to a species whose symbol denotes a
+        concentration therefore sets the species' amount, and SBML
+        evaluates every assignment of an event against the state before
+        the event's own assignments (SBML Test Suite 01779).  The volume
+        that scales the assigned concentration is the one in effect
+        immediately before the event fires.
+        """
 
-            resolved_id = next(
-                (
+        resolved_id = next(
+            (
+                identifier
+                for identifier in model.species
+                if standardize_name(identifier) == standardize_name(species_id)
+            ),
+            None,
+        )
+        if resolved_id is None:
+            return None
+        species = model.species[resolved_id]
+        if species.has_only_substance_units or not species.compartment:
+            return None
+        compartment_id = species.compartment
+        compartment = model.compartments.get(compartment_id)
+        if compartment is None or compartment.spatial_dimensions == 0:
+            # A zero-dimensional compartment has unit size and its
+            # species' symbol is amount-valued.
+            return None
+        if any(
+            assignment.symbol == compartment_id
+            for assignment in model.initial_assignments
+        ) or any(
+            rule.variable == compartment_id and rule.type == "assignment"
+            for rule in model.rules
+        ):
+            # The declared size is not the size in effect at the event.
+            return None
+        if any(
+            assignment.variable == compartment_id
+            for other_event in model.events
+            if other_event is not event_context
+            for assignment in other_event.assignments
+        ):
+            # Another event may have changed the size before this one.
+            return None
+        rate_rules = [
+            rule
+            for rule in model.rules
+            if rule.variable == compartment_id and rule.type == "rate"
+        ]
+        if rate_rules:
+            if len(rate_rules) != 1:
+                return None
+            trajectory = resolve_affine_event_rate(compartment_id, event_context)
+            if trajectory is None:
+                return None
+            initial, slope = trajectory
+            volume = initial + slope * time
+        else:
+            volume = float(compartment.size)
+        if not math.isfinite(volume) or volume == 0:
+            return None
+        return volume
+
+    def resolve_compartment_state_pattern(compartment_id: str) -> Optional[str]:
+        """Return the state pattern carrying a rate-ruled compartment size."""
+
+        if compartment_id not in rate_ruled_compartment_ids:
+            return None
+        return species_to_pattern.get(compartment_id)
+
+    event_context = EventTranslationContext(
+            resolve_species_pattern=lambda species_id: species_to_pattern.get(
+                species_id
+            ),
+            resolve_param=resolve_event_parameter,
+            is_param=lambda identifier: (
+                identifier in model.parameters
+                or identifier in event_species_reference_targets
+            ),
+            is_compartment=lambda identifier: identifier in model.compartments,
+            resolve_compartment_state_pattern=resolve_compartment_state_pattern,
+            resolve_species_concentration_volume=(
+                resolve_species_concentration_volume
+            ),
+            is_compile_time_constant=is_compile_time_constant,
+            unapplied_algebraic_rule=any(
+                rule.type == "algebraic" for rule in model.rules
+            ),
+            resolve_constant=resolve_constant,
+            expand_functions=lambda expression: extend_function(
+                expression, {}, model.function_definitions
+            ),
+            method=(
+                "ssa"
+                if re.search(
+                    r"simulate_ssa|method\s*=>\s*[\"']?ssa", actions or "", re.I
+                )
+                else "ode"
+            ),
+            base_t_end=float(t_end),
+            base_steps=max(1, int(n_steps)),
+            resolve_initial_value=resolve_initial_event_value,
+            resolve_rate_rule_expression_for_event=(
+                lambda identifier, _event: resolve_periodic_rate_rule_expression(
                     identifier
-                    for identifier in model.species
-                    if standardize_name(identifier) == standardize_name(species_id)
-                ),
-                None,
-            )
-            if resolved_id is None:
-                return None
-            species = model.species[resolved_id]
-            if species.has_only_substance_units or not species.compartment:
-                return None
-            compartment_id = species.compartment
-            compartment = model.compartments.get(compartment_id)
-            if compartment is None or compartment.spatial_dimensions == 0:
-                # A zero-dimensional compartment has unit size and its
-                # species' symbol is amount-valued.
-                return None
-            if any(
-                assignment.symbol == compartment_id
-                for assignment in model.initial_assignments
-            ) or any(
-                rule.variable == compartment_id and rule.type == "assignment"
-                for rule in model.rules
-            ):
-                # The declared size is not the size in effect at the event.
-                return None
-            if any(
-                assignment.variable == compartment_id
-                for other_event in model.events
-                if other_event is not event_context
-                for assignment in other_event.assignments
-            ):
-                # Another event may have changed the size before this one.
-                return None
-            rate_rules = [
-                rule
-                for rule in model.rules
-                if rule.variable == compartment_id and rule.type == "rate"
-            ]
-            if rate_rules:
-                if len(rate_rules) != 1:
-                    return None
-                trajectory = resolve_affine_event_rate(compartment_id, event_context)
-                if trajectory is None:
-                    return None
-                initial, slope = trajectory
-                volume = initial + slope * time
-            else:
-                volume = float(compartment.size)
-            if not math.isfinite(volume) or volume == 0:
-                return None
-            return volume
-
-        def resolve_compartment_state_pattern(compartment_id: str) -> Optional[str]:
-            """Return the state pattern carrying a rate-ruled compartment size."""
-
-            if compartment_id not in rate_ruled_compartment_ids:
-                return None
-            return species_to_pattern.get(compartment_id)
-
+                )
+            ),
+            resolve_first_order_cycle_event_system=(
+                resolve_first_order_cycle_event_system
+            ),
+            resolve_first_order_transfer_event_system=(
+                resolve_first_order_transfer_event_system
+            ),
+            resolve_first_order_chain_event_system=(
+                resolve_first_order_chain_event_system
+            ),
+            resolve_affine_rate=resolve_affine_event_rate,
+            resolve_affine_rate_for_event=lambda identifier, event: (
+                resolve_affine_event_rate(identifier, event)
+            ),
+            resolve_affine_priority_rate=lambda identifier, event: (
+                resolve_affine_event_rate(
+                    identifier, event, ignore_simultaneous=True
+                )
+            ),
+            resolve_exponential_rate=resolve_exponential_event_rate,
+            resolve_exponential_rate_for_event=lambda identifier, event: (
+                resolve_exponential_event_rate(identifier, event)
+            ),
+            resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
+            resolve_species_volume_change_for_event=(
+                resolve_species_volume_change_for_event
+            ),
+            resolve_event_volume_assignment_targets=(
+                resolve_event_volume_assignment_targets
+            ),
+            resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
+            resolve_quadratic_state_values_for_event=(
+                resolve_quadratic_event_state_values
+            ),
+            resolve_quadratic_rate_from_state=(
+                lambda identifier, event, state_values: resolve_quadratic_event_rate(
+                    identifier, event, state_values
+                )
+            ),
+            resolve_quadratic_state_values_from_state=(
+                lambda identifier, value, event, state_values: resolve_quadratic_event_state_values(
+                    identifier, value, event, state_values
+                )
+            ),
+            resolve_reaction_rate_for_event=resolve_event_reaction_rate,
+            resolve_priority_reaction_rate_for_event=lambda identifier, event, state: (
+                resolve_event_reaction_rate(
+                    identifier,
+                    event,
+                    priority_state=True,
+                    state_values=state,
+                )
+            ),
+            resolve_priority_assignment_value=resolve_priority_assignment_value,
+            resolve_assignment_rule_value_for_event=lambda identifier, time, event, state: (
+                resolve_priority_assignment_value(
+                    identifier,
+                    time,
+                    event,
+                    state,
+                    allow_simultaneous=False,
+                )
+            ),
+            resolve_priority_initial_parameter_value=(
+                resolve_priority_initial_parameter_value
+            ),
+            resolve_rate_reset=resolve_rate_event_reset,
+            static_event_state=static_event_state,
+            resolve_native_state=resolve_native_state,
+        )
         event_result = synthesize_event_actions(
             event_translation_events,
-            EventTranslationContext(
-                resolve_species_pattern=lambda species_id: species_to_pattern.get(
-                    species_id
-                ),
-                resolve_param=resolve_event_parameter,
-                is_param=lambda identifier: (
-                    identifier in model.parameters
-                    or identifier in event_species_reference_targets
-                ),
-                is_compartment=lambda identifier: identifier in model.compartments,
-                resolve_compartment_state_pattern=resolve_compartment_state_pattern,
-                resolve_species_concentration_volume=(
-                    resolve_species_concentration_volume
-                ),
-                is_compile_time_constant=is_compile_time_constant,
-                unapplied_algebraic_rule=any(
-                    rule.type == "algebraic" for rule in model.rules
-                ),
-                resolve_constant=resolve_constant,
-                expand_functions=lambda expression: extend_function(
-                    expression, {}, model.function_definitions
-                ),
-                method=(
-                    "ssa"
-                    if re.search(
-                        r"simulate_ssa|method\s*=>\s*[\"']?ssa", actions or "", re.I
-                    )
-                    else "ode"
-                ),
-                base_t_end=float(t_end),
-                base_steps=max(1, int(n_steps)),
-                resolve_initial_value=resolve_initial_event_value,
-                resolve_rate_rule_expression_for_event=(
-                    lambda identifier, _event: resolve_periodic_rate_rule_expression(
-                        identifier
-                    )
-                ),
-                resolve_first_order_cycle_event_system=(
-                    resolve_first_order_cycle_event_system
-                ),
-                resolve_first_order_transfer_event_system=(
-                    resolve_first_order_transfer_event_system
-                ),
-                resolve_first_order_chain_event_system=(
-                    resolve_first_order_chain_event_system
-                ),
-                resolve_affine_rate=resolve_affine_event_rate,
-                resolve_affine_rate_for_event=lambda identifier, event: (
-                    resolve_affine_event_rate(identifier, event)
-                ),
-                resolve_affine_priority_rate=lambda identifier, event: (
-                    resolve_affine_event_rate(
-                        identifier, event, ignore_simultaneous=True
-                    )
-                ),
-                resolve_exponential_rate=resolve_exponential_event_rate,
-                resolve_exponential_rate_for_event=lambda identifier, event: (
-                    resolve_exponential_event_rate(identifier, event)
-                ),
-                resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
-                resolve_species_volume_change_for_event=(
-                    resolve_species_volume_change_for_event
-                ),
-                resolve_event_volume_assignment_targets=(
-                    resolve_event_volume_assignment_targets
-                ),
-                resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
-                resolve_quadratic_state_values_for_event=(
-                    resolve_quadratic_event_state_values
-                ),
-                resolve_quadratic_rate_from_state=(
-                    lambda identifier, event, state_values: resolve_quadratic_event_rate(
-                        identifier, event, state_values
-                    )
-                ),
-                resolve_quadratic_state_values_from_state=(
-                    lambda identifier, value, event, state_values: resolve_quadratic_event_state_values(
-                        identifier, value, event, state_values
-                    )
-                ),
-                resolve_reaction_rate_for_event=resolve_event_reaction_rate,
-                resolve_priority_reaction_rate_for_event=lambda identifier, event, state: (
-                    resolve_event_reaction_rate(
-                        identifier,
-                        event,
-                        priority_state=True,
-                        state_values=state,
-                    )
-                ),
-                resolve_priority_assignment_value=resolve_priority_assignment_value,
-                resolve_assignment_rule_value_for_event=lambda identifier, time, event, state: (
-                    resolve_priority_assignment_value(
-                        identifier,
-                        time,
-                        event,
-                        state,
-                        allow_simultaneous=False,
-                    )
-                ),
-                resolve_priority_initial_parameter_value=(
-                    resolve_priority_initial_parameter_value
-                ),
-                resolve_rate_reset=resolve_rate_event_reset,
-                static_event_state=static_event_state,
-            ),
+            event_context,
         )
-        _update_event_translation_warning(model, event_result)
+        native_event_block = None
+        if (
+            not event_result.actions_block
+            and not event_result.converted
+            and not event_result.horizon_limited
+            and len(event_result.untranslated) == len(model.events)
+            and model.events
+        ):
+            native_event_block = synthesize_native_event_block(
+                model.events, event_context
+            )
+        _update_event_translation_warning(
+            model, event_result, native_event_block
+        )
+        )
 
-    if event_result is not None and (
-        event_result.actions_block or event_result.untranslated
+    if native_event_block:
+        # The native event block belongs inside the model block: the grammar
+        # only accepts an actions block after ``end model``.
+        end_model = re.search(r"(?im)^end model\s*$", model_text)
+        if end_model is not None:
+            model_text = (
+                model_text[: end_model.start()]
+                + str(native_event_block)
+                + "\n\n"
+                + model_text[end_model.start() :]
+            )
+
+    if (
+        event_result is not None
+        and not native_event_block
+        and (event_result.actions_block or event_result.untranslated)
     ):
         notes = ["# ==== SBML DYNAMICS NOTES ====\n"]
         if event_result.converted:

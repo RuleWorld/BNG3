@@ -104,11 +104,12 @@ def test_rate_rule_cycle_event_is_not_misclassified_as_never_firing():
 
     assert result.success, result.error
     assert "proven not to fire" not in result.bngl
-    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert "state-dependent or non-constant event(s) remain untranslated" not in result.bngl
     assert "setConcentration(" not in result.bngl
 
 
-def test_unsupported_coupled_rate_rule_event_remains_explicitly_untranslated():
+def test_coupled_rate_rule_event_is_lowered_to_the_native_event_runtime():
     from bionetgen.atomizer.modern import Atomizer
 
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
@@ -136,7 +137,8 @@ def test_unsupported_coupled_rate_rule_event_remains_explicitly_untranslated():
 
     assert result.success, result.error
     assert "proven not to fire" not in result.bngl
-    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert "state-dependent or non-constant event(s) remain untranslated" not in result.bngl
     assert "setConcentration(" not in result.bngl
 
 

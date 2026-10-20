@@ -16,7 +16,13 @@ inline void validateNativeEventSubset(const Model& model) {
     };
     if (model.getEvents().size() != 1) fail("exactly one immediate event is supported");
     const auto& event = model.getEvents().front();
-    if (event.delay || event.priority) fail("delay and priority are unsupported");
+    if (event.priority) fail("priority is unsupported");
+    if (!event.persistent) {
+        // A non-persistent trigger re-arms itself as soon as the assignment
+        // leaves the trigger true, which needs an event queue rather than a
+        // single continuous root crossing.
+        fail("non-persistent triggers are unsupported");
+    }
     const auto& trigger = event.trigger;
     if (trigger.kind() != ExpressionKind::Binary || trigger.args().size() != 2 ||
         (trigger.name() != ">" && trigger.name() != ">=" &&
@@ -33,18 +39,25 @@ inline void validateNativeEventSubset(const Model& model) {
     };
     const bool leftDynamic = dynamicIdentifier(trigger.args()[0]);
     const bool rightDynamic = dynamicIdentifier(trigger.args()[1]);
-    if (leftDynamic == rightDynamic) {
+    if (!leftDynamic && !rightDynamic) {
         fail("trigger requires one time or species observable against a static threshold");
     }
-    const auto& threshold = trigger.args()[leftDynamic ? 1 : 0];
-    for (const auto& name : threshold.getDependencies()) {
-        if (name == "time") fail("event threshold must be static");
-        for (const auto& observable : model.getObservables()) {
-            if (observable.getName() == name) fail("event threshold must be static");
+    // A side that is not itself a bare time or species observable has to be a
+    // static threshold: a mixed expression such as ``time - 1`` would make
+    // the crossing surface time-dependent in a way the runtime cannot
+    // classify.  Two bare observables are allowed: a difference of two
+    // species is a continuous state surface like any other.
+    for (std::size_t side = 0; side < 2; ++side) {
+        if (side == 0 ? leftDynamic : rightDynamic) continue;
+        for (const auto& name : trigger.args()[side].getDependencies()) {
+            if (name == "time") fail("event threshold must be static");
+            for (const auto& observable : model.getObservables()) {
+                if (observable.getName() == name) fail("event threshold must be static");
+            }
+            try {
+                if (model.getParameters().isTimeDependent(name)) fail("event threshold must be static");
+            } catch (const std::exception&) { fail("event threshold requires static parameters"); }
         }
-        try {
-            if (model.getParameters().isTimeDependent(name)) fail("event threshold must be static");
-        } catch (const std::exception&) { fail("event threshold requires static parameters"); }
     }
     std::set<std::string> visiting;
     std::function<void(const Expression&)> continuous = [&](const Expression& expression) {
@@ -75,6 +88,19 @@ inline void validateNativeEventSubset(const Model& model) {
     };
     continuous(trigger.args()[0]);
     continuous(trigger.args()[1]);
+    if (event.delay) {
+        // A delay is a scheduling offset, so it has to be a static constant.
+        for (const auto& name : event.delay->getDependencies()) {
+            if (name == "time") fail("event delay must be static");
+            for (const auto& observable : model.getObservables()) {
+                if (observable.getName() == name) fail("event delay must be static");
+            }
+            try {
+                if (model.getParameters().isTimeDependent(name)) fail("event delay must be static");
+            } catch (const std::exception&) { fail("event delay requires static parameters"); }
+        }
+        continuous(*event.delay);
+    }
     std::set<std::string> targets;
     for (const auto& assignment : event.assignments) {
         if (!targets.insert(assignment.target).second) fail("duplicate assignment target");

@@ -1147,7 +1147,10 @@ def test_static_assignment_rule_parameter_resolves_exponential_event_rate():
     )
     dynamic_result = Atomizer(quiet_mode=True, t_end=3).atomize(dynamic_rule_xml)
     assert dynamic_result.success, dynamic_result.error
-    assert "not a simple time threshold" in dynamic_result.bngl
+    # A time-dependent rate law no longer blocks the event: the native
+    # runtime locates the trigger crossing on the solved trajectory.
+    assert "begin bng3_events version 1" in dynamic_result.bngl
+    assert "not a simple time threshold" not in dynamic_result.bngl
 
 
 def test_conjunctive_event_outside_horizon_is_safely_omitted():
@@ -1606,8 +1609,10 @@ def test_quadratic_state_event_rejects_kinetic_coupling_to_an_independent_compon
     )
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
-    assert "Events NOT simulated" in result.bngl
+    # The native runtime solves the coupled trajectory, so a component that
+    # feeds back into the trigger no longer blocks the event.
+    assert "begin bng3_events version 1" in result.bngl
+    assert "Events NOT simulated" not in result.bngl
 
 
 def _independent_quadratic_event_pair_model(
@@ -1777,8 +1782,10 @@ def test_quadratic_event_rejects_other_reactions_changing_a_rate_species():
     result = Atomizer(quiet_mode=True, t_end=4, n_steps=400).atomize(xml)
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
-    assert "Events NOT simulated" in result.bngl
+    # The native runtime locates the crossing on the solved trajectory, so a
+    # reaction that also moves the trigger's species no longer blocks it.
+    assert "begin bng3_events version 1" in result.bngl
+    assert "Events NOT simulated" not in result.bngl
 
 
 def test_quadratic_event_group_allows_unrelated_rate_rule_targets(tmp_path):
@@ -2594,7 +2601,10 @@ def test_quadratic_event_ignores_rules_outside_trigger_component():
     )
 
     assert active_rule_result.success, active_rule_result.error
-    assert "Events NOT simulated" in active_rule_result.bngl
+    # A rate rule on the trigger's own species is solved by the native
+    # runtime, so the event is no longer left untranslated.
+    assert "begin bng3_events version 1" in active_rule_result.bngl
+    assert "Events NOT simulated" not in active_rule_result.bngl
 
     trigger_rule_xml = (
         xml.replace(
@@ -2614,7 +2624,10 @@ def test_quadratic_event_ignores_rules_outside_trigger_component():
     )
 
     assert trigger_rule_result.success, trigger_rule_result.error
-    assert "Events NOT simulated" in trigger_rule_result.bngl
+    # A rate-ruled threshold is another dynamic state, so the native runtime
+    # compares the two solved quantities directly.
+    assert "begin bng3_events version 1" in trigger_rule_result.bngl
+    assert "Events NOT simulated" not in trigger_rule_result.bngl
 
 
 def test_quadratic_event_staying_true_after_reset_does_not_refire():
