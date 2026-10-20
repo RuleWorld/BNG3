@@ -2378,6 +2378,7 @@
           "scope": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
           "dependencies": [],
           "boundaries": [
+            "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free envelope only.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],
           "required_checks": [
@@ -2573,6 +2574,9 @@
           "scope": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "dependencies": [],
           "boundaries": [
+            "Recorded boundary: the native reader refuses reversible rule directions, energy patterns and substance-unit metadata; the migration preserves them and the native import refuses them explicitly.",
+            "Recorded gap: the v0.1 reader rejects a rule that carries modifiers through its BNGL-mediated path without an explicit feature refusal. Owner of the repair: this obligation.",
+            "Recorded gap: the v0.1 to v0.2 migration silently drops a rule's non-empty driving_work because the v0.2 rule format has no field for it and the migration does not refuse it. Owner of the repair: this obligation.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],
           "required_checks": [
@@ -2580,6 +2584,15 @@
               "id": "bngir-version-migration:v01-v02-feature-matrix",
               "evidence_kind": "native-bngir-semantic-control",
               "expectation": "Every v0.1 to v0.2 feature cell is preserved or refused explicitly; a silently dropped feature fails.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-version-migration:v01-v02-refusal-ownership",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Every v0.1 to v0.2 feature cell that the migration does not preserve names the owning requirement and retains its own evidence.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2604,6 +2617,9 @@
           "scope": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
           "dependencies": [],
           "boundaries": [
+            "Recorded boundary: population types, population maps and protocol actions are refused explicitly.",
+            "Recorded boundary: v0.2 cannot represent 'molecules' observable kinds; the migration refuses them explicitly.",
+            "Recorded gap: a v0.1 document that carries barrier patterns is rejected with an internal snapshot error instead of an explicit feature refusal. Owner of the repair: this obligation.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],
           "required_checks": [
@@ -2611,6 +2627,15 @@
               "id": "bngir-version-migration:v01-v02-feature-matrix",
               "evidence_kind": "native-bngir-semantic-control",
               "expectation": "Every v0.1 to v0.2 feature cell is preserved or refused explicitly; a silently dropped feature fails.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-version-migration:v01-v02-refusal-ownership",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Every v0.1 to v0.2 feature cell that the migration does not preserve names the owning requirement and retains its own evidence.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"

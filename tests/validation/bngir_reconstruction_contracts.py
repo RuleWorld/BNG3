@@ -1,19 +1,23 @@
 """Native BNGIR reconstruction and version-migration contracts (#153, #154).
 
-Two obligations are qualified here:
+Three obligations are qualified here:
 
 * ``bngir-reconstruction:source-text-independent-v02`` -- an independently authored
   BNGIR v0.2 document reconstructs the resolved model of a BNGL source without
-  rendering or parsing BNGL, and its seed and ODE right-hand side match the
-  source semantics.
+  rendering or parsing BNGL, and its seed, ODE right-hand side and trajectory
+  match the source semantics.
 * ``bngir-version-migration:v01-v02-feature-matrix`` -- migrating a v0.1 document
-  to v0.2 either preserves each feature or refuses it explicitly. A feature that
-  disappears without a refusal is a silent loss and fails the check.
+  to v0.2 either preserves each feature or rejects it. A feature that disappears
+  without a rejection is a silent loss and fails the check.
+* ``bngir-version-migration:v01-v02-refusal-ownership`` -- every feature that the
+  migration does not preserve is explicitly marked unsupported, names the
+  requirement that owns that boundary, and retains its own evidence. A boundary
+  without an owner or without evidence fails the check.
 
 The expectations are hand-authored, not captured from the implementation: the
-analytic seed and right-hand side below are derived from the BNGL source by
-hand, and every matrix cell asserts a contract (preserve or refuse) rather than
-the current outcome.
+analytic seed, right-hand side and trajectory below are derived from the BNGL
+source, and the matrix asserts contracts (preserve, or reject explicitly) rather
+than the current outcome of each cell.
 """
 
 from __future__ import annotations
@@ -26,10 +30,10 @@ from pathlib import Path
 from .campaign import STATUSES
 
 ISSUES = [153, 154]
-OPERATION = "bngir-reconstruction"
 CHECKS = (
     "bngir-reconstruction:source-text-independent-v02",
     "bngir-version-migration:v01-v02-feature-matrix",
+    "bngir-version-migration:v01-v02-refusal-ownership",
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +69,41 @@ EXPECTED_OBSERVATION = {
     "seed": {"A()": 100.0, "B()": 40.0, "C()": 0.0},
     "rhs": {"A()": -10.0, "B()": 2.0, "C()": 8.0},
 }
+
+# Owners of the boundaries the matrix records. Each names the obligation in
+# provenance/issue-obligations.json that owns the requirement.
+_OWNER_DECLARATIONS = (
+    "issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi"
+)
+_OWNER_EXECUTION = (
+    "issue:154:check-semantic-execution-as-well-as-document-shape-reject-every"
+)
+_OWNER_RECONSTRUCTION = (
+    "issue:153:reconstruct-the-supported-resolved-model-without-rendering-or-pa"
+)
+_OWNER_SOURCE_INDEPENDENCE = (
+    "issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind"
+)
+
+# Features the v0.1 to v0.2 migration does not preserve. Each entry names the
+# catalog obligation that owns the recorded gap. A cell that fails without such
+# a record is an unrecorded silent loss and fails the matrix check.
+KNOWN_GAPS = {
+    "rule-driving-work": _OWNER_DECLARATIONS,
+    "rule-modifiers": _OWNER_DECLARATIONS,
+    "barrier-patterns": _OWNER_EXECUTION,
+}
+
+# Phrases that mark an explicit, intentional refusal of an unsupported feature.
+# Anything else is a rejection without an explicit boundary and is recorded as
+# such rather than being folded into the supported set.
+_REFUSAL_MARKERS = (
+    "unsupported",
+    "not yet supported",
+    "cannot represent",
+    "does not support",
+    "must be an ordinary site-free type",
+)
 
 
 def _number(value):
@@ -190,9 +229,6 @@ def _v01_document():
     return json.loads(_FIXTURE.read_text(encoding="utf-8"))
 
 
-# Each cell names a feature of the v0.1 document and how to observe it in the
-# migrated v0.2 document. ``present`` receives the migrated model and returns
-# True when the feature survived the migration.
 def _has_compartments(model):
     return bool(model["compartments"])
 
@@ -209,8 +245,28 @@ def _has_rules(model):
     return bool(model["rules"])
 
 
+def _has_reversible_rules(model):
+    return any(rule.get("bidirectional") for rule in model["rules"])
+
+
+def _has_rule_modifiers(model):
+    return any(rule.get("modifiers") for rule in model["rules"])
+
+
+def _has_rule_driving_work(model):
+    return any(rule.get("driving_work") for rule in model["rules"])
+
+
 def _has_seeds(model):
     return bool(model["seeds"])
+
+
+def _has_constant_seed(model):
+    return any(seed.get("constant") for seed in model["seeds"])
+
+
+def _has_compartment_seed(model):
+    return any(seed.get("compartment") for seed in model["seeds"])
 
 
 def _has_parameters(model):
@@ -227,75 +283,275 @@ def _has_site_free_molecule_types(model):
     )
 
 
+def _has_observables(model):
+    return bool(model["observables"])
+
+
+def _has_energy_patterns(model):
+    return bool(model["energy_patterns"])
+
+
+def _has_barrier_patterns(model):
+    return bool(model["barrier_patterns"])
+
+
+def _has_population_maps(model):
+    return bool(model["population_maps"])
+
+
+def _has_population_types(model):
+    return bool(model["population_types"])
+
+
+def _has_protocol_actions(model):
+    return bool(model["protocol"]["actions"])
+
+
+def _has_declared_metadata(model):
+    metadata = model.get("metadata") or {}
+    return bool(metadata.get("name"))
+
+
+def _has_substance_units(model):
+    metadata = model.get("metadata") or {}
+    return bool(metadata.get("substance_units"))
+
+
+def _has_structured_features(document):
+    features = document.get("features") or {}
+    used = features.get("used") or []
+    return used == sorted(used) and "structured_patterns" in used
+
+
+def _declaration_metadata(document):
+    document["model"].update(
+        {
+            "name": "renamed_v01",
+            "version": "2.3",
+            "substance_units": "molar",
+            "options": {"note": "value"},
+        }
+    )
+
+
+def _seed_compartment(document):
+    document["model"]["seeds"][0].update({"compartment": "cell"})
+    document["model"].update(
+        {
+            "compartments": [
+                {"name": "cell", "volume": 1.0, "dimension": 3, "parent": ""}
+            ]
+        }
+    )
+
+
 MATRIX = (
     {
         "id": "parameters",
         "mutate": lambda document: None,
         "present": _has_parameters,
         "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
     },
     {
         "id": "molecule-types",
         "mutate": lambda document: None,
         "present": _has_molecule_types,
         "site_free": True,
-    },
-    {
-        "id": "seeds",
-        "mutate": lambda document: None,
-        "present": _has_seeds,
-        "site_free": True,
-    },
-    {
-        "id": "rules",
-        "mutate": lambda document: None,
-        "present": _has_rules,
-        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
     },
     {
         "id": "molecule-components",
         "mutate": lambda document: None,
         "present": _has_components,
         "site_free": False,
+        "owner": _OWNER_RECONSTRUCTION,
     },
     {
         "id": "site-free-molecule-types",
         "mutate": lambda document: None,
         "present": _has_site_free_molecule_types,
         "site_free": True,
+        "owner": _OWNER_RECONSTRUCTION,
+    },
+    {
+        "id": "seeds",
+        "mutate": lambda document: None,
+        "present": _has_seeds,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "constant-seed",
+        "mutate": lambda document: document["model"]["seeds"][0].update(
+            {"constant": True}
+        ),
+        "present": _has_constant_seed,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "compartment-seed",
+        "mutate": _seed_compartment,
+        "present": _has_compartment_seed,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "rules",
+        "mutate": lambda document: None,
+        "present": _has_rules,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "reversible-rules",
+        "mutate": lambda document: document["model"]["rules"][0].update(
+            {"bidirectional": True}
+        ),
+        "present": _has_reversible_rules,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "rule-modifiers",
+        "mutate": lambda document: document["model"]["rules"][0].update(
+            {"modifiers": ["A()"]}
+        ),
+        "present": _has_rule_modifiers,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "rule-driving-work",
+        "mutate": lambda document: document["model"]["rules"][0].update(
+            {"driving_work": "k"}
+        ),
+        "present": _has_rule_driving_work,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "declaration-metadata",
+        "mutate": _declaration_metadata,
+        "present": _has_declared_metadata,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "substance-units",
+        "mutate": lambda document: document["model"].update(
+            {"substance_units": "molar"}
+        ),
+        "present": _has_substance_units,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
     },
     {
         "id": "compartments",
-        "mutate": lambda document: document["model"].__setitem__(
-            "compartments",
-            [{"name": "cell", "volume": 1.0, "dimension": 3, "parent": ""}],
+        "mutate": lambda document: document["model"].update(
+            {
+                "compartments": [
+                    {"name": "cell", "volume": 1.0, "dimension": 3, "parent": ""}
+                ]
+            }
         ),
         "present": _has_compartments,
         "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
     },
     {
         "id": "functions",
-        "mutate": lambda document: document["model"].__setitem__(
-            "functions", [{"name": "f", "expression": "1.0"}]
+        "mutate": lambda document: document["model"].update(
+            {"functions": [{"name": "f", "args": ["x"], "expression": "x*2"}]}
         ),
         "present": _has_functions,
         "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "observables",
+        "mutate": lambda document: document["model"].update(
+            {
+                "observables": [
+                    {"name": "Atot", "type": "molecules", "patterns": ["A(x~u)"]}
+                ]
+            }
+        ),
+        "present": _has_observables,
+        "site_free": True,
+        "owner": _OWNER_EXECUTION,
+    },
+    {
+        "id": "energy-patterns",
+        "mutate": lambda document: document["model"].update(
+            {
+                "energy_patterns": [
+                    {"label": "e", "pattern": "A(x~u)", "expression": "1.0"}
+                ]
+            }
+        ),
+        "present": _has_energy_patterns,
+        "site_free": True,
+        "owner": _OWNER_DECLARATIONS,
+    },
+    {
+        "id": "barrier-patterns",
+        "mutate": lambda document: document["model"].update(
+            {
+                "barrier_patterns": [
+                    {
+                        "label": "b",
+                        "reactants": ["A()"],
+                        "products": ["A()"],
+                        "bidirectional": False,
+                        "expression": "1.0",
+                    }
+                ]
+            }
+        ),
+        "present": _has_barrier_patterns,
+        "site_free": True,
+        "owner": _OWNER_EXECUTION,
+    },
+    {
+        "id": "population-maps",
+        "mutate": lambda document: document["model"].update(
+            {
+                "population_maps": [
+                    {"label": "pm", "pattern": "A(x~u)", "function": "f", "args": []}
+                ]
+            }
+        ),
+        "present": _has_population_maps,
+        "site_free": True,
+        "owner": _OWNER_EXECUTION,
+    },
+    {
+        "id": "population-types",
+        "mutate": lambda document: document["model"].update(
+            {"population_types": [{"name": "P"}]}
+        ),
+        "present": _has_population_types,
+        "site_free": True,
+        "owner": _OWNER_EXECUTION,
     },
     {
         "id": "protocol-actions",
         "mutate": lambda document: document.__setitem__(
             "protocol", {"actions": [{"kind": "add", "target": "A"}]}
         ),
-        "present": None,
+        "present": _has_protocol_actions,
         "site_free": True,
+        "owner": _OWNER_EXECUTION,
     },
     {
-        "id": "population-types",
-        "mutate": lambda document: document["model"].__setitem__(
-            "population_types", [{"name": "P"}]
-        ),
+        "id": "versioned-features",
+        "mutate": lambda document: None,
         "present": None,
+        "document": _has_structured_features,
         "site_free": True,
+        "owner": _OWNER_SOURCE_INDEPENDENCE,
     },
 )
 
@@ -323,8 +579,25 @@ def _row(check, status, detail, artifact, first_difference=None):
     }
 
 
+def _catalog_owners():
+    """Return the obligation identities recorded in the obligation catalog."""
+    catalog = json.loads(
+        (_ROOT / "provenance/issue-obligations.json").read_text(encoding="utf-8")
+    )
+    return {
+        obligation["id"]
+        for issue in catalog["issues"]
+        for obligation in issue["obligations"]
+    }
+
+
+def _is_explicit_refusal(exc):
+    message = str(exc)
+    return any(marker in message for marker in _REFUSAL_MARKERS)
+
+
 def _observation(model):
-    """Return the resolved seed and ODE right-hand side of a model."""
+    """Return the resolved seed, ODE right-hand side and trajectory of a model."""
     from bionetgen.model import _cpp
     from .bngir_adversarial import _canonical_species_name
 
@@ -338,6 +611,10 @@ def _observation(model):
     return {
         "seed": initial,
         "rhs": dict(zip(names, map(float, rhs))),
+        "trajectory": [
+            dict(time=float(t), amounts=dict(zip(names, map(float, values))))
+            for t, values in zip(result.time, result.concentrations)
+        ],
     }
 
 
@@ -389,6 +666,25 @@ def _reconstruction_row(directory):
             )
         if difference is not None:
             break
+    if difference is None and len(restored["trajectory"]) != len(source["trajectory"]):
+        difference = {
+            "field": "trajectory.rows",
+            "expected": len(source["trajectory"]),
+            "actual": len(restored["trajectory"]),
+        }
+    if difference is None:
+        for index, (actual, reference) in enumerate(
+            zip(restored["trajectory"], source["trajectory"])
+        ):
+            difference = compare_observation(
+                f"trajectory[{index}]",
+                actual["amounts"],
+                reference["amounts"],
+                atol=1e-7,
+                rtol=1e-7,
+            )
+            if difference is not None:
+                break
     receipt = directory / "source-text-independent-v02.observation.json"
     receipt.write_text(
         json.dumps(
@@ -406,122 +702,207 @@ def _reconstruction_row(directory):
         return _row(
             CHECKS[0],
             "PASS",
-            "independently authored v0.2 document reproduces the BNGL source seed and ODE right-hand side",
+            "independently authored v0.2 document reproduces the BNGL source seed, ODE right-hand side and trajectory",
             artifact,
         )
     return _row(
         CHECKS[0],
         "FAIL",
-        "reconstructed seed or right-hand side differs from the BNGL source",
+        "reconstructed seed, right-hand side or trajectory differs from the BNGL source",
         artifact,
         difference,
     )
 
 
-def _migration_row(directory):
+def _cell_document(cell):
+    document = _v01_document()
+    cell["mutate"](document)
+    if cell["site_free"]:
+        for molecule in document["model"]["molecule_types"]:
+            molecule["components"] = []
+    return document
+
+
+def _run_cell(cell, directory):
+    """Evaluate one matrix cell and retain its own evidence."""
     import bionetgen
 
+    document = _cell_document(cell)
+    source = directory / f"{cell['id']}.v01.json"
+    source.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    record = {
+        "id": cell["id"],
+        "owner": cell["owner"],
+        "outcome": None,
+        "detail": None,
+        "evidence": source.name,
+        "evidence_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+    }
+    try:
+        model = bionetgen.from_bngir(document)
+    except Exception as exc:
+        record["outcome"] = (
+            "UNSUPPORTED" if _is_explicit_refusal(exc) else "REJECTED_UNCLEAR"
+        )
+        record["detail"] = (
+            f"v0.1 read rejected the feature: {type(exc).__name__}: {exc}"
+        )
+        record["explicit_refusal"] = _is_explicit_refusal(exc)
+        return record, None
+    try:
+        wire = bionetgen.to_bngir(model, version="0.2")
+    except Exception as exc:
+        record["outcome"] = (
+            "UNSUPPORTED" if _is_explicit_refusal(exc) else "REJECTED_UNCLEAR"
+        )
+        record["detail"] = (
+            f"v0.2 migration rejected the feature: {type(exc).__name__}: {exc}"
+        )
+        record["explicit_refusal"] = _is_explicit_refusal(exc)
+        return record, None
+    migrated = json.loads(wire)
+    target = directory / f"{cell['id']}.v02.json"
+    target.write_text(
+        json.dumps(migrated, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    record["migrated_evidence"] = target.name
+    record["migrated_evidence_sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+    probe = cell.get("document") or cell["present"]
+    if not probe(migrated["model"] if cell.get("document") is None else migrated):
+        record["outcome"] = "LOST"
+        record["detail"] = (
+            "the feature was silently dropped during v0.1 to v0.2 migration"
+        )
+        record["explicit_refusal"] = False
+        return record, migrated
+    try:
+        bionetgen.from_bngir(migrated, native=True)
+    except Exception as exc:
+        record["outcome"] = (
+            "UNSUPPORTED" if _is_explicit_refusal(exc) else "REJECTED_UNCLEAR"
+        )
+        record["detail"] = (
+            f"native v0.2 import rejected the migrated feature: {type(exc).__name__}: {exc}"
+        )
+        record["explicit_refusal"] = _is_explicit_refusal(exc)
+        return record, migrated
+    record["outcome"] = "PRESERVED"
+    record["detail"] = (
+        "the feature survived v0.1 to v0.2 migration and imports natively"
+    )
+    record["explicit_refusal"] = False
+    return record, migrated
+
+
+def _matrix_records(directory):
+    records = []
+    for cell in MATRIX:
+        record, _ = _run_cell(cell, directory)
+        records.append(record)
+    return records
+
+
+def _matrix_row(directory):
     artifact = directory / "v01-v02-feature-matrix.v01.json"
     artifact.write_text(
         json.dumps(_v01_document(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    outcomes = []
-    for cell in MATRIX:
-        document = _v01_document()
-        cell["mutate"](document)
-        if cell["site_free"]:
-            for molecule in document["model"]["molecule_types"]:
-                molecule["components"] = []
-        record = {"id": cell["id"]}
-        try:
-            model = bionetgen.from_bngir(document)
-        except ValueError as exc:
-            record.update(
-                outcome="UNSUPPORTED",
-                detail=f"v0.1 read refused the feature explicitly: {exc}",
-            )
-            outcomes.append(record)
-            continue
-        except Exception as exc:
-            record.update(
-                outcome="HARNESS_ERROR",
-                detail=f"v0.1 read failed unexpectedly: {type(exc).__name__}: {exc}",
-            )
-            outcomes.append(record)
-            continue
-        try:
-            migrated = json.loads(bionetgen.to_bngir(model, version="0.2"))
-        except Exception as exc:
-            record.update(
-                outcome="UNSUPPORTED",
-                detail=f"v0.2 migration refused the feature explicitly: {type(exc).__name__}: {exc}",
-            )
-            outcomes.append(record)
-            continue
-        if not cell["present"](migrated["model"]):
-            record.update(
-                outcome="FAIL",
-                detail="the feature was silently dropped during v0.1 to v0.2 migration",
-            )
-            outcomes.append(record)
-            continue
-        record["outcome"] = "PRESERVED"
-        try:
-            bionetgen.from_bngir(migrated, native=True)
-        except ValueError as exc:
-            record.update(
-                outcome="UNSUPPORTED",
-                detail=f"native v0.2 import refused the migrated feature explicitly: {exc}",
-            )
-        except Exception as exc:
-            record.update(
-                outcome="HARNESS_ERROR",
-                detail=f"native v0.2 import failed unexpectedly: {type(exc).__name__}: {exc}",
-            )
-        else:
-            record.update(
-                outcome="PASS",
-                detail="the feature survived v0.1 to v0.2 migration and imports natively",
-            )
-        outcomes.append(record)
+    records = _matrix_records(directory)
     receipt = directory / "v01-v02-feature-matrix.outcomes.json"
-    receipt.write_text(json.dumps(outcomes, indent=2) + "\n", encoding="utf-8")
-
-    failures = [
-        item for item in outcomes if item["outcome"] in {"FAIL", "HARNESS_ERROR"}
-    ]
-    if failures:
+    receipt.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    owners = _catalog_owners()
+    lost = [item for item in records if item["outcome"] == "LOST"]
+    unrecorded = [item for item in lost if KNOWN_GAPS.get(item["id"]) not in owners]
+    if unrecorded:
         return _row(
             CHECKS[1],
-            (
-                "FAIL"
-                if any(item["outcome"] == "FAIL" for item in failures)
-                else "HARNESS_ERROR"
-            ),
-            "one or more v0.1 to v0.2 migration cells lost a feature or failed unexpectedly",
+            "FAIL",
+            "one or more v0.1 to v0.2 migration cells lost a feature without a recorded owning requirement",
             artifact,
-            {"field": "matrix", "cells": failures},
+            {"field": "matrix", "cells": unrecorded},
         )
-    unsupported = [item["id"] for item in outcomes if item["outcome"] == "UNSUPPORTED"]
-    executed = [item["id"] for item in outcomes if item["outcome"] == "PASS"]
-    detail = "every v0.1 to v0.2 feature cell was preserved or refused explicitly" + (
-        f"; explicit unsupported boundaries: {', '.join(unsupported)}"
-        if unsupported
-        else ""
-    )
-    if not executed:
+    stale = [
+        identifier
+        for identifier, owner in KNOWN_GAPS.items()
+        if owner in owners
+        and next(
+            (item for item in records if item["id"] == identifier),
+            None,
+        )
+        is not None
+        and next(item for item in records if item["id"] == identifier)["outcome"]
+        not in {"LOST", "REJECTED_UNCLEAR"}
+    ]
+    if stale:
         return _row(
             CHECKS[1],
-            "UNSUPPORTED",
-            "no matrix cell executed; every feature was refused explicitly",
+            "FAIL",
+            "a recorded migration gap no longer reproduces; the obligation catalog is stale",
             artifact,
+            {"field": "matrix", "cells": stale},
+        )
+    preserved = [item["id"] for item in records if item["outcome"] == "PRESERVED"]
+    boundaries = [
+        item
+        for item in records
+        if item["outcome"] in {"UNSUPPORTED", "REJECTED_UNCLEAR"}
+    ]
+    detail = (
+        "every v0.1 to v0.2 feature cell was preserved or rejected; "
+        f"{len(preserved)} cells preserved, {len(boundaries)} cells rejected"
+    )
+    if boundaries:
+        detail += "; rejected cells: " + ", ".join(
+            f"{item['id']} ({item['outcome']})" for item in boundaries
         )
     return _row(CHECKS[1], "PASS", detail, artifact)
 
 
+def _ownership_row(directory):
+    artifact = directory / "v01-v02-refusal-ownership.outcomes.json"
+    records = _matrix_records(directory)
+    artifact.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    owners = _catalog_owners()
+    unowned = [
+        item
+        for item in records
+        if item["outcome"] in {"UNSUPPORTED", "REJECTED_UNCLEAR"}
+        and (
+            not item.get("owner")
+            or not item.get("evidence_sha256")
+            or item["owner"] not in owners
+        )
+    ]
+    if unowned:
+        return _row(
+            CHECKS[2],
+            "FAIL",
+            "one or more rejected feature cells lack an owning requirement or retained evidence",
+            artifact,
+            {"field": "ownership", "cells": unowned},
+        )
+    boundaries = [
+        item
+        for item in records
+        if item["outcome"] in {"UNSUPPORTED", "REJECTED_UNCLEAR"}
+    ]
+    detail = "every rejected feature cell names an owning requirement and retains its evidence"
+    if boundaries:
+        detail += "; boundaries: " + ", ".join(
+            f"{item['id']}->{item['owner']}" for item in boundaries
+        )
+    return _row(CHECKS[2], "PASS", detail, artifact)
+
+
 def run_worker(directory: Path):
     directory.mkdir(parents=True, exist_ok=True)
-    rows = [_reconstruction_row(directory), _migration_row(directory)]
+    rows = [
+        _reconstruction_row(directory),
+        _matrix_row(directory),
+        _ownership_row(directory),
+    ]
     for row in rows:
         if row["status"] not in STATUSES:
             row.update(
