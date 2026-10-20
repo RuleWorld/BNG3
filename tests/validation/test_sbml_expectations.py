@@ -566,3 +566,17 @@ def test_a_live_gate_run_matches_the_committed_expectations(tmp_path):
         inventory.format_difference(diff) for diff in comparison["differences"]
     )
     assert comparison["cases_compared"] > 0
+
+
+@pytest.mark.smoke
+def test_a_failed_verdict_is_a_finding_and_not_a_construct_gap():
+    """``failed`` is a result the run produced; only ``unsupported`` is a gap."""
+
+    manifest = _manifest()
+    for case, entry in manifest["cases"].items():
+        gap = entry.get("gap")
+        if gap is None:
+            continue
+        for stage in gap:
+            assert entry[stage] == "unsupported", (case, stage)
+        assert gap[stage]["construct"] != "other", (case, stage)

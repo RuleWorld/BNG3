@@ -50,9 +50,11 @@ human to read two large reports side by side.
   executed, no official reference exists, or the source was invalid. A
   timed-out case is recorded as `failed`, because the stage was attempted and
   did not succeed.
-* `passed` is a result. `unsupported` is a **gap**: the case was refused
-  because a construct is not representable today. Every such case carries a
-  `gap` entry that names the construct (`construct`) and the harness's cause
+* `passed` is a result. `failed` is a result too: the stage ran and
+  disagreed with the reference, which is a finding to investigate.
+  `unsupported` is the only **gap**: the case was refused because a
+  construct is not representable today. Every such case carries a `gap`
+  entry that names the construct (`construct`) and the harness's cause
   labels for it (`causes`):
 
   ```json

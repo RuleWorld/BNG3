@@ -196,7 +196,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000087",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -270,7 +270,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000196",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -296,7 +296,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000137",
-        "reason_signature": "fast-reaction:no-fast-equilibrium-solve",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -347,7 +347,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000158",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -505,7 +505,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000111",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -528,7 +528,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000122",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -544,7 +544,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000096",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -553,7 +553,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000097",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -653,7 +653,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000195",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -802,7 +802,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000144",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1091,7 +1091,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000127",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1100,7 +1100,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000134",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1109,7 +1109,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000135",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1118,7 +1118,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000133",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1127,7 +1127,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000130",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1136,7 +1136,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000132",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1145,7 +1145,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000131",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1154,7 +1154,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000136",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1163,7 +1163,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000129",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1172,7 +1172,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000142",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1216,7 +1216,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000141",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1267,7 +1267,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000007",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1609,7 +1609,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000297",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1681,7 +1681,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000613",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1732,7 +1732,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000718",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -1848,7 +1848,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000436",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2069,7 +2069,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000493",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2141,7 +2141,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000628",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2171,7 +2171,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000928",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2383,7 +2383,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000285",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2441,7 +2441,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000437",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2569,7 +2569,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000439",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2734,7 +2734,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000241",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2806,7 +2806,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000408",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2836,7 +2836,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000001044",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -2961,7 +2961,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000814",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3000,7 +3000,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000534",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3009,7 +3009,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000535",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3018,7 +3018,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000537",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3027,7 +3027,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000536",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3290,7 +3290,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000148",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3327,7 +3327,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000675",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3541,7 +3541,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000056",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3606,7 +3606,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000479",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -3664,7 +3664,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000256",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -4531,7 +4531,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000344",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -4547,7 +4547,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000659",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -4718,7 +4718,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000001028",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -4748,7 +4748,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000001029",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -4906,7 +4906,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000620",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -4936,7 +4936,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000621",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5119,7 +5119,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000001059",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5142,7 +5142,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000480",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5390,7 +5390,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000711",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5494,7 +5494,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000822",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5531,7 +5531,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000901",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5540,7 +5540,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000825",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5591,7 +5591,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000816",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -5607,7 +5607,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000817",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -6029,7 +6029,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000340",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -6045,7 +6045,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000001039",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -6510,7 +6510,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000856",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7250,7 +7250,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000806",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7287,7 +7287,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000828",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7303,7 +7303,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000829",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7437,7 +7437,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000001072",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7460,7 +7460,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000963",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7602,7 +7602,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000001027",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7632,7 +7632,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000265",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -7808,7 +7808,7 @@
         ],
         "format": "SBML",
         "id": "BIOMD0000000727",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "status": "unsupported"
       },
       {
@@ -19573,7 +19573,7 @@
         "id": "00957",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/00957",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -19587,7 +19587,7 @@
         "id": "00958",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/00958",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -19601,7 +19601,7 @@
         "id": "00959",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/00959",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -19675,7 +19675,7 @@
         "id": "00965",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "ref": "semantic/00965",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -19689,7 +19689,7 @@
         "id": "00966",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "ref": "semantic/00966",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -20110,7 +20110,7 @@
         "id": "01000",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "ref": "semantic/01000",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -21724,7 +21724,7 @@
         "id": "01133",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "compartment:unsupported-spatial-dimensions",
         "ref": "semantic/01133",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22366,7 +22366,7 @@
         "id": "01186",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01186",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22382,7 +22382,7 @@
         "id": "01187",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01187",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22398,7 +22398,7 @@
         "id": "01188",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01188",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22414,7 +22414,7 @@
         "id": "01189",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01189",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22430,7 +22430,7 @@
         "id": "01190",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01190",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22446,7 +22446,7 @@
         "id": "01191",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01191",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22462,7 +22462,7 @@
         "id": "01192",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01192",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22478,7 +22478,7 @@
         "id": "01193",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01193",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22494,7 +22494,7 @@
         "id": "01194",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01194",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22510,7 +22510,7 @@
         "id": "01195",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01195",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22526,7 +22526,7 @@
         "id": "01196",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01196",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22540,7 +22540,7 @@
         "id": "01197",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "compartment:unsupported-spatial-dimensions",
         "ref": "semantic/01197",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -22986,7 +22986,7 @@
         "id": "01234",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01234",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -23000,7 +23000,7 @@
         "id": "01235",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01235",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -23014,7 +23014,7 @@
         "id": "01236",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01236",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -23113,7 +23113,7 @@
         "id": "01244",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01244",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -23439,7 +23439,7 @@
         "id": "01271",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01271",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -25197,7 +25197,7 @@
         "id": "01416",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01416",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -25749,7 +25749,7 @@
         "id": "01461",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01461",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -25787,7 +25787,7 @@
         "id": "01464",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01464",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -25801,7 +25801,7 @@
         "id": "01465",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01465",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26059,7 +26059,7 @@
         "id": "01486",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01486",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26085,7 +26085,7 @@
         "id": "01488",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01488",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26595,7 +26595,7 @@
         "id": "01530",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01530",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26609,7 +26609,7 @@
         "id": "01531",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01531",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26623,7 +26623,7 @@
         "id": "01532",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01532",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26637,7 +26637,7 @@
         "id": "01533",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01533",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26888,7 +26888,7 @@
         "id": "01552",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01552",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26902,7 +26902,7 @@
         "id": "01553",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01553",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26916,7 +26916,7 @@
         "id": "01554",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01554",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26930,7 +26930,7 @@
         "id": "01555",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01555",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26944,7 +26944,7 @@
         "id": "01556",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01556",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -26958,7 +26958,7 @@
         "id": "01557",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01557",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27014,7 +27014,7 @@
         "id": "01561",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01561",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27028,7 +27028,7 @@
         "id": "01562",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01562",
         "roundtrip_structure": "not-tested",
         "version": "l2v5"
@@ -27042,7 +27042,7 @@
         "id": "01563",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01563",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27056,7 +27056,7 @@
         "id": "01564",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01564",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27084,7 +27084,7 @@
         "id": "01566",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "mathml:no-bngl-builtin",
         "ref": "semantic/01566",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27387,7 +27387,7 @@
         "id": "01590",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "ref": "semantic/01590",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27585,7 +27585,7 @@
         "id": "01606",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01606",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27601,7 +27601,7 @@
         "id": "01607",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01607",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27617,7 +27617,7 @@
         "id": "01608",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01608",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27633,7 +27633,7 @@
         "id": "01609",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01609",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27649,7 +27649,7 @@
         "id": "01610",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01610",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27665,7 +27665,7 @@
         "id": "01611",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01611",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27681,7 +27681,7 @@
         "id": "01612",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01612",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27697,7 +27697,7 @@
         "id": "01613",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01613",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27713,7 +27713,7 @@
         "id": "01614",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01614",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27729,7 +27729,7 @@
         "id": "01615",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01615",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27745,7 +27745,7 @@
         "id": "01616",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01616",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27761,7 +27761,7 @@
         "id": "01617",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01617",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27777,7 +27777,7 @@
         "id": "01618",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01618",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27793,7 +27793,7 @@
         "id": "01619",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "mathml:infinity",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01619",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27809,7 +27809,7 @@
         "id": "01620",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01620",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27825,7 +27825,7 @@
         "id": "01621",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01621",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27842,7 +27842,7 @@
         "id": "01622",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "stoichiometry:unsupported",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01622",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27858,7 +27858,7 @@
         "id": "01623",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01623",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27874,7 +27874,7 @@
         "id": "01624",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01624",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27890,7 +27890,7 @@
         "id": "01625",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01625",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27930,7 +27930,7 @@
         "id": "01628",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01628",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27946,7 +27946,7 @@
         "id": "01629",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01629",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -27962,7 +27962,7 @@
         "id": "01630",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "package:fbc",
         "ref": "semantic/01630",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -28288,7 +28288,7 @@
         "id": "01657",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "sbml:empty-math",
         "ref": "semantic/01657",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -28927,7 +28927,7 @@
         "id": "01710",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "ref": "semantic/01710",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30685,7 +30685,7 @@
         "id": "00033",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00033",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30772,7 +30772,7 @@
         "id": "00040",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00040",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30787,7 +30787,7 @@
         "id": "00041",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00041",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30802,7 +30802,7 @@
         "id": "00042",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00042",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30817,7 +30817,7 @@
         "id": "00043",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00043",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30832,7 +30832,7 @@
         "id": "00044",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00044",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30847,7 +30847,7 @@
         "id": "00045",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00045",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30862,7 +30862,7 @@
         "id": "00046",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00046",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30877,7 +30877,7 @@
         "id": "00047",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00047",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30892,7 +30892,7 @@
         "id": "00048",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00048",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30907,7 +30907,7 @@
         "id": "00049",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00049",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30922,7 +30922,7 @@
         "id": "00050",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00050",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30937,7 +30937,7 @@
         "id": "00051",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00051",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30952,7 +30952,7 @@
         "id": "00052",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00052",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30967,7 +30967,7 @@
         "id": "00053",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00053",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30982,7 +30982,7 @@
         "id": "00054",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00054",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -30997,7 +30997,7 @@
         "id": "00055",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00055",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31012,7 +31012,7 @@
         "id": "00056",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00056",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31027,7 +31027,7 @@
         "id": "00057",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00057",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31042,7 +31042,7 @@
         "id": "00058",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00058",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31057,7 +31057,7 @@
         "id": "00059",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00059",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31072,7 +31072,7 @@
         "id": "00060",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00060",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31087,7 +31087,7 @@
         "id": "00061",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00061",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31102,7 +31102,7 @@
         "id": "00062",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00062",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31117,7 +31117,7 @@
         "id": "00063",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00063",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31132,7 +31132,7 @@
         "id": "00064",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00064",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31147,7 +31147,7 @@
         "id": "00065",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00065",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31162,7 +31162,7 @@
         "id": "00066",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00066",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31177,7 +31177,7 @@
         "id": "00067",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00067",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31192,7 +31192,7 @@
         "id": "00068",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00068",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31207,7 +31207,7 @@
         "id": "00069",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00069",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31222,7 +31222,7 @@
         "id": "00070",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00070",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31237,7 +31237,7 @@
         "id": "00071",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00071",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31252,7 +31252,7 @@
         "id": "00072",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00072",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31267,7 +31267,7 @@
         "id": "00073",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00073",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31282,7 +31282,7 @@
         "id": "00074",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00074",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31297,7 +31297,7 @@
         "id": "00075",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00075",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31312,7 +31312,7 @@
         "id": "00076",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00076",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31327,7 +31327,7 @@
         "id": "00077",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00077",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31342,7 +31342,7 @@
         "id": "00078",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00078",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31357,7 +31357,7 @@
         "id": "00079",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00079",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31372,7 +31372,7 @@
         "id": "00080",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00080",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31387,7 +31387,7 @@
         "id": "00081",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00081",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31402,7 +31402,7 @@
         "id": "00082",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00082",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31417,7 +31417,7 @@
         "id": "00083",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00083",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31432,7 +31432,7 @@
         "id": "00084",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00084",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31447,7 +31447,7 @@
         "id": "00085",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00085",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31462,7 +31462,7 @@
         "id": "00086",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00086",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31477,7 +31477,7 @@
         "id": "00087",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00087",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31492,7 +31492,7 @@
         "id": "00088",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00088",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31507,7 +31507,7 @@
         "id": "00089",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00089",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31522,7 +31522,7 @@
         "id": "00090",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00090",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31537,7 +31537,7 @@
         "id": "00091",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00091",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31552,7 +31552,7 @@
         "id": "00092",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00092",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31567,7 +31567,7 @@
         "id": "00093",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00093",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31582,7 +31582,7 @@
         "id": "00094",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00094",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31597,7 +31597,7 @@
         "id": "00095",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00095",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31612,7 +31612,7 @@
         "id": "00096",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00096",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31627,7 +31627,7 @@
         "id": "00097",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00097",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31642,7 +31642,7 @@
         "id": "00098",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00098",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31657,7 +31657,7 @@
         "id": "00099",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00099",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
@@ -31672,7 +31672,7 @@
         "id": "00100",
         "independent_comparison": "not-tested",
         "official_reference": "unsupported",
-        "reason_signature": "package:distrib",
+        "reason_signature": "events:untranslated",
         "ref": "stochastic/00100",
         "roundtrip_structure": "not-tested",
         "version": "l3v2"

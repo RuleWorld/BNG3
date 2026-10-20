@@ -434,9 +434,11 @@ instead of a human reading two large reports side by side.
 * `not_tested` means the stage produced no verdict (never executed, no
   reference defined, or the source was invalid). A timed-out case is recorded
   as `failed`, because the stage was attempted and did not succeed.
-* `passed` is a result. `unsupported` is a **gap**: the case was refused
-  because a construct is not representable today, and its `gap` entry names
-  the construct and the harness's cause labels for it. No entry claims that a
+* `passed` is a result. `failed` is a result too: the stage ran and
+  disagreed with the reference, which is a finding to investigate.
+  `unsupported` is the only **gap**: the case was refused because a
+  construct is not representable today, and its `gap` entry names the
+  construct and the harness's cause labels for it. No entry claims that a
   currently-unsupported construct should become supported, and a case that
   stops being refused is a finding to be reported, not a pass.
 * `status_mapping` states how each harness field becomes a verdict, so the

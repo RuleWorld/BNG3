@@ -93,6 +93,7 @@ OFFICIAL_STATUS_MAP: dict[str, str] = {
 # distinctive; the generic needles below are shared with the official suite.
 REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ("flux-balance constraints/objectives", "constraints:flux-balance-not-kinetic"),
+    ('"fbc" package', "package:fbc"),
     ("not an sbml biomodels artifact", "format:not-an-sbml-artifact"),
     ("contains no usable sbml", "format:no-usable-sbml"),
     ("not libsbml-valid", "source:libsbml-invalid"),
@@ -111,15 +112,19 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ("repeated-run mean", "harness:stochastic-ensemble-not-evaluated"),
     ("does not define an official time-course reference", "reference:not-applicable"),
     ("trigger is not a simple time threshold", "events:state-trigger-not-schedulable"),
-    ("SBML event(s) parsed", "events:untranslated"),
+    ("sbml event(s) parsed", "events:untranslated"),
     ("is marked fast", "fast-reaction:no-fast-equilibrium-solve"),
-    ("in math; BNGL has no built-in function", "mathml:no-bngl-builtin"),
-    ("no MathML expression", "sbml:empty-math"),
-    ("have no MathML kinetic law", "sbml:reaction-without-kinetic-law"),
+    ("in math; bngl has no built-in function", "mathml:no-bngl-builtin"),
+    ("no mathml expression", "sbml:empty-math"),
+    ("have no mathml kinetic law", "sbml:reaction-without-kinetic-law"),
     ("is not losslessly representable", "sbml-writer:unrepresentable-function"),
-    ("no exact BNG3 result mapping", "reference:no-result-mapping"),
+    ("no exact bng3 result mapping", "reference:no-result-mapping"),
     ("unsupported stoichiometry", "stoichiometry:unsupported"),
-    ("spatialDimensions", "compartment:unsupported-spatial-dimensions"),
+    (
+        "could not be resolved to a number",
+        "stoichiometry:assigned-stoichiometry-unresolved",
+    ),
+    ("spatialdimensions", "compartment:unsupported-spatial-dimensions"),
     ("algebraic rule(s) present", "rules:algebraic-not-applied"),
     ("conversion factor", "conversion-factor:unsupported"),
     ("reaction-local", "scope:reaction-local"),
@@ -367,20 +372,22 @@ def _official_status(record: dict[str, Any]) -> str:
 def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
     """Name the construct that keeps a stage from producing a verdict.
 
-    ``passed`` is a result. ``unsupported`` is a gap: the case was refused
-    because a construct is not representable today, and the manifest has to
-    say which construct rather than record a bare refusal.
+    ``passed`` is a result.  ``failed`` is a result too: the stage ran and
+    disagreed with the reference, which is a finding to investigate.
+    ``unsupported`` is the only gap: the case was refused because a
+    construct is not representable today, and the manifest has to say which
+    construct rather than record a bare refusal.
     """
 
     if stage == "conversion":
         status = str(record.get("status", ""))
-        if status == "passed":
+        if status != "unsupported":
             return None
         reason = str(record.get("unsupported_reason") or record.get("error") or "")
         causes = sorted(
             set(str(cause) for cause in (record.get("unsupported_causes") or []))
         )
-        if not causes and status == "unsupported":
+        if not causes:
             causes = sorted(
                 set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
             )
@@ -388,7 +395,7 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
 
     if stage == "official_reference":
         official = record.get("official_conformance") or {}
-        if str(official.get("status")) == "passed":
+        if str(official.get("status")) != "unsupported":
             return None
         reason = str(official.get("reason") or "")
         causes = sorted(
