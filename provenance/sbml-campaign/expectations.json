@@ -1,7 +1,7 @@
 {
   "generator": "scripts/ci/sbml_campaign_inventory.py",
   "kind": "sbml-test-suite-expectations",
-  "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that case. 'passed' is a result. 'unsupported' is a gap: the case's 'gap' entry names the construct that is not representable today together with the harness's cause labels for it. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
+  "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that case. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the reference, which is a finding to investigate. 'unsupported' is the only gap: the case's 'gap' entry names the construct that is not representable today together with the harness's cause labels for it. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
   "schema_version": 1,
   "source_report": {
     "bng3_commit": "a4453c7dc147624aaffe7fe170c973bd56434557",

@@ -457,7 +457,9 @@ def expectations_from_report(
         "note": (
             "Each entry records the verdict the tree named by "
             "source_report.bng3_commit produced for that case. 'passed' is a "
-            "result. 'unsupported' is a gap: the case's 'gap' entry names the "
+            "result. 'failed' is a result too: the stage ran and disagreed "
+            "with the reference, which is a finding to investigate. "
+            "'unsupported' is the only gap: the case's 'gap' entry names the "
             "construct that is not representable today together with the "
             "harness's cause labels for it. No entry claims that a currently "
             "unsupported construct should become supported, and an "
