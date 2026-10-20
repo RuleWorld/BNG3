@@ -47,6 +47,36 @@ happen is a record that *converts* and then means something other than its
 source. The residual failures below are the records where that distinction
 still has to be made.
 
+## The Atomizer's output is not reproducible across runs
+
+This is a measurement caveat that applies to every number in this document,
+and it is a defect in the Atomizer rather than in the corpus.
+
+The modern Atomizer emits a different document for the same source model
+depending on the process's `PYTHONHASHSEED`. A set iteration order leaks into
+the emitted text, and the text's numeric constants change with it. One
+curated record, `BIOMD0000001058`, is enough to show it:
+
+```
+PYTHONHASHSEED=0   Autocatalytic_synthesis_of_ClbMt: 0 -> @compartment:M_ClbMt() 0.01999940124825325
+PYTHONHASHSEED=1   Autocatalytic_synthesis_of_ClbMt: 0 -> @compartment:M_ClbMt() 0.019998734476196073
+PYTHONHASHSEED=2   Autocatalytic_synthesis_of_ClbMt: 0 -> @compartment:M_ClbMt() 0.019999159775260743
+```
+
+The same source, the same tree and the same native extension produce three
+different constants. A corpus run therefore measures a slightly different
+model on every pass, and a record whose observable sits at the edge of the
+comparison's tolerance can pass on one pass and fail on the next. That is
+the likely explanation for the records in this corpus whose status does not
+reproduce.
+
+The measurement in this document is taken with `PYTHONHASHSEED=0`, and the
+per-record comparison between the branch and `main` is taken with the same
+fixed seed, so that the diff shows the change under review and not the hash
+order. With the seed fixed, a forty-record sample of the corpus produces
+byte-identical BNGL on `main` and on the branch that carries the two Atomizer
+fixes, and only the four records those fixes target differ.
+
 ## Residual failures
 
 Thirteen records failed and twelve timed out. Each one is classified by the
@@ -96,7 +126,7 @@ Core specification:
 | `BIOMD0000001098` | atomizer | MathML `<apply>` without an operator | Every reaction's kinetic law is an `<apply>` whose operator is a `<ci>` naming a parameter. MathML reads that as a call to an undeclared function, the Atomizer translated it faithfully, and the emitted rule does not parse. **Now reported as unsupported.** |
 | `BIOMD0000000674` | writer | reversible rule with a `TotalRate` modifier | The Atomizer's translation matches the source (see below), but the C++ SBML writer writes the reverse direction of a reversible `TotalRate` rule with an extra factor for the product species and without the `bng:totalRate` annotation, so the written SBML does not reproduce the source's mathematics. **Not fixed here: the defect is in `cpp/io/SbmlWriter.cpp`, not in the Atomizer.** |
 | `BIOMD0000000338`, `BIOMD0000000339` | harness | event-driven compartment size with a species rate rule | The Atomizer refuses explicitly: a species rate rule in a compartment whose size an event changes has no exact BNGL lowering. The harness does not recognise the refusal string and records the record as failed rather than unsupported. |
-| `BIOMD0000000404` | harness | ill-conditioned product observable | The failing observable is a seven-fold product of species concentrations in a 1.41e-15 L compartment. The comparison sits at the edge of the tolerance and does not reproduce between runs. |
+| `BIOMD0000000404` | harness | ill-conditioned product observable | The failing observable is a seven-fold product of species concentrations in a 1.41e-15 L compartment. The comparison sits at the edge of the tolerance, and the stored failure does not reproduce on the merged tree with the rebuilt native extension: three consecutive re-runs pass. |
 | `BIOMD0000000451` | harness | stiff model rejected by the independent oracle | libRoadRunner's CVODE fails to converge on the written SBML at t ≈ 1.5e-8; BNG3's own solver produces a trajectory. The comparison needs both. |
 | `BIOMD0000000601` | harness | stiff model rejected by a solver | A CVODE convergence failure that does not reproduce on the merged tree with the rebuilt native extension. |
 | `BIOMD0000000731` | source | observable undefined at t=0 | The observable is `ln` of a quantity that is zero at t=0, so BNG3 and libRoadRunner both return `-inf`. The corpus comparison requires finite values in both engines. |
