@@ -113,18 +113,63 @@ Combined effect of PRs #316, #318 and #319 on the official-reference stage:
 **1115 → 1169 passed**, 107 → 53 failed, **0 regressions**. The conversion
 stage is unchanged at 1712 passed / 211 unsupported / 0 failed.
 
+## Integrated result (PRs #316, #318, #319, #320)
+
+Measured on the merged tree at base commit `219c76da`:
+
+| Stage | Before | After |
+| --- | --- | --- |
+| Conversion | 1712 passed / 211 unsupported / 0 failed | **unchanged** |
+| Round-trip structure | 1712 passed | **unchanged** |
+| Independent libRoadRunner comparison | 1712 passed | **unchanged** |
+| Official reference | 1115 passed / 701 unsupported / 107 failed | **1172 passed / 701 unsupported / 50 failed** |
+
+57 official-reference cases move `failed → passed` and **none regresses**.
+The Python suite is 1528 passed / 28 skipped / 2 xfailed, with one
+pre-existing failure (`test_generated_notebooks_execute_in_qualified_kernel`)
+that also fails on the unmodified base commit.
+
+Per-change contribution:
+
+| PR | Change | Official cases fixed |
+| --- | --- | --- |
+| #316 | Initial-value resolution order | 15 |
+| #318 | `csymbol` by `definitionURL`; static parameter initial assignments | 20 |
+| #319 | Amount-based rate laws in a non-unity compartment | 19 |
+| #320 | n-ary MathML relations | 3 |
+
 ## Workstreams
 
 | ID | Cluster | Owner | State |
 | --- | --- | --- | --- |
 | A | Initial-value resolution order | agent A | PR #316 (review pending) |
-| B | Over-conservative diagnostics (MathML reciprocals, `fast`) | agent B | in progress |
-| C | Empty MathML / reactions without a kinetic law | agent C | pending |
-| D | Harness: scheduled actions + stochastic ensembles + reaction extents | agent D | pending |
-| E | `delay` / `rateOf` in the C++ SBML writer | agent E | pending |
-| F | State-dependent SBML event triggers | agent F | pending |
-| G | Structural atomization (molecular identity, sites, uncertainty) | agent G | pending |
+| — | `csymbol` semantics + static parameter initial assignments | coordinator | PR #318 (review pending) |
+| H | Amount-based rate laws / extent-rate volume factor | coordinator | PR #319 (review pending) |
+| — | n-ary MathML relations | coordinator | PR #320 (review pending) |
+| — | Baseline inventory and campaign record | coordinator | PR #317 (review pending) |
+| B | Over-conservative diagnostics (MathML reciprocals, `fast`) | agent B | partial work in `/tmp/bng3-campaign/wt-atomizer-diagnostics` |
+| C | Empty MathML / reactions without a kinetic law | agent C | partial work in `/tmp/bng3-campaign/wt-atomizer-empty-math` |
+| D | Harness: scheduled actions + stochastic ensembles + reaction extents | agent D | **not started — highest remaining leverage** (533 cases) |
+| E | `delay` / `rateOf` in the C++ SBML writer | agent E | not started (~18 cases) |
+| F | State-dependent SBML event triggers | agent F | not started (~35 cases) |
+| G | Structural atomization (molecular identity, sites, uncertainty) | agent G | partial work in `/tmp/bng3-campaign/wt-atomizer-structure` |
+| I | Assignment rules whose target is a parameter | agent I | not started (~8 cases) |
+| J | Time-dependent stoichiometry (rate-ruled `speciesReference`) | agent J | not started (~10 cases) |
 | — | Independent review of each implementation PR | separate reviewer | required before merge |
+
+### Remaining official-reference failures (50), by cluster
+
+| Cluster | n | Cases |
+| --- | --- | --- |
+| `CSymbolDelay` | 12 | 00938 00940 00941 00942 00943 01400 01401 01403 01406 01409 01419 01534 |
+| `AssignmentRule` | 11 | 00999 01198 01205 01206 01207 01208 01216 01478 01492 01493 01796 |
+| `RateRule` (variable stoichiometry) | 10 | 01103 01637 01718 01727 01728 01729 01736 01737 01738 01742 |
+| `CSymbolRateOf` | 3 | 01460 01542 01822 |
+| `InitialAssignment` | 8 | 00785 00786 00879 01513 01514 01516 01631 01633 |
+| `CSymbolAvogadro` | 2 | 01121 01723 |
+| other | 2 | 00951 01820 |
+| `AlgebraicRule` | 1 | 01575 |
+| `InitialAssignment` (species) | 1 | 01821 |
 
 ## Invariants for this campaign
 
