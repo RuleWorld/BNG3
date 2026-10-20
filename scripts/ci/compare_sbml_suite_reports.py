@@ -18,6 +18,13 @@ Lists are compared as multisets.  The unsupported-cause and
 official-reference summaries list their cases in record order, and that
 order carries no verdict: two runs that dispatch the same cases in a
 different order must not report a difference.
+
+The tool exits 0 when the two reports agree on every per-case verdict and
+on every aggregate the gate published, and 1 when they do not.  There is no
+verdicts-only mode: a report-level difference is reported too, because it
+is derived from the verdicts.  A difference that is only a report *shape*
+difference -- a bucket one report has and the other does not -- is
+reported as such and is not a verdict.
 """
 
 from __future__ import annotations
@@ -186,7 +193,7 @@ def main() -> int:
         "--max-differences",
         type=int,
         default=40,
-        help="how many differences to print",
+        help="how many differing cases to print in detail",
     )
     args = parser.parse_args()
 
@@ -211,10 +218,21 @@ def main() -> int:
         return 0
     if differences:
         print(f"{len(differing_cases)} cases differ between the two reports")
-        for difference in differences[: args.max_differences]:
-            print(f"  {difference}")
-        if len(differences) > args.max_differences:
-            print(f"  ... {len(differences) - args.max_differences} more differences")
+        # Group the differences by case so the header's case count and the
+        # detail lines agree: one case can contribute many differences.
+        grouped: dict[str, list[str]] = {}
+        for difference in differences:
+            path, _, detail = difference.partition(": ")
+            case = path.split(".", 1)[0]
+            grouped.setdefault(case, []).append(f"{path}: {detail}")
+        for case in sorted(grouped)[: args.max_differences]:
+            details = grouped[case]
+            print(f"  {case}: {len(details)} difference(s)")
+            for detail in details:
+                print(f"    {detail}")
+        remaining = len(grouped) - args.max_differences
+        if remaining > 0:
+            print(f"  ... {remaining} more cases differ")
     else:
         print(
             f"no per-case verdict difference between the two reports "

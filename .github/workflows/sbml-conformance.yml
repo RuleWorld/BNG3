@@ -15,6 +15,7 @@ on:
       - 'tests/test_ssts_selected_gate.py'
       - 'tests/test_ssts_feature_selection.py'
       - 'tests/test_ssts_isolation.py'
+      - 'tests/test_ssts_report_comparison.py'
       - 'tests/test_ssts_stage_reporting.py'
       - 'tests/python/test_native_events.py'
       - 'tests/python/test_species_rate_rule_amounts.py'
@@ -84,7 +85,7 @@ jobs:
             --source-revision "$BNG3_SOURCE_REVISION" \
             > "$RUNNER_TEMP/ssts-artifacts/package-identity.json"
           python -c 'import libsbml, roadrunner; print(libsbml.getLibSBMLDottedVersion(), roadrunner.__version__)'
-          python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_isolation.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/python/test_structural_multi_execution.py tests/python/test_native_events.py tests/python/test_sbml_function_forward_references.py tests/python/test_species_rate_rule_amounts.py -q
+          python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_isolation.py tests/test_ssts_report_comparison.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/python/test_structural_multi_execution.py tests/python/test_native_events.py tests/python/test_sbml_function_forward_references.py tests/python/test_species_rate_rule_amounts.py -q
 
       - name: Checkout and preflight complete locked suite
         shell: bash
