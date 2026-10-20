@@ -6867,7 +6867,8 @@
       "campaign/atomizer-csymbol",
       "campaign/atomizer-volume-factor",
       "campaign/atomizer-nary-relations",
-      "campaign/atomizer-assignment-rule-targets"
+      "campaign/atomizer-assignment-rule-targets",
+      "campaign/atomizer-mathml-reciprocals"
     ],
     "measurement_date": "2026-10-20",
     "measurement_host": "darwin, CPython 3.14, libsbml 5.21.1, roadrunner 2.10.0",
@@ -16511,37 +16512,31 @@
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "00957",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/00957",
         "version": "l3v2"
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "00958",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/00958",
         "version": "l3v2"
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "00959",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/00959",
         "version": "l3v2"
       },
@@ -21939,13 +21934,11 @@
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01486",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/01486",
         "version": "l3v2"
       },
@@ -21961,13 +21954,11 @@
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01488",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/01488",
         "version": "l3v2"
       },
@@ -22247,11 +22238,13 @@
       },
       {
         "category": "semantic",
-        "causes": [],
-        "conversion": "passed",
+        "causes": [
+          "stoichiometry"
+        ],
+        "conversion": "unsupported",
         "id": "01516",
-        "official_reference": "failed",
-        "reason_signature": "",
+        "official_reference": "unsupported",
+        "reason_signature": "other",
         "ref": "semantic/01516",
         "version": "l3v2"
       },
@@ -22387,49 +22380,41 @@
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01530",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "",
         "ref": "semantic/01530",
         "version": "l3v2"
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01531",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "",
         "ref": "semantic/01531",
         "version": "l3v2"
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01532",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "",
         "ref": "semantic/01532",
         "version": "l3v2"
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01533",
         "official_reference": "unsupported",
-        "reason_signature": "other",
+        "reason_signature": "",
         "ref": "semantic/01533",
         "version": "l3v2"
       },
@@ -22745,7 +22730,7 @@
       {
         "category": "semantic",
         "causes": [
-          "other"
+          "stoichiometry"
         ],
         "conversion": "unsupported",
         "id": "01561",
@@ -22756,37 +22741,31 @@
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01562",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/01562",
         "version": "l2v5"
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01563",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/01563",
         "version": "l3v2"
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01564",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/01564",
         "version": "l3v2"
       },
@@ -22804,13 +22783,11 @@
       },
       {
         "category": "semantic",
-        "causes": [
-          "other"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01566",
-        "official_reference": "unsupported",
-        "reason_signature": "other",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/01566",
         "version": "l3v2"
       },
@@ -26695,10 +26672,10 @@
       "events": 94,
       "fast_reactions": 35,
       "mathml": 75,
-      "other": 19,
+      "other": 5,
       "package:distrib": 61,
       "package:fbc": 34,
-      "stoichiometry": 7
+      "stoichiometry": 9
     },
     "cause_sets": [
       {
@@ -26730,12 +26707,6 @@
       },
       {
         "causes": [
-          "other"
-        ],
-        "count": 19
-      },
-      {
-        "causes": [
           "events"
         ],
         "count": 17
@@ -26750,6 +26721,12 @@
       {
         "causes": [
           "stoichiometry"
+        ],
+        "count": 7
+      },
+      {
+        "causes": [
+          "other"
         ],
         "count": 5
       },
@@ -26801,23 +26778,23 @@
       }
     ],
     "official_reference_counts": {
-      "failed": 40,
-      "passed": 1182,
-      "unsupported": 701
+      "failed": 39,
+      "passed": 1191,
+      "unsupported": 693
     },
-    "source_report_sha256": "1f720a7b4f4e11742311b798d48db43ffc451d78f2f3b96d4ff6602617e60a12",
+    "source_report_sha256": "649c26d57c353d62d23da0a753bb94fd40181280c9d55313ffaf7a4988a0c1c0",
     "stage_counts": {
       "conversion": {
-        "passed": 1712,
-        "unsupported": 211
+        "passed": 1724,
+        "unsupported": 199
       },
       "independent_comparison": {
-        "not-tested": 211,
-        "passed": 1712
+        "not-tested": 199,
+        "passed": 1724
       },
       "roundtrip_structure": {
-        "not-tested": 211,
-        "passed": 1712
+        "not-tested": 199,
+        "passed": 1724
       }
     }
   },
