@@ -195,14 +195,21 @@ def _caption(parts: list[str]) -> list[str]:
     return ["_" + "; ".join(parts) + "._"]
 
 
-def _report_caption(path: Path, report: dict[str, Any], extra: str = "") -> list[str]:
+def _report_caption(
+    path: Path,
+    report: dict[str, Any],
+    extra: str = "",
+    measured_commit: str = "",
+) -> list[str]:
     revision = str(report.get("suite_commit") or "")
     commit = str((report.get("source_provenance") or {}).get("bng3_commit") or "")
     parts = [f"Source: `{path}` (SHA-256 `{_digest(path)}`)"]
     if revision:
         parts.append(f"SBML Test Suite revision `{revision}`")
     if commit:
-        parts.append(f"BNG3 commit `{commit}`")
+        parts.append(f"BNG3 commit the run executed `{commit}`")
+    if measured_commit and measured_commit != commit:
+        parts.append(f"the recorded manifest describes `{measured_commit}`")
     if extra:
         parts.append(extra)
     return _caption(parts)
@@ -216,7 +223,9 @@ def suite_stage_counts(report: dict[str, Any]) -> dict[str, Counter]:
     return counters
 
 
-def suite_stage_table(report: dict[str, Any], path: Path) -> list[str]:
+def suite_stage_table(
+    report: dict[str, Any], path: Path, measured_commit: str = ""
+) -> list[str]:
     counters = suite_stage_counts(report)
     rows = []
     for stage, label in STAGE_LABELS:
@@ -237,6 +246,7 @@ def suite_stage_table(report: dict[str, Any], path: Path) -> list[str]:
         report,
         "a timed-out case is recorded as failed and an unevaluated stage "
         "as not tested",
+        measured_commit,
     )
 
 
@@ -285,7 +295,9 @@ def biomodels_table(report: dict[str, Any], path: Path) -> list[str]:
     return lines
 
 
-def official_unsupported_table(report: dict[str, Any], path: Path) -> list[str]:
+def official_unsupported_table(
+    report: dict[str, Any], path: Path, measured_commit: str = ""
+) -> list[str]:
     counts: Counter = Counter()
     for record in report.get("records") or []:
         official = record.get("official_conformance") or {}
@@ -311,7 +323,7 @@ def official_unsupported_table(report: dict[str, Any], path: Path) -> list[str]:
     lines.append(
         f"Total official-reference unsupported verdicts: {sum(counts.values())}."
     )
-    lines.extend(_report_caption(path, report))
+    lines.extend(_report_caption(path, report, measured_commit=measured_commit))
     return lines
 
 
@@ -328,7 +340,10 @@ def component_tags(suite_dir: Path, category: str, case_id: str) -> list[str]:
 
 
 def failure_cluster_table(
-    report: dict[str, Any], path: Path, suite_dir: Path
+    report: dict[str, Any],
+    path: Path,
+    suite_dir: Path,
+    measured_commit: str = "",
 ) -> list[str]:
     clusters: dict[str, list[str]] = {}
     for record in report.get("records") or []:
@@ -353,7 +368,12 @@ def failure_cluster_table(
         f"{sum(len(ids) for ids in clusters.values())}."
     )
     lines.extend(
-        _report_caption(path, report, f"clusters read from `{suite_dir}` case notes")
+        _report_caption(
+            path,
+            report,
+            f"clusters read from `{suite_dir}` case notes",
+            measured_commit,
+        )
     )
     return lines
 
@@ -470,6 +490,7 @@ def render(
     biomodels_report: Path | None,
     suite_dir: Path | None,
     pytest_junit: Path | None,
+    measured_commit: str = "",
 ) -> dict[str, str]:
     regions: dict[str, str] = {}
 
@@ -511,14 +532,14 @@ def render(
         current_report = _load(suite_report)
         current_blocks.append(
             ["#### Official SBML Test Suite — current stage results", ""]
-            + suite_stage_table(current_report, suite_report)
+            + suite_stage_table(current_report, suite_report, measured_commit)
         )
         current_blocks.append(
             [
                 "#### Official-reference unsupported verdicts, by owner",
                 "",
             ]
-            + official_unsupported_table(current_report, suite_report)
+            + official_unsupported_table(current_report, suite_report, measured_commit)
         )
         if suite_dir is not None:
             current_blocks.append(
@@ -526,7 +547,9 @@ def render(
                     "#### Remaining official-reference failures, by official feature",
                     "",
                 ]
-                + failure_cluster_table(current_report, suite_report, suite_dir)
+                + failure_cluster_table(
+                    current_report, suite_report, suite_dir, measured_commit
+                )
             )
     if biomodels_report is not None:
         current_blocks.append(
@@ -632,6 +655,11 @@ def main() -> int:
     parser.add_argument("--biomodels-report", type=Path)
     parser.add_argument("--suite-dir", type=Path)
     parser.add_argument("--pytest-junit", type=Path)
+    parser.add_argument(
+        "--measured-commit",
+        default="",
+        help="the commit the expectation manifest describes, for the caption",
+    )
     parser.add_argument("--doc", type=Path, help="campaign document to update")
     parser.add_argument("--out-dir", type=Path, help="write each region to a file")
     parser.add_argument(
@@ -651,6 +679,7 @@ def main() -> int:
         biomodels_report=args.biomodels_report,
         suite_dir=args.suite_dir,
         pytest_junit=args.pytest_junit,
+        measured_commit=args.measured_commit,
     )
     if args.check:
         if args.doc is None:

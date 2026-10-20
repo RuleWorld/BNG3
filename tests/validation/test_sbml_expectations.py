@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ from scripts.ci import sbml_campaign_inventory as inventory
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
-INVENTORY = REPO / "provenance" / "sbml-campaign" / "integrated-2026-10-20.json"
+INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-20.json"
 LOCK = REPO / "provenance" / "upstreams.lock.yml"
 TOOL = REPO / "scripts" / "ci" / "sbml_campaign_inventory.py"
 GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
@@ -688,3 +689,50 @@ def test_the_manifest_step_documents_the_selection_limit():
     script = _manifest_step_script()
     assert "128-case feature-cover" in script
     assert "scheduled full run compares every case" in script
+
+
+@pytest.mark.smoke
+def test_the_committed_manifest_is_internally_consistent():
+    """Every case, every stage, every gap — the record must describe itself."""
+
+    manifest = _manifest()
+    cases = manifest["cases"]
+    assert manifest["suite"]["case_count"] == len(cases) == 1923
+
+    for identity, entry in cases.items():
+        assert set(inventory.EXPECTATION_STAGES) <= set(entry), identity
+        for stage in inventory.EXPECTATION_STAGES:
+            assert entry[stage] in inventory.EXPECTATION_STATUSES, (identity, stage)
+        gap = entry.get("gap")
+        if gap is None:
+            continue
+        for stage, detail in gap.items():
+            # A gap is recorded only for a refusal, and it names the construct
+            # that is not representable today.
+            assert entry[stage] == "unsupported", (identity, stage)
+            assert detail["construct"], (identity, stage)
+            assert detail["construct"] != "other", (identity, stage)
+
+    # A reference mismatch is a finding, not a missing construct: the
+    # official-reference failures are recorded as failures and carry no gap.
+    failures = [
+        identity
+        for identity, entry in cases.items()
+        if entry["official_reference"] == "failed"
+    ]
+    assert failures
+    for identity in failures:
+        assert "official_reference" not in cases[identity].get("gap", {}), identity
+
+
+@pytest.mark.smoke
+def test_the_manifests_stage_counts_agree_with_its_per_case_verdicts():
+    """The summary and the detail are one record, not two."""
+
+    manifest = _manifest()
+    cases = manifest["cases"]
+    recorded = manifest["stage_counts"]
+    for stage in inventory.EXPECTATION_STAGES:
+        tally = Counter(entry[stage] for entry in cases.values())
+        assert dict(sorted(tally.items())) == recorded[stage], stage
+        assert sum(recorded[stage].values()) == len(cases), stage

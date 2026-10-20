@@ -10,7 +10,12 @@ them changes a verdict.
 | `expectations.json` | the expected verdict of every official SBML Test Suite case at every stage of the gate | `scripts/ci/sbml_campaign_inventory.py --expectations-out` |
 | `baseline-2026-10-19.json` | the measured inventory at campaign base commit `219c76da` | `scripts/ci/sbml_campaign_inventory.py --out` |
 | `integrated-2026-10-20.json` | the measured inventory after the campaign's integrated changes | `scripts/ci/sbml_campaign_inventory.py --out` |
+| `current-2026-10-20.json` | the measured inventory of the current merged tree | `scripts/ci/sbml_campaign_inventory.py --out` |
 | `provenance-<label>.json` | the measurement metadata merged into the matching inventory | hand-maintained; reviewed with the inventory it describes |
+
+The baseline and the integrated inventories are **historical facts** and are
+not rewritten. A new measurement is recorded as a *current* inventory
+alongside them.
 
 ## Expectation manifest schema
 
@@ -66,8 +71,17 @@ human to read two large reports side by side.
   that stops being refused is a finding to be reported, not a pass.
 * `status_mapping` states how each harness field becomes a verdict, so the
   mapping is auditable rather than implicit.
+* `stage_counts` is the recorded summary of the four stages. It is derived
+  from the per-case verdicts, not typed in, so the summary and the detail
+  cannot drift apart.
 * `suite.revision`, `source_report.sha256` and `source_report.bng3_commit`
   identify exactly which suite and which run the manifest describes.
+* `provenance` records the measurement environment: the commit the manifest
+  describes (`measured_commit`), the commit the run actually executed
+  (`measured_at_commit`), the source tree and the native extension's
+  SHA-256, and any note the operator supplied. A run may execute a branch
+  head whose Atomizer behaviour is identical to the described commit; that
+  difference is stated here rather than left implicit.
 
 ## Regenerating the manifest
 
@@ -77,14 +91,22 @@ committed file and the diff is the review.
 ```bash
 PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   --suite-dir /path/to/sbml-test-suite \
-  --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 6 \
+  --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 3 \
   --json /tmp/bng3-campaign/report.json
 
 python scripts/ci/sbml_campaign_inventory.py \
   --suite-report /tmp/bng3-campaign/report.json \
   --expectations-out provenance/sbml-campaign/expectations.json \
-  --measurement-date "$(date -u +%Y-%m-%d)"
+  --measurement-date "$(date -u +%Y-%m-%d)" \
+  --measured-commit "$(git rev-parse HEAD)" \
+  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-20.json
 ```
+
+`--measured-commit` is the commit the manifest *describes*; the report's own
+`source_provenance.bng3_commit` is kept as `measured_at_commit`, the commit
+the run actually executed. When the two differ, say why in the provenance
+document: the reader must be able to tell which native build and which source
+tree produced the numbers.
 
 ## What the pull-request gate does and does not cover
 
@@ -120,7 +142,9 @@ python scripts/ci/validate_sbml_test_suite.py \
 python scripts/ci/sbml_campaign_inventory.py \
   --suite-report /tmp/bng3-campaign/main-report.json \
   --expectations-out provenance/sbml-campaign/expectations.json \
-  --measurement-date "$(date -u +%Y-%m-%d)"
+  --measurement-date "$(date -u +%Y-%m-%d)" \
+  --measured-commit "$(git rev-parse HEAD)" \
+  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-20.json
 
 # verify the regenerated manifest against the report it came from
 python scripts/ci/sbml_campaign_inventory.py \

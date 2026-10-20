@@ -2,12 +2,49 @@
   "generator": "scripts/ci/sbml_campaign_inventory.py",
   "kind": "sbml-test-suite-expectations",
   "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that case. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the reference, which is a finding to investigate. 'unsupported' is the only gap: the case's 'gap' entry names the construct that is not representable today together with the harness's cause labels for it. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
+  "provenance": {
+    "measured_at_commit": "82f837f63d7e986e7184e603819b5bb814a86c52",
+    "measured_commit": "cee96c9aeb91dd9800c840ac6066b89fd06a43d7",
+    "measurement_environment": {
+      "libsbml_version": "5.21.1",
+      "native_extension_sha256": "098cb86d9346ddc22e76eb5768186f6a5818bf41512cef53cb459bee9e7885aa",
+      "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+      "python_package_source_sha256": "3404f099ef8c47926c2ab0f1acdb1a89cb8ab210cab72a22671d45829bde6753",
+      "python_version": "3.14.6",
+      "roadrunner_version": "2.10.0",
+      "source_tree": "/private/tmp/bng3-campaign/wt-static-evaluator/python/bionetgen/__init__.py"
+    },
+    "notes": [
+      "The run executed the #335 branch head 82f837f63d7e986e7184e603819b5bb814a86c52.  The tree difference to the measured commit cee96c9a touches no file under python/bionetgen/atomizer/ and no file under cpp/, so the Atomizer behaviour the gate measures is identical and the measurement is a valid measurement of the measured commit.",
+      "The native extension SHA-256 and the source tree are recorded because the run executed in a branch worktree, not in main: a reader must be able to tell which native build and which source tree produced these numbers."
+    ]
+  },
   "schema_version": 1,
   "source_report": {
-    "bng3_commit": "a4453c7dc147624aaffe7fe170c973bd56434557",
+    "bng3_commit": "cee96c9aeb91dd9800c840ac6066b89fd06a43d7",
+    "measured_at_commit": "82f837f63d7e986e7184e603819b5bb814a86c52",
     "measurement_date": "2026-10-20",
     "python_version": "3.14.6",
-    "sha256": "6cc128cde0aa3e3794fa87382dc0fdbfc8b0c21250b2616f4a0ecebf08999ff3"
+    "sha256": "6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7"
+  },
+  "stage_counts": {
+    "conversion": {
+      "passed": 1731,
+      "unsupported": 192
+    },
+    "independent_comparison": {
+      "not_tested": 192,
+      "passed": 1731
+    },
+    "official_reference": {
+      "failed": 17,
+      "passed": 1220,
+      "unsupported": 686
+    },
+    "roundtrip_structure": {
+      "not_tested": 192,
+      "passed": 1731
+    }
   },
   "stages": [
     "conversion",
@@ -915,7 +952,7 @@
     "semantic/00876": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00877": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00878": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/00879": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "failed"},
+    "semantic/00879": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00880": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00881": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00882": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1458,18 +1495,18 @@
     "semantic/01419": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01420": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01421": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01422": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["stoichiometry"], "construct": "stoichiometry:unsupported"}, "official_reference": {"causes": [], "construct": "stoichiometry:unsupported"}}},
+    "semantic/01422": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01423": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01424": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01425": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01426": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["stoichiometry"], "construct": "stoichiometry:unsupported"}, "official_reference": {"causes": [], "construct": "stoichiometry:unsupported"}}},
-    "semantic/01427": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["stoichiometry"], "construct": "stoichiometry:unsupported"}, "official_reference": {"causes": [], "construct": "stoichiometry:unsupported"}}},
+    "semantic/01426": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01427": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01428": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01429": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01430": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01431": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01432": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["stoichiometry"], "construct": "stoichiometry:unsupported"}, "official_reference": {"causes": [], "construct": "stoichiometry:unsupported"}}},
-    "semantic/01433": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["stoichiometry"], "construct": "stoichiometry:unsupported"}, "official_reference": {"causes": [], "construct": "stoichiometry:unsupported"}}},
+    "semantic/01432": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01433": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01434": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01435": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01436": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1552,7 +1589,7 @@
     "semantic/01513": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01514": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "failed"},
     "semantic/01515": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01516": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["stoichiometry"], "construct": "stoichiometry:assigned-stoichiometry-unresolved"}, "official_reference": {"causes": [], "construct": "stoichiometry:assigned-stoichiometry-unresolved"}}},
+    "semantic/01516": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01517": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01518": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "harness:scheduled-actions-not-executed"}}},
     "semantic/01519": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1597,7 +1634,7 @@
     "semantic/01558": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve"}}},
     "semantic/01559": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve"}}},
     "semantic/01560": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve"}}},
-    "semantic/01561": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["stoichiometry"], "construct": "stoichiometry:assigned-stoichiometry-unresolved"}, "official_reference": {"causes": [], "construct": "stoichiometry:assigned-stoichiometry-unresolved"}}},
+    "semantic/01561": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01562": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01563": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01564": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1658,7 +1695,7 @@
     "semantic/01619": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
     "semantic/01620": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
     "semantic/01621": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
-    "semantic/01622": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc", "stoichiometry"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
+    "semantic/01622": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
     "semantic/01623": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
     "semantic/01624": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
     "semantic/01625": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "mathml", "package:fbc"], "construct": "package:fbc"}, "official_reference": {"causes": [], "construct": "reference:not-applicable"}}},
