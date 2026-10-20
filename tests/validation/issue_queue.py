@@ -315,10 +315,10 @@ def assess_obligations(obligations, reports, revision):
         ):
             if not isinstance(obligation.get(name), list):
                 raise ValueError("invalid obligation list: " + name)
-        checks = obligation["required_checks"]
-        if len({c["id"] for c in checks}) != len(checks):
+        required_checks = obligation["required_checks"]
+        if len({c["id"] for c in required_checks}) != len(required_checks):
             raise ValueError("duplicate required check identity")
-        for check in checks:
+        for check in required_checks:
             if check.get("evidence_kind") not in {
                 "supported-execution",
                 "diagnostic-only",
@@ -332,8 +332,51 @@ def assess_obligations(obligations, reports, revision):
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate obligation identity")
     for obligation in obligations:
+        manual_requirements = []
+        for check in obligation["required_checks"]:
+            if check["evidence_kind"] == "disposition":
+                manual_requirements.append(
+                    dict(
+                        id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                        kind="disposition",
+                        criterion=obligation["criterion"],
+                        text=check["expectation"],
+                    )
+                )
+        for decision in obligation["decisions"]:
+            manual_requirements.append(
+                dict(
+                    id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                    kind="human-decision",
+                    criterion=obligation["criterion"],
+                    text=decision,
+                )
+            )
+        for scope in obligation["unmapped_scope"]:
+            manual_requirements.append(
+                dict(
+                    id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                    kind="scope-reconciliation",
+                    criterion=obligation["criterion"],
+                    text=scope,
+                )
+            )
+        if (
+            obligation.get("scope_status") == "STALE_SCOPE"
+            and not obligation["unmapped_scope"]
+        ):
+            manual_requirements.append(
+                dict(
+                    id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                    kind="scope-reconciliation",
+                    criterion=obligation["criterion"],
+                    text="Reconcile the live issue text with this reviewed scope.",
+                )
+            )
         checks = []
         for required in obligation["required_checks"]:
+            if required["evidence_kind"] == "disposition":
+                continue
             key = required["id"]
             record = dict(required, status="NOT_TESTED", missing_evidence=[])
             if key in conflicts:
@@ -374,14 +417,12 @@ def assess_obligations(obligations, reports, revision):
                 bool(check.get("observation")) and check["status"] != "NOT_TESTED"
             )
         statuses = {c["status"] for c in checks}
-        if (
-            obligation.get("scope_status") in {"STALE_SCOPE", "UNMAPPED"}
-            or obligation.get("unmapped_scope")
-            or obligation.get("decisions")
-        ):
-            status = "DECISION_REQUIRED"
+        if checks:
+            technical_status = "DEMONSTRATED"
         else:
-            status = "DEMONSTRATED" if checks else "EVIDENCE_GAP"
+            technical_status = (
+                "NOT_APPLICABLE" if manual_requirements else "EVIDENCE_GAP"
+            )
         for candidate in (
             "NOT_TESTED",
             "EVIDENCE_GAP",
@@ -393,13 +434,17 @@ def assess_obligations(obligations, reports, revision):
             "CONFLICT",
         ):
             if candidate in statuses:
-                status = candidate
-        if status == "DEMONSTRATED" and statuses != {"PASS"}:
-            status = "EVIDENCE_GAP"
+                technical_status = candidate
+        if technical_status == "DEMONSTRATED" and statuses != {"PASS"}:
+            technical_status = "EVIDENCE_GAP"
+        status = "DECISION_REQUIRED" if manual_requirements else technical_status
         assessed.append(
             dict(
                 obligation,
                 status=status,
+                technical_status=technical_status,
+                decision_status=("REQUIRED" if manual_requirements else "NONE"),
+                manual_requirements=manual_requirements,
                 checks=checks,
                 test_reference_status=(
                     "RELEVANT_TEST_EXISTS"
@@ -429,14 +474,20 @@ def assess_obligations(obligations, reports, revision):
         added = {
             o["id"]
             for o in assessed
-            if o["status"] == "DEMONSTRATED" and set(o["dependencies"]) <= demonstrated
+            if o["status"] == "DEMONSTRATED"
+            and o["decision_status"] != "REQUIRED"
+            and set(o["dependencies"]) <= demonstrated
         } - demonstrated
         if not added:
             break
         demonstrated.update(added)
     for row in assessed:
         row["blocked_dependencies"] = sorted(set(row["dependencies"]) - demonstrated)
-        if row["status"] == "DEMONSTRATED" and row["id"] not in demonstrated:
+        if (
+            row["status"] == "DEMONSTRATED"
+            and row["decision_status"] != "REQUIRED"
+            and row["id"] not in demonstrated
+        ):
             row["status"] = "BLOCKED"
     return dict(obligations=assessed, evidence_audit=audit)
 
@@ -574,10 +625,14 @@ def acceptance_dashboard(queue, assessment, campaigns):
         row["obligations"] = obligations
         row["obligation_outcomes"] = dict(Counter(o["status"] for o in obligations))
         row["demonstrated_obligations"] = [
-            o["id"] for o in obligations if o["status"] == "DEMONSTRATED"
+            o["id"]
+            for o in obligations
+            if o["status"] == "DEMONSTRATED" and o["decision_status"] != "REQUIRED"
         ]
         row["remaining_obligations"] = [
-            o["id"] for o in obligations if o["status"] != "DEMONSTRATED"
+            o["id"]
+            for o in obligations
+            if o["status"] != "DEMONSTRATED" or o["decision_status"] == "REQUIRED"
         ]
         row["selected_families"] = [
             f["id"] for f in campaigns if row["number"] in f["issues"]
@@ -599,12 +654,15 @@ def acceptance_dashboard(queue, assessment, campaigns):
                 obligation=o["id"],
                 decisions=o["decisions"],
                 unmapped_scope=o["unmapped_scope"],
+                manual_requirements=o["manual_requirements"],
             )
             for o in obligations
-            if o["decisions"] or o["unmapped_scope"]
+            if o["manual_requirements"]
         ]
         row["ranking_basis"] = dict(
-            confirmed_failures=sum(o["status"] == "FAIL" for o in obligations),
+            confirmed_failures=sum(
+                check["status"] == "FAIL" for o in obligations for check in o["checks"]
+            ),
             remaining=len(row["remaining_obligations"]),
             shared_issues=len(
                 {

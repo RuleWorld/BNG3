@@ -59,6 +59,38 @@ def test_case_mutations_keep_the_schema_valid():
         assert case["expected_semantics"]
 
 
+def test_rule_reactant_and_product_references_have_generated_refusal_controls():
+    cases = {case["id"]: case for case in adversarial.generated_cases()}
+    expected = {
+        "rule-reactant-type-reference-out-of-range",
+        "rule-reactant-type-name-id-disagreement",
+        "rule-product-type-reference-out-of-range",
+        "rule-product-type-name-id-disagreement",
+    }
+
+    assert expected <= cases.keys()
+    for case_id in expected:
+        case = cases[case_id]
+        assert case["oracle"] == "refuse"
+        jsonschema.validate(case["document"], json.loads(SCHEMA.read_text()))
+        assert f"bngir-adversarial:{case_id}" in adversarial.check_ids()
+        side = "reactants" if "reactant" in case_id else "products"
+        molecule = case["document"]["model"]["rules"][0]["forward"][side][0][
+            "molecules"
+        ][0]
+        declared_types = case["document"]["model"]["molecule_types"]
+        if "out-of-range" in case_id:
+            assert all(item["id"] != molecule["type_id"] for item in declared_types)
+        else:
+            declared_type = next(
+                item["name"]
+                for item in declared_types
+                if item["id"] == molecule["type_id"]
+            )
+            assert molecule["type"] != declared_type
+        assert case["document"] != adversarial._document()
+
+
 def test_native_adapter_reports_explicit_refusals_as_diagnostic_controls():
     case = next(c for c in adversarial.generated_cases() if c["oracle"] == "refuse")
 
@@ -136,6 +168,26 @@ def test_native_adapter_fails_if_a_corrupt_document_is_accepted():
     assert row["status"] == "FAIL"
     assert row["supported_execution"] is False
     assert row["first_difference"]["field"] == "native_refusal"
+
+
+def test_rule_product_name_id_acceptance_is_a_controlled_semantic_failure():
+    case = next(
+        c
+        for c in adversarial.generated_cases()
+        if c["id"] == "rule-product-type-name-id-disagreement"
+    )
+    row = adversarial.evaluate_case(
+        case, native_import=lambda _model: object(), wrap_model=lambda model: model
+    )
+
+    assert row["status"] == "FAIL"
+    assert row["evidence_kind"] == "diagnostic-only"
+    assert row["supported_execution"] is False
+    assert row["first_difference"] == {
+        "field": "native_refusal",
+        "expected": "explicit refusal",
+        "actual": "accepted",
+    }
 
 
 def test_structural_cases_declare_independent_trajectories_and_boundary_policy():

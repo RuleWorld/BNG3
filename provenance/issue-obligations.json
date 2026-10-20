@@ -2449,7 +2449,7 @@
         {
           "id": "issue:153:executed-slice:reconstruction-molecule-id-permutation",
           "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
-          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2459,7 +2459,7 @@
             {
               "id": "bngir-adversarial:molecule-id-permutation",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2476,7 +2476,7 @@
         {
           "id": "issue:153:executed-slice:reconstruction-compartment-suffix",
           "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
-          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2486,7 +2486,7 @@
             {
               "id": "bngir-adversarial:compartment-suffix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2503,7 +2503,7 @@
         {
           "id": "issue:153:executed-slice:reconstruction-compartment-prefix",
           "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
-          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2513,7 +2513,7 @@
             {
               "id": "bngir-adversarial:compartment-prefix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2530,7 +2530,7 @@
         {
           "id": "issue:153:executed-slice:reconstruction-molecule-compartment",
           "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
-          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2540,7 +2540,7 @@
             {
               "id": "bngir-adversarial:molecule-compartment",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2639,7 +2639,7 @@
         {
           "id": "issue:154:executed-slice:reconstruction-molecule-id-permutation",
           "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
-          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2649,7 +2649,7 @@
             {
               "id": "bngir-adversarial:molecule-id-permutation",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2666,7 +2666,7 @@
         {
           "id": "issue:154:executed-slice:reconstruction-compartment-suffix",
           "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
-          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2676,7 +2676,7 @@
             {
               "id": "bngir-adversarial:compartment-suffix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2693,7 +2693,7 @@
         {
           "id": "issue:154:executed-slice:reconstruction-compartment-prefix",
           "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
-          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2703,7 +2703,7 @@
             {
               "id": "bngir-adversarial:compartment-prefix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2720,7 +2720,7 @@
         {
           "id": "issue:154:executed-slice:reconstruction-molecule-compartment",
           "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
-          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -2730,7 +2730,7 @@
             {
               "id": "bngir-adversarial:molecule-compartment",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -3277,6 +3277,130 @@
           "unmapped_scope": []
         },
         {
+          "id": "issue:155:slice:rule-reactant-type-reference-out-of-range",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the generated rule-reactant-type-reference-out-of-range mutation in a rule-side pattern.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic rule-side mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:rule-reactant-type-reference-out-of-range",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected native refusal for rule-reactant-type-reference-out-of-range must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Only the named schema-valid rule-pattern reference refusal is demonstrated by passing exact-candidate execution; parent issue scope remains open.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:rule-reactant-type-name-id-disagreement",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the generated rule-reactant-type-name-id-disagreement mutation in a rule-side pattern.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic rule-side mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:rule-reactant-type-name-id-disagreement",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected native refusal for rule-reactant-type-name-id-disagreement must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Only the named schema-valid rule-pattern reference refusal is demonstrated by passing exact-candidate execution; parent issue scope remains open.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:rule-product-type-reference-out-of-range",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the generated rule-product-type-reference-out-of-range mutation in a rule-side pattern.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic rule-side mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:rule-product-type-reference-out-of-range",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected native refusal for rule-product-type-reference-out-of-range must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Only the named schema-valid rule-pattern reference refusal is demonstrated by passing exact-candidate execution; parent issue scope remains open.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:155:slice:rule-product-type-name-id-disagreement",
+          "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
+          "scope": "Explicit native-boundary refusal for the generated rule-product-type-name-id-disagreement mutation in a rule-side pattern.",
+          "dependencies": [
+            "issue:155:slice:baseline-native-control"
+          ],
+          "boundaries": [
+            "Independent BNGIR dictionary -> C++ importer -> semantic/rejection comparator",
+            "These deterministic rule-side mutations do not provide broad property-based generation or qualify import/export round trips."
+          ],
+          "required_checks": [
+            {
+              "id": "bngir-adversarial:rule-product-type-name-id-disagreement",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Expected native refusal for rule-product-type-name-id-disagreement must be PASS, diagnostic-only, and supported_execution=false.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial.py",
+            "tests/validation/test_bngir_adversarial_native.py"
+          ],
+          "completion_condition": "Only the named schema-valid rule-pattern reference refusal is demonstrated by passing exact-candidate execution; parent issue scope remains open.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
           "id": "issue:155:slice:duplicate-molecule-type-id",
           "criterion": "Exercise malformed and cross-referenced IDs with generated/property cases and verify refusals independently of Python rendering.",
           "scope": "Explicit native-boundary refusal for the named deterministic adversarial cross-reference mutation.",
@@ -3369,7 +3493,7 @@
         {
           "id": "issue:155:executed-slice:reconstruction-molecule-id-permutation",
           "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
-          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -3379,7 +3503,7 @@
             {
               "id": "bngir-adversarial:molecule-id-permutation",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -3396,7 +3520,7 @@
         {
           "id": "issue:155:executed-slice:reconstruction-compartment-suffix",
           "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
-          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -3406,7 +3530,7 @@
             {
               "id": "bngir-adversarial:compartment-suffix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -3423,7 +3547,7 @@
         {
           "id": "issue:155:executed-slice:reconstruction-compartment-prefix",
           "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
-          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -3433,7 +3557,7 @@
             {
               "id": "bngir-adversarial:compartment-prefix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -3450,7 +3574,7 @@
         {
           "id": "issue:155:executed-slice:reconstruction-molecule-compartment",
           "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
-          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -3460,7 +3584,7 @@
             {
               "id": "bngir-adversarial:molecule-compartment",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -4126,7 +4250,7 @@
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-id-permutation",
           "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
-          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -4136,7 +4260,7 @@
             {
               "id": "bngir-adversarial:molecule-id-permutation",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-id-permutation BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -4153,7 +4277,7 @@
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-suffix",
           "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
-          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -4163,7 +4287,7 @@
             {
               "id": "bngir-adversarial:compartment-suffix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-suffix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -4180,7 +4304,7 @@
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-prefix",
           "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
-          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -4190,7 +4314,7 @@
             {
               "id": "bngir-adversarial:compartment-prefix",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored compartment-prefix BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -4207,7 +4331,7 @@
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-compartment",
           "criterion": "Populate a nonempty format tier and verify semantic round trips, downstream consumption and explicit refusal of lossy unsupported exports.",
-          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+          "scope": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
           "dependencies": [],
           "boundaries": [
             "Installed candidate consumer execution against the stated independent expectation.",
@@ -4217,7 +4341,7 @@
             {
               "id": "bngir-adversarial:molecule-compartment",
               "evidence_kind": "native-bngir-semantic-control",
-              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. Compartment refusal remains UNSUPPORTED pending #300. Export, general graphs and migration remain unqualified.",
+              "expectation": "Independently authored molecule-compartment BNGIR: parser-free native import followed by seed, RHS and closed-form ODE execution. The named compartment patterns pass in retained run 39330889076; these finite controls do not establish general compartment support. Export, general graphs and migration remain unqualified.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -5453,9 +5577,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:185:assign-responsible-reviewers-for-semantics-comparators-tolerance",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "manual:issue:185:reviewer-assignment",
+              "evidence_kind": "disposition",
+              "expectation": "Maintainers name responsible reviewers for semantics, comparators/tolerances, provenance, proofs, and public contracts; record accepted reviewer ownership.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5464,11 +5588,11 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [
-            "Maintainer decision required; this inventory records no decision."
+            "Human decision required: which named people or roles own each review area? Do not invent assignees."
           ],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:185:assign-responsible-reviewers-for-semantics-comparators-tolerance.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Reviewer assignment is governance, not an automated product behavior check.",
+            "The accepted scope must cover semantics, comparators/tolerances, provenance, proofs, and public contracts."
           ]
         },
         {
@@ -5479,9 +5603,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:185:add-agreed-ownership-rules-and-separately-inspect-required-revie",
+              "id": "manual:issue:185:review-enforcement-inspection",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Inspect repository required-review and branch-protection settings; retain dated configuration evidence and record any enforcement decision.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5490,11 +5614,11 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [
-            "Maintainer decision required; this inventory records no decision."
+            "Human decision required: which reviewer rules are required and which branch-protection controls enforce them?"
           ],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:185:add-agreed-ownership-rules-and-separately-inspect-required-revie.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Branch-protection enforcement is repository configuration; inspect the live setting rather than infer it from source files.",
+            "Do not choose reviewer identities or policy without maintainer agreement."
           ]
         },
         {
@@ -5505,9 +5629,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:185:closure-record",
+              "id": "manual:issue:185:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the agreed ownership policy, exact repository revision, inspected branch-protection evidence, and remaining limits.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5517,8 +5641,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:185:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Closure requires a human-approved ownership policy plus retained configuration evidence; there is no standalone behavioral check."
           ]
         }
       ]
