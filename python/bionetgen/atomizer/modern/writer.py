@@ -4169,9 +4169,7 @@ def _seed_symbol_values(
         # reference rule-derived values, and they override attribute defaults.
         for assignment in model.initial_assignments:
             symbol = getattr(assignment, "symbol", "")
-            changed = (
-                set_resolved(symbol, getattr(assignment, "math", "")) or changed
-            )
+            changed = set_resolved(symbol, getattr(assignment, "math", "")) or changed
 
         for seed in seed_species:
             identifier = seed.sbml_id

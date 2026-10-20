@@ -223,9 +223,7 @@ def test_non_constant_parameter_without_value_is_not_seeded_zero():
         ),
         parameters=OrderedDict([("k1", SBMLParameter(id="k1", constant=False))]),
         rules=[SBMLRule(type="assignment", variable="k1", math="0.75")],
-        initial_assignments=[
-            SBMLInitialAssignment(symbol="S1", math="k1")
-        ],
+        initial_assignments=[SBMLInitialAssignment(symbol="S1", math="k1")],
     )
     sct = build_species_composition_table(model)
     bngl, _ = generate_bngl(
@@ -259,9 +257,7 @@ def test_concentration_species_initial_assignment_applies_volume():
                 )
             ]
         ),
-        initial_assignments=[
-            SBMLInitialAssignment(symbol="S1", math="0.1")
-        ],
+        initial_assignments=[SBMLInitialAssignment(symbol="S1", math="0.1")],
     )
     sct = build_species_composition_table(model)
     bngl, _ = generate_bngl(
