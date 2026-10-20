@@ -1,5 +1,74 @@
 # BNG3 current progress
 
+## Capability inventory, real-model fixtures, corpus selection and BioModels retention (2026-10-20 candidate)
+
+Four obligation families had no named executable check: the capability-union
+inventory (#137), the real-model fixtures (#152), the curated BioModels
+retention (#162) and the corpus selection (#181). Each one now has a
+generated, parameterized check in the existing harness, and each one is
+registered as a campaign stage with its own focus flag.
+
+* `tests/validation/capability_inventory.py` reads the generated inventory -
+  the rows `scripts/validate.py --inventory-only` writes to `inventory.json` -
+  and checks the capability-union rows of the new
+  `provenance/capability-union.yml`. The 36 rows cover the six supported
+  surfaces (BioNetGen, PyBioNetGen, the canonical NFsim, the newer NFsim
+  fork, the Atomizer and the optional tools) and crosswalk every row of
+  `provenance/capability-matrix.yml`. Every row records a support status, a
+  review owner with its assignment state, the acceptance gate that would
+  qualify it and its explicit exclusions; a capability that is not fully
+  implemented cannot leave an exclusion implicit, a gate that names a check
+  which does not exist is refused, and a surface without a capability is
+  refused. The inventory records availability and the plan to qualify a
+  capability; the approval of a per-row support policy, the owner allocation
+  and the acceptance of a gate remain maintainer decisions of #137.
+* `tests/validation/real_model_fixtures.py` adds the five named real models
+  of the canonical NFsim source at its locked revision `9b00d42` under
+  `tests/validation/fixtures/nfsim`, with the source link and the digest of
+  every file in `SOURCES.json`. The RNA synthesis, flagellar motor,
+  Goldbeter-Koshland, fceRI and IL-2 fixtures are each compared with an
+  independent expectation: the conservation or exclusivity law that the
+  model's own source semantics imply, and, where the model admits one, an
+  analytic law computed in the harness. The motor fixture reproduces the exact
+  two-state chain law of its phosphorylation subsystem (worst relative error
+  7.3e-9 over the recorded grid) and the TQSSA fixture converges to the
+  independently solved steady state of its declared mass-action system
+  (worst relative error 9.6e-12), including the fixture's own use of `k2d` for
+  the E-catalysed step and the observable's free-plus-bound counting. A
+  fixture the engine cannot represent is refused with its reason instead of
+  being skipped. The comparison covers the declared sample grid; it does not
+  claim a canonical BioNetGen parity of these models, and the upstream
+  source-drift classification of #152 stays a separate scope. With
+  `BNG3_NFSIM_SOURCE` naming an NFsim checkout, every vendored fixture is
+  also compared with the upstream file at the recorded revision, so the
+  source link is verified against the source itself.
+* `tests/validation/corpus_selection.py` reconciles the committed selection
+  with the retained 71-model Tier-P workflow and with the accepted
+  selections. The accepted set is empty by record - no tier membership has
+  been approved - and the difference between the frozen 100-model workflow and
+  the current 106 models is explained by the six recorded additions and their
+  recorded outcomes. Every selected model now records a reason that is
+  re-derived from the model file, so a stale or hand-written reason fails and
+  no two models share one reason. Every tier records its question, its owner
+  and its budget, and the empty format and stress tiers record why they are
+  empty instead of hiding it. Populating them with models stays a maintainer
+  decision.
+* `tests/validation/biomodels_hold.py` keeps the recorded hold of the full
+  curated BioModels corpus in effect as a diagnostic: the check runs no
+  corpus, contacts no BioModels endpoint and claims no category count. It
+  checks the retention contract that will keep the results: the pass,
+  unsupported, failed, timed-out and invalid-source categories stay separate
+  - an invalid source document is a source defect and is no longer folded into
+  a parity failure - and the retained results stay bound to the corpus they
+  came from and to the hashes of their source records.
+
+The integrated campaign could not run at all before this change: the merge
+that added the stochastic-parity family lost the `--stochastic-parity-only`
+and `--api-surface-only` parser arguments, so every invocation raised an
+`AttributeError` before it selected a qualification. The focused flags are
+now derived from one registry, every one of them exists as a command line
+argument, and a selected focus excludes every other qualification.
+
 ## JAX backend stage profile (2026-10-20 candidate)
 
 Issue #174 asks for representative speed and memory baselines on a fixed

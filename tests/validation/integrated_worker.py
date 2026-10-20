@@ -744,6 +744,10 @@ def main():
             "api-surface",
             "stochastic-parity",
             "stochastic-parity",
+            "capability-inventory",
+            "real-model-fixtures",
+            "corpus-selection",
+            "biomodels-hold",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -843,6 +847,10 @@ def main():
         "jax-backend-measurement",
         "api-surface",
         "stochastic-parity",
+        "capability-inventory",
+        "real-model-fixtures",
+        "corpus-selection",
+        "biomodels-hold",
     ):
         from tests.validation.integrated_extensions import run_worker
 

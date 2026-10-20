@@ -160,15 +160,24 @@ def _causes(reason: str) -> list[str]:
 
 
 def biomodels_inventory(report: dict[str, Any]) -> dict[str, Any]:
-    """Reduce a curated BioModels harness report to a compact inventory."""
+    """Reduce a curated BioModels harness report to a compact inventory.
+
+    The retained inventory keeps the five result categories separate - pass,
+    unsupported, failed, timed out and invalid source - so a retained result
+    says which of them it is, and it keeps the corpus the results came from:
+    the pinned corpus manifest, its digest and the counts it declares.
+    """
 
     records = report.get("records") or []
     rows: list[dict[str, Any]] = []
     status_counts: Counter = Counter()
     cause_counts: Counter = Counter()
+    category_counts: Counter = Counter()
     for record in records:
         status = str(record.get("status", "unknown"))
         status_counts[status] += 1
+        category = _biomodels_category(status)
+        category_counts[category] += 1
         causes = sorted(
             set(str(cause) for cause in (record.get("unsupported_causes") or []))
         )
@@ -179,15 +188,53 @@ def biomodels_inventory(report: dict[str, Any]) -> dict[str, Any]:
                 "id": record.get("id"),
                 "format": record.get("format"),
                 "status": status,
+                "category": category,
                 "causes": causes,
+                "source_sha256": (record.get("source_artifact") or {}).get("sha256"),
             }
         )
+    corpus = report.get("corpus") or {}
     return {
         "record_count": len(rows),
         "status_counts": dict(sorted(status_counts.items())),
+        "category_counts": {
+            category: category_counts.get(category, 0)
+            for category in (
+                "passed",
+                "unsupported",
+                "failed",
+                "timeout",
+                "invalid_source",
+            )
+        },
         "cause_counts": dict(cause_counts.most_common()),
+        "corpus": {
+            "manifest": corpus.get("manifest"),
+            "manifest_sha256": corpus.get("manifest_sha256"),
+            "snapshot_date": corpus.get("snapshot_date"),
+            "curation_query": corpus.get("curation_query"),
+            "expected_records": corpus.get("expected_records"),
+            "expected_sbml_records": corpus.get("expected_sbml_records"),
+            "expected_non_sbml_records": corpus.get("expected_non_sbml_records"),
+        },
         "cases": rows,
     }
+
+
+def _biomodels_category(status: str) -> str:
+    """Map a BioModels record status onto one of the five result categories."""
+    value = str(status or "").strip().lower()
+    if value in {"passed", "pass"}:
+        return "passed"
+    if value in {"unsupported", "unsupported_format"}:
+        return "unsupported"
+    if value in {"timeout", "timed-out", "timed_out"}:
+        return "timeout"
+    if value in {"invalid_source", "invalid-source"}:
+        return "invalid_source"
+    if value in {"failed", "fail", "error"}:
+        return "failed"
+    return "failed"
 
 
 def _digest(path: Path) -> str:

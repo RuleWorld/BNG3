@@ -34,6 +34,14 @@ from . import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# The focused-campaign flags: each one reproduces one qualification on its
+# own, so selecting one excludes every other qualification.
+FOCUS_FLAGS = {
+    name: attribute.lstrip("-").replace("-", "_")
+    for name, attribute in integrated_extensions.FOCUS_FLAGS.items()
+}
+
 WORKER = Path(__file__).with_name("integrated_worker.py")
 # Required evidence is declared independently of execution, so deleting a
 # comparator cannot leave a green report containing only successful processes.
@@ -93,6 +101,10 @@ def annotate_acceptance_evidence(rows):
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
     consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
     consumers.update(integrated_extensions.check_ids("stochastic-parity"))
+    consumers.update(integrated_extensions.check_ids("capability-inventory"))
+    consumers.update(integrated_extensions.check_ids("real-model-fixtures"))
+    consumers.update(integrated_extensions.check_ids("corpus-selection"))
+    consumers.update(integrated_extensions.check_ids("biomodels-hold"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -118,6 +130,10 @@ def expected_contract_ids(
     include_jax_backend_measurement=True,
     include_api_surface=True,
     include_stochastic_parity=True,
+    include_capability_inventory=True,
+    include_real_model_fixtures=True,
+    include_corpus_selection=True,
+    include_biomodels_hold=True,
     full=False,
 ):
     return [
@@ -170,6 +186,10 @@ def expected_contract_ids(
         include_jax_backend_measurement=include_jax_backend_measurement,
         include_api_surface=include_api_surface,
         include_stochastic_parity=include_stochastic_parity,
+        include_capability_inventory=include_capability_inventory,
+        include_real_model_fixtures=include_real_model_fixtures,
+        include_corpus_selection=include_corpus_selection,
+        include_biomodels_hold=include_biomodels_hold,
         full=full,
     )
 
@@ -957,23 +977,18 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--stochastic-parity-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
+    parser.add_argument("--capability-inventory-only", action="store_true")
+    parser.add_argument("--real-model-fixtures-only", action="store_true")
+    parser.add_argument("--corpus-selection-only", action="store_true")
+    parser.add_argument("--biomodels-hold-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
-    if (
-        sum(
-            (
-                args.boundaries_only,
-                args.graph_identity_only,
-                args.bngir_adversarial_only,
-                args.quantity_laws_only,
-                args.export_format_tier_only,
-                args.netrule_execution_only,
-                args.bngsim_boundary_only,
-                args.jax_backend_measurement_only,
-            )
-        )
-        > 1
-    ):
+    focused = [
+        name for name, attribute in FOCUS_FLAGS.items() if getattr(args, attribute)
+    ]
+    if len(focused) > 1:
         parser.error("select at most one focused qualification")
     args.ensemble_runs = (
         args.ensemble_runs
@@ -990,17 +1005,7 @@ def main(argv=None):
         if args.case
         else generated_cases(args.full)
     )
-    if (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.export_format_tier_only
-        or args.netrule_execution_only
-        or args.bngsim_boundary_only
-        or args.jax_backend_measurement_only
-        or args.stochastic_parity_only
-    ):
+    if focused:
         selected = []
     for name in (
         "bng_cpp",
@@ -1026,78 +1031,12 @@ def main(argv=None):
     )
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "0"
-    focused = (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.netrule_execution_only
-        or args.jax_backend_measurement_only
-        or args.stochastic_parity_only
-    )
-    qualification_selection = dict(
-        include_boundaries=not (
-            args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_graph_identity=not (
-            args.boundaries_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_bngir_adversarial=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-        ),
-        include_export_format_tier=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-    )
-    qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.export_format_tier_only
-        or args.netrule_execution_only
-        or args.bngsim_boundary_only
-        or args.api_surface_only
-    )
-    qualification_selection["include_bngsim_boundary"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.jax_backend_measurement_only
-        or args.api_surface_only
-    )
-    qualification_selection["include_api_surface"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.jax_backend_measurement_only
-        or args.stochastic_parity_only
-    )
-    qualification_selection["include_netrule_execution"] = not focused
-    qualification_selection["include_jax_backend_measurement"] = not focused
-    qualification_selection["include_stochastic_parity"] = not focused
+    # A focused campaign reproduces exactly one qualification on its own, so
+    # every other qualification is excluded while a focus is selected.
+    qualification_selection = {
+        "include_" + name.replace("-", "_"): (not focused or focused[0] == name)
+        for name in FOCUS_FLAGS
+    }
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1135,6 +1074,18 @@ def main(argv=None):
             )
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
+        if qualification_selection["include_capability_inventory"]:
+            integrated_extensions.invoke(
+                "capability-inventory", args, rows, env, run_stage
+            )
+        if qualification_selection["include_real_model_fixtures"]:
+            integrated_extensions.invoke(
+                "real-model-fixtures", args, rows, env, run_stage
+            )
+        if qualification_selection["include_corpus_selection"]:
+            integrated_extensions.invoke("corpus-selection", args, rows, env, run_stage)
+        if qualification_selection["include_biomodels_hold"]:
+            integrated_extensions.invoke("biomodels-hold", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1180,6 +1131,12 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "stochastic-parity": ["--stochastic-parity-only"],
+        "api-surface": ["--api-surface-only"],
+        "capability-inventory": ["--capability-inventory-only"],
+        "real-model-fixtures": ["--real-model-fixtures-only"],
+        "corpus-selection": ["--corpus-selection-only"],
+        "biomodels-hold": ["--biomodels-hold-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1273,6 +1230,10 @@ def main(argv=None):
                 ],
                 "api-surface": "tests/validation/api_surface.py",
                 "stochastic-parity": "tests/validation/stochastic_parity.py",
+                "capability-inventory": "tests/validation/capability_inventory.py",
+                "real-model-fixtures": "tests/validation/real_model_fixtures.py",
+                "corpus-selection": "tests/validation/corpus_selection.py",
+                "biomodels-hold": "tests/validation/biomodels_hold.py",
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1320,6 +1281,14 @@ def main(argv=None):
                 issues = [167]
             elif stage == "api-surface":
                 issues = [171]
+            elif stage == "capability-inventory":
+                issues = [137]
+            elif stage == "real-model-fixtures":
+                issues = [152]
+            elif stage == "corpus-selection":
+                issues = [181]
+            elif stage == "biomodels-hold":
+                issues = [162]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -1349,7 +1318,7 @@ def main(argv=None):
 
     matrix = yaml.safe_load((ROOT / "provenance/capability-matrix.yml").read_text())
     capabilities = inventory.discover_capabilities(
-        ROOT, matrix["validation_capabilities"]
+        ROOT, matrix["validation_capabilities"], inventory.load_union(ROOT)
     )
     reporting.attach_coverage(capabilities, rows)
     annotate_acceptance_evidence(rows)
@@ -1402,9 +1371,16 @@ def main(argv=None):
                 ROOT / "tests/validation/export_format_tier.py",
                 ROOT / "tests/validation/netrule_execution.py",
                 ROOT / "tests/validation/bngsim_boundary.py",
+                ROOT / "tests/validation/stochastic_parity.py",
+                ROOT / "tests/validation/capability_inventory.py",
+                ROOT / "tests/validation/real_model_fixtures.py",
+                ROOT / "tests/validation/corpus_selection.py",
+                ROOT / "tests/validation/biomodels_hold.py",
                 ROOT / "tests/validation/compare.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",
+                ROOT / "provenance/capability-union.yml",
+                ROOT / "provenance/corpus/selection.json",
                 ROOT / "tests/validation/contracts.py",
             )
         },

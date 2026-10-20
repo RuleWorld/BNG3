@@ -17,6 +17,10 @@ from . import (
     api_surface,
     stochastic_parity,
     bngsim_boundary,
+    capability_inventory,
+    real_model_fixtures,
+    corpus_selection,
+    biomodels_hold,
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
@@ -41,16 +45,28 @@ OPERATIONS = (
     "jax-backend-measurement",
     "api-surface",
     "stochastic-parity",
+    "capability-inventory",
+    "real-model-fixtures",
+    "corpus-selection",
+    "biomodels-hold",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
 FOCUS_FLAGS = {
-    "quantity-laws": "--quantity-laws-only",
     "boundaries": "--boundaries-only",
-    "bngir-adversarial": "--bngir-adversarial-only",
     "graph-identity": "--graph-identity-only",
+    "bngir-adversarial": "--bngir-adversarial-only",
+    "quantity-laws": "--quantity-laws-only",
     "export-format-tier": "--export-format-tier-only",
+    "netrule-execution": "--netrule-execution-only",
+    "bngsim-boundary": "--bngsim-boundary-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "stochastic-parity": "--stochastic-parity-only",
+    "api-surface": "--api-surface-only",
+    "capability-inventory": "--capability-inventory-only",
+    "real-model-fixtures": "--real-model-fixtures-only",
+    "corpus-selection": "--corpus-selection-only",
+    "biomodels-hold": "--biomodels-hold-only",
 }
 
 
@@ -86,6 +102,14 @@ def check_ids(operation, case=None, *, full=False):
         return api_surface.check_ids()
     if operation == "stochastic-parity":
         return stochastic_parity.check_ids()
+    if operation == "capability-inventory":
+        return capability_inventory.check_ids()
+    if operation == "real-model-fixtures":
+        return real_model_fixtures.check_ids()
+    if operation == "corpus-selection":
+        return corpus_selection.check_ids()
+    if operation == "biomodels-hold":
+        return biomodels_hold.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -106,6 +130,10 @@ def expected_ids(
     include_jax_backend_measurement=True,
     include_api_surface=True,
     include_stochastic_parity=True,
+    include_capability_inventory=True,
+    include_real_model_fixtures=True,
+    include_corpus_selection=True,
+    include_biomodels_hold=True,
     full=False,
 ):
     ids = []
@@ -134,6 +162,16 @@ def expected_ids(
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
+    if include_capability_inventory:
+        ids.extend(
+            ["campaign:capability-inventory", *check_ids("capability-inventory")]
+        )
+    if include_real_model_fixtures:
+        ids.extend(["campaign:real-model-fixtures", *check_ids("real-model-fixtures")])
+    if include_corpus_selection:
+        ids.extend(["campaign:corpus-selection", *check_ids("corpus-selection")])
+    if include_biomodels_hold:
+        ids.extend(["campaign:biomodels-hold", *check_ids("biomodels-hold")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -171,6 +209,14 @@ def run_worker(operation, args):
         return api_surface.run(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
+    if operation == "capability-inventory":
+        return capability_inventory.run_worker(Path.cwd())
+    if operation == "real-model-fixtures":
+        return real_model_fixtures.run_worker(Path.cwd())
+    if operation == "corpus-selection":
+        return corpus_selection.run_worker(Path.cwd())
+    if operation == "biomodels-hold":
+        return biomodels_hold.run_worker(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)

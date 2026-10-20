@@ -646,3 +646,56 @@ PYTHONPATH=python:build/cpp python -m tests.validation.api_surface \
 
 The family also runs as a campaign-level stage of the integrated report, so
 its named rows reach the issue queue with the other exact-revision evidence.
+
+### Capability inventory, real-model fixture, corpus selection and release families
+
+Four bounded families close the detection gaps of the inventory, fixture,
+corpus and release-evidence obligations. Each one is selected on its own with
+its own focus flag (`--capability-inventory-only`, `--real-model-fixtures-only`,
+`--corpus-selection-only`, `--biomodels-hold-only`) and runs as a
+campaign-level stage of the integrated report.
+
+`capability-inventory` reads the generated inventory - the same rows that
+`scripts/validate.py --inventory-only` writes to `inventory.json` - and checks
+the capability-union rows of `provenance/capability-union.yml`. Every
+capability of the six supported surfaces (BioNetGen, PyBioNetGen, the
+canonical NFsim, the newer NFsim fork, the Atomizer and the optional tools)
+records its support status, its review owner, the acceptance gate that would
+qualify it and its explicit exclusions. A capability that is not fully
+implemented cannot leave an exclusion implicit, a gate that names a check
+which does not exist is refused, and a surface without a capability is
+refused. The inventory records availability and the plan; the approval of a
+per-row support policy stays a maintainer decision.
+
+`real-model-fixtures` runs five real models of the canonical NFsim source at
+its locked revision: an RNA synthesis model, the flagellar motor, the
+Goldbeter-Koshland switch, the fceRI compendium and the IL-2 multisite model.
+The vendored copies are byte-identical to that source and the source link is
+re-checked before a fixture runs. Every fixture is compared with an
+independent expectation: the conservation or exclusivity law that the model's
+own source semantics imply, and, where the model admits one, an analytic law
+computed in the harness - the exact two-state chain law of the motor's
+phosphorylation subsystem and the steady state of the TQSSA fixture's declared
+mass-action system. A fixture the engine cannot represent is refused with its
+reason instead of being skipped. `BNG3_NFSIM_SOURCE` may name an NFsim
+checkout: when it does, every vendored fixture is also compared with the
+upstream file at the recorded revision, so the source link is verified against
+the source itself; without it the recorded digest remains the executed
+contract and the result says so.
+
+`corpus-selection` reconciles the committed corpus selection with the
+retained 71-model Tier-P workflow and with the accepted selections. The
+accepted set is empty by record - no tier membership has been approved - and
+the difference between the frozen 100-model workflow and the current
+selection is explained by the recorded additions and their recorded
+outcomes. Every selected model records a reason that is re-derived from the
+model file, so a stale or hand-written reason fails, and the empty format and
+stress tiers are reported with their owner, their budget and the reason they
+are empty.
+
+`biomodels-hold` keeps the recorded hold of the full curated BioModels corpus
+in effect as a diagnostic: it runs no corpus, contacts no BioModels endpoint
+and claims no category count. It checks the retention contract that will keep
+the results: the pass, unsupported, failed, timed-out and invalid-source
+categories stay separate, and the retained results stay bound to the corpus
+they came from and to the hashes of their source records.

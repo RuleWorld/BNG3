@@ -19,6 +19,23 @@ from . import campaign, inventory
 ROOT = Path(__file__).resolve().parents[2]
 FAILURES = {"FAIL", "HARNESS_ERROR", "TIMEOUT", "INVALID_INPUT"}
 
+# The focused-campaign arguments that reproduce one qualification family on
+# its own.  A family without an entry replays its own cases.
+SELECTION_ARGUMENTS = {
+    "native-bngir-adversarial": ["--bngir-adversarial-only"],
+    "quantity-source-laws": ["--quantity-laws-only"],
+    "export-format-tier": ["--export-format-tier-only"],
+    "network-rule-execution": ["--netrule-execution-only"],
+    "bngsim-boundary": ["--bngsim-boundary-only"],
+    "jax-backend-measurement": ["--jax-backend-measurement-only"],
+    "stochastic-parity": ["--stochastic-parity-only"],
+    "public-api-surface": ["--report-dir", "<new-empty-directory>"],
+    "capability-union-inventory": ["--capability-inventory-only"],
+    "real-model-fixtures": ["--real-model-fixtures-only"],
+    "corpus-selection": ["--corpus-selection-only"],
+    "biomodels-retention": ["--biomodels-hold-only"],
+}
+
 
 def acceptance_criteria(issue):
     """Retain live issue criteria separately from broad issue-linked evidence.
@@ -582,6 +599,11 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated_marginals import source_law_check_ids
     from .integrated_cases import source_law_cases
     from .export_format_tier import check_ids as export_format_tier_check_ids
+    from .stochastic_parity import check_ids as stochastic_parity_check_ids
+    from .capability_inventory import check_ids as capability_inventory_check_ids
+    from .real_model_fixtures import check_ids as real_model_fixtures_check_ids
+    from .corpus_selection import check_ids as corpus_selection_check_ids
+    from .biomodels_hold import check_ids as biomodels_hold_check_ids
 
     families.append(
         dict(
@@ -666,6 +688,82 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             limits="One generated first-order decay family; the stochastic statements cover the terminal-time marginal only; notebook execution and third-party integrations are outside the family.",
         )
     )
+    families.append(
+        dict(
+            id="capability-union-inventory",
+            case_ids=[],
+            check_ids=capability_inventory_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(capability_inventory_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The recorded capability-union inventory of BioNetGen, "
+                "PyBioNetGen, the canonical and the newer NFsim, the Atomizer "
+                "and the optional tools. It records the availability, the "
+                "review owner, the acceptance gate and the explicit "
+                "exclusions of every capability; it does not approve a support "
+                "policy."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="real-model-fixtures",
+            case_ids=[],
+            check_ids=real_model_fixtures_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(real_model_fixtures_check_ids()),
+                stage_timeout_seconds=900,
+            ),
+            limits=(
+                "Five real fixtures of the canonical NFsim source: an RNA "
+                "synthesis model, the flagellar motor, the Goldbeter-Koshland "
+                "switch, the fceRI compendium and the IL-2 multisite model. "
+                "Each is compared with a declared conservation or exclusivity "
+                "law and, where the model admits one, an analytic law computed "
+                "in the harness; a fixture the engine cannot represent is "
+                "refused with its reason."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="corpus-selection",
+            case_ids=[],
+            check_ids=corpus_selection_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(corpus_selection_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The recorded corpus selection, its per-model justification and "
+                "its reconciliation with the separate 71-model Tier-P "
+                "workflow. Populating the empty format and stress tiers with "
+                "models stays a maintainer decision."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="biomodels-retention",
+            case_ids=[],
+            check_ids=biomodels_hold_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(biomodels_hold_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The recorded hold of the full curated BioModels corpus and "
+                "the retention contract of its results. No corpus run and no "
+                "category count is claimed."
+            ),
+        )
+    )
     selected = []
     for family in families:
         available = set(family["check_ids"])
@@ -695,37 +793,14 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             authorization="PLAN_ONLY",
             complete_corpus_coverage=False,
         )
-        family["selection_arguments"] = (
-            ["--bngir-adversarial-only"]
-            if family["id"] == "native-bngir-adversarial"
-            else (
-                ["--quantity-laws-only"]
-                if family["id"] == "quantity-source-laws"
-                else (
-                    ["--export-format-tier-only"]
-                    if family["id"] == "export-format-tier"
-                    else (
-                        ["--netrule-execution-only"]
-                        if family["id"] == "network-rule-execution"
-                        else (
-                            ["--bngsim-boundary-only"]
-                            if family["id"] == "bngsim-boundary"
-                            else (
-                                ["--jax-backend-measurement-only"]
-                                if family["id"] == "jax-backend-measurement"
-                                else (
-                                    ["--report-dir", "<new-empty-directory>"]
-                                    if family["id"] == "public-api-surface"
-                                    else [
-                                        argument
-                                        for case_id in family["case_ids"]
-                                        for argument in ("--case", case_id)
-                                    ]
-                                )
-                            )
-                        )
-                    )
-                )
+        family["selection_arguments"] = list(
+            SELECTION_ARGUMENTS.get(
+                family["id"],
+                [
+                    argument
+                    for case_id in family["case_ids"]
+                    for argument in ("--case", case_id)
+                ],
             )
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
