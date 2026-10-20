@@ -3066,7 +3066,7 @@ def _unrepresentable_math_function_message(function_name: str) -> str:
 
     return (
         f'SBML math function "{function_name}" is not losslessly representable '
-        "in the C++ SBML writer/libRoadRunner path: "
+        "in the BNG3 engine/libRoadRunner path: "
         f"{_unrepresentable_math_function_reason(function_name)}."
     )
 
@@ -3496,6 +3496,11 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         The assignment may only depend on time and on symbols that keep the
         same value before the simulation starts; anything else would need the
         history of a symbol this lowering cannot evaluate.
+
+        The history is reconstructed by evaluating the assignment at
+        ``time - duration``.  That is exact for the start time SBML assumes,
+        ``t0 = 0``: the Atomizer has no ``t_start`` parameter, and SBML
+        itself fixes the start time of a simulation at zero.
         """
 
         if target not in initial_assignment_targets:
