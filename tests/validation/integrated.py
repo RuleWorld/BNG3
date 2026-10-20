@@ -1127,16 +1127,22 @@ def main(argv=None):
             ]
         row.setdefault("question", "generated-cross-component-handoff")
         if row["stage"] in integrated_extensions.OPERATIONS:
-            row["source_locations"] = [
-                {
-                    "boundaries": "tests/validation/integrated_boundaries.py",
-                    "protocol": "tests/validation/integrated_protocol.py",
-                    "nf-marginals": "tests/validation/integrated_marginals.py",
-                    "quantity-laws": "tests/validation/integrated_marginals.py",
-                    "bngir-adversarial": "tests/validation/bngir_adversarial.py",
-                    "graph-identity": "tests/validation/graph_identity.py",
-                }[row["stage"]]
-            ]
+            source_locations = {
+                "boundaries": "tests/validation/integrated_boundaries.py",
+                "protocol": "tests/validation/integrated_protocol.py",
+                "nf-marginals": "tests/validation/integrated_marginals.py",
+                "quantity-laws": "tests/validation/integrated_marginals.py",
+                "bngir-adversarial": [
+                    "tests/validation/bngir_adversarial.py",
+                    "tests/validation/bngir_format_contracts.py",
+                ],
+                "graph-identity": "tests/validation/graph_identity.py",
+            }[row["stage"]]
+            row["source_locations"] = (
+                source_locations
+                if isinstance(source_locations, list)
+                else [source_locations]
+            )
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
         if row["stage"] == "rate-trace":

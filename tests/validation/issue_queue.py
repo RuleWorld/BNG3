@@ -510,7 +510,10 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
         raise ValueError("campaign family budget must be between zero and ten")
     from .integrated_cases import generated_cases
     from .integrated import expected_contract_ids
-    from .bngir_adversarial import check_ids
+    from .bngir_adversarial import check_ids as adversarial_check_ids
+    from .bngir_format_contracts import check_ids as format_check_ids
+
+    check_ids = [*adversarial_check_ids(), *format_check_ids()]
 
     cases = generated_cases(full=False)
     families = []
@@ -538,9 +541,9 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
         dict(
             id="native-bngir-adversarial",
             case_ids=[],
-            check_ids=check_ids(),
+            check_ids=check_ids,
             runner="tests.validation.integrated",
-            budget=dict(checks=len(check_ids()), stage_timeout_seconds=60),
+            budget=dict(checks=len(check_ids), stage_timeout_seconds=60),
             limits="Bounded generated native reader shapes; no complete migration or arbitrary graph coverage.",
         )
     )

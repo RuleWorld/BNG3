@@ -7,6 +7,7 @@ from pathlib import Path
 
 from tests.validation import (
     bngir_adversarial,
+    bngir_format_contracts,
     graph_identity,
     integrated_extensions as extensions,
     integrated_cases,
@@ -27,9 +28,16 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
     assert "campaign:graph-identity" in ids
     assert "campaign:bngir-adversarial" in ids
     assert set(bngir_adversarial.check_ids()).issubset(ids)
+    assert set(bngir_format_contracts.check_ids()).issubset(ids)
     assert not set(
         extensions.expected_ids(cases, include_bngir_adversarial=False)
-    ).intersection({"campaign:bngir-adversarial", *bngir_adversarial.check_ids()})
+    ).intersection(
+        {
+            "campaign:bngir-adversarial",
+            *bngir_adversarial.check_ids(),
+            *bngir_format_contracts.check_ids(),
+        }
+    )
     assert set(extensions.check_ids("graph-identity")) == {
         f"graph-identity:{case['id']}" for case in graph_identity.CASES
     }
@@ -52,7 +60,11 @@ def test_bngir_adversarial_extension_requires_exact_issue_linked_checks(tmp_path
                 "check": identity.rsplit(":", 1)[-1],
                 "status": "PASS",
                 "detail": "native structural control",
-                "related_issues": [153, 154, 155, 156],
+                "related_issues": (
+                    list(bngir_format_contracts.ISSUES)
+                    if identity in bngir_format_contracts.check_ids()
+                    else [153, 154, 155, 156]
+                ),
                 "evidence_kind": "diagnostic-only",
                 "supported_execution": False,
                 "source_artifact": identity.rsplit(":", 1)[-1] + ".bngir.json",
@@ -77,7 +89,15 @@ def test_bngir_adversarial_extension_requires_exact_issue_linked_checks(tmp_path
     assert parent["status"] == "PASS"
     assert parent["qualification"] == "bngir-adversarial"
     assert [row["id"] for row in rows[1:]] == extensions.check_ids("bngir-adversarial")
-    assert all(row["related_issues"] == [153, 154, 155, 156] for row in rows[1:])
+    assert all(
+        row["related_issues"]
+        == (
+            [155, 156]
+            if row["id"] in bngir_format_contracts.check_ids()
+            else [153, 154, 155, 156]
+        )
+        for row in rows[1:]
+    )
 
 
 def test_graph_identity_receipt_links_each_generated_observation_to_issue_142(

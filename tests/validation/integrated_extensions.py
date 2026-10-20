@@ -12,6 +12,7 @@ from . import (
     campaign,
     integrated_boundaries,
     bngir_adversarial,
+    bngir_format_contracts,
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
@@ -45,7 +46,7 @@ def check_ids(operation, case=None, *, full=False):
 
         return [f"graph-identity:{case['id']}" for case in CASES]
     if operation == "bngir-adversarial":
-        return bngir_adversarial.check_ids()
+        return [*bngir_adversarial.check_ids(), *bngir_format_contracts.check_ids()]
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -91,7 +92,10 @@ def run_worker(operation, args):
 
         return run_graph_identity(Path.cwd())
     if operation == "bngir-adversarial":
-        return bngir_adversarial.run_worker(Path.cwd())
+        return [
+            *bngir_adversarial.run_worker(Path.cwd()),
+            *bngir_format_contracts.run_worker(Path.cwd()),
+        ]
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)

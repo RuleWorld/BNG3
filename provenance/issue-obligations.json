@@ -2755,22 +2755,26 @@
           "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
           "scope": "Add a native import contract.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The native reader refuses site-bearing molecule types; only the site-free v0.2 envelope is natively importable."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:155:native-import-contract",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-export:v02-site-bearing-unsupported",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "Native import of the retained site-bearing v0.2 document is explicitly refused as an ordinary site-free type.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/bngir_format_contracts.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:native-import-contract.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -2779,22 +2783,26 @@
           "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
           "scope": "Add a native export contract.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The executed native export contract covers the site-free v0.2 envelope only; the site-bearing envelope is an explicit unsupported boundary."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:155:native-export-contract",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-export:v02-independent-roundtrip",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Native import and export of the retained site-free v0.2 document reproduces it exactly.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/bngir_format_contracts.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:native-export-contract.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -2806,19 +2814,21 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:155:version-migration-fixtures",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-equality:v01-v02-identity-provenance",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "semantic_equal accepts the v0.1-to-v0.2 round trip and rejects a changed model identity; provenance is outside semantic_equal's model API.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/bngir_format_contracts.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:version-migration-fixtures.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -2830,19 +2840,21 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:155:deterministic-serialization-fixtures",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-export:canonical-bytes-determinism",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Repeated v0.2 serialization is byte-identical and equals the frozen canonical v0.2 wire bytes.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/bngir_format_contracts.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:deterministic-serialization-fixtures.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -3612,24 +3624,25 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:156:decide-the-public-default-version-and-supported-migration-policy",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-equality:approved-default-v01-explicit-v02",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The approved public contract holds: v0.1 is the default, v0.2 requires explicit opt-in, and unknown versions are refused.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
           "test_references": [
             "tests/python/test_bngir.py",
-            "tests/python/test_bngir_version_bridge.py"
+            "tests/python/test_bngir_version_bridge.py",
+            "tests/validation/bngir_format_contracts.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [
-            "Maintainer decision required; this inventory records no decision."
+            "Maintainer decision: keep v0.1 as the public default version and require an explicit version=\"0.2\" opt-in; unknown versions stay refused."
           ],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:156:decide-the-public-default-version-and-supported-migration-policy.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -3641,19 +3654,21 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:156:specify-identity-versus-provenance-and-test-exactly-what-semanti",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-equality:v01-v02-identity-provenance",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "semantic_equal accepts the v0.1-to-v0.2 round trip and rejects a changed model identity; provenance is outside semantic_equal's model API.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/bngir_format_contracts.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:156:specify-identity-versus-provenance-and-test-exactly-what-semanti.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
