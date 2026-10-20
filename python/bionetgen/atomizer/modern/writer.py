@@ -4256,6 +4256,35 @@ def _substitute_seed_symbols(
     return _evaluate_arithmetic(result)
 
 
+def _species_reference_stoichiometry_symbols(
+    model: SBMLModel,
+) -> "OrderedDict[str, Optional[float]]":
+    """Return each species-reference id and its ``stoichiometry`` attribute.
+
+    SBML Level 3 Version 2 Core Sec. 4.11.3 gives a ``speciesReference`` id
+    the meaning of a model-level symbol whose value is that reference's
+    stoichiometry.  The ``stoichiometry`` attribute supplies that symbol's
+    time-zero value unless an initial assignment defines the same symbol.
+    A reference without the attribute has no attribute value (``None``): its
+    time-zero stoichiometry has to come from an initial assignment or from
+    another SBML construct, and the default of 1 would be an approximation.
+    """
+
+    values: "OrderedDict[str, Optional[float]]" = OrderedDict()
+    for reaction in model.reactions.values():
+        for reference in [*reaction.reactants, *reaction.products]:
+            reference_id = str(getattr(reference, "id", "") or "").strip()
+            if not reference_id or reference_id in values:
+                continue
+            value: Optional[float] = None
+            if getattr(reference, "stoichiometry_set", False):
+                numeric = _numeric_value(getattr(reference, "stoichiometry", None))
+                if numeric is not None and math.isfinite(numeric):
+                    value = numeric
+            values[reference_id] = value
+    return values
+
+
 def _seed_symbol_values(
     model: SBMLModel, seed_species: Sequence[SeedSpeciesEntry]
 ) -> Dict[str, float]:
@@ -4302,6 +4331,26 @@ def _seed_symbol_values(
             f"__compartment_{standardize_name(compartment_id)}__",
             size,
         )
+
+    # SBML Level 3 Version 2 Core Sec. 4.11.3 gives a ``speciesReference`` id
+    # the meaning of a model-level symbol whose value is that reference's
+    # stoichiometry.  The symbol's time-zero value is the ``stoichiometry``
+    # attribute unless an initial assignment defines the same symbol, in
+    # which case Sec. 4.11.3 says the attribute is ignored.  Seed the symbol
+    # with the attribute value here; the initial-assignment pass below
+    # replaces it where the source model assigns one.
+    initial_assignment_symbols = {
+        str(getattr(assignment, "symbol", "") or "")
+        for assignment in model.initial_assignments
+    }
+    for reference_id, value in _species_reference_stoichiometry_symbols(
+        model
+    ).items():
+        if value is None or reference_id in initial_assignment_symbols:
+            continue
+        if reference_id in symbols or standardize_name(reference_id) in symbols:
+            continue
+        _add_seed_symbol(symbols, reference_id, value)
 
     species_ids = set(model.species)
     standardized_species_ids = {
@@ -6613,6 +6662,10 @@ def generate_bngl(
     existing_molecule_names = {
         standardize_name(molecule.name) for molecule in augmented_molecule_types
     }
+    # Species-reference ids that carry a stoichiometry symbol (SBML Level 3
+    # Version 2 Core Sec. 4.11.3).  A rate-ruled one needs a defined time-zero
+    # value for the state variable that carries it.
+    stoichiometry_symbol_ids = set(_species_reference_stoichiometry_symbols(model))
     for rule in model.rules:
         if not rule.variable or rule.type != "rate":
             continue
@@ -6641,8 +6694,25 @@ def generate_bngl(
         initial_value = seed_symbol_values.get(variable)
         if initial_value is None:
             initial_value = seed_symbol_values.get(target)
+        resolved = initial_value is not None
         if initial_value is None:
             initial_value = getattr(parameter, "value", 0) if parameter else 0
+        if not resolved and variable in stoichiometry_symbol_ids:
+            # SBML Level 3 Version 2 Core Sec. 4.11.3: the time-zero value of
+            # a species-reference stoichiometry symbol comes from the
+            # reference's ``stoichiometry`` attribute or from an initial
+            # assignment that defines the same symbol.  With neither, the
+            # symbol has no defined value at t=0 and seeding it with a
+            # default would silently change the model.
+            _record_import_warning(
+                model,
+                f'The stoichiometry symbol "{variable}" has no defined value at '
+                "t=0: SBML Level 3 Version 2 Core Sec. 4.11.3 takes it from the "
+                "species reference's stoichiometry attribute or from an initial "
+                "assignment, and the source model supplies neither.",
+                category="stoichiometry",
+                severity="dropped",
+            )
         try:
             initial = float(initial_value)
             if not math.isfinite(initial):
