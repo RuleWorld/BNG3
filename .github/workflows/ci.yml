@@ -92,7 +92,8 @@ jobs:
             tests/validation/test_external_lanes.py \
             tests/validation/test_minimize.py \
             tests/validation/test_conformance_cli.py \
-            tests/validation/test_conformance_ci_wiring.py
+            tests/validation/test_conformance_ci_wiring.py \
+            tests/validation/test_stochastic_consistency.py
 
       - name: Discover capability inventory without qualification claims
         run: python scripts/validate.py --inventory-only --report-dir "$RUNNER_TEMP/bng3-inventory"
