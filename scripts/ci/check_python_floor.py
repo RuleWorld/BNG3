@@ -436,6 +436,27 @@ def _parse(source: str, filename: str, feature_version: Optional[Version] = None
         return ast.parse(source, filename=filename, feature_version=feature_version)
 
 
+def _fstring_quote(source: str, node: ast.JoinedStr) -> str:
+    """Return the quote that delimits an f-string, or an empty string.
+
+    Python 3.12 reports the whole f-string, prefix and both quotes, as the
+    node's source.  An older interpreter reports the content only, so the
+    delimiter cannot be recovered there; the caller then relies on the floor
+    interpreter refusing to parse the file.
+    """
+    segment = ast.get_source_segment(source, node) or ""
+    index = 0
+    while index < len(segment) and segment[index] in "furbFURB":
+        index += 1
+    if index >= len(segment) or segment[index] not in "\"'":
+        return ""
+    triple = segment[index : index + 3]
+    quote = triple if triple in ('"""', "'''") else segment[index]
+    if not segment.endswith(quote):
+        return ""
+    return quote
+
+
 def analyse_source(
     path: Path,
     source: str,
@@ -639,6 +660,32 @@ def analyse_source(
                 minimum,
                 "the method does not exist on the floor",
             )
+
+    # PEP 701 f-strings.  The floor grammar accepts them, so the feature
+    # version of the parser does not report them; the relaxed f-string rules
+    # of Python 3.12 are detected from the source instead.
+    for node in nodes:
+        if not isinstance(node, ast.JoinedStr):
+            continue
+        quote = _fstring_quote(source, node)
+        for value in node.values:
+            if not isinstance(value, ast.FormattedValue):
+                continue
+            inner = ast.get_source_segment(source, value.value) or ""
+            if quote and quote in inner:
+                add(
+                    value,
+                    "PEP 701 nested f-string",
+                    (3, 12),
+                    "a replacement field reuses the quote of its f-string",
+                )
+            elif "\\" in inner:
+                add(
+                    value,
+                    "PEP 701 f-string with a backslash",
+                    (3, 12),
+                    "a backslash in a replacement field needs Python 3.12",
+                )
 
     # PEP 604 unions and PEP 585 builtin generics, but only where the
     # annotation is evaluated at runtime.

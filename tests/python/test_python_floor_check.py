@@ -134,6 +134,19 @@ def test_a_pep585_builtin_generic_is_reported_below_its_release():
     assert findings == [], [finding.render() for finding in findings]
 
 
+def test_a_pep701_nested_fstring_is_reported():
+    findings = _findings('def f(data):\n    return f"{data["key"]}"\n')
+    assert "PEP 701" in _features(findings)
+    assert all(finding.minimum >= (3, 12) for finding in findings)
+
+
+def test_an_ordinary_fstring_is_not_reported():
+    findings = _findings(
+        "def f(data):\n    return f\"{data['key']} and {len(data)}\"\n"
+    )
+    assert findings == [], [finding.render() for finding in findings]
+
+
 @pytest.mark.parametrize(
     "source,expected",
     [
