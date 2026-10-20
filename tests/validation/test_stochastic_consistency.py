@@ -28,6 +28,14 @@ from scripts.ci.check_stochastic_consistency import (
     main,
 )
 
+try:  # the sweep needs the native extension: parse BNGL and run the engines
+    from bionetgen import _bionetgen_cpp as _native  # noqa: F401
+except Exception as exc:  # pragma: no cover - environment dependent
+    pytest.skip(
+        f"the native BNG3 extension is not importable: {exc}",
+        allow_module_level=True,
+    )
+
 SBML_HEADER = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
     '<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" '
