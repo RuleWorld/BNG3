@@ -234,6 +234,55 @@ TIMEOUT_TAXONOMY: dict[str, dict[str, Any]] = {
     },
 }
 
+# The effect of the change under review, measured record by record with the
+# corpus gate's own ``--only-id`` path.  The entries are the records the
+# branch changes; each one was measured on the branch and on ``main`` with the
+# same native extension.
+BRANCH_EFFECT: dict[str, dict[str, Any]] = {
+    "BIOMD0000000245": {
+        "construct": "reaction id used as a rate inside a rule",
+        "main": "failed",
+        "branch": "passed",
+        "cause": (
+            "The rule names seven reaction ids.  The flux inlining replaced one "
+            "reaction per pass and stopped after four passes, so the remaining "
+            "ids reached the emitted rule as unresolved expression symbols and "
+            "the model did not compile."
+        ),
+    },
+    "BIOMD0000000570": {
+        "construct": "reaction id used as a rate inside a rate rule",
+        "main": "failed",
+        "branch": "passed",
+        "cause": (
+            "The rate rule names seven reaction ids; the same four-pass limit "
+            "left three of them unresolved."
+        ),
+    },
+    "BIOMD0000000353": {
+        "construct": "compartment size set by an initialAssignment",
+        "main": "failed",
+        "branch": "passed",
+        "cause": (
+            "A species assignment rule names a compartment whose size an "
+            "initial assignment sets; the compartment was rewritten to the "
+            "constant volume parameter, producing a call to an undeclared "
+            "function."
+        ),
+    },
+    "BIOMD0000001098": {
+        "construct": "MathML <apply> without an operator",
+        "main": "failed",
+        "branch": "unsupported",
+        "cause": (
+            "Every kinetic law is an <apply> whose operator is a <ci> naming a "
+            "parameter, which MathML reads as a call to an undeclared "
+            "function; the emitted rule did not parse.  The construct is now "
+            "reported as a loss."
+        ),
+    },
+}
+
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -547,6 +596,24 @@ def main() -> int:
                 "sha256": _digest(args.structural_trigger_report),
             },
             "summary": structural.get("summary"),
+        }
+    if BRANCH_EFFECT:
+        inventory["residuals"]["branch_effect"] = {
+            "note": (
+                "The records the change under review touches, measured record "
+                "by record with the corpus gate's --only-id path on the branch "
+                "and on main with the same native extension."
+            ),
+            "records": {
+                model_id: {
+                    **entry,
+                    "measured_in_report": next(
+                        (row["flat_status"] for row in rows if row["id"] == model_id),
+                        None,
+                    ),
+                }
+                for model_id, entry in sorted(BRANCH_EFFECT.items())
+            },
         }
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
