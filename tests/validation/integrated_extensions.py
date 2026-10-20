@@ -18,6 +18,7 @@ from . import (
     integrated_marginals,
     integrated_protocol,
     export_format_tier,
+    netrule_execution,
 )
 from .integrated_cases import generated_cases
 
@@ -31,6 +32,7 @@ OPERATIONS = (
     "bngir-adversarial",
     "quantity-laws",
     "export-format-tier",
+    "netrule-execution",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -48,6 +50,8 @@ def check_ids(operation, case=None, *, full=False):
         return integrated_marginals.source_law_check_ids(full=full)
     if operation == "boundaries":
         return integrated_boundaries.expected_check_ids()
+    if operation == "netrule-execution":
+        return netrule_execution.check_ids()
     if operation == "protocol":
         return [
             f"{case['id']}:protocol:{name}"
@@ -80,6 +84,7 @@ def expected_ids(
     include_bngir_adversarial=True,
     include_quantity_laws=True,
     include_export_format_tier=True,
+    include_netrule_execution=True,
     full=False,
 ):
     ids = []
@@ -93,6 +98,8 @@ def expected_ids(
         ids.extend(["campaign:bngir-adversarial", *check_ids("bngir-adversarial")])
     if include_export_format_tier:
         ids.extend(["campaign:export-format-tier", *check_ids("export-format-tier")])
+    if include_netrule_execution:
+        ids.extend(["campaign:netrule-execution", *check_ids("netrule-execution")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -108,6 +115,8 @@ def run_worker(operation, args):
         )
     if operation == "boundaries":
         return integrated_boundaries.run(Path.cwd())
+    if operation == "netrule-execution":
+        return netrule_execution.run_worker(Path.cwd())
     if operation == "graph-identity":
         from .graph_identity import run_worker as run_graph_identity
 
@@ -242,7 +251,7 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                     row["first_difference"], dict
                 ):
                     raise ValueError("invalid first-difference observation")
-                if operation == "bngir-adversarial":
+                if operation in ("bngir-adversarial", "netrule-execution"):
                     artifact_name = row.get("source_artifact")
                     digest = row.get("source_sha256")
                     artifact = (

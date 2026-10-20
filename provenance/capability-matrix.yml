@@ -309,6 +309,7 @@ validation_capabilities:
   tests:
   - tests/cpp/test_network_generator.cpp
   - tests/validation/test_parity_net.py
+  - tests/validation/netrule_execution.py
   issues:
   - 139
   reference: bionetgen

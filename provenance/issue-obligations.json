@@ -184,18 +184,102 @@
               "identity_requirements": [
                 "source.revision"
               ]
+            },
+            {
+              "id": "netrule-execution:conversion-r0:graph",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:graph",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r0:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:filter-include:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:filter-exclude:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:local-scope:local-scope",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the local scope and the scoped rate law, and the executed local rate equals the closed-form law that adds the local observable count to the base rate.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:reversible-r0:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:reversible-r1:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
             }
           ],
           "test_references": [
             "tests/cpp/test_network_generator.cpp",
             "tests/cpp/test_reaction_rule_expansion.cpp",
             "tests/python/test_legacy_symmetry_factor.py",
-            "tests/validation/test_parity_net.py"
+            "tests/validation/test_parity_net.py",
+            "tests/validation/netrule_execution.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
             "Missing required qualification ID: qualification:issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit.",
+            "The LegacyNetworkRuleKernel reconstruction is not replaced by this evidence: the parity checks qualify a bounded slice and retire no legacy path.",
+            "The qualified slice is bounded: single-molecule rule patterns without bonds, compartments or delete-molecules. Other rule shapes and the replacement of the legacy path itself remain unqualified.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -207,19 +291,94 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:139:demonstrate-graph-rate-filter-local-scope-and-reversible-rule-pa",
+              "id": "netrule-execution:conversion-r0:graph",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:graph",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r0:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:filter-include:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:filter-exclude:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:local-scope:local-scope",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the local scope and the scoped rate law, and the executed local rate equals the closed-form law that adds the local observable count to the base rate.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:reversible-r0:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:reversible-r1:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/netrule_execution.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:139:demonstrate-graph-rate-filter-local-scope-and-reversible-rule-pa.",
+            "The qualified slice is bounded: single-molecule rule patterns without bonds, compartments or delete-molecules. Other rule shapes and the replacement of the legacy path itself remain unqualified.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -246,6 +405,162 @@
             "Missing required qualification ID: qualification:issue:139:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:139:executed-slice:network-rule-execution-graph",
+          "criterion": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "scope": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "netrule-execution:conversion-r0:graph",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:graph",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/netrule_execution.py"
+          ],
+          "completion_condition": "Only the named supported slice is demonstrated by passing exact-candidate execution; no legacy network-rule path is retired by this evidence.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:139:executed-slice:network-rule-execution-rate",
+          "criterion": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "scope": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "netrule-execution:conversion-r0:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/netrule_execution.py"
+          ],
+          "completion_condition": "Only the named supported slice is demonstrated by passing exact-candidate execution; no legacy network-rule path is retired by this evidence.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:139:executed-slice:network-rule-execution-filter",
+          "criterion": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "scope": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "netrule-execution:filter-include:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:filter-exclude:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/netrule_execution.py"
+          ],
+          "completion_condition": "Only the named supported slice is demonstrated by passing exact-candidate execution; no legacy network-rule path is retired by this evidence.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:139:executed-slice:network-rule-execution-local-scope",
+          "criterion": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "scope": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "netrule-execution:local-scope:local-scope",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the local scope and the scoped rate law, and the executed local rate equals the closed-form law that adds the local observable count to the base rate.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/netrule_execution.py"
+          ],
+          "completion_condition": "Only the named supported slice is demonstrated by passing exact-candidate execution; no legacy network-rule path is retired by this evidence.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:139:executed-slice:network-rule-execution-reversible",
+          "criterion": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "scope": "Demonstrate graph, rate, filter, local-scope and reversible-rule parity before retiring each legacy path.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "netrule-execution:reversible-r0:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:reversible-r1:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/netrule_execution.py"
+          ],
+          "completion_condition": "Only the named supported slice is demonstrated by passing exact-candidate execution; no legacy network-rule path is retired by this evidence.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
