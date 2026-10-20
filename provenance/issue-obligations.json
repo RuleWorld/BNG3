@@ -1430,26 +1430,150 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:142:compare-the-two-graph-encodings-canonicalizers-against-independe",
+              "id": "graph-identity-contract:symmetric-ring-3:network-canonical-label",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-3:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-4:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-4:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-5:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-5:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:molecule-compartment-distinction:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:molecule-compartment-distinction:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:species-compartment-distinction:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:species-compartment-distinction:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:state-distinction:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:state-distinction:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:topology-distinction:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:topology-distinction:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
           "test_references": [
+            "cpp/core/IdentityContract.hpp",
+            "cpp/ast/SpeciesGraph.cpp",
+            "cpp/nfsim/NFcore/complex.cpp",
             "tests/architecture_contracts",
+            "tests/cpp/test_graph_identity_contract.cpp",
             "tests/cpp/test_hnauty.cpp",
             "tests/cpp/test_node_label_parity.cpp",
             "tests/cpp/test_node_operator.cpp",
             "tests/cpp/test_ullmann.cpp",
-            "tests/python/test_single_nauty_contract.py"
+            "tests/python/test_single_nauty_contract.py",
+            "tests/validation/graph_identity_contract.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:142:compare-the-two-graph-encodings-canonicalizers-against-independe.",
+            "The comparison is bounded to the generated symmetric, compartmental, state and topology families; it does not qualify every molecular graph either encoding can build.",
+            "The NFsim complex canonical label is compared as a label; the standalone NFsim binary is not executed by this check.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -1461,19 +1585,142 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:142:share-the-justified-identity-contract-or-implementation-and-reta",
+              "id": "graph-identity-contract:symmetric-ring-3:network-species-identity",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-3:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-4:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-4:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-5:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:symmetric-ring-5:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:molecule-compartment-distinction:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:molecule-compartment-distinction:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:species-compartment-distinction:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:species-compartment-distinction:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:state-distinction:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:state-distinction:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:topology-distinction:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:topology-distinction:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "cpp/core/IdentityContract.hpp",
+            "cpp/ast/SpeciesList.cpp",
+            "tests/cpp/test_graph_identity_contract.cpp",
+            "tests/validation/graph_identity_contract.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:142:share-the-justified-identity-contract-or-implementation-and-reta.",
+            "The shared contract names the layer every surface decides; the NFsim encoding keeps its own nauty encoding and was not replaced by the network implementation.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },

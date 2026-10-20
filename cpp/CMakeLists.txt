@@ -449,6 +449,7 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_compile_snapshot.cpp
         bindings/bind_parser.cpp
         bindings/bind_engine.cpp
+        bindings/bind_graph_identity.cpp
         bindings/bind_nfsim.cpp
         bindings/bind_io.cpp
         bindings/bind_viz.cpp

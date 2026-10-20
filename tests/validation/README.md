@@ -457,6 +457,25 @@ files, per-case outcomes and the first identity difference stay in the report
 directory. Invalid generated inputs and evidence-harness failures retain their
 own classifications, and do not stop later cases.
 
+The campaign also runs the generated identity-contract controls. For every
+generated family, the two native graph encodings (BNGcore's `PatternGraph`
+canonical label and NFsim's `Complex` canonical label) and the network species
+identity are compared against one independent identity contract, the validation
+graph matcher, at the layer each surface decides. The network label decides the
+structure layer (compartments excluded), the NFsim label decides the structure
+and compartment layers (NFcore carries the compartment on the molecule), and the
+network species identity decides the species layer. Every result states the
+layer it decided, so a surface that decides a different layer is visible
+instead of silent. A label is never accepted as proof of identity: the
+partition a label induces is compared with the partition the independent
+matcher computes, so two different graphs that share a label are a mismatch and
+not a merge. The contract itself lives in `cpp/core/IdentityContract.hpp`, and
+each surface declares the layer it decides. The generated families spell a
+species compartment as the `@C:` prefix and a molecule compartment as the
+`A(...)@C` suffix; the native parser reads the molecule-prefix spelling
+`A@C(...)` differently, so the families do not use it. Run just this group
+with `--graph-identity-contract-only`.
+
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.
 

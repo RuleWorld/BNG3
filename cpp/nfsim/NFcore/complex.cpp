@@ -2,6 +2,11 @@
 #include "NFcore.hh"
 #include <string>
 
+// The shared identity contract (see cpp/core/IdentityContract.hpp).  NFcore's
+// Complex encoding carries the compartment on every molecule, so its
+// canonical label decides the structure and compartment layers.
+#include "core/IdentityContract.hpp"
+
 // for labeling
 #include <sstream>
 #include <algorithm>
@@ -224,6 +229,13 @@ string Complex::getCanonicalLabel ( )
 		generateCanonicalLabel();
 
 	return canonical_label;
+}
+
+
+// the layer of the shared identity contract that this canonical label decides
+const char* Complex::identityLayer ( )
+{
+	return bng::identity::layerName ( bng::identity::Layer::Compartment );
 }
 
 

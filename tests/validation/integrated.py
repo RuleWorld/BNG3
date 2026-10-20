@@ -93,6 +93,7 @@ def annotate_acceptance_evidence(rows):
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
     consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
     consumers.update(integrated_extensions.check_ids("stochastic-parity"))
+    consumers.update(integrated_extensions.check_ids("graph-identity-contract"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -110,6 +111,7 @@ def expected_contract_ids(
     *,
     include_boundaries=True,
     include_graph_identity=True,
+    include_graph_identity_contract=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
     include_export_format_tier=True,
@@ -162,6 +164,7 @@ def expected_contract_ids(
         cases,
         include_boundaries=include_boundaries,
         include_graph_identity=include_graph_identity,
+        include_graph_identity_contract=include_graph_identity_contract,
         include_bngir_adversarial=include_bngir_adversarial,
         include_quantity_laws=include_quantity_laws,
         include_export_format_tier=include_export_format_tier,
@@ -951,6 +954,7 @@ def main(argv=None):
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--boundaries-only", action="store_true")
     parser.add_argument("--graph-identity-only", action="store_true")
+    parser.add_argument("--graph-identity-contract-only", action="store_true")
     parser.add_argument("--bngir-adversarial-only", action="store_true")
     parser.add_argument("--quantity-laws-only", action="store_true")
     parser.add_argument("--export-format-tier-only", action="store_true")
@@ -964,6 +968,7 @@ def main(argv=None):
             (
                 args.boundaries_only,
                 args.graph_identity_only,
+                args.graph_identity_contract_only,
                 args.bngir_adversarial_only,
                 args.quantity_laws_only,
                 args.export_format_tier_only,
@@ -993,6 +998,7 @@ def main(argv=None):
     if (
         args.boundaries_only
         or args.graph_identity_only
+        or args.graph_identity_contract_only
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.export_format_tier_only
@@ -1029,6 +1035,7 @@ def main(argv=None):
     focused = (
         args.boundaries_only
         or args.graph_identity_only
+        or args.graph_identity_contract_only
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.netrule_execution_only
@@ -1038,6 +1045,7 @@ def main(argv=None):
     qualification_selection = dict(
         include_boundaries=not (
             args.graph_identity_only
+            or args.graph_identity_contract_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
             or args.export_format_tier_only
@@ -1047,6 +1055,15 @@ def main(argv=None):
         ),
         include_graph_identity=not (
             args.boundaries_only
+            or args.graph_identity_contract_only
+            or args.bngir_adversarial_only
+            or args.quantity_laws_only
+            or args.export_format_tier_only
+            or args.netrule_execution_only
+        ),
+        include_graph_identity_contract=not (
+            args.boundaries_only
+            or args.graph_identity_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
             or args.export_format_tier_only
@@ -1057,12 +1074,14 @@ def main(argv=None):
         include_bngir_adversarial=not (
             args.boundaries_only
             or args.graph_identity_only
+            or args.graph_identity_contract_only
             or args.quantity_laws_only
             or args.export_format_tier_only
         ),
         include_export_format_tier=not (
             args.boundaries_only
             or args.graph_identity_only
+            or args.graph_identity_contract_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
             or args.netrule_execution_only
@@ -1073,6 +1092,7 @@ def main(argv=None):
     qualification_selection["include_quantity_laws"] = not (
         args.boundaries_only
         or args.graph_identity_only
+        or args.graph_identity_contract_only
         or args.bngir_adversarial_only
         or args.export_format_tier_only
         or args.netrule_execution_only
@@ -1109,6 +1129,10 @@ def main(argv=None):
             integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
         if qualification_selection["include_graph_identity"]:
             integrated_extensions.invoke("graph-identity", args, rows, env, run_stage)
+        if qualification_selection["include_graph_identity_contract"]:
+            integrated_extensions.invoke(
+                "graph-identity-contract", args, rows, env, run_stage
+            )
         if qualification_selection["include_bngir_adversarial"]:
             integrated_extensions.invoke(
                 "bngir-adversarial", args, rows, env, run_stage
@@ -1177,6 +1201,7 @@ def main(argv=None):
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
+        "graph-identity-contract": ["--graph-identity-contract-only"],
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
@@ -1256,6 +1281,10 @@ def main(argv=None):
                     "tests/validation/bngir_reconstruction_contracts.py",
                 ],
                 "graph-identity": "tests/validation/graph_identity.py",
+                "graph-identity-contract": [
+                    "tests/validation/graph_identity_contract.py",
+                    "cpp/core/IdentityContract.hpp",
+                ],
                 "export-format-tier": "tests/validation/export_format_tier.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
@@ -1281,6 +1310,10 @@ def main(argv=None):
             )
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
+            if row["stage"] == "graph-identity-contract":
+                row["question"] = (
+                    "both-native-graph-encodings-vs-one-independent-identity-contract"
+                )
             if row["stage"] == "netrule-execution":
                 row["question"] = (
                     "compile-owned-network-rule-contract-vs-legacy-path-and-oracle"
@@ -1307,6 +1340,8 @@ def main(argv=None):
             elif stage in {"nf-marginals", "quantity-laws"}:
                 issues = [143, 146, 151, 167]
             elif stage == "graph-identity":
+                issues = [142]
+            elif stage == "graph-identity-contract":
                 issues = [142]
             elif stage == "export-format-tier":
                 issues = [163]
