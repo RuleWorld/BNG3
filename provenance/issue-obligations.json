@@ -1759,12 +1759,361 @@
           "criterion": "Specify supported special-rate, TFUN, scope, multiplicity and dependency/evaluation conventions once.",
           "scope": "Specify supported special-rate, TFUN, scope, multiplicity and dependency/evaluation conventions once.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The declared supported slice: single-reaction rules over free, non-compartment molecules with no filter, no rule modifier, no energy pattern and no population map; rate laws that resolve to an elementary parameter rate, a Saturation or Hill special rate, a two-reactant MichaelisMenten special rate, a table function, or a model function whose only argument is a local molecule scope.",
+            "A case outside the slice is reported as unsupported with the construct that put it outside; it is never skipped quietly.",
+            "The independent reference is a closed-form law written in the harness: no comparison reads a value the engine produced from the same quantity the expectation is derived from.",
+            "The comparison tolerance is 1e-9 relative for the coefficient, the right-hand side and the propensity, and 1e-7 relative for the ODE trajectory control, which is the error budget of the numerical solver."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:143:specify-supported-special-rate-tfun-scope-multiplicity-and-depen",
+              "id": "rate-law-contract:special-sat-r0:coefficient",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The compiled coefficient of the special-saturation case equals the closed-form law the stated convention defines: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-saturation case equals the closed-form law the stated convention defines: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-saturation case equals the closed-form law the stated convention defines: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-saturation case equals the closed-form law the stated convention defines: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-saturation case equals the closed-form law the stated convention defines: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-saturation case equals the closed-form law the stated convention defines: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r0:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-hill case equals the closed-form law the stated convention defines: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-hill case equals the closed-form law the stated convention defines: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-hill case equals the closed-form law the stated convention defines: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-hill case equals the closed-form law the stated convention defines: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-hill case equals the closed-form law the stated convention defines: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-hill case equals the closed-form law the stated convention defines: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r0:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-michaelis-menten case equals the closed-form law the stated convention defines: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-michaelis-menten case equals the closed-form law the stated convention defines: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-michaelis-menten case equals the closed-form law the stated convention defines: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-michaelis-menten case equals the closed-form law the stated convention defines: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-michaelis-menten case equals the closed-form law the stated convention defines: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-michaelis-menten case equals the closed-form law the stated convention defines: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t0:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t2:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t2:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t2:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the table-function case equals the closed-form law the stated convention defines: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:local-scope:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the local-scope case equals the closed-form law the stated convention defines: the scoped rate k plus the scoped count of the `up` observable in each direction's local scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:local-scope:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the local-scope case equals the closed-form law the stated convention defines: the scoped rate k plus the scoped count of the `up` observable in each direction's local scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:local-scope:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the local-scope case equals the closed-form law the stated convention defines: the scoped rate k plus the scoped count of the `up` observable in each direction's local scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-distinct:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the multiplicity case equals the closed-form law the stated convention defines: the coefficient k of a distinct-reactant reaction, the derivative -k*A*B and the discrete propensity k*nA*nB.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-distinct:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the multiplicity case equals the closed-form law the stated convention defines: the coefficient k of a distinct-reactant reaction, the derivative -k*A*B and the discrete propensity k*nA*nB.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-distinct:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the multiplicity case equals the closed-form law the stated convention defines: the coefficient k of a distinct-reactant reaction, the derivative -k*A*B and the discrete propensity k*nA*nB.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-identical:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the multiplicity case equals the closed-form law the stated convention defines: the coefficient k/2! of an identical-reactant reaction, the derivative -(k/2)*A^2 and the discrete propensity (k/2)*n*(n-1).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-identical:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the multiplicity case equals the closed-form law the stated convention defines: the coefficient k/2! of an identical-reactant reaction, the derivative -(k/2)*A^2 and the discrete propensity (k/2)*n*(n-1).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-identical:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the multiplicity case equals the closed-form law the stated convention defines: the coefficient k/2! of an identical-reactant reaction, the derivative -(k/2)*A^2 and the discrete propensity (k/2)*n*(n-1).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:dependency-observable:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the dependency case equals the closed-form law the stated convention defines: the coefficient k times the current observable value, re-evaluated at each state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:dependency-observable:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the dependency case equals the closed-form law the stated convention defines: the coefficient k times the current observable value, re-evaluated at each state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:dependency-observable:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the dependency case equals the closed-form law the stated convention defines: the coefficient k times the current observable value, re-evaluated at each state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:boundary-compartment:slice",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A model that declares a compartment is outside the declared slice and is reported as unsupported with the construct named instead of being skipped quietly.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:boundary-filter:slice",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A model that declares a filter is outside the declared slice and is reported as unsupported with the construct named instead of being skipped quietly.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:boundary-modifier:slice",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A model that declares a modifier is outside the declared slice and is reported as unsupported with the construct named instead of being skipped quietly.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:boundary-energy:slice",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A model that declares a energy is outside the declared slice and is reported as unsupported with the construct named instead of being skipped quietly.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:boundary-population-map:slice",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A model that declares a population map is outside the declared slice and is reported as unsupported with the construct named instead of being skipped quietly.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -1778,13 +2127,18 @@
             "tests/cpp/test_signaling_rate_laws.cpp",
             "tests/python/test_legacy_symmetry_factor.py",
             "tests/validation/test_parity_expressions.py",
-            "tests/validation/test_parity_rhs.py"
+            "tests/validation/test_parity_rhs.py",
+            "tests/validation/rate_law_contract.py",
+            "tests/validation/test_rate_law_contract.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:143:specify-supported-special-rate-tfun-scope-multiplicity-and-depen.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
+          "_references": [
+            "tests/validation/rate_law_contract.py",
+            "tests/validation/test_rate_law_contract.py"
           ]
         },
         {
@@ -1792,23 +2146,450 @@
           "criterion": "Compare supported backend coefficients/RHS/propensities against independent references and test cache invalidation.",
           "scope": "Compare supported backend coefficients/RHS/propensities against independent references and test cache invalidation.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The declared supported slice: single-reaction rules over free, non-compartment molecules with no filter, no rule modifier, no energy pattern and no population map; rate laws that resolve to an elementary parameter rate, a Saturation or Hill special rate, a two-reactant MichaelisMenten special rate, a table function, or a model function whose only argument is a local molecule scope.",
+            "A case outside the slice is reported as unsupported with the construct that put it outside; it is never skipped quietly.",
+            "The independent reference is a closed-form law written in the harness: no comparison reads a value the engine produced from the same quantity the expectation is derived from.",
+            "The comparison tolerance is 1e-9 relative for the coefficient, the right-hand side and the propensity, and 1e-7 relative for the ODE trajectory control, which is the error budget of the numerical solver."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:143:compare-supported-backend-coefficients-rhs-propensities-against",
+              "id": "rate-law-contract:elementary-r0:coefficient",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The compiled coefficient of the elementary-r0 case equals the independent closed-form law: the elementary mass-action coefficient k, the derivative -k*A and the discrete propensity k*n.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:elementary-r0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the elementary-r0 case equals the independent closed-form law: the elementary mass-action coefficient k, the derivative -k*A and the discrete propensity k*n.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:elementary-r0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the elementary-r0 case equals the independent closed-form law: the elementary mass-action coefficient k, the derivative -k*A and the discrete propensity k*n.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:elementary-r1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the elementary-r1 case equals the independent closed-form law: the elementary mass-action coefficient k, the derivative -k*A and the discrete propensity k*n.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:elementary-r1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the elementary-r1 case equals the independent closed-form law: the elementary mass-action coefficient k, the derivative -k*A and the discrete propensity k*n.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:elementary-r1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the elementary-r1 case equals the independent closed-form law: the elementary mass-action coefficient k, the derivative -k*A and the discrete propensity k*n.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r0:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-sat-r0 case equals the independent closed-form law: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-sat-r0 case equals the independent closed-form law: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-sat-r0 case equals the independent closed-form law: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-sat-r1 case equals the independent closed-form law: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-sat-r1 case equals the independent closed-form law: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-sat-r1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-sat-r1 case equals the independent closed-form law: the total saturation rate Vmax*S/(Km+S) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r0:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-hill-r0 case equals the independent closed-form law: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-hill-r0 case equals the independent closed-form law: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-hill-r0 case equals the independent closed-form law: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-hill-r1 case equals the independent closed-form law: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-hill-r1 case equals the independent closed-form law: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-hill-r1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-hill-r1 case equals the independent closed-form law: the total Hill rate Vmax*S^n/(Kh^n+S^n) at the seeded substrate amount.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r0:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-mm-r0 case equals the independent closed-form law: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-mm-r0 case equals the independent closed-form law: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-mm-r0 case equals the independent closed-form law: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the special-mm-r1 case equals the independent closed-form law: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the special-mm-r1 case equals the independent closed-form law: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:special-mm-r1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the special-mm-r1 case equals the independent closed-form law: the self-consistent Michaelis-Menten total rate kcat*Et*S/(Km+S) at the seeded substrate and enzyme amounts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t0:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the tfun-t0 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t0:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the tfun-t0 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t0:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the tfun-t0 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t1:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the tfun-t1 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t1:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the tfun-t1 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t1:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the tfun-t1 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t2:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the tfun-t2 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t2:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the tfun-t2 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:tfun-t2:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the tfun-t2 case equals the independent closed-form law: the linear interpolation of the tabulated knots, clamped outside the tabulated range.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:local-scope:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the local-scope case equals the independent closed-form law: the scoped rate k plus the scoped count of the `up` observable in each direction's local scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:local-scope:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the local-scope case equals the independent closed-form law: the scoped rate k plus the scoped count of the `up` observable in each direction's local scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:local-scope:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the local-scope case equals the independent closed-form law: the scoped rate k plus the scoped count of the `up` observable in each direction's local scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-distinct:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the multiplicity-distinct case equals the independent closed-form law: the coefficient k of a distinct-reactant reaction, the derivative -k*A*B and the discrete propensity k*nA*nB.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-distinct:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the multiplicity-distinct case equals the independent closed-form law: the coefficient k of a distinct-reactant reaction, the derivative -k*A*B and the discrete propensity k*nA*nB.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-distinct:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the multiplicity-distinct case equals the independent closed-form law: the coefficient k of a distinct-reactant reaction, the derivative -k*A*B and the discrete propensity k*nA*nB.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-identical:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the multiplicity-identical case equals the independent closed-form law: the coefficient k/2! of an identical-reactant reaction, the derivative -(k/2)*A^2 and the discrete propensity (k/2)*n*(n-1).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-identical:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the multiplicity-identical case equals the independent closed-form law: the coefficient k/2! of an identical-reactant reaction, the derivative -(k/2)*A^2 and the discrete propensity (k/2)*n*(n-1).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:multiplicity-identical:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the multiplicity-identical case equals the independent closed-form law: the coefficient k/2! of an identical-reactant reaction, the derivative -(k/2)*A^2 and the discrete propensity (k/2)*n*(n-1).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:dependency-observable:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the dependency-observable case equals the independent closed-form law: the coefficient k times the current observable value, re-evaluated at each state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:dependency-observable:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the dependency-observable case equals the independent closed-form law: the coefficient k times the current observable value, re-evaluated at each state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:dependency-observable:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the dependency-observable case equals the independent closed-form law: the coefficient k times the current observable value, re-evaluated at each state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-parameter:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the cache-rate-parameter case equals the independent closed-form law: the elementary coefficient k before the change.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-parameter:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the cache-rate-parameter case equals the independent closed-form law: the elementary coefficient k before the change.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-parameter:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the cache-rate-parameter case equals the independent closed-form law: the elementary coefficient k before the change.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-dependency:coefficient",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled coefficient of the cache-rate-dependency case equals the independent closed-form law: the coefficient of the parameter defined as 2*k.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-dependency:rhs",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rhs of the cache-rate-dependency case equals the independent closed-form law: the coefficient of the parameter defined as 2*k.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-dependency:propensity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled propensity of the cache-rate-dependency case equals the independent closed-form law: the coefficient of the parameter defined as 2*k.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-parameter:cache-invalidation",
+              "evidence_kind": "supported-execution",
+              "expectation": "A changed rate parameter, or a changed dependency of one, invalidates every cached value that depends on it: the coefficient of the changed rate parameter, the rebuilt network and the closed-form decay of the changed rate.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "rate-law-contract:cache-rate-dependency:cache-invalidation",
+              "evidence_kind": "supported-execution",
+              "expectation": "A changed rate parameter, or a changed dependency of one, invalidates every cached value that depends on it: the coefficient of the dependent parameter after its dependency changed, the rebuilt network and the closed-form decay of the changed rate.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/rate_law_contract.py",
+            "tests/validation/test_rate_law_contract.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:143:compare-supported-backend-coefficients-rhs-propensities-against.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
+          "_references": [
+            "tests/validation/rate_law_contract.py",
+            "tests/validation/test_rate_law_contract.py"
           ]
         },
         {
@@ -2281,25 +3062,195 @@
           "criterion": "Select supported additions for dynamic rates, filters/modifiers, compartments, population maps and energy from the approved capability matrix.",
           "scope": "Select supported additions for dynamic rates, filters/modifiers, compartments, population maps and energy from the approved capability matrix.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The approved supported slice: unary site-state rules with a static elementary rate, isolated integer seed populations, and unary Molecules observables; every other semantic family is refused by name instead of being approximated.",
+            "Every candidate family outside the approved slice is refused by name in the representation and in the executor, and the refusal is recorded as a diagnostic observation rather than as supported execution.",
+            "The independent reference of the supported slice is the exact pure-death law: every seeded molecule converts independently at the declared rate, so the unconverted count at time T is binomial with N0 trials and success probability exp(-k*T).",
+            "The stochastic comparison is a 4.0-sigma bound over an ensemble of 256 recorded runs; it is not a pathwise claim."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:147:select-supported-additions-for-dynamic-rates-filters-modifiers-c",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "nfnext-slices:unary-site-state:representation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The representation of the approved NFnext slice (unary site-state rules) matches the declared boundary and the independent pure-death law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:unary-site-state:executor",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executor of the approved NFnext slice (unary site-state rules) matches the declared boundary and the independent pure-death law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:unary-site-state:independent-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independent-reference of the approved NFnext slice (unary site-state rules) matches the declared boundary and the independent pure-death law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:dynamic-rates:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the dynamic rates family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:dynamic-rates:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the dynamic rates family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:dynamic-rates:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the dynamic rates family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:filters:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the rule filters family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:filters:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the rule filters family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:filters:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the rule filters family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:modifiers:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the rule modifiers family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:modifiers:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the rule modifiers family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:modifiers:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the rule modifiers family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:compartments:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the compartments family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:compartments:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the compartments family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:compartments:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the compartments family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:population-maps:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the population maps family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:population-maps:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the population maps family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:population-maps:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the population maps family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:energy:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the energy patterns family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:energy:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the energy patterns family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:energy:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the energy patterns family is refused by name, and no partial lowering of the family is carried.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/architecture_contracts/nfnext"
+            "tests/architecture_contracts/nfnext",
+            "tests/validation/nfnext_slices.py",
+            "tests/validation/test_nfnext_slices.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:147:select-supported-additions-for-dynamic-rates-filters-modifiers-c.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
+          "_references": [
+            "tests/validation/nfnext_slices.py",
+            "tests/validation/test_nfnext_slices.py"
           ]
         },
         {
@@ -2307,23 +3258,194 @@
           "criterion": "Add representation, executor and independent tests per slice; retain explicit rejection for everything outside scope.",
           "scope": "Add representation, executor and independent tests per slice; retain explicit rejection for everything outside scope.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The approved supported slice: unary site-state rules with a static elementary rate, isolated integer seed populations, and unary Molecules observables; every other semantic family is refused by name instead of being approximated.",
+            "Every candidate family outside the approved slice is refused by name in the representation and in the executor, and the refusal is recorded as a diagnostic observation rather than as supported execution.",
+            "The independent reference of the supported slice is the exact pure-death law: every seeded molecule converts independently at the declared rate, so the unconverted count at time T is binomial with N0 trials and success probability exp(-k*T).",
+            "The stochastic comparison is a 4.0-sigma bound over an ensemble of 256 recorded runs; it is not a pathwise claim."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:147:add-representation-executor-and-independent-tests-per-slice-reta",
+              "id": "nfnext-slices:unary-site-state:representation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The representation of the approved NFnext slice (unary site-state rules) matches the declared boundary and the independent pure-death law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:unary-site-state:executor",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executor of the approved NFnext slice (unary site-state rules) matches the declared boundary and the independent pure-death law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:unary-site-state:independent-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independent-reference of the approved NFnext slice (unary site-state rules) matches the declared boundary and the independent pure-death law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:dynamic-rates:representation",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The representation of the dynamic rates family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:dynamic-rates:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the dynamic rates family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:dynamic-rates:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the dynamic rates family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:filters:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the rule filters family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:filters:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the rule filters family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:filters:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the rule filters family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:modifiers:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the rule modifiers family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:modifiers:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the rule modifiers family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:modifiers:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the rule modifiers family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:compartments:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the compartments family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:compartments:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the compartments family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:compartments:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the compartments family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:population-maps:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the population maps family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:population-maps:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the population maps family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:population-maps:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the population maps family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:energy:representation",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The representation of the energy patterns family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:energy:executor",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The executor of the energy patterns family is refused by name, and no partial lowering of the family is carried.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-slices:energy:independent-reference",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The independent-reference of the energy patterns family is refused by name, and no partial lowering of the family is carried.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/nfnext_slices.py",
+            "tests/validation/test_nfnext_slices.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:147:add-representation-executor-and-independent-tests-per-slice-reta.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
+          "_references": [
+            "tests/validation/nfnext_slices.py",
+            "tests/validation/test_nfnext_slices.py"
           ]
         },
         {

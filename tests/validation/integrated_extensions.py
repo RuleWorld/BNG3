@@ -12,10 +12,11 @@ from . import (
     campaign,
     integrated_boundaries,
     bngir_adversarial,
-    bngir_format_contracts,
-    bngir_reconstruction_contracts,
     api_surface,
     stochastic_parity,
+    graph_identity_contract,
+    bngir_format_contracts,
+    bngir_reconstruction_contracts,
     bngsim_boundary,
     integrated_consumers,
     integrated_marginals,
@@ -23,6 +24,8 @@ from . import (
     export_format_tier,
     jax_backend_measurement,
     netrule_execution,
+    nfnext_slices,
+    rate_law_contract,
 )
 from .integrated_cases import generated_cases
 
@@ -33,15 +36,17 @@ OPERATIONS = (
     "protocol",
     "nf-marginals",
     "graph-identity",
-    "graph-identity-contract",
     "bngir-adversarial",
     "quantity-laws",
     "export-format-tier",
     "netrule-execution",
     "bngsim-boundary",
     "jax-backend-measurement",
+    "rate-law-contract",
+    "nfnext-slices",
     "api-surface",
     "stochastic-parity",
+    "graph-identity-contract",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -50,9 +55,13 @@ FOCUS_FLAGS = {
     "boundaries": "--boundaries-only",
     "bngir-adversarial": "--bngir-adversarial-only",
     "graph-identity": "--graph-identity-only",
-    "graph-identity-contract": "--graph-identity-contract-only",
     "export-format-tier": "--export-format-tier-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "rate-law-contract": "--rate-law-contract-only",
+    "nfnext-slices": "--nfnext-slices-only",
+    "api-surface": "--api-surface-only",
+    "stochastic-parity": "--stochastic-parity-only",
+    "graph-identity-contract": "--graph-identity-contract-only",
 }
 
 
@@ -67,6 +76,31 @@ def check_ids(operation, case=None, *, full=False):
         return netrule_execution.check_ids()
     if operation == "jax-backend-measurement":
         return jax_backend_measurement.check_ids()
+    if operation == "api-surface":
+        return api_surface.check_ids()
+    if operation == "stochastic-parity":
+        return stochastic_parity.check_ids()
+    if operation == "graph-identity-contract":
+        from .graph_identity_contract import (
+            CASES as GRAPH_CASES,
+            CHECKS as GRAPH_CHECKS,
+        )
+
+        return [
+            f"graph-identity-contract:{case['id']}:{check}"
+            for case in GRAPH_CASES
+            for check in GRAPH_CHECKS
+        ]
+    if operation == "api-surface":
+        return api_surface.run(Path.cwd())
+    if operation == "stochastic-parity":
+        return stochastic_parity.run_worker(Path.cwd())
+    if operation == "graph-identity-contract":
+        return graph_identity_contract.run_worker(Path.cwd())
+    if operation == "rate-law-contract":
+        return rate_law_contract.check_ids()
+    if operation == "nfnext-slices":
+        return nfnext_slices.check_ids()
     if operation == "protocol":
         return [
             f"{case['id']}:protocol:{name}"
@@ -76,14 +110,6 @@ def check_ids(operation, case=None, *, full=False):
         from .graph_identity import CASES
 
         return [f"graph-identity:{case['id']}" for case in CASES]
-    if operation == "graph-identity-contract":
-        from .graph_identity_contract import CASES, CHECKS
-
-        return [
-            f"graph-identity-contract:{case['id']}:{check}"
-            for case in CASES
-            for check in CHECKS
-        ]
     if operation == "bngir-adversarial":
         return [
             *bngir_adversarial.check_ids(),
@@ -92,10 +118,6 @@ def check_ids(operation, case=None, *, full=False):
         ]
     if operation == "export-format-tier":
         return export_format_tier.check_ids()
-    if operation == "api-surface":
-        return api_surface.check_ids()
-    if operation == "stochastic-parity":
-        return stochastic_parity.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -108,15 +130,17 @@ def expected_ids(
     *,
     include_boundaries=True,
     include_graph_identity=True,
-    include_graph_identity_contract=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
     include_export_format_tier=True,
     include_netrule_execution=True,
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
+    include_rate_law_contract=True,
+    include_nfnext_slices=True,
     include_api_surface=True,
     include_stochastic_parity=True,
+    include_graph_identity_contract=True,
     full=False,
 ):
     ids = []
@@ -128,13 +152,6 @@ def expected_ids(
         ids.extend(["campaign:boundaries", *check_ids("boundaries")])
     if include_graph_identity:
         ids.extend(["campaign:graph-identity", *check_ids("graph-identity")])
-    if include_graph_identity_contract:
-        ids.extend(
-            [
-                "campaign:graph-identity-contract",
-                *check_ids("graph-identity-contract"),
-            ]
-        )
     if include_bngir_adversarial:
         ids.extend(["campaign:bngir-adversarial", *check_ids("bngir-adversarial")])
     if include_export_format_tier:
@@ -148,10 +165,21 @@ def expected_ids(
                 *check_ids("jax-backend-measurement"),
             ]
         )
+    if include_rate_law_contract:
+        ids.extend(["campaign:rate-law-contract", *check_ids("rate-law-contract")])
+    if include_nfnext_slices:
+        ids.extend(["campaign:nfnext-slices", *check_ids("nfnext-slices")])
     if include_api_surface:
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
+    if include_graph_identity_contract:
+        ids.extend(
+            [
+                "campaign:graph-identity-contract",
+                *check_ids("graph-identity-contract"),
+            ]
+        )
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -173,14 +201,35 @@ def run_worker(operation, args):
         return netrule_execution.run_worker(Path.cwd())
     if operation == "jax-backend-measurement":
         return jax_backend_measurement.run_worker(Path.cwd())
+    if operation == "api-surface":
+        return api_surface.check_ids()
+    if operation == "stochastic-parity":
+        return stochastic_parity.check_ids()
+    if operation == "graph-identity-contract":
+        from .graph_identity_contract import (
+            CASES as GRAPH_CASES,
+            CHECKS as GRAPH_CHECKS,
+        )
+
+        return [
+            f"graph-identity-contract:{case['id']}:{check}"
+            for case in GRAPH_CASES
+            for check in GRAPH_CHECKS
+        ]
+    if operation == "api-surface":
+        return api_surface.run(Path.cwd())
+    if operation == "stochastic-parity":
+        return stochastic_parity.run_worker(Path.cwd())
+    if operation == "graph-identity-contract":
+        return graph_identity_contract.run_worker(Path.cwd())
+    if operation == "rate-law-contract":
+        return rate_law_contract.run_worker(Path.cwd())
+    if operation == "nfnext-slices":
+        return nfnext_slices.run_worker(Path.cwd())
     if operation == "graph-identity":
         from .graph_identity import run_worker as run_graph_identity
 
         return run_graph_identity(Path.cwd())
-    if operation == "graph-identity-contract":
-        from .graph_identity_contract import run_worker as run_graph_identity_contract
-
-        return run_graph_identity_contract(Path.cwd())
     if operation == "bngir-adversarial":
         return [
             *bngir_adversarial.run_worker(Path.cwd()),
@@ -189,10 +238,6 @@ def run_worker(operation, args):
         ]
     if operation == "export-format-tier":
         return export_format_tier.run_worker(Path.cwd(), bng_cpp=args.bng_cpp)
-    if operation == "api-surface":
-        return api_surface.run(Path.cwd())
-    if operation == "stochastic-parity":
-        return stochastic_parity.run_worker(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)
@@ -319,7 +364,12 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                     row["first_difference"], dict
                 ):
                     raise ValueError("invalid first-difference observation")
-                if operation in ("bngir-adversarial", "netrule-execution"):
+                if operation in (
+                    "bngir-adversarial",
+                    "netrule-execution",
+                    "rate-law-contract",
+                    "nfnext-slices",
+                ):
                     artifact_name = row.get("source_artifact")
                     digest = row.get("source_sha256")
                     artifact = (

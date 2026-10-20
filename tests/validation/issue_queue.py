@@ -510,13 +510,25 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
         raise ValueError("campaign family budget must be between zero and ten")
     from .integrated_cases import generated_cases
     from .integrated import expected_contract_ids
-    from . import api_surface
-    from .stochastic_parity import check_ids as stochastic_parity_check_ids
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
     from .netrule_execution import check_ids as netrule_check_ids
     from .netrule_execution import cases as netrule_cases
+    from .nfnext_slices import check_ids as nfnext_slice_check_ids
+    from .rate_law_contract import check_ids as rate_law_check_ids
+    from . import api_surface
+    from .stochastic_parity import check_ids as stochastic_parity_check_ids
+    from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
+    from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
+
+    def graph_identity_check_ids():
+        return [
+            f"graph-identity-contract:{case['id']}:{check}"
+            for case in GRAPH_CONTRACT_CASES
+            for check in GRAPH_CONTRACT_CHECKS
+        ]
+
     from .bngsim_boundary import check_ids as boundary_check_ids
     from .jax_backend_measurement import check_ids as jax_measurement_check_ids
 
@@ -544,9 +556,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_netrule_execution=False,
                     include_bngsim_boundary=False,
                     include_jax_backend_measurement=False,
-                    # The public API/CLI surface family is a campaign-level
-                    # stage, not a per-case one.
-                    include_api_surface=False,
+                    include_rate_law_contract=False,
+                    include_nfnext_slices=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -642,6 +653,41 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="rate-law-contract",
+            case_ids=[],
+            check_ids=rate_law_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(rate_law_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The declared rate-law slice only: elementary parameter rates, "
+                "the Saturation/MichaelisMenten/Hill special rates, table "
+                "functions, local molecule scopes, elementary mass-action "
+                "multiplicity and observable-dependent rates, compared against "
+                "closed-form laws; compartment-scoped, filtered, modified, "
+                "energy-bearing and population-mapped models stay outside the "
+                "slice and are reported as unsupported with their reason."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="api-surface",
+            case_ids=[],
+            check_ids=api_surface.check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(api_surface.check_ids()), stage_timeout_seconds=300),
+            limits=(
+                "One generated first-order decay family through the public API "
+                "and the installed CLI; the stochastic statements cover the "
+                "terminal-time marginal only."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="stochastic-parity",
             case_ids=[],
             check_ids=stochastic_parity_check_ids(),
@@ -652,18 +698,43 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             limits=(
                 "Generated stochastic rate conventions against the exact binomial "
                 "count law with a recorded seed and a stated error budget; the "
-                "claims cover the terminal-time marginal, not pathwise equivalence."
+                "claims cover the terminal-time marginal only."
             ),
         )
     )
     families.append(
         dict(
-            id="public-api-surface",
+            id="graph-identity-contract",
             case_ids=[],
-            check_ids=api_surface.check_ids(),
-            runner="tests.validation.api_surface",
-            budget=dict(checks=len(api_surface.check_ids()), stage_timeout_seconds=300),
-            limits="One generated first-order decay family; the stochastic statements cover the terminal-time marginal only; notebook execution and third-party integrations are outside the family.",
+            check_ids=graph_identity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(graph_identity_check_ids()), stage_timeout_seconds=300
+            ),
+            limits=(
+                "The generated identity families only: the network, NFsim and "
+                "species layers are compared against one shared contract for "
+                "isomorphic spellings and non-isomorphic controls."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="nfnext-slices",
+            case_ids=[],
+            check_ids=nfnext_slice_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(nfnext_slice_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The approved NFnext slice only: unary site-state rules with a "
+                "static elementary rate, isolated integer seeds and unary "
+                "Molecules observables; the dynamic-rate, filter, modifier, "
+                "compartment, population-map and energy families are checked as "
+                "named refusals and are not qualified as supported."
+            ),
         )
     )
     selected = []
@@ -714,13 +785,58 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                 ["--jax-backend-measurement-only"]
                                 if family["id"] == "jax-backend-measurement"
                                 else (
-                                    ["--report-dir", "<new-empty-directory>"]
-                                    if family["id"] == "public-api-surface"
-                                    else [
-                                        argument
-                                        for case_id in family["case_ids"]
-                                        for argument in ("--case", case_id)
-                                    ]
+                                    ["--stochastic-parity-only"]
+                                    if family["id"] == "stochastic-parity"
+                                    else (
+                                        ["--api-surface-only"]
+                                        if family["id"] == "public-api-surface"
+                                        else (
+                                            ["--graph-identity-contract-only"]
+                                            if family["id"] == "graph-identity-contract"
+                                            else (
+                                                ["--rate-law-contract-only"]
+                                                if family["id"] == "rate-law-contract"
+                                                else (
+                                                    ["--nfsim-fixtures-only"]
+                                                    if family["id"] == "nfsim-fixtures"
+                                                    else (
+                                                        ["--atomizer-events-only"]
+                                                        if family["id"]
+                                                        == "atomizer-events"
+                                                        else (
+                                                            ["--energy-contract-only"]
+                                                            if family["id"]
+                                                            == "energy-contract"
+                                                            else (
+                                                                [
+                                                                    "--semantic-identity-only"
+                                                                ]
+                                                                if family["id"]
+                                                                == "semantic-identity"
+                                                                else (
+                                                                    [
+                                                                        "--capability-inventory-only"
+                                                                    ]
+                                                                    if family["id"]
+                                                                    == "capability-inventory"
+                                                                    else [
+                                                                        argument
+                                                                        for case_id in family[
+                                                                            "case_ids"
+                                                                        ]
+                                                                        for argument in (
+                                                                            "--case",
+                                                                            case_id,
+                                                                        )
+                                                                    ]
+                                                                )
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
                                 )
                             )
                         )

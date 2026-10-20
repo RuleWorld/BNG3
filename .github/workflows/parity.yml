@@ -567,6 +567,16 @@ jobs:
         run: python -m pytest -c tests/validation/pytest.ini \
           tests/validation/test_netrule_execution.py -q -ra
 
+      - name: Check the shared rate-law contract against independent laws
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: python -m pytest -c tests/validation/pytest.ini \
+          tests/validation/test_rate_law_contract.py -q -ra
+
+      - name: Check the NFnext slice contract against independent laws
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: python -m pytest -c tests/validation/pytest.ini \
+          tests/validation/test_nfnext_slices.py -q -ra
+
       - name: Audit generated consumer matrix receipts
         if: always()
         run: |

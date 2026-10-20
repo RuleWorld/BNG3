@@ -735,16 +735,14 @@ def main():
             "protocol",
             "nf-marginals",
             "graph-identity",
-            "graph-identity-contract",
             "bngir-adversarial",
             "quantity-laws",
             "export-format-tier",
             "netrule-execution",
             "bngsim-boundary",
             "jax-backend-measurement",
-            "api-surface",
-            "stochastic-parity",
-            "stochastic-parity",
+            "rate-law-contract",
+            "nfnext-slices",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -836,15 +834,14 @@ def main():
         "protocol",
         "nf-marginals",
         "graph-identity",
-        "graph-identity-contract",
         "bngir-adversarial",
         "quantity-laws",
         "export-format-tier",
         "netrule-execution",
         "bngsim-boundary",
         "jax-backend-measurement",
-        "api-surface",
-        "stochastic-parity",
+        "rate-law-contract",
+        "nfnext-slices",
     ):
         from tests.validation.integrated_extensions import run_worker
 

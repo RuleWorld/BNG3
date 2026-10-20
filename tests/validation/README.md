@@ -665,3 +665,51 @@ PYTHONPATH=python:build/cpp python -m tests.validation.api_surface \
 
 The family also runs as a campaign-level stage of the integrated report, so
 its named rows reach the issue queue with the other exact-revision evidence.
+
+### Shared rate-law contract
+
+`rate-law-contract` states the shared rate-law and local-function conventions
+as an executable contract over a generated, parameterized case matrix. It is
+selected on its own with `--rate-law-contract-only`.
+
+The conventions are stated once, in the module: the special rates (`Sat`,
+`Hill` and the two-reactant `MM`), the table function, the local molecule
+scope, the mass-action multiplicity, the dependency/evaluation convention and
+the cache-invalidation convention. Every case is checked against them, and the
+declared slice is explicit: single-reaction rules over free, non-compartment
+molecules with no filter, no rule modifier, no energy pattern and no
+population map.
+
+The supported backends' coefficients, right-hand sides and SSA propensities are
+compared against closed-form laws written in the harness, never against
+another implementation's output: the elementary mass-action law, the total
+saturation and Hill laws, the self-consistent Michaelis-Menten root, the
+linear table interpolation with its clamped ends, the scoped rate, the
+symmetry factor with the discrete identical-reactant product, and the
+observable-dependent coefficient re-evaluated at each state. A model that
+declares a construct outside the slice is reported as `UNSUPPORTED` with the
+construct named; it is never skipped quietly.
+
+The cache control changes a rate parameter, and a parameter that is defined in
+terms of another, and requires the compiled coefficient, the right-hand side
+and the closed-form decay to follow the change.
+
+### NFnext slice contract
+
+`nfnext-slices` states the approved NFnext slice and the boundary of every
+candidate family of the capability matrix. It is selected on its own with
+`--nfnext-slices-only`.
+
+The approved slice is unary site-state rules with a static elementary rate,
+isolated integer seed populations and unary `Molecules` observables. For that
+slice the family checks the NFIR representation, the executor and an
+independent reference: the exact pure-death law of the seeded population, with
+a declared error budget over a recorded ensemble, a variance control and a
+fixed-seed reproducibility control.
+
+Every candidate family outside the approved slice -- dynamic rates, rule
+filters, rule modifiers, compartments, population maps and energy patterns --
+is checked as a named refusal: the lowering must report the construct, the
+executor must refuse by name, and no partial lowering of the family may be
+carried. A refusal is recorded as a diagnostic observation, never as supported
+execution.

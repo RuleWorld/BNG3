@@ -454,6 +454,7 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_io.cpp
         bindings/bind_viz.cpp
         bindings/bind_jax_ssa.cpp
+        bindings/bind_nfnext.cpp
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
     # The extension links the C++ runtime dynamically, unlike the CLI

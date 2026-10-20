@@ -1397,6 +1397,19 @@ std::vector<double> OdeIntegrator::evaluateRateCoefficients(
     return rates;
 }
 
+std::vector<double> OdeIntegrator::evaluatePropensities(double t,
+                                                         const double* y) const {
+    const auto coefficients = evaluateRateCoefficients(t, y);
+    const std::vector<double> state(y, y + nSpecies_);
+    std::vector<double> propensities;
+    propensities.reserve(compiledRxns_.size());
+    for (std::size_t index = 0; index < compiledRxns_.size(); ++index) {
+        propensities.push_back(
+            computePropensity(compiledRxns_[index], state, coefficients[index]));
+    }
+    return propensities;
+}
+
 void OdeIntegrator::evaluateFunctionalRateCoefficients(
     double t, const double* y, double* rates, bool failOnError) const {
     updateGroups(y, groupValues_);

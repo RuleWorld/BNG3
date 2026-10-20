@@ -67,6 +67,47 @@ integrated campaign imports them under the `netrule-execution` qualification.
 
 The evidence qualifies that slice only. The `LegacyNetworkRuleKernel`
 reconstruction is not replaced by it and no legacy path is retired.
+
+## Shared rate-law and NFnext slice qualification (2026-10-20 candidate)
+
+Issues #143 and #147 had no named executable check for the shared rate-law
+contract or for the NFnext slice families, so both families stayed detection
+gaps.
+
+`tests/validation/rate_law_contract.py` states the rate-law conventions once
+-- the special rates (`Sat`, `Hill` and the two-reactant `MM`), the table
+function, the local molecule scope, the mass-action multiplicity, the
+dependency/evaluation convention and the cache-invalidation convention -- and
+checks a generated, parameterized case matrix against them. The compiled
+coefficient, the right-hand side and the SSA propensity of every case are
+compared against closed-form laws written in the harness, never against another
+implementation's output. The declared slice is explicit, and a model that
+declares a construct outside it is reported as `UNSUPPORTED` with the construct
+named instead of being skipped quietly. The cache control changes a rate
+parameter and a parameter defined in terms of another, and requires the
+compiled coefficient, the right-hand side and the closed-form decay to follow
+the change. The engine's own SSA propensity is now observable through
+`OdeIntegrator::evaluatePropensities`, so the discrete convention is compared
+directly instead of being inferred from a sampled trajectory.
+
+`tests/validation/nfnext_slices.py` states the approved NFnext slice -- unary
+site-state rules with a static elementary rate, isolated integer seeds and
+unary `Molecules` observables -- and checks its representation, its executor
+and an independent reference: the exact pure-death law of the seeded
+population, with a declared error budget over a recorded ensemble, a variance
+control and a fixed-seed reproducibility control. Every candidate family
+outside the approved slice (dynamic rates, filters, modifiers, compartments,
+population maps and energy) is checked as a named refusal, and a refusal is
+recorded as a diagnostic observation rather than as supported execution. NFnext
+is reachable from the harness through the new `_nfnext_lower` and
+`_nfnext_execute` bindings, which expose the native lowering and executor
+instead of reimplementing them in Python.
+
+The evidence qualifies those slices only. The rate-law contract says nothing
+about compartment-scoped, filtered, modified, energy-bearing or
+population-mapped models, and the NFnext contract does not qualify any family
+outside the approved slice as supported.
+
 ## Compile-once model reuse lifecycle qualification (2026-10-20 candidate)
 
 Issue #141 still had no named executable check for repeated instantiation,
