@@ -1221,6 +1221,29 @@ def _topology_matches_molecules(
     return not remaining
 
 
+def _components_are_monomers(
+    components: Sequence[str], context: _StructuralContext
+) -> bool:
+    """Report whether every component of a complex is a single molecule.
+
+    The binding sites of an inferred complex are named by the position of
+    the component in the complex.  A complex whose component is itself a
+    complex cannot be named that way: the inner complex already carries
+    bonds, and the outer bond would attach to the wrong molecule.  Such a
+    structure is not representable exactly, so the species keeps its flat
+    representation instead of a complex that would change the generated
+    network.
+    """
+
+    for component in components:
+        entry = context.entries.get(component)
+        if entry is None:
+            continue
+        if len(entry.structure.molecules) > 1:
+            return False
+    return True
+
+
 def _infer_species_structure(
     species_id: str,
     item: SBMLSpecies,
@@ -1335,7 +1358,7 @@ def _infer_species_structure(
 
     name_candidates = _name_complex_candidates(name, context.names_to_ids)
     complex_components = topology_components
-    if complex_components:
+    if complex_components and _components_are_monomers(complex_components, context):
         components = list(complex_components)
         structure = _complex_species(components, context.entries, context.use_id)
         _sanitize_structure(structure)
@@ -1360,6 +1383,17 @@ def _infer_species_structure(
         _report_unparsed_fragments(context.model, species_id, name, unparsed)
         record.alternatives.extend(alternatives)
         return structure, components, {}, record
+    if complex_components:
+        alternatives.append(
+            _alternative_inference(
+                "reaction-topology",
+                "reaction topology makes the species a complex of "
+                + ", ".join(str(component) for component in complex_components)
+                + ", but one of them is itself a complex, which has no exact "
+                "binding-site representation",
+                molecules=list(complex_components),
+            )
+        )
 
     if base_id and base_entry is not None:
         modification = _modification_from_name(context, name, base_id)
@@ -1455,26 +1489,39 @@ def _infer_species_structure(
     if name_candidates:
         separator, parts = name_candidates[0]
         resolved_parts = [context.names_to_ids.get(part, part) for part in parts]
-        structure = _complex_species(resolved_parts, context.entries, context.use_id)
-        _sanitize_structure(structure)
-        record = _structure_inference(
-            species_id,
-            name,
-            structure,
-            "name-heuristic",
-            f'the species name splits on "{separator}" into ' + ", ".join(parts),
-        )
-        for other_separator, other_parts in name_candidates[1:]:
-            record.alternatives.append(
-                _alternative_inference(
-                    "name-heuristic",
-                    f'the species name also splits on "{other_separator}" into '
-                    + ", ".join(other_parts),
-                    molecules=list(other_parts),
-                )
+        if _components_are_monomers(resolved_parts, context):
+            structure = _complex_species(
+                resolved_parts, context.entries, context.use_id
             )
-        record.alternatives.extend(alternatives)
-        return structure, resolved_parts, {}, record
+            _sanitize_structure(structure)
+            record = _structure_inference(
+                species_id,
+                name,
+                structure,
+                "name-heuristic",
+                f'the species name splits on "{separator}" into ' + ", ".join(parts),
+            )
+            for other_separator, other_parts in name_candidates[1:]:
+                record.alternatives.append(
+                    _alternative_inference(
+                        "name-heuristic",
+                        f'the species name also splits on "{other_separator}" into '
+                        + ", ".join(other_parts),
+                        molecules=list(other_parts),
+                    )
+                )
+            record.alternatives.extend(alternatives)
+            return structure, resolved_parts, {}, record
+        alternatives.append(
+            _alternative_inference(
+                "name-heuristic",
+                f'the species name splits on "{separator}" into '
+                + ", ".join(parts)
+                + ", but one of them is itself a complex, which has no exact "
+                "binding-site representation",
+                molecules=list(parts),
+            )
+        )
 
     structure = _elemental_species(item)
     _sanitize_structure(structure)

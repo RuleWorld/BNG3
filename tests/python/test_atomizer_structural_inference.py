@@ -368,8 +368,7 @@ def test_uncorroborated_name_reading_is_reported_as_an_alternative():
     assert record["confidence"] == "elemental"
     assert record["molecules"] == ["AB"]
     assert any(
-        alternative["molecules"] == ["A", "B"]
-        for alternative in record["alternatives"]
+        alternative["molecules"] == ["A", "B"] for alternative in record["alternatives"]
     )
 
 
@@ -522,6 +521,62 @@ def test_inferred_structure_matches_the_ground_truth(model):
         binding_sites = len(record["sites"]) - len(modification_sites)
         assert binding_sites == expected["binding_sites"], (species_id, record)
         assert record["confidence"] == expected["confidence"], (species_id, record)
+
+
+def test_complex_of_a_complex_keeps_the_exact_flat_representation():
+    """A complex whose component is itself a complex has no exact pattern."""
+
+    sbml = build_sbml(
+        "nested_model",
+        [
+            ("A", "A", 6.0, None),
+            ("B", "B", 4.0, None),
+            ("C", "C", 2.0, None),
+            ("AB", "AB", 1.0, None),
+            ("ABC", "ABC", 0.0, None),
+        ],
+        [
+            _reaction("ab", ["A", "B"], ["AB"], "kon", ["A", "B"]),
+            _reaction("abc", ["AB", "C"], ["ABC"], "kon", ["AB", "C"]),
+        ],
+        [("kon", 0.5)],
+    )
+
+    complex_record = _inference(sbml, "AB")
+    nested_record = _inference(sbml, "ABC")
+
+    assert complex_record["confidence"] == "reaction-topology"
+    assert complex_record["molecules"] == ["A", "B"]
+    assert nested_record["confidence"] == "elemental"
+    assert nested_record["molecules"] == ["ABC"]
+    assert any(
+        alternative["confidence"] == "reaction-topology"
+        for alternative in nested_record["alternatives"]
+    )
+
+
+def test_flat_and_atomized_networks_match_for_a_nested_complex():
+    sbml = build_sbml(
+        "nested_network_model",
+        [
+            ("A", "A", 6.0, None),
+            ("B", "B", 4.0, None),
+            ("C", "C", 2.0, None),
+            ("AB", "AB", 1.0, None),
+            ("ABC", "ABC", 0.0, None),
+        ],
+        [
+            _reaction("ab", ["A", "B"], ["AB"], "kon", ["A", "B"]),
+            _reaction("abc", ["AB", "C"], ["ABC"], "kon", ["AB", "C"]),
+        ],
+        [("kon", 0.5)],
+    )
+
+    report = compare_flat_and_atomized(sbml)
+
+    assert report["problems"] == []
+    assert report["flat_species"] == report["atomized_species"]
+    assert report["flat_reactions"] == report["atomized_reactions"]
 
 
 def _reaction(
