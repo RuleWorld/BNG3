@@ -318,7 +318,9 @@ def _has_population_maps(model):
 
 
 def _has_population_types(model):
-    return bool(model["population_types"])
+    return bool(model.get("population_types")) or any(
+        item.get("population") for item in model["molecule_types"]
+    )
 
 
 def _has_protocol_actions(document):
@@ -547,8 +549,8 @@ MATRIX = (
     },
     {
         "id": "population-types",
-        "mutate": lambda document: document["model"].update(
-            {"population_types": [{"name": "P"}]}
+        "mutate": lambda document: document["model"]["molecule_types"][0].update(
+            {"population": True}
         ),
         "present": _has_population_types,
         "site_free": True,

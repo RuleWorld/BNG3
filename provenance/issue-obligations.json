@@ -2379,6 +2379,7 @@
           "dependencies": [],
           "boundaries": [
             "Recorded boundary: the C++ native importer accepts a conversion expressed with an empty mutation list while the Python-level native adapter refuses the same document because the compiled semantics differ; the qualified reconstruction uses the C++ native importer.",
+            "Recorded boundary: the native model carries no actions, so the native reader refuses a document that states protocol actions.",
             "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free envelope only.",
             "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free v0.2 envelope only.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
@@ -2648,6 +2649,7 @@
           "dependencies": [],
           "boundaries": [
             "Recorded boundary: population types, population maps and protocol actions are refused explicitly.",
+            "Recorded boundary: the v0.1 reader refuses barrier patterns and population maps because the engine does not compile them; each refusal names the feature.",
             "Recorded boundary: the v0.1 reader refuses barrier patterns, population types, population maps and protocol actions because the engine does not compile them; each refusal names the feature.",
             "Recorded boundary: v0.2 cannot represent 'molecules' observable kinds; the migration refuses them explicitly.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."

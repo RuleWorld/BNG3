@@ -143,7 +143,7 @@ def _reorder_parameter_ids(model: dict, names: tuple[str, ...]) -> None:
     remap(model)
 
 
-def test_direct_native_builder_refuses_schema_valid_population_type():
+def test_direct_native_builder_accepts_a_schema_valid_population_type():
     document = _document(POPULATION_SOURCE)
     schema_path = (
         Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
@@ -154,8 +154,9 @@ def test_direct_native_builder_refuses_schema_valid_population_type():
     )
     assert population_type["population"] is True
 
-    with pytest.raises(RuntimeError, match="population molecule types are unsupported"):
-        _cpp._model_from_bngir_v02(document["model"])
+    model = _cpp._model_from_bngir_v02(document["model"])
+    imported = next(item for item in model.molecule_types if item.name == "P")
+    assert imported.is_population
 
 
 @pytest.mark.parametrize(

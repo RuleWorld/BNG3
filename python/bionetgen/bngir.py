@@ -1788,7 +1788,11 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"native BNGIR molecule type name is invalid or duplicated: {name!r}"
             )
-        if molecule["population"] is not False or molecule["components"] != []:
+        if not isinstance(molecule["population"], bool):
+            raise ValueError(
+                f"native BNGIR molecule type {name!r} has an invalid population flag"
+            )
+        if molecule["components"] != []:
             raise ValueError(
                 f"native BNGIR molecule type {name!r} must be an ordinary site-free type"
             )

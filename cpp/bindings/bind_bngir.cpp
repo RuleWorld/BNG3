@@ -549,10 +549,6 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             throw std::runtime_error(
                 "native BNGIR molecule type population must be boolean");
         }
-        if (py::cast<bool>(population)) {
-            throw std::runtime_error(
-                "native BNGIR population molecule types are unsupported");
-        }
         const auto components = py::cast<py::list>(moleculeType["components"]);
         if (!components.empty()) {
             throw std::runtime_error(
@@ -658,7 +654,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                 "native BNGIR molecule type names must be unique");
         }
         model->addMoleculeType(MoleculeType(
-            name, {}, false));
+            name, {}, py::cast<bool>(moleculeType[py::str("population")])));
     }
 
     std::set<std::string> uniqueCompartmentNames;
