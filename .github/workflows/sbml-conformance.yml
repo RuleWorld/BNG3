@@ -8,7 +8,9 @@ on:
       - 'provenance/ssts-ci-linux-py312.lock'
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
+      - 'scripts/ci/sbml_campaign_inventory.py'
       - 'scripts/ci/ssts_selection.py'
+      - 'provenance/sbml-campaign/expectations.json'
       - 'tests/test_ci_contract.py'
       - 'tests/test_ssts_selected_gate.py'
       - 'tests/test_ssts_feature_selection.py'
@@ -120,6 +122,18 @@ jobs:
             --gate-selected-cases \
             --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
             2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
+
+      - name: Compare the run against the committed expectation manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The manifest records the expected verdict of every case at every
+          # stage.  A case that stops passing fails here even when the
+          # selected-surface gate tolerates it, and a case that starts
+          # passing fails until the manifest is explicitly updated.
+          python scripts/ci/sbml_campaign_inventory.py \
+            --suite-report "$RUNNER_TEMP/ssts-artifacts/report.json" \
+            --expectations provenance/sbml-campaign/expectations.json
 
       - name: Triage retained stages with the common conformance tools
         if: always()

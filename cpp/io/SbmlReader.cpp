@@ -241,6 +241,34 @@ std::string mathExpression(const TiXmlElement* element) {
     const auto parenthesized = [](const std::string& value) {
         return "(" + value + ")";
     };
+    if (op == "csymbol") {
+        // SBML Level 3 Version 2 Core Sec. 4.3.4 and Sec. 4.3.5 define the
+        // delay and rateOf csymbols.  They are operators, not identifiers, so
+        // they arrive as the first child of <apply>.
+        const std::string definitionUrl =
+            attribute(children.front(), "definitionURL");
+        const std::string name = elementText(children.front());
+        const bool isDelay = definitionUrl == "http://www.sbml.org/sbml/symbols/delay" ||
+                             name == "delay";
+        const bool isRateOf = definitionUrl == "http://www.sbml.org/sbml/symbols/rateOf" ||
+                              name == "rateOf";
+        if (isDelay || isRateOf) {
+            const std::size_t expected = isDelay ? 2U : 1U;
+            if (args.size() != expected) {
+                throw std::runtime_error(
+                    std::string("SBML ") + (isDelay ? "delay" : "rateOf") +
+                    " requires " + std::to_string(expected) + " arguments");
+            }
+            std::string result = isDelay ? "delay(" : "rateOf(";
+            for (std::size_t i = 0; i < args.size(); ++i) {
+                if (i != 0) result += ",";
+                result += args[i];
+            }
+            result += ")";
+            return result;
+        }
+        throw std::runtime_error("unsupported MathML csymbol operator: " + name);
+    }
     if (op == "plus") {
         return args.size() > 1 ? parenthesized(join(args, "+")) : join(args, "+");
     }

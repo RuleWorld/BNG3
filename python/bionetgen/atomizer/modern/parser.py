@@ -15,7 +15,7 @@ import copy
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 from urllib.parse import unquote, urlsplit
 
 from .types import (
@@ -39,6 +39,13 @@ from .types import (
 from .multi import parse_multi_package
 from .units import apply_unit_scaling
 from .helpers import logger
+from .math_builtins import (
+    MATH_BUILTIN_BY_MATHML,
+    MATH_BUILTIN_BY_NAME,
+    evaluate_math_builtin,
+    format_number,
+    math_builtin_formula,
+)
 
 
 def _local_name(tag: str) -> str:
@@ -95,52 +102,24 @@ _SBML_CSYMBOL_URLS = {
 }
 
 # Function names that carry no free symbol, so an expression that mentions one
-# is not dependent on an unknown model quantity.
-_INTRINSIC_FUNCTIONS = frozenset(
-    {
-        "abs",
-        "acos",
-        "acosh",
-        "and",
-        "arcsec",
-        "arcsech",
-        "arccos",
-        "arccosh",
-        "arccot",
-        "arccsc",
-        "arccsch",
-        "arcsec",
-        "asin",
-        "asinh",
-        "atan",
-        "atanh",
-        "ceil",
-        "cos",
-        "cosh",
-        "cot",
-        "csc",
-        "exp",
-        "floor",
-        "gcd",
-        "if",
-        "lcm",
-        "ln",
-        "log",
-        "log10",
-        "max",
-        "min",
-        "not",
-        "or",
-        "pow",
-        "power",
-        "root",
-        "sec",
-        "sin",
-        "sinh",
-        "sqrt",
-        "tan",
-        "tanh",
-    }
+# is not dependent on an unknown model quantity.  The MathML built-ins come
+# from the shared table so that the set of names the evaluator understands and
+# the set the writer lowers cannot drift apart.
+_INTRINSIC_FUNCTIONS = (
+    frozenset(
+        {
+            "and",
+            "gcd",
+            "if",
+            "lcm",
+            "max",
+            "min",
+            "not",
+            "or",
+        }
+    )
+    | frozenset(MATH_BUILTIN_BY_NAME)
+    | frozenset(MATH_BUILTIN_BY_MATHML)
 )
 
 # An identifier that is not part of a numeric literal.  Scientific notation
@@ -942,39 +921,47 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
                     return f"log10({args[0] if args else ''})"
                 return f"log({base}, {args[0] if args else ''})"
             return f"log10({args[0] if args else ''})"
-        if operator == "quotient":
-            return f"floor(({args[0]}) / ({args[1]}))" if len(args) >= 2 else ""
-        if operator == "rem":
-            return (
-                f"(({args[0]}) - ({args[1]}) * floor(({args[0]}) / ({args[1]})))"
-                if len(args) >= 2
-                else ""
-            )
-        if operator == "implies":
-            return f"if({args[0]}, {args[1]}, 1)" if len(args) == 2 else ""
-        if operator == "arccoth":
-            # MathML arccoth(x) is atanh(1/x) on the real domain |x| > 1.
-            # Lower to BNGL's existing portable builtin instead of extending
-            # its grammar or changing NFsim's builtin contract.
-            return f"atanh(1/({args[0]}))" if len(args) == 1 else ""
-        direct = {
-            "ceiling": "ceil",
-            "arcsin": "asin",
-            "arccos": "acos",
-            "arctan": "atan",
-            # MathML spells the inverse hyperbolic functions with an "arc"
-            # prefix; BNGL names them asinh/acosh/atanh.  Same functions, so
-            # translate the name rather than report the model unsupported.
-            "arcsinh": "asinh",
-            "arccosh": "acosh",
-            "arctanh": "atanh",
-        }
-        return f"{direct.get(operator, operator)}({', '.join(args)})"
+        # Every built-in comes from the shared table, so the formula text the
+        # parser produces and the BNGL text the writer emits agree with the
+        # value the static evaluator computes.
+        return math_builtin_formula(operator, args)
     return (
         _mathml_to_formula(children[0], parenthesize)
         if children
         else _mathml_text(element)
     )
+
+
+def _evaluate_math_builtin_call(
+    name: str,
+    arguments: Sequence[str],
+    symbols: Dict[str, float],
+    functions: Optional[Mapping[str, SBMLFunctionDefinition]],
+    function_stack: tuple[str, ...],
+) -> Optional[float]:
+    """Evaluate one MathML built-in call from its argument texts.
+
+    The value comes from the shared built-in table, so it is the value of
+    exactly the expression the writer emits for the same call.  A built-in
+    the table does not know, an argument that is not itself constant, or a
+    result that is not a finite number all leave the expression unfolded.
+    """
+
+    builtin = MATH_BUILTIN_BY_NAME.get(name)
+    if builtin is None or builtin.evaluate is None:
+        return None
+    values: List[float] = []
+    for argument in arguments:
+        value = _evaluate_static_arithmetic(
+            argument,
+            symbols,
+            functions,
+            function_stack,
+        )
+        if value is None:
+            return None
+        values.append(value)
+    return evaluate_math_builtin(name, values)
 
 
 def _evaluate_static_arithmetic(
@@ -997,7 +984,7 @@ def _evaluate_static_arithmetic(
         value = symbols[symbol]
         result = re.sub(
             rf"\b{re.escape(symbol)}\b(?!\s*\()",
-            format(value, ".15g"),
+            format_number(value),
             result,
         )
 
@@ -1057,8 +1044,6 @@ def _evaluate_static_arithmetic(
                 ),
                 function_name,
             )
-        if function is None or function_key in function_stack:
-            return None
         opening = call.end() - 1
         depth = 0
         closing: Optional[int] = None
@@ -1073,7 +1058,28 @@ def _evaluate_static_arithmetic(
         if closing is None:
             return None
         arguments = split_arguments(result[opening + 1 : closing])
-        if arguments is None or len(arguments) != len(function.arguments):
+        if arguments is None:
+            return None
+        if function is None:
+            # A MathML built-in.  Its value comes from the shared table, so
+            # the folded number is the value of exactly the expression the
+            # writer emits for the same call.
+            value = _evaluate_math_builtin_call(
+                function_name,
+                arguments,
+                symbols,
+                functions,
+                function_stack,
+            )
+            if value is None:
+                return None
+            result = (
+                result[: call.start()] + format_number(value) + result[closing + 1 :]
+            )
+            continue
+        if function_key in function_stack:
+            return None
+        if len(arguments) != len(function.arguments):
             return None
         argument_values = [
             _evaluate_static_arithmetic(
@@ -1099,7 +1105,7 @@ def _evaluate_static_arithmetic(
         )
         if value is None:
             return None
-        result = result[: call.start()] + format(value, ".15g") + result[closing + 1 :]
+        result = result[: call.start()] + format_number(value) + result[closing + 1 :]
 
     tokens = re.findall(r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?|[+\-*/^()]", result)
     if not tokens or "".join(tokens) != re.sub(r"\s+", "", result):
@@ -1170,6 +1176,44 @@ _RATE_OF_CALL = re.compile(
 )
 
 
+def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
+    """Replace ``rateOf`` of a reaction-local parameter by zero.
+
+    SBML Level 3 Version 2 Core Sec. 4.3.5: "The ``rateOf`` for any symbol
+    declared constant is zero.  Note that in SBML Level 3 Version 2,
+    ``LocalParameter`` objects must always be constant; therefore, their
+    ``rateOf`` value is always zero."  A reaction-local parameter shadows the
+    global parameter of the same name inside the reaction's kinetic law, so a
+    global rate rule for that name must not be used here.
+    """
+
+    local_parameters = (
+        kinetic_law.get("localParameters", [])
+        if isinstance(kinetic_law, Mapping)
+        else getattr(kinetic_law, "local_parameters", [])
+    )
+    masked = str(expression or "")
+    for parameter in local_parameters or []:
+        parameter_id = (
+            parameter.get("id")
+            if isinstance(parameter, Mapping)
+            else getattr(parameter, "id", None)
+        )
+        if not parameter_id:
+            continue
+        masked = _RATE_OF_CALL.sub(
+            lambda match: (
+                "0"
+                if match.group(1) == str(parameter_id)
+                or standardize_name(match.group(1))
+                == standardize_name(str(parameter_id))
+                else match.group(0)
+            ),
+            masked,
+        )
+    return masked
+
+
 def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
     """Inline ``rateOf`` calls whose targets have explicit SBML rate rules.
 
@@ -1220,7 +1264,8 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
             if isinstance(kinetic_law, Mapping)
             else getattr(kinetic_law, "math", "")
         )
-        new_math = expand(old_math)
+        new_math = _mask_reaction_local_rate_of(old_math, kinetic_law)
+        new_math = expand(new_math)
         if isinstance(kinetic_law, Mapping):
             kinetic_law["math"] = new_math
         if hasattr(kinetic_law, "math"):
@@ -3186,7 +3231,7 @@ class SBMLParser:
                             "severity": "info",
                         }
                     )
-                elif not math.isfinite(value) or value < 0:
+                elif not math.isfinite(value):
                     result.import_warnings.append(
                         {
                             "category": "stoichiometry",
@@ -3197,6 +3242,26 @@ class SBMLParser:
                             ),
                             "count": 1,
                             "severity": "dropped",
+                        }
+                    )
+                elif value < 0:
+                    # SBML Level 3 Version 2 Core Sec. 4.11.3 allows a
+                    # negative stoichiometry: the species is consumed where it
+                    # is listed as a product.  A BNGL reaction pattern cannot
+                    # spell a negative molecule count, but the deterministic
+                    # flux lowering carries the sign in the rate coefficient.
+                    result.import_warnings.append(
+                        {
+                            "category": "stoichiometry",
+                            "message": (
+                                f'Reaction "{reaction_id}" has a negative fixed '
+                                f"stoichiometry {value:g} for species "
+                                f'"{reference.species}"; the sign is carried by '
+                                "the deterministic flux lowering the writer "
+                                "selects."
+                            ),
+                            "count": 1,
+                            "severity": "info",
                         }
                     )
                 elif abs(value - round(value)) > 1e-9:

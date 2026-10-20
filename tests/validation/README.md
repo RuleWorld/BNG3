@@ -339,6 +339,47 @@ bounded acceptance criteria. Aggregate model rows do not create duplicate
 investigation tasks. These diagnostics expose failures; they do not approve a
 release or repair product behavior.
 
+## SBML Atomizer coverage expectations
+
+`tests.validation.test_sbml_expectations` guards the machine-readable
+expectation manifest in
+[`../../provenance/sbml-campaign/expectations.json`](../../provenance/sbml-campaign/expectations.json).
+The manifest records the expected verdict of every official SBML Test Suite
+case at every stage of the gate — conversion, round-trip structure,
+independent libRoadRunner comparison and official reference comparison — so a
+coverage regression fails a comparison instead of needing a human to read two
+large reports side by side.
+
+The manifest is generated from one harness report by
+`scripts/ci/sbml_campaign_inventory.py`, the same tool the test exercises:
+
+```bash
+python scripts/ci/sbml_campaign_inventory.py \
+  --suite-report /path/to/report.json \
+  --expectations-out provenance/sbml-campaign/expectations.json
+```
+
+A run is compared against it with `--expectations`, which prints one line per
+differing case and stage and exits non-zero:
+
+```bash
+python scripts/ci/sbml_campaign_inventory.py \
+  --suite-report /path/to/report.json \
+  --expectations provenance/sbml-campaign/expectations.json
+```
+
+A stage that was `passed` and no longer is is a regression. A stage that
+starts passing is an improvement and is only accepted once the manifest is
+explicitly updated, so refreshing the manifest is a reviewable act. A run
+against a different official suite revision is rejected before any
+comparison.
+
+The test also runs a bounded live gate when `BNG3_SBML_SUITE_DIR` names a
+pinned suite checkout, and skips cleanly otherwise. The campaign document's
+result tables are generated from the same reports by
+`scripts/ci/sbml_campaign_tables.py`; see
+[`../../docs/SBML_ATOMIZER_COVERAGE_CAMPAIGN.md`](../../docs/SBML_ATOMIZER_COVERAGE_CAMPAIGN.md).
+
 ## Oracles
 - **Perl** — `legacy/perl/BNG2.pl`. Truth for `.net` and ODE/SSA `.gdat`. Cached as golden so Perl is off the hot path.
 - **NFsim** — independently built native binary from the pinned pre-convergence

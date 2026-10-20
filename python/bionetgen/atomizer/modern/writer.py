@@ -43,6 +43,7 @@ from .rate_rule_constants import (
 )
 from .structures import Molecule, Species, read_from_string
 from .helpers import logger
+from .math_builtins import MATH_BUILTINS, format_number as _number
 from .metadata import metadata_payload
 from .types import (
     BNGL_LEXER_KEYWORDS,
@@ -446,20 +447,6 @@ def _pattern(species: Species, compartment: str = "") -> str:
     return ".".join(sorted(molecules))
 
 
-def _number(value: object) -> str:
-    # Preserve arbitrary-precision integer literals instead of converting
-    # large factorials through float and raising OverflowError.
-    if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
-    try:
-        number = float(value)
-    except (OverflowError, TypeError, ValueError):
-        return str(value)
-    if number.is_integer() and abs(number) < 1e15:
-        return str(int(number))
-    return repr(number)
-
-
 def _factorial(value: float) -> int:
     return math.factorial(int(value))
 
@@ -584,65 +571,14 @@ def convert_math_expression(expression: str) -> str:
     """Convert common MathML/libSBML function spellings to BNGL syntax."""
 
     result = str(expression or "").strip()
-    result = _replace_nested_function(
-        result,
-        "pow",
-        lambda args: (
-            f"(({args[0]})^({args[1]}))"
-            if len(args) >= 2
-            else f"pow({', '.join(args)})"
-        ),
-    )
-    result = _replace_nested_function(
-        result,
-        "power",
-        lambda args: (
-            f"(({args[0]})^({args[1]}))"
-            if len(args) >= 2
-            else f"power({', '.join(args)})"
-        ),
-    )
-    result = _replace_nested_function(
-        result, "sqrt", lambda args: f"(({args[0]})^(1/2))" if args else "sqrt()"
-    )
-    result = _replace_nested_function(
-        result, "sqr", lambda args: f"(({args[0]})^2)" if args else "sqr()"
-    )
-    result = _replace_nested_function(
-        result,
-        "exp",
-        lambda args: f"(2.71828182845905^({args[0]}))" if args else "exp()",
-    )
-    result = _replace_nested_function(
-        result,
-        "abs",
-        lambda args: f"if({args[0]}>=0,{args[0]},-({args[0]}))" if args else "abs()",
-    )
-
-    # SBML's reciprocal and inverse trigonometric names are not BNGL lexer
-    # tokens, but they have direct one-expression equivalents.  Lower them
-    # before the C++ parser sees the generated model.
-    for function, replacement in {
-        "sec": lambda args: f"(1/cos({args[0]}))" if args else "sec()",
-        "csc": lambda args: f"(1/sin({args[0]}))" if args else "csc()",
-        "cot": lambda args: f"(cos({args[0]})/sin({args[0]}))" if args else "cot()",
-        "arcsec": lambda args: f"acos(1/({args[0]}))" if args else "arcsec()",
-        "arccsc": lambda args: f"asin(1/({args[0]}))" if args else "arccsc()",
-        "arccot": lambda args: f"atan(1/({args[0]}))" if args else "arccot()",
-        "arcsinh": lambda args: f"asinh({args[0]})" if args else "arcsinh()",
-        "arccosh": lambda args: f"acosh({args[0]})" if args else "arccosh()",
-        "arctanh": lambda args: f"atanh({args[0]})" if args else "arctanh()",
-        "arcsech": lambda args: f"acosh(1/({args[0]}))" if args else "arcsech()",
-        "arccsch": lambda args: f"asinh(1/({args[0]}))" if args else "arccsch()",
-        "sech": lambda args: f"(1/cosh({args[0]}))" if args else "sech()",
-        "csch": lambda args: f"(1/sinh({args[0]}))" if args else "csch()",
-        # The quotient is parenthesised as a whole so it cannot bind loosely
-        # against a surrounding ``*`` or ``/``.
-        "coth": lambda args: (
-            f"(cosh({args[0]})/sinh({args[0]}))" if args else "coth()"
-        ),
-    }.items():
-        result = _replace_nested_function(result, function, replacement)
+    # The MathML built-ins are lowered from one shared table so that the
+    # writer's lowering and the parser's static evaluator cannot drift: the
+    # evaluator computes the value of exactly the expression emitted here.
+    for builtin in MATH_BUILTINS:
+        if builtin.lower is None:
+            continue
+        for name in builtin.lowering_names:
+            result = _replace_nested_function(result, name, builtin.lower)
 
     # libSBML's MathML visitor may expose n-ary arithmetic as named calls
     # (multiply/add/divide/subtract) instead of infix operators.  BNGL's
@@ -686,44 +622,7 @@ def convert_math_expression(expression: str) -> str:
         )
 
     # SBML log(base, value) is distinct from the one-argument natural log.
-    result = _replace_nested_function(
-        result,
-        "log",
-        lambda args: (
-            f"(ln({args[1]})/ln({args[0]}))"
-            if len(args) >= 2
-            else f"ln({args[0]})" if args else "log()"
-        ),
-    )
-    result = _replace_nested_function(
-        result,
-        "log10",
-        lambda args: f"(ln({args[0]})/2.302585093)" if args else "log10()",
-    )
-    result = _replace_nested_function(
-        result,
-        "root",
-        lambda args: (
-            f"(({args[1]})^(1/({args[0]})))"
-            if len(args) >= 2
-            else f"(({args[0]})^(1/2))" if args else "root()"
-        ),
-    )
-    result = _replace_nested_function(
-        result,
-        "floor",
-        lambda args: f"floor({args[0]})" if args else "floor()",
-    )
-    result = _replace_nested_function(
-        result,
-        "ceiling",
-        lambda args: f"ceil({args[0]})" if args else "ceiling()",
-    )
-    result = _replace_nested_function(
-        result,
-        "ceil",
-        lambda args: f"ceil({args[0]})" if args else "ceil()",
-    )
+    # The shared table already lowered ``log`` and ``log10`` above.
     for function, operator in {
         "gt": ">",
         "lt": "<",
@@ -3133,6 +3032,35 @@ def _report_unspellable_identifiers(model: SBMLModel) -> None:
                 )
 
 
+def _unrepresentable_math_function_reason(function_name: str) -> str:
+    """Return the reason an SBML math function has no executable equivalent."""
+
+    if function_name in {"delay", "rateOf"}:
+        return (
+            "the C++ SBML writer serializes the call, but neither the BNG3 "
+            "engine nor libRoadRunner can evaluate SBML "
+            f"{function_name} semantics"
+        )
+    return "BNGL has no built-in function with those semantics"
+
+
+def _unrepresentable_math_function_message(function_name: str) -> str:
+    """Describe why an SBML math function has no executable BNG3 equivalent.
+
+    The C++ SBML writer can serialize the SBML Level 3 Version 2 spelling of
+    ``delay`` and ``rateOf`` (Core Sec. 4.3.4 and Sec. 4.3.5), so the
+    remaining boundary is the execution path: the BNG3 engine has no
+    delayed-history or derivative semantics for these calls, and libRoadRunner
+    rejects a model that uses ``delay`` at all.
+    """
+
+    return (
+        f'SBML math function "{function_name}" is not losslessly representable '
+        "in the C++ SBML writer/libRoadRunner path: "
+        f"{_unrepresentable_math_function_reason(function_name)}."
+    )
+
+
 def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
     """Fold delayed history that stays at or before simulation start.
 
@@ -3534,18 +3462,71 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             return None
         return event_time, initial_duration, assigned_duration
 
+    def pre_simulation_history(target: str, duration: float) -> Optional[str]:
+        """Return the exact history of a delayed symbol before ``t = 0``.
+
+        SBML Level 3 Version 2 Core Sec. 4.3 ("Meaning of time") keeps an
+        ``initialAssignment`` in effect for times before the simulation
+        starts: "Any InitialAssignment definition continues to take effect.
+        Since these contain mathematical formulas, different values may be
+        computed at each time step".  A delayed read of such a symbol
+        therefore returns the assignment evaluated at the delayed time, not
+        the symbol's value at ``t = 0``.
+
+        The assignment may only depend on time and on symbols that keep the
+        same value before the simulation starts; anything else would need the
+        history of a symbol this lowering cannot evaluate.
+        """
+
+        if target not in initial_assignment_targets:
+            return None
+        assignments = [
+            assignment
+            for assignment in model.initial_assignments
+            if str(getattr(assignment, "symbol", "")) == target
+        ]
+        if len(assignments) != 1:
+            return None
+        expression = str(getattr(assignments[0], "math", "") or "")
+        if not expression:
+            return None
+        for call in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", expression):
+            if call.group(1) in model.function_definitions:
+                return None
+        for identifier in re.findall(
+            r"\b[A-Za-z_][A-Za-z0-9_]*\b(?!\s*\()", expression
+        ):
+            if identifier.lower() == "time":
+                continue
+            if identifier in model.species or identifier in model.compartments:
+                return None
+            if identifier in initial_assignment_targets or identifier in event_targets:
+                return None
+            parameter = model.parameters.get(identifier)
+            if parameter is None or not parameter.constant:
+                return None
+        return re.sub(
+            r"\btime\b",
+            f"(time - {duration!r})",
+            expression,
+            flags=re.IGNORECASE,
+        )
+
     def affine_delayed_value(
         target: str, trajectory: Tuple[float, float], duration: float
     ) -> Optional[str]:
         initial, slope = trajectory
         if duration == 0:
             return target
+        history = pre_simulation_history(target, duration)
         if duration >= t_end:
-            return repr(initial)
+            return repr(initial) if history is None else history
         displacement = slope * duration
         if not math.isfinite(displacement):
             return None
-        return f"if(time < {duration!r}, {initial!r}, ({target} - {displacement!r}))"
+        if history is None:
+            history = repr(initial)
+        return f"if(time < {duration!r}, {history}, ({target} - {displacement!r}))"
 
     def fold_bounded_delays(
         expression: str, *, lower_affine_state_history: bool = True
@@ -3612,13 +3593,8 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                     if not lower_affine_state_history:
                         position = call_end
                         continue
-                    initial, slope = trajectory
-                    displacement = slope * duration
-                    if math.isfinite(displacement):
-                        replacement = (
-                            f"if(time < {duration!r}, {initial!r}, "
-                            f"({target} - {displacement!r}))"
-                        )
+                    replacement = affine_delayed_value(target, trajectory, duration)
+                    if replacement is not None:
                         replacements.append((match.start(), call_end, replacement))
                         position = call_end
                         continue
@@ -4269,6 +4245,35 @@ def _substitute_seed_symbols(
     return _evaluate_arithmetic(result)
 
 
+def _species_reference_stoichiometry_symbols(
+    model: SBMLModel,
+) -> "OrderedDict[str, Optional[float]]":
+    """Return each species-reference id and its ``stoichiometry`` attribute.
+
+    SBML Level 3 Version 2 Core Sec. 4.11.3 gives a ``speciesReference`` id
+    the meaning of a model-level symbol whose value is that reference's
+    stoichiometry.  The ``stoichiometry`` attribute supplies that symbol's
+    time-zero value unless an initial assignment defines the same symbol.
+    A reference without the attribute has no attribute value (``None``): its
+    time-zero stoichiometry has to come from an initial assignment or from
+    another SBML construct, and the default of 1 would be an approximation.
+    """
+
+    values: "OrderedDict[str, Optional[float]]" = OrderedDict()
+    for reaction in model.reactions.values():
+        for reference in [*reaction.reactants, *reaction.products]:
+            reference_id = str(getattr(reference, "id", "") or "").strip()
+            if not reference_id or reference_id in values:
+                continue
+            value: Optional[float] = None
+            if getattr(reference, "stoichiometry_set", False):
+                numeric = _numeric_value(getattr(reference, "stoichiometry", None))
+                if numeric is not None and math.isfinite(numeric):
+                    value = numeric
+            values[reference_id] = value
+    return values
+
+
 def _seed_symbol_values(
     model: SBMLModel, seed_species: Sequence[SeedSpeciesEntry]
 ) -> Dict[str, float]:
@@ -4315,6 +4320,24 @@ def _seed_symbol_values(
             f"__compartment_{standardize_name(compartment_id)}__",
             size,
         )
+
+    # SBML Level 3 Version 2 Core Sec. 4.11.3 gives a ``speciesReference`` id
+    # the meaning of a model-level symbol whose value is that reference's
+    # stoichiometry.  The symbol's time-zero value is the ``stoichiometry``
+    # attribute unless an initial assignment defines the same symbol, in
+    # which case Sec. 4.11.3 says the attribute is ignored.  Seed the symbol
+    # with the attribute value here; the initial-assignment pass below
+    # replaces it where the source model assigns one.
+    initial_assignment_symbols = {
+        str(getattr(assignment, "symbol", "") or "")
+        for assignment in model.initial_assignments
+    }
+    for reference_id, value in _species_reference_stoichiometry_symbols(model).items():
+        if value is None or reference_id in initial_assignment_symbols:
+            continue
+        if reference_id in symbols or standardize_name(reference_id) in symbols:
+            continue
+        _add_seed_symbol(symbols, reference_id, value)
 
     species_ids = set(model.species)
     standardized_species_ids = {
@@ -5803,14 +5826,26 @@ def write_reaction_rules(
             for reference in [*reaction.reactants, *reaction.products]
             if reference.species != "EmptySet" and reference.variable_stoichiometry
         ]
+        # A BNGL reaction pattern can only spell a nonnegative integer
+        # molecule count.  A fixed stoichiometry that is negative or
+        # fractional is therefore carried by the deterministic flux lowering,
+        # where the sign and the fraction live in the rate coefficient
+        # instead of in the pattern.
+        negative_stoichiometry = any(
+            reference.species != "EmptySet"
+            and not reference.variable_stoichiometry
+            and math.isfinite(reference.stoichiometry)
+            and reference.stoichiometry < 0
+            for reference in [*reaction.reactants, *reaction.products]
+        )
         fractional_stoichiometry = any(
             reference.species != "EmptySet"
             and not reference.variable_stoichiometry
             and math.isfinite(reference.stoichiometry)
-            and reference.stoichiometry >= 0
             and abs(reference.stoichiometry - round(reference.stoichiometry)) > 1e-9
             for reference in [*reaction.reactants, *reaction.products]
         )
+        non_pattern_stoichiometry = negative_stoichiometry or fractional_stoichiometry
         oversized_stoichiometries = [
             reference
             for reference in [*reaction.reactants, *reaction.products]
@@ -5981,22 +6016,15 @@ def write_reaction_rules(
             )
             continue
         oversized_fixed_stoichiometry = bool(oversized_stoichiometries)
+        # A fixed negative or fractional stoichiometry is carried by the
+        # deterministic flux lowering below, so only a stoichiometry that is
+        # not a finite number stays unsupported here.
         unsupported = next(
             (
                 reference
                 for reference in [*reaction.reactants, *reaction.products]
                 if reference.species != "EmptySet"
-                and (
-                    not math.isfinite(reference.stoichiometry)
-                    or reference.stoichiometry < 0
-                    or (
-                        reference.variable_stoichiometry
-                        and abs(
-                            reference.stoichiometry - round(reference.stoichiometry)
-                        )
-                        > 1e-9
-                    )
-                )
+                and not math.isfinite(reference.stoichiometry)
             ),
             None,
         )
@@ -6005,12 +6033,12 @@ def write_reaction_rules(
                 model,
                 f'Reaction "{reaction_id}" has unsupported stoichiometry for '
                 f'"{unsupported.species}"; the reaction was omitted because BNGL '
-                "requires fixed nonnegative integer stoichiometry.",
+                "requires a fixed finite stoichiometry.",
                 category="stoichiometry",
                 severity="dropped",
             )
             continue
-        if (fractional_stoichiometry or oversized_fixed_stoichiometry) and (
+        if (non_pattern_stoichiometry or oversized_fixed_stoichiometry) and (
             reaction.fast
             or model.multi_executable
             or reaction.multi_intra_species
@@ -6020,15 +6048,16 @@ def write_reaction_rules(
         ):
             _record_import_warning(
                 model,
-                f'Reaction "{reaction_id}" has fixed fractional stoichiometry, '
-                "but fast, executable Multi, or FBC semantics prevent deterministic "
-                "flux lowering; the reaction was omitted.",
+                f'Reaction "{reaction_id}" has a fixed stoichiometry that a BNGL '
+                "reaction pattern cannot spell, but fast, executable Multi, or "
+                "FBC semantics prevent deterministic flux lowering; the reaction "
+                "was omitted.",
                 category="stoichiometry",
                 severity="dropped",
             )
             continue
         deterministic_flux_lowering = (
-            fractional_stoichiometry or oversized_fixed_stoichiometry
+            non_pattern_stoichiometry or oversized_fixed_stoichiometry
         )
         reactants: List[str] = []
         products: List[str] = []
@@ -6087,10 +6116,20 @@ def write_reaction_rules(
                     species_compartment_prefix=species_compartment_prefix,
                 )
             products.extend([product_pattern] * int(round(reference.stoichiometry)))
-        if not reactants and not products and not source_is_noop:
+        if (
+            not reactants
+            and not products
+            and not source_is_noop
+            and not deterministic_flux_lowering
+        ):
             # A reaction whose only participant is rate-rule-controlled has no
             # independent stoichiometric effect after the target is removed.
             # Its kinetic law remains available to rate-rule inlining above.
+            # A reaction with fractional or negative stoichiometry is
+            # different: its pattern list is empty because the count rounds
+            # to zero, while the deterministic flux lowering below still
+            # emits the species-specific rate rules that carry its
+            # stoichiometry.
             continue
         label = standardize_name(reaction.name or reaction_id)
         candidate = label
@@ -6150,7 +6189,13 @@ def write_reaction_rules(
                         net_stoichiometry.get(reference.species, 0.0)
                         + reference.stoichiometry
                     )
-            if fractional_stoichiometry:
+            if negative_stoichiometry:
+                message = (
+                    f'Reaction "{reaction_id}" has a negative fixed stoichiometry; '
+                    "its ODE flux was lowered to species-specific TotalRate rules "
+                    "that carry the sign of the coefficient."
+                )
+            elif fractional_stoichiometry:
                 message = (
                     f'Reaction "{reaction_id}" has fixed fractional stoichiometry; '
                     "its ODE flux was lowered to species-specific TotalRate rules."
@@ -6182,7 +6227,11 @@ def write_reaction_rules(
                 ):
                     continue
                 factor = _conversion_factor_for_species(species_id, model)
-                derivative = f"({coefficient:g}) * ({source_flux})"
+                # The coefficient has to keep every digit the source value
+                # carries: the lowered rule *is* the species' derivative, so a
+                # coefficient rounded to six significant digits changes the
+                # trajectory.
+                derivative = f"({_number(coefficient)}) * ({source_flux})"
                 if factor is not None:
                     derivative = f"({factor}) * ({derivative})"
                 pattern = _reaction_pattern(
@@ -6198,7 +6247,7 @@ def write_reaction_rules(
                     rule_specs = (("produce", positive), ("consume", negative))
                 else:
                     side = "produce" if coefficient > 0 else "consume"
-                    rate_expression = f"({abs(coefficient):g}) * ({source_flux})"
+                    rate_expression = f"({_number(abs(coefficient))}) * ({source_flux})"
                     if factor is not None:
                         rate_expression = f"({factor}) * ({rate_expression})"
                     rule_specs = ((side, rate_expression),)
@@ -6652,8 +6701,7 @@ def generate_bngl(
         ):
             _record_import_warning(
                 model,
-                f'SBML math function "{function_name}" is not losslessly '
-                "representable in the C++ SBML writer/libRoadRunner path.",
+                _unrepresentable_math_function_message(function_name),
                 category="mathml",
                 severity="dropped",
                 group=_MATHML_FUNCTION_GROUP.get(function_name, ""),
@@ -6709,6 +6757,10 @@ def generate_bngl(
     existing_molecule_names = {
         standardize_name(molecule.name) for molecule in augmented_molecule_types
     }
+    # Species-reference ids that carry a stoichiometry symbol (SBML Level 3
+    # Version 2 Core Sec. 4.11.3).  A rate-ruled one needs a defined time-zero
+    # value for the state variable that carries it.
+    stoichiometry_symbol_ids = set(_species_reference_stoichiometry_symbols(model))
     for rule in model.rules:
         if not rule.variable or rule.type != "rate":
             continue
@@ -6737,8 +6789,25 @@ def generate_bngl(
         initial_value = seed_symbol_values.get(variable)
         if initial_value is None:
             initial_value = seed_symbol_values.get(target)
+        resolved = initial_value is not None
         if initial_value is None:
             initial_value = getattr(parameter, "value", 0) if parameter else 0
+        if not resolved and variable in stoichiometry_symbol_ids:
+            # SBML Level 3 Version 2 Core Sec. 4.11.3: the time-zero value of
+            # a species-reference stoichiometry symbol comes from the
+            # reference's ``stoichiometry`` attribute or from an initial
+            # assignment that defines the same symbol.  With neither, the
+            # symbol has no defined value at t=0 and seeding it with a
+            # default would silently change the model.
+            _record_import_warning(
+                model,
+                f'The stoichiometry symbol "{variable}" has no defined value at '
+                "t=0: SBML Level 3 Version 2 Core Sec. 4.11.3 takes it from the "
+                "species reference's stoichiometry attribute or from an initial "
+                "assignment, and the source model supplies neither.",
+                category="stoichiometry",
+                severity="dropped",
+            )
         try:
             initial = float(initial_value)
             if not math.isfinite(initial):
@@ -10361,15 +10430,25 @@ def generate_bngl(
     # limitation on the model so validation reports it globally rather than
     # accepting a malformed or semantically altered round trip.
     for function_name in ("gcd", "lcm", "rint", "delay", "rateOf"):
-        if re.search(rf"\b{re.escape(function_name)}\s*\(", model_text, re.IGNORECASE):
-            _record_import_warning(
-                model,
-                f'Generated BNGL math function "{function_name}" is not '
-                "losslessly representable in the C++ SBML writer/libRoadRunner path.",
-                category="mathml",
-                severity="dropped",
-                group=_MATHML_FUNCTION_GROUP.get(function_name, ""),
-            )
+        if not re.search(
+            rf"\b{re.escape(function_name)}\s*\(", model_text, re.IGNORECASE
+        ):
+            continue
+        if any(
+            f'SBML math function "{function_name}"' in str(warning.get("message"))
+            for warning in model.import_warnings
+        ):
+            # The source-level diagnostic already reported this construct.
+            continue
+        _record_import_warning(
+            model,
+            f'Generated BNGL math function "{function_name}" is not '
+            "losslessly representable in the C++ SBML writer/libRoadRunner "
+            f"path: {_unrepresentable_math_function_reason(function_name)}.",
+            category="mathml",
+            severity="dropped",
+            group=_MATHML_FUNCTION_GROUP.get(function_name, ""),
+        )
 
     has_multi = bool(
         model.multi_molecule_types

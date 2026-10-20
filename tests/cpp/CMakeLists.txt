@@ -446,6 +446,18 @@ target_link_libraries(test_sbml_reader PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
 catch_discover_tests(test_sbml_reader)
 
+# test_sbml_delay_writer — SBML Level 3 Version 2 delay/rateOf csymbols
+add_executable(test_sbml_delay_writer test_sbml_delay_writer.cpp)
+target_include_directories(test_sbml_delay_writer PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput/TinyXML
+)
+target_link_libraries(test_sbml_delay_writer PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
+catch_discover_tests(test_sbml_delay_writer)
+
 add_executable(test_finite_backend test_finite_backend.cpp)
 target_include_directories(test_finite_backend PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp
