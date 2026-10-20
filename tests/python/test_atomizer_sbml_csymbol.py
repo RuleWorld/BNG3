@@ -125,9 +125,7 @@ def test_operator_position_csymbol_uses_the_definition_url():
 
 
 def test_static_parameter_initial_assignment_is_folded_to_a_fixed_value():
-    model = SBMLParser().parse(
-        _model(
-            """<listOfParameters>
+    model = SBMLParser().parse(_model("""<listOfParameters>
                  <parameter id="k" value="3" constant="true"/>
                  <parameter id="p" value="0" constant="false"/>
                </listOfParameters>
@@ -137,9 +135,7 @@ def test_static_parameter_initial_assignment_is_folded_to_a_fixed_value():
                      <apply><times/><ci>k</ci><cn>2</cn></apply>
                    </math>
                  </initialAssignment>
-               </listOfInitialAssignments>"""
-        )
-    )
+               </listOfInitialAssignments>"""))
 
     assert not model.initial_assignments
     assert model.parameters["p"].value == 6.0
@@ -147,8 +143,7 @@ def test_static_parameter_initial_assignment_is_folded_to_a_fixed_value():
 
 def test_static_parameter_initial_assignment_is_not_emitted_as_a_runtime_function():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(
-        _model(
-            """<listOfParameters>
+        _model("""<listOfParameters>
                  <parameter id="k" value="3" constant="true"/>
                  <parameter id="p" value="0" constant="false"/>
                </listOfParameters>
@@ -158,8 +153,7 @@ def test_static_parameter_initial_assignment_is_not_emitted_as_a_runtime_functio
                      <apply><times/><ci>k</ci><cn>2</cn></apply>
                    </math>
                  </initialAssignment>
-               </listOfInitialAssignments>"""
-        )
+               </listOfInitialAssignments>""")
     )
 
     assert result.success, result.error
@@ -168,9 +162,7 @@ def test_static_parameter_initial_assignment_is_not_emitted_as_a_runtime_functio
 
 
 def test_initial_assignment_that_depends_on_a_species_is_not_folded():
-    model = SBMLParser().parse(
-        _model(
-            """<listOfCompartments>
+    model = SBMLParser().parse(_model("""<listOfCompartments>
                  <compartment id="C" size="1" constant="true"/>
                </listOfCompartments>
                <listOfSpecies>
@@ -186,9 +178,7 @@ def test_initial_assignment_that_depends_on_a_species_is_not_folded():
                      <apply><times/><ci>S1</ci><cn>2</cn></apply>
                    </math>
                  </initialAssignment>
-               </listOfInitialAssignments>"""
-        )
-    )
+               </listOfInitialAssignments>"""))
 
     assert len(model.initial_assignments) == 1
     assert model.parameters["p"].value == 0.0
@@ -198,9 +188,7 @@ def test_chained_initial_assignments_resolve_in_dependency_order():
     # An initial assignment overrides the declared ``value`` attribute of its
     # target, so a chain must be resolved from the root of the chain, not
     # from the declared values.
-    model = SBMLParser().parse(
-        _model(
-            """<listOfParameters>
+    model = SBMLParser().parse(_model("""<listOfParameters>
                  <parameter id="a" value="1" constant="true"/>
                  <parameter id="b" value="0" constant="true"/>
                  <parameter id="c" value="0" constant="true"/>
@@ -216,9 +204,7 @@ def test_chained_initial_assignments_resolve_in_dependency_order():
                  <initialAssignment symbol="d">
                    <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>c</ci></math>
                  </initialAssignment>
-               </listOfInitialAssignments>"""
-        )
-    )
+               </listOfInitialAssignments>"""))
 
     assert not model.initial_assignments
     assert model.parameters["b"].value == 1.0

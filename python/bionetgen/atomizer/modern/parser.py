@@ -3878,9 +3878,7 @@ class SBMLParser:
             return
 
         species_ids = set(model.species)
-        rule_targets = {
-            str(rule.variable) for rule in model.rules if rule.variable
-        }
+        rule_targets = {str(rule.variable) for rule in model.rules if rule.variable}
         event_targets = {
             str(assignment.variable)
             for event in model.events
