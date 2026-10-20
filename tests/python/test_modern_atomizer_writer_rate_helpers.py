@@ -200,9 +200,12 @@ def test_write_functions_preserves_assignment_rule_that_shadows_parameter():
 
     lines = write_functions(model)
 
-    assert "T() = A" in lines
-    assert "flux() = T() * A" in lines
-    assert "flux() = 0 * A" not in lines
+    # ``A`` has no ``hasOnlySubstanceUnits``, so the SBML symbol denotes its
+    # concentration (SBML Level 3 Version 2 Core, Sec. 4.8) and the rule
+    # body names the concentration helper.
+    assert "T() = _c_A()" in lines
+    assert "flux() = T() * _c_A()" in lines
+    assert "flux() = 0 * _c_A()" not in lines
 
 
 def test_write_functions_keeps_mutable_parameter_live_in_assignment_rule():
@@ -214,8 +217,10 @@ def test_write_functions_keeps_mutable_parameter_live_in_assignment_rule():
 
     lines = write_functions(model)
 
-    assert "flux() = k * A" in lines
-    assert "flux() = 3 * A" not in lines
+    # ``A`` is concentration-valued, so the rule body names the concentration
+    # helper, and a mutable parameter stays live in the expression.
+    assert "flux() = k * _c_A()" in lines
+    assert "flux() = 3 * _c_A()" not in lines
 
 
 def test_bngl_renames_legacy_time_alias_for_sbml_identifiers():

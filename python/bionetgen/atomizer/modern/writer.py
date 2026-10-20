@@ -4353,6 +4353,7 @@ def write_observables(
             continue
         pattern_counts: Dict[str, int] = OrderedDict()
         rule_compartment = ""
+        concentration_operands = False
         for term in rule.math.split("+"):
             term = term.strip()
             if not term:
@@ -4389,7 +4390,24 @@ def write_observables(
             pattern_counts[pattern] = pattern_counts.get(pattern, 0) + coefficient
             if species is not None and species.compartment and not rule_compartment:
                 rule_compartment = species.compartment
+            if (
+                species is not None
+                and not species.has_only_substance_units
+                and species.compartment
+            ):
+                # An SBML species identifier in an expression denotes the
+                # species' amount or concentration according to its
+                # ``hasOnlySubstanceUnits`` attribute (SBML Level 3 Version 2
+                # Core, Sec. 4.8).  A concentration-valued operand makes the
+                # rule's value a concentration, which no BNGL observable can
+                # report: a ``Molecules`` observable counts molecules and a
+                # ``Species`` observable of a pattern reports the same count.
+                # Leave the rule to the function writer, which can express the
+                # concentration exactly.
+                concentration_operands = True
         if not pattern_counts:
+            continue
+        if concentration_operands:
             continue
         name = standardize_name(rule.variable)
         # Replace every prior observable with these names.  A round-tripped
@@ -4545,14 +4563,39 @@ def _inline_constant_function_calls(
     return rewritten
 
 
-def _map_compartment_references(expression: str, model: SBMLModel) -> str:
-    """Map bare SBML compartment IDs to emitted BNGL volume parameters."""
+def _map_compartment_references(
+    expression: str,
+    model: SBMLModel,
+    rate_ruled_compartments: Optional[Set[str]] = None,
+    assignment_rule_compartments: Optional[Set[str]] = None,
+) -> str:
+    """Map bare SBML compartment IDs to emitted BNGL volume parameters.
+
+    A compartment whose size is driven by a rule does not have a constant
+    BNGL parameter, so the reference has to name the state that carries the
+    current size instead.
+    """
 
     result = expression
+    rate_ruled = {
+        standardize_name(str(compartment_id))
+        for compartment_id in (rate_ruled_compartments or set())
+    }
+    assignment_ruled = {
+        standardize_name(str(compartment_id))
+        for compartment_id in (assignment_rule_compartments or set())
+    }
     for compartment_id in model.compartments:
+        name = standardize_name(str(compartment_id))
+        if name in rate_ruled:
+            replacement = f"{name}_amt"
+        elif name in assignment_ruled:
+            replacement = f"{name}()"
+        else:
+            replacement = f"__compartment_{name}__"
         result = re.sub(
             rf"\b{re.escape(str(compartment_id))}\b",
-            f"__compartment_{standardize_name(str(compartment_id))}__",
+            replacement,
             result,
         )
     return result
@@ -4833,6 +4876,13 @@ def write_functions(
             }
         )
     }
+    # A species without a compartment has no volume, so its SBML symbol has
+    # no concentration form; the amount is the only quantity it can denote.
+    concentration_species = {
+        standardize_name(species_id)
+        for species_id, species in model.species.items()
+        if species.compartment and standardize_name(species_id) in concentration_names
+    }
 
     # SBML species are amount-valued in the BNGL observable block.  The
     # concentration helper mirrors the Playground writer and is required for
@@ -4968,7 +5018,22 @@ def write_functions(
         # pre-pass itself: a raw species id cannot survive into the functions
         # block, where the declared symbol is its standardized spelling.
         body = _standardize_declared_id_runs(body, species_map)
-        body = _map_compartment_references(convert_math_expression(body), model)
+        body = _map_compartment_references(
+            convert_math_expression(body),
+            model,
+            rate_ruled_compartments=rate_ruled_compartments,
+            assignment_rule_compartments=assignment_rule_compartments,
+        )
+        # An SBML species identifier denotes the species' amount or
+        # concentration according to its ``hasOnlySubstanceUnits`` attribute
+        # (SBML Level 3 Version 2 Core, Sec. 4.8).  The concentration helper
+        # divides by the compartment's current size, so it is also correct
+        # when the compartment is driven by a rule.
+        body = _rewrite_declared_id_runs(
+            body,
+            concentration_species,
+            lambda name: f"_c_{name}()",
+        )
         body = _rewrite_assignment_rule_references(
             body,
             assignment_rule_variables,
