@@ -43,6 +43,7 @@ from .rate_rule_constants import (
 )
 from .structures import Molecule, Species, read_from_string
 from .helpers import logger
+from .math_builtins import MATH_BUILTINS, format_number as _number
 from .metadata import metadata_payload
 from .types import (
     BNGL_LEXER_KEYWORDS,
@@ -435,20 +436,6 @@ def _pattern(species: Species, compartment: str = "") -> str:
     return ".".join(sorted(molecules))
 
 
-def _number(value: object) -> str:
-    # Preserve arbitrary-precision integer literals instead of converting
-    # large factorials through float and raising OverflowError.
-    if isinstance(value, int) and not isinstance(value, bool):
-        return str(value)
-    try:
-        number = float(value)
-    except (OverflowError, TypeError, ValueError):
-        return str(value)
-    if number.is_integer() and abs(number) < 1e15:
-        return str(int(number))
-    return repr(number)
-
-
 def _factorial(value: float) -> int:
     return math.factorial(int(value))
 
@@ -573,65 +560,14 @@ def convert_math_expression(expression: str) -> str:
     """Convert common MathML/libSBML function spellings to BNGL syntax."""
 
     result = str(expression or "").strip()
-    result = _replace_nested_function(
-        result,
-        "pow",
-        lambda args: (
-            f"(({args[0]})^({args[1]}))"
-            if len(args) >= 2
-            else f"pow({', '.join(args)})"
-        ),
-    )
-    result = _replace_nested_function(
-        result,
-        "power",
-        lambda args: (
-            f"(({args[0]})^({args[1]}))"
-            if len(args) >= 2
-            else f"power({', '.join(args)})"
-        ),
-    )
-    result = _replace_nested_function(
-        result, "sqrt", lambda args: f"(({args[0]})^(1/2))" if args else "sqrt()"
-    )
-    result = _replace_nested_function(
-        result, "sqr", lambda args: f"(({args[0]})^2)" if args else "sqr()"
-    )
-    result = _replace_nested_function(
-        result,
-        "exp",
-        lambda args: f"(2.71828182845905^({args[0]}))" if args else "exp()",
-    )
-    result = _replace_nested_function(
-        result,
-        "abs",
-        lambda args: f"if({args[0]}>=0,{args[0]},-({args[0]}))" if args else "abs()",
-    )
-
-    # SBML's reciprocal and inverse trigonometric names are not BNGL lexer
-    # tokens, but they have direct one-expression equivalents.  Lower them
-    # before the C++ parser sees the generated model.
-    for function, replacement in {
-        "sec": lambda args: f"(1/cos({args[0]}))" if args else "sec()",
-        "csc": lambda args: f"(1/sin({args[0]}))" if args else "csc()",
-        "cot": lambda args: f"(cos({args[0]})/sin({args[0]}))" if args else "cot()",
-        "arcsec": lambda args: f"acos(1/({args[0]}))" if args else "arcsec()",
-        "arccsc": lambda args: f"asin(1/({args[0]}))" if args else "arccsc()",
-        "arccot": lambda args: f"atan(1/({args[0]}))" if args else "arccot()",
-        "arcsinh": lambda args: f"asinh({args[0]})" if args else "arcsinh()",
-        "arccosh": lambda args: f"acosh({args[0]})" if args else "arccosh()",
-        "arctanh": lambda args: f"atanh({args[0]})" if args else "arctanh()",
-        "arcsech": lambda args: f"acosh(1/({args[0]}))" if args else "arcsech()",
-        "arccsch": lambda args: f"asinh(1/({args[0]}))" if args else "arccsch()",
-        "sech": lambda args: f"(1/cosh({args[0]}))" if args else "sech()",
-        "csch": lambda args: f"(1/sinh({args[0]}))" if args else "csch()",
-        # The quotient is parenthesised as a whole so it cannot bind loosely
-        # against a surrounding ``*`` or ``/``.
-        "coth": lambda args: (
-            f"(cosh({args[0]})/sinh({args[0]}))" if args else "coth()"
-        ),
-    }.items():
-        result = _replace_nested_function(result, function, replacement)
+    # The MathML built-ins are lowered from one shared table so that the
+    # writer's lowering and the parser's static evaluator cannot drift: the
+    # evaluator computes the value of exactly the expression emitted here.
+    for builtin in MATH_BUILTINS:
+        if builtin.lower is None:
+            continue
+        for name in builtin.lowering_names:
+            result = _replace_nested_function(result, name, builtin.lower)
 
     # libSBML's MathML visitor may expose n-ary arithmetic as named calls
     # (multiply/add/divide/subtract) instead of infix operators.  BNGL's
@@ -675,44 +611,7 @@ def convert_math_expression(expression: str) -> str:
         )
 
     # SBML log(base, value) is distinct from the one-argument natural log.
-    result = _replace_nested_function(
-        result,
-        "log",
-        lambda args: (
-            f"(ln({args[1]})/ln({args[0]}))"
-            if len(args) >= 2
-            else f"ln({args[0]})" if args else "log()"
-        ),
-    )
-    result = _replace_nested_function(
-        result,
-        "log10",
-        lambda args: f"(ln({args[0]})/2.302585093)" if args else "log10()",
-    )
-    result = _replace_nested_function(
-        result,
-        "root",
-        lambda args: (
-            f"(({args[1]})^(1/({args[0]})))"
-            if len(args) >= 2
-            else f"(({args[0]})^(1/2))" if args else "root()"
-        ),
-    )
-    result = _replace_nested_function(
-        result,
-        "floor",
-        lambda args: f"floor({args[0]})" if args else "floor()",
-    )
-    result = _replace_nested_function(
-        result,
-        "ceiling",
-        lambda args: f"ceil({args[0]})" if args else "ceiling()",
-    )
-    result = _replace_nested_function(
-        result,
-        "ceil",
-        lambda args: f"ceil({args[0]})" if args else "ceil()",
-    )
+    # The shared table already lowered ``log`` and ``log10`` above.
     for function, operator in {
         "gt": ">",
         "lt": "<",
@@ -5785,14 +5684,26 @@ def write_reaction_rules(
             for reference in [*reaction.reactants, *reaction.products]
             if reference.species != "EmptySet" and reference.variable_stoichiometry
         ]
+        # A BNGL reaction pattern can only spell a nonnegative integer
+        # molecule count.  A fixed stoichiometry that is negative or
+        # fractional is therefore carried by the deterministic flux lowering,
+        # where the sign and the fraction live in the rate coefficient
+        # instead of in the pattern.
+        negative_stoichiometry = any(
+            reference.species != "EmptySet"
+            and not reference.variable_stoichiometry
+            and math.isfinite(reference.stoichiometry)
+            and reference.stoichiometry < 0
+            for reference in [*reaction.reactants, *reaction.products]
+        )
         fractional_stoichiometry = any(
             reference.species != "EmptySet"
             and not reference.variable_stoichiometry
             and math.isfinite(reference.stoichiometry)
-            and reference.stoichiometry >= 0
             and abs(reference.stoichiometry - round(reference.stoichiometry)) > 1e-9
             for reference in [*reaction.reactants, *reaction.products]
         )
+        non_pattern_stoichiometry = negative_stoichiometry or fractional_stoichiometry
         oversized_stoichiometries = [
             reference
             for reference in [*reaction.reactants, *reaction.products]
@@ -5963,22 +5874,15 @@ def write_reaction_rules(
             )
             continue
         oversized_fixed_stoichiometry = bool(oversized_stoichiometries)
+        # A fixed negative or fractional stoichiometry is carried by the
+        # deterministic flux lowering below, so only a stoichiometry that is
+        # not a finite number stays unsupported here.
         unsupported = next(
             (
                 reference
                 for reference in [*reaction.reactants, *reaction.products]
                 if reference.species != "EmptySet"
-                and (
-                    not math.isfinite(reference.stoichiometry)
-                    or reference.stoichiometry < 0
-                    or (
-                        reference.variable_stoichiometry
-                        and abs(
-                            reference.stoichiometry - round(reference.stoichiometry)
-                        )
-                        > 1e-9
-                    )
-                )
+                and not math.isfinite(reference.stoichiometry)
             ),
             None,
         )
@@ -5987,12 +5891,12 @@ def write_reaction_rules(
                 model,
                 f'Reaction "{reaction_id}" has unsupported stoichiometry for '
                 f'"{unsupported.species}"; the reaction was omitted because BNGL '
-                "requires fixed nonnegative integer stoichiometry.",
+                "requires a fixed finite stoichiometry.",
                 category="stoichiometry",
                 severity="dropped",
             )
             continue
-        if (fractional_stoichiometry or oversized_fixed_stoichiometry) and (
+        if (non_pattern_stoichiometry or oversized_fixed_stoichiometry) and (
             reaction.fast
             or model.multi_executable
             or reaction.multi_intra_species
@@ -6002,15 +5906,16 @@ def write_reaction_rules(
         ):
             _record_import_warning(
                 model,
-                f'Reaction "{reaction_id}" has fixed fractional stoichiometry, '
-                "but fast, executable Multi, or FBC semantics prevent deterministic "
-                "flux lowering; the reaction was omitted.",
+                f'Reaction "{reaction_id}" has a fixed stoichiometry that a BNGL '
+                "reaction pattern cannot spell, but fast, executable Multi, or "
+                "FBC semantics prevent deterministic flux lowering; the reaction "
+                "was omitted.",
                 category="stoichiometry",
                 severity="dropped",
             )
             continue
         deterministic_flux_lowering = (
-            fractional_stoichiometry or oversized_fixed_stoichiometry
+            non_pattern_stoichiometry or oversized_fixed_stoichiometry
         )
         reactants: List[str] = []
         products: List[str] = []
@@ -6078,10 +5983,11 @@ def write_reaction_rules(
             # A reaction whose only participant is rate-rule-controlled has no
             # independent stoichiometric effect after the target is removed.
             # Its kinetic law remains available to rate-rule inlining above.
-            # A reaction with fractional stoichiometry is different: its
-            # pattern list is empty because the count rounds to zero, while
-            # the deterministic flux lowering below still emits the
-            # species-specific rate rules that carry its stoichiometry.
+            # A reaction with fractional or negative stoichiometry is
+            # different: its pattern list is empty because the count rounds
+            # to zero, while the deterministic flux lowering below still
+            # emits the species-specific rate rules that carry its
+            # stoichiometry.
             continue
         label = standardize_name(reaction.name or reaction_id)
         candidate = label
@@ -6141,7 +6047,13 @@ def write_reaction_rules(
                         net_stoichiometry.get(reference.species, 0.0)
                         + reference.stoichiometry
                     )
-            if fractional_stoichiometry:
+            if negative_stoichiometry:
+                message = (
+                    f'Reaction "{reaction_id}" has a negative fixed stoichiometry; '
+                    "its ODE flux was lowered to species-specific TotalRate rules "
+                    "that carry the sign of the coefficient."
+                )
+            elif fractional_stoichiometry:
                 message = (
                     f'Reaction "{reaction_id}" has fixed fractional stoichiometry; '
                     "its ODE flux was lowered to species-specific TotalRate rules."
@@ -6173,7 +6085,11 @@ def write_reaction_rules(
                 ):
                     continue
                 factor = _conversion_factor_for_species(species_id, model)
-                derivative = f"({coefficient:g}) * ({source_flux})"
+                # The coefficient has to keep every digit the source value
+                # carries: the lowered rule *is* the species' derivative, so a
+                # coefficient rounded to six significant digits changes the
+                # trajectory.
+                derivative = f"({_number(coefficient)}) * ({source_flux})"
                 if factor is not None:
                     derivative = f"({factor}) * ({derivative})"
                 pattern = _reaction_pattern(
@@ -6189,7 +6105,7 @@ def write_reaction_rules(
                     rule_specs = (("produce", positive), ("consume", negative))
                 else:
                     side = "produce" if coefficient > 0 else "consume"
-                    rate_expression = f"({abs(coefficient):g}) * ({source_flux})"
+                    rate_expression = f"({_number(abs(coefficient))}) * ({source_flux})"
                     if factor is not None:
                         rate_expression = f"({factor}) * ({rate_expression})"
                     rule_specs = ((side, rate_expression),)

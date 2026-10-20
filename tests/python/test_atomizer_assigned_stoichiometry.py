@@ -51,14 +51,15 @@ def _model(reference: str, assignment: str) -> str:
 
 
 def test_unresolvable_assigned_stoichiometry_is_reported():
-    # The assigned value uses a MathML built-in that the Atomizer cannot
-    # evaluate numerically, so the stoichiometry is not representable and the
-    # model must say so rather than silently use the attribute's value.
+    # The assigned value depends on the species amount, so it is not a
+    # constant the Atomizer can resolve at initialization and the
+    # stoichiometry is not representable.  The model must say so rather than
+    # silently use the attribute's value.
     atomizer = Atomizer(atomize=False, quiet_mode=True)
     result = atomizer.atomize(
         _model(
             'id="S1_sr" species="S1" stoichiometry="1" constant="true"',
-            "<apply><exp/><cn>2.7</cn></apply>",
+            "<apply><abs/><ci>S1</ci></apply>",
         )
     )
 
