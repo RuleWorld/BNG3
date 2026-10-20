@@ -30,10 +30,15 @@ from pathlib import Path
 from .campaign import STATUSES
 
 ISSUES = [153, 154]
+_RECONSTRUCTION = "bngir-reconstruction:source-text-independent-v02"
+_RULE_FEATURES = "bngir-reconstruction:v02-scopes-filters-and-mutations"
+_FEATURE_MATRIX = "bngir-version-migration:v01-v02-feature-matrix"
+_REFUSAL_OWNERSHIP = "bngir-version-migration:v01-v02-refusal-ownership"
 CHECKS = (
-    "bngir-reconstruction:source-text-independent-v02",
-    "bngir-version-migration:v01-v02-feature-matrix",
-    "bngir-version-migration:v01-v02-refusal-ownership",
+    _RECONSTRUCTION,
+    _RULE_FEATURES,
+    _FEATURE_MATRIX,
+    _REFUSAL_OWNERSHIP,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -103,6 +108,7 @@ _REFUSAL_MARKERS = (
     "cannot represent",
     "does not support",
     "must be an ordinary site-free type",
+    "out of range",
 )
 
 
@@ -143,19 +149,29 @@ def independent_document():
         "format": "BNGIR",
         "version": "0.2",
         "features": {
-            "required": [],
-            "used": ["parameters", "molecule_types", "seeds", "rules"],
+            "required": ["structured_patterns", "structured_expressions"],
+            "used": [
+                "rules",
+                "seeds",
+                "structured_expressions",
+                "structured_patterns",
+            ],
         },
         "protocol": {"actions": []},
         "model": {
             "metadata": {
                 "name": "independent_reconstruction",
                 "version": "2.2",
-                "substance_units": "item",
+                "substance_units": "",
                 "options": {},
             },
             "parameters": [
-                {"id": 0, "name": "base", "expression": _number(0.05)},
+                {
+                    "id": 0,
+                    "name": "base",
+                    "expression": _number(0.05),
+                    "constant_value": 0.05,
+                },
                 {
                     "id": 1,
                     "name": "k1",
@@ -164,6 +180,7 @@ def independent_document():
                         "operator": "multiply",
                         "arguments": [_number(2.0), _parameter(0)],
                     },
+                    "constant_value": 0.1,
                 },
                 {
                     "id": 2,
@@ -173,6 +190,7 @@ def independent_document():
                         "operator": "multiply",
                         "arguments": [_number(4.0), _parameter(0)],
                     },
+                    "constant_value": 0.2,
                 },
             ],
             "molecule_types": [
@@ -198,7 +216,9 @@ def independent_document():
             "observables": [],
             "functions": [],
             "energy_patterns": [],
+            "barrier_patterns": [],
             "population_maps": [],
+            "population_types": [],
             "rules": [
                 {
                     "id": 0,
@@ -639,7 +659,7 @@ def _reconstruction_row(directory):
         )
     except Exception as exc:
         return _row(
-            CHECKS[0],
+            _RECONSTRUCTION,
             "HARNESS_ERROR",
             f"native reconstruction failed: {type(exc).__name__}: {exc}",
             artifact,
@@ -651,7 +671,7 @@ def _reconstruction_row(directory):
         restored = _observation(bionetgen.BioNetGenModel(native_model))
     except Exception as exc:
         return _row(
-            CHECKS[0],
+            _RECONSTRUCTION,
             "HARNESS_ERROR",
             f"reconstruction comparison failed: {type(exc).__name__}: {exc}",
             artifact,
@@ -700,13 +720,13 @@ def _reconstruction_row(directory):
     )
     if difference is None:
         return _row(
-            CHECKS[0],
+            _RECONSTRUCTION,
             "PASS",
             "independently authored v0.2 document reproduces the BNGL source seed, ODE right-hand side and trajectory",
             artifact,
         )
     return _row(
-        CHECKS[0],
+        _RECONSTRUCTION,
         "FAIL",
         "reconstructed seed, right-hand side or trajectory differs from the BNGL source",
         artifact,
@@ -817,7 +837,7 @@ def _matrix_row(directory):
     unrecorded = [item for item in lost if KNOWN_GAPS.get(item["id"]) not in owners]
     if unrecorded:
         return _row(
-            CHECKS[1],
+            _FEATURE_MATRIX,
             "FAIL",
             "one or more v0.1 to v0.2 migration cells lost a feature without a recorded owning requirement",
             artifact,
@@ -837,7 +857,7 @@ def _matrix_row(directory):
     ]
     if stale:
         return _row(
-            CHECKS[1],
+            _FEATURE_MATRIX,
             "FAIL",
             "a recorded migration gap no longer reproduces; the obligation catalog is stale",
             artifact,
@@ -857,7 +877,7 @@ def _matrix_row(directory):
         detail += "; rejected cells: " + ", ".join(
             f"{item['id']} ({item['outcome']})" for item in boundaries
         )
-    return _row(CHECKS[1], "PASS", detail, artifact)
+    return _row(_FEATURE_MATRIX, "PASS", detail, artifact)
 
 
 def _ownership_row(directory):
@@ -877,7 +897,7 @@ def _ownership_row(directory):
     ]
     if unowned:
         return _row(
-            CHECKS[2],
+            _REFUSAL_OWNERSHIP,
             "FAIL",
             "one or more rejected feature cells lack an owning requirement or retained evidence",
             artifact,
@@ -893,13 +913,95 @@ def _ownership_row(directory):
         detail += "; boundaries: " + ", ".join(
             f"{item['id']}->{item['owner']}" for item in boundaries
         )
-    return _row(CHECKS[2], "PASS", detail, artifact)
+    return _row(_REFUSAL_OWNERSHIP, "PASS", detail, artifact)
+
+
+def _scope_filter_mutation_probes():
+    """Probe the native reader with the v0.2 rule features it may not support."""
+    pattern = _pattern("A", 0)
+
+    filtered = copy.deepcopy(independent_document())
+    filtered["model"]["rules"][0]["forward"]["filters"] = [
+        {"include": True, "side": "reactant", "pattern_index": 0, "patterns": [pattern]}
+    ]
+
+    scoped = copy.deepcopy(independent_document())
+    scoped["model"]["rules"][0]["forward"]["local_scopes"] = [
+        {"name": "scope", "kind": "species", "reactant_pattern": pattern}
+    ]
+
+    mutated = copy.deepcopy(independent_document())
+    mutated["model"]["rules"][0]["forward"]["mutations"] = [
+        {
+            "kind": "change_state",
+            "source": {"molecule": 0, "pattern": 0, "side": "reactant", "site": 0},
+            "state": "p",
+            "state_index": 1,
+        }
+    ]
+
+    return (
+        ("rule-filters", filtered, _OWNER_DECLARATIONS),
+        ("rule-local-scopes", scoped, _OWNER_DECLARATIONS),
+        ("rule-mutations", mutated, _OWNER_DECLARATIONS),
+    )
+
+
+def _scope_row(directory):
+    """Record the native disposition of the v0.2 rule features."""
+    import bionetgen
+
+    records = []
+    for identifier, document, owner in _scope_filter_mutation_probes():
+        artifact = directory / f"{identifier}.bngir.json"
+        artifact.write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        record = {
+            "id": identifier,
+            "owner": owner,
+            "evidence": artifact.name,
+            "evidence_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        }
+        try:
+            bionetgen.from_bngir(document, native=True)
+        except Exception as exc:
+            record["outcome"] = (
+                "UNSUPPORTED" if _is_explicit_refusal(exc) else "REJECTED_UNCLEAR"
+            )
+            record["detail"] = f"native import rejected the feature: {exc}"
+            record["explicit_refusal"] = _is_explicit_refusal(exc)
+        else:
+            record["outcome"] = "SUPPORTED"
+            record["detail"] = "native import accepted the feature"
+            record["explicit_refusal"] = False
+        records.append(record)
+    receipt = directory / "v02-scopes-filters-and-mutations.outcomes.json"
+    receipt.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    owners = _catalog_owners()
+    unowned = [
+        item
+        for item in records
+        if item["outcome"] != "SUPPORTED" and item["owner"] not in owners
+    ]
+    if unowned:
+        return _row(
+            _RULE_FEATURES,
+            "FAIL",
+            "a rejected v0.2 rule feature lacks an owning requirement",
+            receipt,
+            {"field": "ownership", "cells": unowned},
+        )
+    detail = "every v0.2 rule feature probe has an explicit native disposition and an owning requirement"
+    detail += "; " + ", ".join(f"{item['id']}={item['outcome']}" for item in records)
+    return _row(_RULE_FEATURES, "PASS", detail, receipt)
 
 
 def run_worker(directory: Path):
     directory.mkdir(parents=True, exist_ok=True)
     rows = [
         _reconstruction_row(directory),
+        _scope_row(directory),
         _matrix_row(directory),
         _ownership_row(directory),
     ]

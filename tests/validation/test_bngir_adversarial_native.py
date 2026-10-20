@@ -79,7 +79,7 @@ def test_native_bngir_reconstruction_and_version_migration_contracts(tmp_path):
     directory = tmp_path / "reconstruction-contracts"
     rows = reconstruction.run_worker(directory)
     assert [row["id"] for row in rows] == reconstruction.check_ids()
-    assert [row["status"] for row in rows] == ["PASS", "PASS", "PASS"]
+    assert [row["status"] for row in rows] == ["PASS", "PASS", "PASS", "PASS"]
     for row in rows:
         assert row["related_issues"] == [153, 154]
         assert row["supported_execution"] is True
@@ -128,8 +128,9 @@ def test_version_matrix_contract_reports_a_silently_dropped_feature_as_failure(
             cell["present"] = lambda model: False
     monkeypatch.setattr(reconstruction, "MATRIX", cells)
     rows = reconstruction.run_worker(tmp_path / "dropped")
-    assert rows[1]["status"] == "FAIL"
-    assert rows[1]["first_difference"]["cells"][0]["id"] == "parameters"
+    matrix = next(row for row in rows if row["id"] == reconstruction._FEATURE_MATRIX)
+    assert matrix["status"] == "FAIL"
+    assert matrix["first_difference"]["cells"][0]["id"] == "parameters"
 
 
 def test_version_matrix_fails_when_a_gap_is_not_recorded(tmp_path, monkeypatch):
@@ -137,8 +138,9 @@ def test_version_matrix_fails_when_a_gap_is_not_recorded(tmp_path, monkeypatch):
     recorded.pop("rule-driving-work")
     monkeypatch.setattr(reconstruction, "KNOWN_GAPS", recorded)
     rows = reconstruction.run_worker(tmp_path / "unrecorded")
-    assert rows[1]["status"] == "FAIL"
-    assert rows[1]["first_difference"]["cells"][0]["id"] == "rule-driving-work"
+    matrix = next(row for row in rows if row["id"] == reconstruction._FEATURE_MATRIX)
+    assert matrix["status"] == "FAIL"
+    assert matrix["first_difference"]["cells"][0]["id"] == "rule-driving-work"
 
 
 def test_version_matrix_fails_when_a_recorded_gap_no_longer_reproduces(
@@ -150,8 +152,9 @@ def test_version_matrix_fails_when_a_recorded_gap_no_longer_reproduces(
             cell["present"] = lambda model: True
     monkeypatch.setattr(reconstruction, "MATRIX", cells)
     rows = reconstruction.run_worker(tmp_path / "stale")
-    assert rows[1]["status"] == "FAIL"
-    assert rows[1]["first_difference"]["cells"] == ["rule-driving-work"]
+    matrix = next(row for row in rows if row["id"] == reconstruction._FEATURE_MATRIX)
+    assert matrix["status"] == "FAIL"
+    assert matrix["first_difference"]["cells"] == ["rule-driving-work"]
 
 
 def test_refusal_ownership_fails_when_an_owner_is_not_in_the_catalog(
@@ -159,5 +162,8 @@ def test_refusal_ownership_fails_when_an_owner_is_not_in_the_catalog(
 ):
     monkeypatch.setattr(reconstruction, "_catalog_owners", lambda: set(), raising=True)
     rows = reconstruction.run_worker(tmp_path / "unowned")
-    assert rows[2]["status"] == "FAIL"
-    assert rows[2]["first_difference"]["cells"]
+    ownership = next(
+        row for row in rows if row["id"] == reconstruction._REFUSAL_OWNERSHIP
+    )
+    assert ownership["status"] == "FAIL"
+    assert ownership["first_difference"]["cells"]

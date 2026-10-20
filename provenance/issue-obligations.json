@@ -2378,6 +2378,7 @@
           "scope": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
           "dependencies": [],
           "boundaries": [
+            "Recorded boundary: the C++ native importer accepts a conversion expressed with an empty mutation list while the Python-level native adapter refuses the same document because the compiled semantics differ; the qualified reconstruction uses the C++ native importer.",
             "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free envelope only.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],
@@ -2386,6 +2387,15 @@
               "id": "bngir-reconstruction:source-text-independent-v02",
               "evidence_kind": "native-bngir-semantic-control",
               "expectation": "An independently authored v0.2 document reconstructs the BNGL source seed and ODE right-hand side without rendering or parsing BNGL.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-reconstruction:v02-scopes-filters-and-mutations",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native reader has an explicit disposition for rule filters, local scopes and rule mutations, and each disposition names the requirement that owns it.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2574,7 +2584,9 @@
           "scope": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "dependencies": [],
           "boundaries": [
+            "Recorded boundary: the native reader refuses a rule mutation whose site reference is out of range; a site-bearing molecule type is outside the native envelope.",
             "Recorded boundary: the native reader refuses reversible rule directions, energy patterns and substance-unit metadata; the migration preserves them and the native import refuses them explicitly.",
+            "Recorded boundary: the native reader refuses rule filters and local scopes explicitly; the Python reader accepts filters, so the two entry points differ.",
             "Recorded gap: the v0.1 reader rejects a rule that carries modifiers through its BNGL-mediated path without an explicit feature refusal. Owner of the repair: this obligation.",
             "Recorded gap: the v0.1 to v0.2 migration silently drops a rule's non-empty driving_work because the v0.2 rule format has no field for it and the migration does not refuse it. Owner of the repair: this obligation.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
@@ -2593,6 +2605,15 @@
               "id": "bngir-version-migration:v01-v02-refusal-ownership",
               "evidence_kind": "native-bngir-semantic-control",
               "expectation": "Every v0.1 to v0.2 feature cell that the migration does not preserve names the owning requirement and retains its own evidence.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-reconstruction:v02-scopes-filters-and-mutations",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native reader has an explicit disposition for rule filters, local scopes and rule mutations, and each disposition names the requirement that owns it.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"

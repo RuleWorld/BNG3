@@ -4,6 +4,7 @@ from tests.validation import bngir_reconstruction_contracts as contracts
 def test_reconstruction_and_migration_check_ids_are_namespaced():
     assert contracts.check_ids() == [
         "bngir-reconstruction:source-text-independent-v02",
+        "bngir-reconstruction:v02-scopes-filters-and-mutations",
         "bngir-version-migration:v01-v02-feature-matrix",
         "bngir-version-migration:v01-v02-refusal-ownership",
     ]
