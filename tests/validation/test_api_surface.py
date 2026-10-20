@@ -97,6 +97,48 @@ def test_the_family_is_registered_in_the_existing_harness():
     assert len(ids) == len(set(ids))
 
 
+def test_the_campaign_stage_imports_the_family_rows_and_links_issue_171(tmp_path):
+    """The integrated report must carry the family's named rows."""
+    import json
+    from argparse import Namespace
+
+    rows = []
+
+    def worker(case_id, operation, command, directory, results, **kwargs):
+        directory.mkdir(parents=True)
+        (directory / "identity.json").write_text("{}")
+        checks = [
+            {
+                "id": check_id,
+                "check": check_id.rsplit(":", 1)[-1],
+                "status": "PASS",
+                "detail": "generated public surface observation",
+                "related_issues": [171],
+                "evidence_kind": "supported-execution",
+                "supported_execution": True,
+            }
+            for check_id in extensions.check_ids("api-surface")
+        ]
+        (directory / "checks.json").write_text(json.dumps(checks))
+        row = dict(
+            id=f"{case_id}:{operation}",
+            stage=operation,
+            status="PASS",
+            receipt="receipt",
+        )
+        results.append(row)
+        return row
+
+    args = Namespace(report_dir=tmp_path, nfsim_binary=Path("/native/NFsim"))
+    parent = extensions.invoke("api-surface", args, rows, {}, worker)
+
+    assert parent["status"] == "PASS"
+    assert parent["qualification"] == "api-surface"
+    assert [row["id"] for row in rows[1:]] == extensions.check_ids("api-surface")
+    assert all(row["related_issues"] == [171] for row in rows[1:])
+    assert all(row["stage"] == "api-surface" for row in rows[1:])
+
+
 def test_the_obligation_catalog_names_the_new_checks():
     catalog = json.loads(
         (ROOT / "provenance/issue-obligations.json").read_text(encoding="utf-8")
