@@ -157,11 +157,16 @@ struct BngirNames {
 
 // The scope an expression is rebuilt in. A model-level expression has no
 // arguments; a function body is rebuilt with the arguments of the function
-// that owns it, because a local reference is only meaningful there.
+// that owns it, because a local reference is only meaningful there. A rule
+// rate is rebuilt with the local scopes the rule declares, because a local
+// reference there names one of those scopes.
 struct BngirScope {
     const BngirNames* names = nullptr;
     std::vector<std::string> localNames;
     bool functionBody = false;
+    // A local reference is only meaningful where a local name exists: inside
+    // a function body or inside a rule that declares local scopes.
+    bool localScopes = false;
 };
 
 bool containsName(const std::vector<std::string>& names, const std::string& name) {
@@ -186,18 +191,24 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
         }
         const auto& name = names.parameterNames[index];
         // The compiler resolves an argument before a parameter, so a parameter
-        // that shares a name with an argument is unreachable in the body.
+        // that shares a name with an argument is unreachable in the body. The
+        // same holds for a rule's local scopes.
         if (containsName(scope.localNames, name)) {
+            if (scope.functionBody) {
+                throw std::runtime_error(
+                    "native BNGIR function parameter reference is shadowed by an argument");
+            }
             throw std::runtime_error(
-                "native BNGIR function parameter reference is shadowed by an argument");
+                "native BNGIR rule parameter reference is shadowed by a local scope");
         }
         return Expression::identifier(name);
     }
     if (kind == "local_ref") {
         requireExpressionProperties(value, {"kind", "name"});
-        if (!scope.functionBody) {
+        if (!scope.functionBody && !scope.localScopes) {
             throw std::runtime_error(
-                "native BNGIR local reference is only supported inside a function body");
+                "native BNGIR local reference is only supported inside a "
+                "function body or a rule with local scopes");
         }
         if (!py::isinstance<py::str>(value["name"])) {
             throw std::runtime_error(
@@ -205,8 +216,12 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
         }
         const auto name = py::cast<std::string>(value["name"]);
         if (!containsName(scope.localNames, name)) {
+            if (scope.functionBody) {
+                throw std::runtime_error(
+                    "native BNGIR local reference is not a function argument");
+            }
             throw std::runtime_error(
-                "native BNGIR local reference is not a function argument");
+                "native BNGIR local reference is not a local scope of the rule");
         }
         return Expression::identifier(name);
     }
@@ -621,6 +636,109 @@ std::string filterModifierText(const py::dict& filter) {
            std::to_string(patternIndex + 1) + "," + moleculeName + ")";
 }
 
+// Read the local-function scopes a direction declares.
+//
+// The wire form names the scope, its kind, the side it is anchored on, the
+// pattern it indexes and, for a molecule scope, the molecule occurrence
+// inside that pattern. A scope anchored on the reactants names that reactant
+// pattern; a scope anchored on the products has no reactant pattern of its
+// own.
+std::vector<ReactionRule::LocalScope> localScopesFromBngir(
+    const py::list& scopes,
+    std::size_t reactantCount,
+    std::size_t productCount,
+    const std::string& where) {
+    std::vector<ReactionRule::LocalScope> result;
+    result.reserve(scopes.size());
+    std::set<std::string> names;
+    for (const auto& rawScope : scopes) {
+        const auto scope = py::cast<py::dict>(rawScope);
+        static const std::vector<std::string> required = {
+            "name", "kind", "side", "pattern_index", "reactant_pattern",
+        };
+        static const std::vector<std::string> allowed = {
+            "name", "kind", "side", "pattern_index", "reactant_pattern",
+            "molecule_occurrence",
+        };
+        requireObjectKeys(scope, required, allowed, where);
+        if (!py::isinstance<py::str>(scope["name"])) {
+            throw std::runtime_error(
+                "native BNGIR " + where + " name must be a string");
+        }
+        const auto name = py::cast<std::string>(scope["name"]);
+        if (name.empty() || !names.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR " + where + " names must be nonempty and unique");
+        }
+        ReactionRule::LocalScope localScope;
+        localScope.name = name;
+
+        const auto kind = py::cast<std::string>(scope["kind"]);
+        if (kind == "species") {
+            localScope.kind = ReactionRule::LocalScope::Kind::Species;
+        } else if (kind == "molecule") {
+            localScope.kind = ReactionRule::LocalScope::Kind::Molecule;
+        } else {
+            throw std::runtime_error(
+                "native BNGIR " + where + " kind must be molecule or species");
+        }
+
+        const auto side = py::cast<std::string>(scope["side"]);
+        const bool reactantSide = side == "reactant";
+        if (!reactantSide && side != "product") {
+            throw std::runtime_error(
+                "native BNGIR " + where + " side must be reactant or product");
+        }
+        localScope.side = reactantSide
+            ? ReactionRule::LocalScope::Side::Reactant
+            : ReactionRule::LocalScope::Side::Product;
+
+        const auto patternIndex =
+            indexFromBngir(scope["pattern_index"], where + " pattern index");
+        const auto patternCount = reactantSide ? reactantCount : productCount;
+        if (patternIndex >= patternCount) {
+            throw std::runtime_error(
+                "native BNGIR " + where + " pattern index is out of range");
+        }
+        localScope.patternIndex = patternIndex;
+
+        if (reactantSide) {
+            const auto reactantPattern = indexFromBngir(
+                scope["reactant_pattern"], where + " reactant pattern");
+            if (reactantPattern != patternIndex) {
+                throw std::runtime_error(
+                    "native BNGIR " + where +
+                    " reactant pattern does not match its pattern index");
+            }
+        } else if (!scope["reactant_pattern"].is_none()) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " product-side scope must not name a reactant pattern");
+        }
+
+        if (scope.contains(py::str("molecule_occurrence"))) {
+            if (localScope.kind != ReactionRule::LocalScope::Kind::Molecule) {
+                throw std::runtime_error(
+                    "native BNGIR " + where +
+                    " species scope must not name a molecule occurrence");
+            }
+            localScope.moleculeOccurrence = indexFromBngir(
+                scope["molecule_occurrence"], where + " molecule occurrence");
+        }
+        result.push_back(std::move(localScope));
+    }
+    return result;
+}
+
+// The names a direction declares as local scopes.
+std::vector<std::string> localScopeNames(
+    const std::vector<ReactionRule::LocalScope>& scopes) {
+    std::vector<std::string> names;
+    names.reserve(scopes.size());
+    for (const auto& scope : scopes) names.push_back(scope.name);
+    return names;
+}
+
 std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
                                         const py::object& protocol) {
     rejectUnsupportedModelSections(document);
@@ -857,6 +975,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
         static const std::vector<std::string> ruleKeys = {
             "id", "name", "label", "bidirectional", "modifiers", "forward",
             "molecule_mappings", "component_mappings", "reverse",
+            "driving_work",
         };
         static const std::vector<std::string> requiredRuleKeys = {
             "id", "name", "label", "bidirectional", "modifiers", "forward",
@@ -905,16 +1024,55 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
             "mutations", "transformations_complete",
         };
         requireObjectKeys(direction, directionKeys, directionKeys, "rule direction");
-        if (!py::cast<py::list>(direction["local_scopes"]).empty()) {
-            throw std::runtime_error(
-                "native BNGIR does not support local scopes");
-        }
         const auto reactants = py::cast<py::list>(direction["reactants"]);
         const auto products = py::cast<py::list>(direction["products"]);
         if (reactants.empty() || products.empty()) {
             throw std::runtime_error(
                 "native BNGIR does not support a rule direction without a "
                 "reactant and product pattern");
+        }
+        // The local scopes a direction declares are part of the rule's
+        // semantics: they bind a local function argument to a reactant.
+        const auto forwardScopes = localScopesFromBngir(
+            py::cast<py::list>(direction["local_scopes"]),
+            reactants.size(), products.size(), "rule direction local scope");
+        std::vector<ReactionRule::LocalScope> localScopes = forwardScopes;
+        if (py::cast<bool>(bidirectional)) {
+            // A bidirectional rule states its reverse direction. The compiler
+            // materializes the reverse rule from the forward one and takes the
+            // reverse rate from the second rate, so the document's reverse
+            // rate is what the reverse direction must use.
+            if (!rule.contains("reverse")) {
+                throw std::runtime_error(
+                    "native BNGIR bidirectional rule is missing its reverse direction");
+            }
+            const auto reverse = py::cast<py::dict>(rule["reverse"]);
+            const auto reverseScopes = localScopesFromBngir(
+                py::cast<py::list>(reverse["local_scopes"]),
+                products.size(), reactants.size(),
+                "rule reverse direction local scope");
+            // The reverse direction's reactants are the forward direction's
+            // products, so a scope of the reverse direction is anchored on the
+            // opposite side of the forward direction.
+            for (auto scope : reverseScopes) {
+                scope.side = scope.side == ReactionRule::LocalScope::Side::Reactant
+                                 ? ReactionRule::LocalScope::Side::Product
+                                 : ReactionRule::LocalScope::Side::Reactant;
+                localScopes.push_back(std::move(scope));
+            }
+            // Both directions of a rule share the tags of the rule, so the
+            // scopes of the two directions must name the same scopes.
+            const auto forwardNames = localScopeNames(forwardScopes);
+            const auto reverseNames = localScopeNames(reverseScopes);
+            std::vector<std::string> sortedForward = forwardNames;
+            std::vector<std::string> sortedReverse = reverseNames;
+            std::sort(sortedForward.begin(), sortedForward.end());
+            std::sort(sortedReverse.begin(), sortedReverse.end());
+            if (sortedForward != sortedReverse) {
+                throw std::runtime_error(
+                    "native BNGIR bidirectional rule declares different local "
+                    "scopes for its two directions");
+            }
         }
         std::vector<SpeciesGraph> reactantGraphs;
         std::vector<SpeciesGraph> productGraphs;
@@ -1000,30 +1158,39 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
         modifiers.insert(
             modifiers.end(), filterModifiers.begin(), filterModifiers.end());
         const auto rate = py::cast<py::dict>(direction["rate"]);
+        // A rate may name the rule's local scopes. The compiler resolves a
+        // local name before a parameter, so the rate is rebuilt in the scope
+        // of the local scopes the rule declares.
+        BngirScope ruleScope{&names, localScopeNames(forwardScopes), false};
+        ruleScope.localScopes = !forwardScopes.empty();
         std::vector<Expression> rates;
         rates.push_back(expressionFromBngir(
-            py::cast<py::dict>(rate["expression"]), modelScope));
+            py::cast<py::dict>(rate["expression"]), ruleScope));
         if (py::cast<bool>(bidirectional)) {
             // A bidirectional rule states its reverse direction. The compiler
             // materializes the reverse rule from the forward one and takes the
             // reverse rate from the second rate, so the document's reverse
             // rate is what the reverse direction must use.
-            if (!rule.contains("reverse")) {
-                throw std::runtime_error(
-                    "native BNGIR bidirectional rule is missing its reverse direction");
-            }
             const auto reverse = py::cast<py::dict>(rule["reverse"]);
             const auto reverseRate = py::cast<py::dict>(reverse["rate"]);
             rates.push_back(expressionFromBngir(
-                py::cast<py::dict>(reverseRate["expression"]), modelScope));
+                py::cast<py::dict>(reverseRate["expression"]), ruleScope));
         }
-        model->addReactionRule(ReactionRule::fromResolvedPatterns(
+        auto reactionRule = ReactionRule::fromResolvedPatterns(
             py::cast<std::string>(rule["name"]),
             py::cast<std::string>(rule["label"]),
             std::move(rates),
             std::move(reactantGraphs), std::move(productGraphs),
             std::move(modifiers), py::cast<bool>(bidirectional),
-            !filterModifiers.empty()));
+            !filterModifiers.empty());
+        reactionRule.setLocalScopes(std::move(localScopes));
+        // The reservoir work is part of the rule's thermodynamics. It is a
+        // model-level quantity, so it is rebuilt in the model scope.
+        if (rule.contains(py::str("driving_work"))) {
+            reactionRule.setDrivingWorkExpression(expressionFromBngir(
+                py::cast<py::dict>(rule["driving_work"]), modelScope));
+        }
+        model->addReactionRule(std::move(reactionRule));
     }
 
     // The energy patterns give a transition-state energy to the patterns they

@@ -421,6 +421,45 @@ def test_bngir_v02_round_trip_preserves_rule_modifiers():
     assert bionetgen.semantic_equal(model, restored, version="0.2")
 
 
+DRIVING_WORK_MODEL = r"""
+version("2.2")
+begin model
+begin parameters
+    k 0.1
+    w 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+end seed species
+begin reaction rules
+    A() -> B() k driven_by(w)
+end reaction rules
+end model
+"""
+
+
+def test_bngir_v01_driving_work_migrates_to_v02_without_loss():
+    """The v0.1 drive migrates to the v0.2 rule field without being dropped."""
+    model = bionetgen.BioNetGenModel(
+        bionetgen.model._cpp.parse_string(DRIVING_WORK_MODEL)
+    )
+    legacy = json.loads(model.to_bngir(version="0.1"))
+    assert legacy["model"]["rules"][0]["driving_work"] == "w"
+
+    migrated = json.loads(bionetgen.to_bngir(model, version="0.2"))
+
+    assert migrated["model"]["rules"][0]["driving_work"] == {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 1},
+    }
+    restored = bionetgen.from_bngir(migrated, native=True)
+    assert json.loads(bionetgen.to_bngir(restored, version="0.2")) == migrated
+
+
 INDEX_REFERENCE_MODEL = r"""
 version("2.2")
 begin model

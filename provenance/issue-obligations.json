@@ -2583,10 +2583,7 @@
           "criterion": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "scope": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "dependencies": [],
-          "boundaries": [
-            "Recorded boundary: the native reader refuses rule local scopes, because the native rule collects them from pattern text the wire format does not carry.",
-            "Recorded boundary: the v0.2 rule format has no driving-work field, so the v0.2 writer refuses a rule that carries one and points at the version that can represent it."
-          ],
+          "boundaries": [],
           "required_checks": [
             {
               "id": "bngir-version-migration:v01-v02-feature-matrix",

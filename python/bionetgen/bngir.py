@@ -323,25 +323,10 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
                 f"BNGIR {STRUCTURAL_VERSION} cannot represent "
                 f"{observable.type!r} observable kinds; use version {VERSION!r}"
             )
-    # The v0.2 rule format has no driving-work field. Silently dropping the
-    # drive would change the model's thermodynamics, so refuse explicitly and
-    # point at the version that can represent it. A zero-valued drive is
-    # equivalent to no drive: dG - 0 recovers the undriven rate.
-    for rule in native.reaction_rules:
-        if not rule.has_driving_work:
-            continue
-        drive = str(rule.driving_work).strip()
-        if not drive:
-            continue
-        try:
-            if float(drive) == 0.0:
-                continue
-        except ValueError:
-            pass
-        raise ValueError(
-            f"BNGIR {STRUCTURAL_VERSION} cannot represent rule driving_work "
-            f"({drive!r}); use version {VERSION!r}"
-        )
+    # The v0.2 rule format carries the reservoir work as a resolved
+    # expression tree, the same way it carries every other expression. A
+    # drive that the compiler cannot evaluate statically makes the compiled
+    # model invalid, and the structural snapshot refuses it there.
     try:
         from .model import _cpp
 
@@ -932,6 +917,52 @@ def _validate_pattern_ref_v02(
             raise ValueError(f"BNGIR {where} site reference is out of range")
 
 
+def _local_scope_side(scope: Mapping[str, Any]) -> str:
+    """Return the side a local scope is anchored on.
+
+    A scope is anchored on the reactants of its direction unless the wire
+    form says otherwise. The reverse direction of a rule has the forward
+    direction's products as its reactants.
+    """
+    side = scope.get("side", "reactant")
+    if side not in {"reactant", "product"}:
+        raise ValueError(f"BNGIR local scope has an invalid side: {side!r}")
+    return side
+
+
+def _local_scope_pattern_v02(
+    scope: Mapping[str, Any],
+    where: str,
+    reactant_count: int,
+    product_count: int,
+) -> int:
+    """Return the pattern a local scope is anchored on.
+
+    A reactant-anchored scope names the reactant pattern it indexes; a
+    product-anchored scope names the product pattern it indexes and has no
+    reactant pattern of its own.
+    """
+    side = _local_scope_side(scope)
+    count = reactant_count if side == "reactant" else product_count
+    index = scope.get("pattern_index")
+    if index is None and side == "reactant":
+        index = scope.get("reactant_pattern")
+    if not _is_json_integer(index) or index < 0 or index >= count:
+        raise ValueError(f"BNGIR {where} local scope pattern is out of range")
+    reactant_pattern = scope.get("reactant_pattern")
+    if side == "reactant":
+        if reactant_pattern is not None and reactant_pattern != index:
+            raise ValueError(
+                f"BNGIR {where} local scope reactant pattern does not match "
+                "its pattern index"
+            )
+    elif reactant_pattern is not None:
+        raise ValueError(
+            f"BNGIR {where} product-side local scope must not name a reactant pattern"
+        )
+    return index
+
+
 def _validate_direction_v02(
     direction: Mapping[str, Any], model: Mapping[str, Any], where: str
 ) -> None:
@@ -951,23 +982,23 @@ def _validate_direction_v02(
         raise ValueError(f"BNGIR {where}.local_scopes must be an array")
     local_names: set[str] = set()
     reactants = direction.get("reactants", [])
+    products = direction.get("products", [])
     for i, raw_scope in enumerate(scopes):
         scope = _require_mapping(raw_scope, f"{where}.local_scopes[{i}]")
         name = scope.get("name")
         kind = scope.get("kind")
-        pi = scope.get("reactant_pattern")
         if not isinstance(name, str) or not name or name in local_names:
             raise ValueError(f"BNGIR {where} has invalid/duplicate local scope name")
         local_names.add(name)
         if kind not in {"molecule", "species"}:
             raise ValueError(f"BNGIR {where} has invalid local scope kind")
-        if not _is_json_integer(pi) or pi < 0 or pi >= len(reactants):
-            raise ValueError(
-                f"BNGIR {where} local scope reactant pattern is out of range"
-            )
+        pi = _local_scope_pattern_v02(
+            scope, f"{where}.local_scopes[{i}]", len(reactants), len(products)
+        )
         occurrence = scope.get("molecule_occurrence")
         if kind == "molecule":
-            molecules = _require_mapping(reactants[pi], f"{where}.reactants[{pi}]").get(
+            anchored = reactants if _local_scope_side(scope) == "reactant" else products
+            molecules = _require_mapping(anchored[pi], f"{where}.patterns[{pi}]").get(
                 "molecules", []
             )
             if (
@@ -1304,6 +1335,16 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"BNGIR model.rules[{i}] has unsupported modifier kind: {kind!r}"
             )
+        driving_work = rule.get("driving_work")
+        if driving_work is not None:
+            # The reservoir work is a model-level quantity: it names the
+            # parameters of the model, not a local scope of the rule.
+            _validate_expression_v02(
+                _require_mapping(driving_work, f"model.rules[{i}].driving_work"),
+                model,
+                local_names=set(),
+                where=f"model.rules[{i}].driving_work",
+            )
 
 
 def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
@@ -1377,6 +1418,7 @@ def _native_expression_v02(
     where: str,
     *,
     local_names: frozenset[str] | None = None,
+    local_description: str = "function argument",
     function_ids: frozenset[int] = frozenset(),
     function_arities: Mapping[int, int] | None = None,
     observable_ids: frozenset[int] = frozenset(),
@@ -1421,7 +1463,7 @@ def _native_expression_v02(
         name = expression["name"]
         if not isinstance(name, str) or name not in local_names:
             raise ValueError(
-                f"native BNGIR {where} references an unknown function argument"
+                f"native BNGIR {where} references an unknown {local_description}"
             )
         return
     if kind == "function_ref":
@@ -1462,6 +1504,7 @@ def _native_expression_v02(
                 parameter_ids,
                 f"{where}.arguments[{argument_index}]",
                 local_names=local_names,
+                local_description=local_description,
                 function_ids=function_ids,
                 function_arities=function_arities,
                 observable_ids=observable_ids,
@@ -1516,6 +1559,7 @@ def _native_expression_v02(
             parameter_ids,
             f"{where}.arguments[0]",
             local_names=local_names,
+            local_description=local_description,
             function_ids=function_ids,
             function_arities=function_arities,
             observable_ids=observable_ids,
@@ -1542,6 +1586,7 @@ def _native_expression_v02(
                 parameter_ids,
                 f"{where}.arguments[{index}]",
                 local_names=local_names,
+                local_description=local_description,
                 function_ids=function_ids,
                 function_arities=function_arities,
                 observable_ids=observable_ids,
@@ -1653,6 +1698,93 @@ def _native_pattern_v02(
                 f"native BNGIR {where}.molecules[0].sites[{site_index}] has an "
                 "unsupported bond constraint kind"
             )
+
+
+def _native_local_scopes_v02(
+    scopes: Any,
+    where: str,
+    *,
+    reactant_count: int,
+    product_count: int,
+) -> list[str]:
+    """Validate the local-function scopes a rule direction declares.
+
+    The wire form names the scope, its kind, the side it is anchored on, the
+    pattern it indexes and, for a molecule scope, the molecule occurrence
+    inside that pattern. A scope anchored on the reactants names that
+    reactant pattern; a scope anchored on the products has no reactant
+    pattern of its own.
+    """
+    if not isinstance(scopes, list):
+        raise ValueError(f"native BNGIR {where}.local_scopes must be an array")
+    names: list[str] = []
+    for index, raw in enumerate(scopes):
+        scope = _require_mapping(raw, f"{where}.local_scopes[{index}]")
+        _native_required_optional_keys(
+            scope,
+            {"name", "kind", "side", "pattern_index", "reactant_pattern"},
+            {
+                "name",
+                "kind",
+                "side",
+                "pattern_index",
+                "reactant_pattern",
+                "molecule_occurrence",
+            },
+            f"{where}.local_scopes[{index}]",
+        )
+        name = scope["name"]
+        if not isinstance(name, str) or not name or name in names:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] has an invalid or "
+                "duplicated name"
+            )
+        names.append(name)
+        kind = scope["kind"]
+        if kind not in {"molecule", "species"}:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] has an unsupported kind"
+            )
+        side = scope["side"]
+        if side not in {"reactant", "product"}:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] has an unsupported side"
+            )
+        pattern_index = scope["pattern_index"]
+        pattern_count = reactant_count if side == "reactant" else product_count
+        if (
+            not _is_json_integer(pattern_index)
+            or not 0 <= pattern_index < pattern_count
+        ):
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] references an "
+                "unknown pattern"
+            )
+        reactant_pattern = scope["reactant_pattern"]
+        if side == "reactant":
+            if reactant_pattern != pattern_index:
+                raise ValueError(
+                    f"native BNGIR {where}.local_scopes[{index}] reactant pattern "
+                    "does not match its pattern index"
+                )
+        elif reactant_pattern is not None:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] product-side scope "
+                "must not name a reactant pattern"
+            )
+        occurrence = scope.get("molecule_occurrence")
+        if occurrence is not None:
+            if kind != "molecule":
+                raise ValueError(
+                    f"native BNGIR {where}.local_scopes[{index}] species scope "
+                    "must not name a molecule occurrence"
+                )
+            if not _is_json_integer(occurrence) or occurrence < 0:
+                raise ValueError(
+                    f"native BNGIR {where}.local_scopes[{index}] has an invalid "
+                    "molecule occurrence"
+                )
+    return names
 
 
 def _native_multi_pattern_direction_v02(
@@ -2053,6 +2185,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 "reverse",
                 "molecule_mappings",
                 "component_mappings",
+                "driving_work",
             },
             f"model.rules[{index}]",
         )
@@ -2148,10 +2281,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             },
             f"model.rules[{index}].forward",
         )
-        if direction["local_scopes"] != []:
-            raise ValueError(
-                f"native BNGIR model.rules[{index}] does not support local scopes"
-            )
         for filter_index, raw_filter in enumerate(direction["filters"]):
             filter_ = _require_mapping(
                 raw_filter, f"model.rules[{index}].forward.filters[{filter_index}]"
@@ -2199,6 +2328,30 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     molecule_ids,
                 )
         _native_multi_pattern_direction_v02(rule, direction, index, model, molecule_ids)
+        # The local scopes bind a local function argument to a reactant of the
+        # direction that declares them. The reverse direction's reactants are
+        # the forward direction's products.
+        forward_scope_names = _native_local_scopes_v02(
+            direction["local_scopes"],
+            f"model.rules[{index}].forward",
+            reactant_count=len(direction["reactants"]),
+            product_count=len(direction["products"]),
+        )
+        reverse_scope_names: list[str] = []
+        if "reverse" in rule:
+            reverse_scope_names = _native_local_scopes_v02(
+                _require_mapping(rule["reverse"], f"model.rules[{index}].reverse")[
+                    "local_scopes"
+                ],
+                f"model.rules[{index}].reverse",
+                reactant_count=len(direction["products"]),
+                product_count=len(direction["reactants"]),
+            )
+            if sorted(forward_scope_names) != sorted(reverse_scope_names):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] declares different local "
+                    "scopes for its two directions"
+                )
         if len(rule["molecule_mappings"]) > 1:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] has too many molecule mappings"
@@ -2250,10 +2403,45 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             rate["expression"],
             parameter_ids,
             f"model.rules[{index}].forward.rate.expression",
+            local_names=frozenset(forward_scope_names),
+            local_description="local scope",
             function_ids=frozenset(function_ids),
             function_arities=function_arities,
             allow_function_calls=True,
         )
+        if "reverse" in rule:
+            reverse_rate = _require_mapping(
+                _require_mapping(rule["reverse"], f"model.rules[{index}].reverse")[
+                    "rate"
+                ],
+                f"model.rules[{index}].reverse.rate",
+            )
+            _native_exact_keys(
+                reverse_rate,
+                {"kind", "expression"},
+                f"model.rules[{index}].reverse.rate",
+            )
+            _native_expression_v02(
+                reverse_rate["expression"],
+                parameter_ids,
+                f"model.rules[{index}].reverse.rate.expression",
+                local_names=frozenset(reverse_scope_names),
+                local_description="local scope",
+                function_ids=frozenset(function_ids),
+                function_arities=function_arities,
+                allow_function_calls=True,
+            )
+        if "driving_work" in rule:
+            # The reservoir work is a model-level quantity: it names the
+            # parameters of the model, not a local scope of the rule.
+            _native_expression_v02(
+                rule["driving_work"],
+                parameter_ids,
+                f"model.rules[{index}].driving_work",
+                function_ids=frozenset(function_ids),
+                function_arities=function_arities,
+                allow_function_calls=True,
+            )
         mutations = direction["mutations"]
         if not isinstance(mutations, list):
             raise ValueError(
@@ -2658,13 +2846,16 @@ def _direction_pattern_strings_v02(
     direction: Mapping[str, Any], side: str
 ) -> list[str]:
     patterns = direction.get(side, [])
-    if side != "reactants":
-        return [_pattern_v02(pattern) for pattern in patterns]
     molecule_scopes: dict[int, dict[int, list[str]]] = {}
     species_scopes: dict[int, list[str]] = {}
+    scope_side = "reactant" if side == "reactants" else "product"
     for raw in direction.get("local_scopes", []):
         scope = _require_mapping(raw, "rule local scope")
-        pi = int(scope["reactant_pattern"])
+        # A scope is anchored on the reactants of its direction unless the
+        # wire form says otherwise.
+        if _local_scope_side(scope) != scope_side:
+            continue
+        pi = int(scope.get("pattern_index", scope.get("reactant_pattern")))
         if scope["kind"] == "species":
             species_scopes.setdefault(pi, []).append(str(scope["name"]))
         else:

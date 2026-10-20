@@ -1016,6 +1016,14 @@ const std::vector<SpeciesGraph>& ReactionRule::getReactantPatterns() const {
     return reactantPatterns_;
 }
 
+const std::vector<ReactionRule::LocalScope>& ReactionRule::getLocalScopes() const {
+    return localScopes_;
+}
+
+void ReactionRule::setLocalScopes(std::vector<LocalScope> scopes) {
+    localScopes_ = std::move(scopes);
+}
+
 const std::vector<SpeciesGraph>& ReactionRule::getProductPatterns() const {
     return productPatterns_;
 }
