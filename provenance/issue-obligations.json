@@ -3665,11 +3665,57 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:155:malformed-reference-cases",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-adversarial:nested-parameter-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:seed-molecule-type-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-reactant-type-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-product-type-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:compartment-parent-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:unknown-pattern-compartment",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
@@ -3677,7 +3723,6 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:malformed-reference-cases.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -3689,11 +3734,57 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:155:cross-referenced-id-cases",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-adversarial:parameter-reference-kind-mismatch",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:seed-type-name-id-disagreement",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-reactant-type-name-id-disagreement",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-product-type-name-id-disagreement",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:duplicate-molecule-type-id",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:duplicate-parameter-name",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
@@ -3701,7 +3792,6 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:cross-referenced-id-cases.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -3713,11 +3803,93 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:155:generated-property-cases",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-adversarial:baseline-native-control",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:alpha-renamed-symbols",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:parameter-declaration-order",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:nested-rate-expression",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:function-rate-law",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:molecule-id-permutation",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:compartment-suffix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:compartment-prefix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:molecule-compartment",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:bonded-complex-boundary",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
@@ -3725,7 +3897,6 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:generated-property-cases.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -3737,11 +3908,111 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:155:independent-refusal-verification",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-adversarial:nested-parameter-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:parameter-reference-kind-mismatch",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:seed-molecule-type-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:seed-type-name-id-disagreement",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-reactant-type-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-reactant-type-name-id-disagreement",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-product-type-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:rule-product-type-name-id-disagreement",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:duplicate-molecule-type-id",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:duplicate-parameter-name",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:compartment-parent-reference-out-of-range",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-adversarial:unknown-pattern-compartment",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native boundary refuses the case without relying on Python rendering, and the retained evidence names the refusal.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
@@ -3749,7 +4020,6 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:155:independent-refusal-verification.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
