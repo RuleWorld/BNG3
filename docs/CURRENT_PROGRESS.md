@@ -248,6 +248,12 @@ green CI as broad implementation equivalence. This candidate adds:
   RoadRunner comparison and official references have separate stage counts.
   Per-case inputs, translations, exported XML, worker reports and logs are retained;
   worker identity includes a digest of the Python sources.
+  Each case runs in its own process; the default isolation mode forks one child
+  per case from a parent that never executes a case body, and
+  `--isolation-mode process` keeps the one-fresh-interpreter-per-case mode.
+  Pooling changes no verdict: the per-case diff over all 1923 records is empty
+  in both directions. A full-suite run takes an advisory, fail-open shared
+  verification slot (`--lock-file`, `--no-lock`, `--lock-wait`).
 - Live pinned BNG2 SSA ensembles in scheduled/manual parity, deterministic spread
   seeds, and an independent analytic marginal check for the fixed michment model.
   Scratch generation never refreshes committed golden files implicitly.

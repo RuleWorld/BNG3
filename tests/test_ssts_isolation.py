@@ -408,9 +408,38 @@ def test_unusable_verification_slot_fails_open(tmp_path):
 
 def test_jobs_advisory_warns_when_the_run_oversubscribes_the_machine():
     cpu_count = os.cpu_count() or 1
-    assert runner._jobs_advisory(cpu_count + 1) is not None
-    assert "CPUs" in runner._jobs_advisory(cpu_count + 1)
-    assert runner._jobs_advisory(1) is None
+    assert runner._jobs_advisory(cpu_count + 1, cpu_count) is not None
+    assert "CPUs" in runner._jobs_advisory(cpu_count + 1, cpu_count)
+    assert runner._jobs_advisory(1, cpu_count) is None
+    assert runner._jobs_advisory(max(1, cpu_count // 2), cpu_count) is None
+    # Every CPU is more than half of them, so the softer advisory still fires.
+    assert runner._jobs_advisory(cpu_count, cpu_count) is not None
+
+
+def test_jobs_is_rejected_when_it_is_not_positive():
+    """A nonsensical worker count is refused in every mode, not only isolated."""
+
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(GATE),
+            "--suite-dir",
+            str(Path(__file__).parent),
+            "--json",
+            "/dev/null",
+            "--jobs",
+            "0",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "--jobs must be at least one" in result.stderr
 
 
 def _namespace(tmp_path: Path, case_timeout: int):

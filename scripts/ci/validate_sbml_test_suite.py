@@ -2475,14 +2475,14 @@ def _run_forked_cases(
     return records
 
 
-def _jobs_advisory(jobs: int) -> str | None:
+def _jobs_advisory(jobs: int, cpu_count: int) -> str | None:
     """Return a warning when the worker count oversubscribes the machine."""
 
-    cpu_count = os.cpu_count() or 1
     if jobs > cpu_count:
         return (
             f"--jobs {jobs} exceeds the {cpu_count} CPUs available; the gate will "
-            "oversubscribe the machine and slow down every other job"
+            "oversubscribe the machine and slow down every other job, so it is "
+            f"using {cpu_count} workers"
         )
     if jobs > max(1, cpu_count // 2):
         return (
@@ -2694,7 +2694,14 @@ def main() -> int:
         "--lock-file",
         type=Path,
         default=DEFAULT_VERIFICATION_LOCK,
-        help="shared full-suite verification slot file",
+        help=(
+            "shared full-suite verification slot file; the default is "
+            "<tempdir>/bng3-sbml-suite-verification.lock, which is machine-wide "
+            "on Linux and per-user on macOS. Point this at another shared lock "
+            "file to interoperate with another runner: the slot is an exclusive "
+            "fcntl.flock, so two runners that lock the same file exclude each "
+            "other"
+        ),
     )
     parser.add_argument(
         "--no-lock",
@@ -2716,6 +2723,8 @@ def main() -> int:
     parser.add_argument("--simulation-rtol", type=float, default=1e-7)
     parser.add_argument("--simulation-atol", type=float, default=1e-12)
     args = parser.parse_args()
+    if args.jobs < 1:
+        raise SystemExit("--jobs must be at least one")
 
     try:
         suite_info = _validate_suite_checkout(args.suite_dir, args.lock)
@@ -2801,11 +2810,13 @@ def main() -> int:
 
     isolation_mode = "none"
     if args.isolate_cases and not args.worker:
-        if args.jobs < 1:
-            raise SystemExit("--jobs must be at least one")
-        advisory = _jobs_advisory(args.jobs)
+        cpu_count = os.cpu_count() or 1
+        advisory = _jobs_advisory(args.jobs, cpu_count)
         if advisory:
             print(f"warning: {advisory}", file=sys.stderr)
+        # A run never forks more children than the machine has CPUs: the
+        # workers are CPU bound, so extra workers only add contention.
+        args.jobs = min(args.jobs, cpu_count)
         isolation_mode = args.isolation_mode
         if isolation_mode == "fork" and not hasattr(os, "fork"):
             print(
