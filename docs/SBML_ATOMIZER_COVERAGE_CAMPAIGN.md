@@ -159,16 +159,39 @@ so a cluster table can no longer omit the cases it forgot.
    such model integrated a different trajectory.
 
 5. **SBML `delay` / `rateOf` semantics** (PR #324). MathML has no `delay` or
-   `rateOf` operator: SBML L3 Core §4.3.4 and §4.3.5 define both as
-   `csymbol` operators. The C++ SBML writer emitted `<ci>delay</ci>`, which
-   is invalid SBML. The writer now emits the `csymbol` form that libSBML
-   5.21.1 itself emits, the native reader reads it back, a delayed read of a
-   symbol with an `initialAssignment` uses the assignment evaluated at the
-   delayed time rather than the `t = 0` value (§4.3), and `rateOf` of a
-   reaction-local parameter is zero because the local parameter shadows the
-   global one (§4.3.5). A delay whose history the BNG3 engine cannot
-   reproduce stays explicitly unsupported, and the diagnostic now names that
-   boundary instead of blaming the SBML writer.
+   `rateOf` operator: SBML L3 Core §3.4.6 defines both as `csymbol`
+   operators, and §3.4.8 gives the rules for the values before `t = 0`. The
+   C++ SBML writer emitted `<ci>delay</ci>`, which is invalid SBML. The
+   writer now emits the `csymbol` form that libSBML 5.21.1 itself emits and
+   the native reader reads it back. That C++ work is real and is covered by
+   new C++ unit tests, but it is **not reachable through this campaign's
+   harness**: the refusal a model with an unlowerable `delay` receives is
+   emitted by the *Python Atomizer* (`writer.py`), whose wording names the
+   C++ writer, and the harness classifies such a model as `unsupported` at
+   the conversion stage, which returns before `cpp.io.write_sbml` is ever
+   called. The baseline's `delay`-related bucket of unsupported verdicts is
+   therefore untouched: those cases stay unsupported for the same reason.
+   The generated "unsupported verdicts, by owner" table above still lists
+   that bucket under the C++ writer, because that is how the Atomizer's
+   refusal names it; the refusal itself is the Atomizer's.
+
+   On the measured surface the change moved **7 official-reference cases
+   from `failed` to `passed`** — 00938 00940 00942 01460 01498 01534 01542 —
+   with the maximum absolute difference against the published
+   `-results.csv` dropping from 0.4–20 to ≤ 4.6e-7; **no conversion verdict
+   changed in either direction**; and 10 further cases changed only in their
+   diagnostic text and stayed `unsupported` (00985 01142 01410 01411 01412
+   01480 01481 01535 01539 01593), so no diagnostic was weakened. The 15
+   cases the change originally claimed were official-reference *failures*
+   in the baseline, not `unsupported` cases, and 8 of them are untouched:
+   00941 and 00943, where a `delay` of a parameter whose `initialAssignment`
+   is time-dependent is silently dropped (no diagnostic, wrong numbers);
+   01400, 01401, 01403, 01406 and 01409, which all fail at exactly one
+   sample, `t = 0`, with a maximum absolute difference of 0.5–1.5, because
+   the rule that "the `rateOf` value for any valid target in SBML for time
+   `t < 0` will always be zero" is not implemented; and 01419, whose BNGL is
+   byte-identical between the base and the branch and which was fixed by
+   the sibling PR #323.
 
 5. **MathML built-ins folded in the static evaluator, and a signed
    stoichiometry carried** (PR #335). The static evaluator now folds the
