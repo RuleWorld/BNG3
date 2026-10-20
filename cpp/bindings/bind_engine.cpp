@@ -707,6 +707,25 @@ void bind_engine(py::module_& m) {
         return d;
     }, py::arg("model"), py::arg("network"),
        "Whether this generated network can be faithfully lowered to BNGsim");
+    m.def("finite_backend_decision", [](Model& model, GeneratedNetwork& network,
+                                        const std::string& requested,
+                                        const std::string& method) {
+        py::dict d;
+        auto decision = resolveFiniteBackend(
+            finiteBackendFromString(requested), method, model, network);
+        d["backend"] = py::cast(finiteBackendToString(decision.backend));
+        d["route"] = decision.route;
+        d["reason"] = decision.reason;
+        d["method"] = decision.method;
+        d["bngsim_available"] = decision.bngsimAvailable;
+        d["bngsim_lowering_checked"] = decision.bngsimLoweringChecked;
+        d["bngsim_lowerable"] = decision.bngsimLowerable;
+        d["bngsim_version"] = decision.bngsimVersion;
+        d["blockers"] = decision.blockers;
+        return d;
+    }, py::arg("model"), py::arg("network"), py::arg("requested") = "auto",
+       py::arg("method") = "ode",
+       "Named finite-backend routing decision: route, reason and the facts behind it");
     m.def("simulate_ode_bngsim", [](Model& model, GeneratedNetwork& network,
                                      double t_end, int n_steps, double t_start,
                                      double rtol, double atol, const std::string& method,

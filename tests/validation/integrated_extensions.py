@@ -14,6 +14,7 @@ from . import (
     bngir_adversarial,
     bngir_format_contracts,
     bngir_reconstruction_contracts,
+    bngsim_boundary,
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
@@ -29,12 +30,15 @@ OPERATIONS = (
     "graph-identity",
     "bngir-adversarial",
     "quantity-laws",
+    "bngsim-boundary",
 )
 
 
 def check_ids(operation, case=None, *, full=False):
     if operation == "quantity-laws":
         return integrated_marginals.source_law_check_ids(full=full)
+    if operation == "bngsim-boundary":
+        return bngsim_boundary.check_ids()
     if operation == "boundaries":
         return integrated_boundaries.expected_check_ids()
     if operation == "protocol":
@@ -66,11 +70,14 @@ def expected_ids(
     include_graph_identity=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_bngsim_boundary=True,
     full=False,
 ):
     ids = []
     if include_quantity_laws:
         ids.extend(["campaign:quantity-laws", *check_ids("quantity-laws", full=full)])
+    if include_bngsim_boundary:
+        ids.extend(["campaign:bngsim-boundary", *check_ids("bngsim-boundary")])
     if include_boundaries:
         ids.extend(["campaign:boundaries", *check_ids("boundaries")])
     if include_graph_identity:
@@ -90,6 +97,8 @@ def run_worker(operation, args):
         return integrated_marginals.run_source_laws(
             Path.cwd(), args.native_nfsim, full=args.full, runs=args.ensemble_runs
         )
+    if operation == "bngsim-boundary":
+        return bngsim_boundary.run(Path.cwd(), runs=args.ensemble_runs)
     if operation == "boundaries":
         return integrated_boundaries.run(Path.cwd())
     if operation == "graph-identity":

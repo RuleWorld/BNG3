@@ -737,6 +737,7 @@ def main():
             "graph-identity",
             "bngir-adversarial",
             "quantity-laws",
+            "bngsim-boundary",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -829,6 +830,7 @@ def main():
         "graph-identity",
         "bngir-adversarial",
         "quantity-laws",
+        "bngsim-boundary",
     ):
         from tests.validation.integrated_extensions import run_worker
 

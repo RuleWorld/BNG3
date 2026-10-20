@@ -513,6 +513,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
+    from .bngsim_boundary import check_ids as boundary_check_ids
 
     check_ids = [
         *adversarial_check_ids(),
@@ -534,6 +535,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_graph_identity=False,
                     include_bngir_adversarial=False,
                     include_quantity_laws=False,
+                    include_bngsim_boundary=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -567,6 +569,16 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                 stage_timeout_seconds=900,
             ),
             limits="Finite prelowered physical-law and bare BNGL count controls; no unit-annotation ingestion or joint-law qualification.",
+        )
+    )
+    families.append(
+        dict(
+            id="bngsim-boundary",
+            case_ids=[],
+            check_ids=boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(boundary_check_ids()), stage_timeout_seconds=300),
+            limits="Generated finite-network models with an independent closed-form law; the BNGsim route itself needs a build with the adapter linked.",
         )
     )
     selected = []
@@ -604,11 +616,15 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             else (
                 ["--quantity-laws-only"]
                 if family["id"] == "quantity-source-laws"
-                else [
-                    argument
-                    for case_id in family["case_ids"]
-                    for argument in ("--case", case_id)
-                ]
+                else (
+                    ["--bngsim-boundary-only"]
+                    if family["id"] == "bngsim-boundary"
+                    else [
+                        argument
+                        for case_id in family["case_ids"]
+                        for argument in ("--case", case_id)
+                    ]
+                )
             )
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)

@@ -91,6 +91,7 @@ def annotate_acceptance_evidence(rows):
             }
         )
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
+    consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -110,6 +111,7 @@ def expected_contract_ids(
     include_graph_identity=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_bngsim_boundary=True,
     full=False,
 ):
     return [
@@ -156,6 +158,7 @@ def expected_contract_ids(
         include_graph_identity=include_graph_identity,
         include_bngir_adversarial=include_bngir_adversarial,
         include_quantity_laws=include_quantity_laws,
+        include_bngsim_boundary=include_bngsim_boundary,
         full=full,
     )
 
@@ -939,6 +942,7 @@ def main(argv=None):
     parser.add_argument("--graph-identity-only", action="store_true")
     parser.add_argument("--bngir-adversarial-only", action="store_true")
     parser.add_argument("--quantity-laws-only", action="store_true")
+    parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -948,6 +952,7 @@ def main(argv=None):
                 args.graph_identity_only,
                 args.bngir_adversarial_only,
                 args.quantity_laws_only,
+                args.bngsim_boundary_only,
             )
         )
         > 1
@@ -973,6 +978,7 @@ def main(argv=None):
         or args.graph_identity_only
         or args.bngir_adversarial_only
         or args.quantity_laws_only
+        or args.bngsim_boundary_only
     ):
         selected = []
     for name in (
@@ -1004,18 +1010,32 @@ def main(argv=None):
             args.graph_identity_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
+            or args.bngsim_boundary_only
         ),
         include_graph_identity=not (
             args.boundaries_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
+            or args.bngsim_boundary_only
         ),
         include_bngir_adversarial=not (
-            args.boundaries_only or args.graph_identity_only or args.quantity_laws_only
+            args.boundaries_only
+            or args.graph_identity_only
+            or args.quantity_laws_only
+            or args.bngsim_boundary_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.bngsim_boundary_only
+    )
+    qualification_selection["include_bngsim_boundary"] = not (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
     )
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
@@ -1034,6 +1054,8 @@ def main(argv=None):
             )
         if qualification_selection["include_quantity_laws"]:
             integrated_extensions.invoke("quantity-laws", args, rows, env, run_stage)
+        if qualification_selection["include_bngsim_boundary"]:
+            integrated_extensions.invoke("bngsim-boundary", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1079,7 +1101,11 @@ def main(argv=None):
             + (
                 ["--quantity-laws-only"]
                 if row.get("qualification") == "quantity-laws"
-                else []
+                else (
+                    ["--bngsim-boundary-only"]
+                    if row.get("qualification") == "bngsim-boundary"
+                    else []
+                )
             )
             + (
                 ["--boundaries-only"]
@@ -1138,6 +1164,10 @@ def main(argv=None):
                     "tests/validation/bngir_reconstruction_contracts.py",
                 ],
                 "graph-identity": "tests/validation/graph_identity.py",
+                "bngsim-boundary": [
+                    "tests/validation/bngsim_boundary.py",
+                    "cpp/engine/FiniteBackend.cpp",
+                ],
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1165,6 +1195,8 @@ def main(argv=None):
                 issues = [143, 146, 151, 167]
             elif stage == "graph-identity":
                 issues = [142]
+            elif stage == "bngsim-boundary":
+                issues = [144]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -1240,6 +1272,7 @@ def main(argv=None):
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
+                ROOT / "tests/validation/bngsim_boundary.py",
                 ROOT / "tests/validation/compare.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",

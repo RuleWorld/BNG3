@@ -93,6 +93,84 @@ def test_auto_backend_is_native_during_migration():
         os.unlink(path)
 
 
+def test_every_finite_route_records_a_named_decision():
+    """A native route is never implicit: the route and its reason are kept."""
+    path = _tmp_bngl(SIMPLE_BNGL)
+    try:
+        m = bionetgen.load(path)
+        for method, kwargs in (
+            ("ode", {}),
+            ("ssa", {"seed": 3}),
+            ("pla", {}),
+            ("psa", {}),
+        ):
+            r = m.simulate(method=method, t_end=1, n_steps=2, **kwargs)
+            assert r.backend in {"native", "bngsim"}
+            assert r.backend_route, f"{method}: no routing route was recorded"
+            assert r.backend_reason, f"{method}: no routing reason was recorded"
+            if r.backend == "native":
+                assert r.backend_route != "bngsim-explicit"
+    finally:
+        os.unlink(path)
+
+
+def test_explicit_native_route_is_named():
+    path = _tmp_bngl(SIMPLE_BNGL)
+    try:
+        m = bionetgen.load(path)
+        r = m.simulate(method="ode", t_end=1, n_steps=2, backend="native")
+        assert r.backend == "native"
+        assert r.backend_route == "native-explicit"
+        assert "explicitly" in r.backend_reason
+    finally:
+        os.unlink(path)
+
+
+def test_unavailable_bngsim_route_is_named_and_never_silent():
+    path = _tmp_bngl(SIMPLE_BNGL)
+    try:
+        m = bionetgen.load(path)
+        m.generate_network()
+        import bionetgen._bionetgen_cpp as _cpp
+
+        decision = _cpp.finite_backend_decision(
+            m._model, m._network, requested="bngsim", method="ode"
+        )
+        assert decision["route"] in {
+            "bngsim-explicit",
+            "native-fallback:bngsim-unavailable",
+            "native-fallback:unsupported-semantics",
+        }
+        assert decision["reason"]
+        if not _cpp.bngsim_available():
+            assert decision["route"] == "native-fallback:bngsim-unavailable"
+            assert decision["bngsim_lowering_checked"] is True
+            assert decision["bngsim_lowerable"] is True
+            r = m.simulate(method="ode", t_end=1, n_steps=2)
+            assert r.backend_route == decision["route"]
+            assert r.backend_reason == decision["reason"]
+    finally:
+        os.unlink(path)
+
+
+def test_unsupported_model_records_the_semantic_fallback_reason():
+    path = _tmp_bngl(COMPARTMENT_BNGL)
+    try:
+        m = bionetgen.load(path)
+        m.generate_network()
+        import bionetgen._bionetgen_cpp as _cpp
+
+        decision = _cpp.finite_backend_decision(
+            m._model, m._network, requested="bngsim", method="ode"
+        )
+        assert decision["route"] == "native-fallback:unsupported-semantics"
+        assert decision["bngsim_lowerable"] is False
+        assert any("compartments" in blocker for blocker in decision["blockers"])
+        assert "compartments" in decision["reason"]
+    finally:
+        os.unlink(path)
+
+
 def test_explicit_bngsim_fails_closed_when_unavailable_or_unsupported():
     path = _tmp_bngl(SIMPLE_BNGL)
     try:

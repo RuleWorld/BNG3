@@ -317,6 +317,16 @@ jobs:
             -q -ra \
             --junitxml="$RUNNER_TEMP/issue182-required-parity.xml"
 
+      - name: Qualify the BNGsim adapter boundary against an independent law
+        id: bngsim_boundary_contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_bngsim_boundary.py \
+            -q -ra \
+            --junitxml="$RUNNER_TEMP/bngsim-boundary-contract.xml"
+
       - name: Run live pinned 200-member SSA ensemble parity (scheduled)
         id: ssa_ensemble_parity
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
