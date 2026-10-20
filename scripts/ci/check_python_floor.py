@@ -18,10 +18,16 @@ re-implementation of the matrix:
 * annotations are only treated as runtime-evaluated when the module does not
   defer them with ``from __future__ import annotations``.
 
+A file that an interpreter cannot parse is not compatible with the floor
+either: it needs an interpreter newer than the one that refused it.  The
+verdict is the same on every host, whether the host reads the file or not;
+only the precision differs, because a host that cannot read the file cannot
+name the release that provides the construct.
+
 A static check cannot prove runtime behaviour, so the script states what it
 did not check instead of claiming success.  When it cannot establish
-compatibility at all -- an unreadable file, a file it cannot parse, a missing
-``requires-python`` -- it fails rather than passes.
+compatibility at all -- an unreadable file, a missing ``requires-python``, a
+floor the CI matrix does not exercise -- it fails rather than passes.
 
 Usage::
 
@@ -41,7 +47,7 @@ import sys
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -59,6 +65,10 @@ WORKFLOW_MATRIX_RE = re.compile(r"python-version:\s*\[([^\]]*)\]")
 SYNTAX_VERSION_RE = re.compile(r"only supported in Python (\d+)\.(\d+) and greater")
 
 Version = Tuple[int, int]
+
+#: The parser the check uses.  It takes the source, the file name and an
+#: optional feature version, like ``ast.parse``.
+Parser = Callable[..., ast.AST]
 
 #: Syntax constructs and the first CPython release that accepts them.  The
 #: node names are looked up on ``ast`` at run time because the script itself
@@ -172,6 +182,10 @@ LIMITATIONS = (
     "Only the constructs listed in this script's tables are covered. A "
     "construct added to a later revision of the tables is not detected by an "
     "earlier run of the script.",
+    "When the interpreter running the check cannot read a file, the report "
+    "names that interpreter as the lower bound of what the file needs, not "
+    "the exact release that provides the construct: only an interpreter that "
+    "can read the file can name it.",
 )
 
 
@@ -181,24 +195,52 @@ class CannotEstablish(Exception):
 
 @dataclass(frozen=True)
 class Finding:
-    """One construct that the floor interpreter does not provide."""
+    """One construct that the floor interpreter does not provide.
+
+    ``minimum`` is the first release that provides the construct, when that
+    release is known.  ``rejected_by`` is the interpreter whose own parser
+    refused the file, when the construct could not be identified: a file that
+    an interpreter cannot parse is not floor-compatible either, and the
+    interpreter that refused it is the lower bound of what the file needs.
+    """
 
     path: str
     line: int
     column: int
     feature: str
-    minimum: Version
+    minimum: Optional[Version]
     detail: str
+    rejected_by: Optional[Version] = None
+    rejected_by_role: str = ""
 
     def render(self) -> str:
-        return (
-            f"{self.path}:{self.line}:{self.column}: requires Python >= "
-            f"{self.minimum[0]}.{self.minimum[1]}: {self.feature} ({self.detail})"
-        )
+        location = f"{self.path}:{self.line}:{self.column}: "
+        if self.minimum is not None:
+            return (
+                f"{location}requires Python >= {format_version(self.minimum)}: "
+                f"{self.feature} ({self.detail})"
+            )
+        if self.rejected_by is not None:
+            return (
+                f"{location}does not parse under Python "
+                f"{format_version(self.rejected_by)} (the {self.rejected_by_role} "
+                f"interpreter): the file requires a newer interpreter "
+                f"({self.detail})"
+            )
+        return f"{location}{self.feature} ({self.detail})"
+
+    def requires_newer_interpreter(self) -> bool:
+        """Return True when the file needs an interpreter newer than the floor."""
+        return self.minimum is not None or self.rejected_by is not None
 
 
 def format_version(version: Version) -> str:
     return f"{version[0]}.{version[1]}"
+
+
+def host_version() -> Version:
+    """Return the version of the interpreter that runs the check."""
+    return sys.version_info[0], sys.version_info[1]
 
 
 def parse_version(text: str) -> Version:
@@ -457,17 +499,70 @@ def _fstring_quote(source: str, node: ast.JoinedStr) -> str:
     return quote
 
 
+def _syntax_finding(
+    relative: str,
+    error: SyntaxError,
+    rejecting: Version,
+    role: str,
+    floor: Version,
+) -> Finding:
+    """Classify a syntax error raised while parsing a changed file.
+
+    A file that an interpreter cannot parse is not compatible with the floor:
+    it needs an interpreter newer than the one that refused it.  When the
+    error names the release that provides the construct, that release is
+    reported exactly; otherwise the interpreter that refused the file is
+    reported, and with it the lower bound of what the file needs.
+    """
+    minimum = _required_version(error)
+    if minimum is not None and minimum > floor:
+        return Finding(
+            path=relative,
+            line=error.lineno or 0,
+            column=error.offset or 0,
+            feature=f"syntax that needs Python {format_version(minimum)}",
+            minimum=minimum,
+            detail=error.msg or str(error),
+        )
+    return Finding(
+        path=relative,
+        line=error.lineno or 0,
+        column=error.offset or 0,
+        feature=f"syntax that the {role} interpreter cannot parse",
+        minimum=None,
+        detail=error.msg or str(error),
+        rejected_by=rejecting,
+        rejected_by_role=role,
+    )
+
+
 def analyse_source(
     path: Path,
     source: str,
     floor: Version,
     relative_to: Optional[Path] = None,
+    host: Optional[Version] = None,
+    parser: Optional[Parser] = None,
 ) -> List[Finding]:
-    """Return the constructs of ``source`` that the floor does not provide."""
+    """Return the constructs of ``source`` that the floor does not provide.
+
+    ``host`` is the interpreter whose parser is used, and defaults to the one
+    running the check.  ``parser`` replaces that parser, which lets a caller
+    exercise the classification of a file that this interpreter cannot read.
+    """
     try:
         relative = str(path.relative_to(relative_to)) if relative_to else str(path)
     except ValueError:
         relative = str(path)
+
+    host = host if host is not None else host_version()
+    if host < floor:
+        raise CannotEstablish(
+            f"{relative}: the running interpreter {format_version(host)} is "
+            f"older than the floor {format_version(floor)}; its parser cannot "
+            "decide the floor's grammar"
+        )
+    parse = parser if parser is not None else _parse
 
     findings: List[Finding] = []
 
@@ -494,24 +589,13 @@ def analyse_source(
         )
 
     try:
-        tree = _parse(source, str(path))
+        tree = parse(source, str(path))
     except SyntaxError as error:
-        minimum = _required_version(error)
-        if minimum is None:
-            raise CannotEstablish(
-                f"{relative}: cannot parse the file: {error}"
-            ) from error
-        if minimum > floor:
-            findings.append(
-                Finding(
-                    path=relative,
-                    line=error.lineno or 0,
-                    column=error.offset or 0,
-                    feature=f"syntax that needs Python {format_version(minimum)}",
-                    minimum=minimum,
-                    detail=error.msg or str(error),
-                )
-            )
+        # The interpreter cannot read the file at all.  That is evidence that
+        # the file needs a newer interpreter, not that the question is
+        # undecidable: the floor is never newer than the interpreter that
+        # refused the file.
+        findings.append(_syntax_finding(relative, error, host, "host", floor))
         return findings
 
     nodes = list(ast.walk(tree))
@@ -531,18 +615,12 @@ def analyse_source(
                 named_syntax += 1
 
     try:
-        _parse(source, str(path), feature_version=floor)
+        parse(source, str(path), feature_version=floor)
     except SyntaxError as error:
-        minimum = _required_version(error) or floor
+        # The floor's own grammar refuses the file, so the file needs an
+        # interpreter newer than the floor.
         if named_syntax == 0:
-            add(
-                tree,
-                f"syntax not available on Python {format_version(floor)}",
-                minimum,
-                error.msg or str(error),
-                line=error.lineno or 0,
-                column=error.offset or 0,
-            )
+            findings.append(_syntax_finding(relative, error, floor, "floor", floor))
 
     bound = _bound_names(nodes)
     loaded = {
@@ -661,31 +739,35 @@ def analyse_source(
                 "the method does not exist on the floor",
             )
 
-    # PEP 701 f-strings.  The floor grammar accepts them, so the feature
-    # version of the parser does not report them; the relaxed f-string rules
-    # of Python 3.12 are detected from the source instead.
-    for node in nodes:
-        if not isinstance(node, ast.JoinedStr):
-            continue
-        quote = _fstring_quote(source, node)
-        for value in node.values:
-            if not isinstance(value, ast.FormattedValue):
+    # PEP 701 f-strings.  Before Python 3.12 the f-string rules are strict
+    # enough that the interpreter cannot read such a file at all, so the
+    # parse failure above already reports it, and the positions of the parts
+    # of an f-string are not reported exactly.  The textual rule is therefore
+    # used only on the interpreters that can read the file and that report
+    # those positions exactly.
+    if host >= (3, 12):
+        for node in nodes:
+            if not isinstance(node, ast.JoinedStr):
                 continue
-            inner = ast.get_source_segment(source, value.value) or ""
-            if quote and quote in inner:
-                add(
-                    value,
-                    "PEP 701 nested f-string",
-                    (3, 12),
-                    "a replacement field reuses the quote of its f-string",
-                )
-            elif "\\" in inner:
-                add(
-                    value,
-                    "PEP 701 f-string with a backslash",
-                    (3, 12),
-                    "a backslash in a replacement field needs Python 3.12",
-                )
+            quote = _fstring_quote(source, node)
+            for value in node.values:
+                if not isinstance(value, ast.FormattedValue):
+                    continue
+                inner = ast.get_source_segment(source, value.value) or ""
+                if quote and quote in inner:
+                    add(
+                        value,
+                        "PEP 701 nested f-string",
+                        (3, 12),
+                        "a replacement field reuses the quote of its f-string",
+                    )
+                elif "\\" in inner:
+                    add(
+                        value,
+                        "PEP 701 f-string with a backslash",
+                        (3, 12),
+                        "a backslash in a replacement field needs Python 3.12",
+                    )
 
     # PEP 604 unions and PEP 585 builtin generics, but only where the
     # annotation is evaluated at runtime.
@@ -805,7 +887,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             "line": finding.line,
                             "column": finding.column,
                             "feature": finding.feature,
-                            "minimum": format_version(finding.minimum),
+                            "minimum": (
+                                format_version(finding.minimum)
+                                if finding.minimum is not None
+                                else None
+                            ),
+                            "rejected_by": (
+                                format_version(finding.rejected_by)
+                                if finding.rejected_by is not None
+                                else None
+                            ),
+                            "rejected_by_role": finding.rejected_by_role,
                             "detail": finding.detail,
                         }
                         for finding in findings

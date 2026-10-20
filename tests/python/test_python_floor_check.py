@@ -6,10 +6,17 @@ only catch a construct that the floor interpreter rejects.  This test keeps
 the local check honest -- it has to keep detecting the constructs it claims to
 detect, it has to keep the repository itself within the floor, and it has to
 refuse to pass when it cannot establish compatibility.
+
+The verdict for a construct the floor does not provide is the same on every
+host: the file needs an interpreter newer than the floor.  Only the precision
+differs, because an interpreter that cannot read the file cannot name the
+release that provides the construct.  The tests below therefore assert the
+verdict everywhere and the exact release only where the host can name it.
 """
 
 from __future__ import annotations
 
+import ast
 import sys
 from pathlib import Path
 
@@ -29,6 +36,27 @@ from scripts.ci.check_python_floor import (
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FLOOR = (3, 9)
 
+#: The version of the interpreter running the test.
+HOST = sys.version_info[0], sys.version_info[1]
+
+#: A nested f-string.  Python 3.12 relaxed the f-string rules, so an
+#: interpreter older than 3.12 cannot even tokenise it.
+PEP701_SOURCE = 'def f(data):\n    return f"{data["key"]}"\n'
+
+#: A ``match`` statement, which needs Python 3.10.
+MATCH_SOURCE = (
+    "def f(x):\n    match x:\n        case 1:\n            return 1\n    return 0\n"
+)
+
+#: An exception group handler, which needs Python 3.11.
+EXCEPTION_GROUP_SOURCE = (
+    "def f():\n"
+    "    try:\n"
+    "        pass\n"
+    "    except* ValueError:\n"
+    "        pass\n"
+)
+
 
 def _findings(source, floor=FLOOR):
     """Return the findings of one synthetic file."""
@@ -37,6 +65,15 @@ def _findings(source, floor=FLOOR):
 
 def _features(findings):
     return " ".join(finding.feature for finding in findings)
+
+
+def _host_can_parse(source):
+    """Return True when the interpreter running the test can read the source."""
+    try:
+        ast.parse(source)
+    except SyntaxError:
+        return False
+    return True
 
 
 def test_the_declared_floor_is_the_oldest_interpreter_of_the_ci_matrix():
@@ -70,38 +107,75 @@ def test_the_checker_and_its_own_test_stay_inside_the_floor():
         assert findings == [], [finding.render() for finding in findings]
 
 
-def test_a_match_statement_is_reported():
-    source = (
-        "def f(x):\n    match x:\n        case 1:\n            return 1\n    return 0\n"
+def test_a_file_the_host_cannot_parse_needs_a_newer_interpreter():
+    """A file the interpreter cannot read is not floor-compatible.
+
+    This is the regression test for the classification of a parse failure.
+    It does not depend on the host: the parser is replaced by one that
+    refuses the file, exactly as an interpreter older than the construct
+    does.
+    """
+
+    def refusing_parser(source, filename, feature_version=None):
+        raise SyntaxError("f-string: unmatched '['")
+
+    findings = analyse_source(
+        Path("sample.py"),
+        PEP701_SOURCE,
+        FLOOR,
+        host=(3, 10),
+        parser=refusing_parser,
     )
-    try:
-        findings = _findings(source)
-    except CannotEstablish:
-        # An interpreter that cannot parse the construct at all cannot
-        # establish compatibility either, and must say so instead of passing.
-        assert sys.version_info < (3, 10)
-        return
+    assert findings, "the parse failure was not reported"
+    assert all(finding.requires_newer_interpreter() for finding in findings)
+    assert findings[0].rejected_by == (3, 10)
+    assert findings[0].rejected_by_role == "host"
+    assert "3.10" in findings[0].render()
+    assert "newer interpreter" in findings[0].render()
+
+
+def test_a_file_the_floor_cannot_parse_needs_a_newer_interpreter():
+    """A file the floor's grammar refuses is reported against the floor."""
+
+    def floor_refusing_parser(source, filename, feature_version=None):
+        if feature_version is None:
+            return ast.parse(source, filename=filename)
+        raise SyntaxError("invalid syntax")
+
+    findings = analyse_source(
+        Path("sample.py"),
+        "x = 1\n",
+        FLOOR,
+        host=(3, 14),
+        parser=floor_refusing_parser,
+    )
+    assert findings, "the parse failure was not reported"
+    assert all(finding.requires_newer_interpreter() for finding in findings)
+    assert findings[0].rejected_by == FLOOR
+    assert findings[0].rejected_by_role == "floor"
+    assert format_version(FLOOR) in findings[0].render()
+
+
+def test_a_match_statement_is_reported():
+    """A ``match`` statement needs a newer interpreter, on every host."""
+    findings = _findings(MATCH_SOURCE)
     assert findings, "the match statement was not reported"
-    assert all(finding.minimum >= (3, 10) for finding in findings)
+    assert all(finding.requires_newer_interpreter() for finding in findings)
+    if _host_can_parse(MATCH_SOURCE):
+        assert all(finding.minimum == (3, 10) for finding in findings)
+    else:
+        assert all(finding.rejected_by == HOST for finding in findings)
 
 
 def test_an_exception_group_handler_is_reported():
-    source = (
-        "def f():\n"
-        "    try:\n"
-        "        pass\n"
-        "    except* ValueError:\n"
-        "        pass\n"
-    )
-    try:
-        findings = _findings(source)
-    except CannotEstablish:
-        # Python 3.9 has no ``except*`` at all, so the checker refuses to
-        # establish compatibility rather than reporting success.
-        assert sys.version_info < (3, 11)
-        return
+    """An exception group needs a newer interpreter, on every host."""
+    findings = _findings(EXCEPTION_GROUP_SOURCE)
     assert findings, "the exception group handler was not reported"
-    assert all(finding.minimum >= (3, 11) for finding in findings)
+    assert all(finding.requires_newer_interpreter() for finding in findings)
+    if _host_can_parse(EXCEPTION_GROUP_SOURCE):
+        assert all(finding.minimum == (3, 11) for finding in findings)
+    else:
+        assert all(finding.rejected_by == HOST for finding in findings)
 
 
 def test_a_runtime_pep604_union_is_reported():
@@ -135,15 +209,38 @@ def test_a_pep585_builtin_generic_is_reported_below_its_release():
 
 
 def test_a_pep701_nested_fstring_is_reported():
-    findings = _findings('def f(data):\n    return f"{data["key"]}"\n')
-    assert "PEP 701" in _features(findings)
-    assert all(finding.minimum >= (3, 12) for finding in findings)
+    """A nested f-string needs a newer interpreter, on every host.
+
+    Python 3.12 relaxed the f-string rules.  An interpreter older than 3.12
+    cannot tokenise the file at all, so the report names that interpreter
+    instead of the release; the verdict is the same either way.
+    """
+    findings = _findings(PEP701_SOURCE)
+    assert findings, "the nested f-string was not reported"
+    assert all(finding.requires_newer_interpreter() for finding in findings)
+    if _host_can_parse(PEP701_SOURCE):
+        assert all(finding.minimum == (3, 12) for finding in findings)
+    else:
+        assert all(finding.rejected_by == HOST for finding in findings)
 
 
 def test_an_ordinary_fstring_is_not_reported():
     findings = _findings(
         "def f(data):\n    return f\"{data['key']} and {len(data)}\"\n"
     )
+    assert findings == [], [finding.render() for finding in findings]
+
+
+def test_an_escaped_quote_in_an_fstring_literal_is_not_reported():
+    """The literal part of an f-string is not a replacement field.
+
+    An escaped quote in the literal part of an f-string is valid on every
+    supported interpreter.  Only Python 3.12 and later report the positions
+    inside an f-string exactly, so the textual rule must not be used on the
+    interpreters that do not.
+    """
+    source = "def f(path):\n" '    return f"""readFile({{file=>\\"{path}\\"}})"""\n'
+    findings = _findings(source)
     assert findings == [], [finding.render() for finding in findings]
 
 
@@ -185,9 +282,17 @@ def test_zoneinfo_is_available_on_the_floor_but_not_below_it():
     assert "zoneinfo" in _features(_findings(source, floor=(3, 8)))
 
 
-def test_a_file_that_cannot_be_parsed_is_not_reported_as_compatible():
+def test_a_file_with_a_syntax_error_is_not_reported_as_compatible():
+    """A file the interpreter cannot read is not floor-compatible."""
+    findings = _findings("def f(:\n")
+    assert findings, "the syntax error was not reported"
+    assert all(finding.requires_newer_interpreter() for finding in findings)
+
+
+def test_a_host_older_than_the_floor_cannot_establish_compatibility():
+    """An interpreter older than the floor cannot judge the floor."""
     with pytest.raises(CannotEstablish):
-        _findings("def f(:\n")
+        analyse_source(Path("sample.py"), "x = 1\n", FLOOR, host=(3, 8))
 
 
 def test_an_unreadable_file_is_not_reported_as_compatible(tmp_path):
