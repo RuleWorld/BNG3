@@ -1186,20 +1186,32 @@ _RATE_OF_CALL = re.compile(
     re.IGNORECASE,
 )
 
+# A ``rateOf`` that has been expanded into its derivative still has to be
+# recognised when the expansion is read through a ``delay``: SBML Level 3
+# Version 2 Core Sec. 3.4.8 ("Initial conditions and special considerations")
+# fixes the ``rateOf`` of any valid target at zero for ``t < 0``, so a delayed
+# read of a rate observes zero while the delayed time is still before the
+# start of the simulation.  The marker keeps the expansion recognisable for
+# that step and is removed once the delayed reads have been lowered.
+_RATE_OF_MARKER = "__sbml_rate_of__"
 
-def _rate_of_before_start_guard(body: str) -> str:
-    """Return ``body`` guarded to be zero before the simulation starts.
 
-    SBML Level 3 Version 2 Core Sec. 3.4.8 ("Initial conditions and special
-    considerations") fixes the ``rateOf`` of any valid target at zero for
-    ``t < 0``.  A delayed read of a rate therefore observes zero while the
-    delayed time is still before the start of the simulation.
-    """
+def _mark_rate_of(body: str) -> str:
+    """Mark an expanded ``rateOf`` so a delayed read can recognise it."""
 
-    text = str(body or "").strip()
-    if not text or text == "0":
-        return text
-    return f"if(time < 0, 0, {text})"
+    return f"{_RATE_OF_MARKER}{body}"
+
+
+def _marked_rate_of_body(expression: str) -> Optional[str]:
+    """Return the body of a marked ``rateOf`` expression, or ``None``."""
+
+    text = str(expression or "").strip()
+    if not text.startswith(_RATE_OF_MARKER):
+        return None
+    body = text[len(_RATE_OF_MARKER) :].strip()
+    if not (body.startswith("(") and body.endswith(")")):
+        return None
+    return body[1:-1]
 
 
 def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
@@ -1277,9 +1289,7 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
             replacement = rate_rules.get(key)
             if replacement is None or key in stack:
                 return match.group(0)
-            return _rate_of_before_start_guard(
-                f"({expand(replacement, (*stack, key))})"
-            )
+            return _mark_rate_of(f"({expand(replacement, (*stack, key))})")
 
         return _RATE_OF_CALL.sub(replace, source)
 
@@ -1648,7 +1658,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             )
             if replacement is None:
                 return match.group(0)
-            return _rate_of_before_start_guard(f"({replacement})")
+            return _mark_rate_of(f"({replacement})")
 
         return _RATE_OF_CALL.sub(substitute, str(expression or ""))
 
@@ -2688,9 +2698,15 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 )
                 and (is_static(second, extra_static) or nonnegative_time_delay)
             ):
+                # A delayed read of a rate observes zero while the delayed
+                # time is still before the start of the simulation.
+                rate_of_body = _marked_rate_of_body(first)
+                delayed_expression = rate_of_body if rate_of_body is not None else first
                 delayed_symbols = {
                     standardize_name(identifier)
-                    for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first)
+                    for identifier in re.findall(
+                        r"\b[A-Za-z_][A-Za-z0-9_]*\b", delayed_expression
+                    )
                 }
                 defer_affine_history = not lower_affine_history and bool(
                     delayed_symbols & (set(rate_rules) | set(reaction_rate_rules))
@@ -2698,7 +2714,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 expanded_first = (
                     None
                     if defer_affine_history
-                    else time_expression(first, extra_static=extra_static)
+                    else time_expression(delayed_expression, extra_static=extra_static)
                 )
                 if expanded_first is not None and re.search(
                     r"\btime\b", expanded_first, re.IGNORECASE
@@ -2711,7 +2727,11 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     )
                 if shifted is None:
                     identifiers = list(
-                        dict.fromkeys(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first))
+                        dict.fromkeys(
+                            re.findall(
+                                r"\b[A-Za-z_][A-Za-z0-9_]*\b", delayed_expression
+                            )
+                        )
                     )
                     dynamic = [
                         identifier
@@ -2727,11 +2747,11 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                         re.sub(
                             r"\btime\b",
                             f"(time - ({second}))",
-                            first,
+                            delayed_expression,
                             flags=re.IGNORECASE,
                         )
-                        if re.search(r"\btime\b", first, re.IGNORECASE)
-                        else first
+                        if re.search(r"\btime\b", delayed_expression, re.IGNORECASE)
+                        else delayed_expression
                     )
                     safe = bool(dynamic) and lower_affine_history
                     for identifier in identifiers:
@@ -2761,6 +2781,10 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                         r"[A-Za-z_][A-Za-z0-9_]*", first
                     ):
                         shifted = delayed_constant_rate(first, second)
+                if shifted is not None and rate_of_body is not None:
+                    # A rate is zero before the simulation starts, so a delayed
+                    # read of one is zero while the delayed time is negative.
+                    shifted = f"if(time < ({second}), 0, {shifted})"
             result.append(expression[cursor:start])
             result.append(
                 first
@@ -2807,30 +2831,45 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     local_values[str(name)] = float(value)
             except (TypeError, ValueError):
                 continue
+        updated = replace(
+            (
+                str(law.get("math", "") or "")
+                if isinstance(law, Mapping)
+                else str(getattr(law, "math", "") or "")
+            ),
+            local_names,
+            local_values,
+        ).replace(_RATE_OF_MARKER, "")
         if isinstance(law, Mapping):
-            law["math"] = replace(
-                str(law.get("math", "") or ""), local_names, local_values
-            )
-        elif hasattr(law, "math"):
-            law.math = replace(
-                str(getattr(law, "math", "") or ""), local_names, local_values
-            )
+            law["math"] = updated
+        if hasattr(law, "math"):
+            # A mapping-compatible kinetic law keeps the expression both as a
+            # mapping item and as an attribute; both have to agree.
+            law.math = updated
 
     for reaction in model.reactions.values():
         update_law(reaction.kinetic_law)
     for rule in model.rules:
-        rule.math = replace(rule.math)
+        rule.math = replace(rule.math).replace(_RATE_OF_MARKER, "")
     for function in model.function_definitions.values():
-        function.math = replace(function.math)
+        function.math = replace(function.math).replace(_RATE_OF_MARKER, "")
     for event in model.events:
-        event.trigger = replace(event.trigger, lower_affine_history=False)
-        event.delay = replace(event.delay) if event.delay else event.delay
-        event.priority = replace(event.priority) if event.priority else event.priority
+        event.trigger = replace(event.trigger).replace(_RATE_OF_MARKER, "")
+        event.delay = (
+            replace(event.delay).replace(_RATE_OF_MARKER, "")
+            if event.delay
+            else event.delay
+        )
+        event.priority = (
+            replace(event.priority).replace(_RATE_OF_MARKER, "")
+            if event.priority
+            else event.priority
+        )
         for assignment in event.assignments:
             if hasattr(assignment, "math"):
-                assignment.math = replace(assignment.math, lower_affine_history=False)
+                assignment.math = replace(assignment.math).replace(_RATE_OF_MARKER, "")
     for assignment in model.initial_assignments:
-        assignment.math = replace(assignment.math)
+        assignment.math = replace(assignment.math).replace(_RATE_OF_MARKER, "")
 
     expressions = [rule.math for rule in model.rules]
     expressions.extend(

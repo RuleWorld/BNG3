@@ -3725,11 +3725,15 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
     # (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of time"): a symbol
     # that no rule and no event assignment touches keeps the value it had at
     # ``t = 0`` for the whole run.  The pre-simulation history has already
-    # been folded into the delayed reads above, so the assignment may now be
-    # reduced to that value instead of being re-evaluated at every time.
+    # been folded into the delayed reads above, so an assignment that reads
+    # the simulation time may now be reduced to that value instead of being
+    # re-evaluated at every time.
     for assignment in model.initial_assignments:
         symbol = str(getattr(assignment, "symbol", "") or "")
+        expression = str(getattr(assignment, "math", "") or "")
         if not symbol or symbol in model.species:
+            continue
+        if not re.search(r"\btime\b", expression, re.IGNORECASE):
             continue
         if any(rule.variable == symbol for rule in model.rules):
             continue
