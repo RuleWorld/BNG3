@@ -124,8 +124,36 @@ def test_committed_manifest_records_a_reproducible_measurement():
     assert cases
     for identity, statuses in cases.items():
         assert re.fullmatch(r"(semantic|stochastic)/[0-9]{5}", identity), identity
-        assert tuple(statuses) == inventory.EXPECTATION_STAGES, identity
-        assert set(statuses.values()) <= set(inventory.EXPECTATION_STATUSES), identity
+        assert set(inventory.EXPECTATION_STAGES) <= set(statuses), identity
+        for stage in inventory.EXPECTATION_STAGES:
+            assert statuses[stage] in inventory.EXPECTATION_STATUSES, (
+                identity,
+                stage,
+            )
+
+
+@pytest.mark.smoke
+def test_an_unsupported_expectation_names_the_construct_it_waits_for():
+    """``passed`` is a result; ``unsupported`` is a gap with a named cause."""
+
+    manifest = _manifest()
+    assert "gap" in manifest["note"]
+    gaps = {
+        case: entry["gap"]
+        for case, entry in manifest["cases"].items()
+        if "gap" in entry
+    }
+    assert gaps
+    for case, entry in gaps.items():
+        assert set(entry) <= {"conversion", "official_reference"}, case
+        for stage, detail in entry.items():
+            assert detail["construct"], (case, stage)
+            assert isinstance(detail["causes"], list), (case, stage)
+    # Every case that is refused at the conversion stage names the construct.
+    for case, entry in manifest["cases"].items():
+        if entry["conversion"] == "unsupported":
+            assert "conversion" in gaps.get(case, {}), case
+            assert gaps[case]["conversion"]["construct"], case
 
 
 @pytest.mark.smoke
@@ -414,6 +442,40 @@ def _generated_region(document: str, name: str) -> str:
     start = document.index(begin) + len(begin)
     stop = document.index(end)
     return document[start:stop]
+
+
+def test_the_check_mode_reports_a_region_that_drifted_from_the_reports():
+    """The document's generated sections are checked, not trusted."""
+
+    from scripts.ci import sbml_campaign_tables as tables
+
+    regions = {name: f"generated {name}\n" for name in tables.REGIONS}
+    document = "".join(
+        f"{tables.BEGIN_MARKER_TEMPLATE.format(name=name)}\n\n"
+        f"{regions[name]}\n"
+        f"{tables.END_MARKER_TEMPLATE.format(name=name)}\n\n"
+        for name in tables.REGIONS
+    )
+    assert tables.check_regions(document, regions) == []
+
+    drifted = dict(regions)
+    drifted["sbml-campaign-current"] = "a hand-written number\n"
+    problems = tables.check_regions(document, drifted)
+    assert problems
+    assert any("sbml-campaign-current" in problem for problem in problems)
+    assert any("-generated sbml-campaign-current" in problem for problem in problems)
+
+
+def test_a_region_that_is_missing_is_an_error():
+    from scripts.ci import sbml_campaign_tables as tables
+
+    document = (
+        f"{tables.BEGIN_MARKER_TEMPLATE.format(name='sbml-campaign-current')}\n"
+        "x\n"
+        f"{tables.END_MARKER_TEMPLATE.format(name='sbml-campaign-current')}\n"
+    )
+    with pytest.raises(ValueError):
+        tables.read_region(document, "sbml-campaign-baseline")
 
 
 @pytest.mark.smoke

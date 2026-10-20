@@ -46,6 +46,18 @@ REGIONS: tuple[str, ...] = (
     "sbml-campaign-python",
 )
 
+# The region syntax a document uses to hand a section to this tool.  A
+# document marks a generated section with
+#
+#     <!-- BEGIN GENERATED: <name> -->
+#     ...generated markdown...
+#     <!-- END GENERATED: <name> -->
+#
+# and the tool rewrites everything between the two markers.  The markers are
+# plain HTML comments, so they render as nothing.
+BEGIN_MARKER_TEMPLATE = "<!-- BEGIN GENERATED: {name} -->"
+END_MARKER_TEMPLATE = "<!-- END GENERATED: {name} -->"
+
 # The order of the stages in every generated stage table.
 STAGE_LABELS: tuple[tuple[str, str], ...] = (
     ("conversion", "Conversion (SBML → BNGL)"),
@@ -263,7 +275,13 @@ def biomodels_table(report: dict[str, Any], path: Path) -> list[str]:
         f"{summary.get('declared_sbml_records', '?')} declare SBML; "
         f"{summary.get('archive_records', '?')} are archives."
     )
-    lines.extend(_report_caption(path, report, f"mode `{report.get('mode')}`"))
+    lines.extend(
+        _report_caption(
+            path,
+            report,
+            f"mode `{report.get('mode')}`",
+        )
+    )
     return lines
 
 
@@ -543,8 +561,8 @@ def _join(blocks: list[list[str]]) -> str:
 
 
 def replace_region(document: str, name: str, block: str) -> str:
-    begin = f"<!-- BEGIN GENERATED: {name} -->"
-    end = f"<!-- END GENERATED: {name} -->"
+    begin = BEGIN_MARKER_TEMPLATE.format(name=name)
+    end = END_MARKER_TEMPLATE.format(name=name)
     start = document.find(begin)
     stop = document.find(end)
     if start < 0 or stop < 0 or stop < start:
@@ -557,6 +575,55 @@ def replace_region(document: str, name: str, block: str) -> str:
     return f"{prefix}\n\n{block}\n{suffix}"
 
 
+def read_region(document: str, name: str) -> str:
+    """Return the markdown a generated region currently holds."""
+
+    begin = BEGIN_MARKER_TEMPLATE.format(name=name)
+    end = END_MARKER_TEMPLATE.format(name=name)
+    start = document.find(begin)
+    stop = document.find(end)
+    if start < 0 or stop < 0 or stop < start:
+        raise ValueError(
+            f"campaign document is missing the generated region {name} "
+            f"({begin} … {end})"
+        )
+    return document[start + len(begin) : stop].strip()
+
+
+def check_regions(document: str, regions: dict[str, str]) -> list[str]:
+    """Return one message per region whose content drifted from the reports."""
+
+    problems = []
+    for name in REGIONS:
+        expected = regions[name].strip()
+        actual = read_region(document, name)
+        if actual == expected:
+            continue
+        problems.append(
+            f"generated region {name} does not match the reports "
+            f"(document: {len(actual)} characters, reports: "
+            f"{len(expected)} characters)"
+        )
+        for line in _diff_lines(actual, expected):
+            problems.append(f"  {line}")
+    return problems
+
+
+def _diff_lines(actual: str, expected: str) -> list[str]:
+    import difflib
+
+    return list(
+        difflib.unified_diff(
+            actual.splitlines(),
+            expected.splitlines(),
+            fromfile="document",
+            tofile="reports",
+            lineterm="",
+            n=1,
+        )
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline-suite-report", type=Path)
@@ -567,6 +634,14 @@ def main() -> int:
     parser.add_argument("--pytest-junit", type=Path)
     parser.add_argument("--doc", type=Path, help="campaign document to update")
     parser.add_argument("--out-dir", type=Path, help="write each region to a file")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "verify that the document's generated regions match the reports; "
+            "exit non-zero on drift and leave the document unchanged"
+        ),
+    )
     args = parser.parse_args()
 
     regions = render(
@@ -577,6 +652,16 @@ def main() -> int:
         suite_dir=args.suite_dir,
         pytest_junit=args.pytest_junit,
     )
+    if args.check:
+        if args.doc is None:
+            parser.error("--check requires --doc")
+        document = args.doc.read_text(encoding="utf-8")
+        problems = check_regions(document, regions)
+        if problems:
+            print("\n".join(problems), file=sys.stderr)
+            return 1
+        print(f"{args.doc} matches the reports")
+        return 0
     if args.out_dir is not None:
         args.out_dir.mkdir(parents=True, exist_ok=True)
         for name, block in regions.items():

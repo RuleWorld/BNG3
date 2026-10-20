@@ -104,8 +104,10 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ),
     ("observable mismatch", "simulation:observable-mismatch"),
     ("compartment derivative", "rules:species-rate-rule-needs-compartment"),
-    ("cvode", "simulation:solver-failure"),
-    ("scheduled actions", "harness:scheduled-actions-not-executed"),
+    (
+        "generated bngl contains scheduled actions",
+        "harness:scheduled-actions-not-executed",
+    ),
     ("repeated-run mean", "harness:stochastic-ensemble-not-evaluated"),
     ("does not define an official time-course reference", "reference:not-applicable"),
     ("trigger is not a simple time threshold", "events:state-trigger-not-schedulable"),
@@ -127,6 +129,11 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ("no species", "model:no-state-variables"),
     ("no reactants or products", "reaction:no-participants"),
     ("negative numeric rate", "rate:negative"),
+    # A solver failure is only a solver failure when the solver said so.  The
+    # official suite's own harness reasons also mention CVODE, so the needle
+    # names the failure rather than the engine.
+    ("cvode error", "simulation:solver-failure"),
+    ("cvode failed", "simulation:solver-failure"),
 )
 
 
@@ -357,6 +364,41 @@ def _official_status(record: dict[str, Any]) -> str:
     return OFFICIAL_STATUS_MAP.get(status, "not_tested")
 
 
+def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
+    """Name the construct that keeps a stage from producing a verdict.
+
+    ``passed`` is a result. ``unsupported`` is a gap: the case was refused
+    because a construct is not representable today, and the manifest has to
+    say which construct rather than record a bare refusal.
+    """
+
+    if stage == "conversion":
+        status = str(record.get("status", ""))
+        if status == "passed":
+            return None
+        reason = str(record.get("unsupported_reason") or record.get("error") or "")
+        causes = sorted(
+            set(str(cause) for cause in (record.get("unsupported_causes") or []))
+        )
+        if not causes and status == "unsupported":
+            causes = sorted(
+                set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
+            )
+        return {"construct": reason_signature(reason), "causes": causes}
+
+    if stage == "official_reference":
+        official = record.get("official_conformance") or {}
+        if str(official.get("status")) == "passed":
+            return None
+        reason = str(official.get("reason") or "")
+        causes = sorted(
+            set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
+        )
+        return {"construct": reason_signature(reason), "causes": causes}
+
+    return None
+
+
 def expectation_cases(report: dict[str, Any]) -> dict[str, dict[str, str]]:
     """Return the observed verdict of every case at every gate stage."""
 
@@ -372,6 +414,22 @@ def expectation_cases(report: dict[str, Any]) -> dict[str, dict[str, str]]:
     return cases
 
 
+def expectation_gaps(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return the construct that keeps each non-passing stage from passing."""
+
+    gaps: dict[str, dict[str, Any]] = {}
+    for record in report.get("records") or []:
+        identity = f"{record.get('category')}/{record.get('id')}"
+        entry: dict[str, Any] = {}
+        for stage in ("conversion", "official_reference"):
+            gap = _stage_gap(record, stage)
+            if gap is not None:
+                entry[stage] = gap
+        if entry:
+            gaps[identity] = entry
+    return gaps
+
+
 def expectations_from_report(
     report: dict[str, Any],
     *,
@@ -381,6 +439,7 @@ def expectations_from_report(
     """Build an expectation manifest from one SBML Test Suite report."""
 
     cases = expectation_cases(report)
+    gaps = expectation_gaps(report)
     source_lock = report.get("suite_source_lock") or {}
     source_provenance = report.get("source_provenance") or {}
     runtime = report.get("runtime_provenance") or {}
@@ -388,6 +447,15 @@ def expectations_from_report(
         "schema_version": EXPECTATIONS_SCHEMA_VERSION,
         "kind": "sbml-test-suite-expectations",
         "generator": "scripts/ci/sbml_campaign_inventory.py",
+        "note": (
+            "Each entry records the verdict the tree named by "
+            "source_report.bng3_commit produced for that case. 'passed' is a "
+            "result. 'unsupported' is a gap: the case's 'gap' entry names the "
+            "construct that is not representable today together with the "
+            "harness's cause labels for it. No entry claims that a currently "
+            "unsupported construct should become supported, and an "
+            "'unsupported' entry is never counted as support."
+        ),
         "stages": list(EXPECTATION_STAGES),
         "statuses": list(EXPECTATION_STATUSES),
         "status_mapping": {
@@ -415,7 +483,13 @@ def expectations_from_report(
             "bng3_commit": str(source_provenance.get("bng3_commit") or ""),
             "python_version": str(runtime.get("python_version") or ""),
         },
-        "cases": {identity: cases[identity] for identity in sorted(cases)},
+        "cases": {
+            identity: {
+                **cases[identity],
+                **({"gap": gaps[identity]} if identity in gaps else {}),
+            }
+            for identity in sorted(cases)
+        },
     }
     if measurement_date:
         manifest["source_report"]["measurement_date"] = measurement_date
@@ -547,14 +621,14 @@ def _write_expectations(path: Path, manifest: dict[str, Any]) -> None:
     body = body[:-1].rstrip()
     if not body.endswith("{"):
         body += ","
-    lines = [
-        f'    "{identity}": {{'
-        + ", ".join(
-            f'"{stage}": "{cases[identity][stage]}"' for stage in EXPECTATION_STAGES
-        )
-        + "}"
-        for identity in sorted(cases)
-    ]
+    lines = []
+    for identity in sorted(cases):
+        entry = cases[identity]
+        parts = [f'"{stage}": "{entry[stage]}"' for stage in EXPECTATION_STAGES]
+        gap = entry.get("gap")
+        if gap:
+            parts.append('"gap": ' + json.dumps(gap, sort_keys=True))
+        lines.append(f'    "{identity}": {{' + ", ".join(parts) + "}")
     body += '\n  "cases": {\n' + ",\n".join(lines) + "\n  }\n}\n"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")

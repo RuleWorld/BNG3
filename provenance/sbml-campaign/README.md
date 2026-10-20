@@ -44,13 +44,24 @@ human to read two large reports side by side.
   }
 }
 ```
-
 * `cases` is keyed `category/id` and holds one status per stage. The status
   vocabulary is closed: `passed`, `unsupported`, `failed`, `not_tested`.
 * `not_tested` means the stage produced no verdict: the stage was not
   executed, no official reference exists, or the source was invalid. A
   timed-out case is recorded as `failed`, because the stage was attempted and
   did not succeed.
+* `passed` is a result. `unsupported` is a **gap**: the case was refused
+  because a construct is not representable today. Every such case carries a
+  `gap` entry that names the construct (`construct`) and the harness's cause
+  labels for it (`causes`):
+
+  ```json
+  "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["constraints"]}}}
+  ```
+
+  No entry claims that a currently-unsupported construct should become
+  supported. An `unsupported` entry is never counted as support, and a case
+  that stops being refused is a finding to be reported, not a pass.
 * `status_mapping` states how each harness field becomes a verdict, so the
   mapping is auditable rather than implicit.
 * `suite.revision`, `source_report.sha256` and `source_report.bng3_commit`
