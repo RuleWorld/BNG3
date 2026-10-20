@@ -2418,7 +2418,7 @@
           "scope": "Round-trip and execute reconstructed models with source-text independence and fail-closed malformed-reference handling.",
           "dependencies": [],
           "boundaries": [
-            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+            "The qualified matrix covers the v0.1 to v0.2 migration path only; the native reader's remaining refusals (rule local scopes, and a barrier pattern whose transition has no supported reaction center) are explicit boundaries, not supported execution."
           ],
           "required_checks": [
             {
@@ -2640,7 +2640,8 @@
           "scope": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
           "dependencies": [],
           "boundaries": [
-            "Recorded boundary: the v0.1 reader refuses barrier patterns because the engine does not compile a barrier pattern, and refuses population maps because the wire format does not carry a population map's rate."
+            "Recorded boundary: a barrier pattern whose transition does not reduce to one supported reaction center is refused; the native reader requires a resolved reaction center that matches the transition.",
+            "Recorded boundary: a population map without a mapping rate is refused, because the rate is part of the map's meaning."
           ],
           "required_checks": [
             {

@@ -174,6 +174,13 @@ def test_version_matrix_fails_when_a_recorded_gap_no_longer_reproduces(
 def test_refusal_ownership_fails_when_an_owner_is_not_in_the_catalog(
     tmp_path, monkeypatch
 ):
+    # A cell that is not preserved must name an owner the catalog knows. With
+    # the owner removed from the catalog the check has to fail.
+    cells = [dict(cell) for cell in reconstruction.MATRIX]
+    for cell in cells:
+        if cell["id"] == "parameters":
+            cell["present"] = lambda model: False
+    monkeypatch.setattr(reconstruction, "MATRIX", cells)
     monkeypatch.setattr(reconstruction, "_catalog_owners", lambda: set(), raising=True)
     rows = reconstruction.run_worker(tmp_path / "unowned")
     ownership = next(

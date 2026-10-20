@@ -611,18 +611,17 @@ investigation-packet paths.
 | `functions` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `functions.v02.json` |
 | `observables` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `observables.v02.json` |
 | `energy-patterns` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `energy-patterns.v02.json` |
-| `barrier-patterns` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `barrier-patterns.v01.json` |
-| `population-maps` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-maps.v01.json` |
+| `barrier-patterns` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `barrier-patterns.v02.json` |
+| `population-maps` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-maps.v02.json` |
 | `population-types` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-types.v02.json` |
 | `protocol-actions` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `protocol-actions.v02.json` |
 | `versioned-features` | PRESERVED | `issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind` | `versioned-features.v02.json` |
 
-Twenty cells preserve the feature and import natively. Two are refused explicitly by the
-migration or by the v0.1 reader. No cell loses a feature silently and no cell is rejected
-without an explicit reason: the migration, the v0.1 reader and the native reader all fail
-closed with a message that names the unsupported feature.
+All twenty-two cells preserve the feature and import natively. No cell loses a feature
+silently and no cell is rejected without an explicit reason: the migration, the v0.1 reader
+and the native reader all fail closed with a message that names the unsupported feature.
 
-Thirteen defects were found and repaired while the matrix was extended, and their records were
+16 defects were found and repaired while the matrix was extended, and their records were
 removed from the obligation catalog:
 
 - The v0.2 writer silently dropped a rule's non-empty `driving_work`, because the v0.2 rule
@@ -634,9 +633,9 @@ removed from the obligation catalog:
   grammar only accepts for the other action commands. It now emits the positional form those
   actions use and keeps the named-argument hash for the rest.
 - A v0.1 document carrying barrier patterns failed with an internal snapshot error. The v0.1
-  reader now refuses barrier patterns explicitly, and every v0.1 document is checked against
-  the compiler before it is accepted, so an invalid model is refused where it is read instead
-  of failing later.
+  reader now rebuilds a barrier pattern, and every v0.1 document is checked against the
+  compiler before it is accepted, so an invalid model is refused where it is read instead of
+  failing later.
 - The native reader refused reversible rule directions and keyword rule modifiers. Both are
   now natively supported, and the native reader fails closed on a reverse direction carried by
   a forward rule and on a modifier that is not an object with a known kind.
@@ -662,11 +661,24 @@ removed from the obligation catalog:
   pattern text the wire format does not carry. The rule now declares its local scopes
   structurally, the compiler prefers the declaration over the pattern text, and the compiled
   snapshot emits the scopes again.
+- The v0.1 wire format carried a population map without its rate, so the reader could not
+  rebuild the map the engine needs. The rate is now part of the v0.1 population map, and a
+  map that still states no rate is refused with a message that names the missing rate.
+- The v0.2 schema for population maps still encoded the pre-canonical rate-less vocabulary,
+  so the emitter's own output did not validate against it. The schema now states the
+  canonical `population`/`population_id`/`rate` keys and keeps the legacy `function` alias as
+  an optional field, and the barrier section states the transition's structured patterns and
+  a resolved expression tree.
+- The native reader refused a barrier pattern, because the wire form carried only the
+  transition's text and not the structured patterns the engine needs. The barrier now carries
+  its structured patterns and a resolved expression tree, the transition's text is retained as
+  provenance so the document round-trips exactly, and the reaction centre is cross-checked.
 
-The two remaining cells are explicit unsupported boundaries, each with an owning requirement:
-barrier patterns and population maps. The first is refused because the engine does not compile
-a barrier pattern; the second is refused because the wire format carries no population map's
-rate.
+No cell remains an explicit unsupported boundary: every feature class the matrix
+covers is now preserved through the migration and imported natively. The boundaries that
+remained after each individual repair are recorded on the obligations they belong to, and
+the native reader still refuses a barrier pattern whose transition does not reduce to one
+supported reaction centre, because such a barrier has no centre to contribute to.
 
 ### Issue 141 CVODE cleanup
 
@@ -686,3 +698,19 @@ the native reader and writer, and `bngir-export:v02-site-bearing-python-roundtri
 the same envelope through the Python reader and writer. Both reproduce the retained document
 exactly. The site-free envelope has its own contract, `bngir-export:v02-independent-roundtrip`,
 so the two envelopes stay separately visible.
+
+### JAX backend on an accelerator
+
+The CI job for the JAX backend pins `JAX_PLATFORMS: cpu` so its result is deterministic
+and independent of the accelerator a runner happens to have. The same suites were run
+locally on the Apple Metal device of this machine, which the CI job cannot reach:
+
+- `JAX_ENABLE_X64=false` with the default Metal device: `tests/python/test_jax_ode.py` and
+  `tests/python/test_jax_ssa.py`, 25 passed.
+- `JAX_ENABLE_X64=true` with the default Metal device: `tests/python/test_jax_ode.py`, 20
+  passed.
+
+The device is reported by JAX as `METAL`; the lower-case spelling `metal` is rejected by
+JAX's own backend list, so an accelerator run must use the name JAX reports. This is
+supplementary device-diversity evidence for the JAX backend, not a replacement for the
+CPU-pinned gate.
