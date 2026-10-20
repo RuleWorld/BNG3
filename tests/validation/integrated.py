@@ -110,6 +110,7 @@ def expected_contract_ids(
     include_graph_identity=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_api_surface=True,
     full=False,
 ):
     return [
@@ -156,6 +157,7 @@ def expected_contract_ids(
         include_graph_identity=include_graph_identity,
         include_bngir_adversarial=include_bngir_adversarial,
         include_quantity_laws=include_quantity_laws,
+        include_api_surface=include_api_surface,
         full=full,
     )
 
@@ -1017,6 +1019,12 @@ def main(argv=None):
     qualification_selection["include_quantity_laws"] = not (
         args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only
     )
+    qualification_selection["include_api_surface"] = not (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
+    )
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1034,6 +1042,8 @@ def main(argv=None):
             )
         if qualification_selection["include_quantity_laws"]:
             integrated_extensions.invoke("quantity-laws", args, rows, env, run_stage)
+        if qualification_selection["include_api_surface"]:
+            integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1138,6 +1148,7 @@ def main(argv=None):
                     "tests/validation/bngir_reconstruction_contracts.py",
                 ],
                 "graph-identity": "tests/validation/graph_identity.py",
+                "api-surface": "tests/validation/api_surface.py",
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1165,6 +1176,8 @@ def main(argv=None):
                 issues = [143, 146, 151, 167]
             elif stage == "graph-identity":
                 issues = [142]
+            elif stage == "api-surface":
+                issues = [171]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):

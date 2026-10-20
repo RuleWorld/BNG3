@@ -737,6 +737,7 @@ def main():
             "graph-identity",
             "bngir-adversarial",
             "quantity-laws",
+            "api-surface",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -829,6 +830,7 @@ def main():
         "graph-identity",
         "bngir-adversarial",
         "quantity-laws",
+        "api-surface",
     ):
         from tests.validation.integrated_extensions import run_worker
 

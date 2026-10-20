@@ -632,13 +632,14 @@ void bind_engine(py::module_& m) {
 
     m.def("simulate_pla", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, const std::string& config_str,
-                             double t_start) {
+                             double t_start, unsigned int seed) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
+        opts.seed = seed;
 
         PlaConfig config;
         if (!config_str.empty()) {
@@ -657,17 +658,20 @@ void bind_engine(py::module_& m) {
         py::arg("n_steps") = 100,
         py::arg("config_str") = "",
         py::arg("t_start") = 0.0,
-        "Run PLA simulation on a generated network");
+        py::arg("seed") = 0,
+        "Run PLA simulation on a generated network. "
+        "Set seed > 0 for a reproducible random stream; 0 selects a system seed.");
 
     m.def("simulate_psa", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, double poplevel,
-                             double t_start) {
+                             double t_start, unsigned int seed) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
+        opts.seed = seed;
 
         PsaSimulator simulator(model, network);
         OdeResult result = simulator.simulate(opts, poplevel);
@@ -681,7 +685,9 @@ void bind_engine(py::module_& m) {
         py::arg("n_steps") = 100,
         py::arg("poplevel") = 100,
         py::arg("t_start") = 0.0,
-        "Run PSA simulation on a generated network");
+        py::arg("seed") = 0,
+        "Run PSA simulation on a generated network. "
+        "Set seed > 0 for a reproducible random stream; 0 selects a system seed.");
 
     // --- Finite backend dispatch (BNGsim canonical backend) ---
     m.def("bngsim_available", []() { return isBngsimAvailable(); },

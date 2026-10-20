@@ -4854,9 +4854,65 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:171:cover-signatures-defaults-positional-dispatch-timeouts-actions-r",
+              "id": "api-surface:surface:signatures-defaults",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The declared API and CLI defaults agree with the documented signature defaults, and both default runs match the independent first-order decay law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:surface:positional-dispatch",
+              "evidence_kind": "supported-execution",
+              "expectation": "The API's positional method and time dispatch behaves as documented, and the CLI rejects a positional method argument.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:surface:timeouts",
+              "evidence_kind": "supported-execution",
+              "expectation": "Neither entry point silently accepts a requested timeout: the API refuses it with a typed exception and the CLI rejects the unknown option.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:surface:actions",
+              "evidence_kind": "supported-execution",
+              "expectation": "The action block is executed identically by the API and the CLI, its artifacts match, and the action trajectory matches the independent law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:surface:results-files",
+              "evidence_kind": "supported-execution",
+              "expectation": "The API result container and the CLI result file expose the same trajectory, and both match the independent law.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:surface:exceptions",
+              "evidence_kind": "supported-execution",
+              "expectation": "Invalid input is refused with the documented API exception types and with the documented CLI exit codes.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:surface:optional-imports",
+              "evidence_kind": "supported-execution",
+              "expectation": "Optional distributions stay optional: importing bionetgen imports none of them, a missing optional distribution surfaces as an ImportError, and the core CLI commands still run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:surface:intentional-incompatibilities",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every declared API/CLI difference is observed exactly as declared, so an unexplained divergence fails instead of being reported as a benign difference.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -4879,7 +4935,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:171:cover-signatures-defaults-positional-dispatch-timeouts-actions-r.",
+            "The api-surface family qualifies the named public Python API and installed CLI surface; notebook execution and third-party integration paths are not part of this family and stay covered by the compatibility contract tests.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4891,9 +4947,121 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:171:test-supported-simulation-methods-through-both-installed-api-and",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "api-surface:methods:ode:api-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The public API ode trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:ode:cli-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The installed CLI ode trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:ode:route-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The API and CLI ode routes agree for every recorded seed; the independent law remains the primary oracle and the agreement never replaces it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:ssa:api-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The public API ssa trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:ssa:cli-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The installed CLI ssa trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:ssa:route-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The API and CLI ssa routes agree for every recorded seed; the independent law remains the primary oracle and the agreement never replaces it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:nf:api-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The public API nf trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:nf:cli-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The installed CLI nf trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:nf:route-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The API and CLI nf routes agree for every recorded seed; the independent law remains the primary oracle and the agreement never replaces it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:pla:api-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The public API pla trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:pla:cli-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The installed CLI pla trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:pla:route-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The API and CLI pla routes agree for every recorded seed; the independent law remains the primary oracle and the agreement never replaces it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:psa:api-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The public API psa trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:psa:cli-vs-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The installed CLI psa trajectory matches the independent first-order decay law (closed form for ode, exact binomial count law for the stochastic methods).",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "api-surface:methods:psa:route-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The API and CLI psa routes agree for every recorded seed; the independent law remains the primary oracle and the agreement never replaces it.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -4903,7 +5071,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:171:test-supported-simulation-methods-through-both-installed-api-and.",
+            "The api-surface family qualifies the five supported simulation methods on one generated first-order decay family; other model shapes and other method-specific option combinations still require review.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4915,9 +5083,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:171:closure-record",
+              "id": "manual:issue:171:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the implemented qualification, the exact revision, the validation commands and results, the declared API/CLI incompatibilities and the remaining limits before closing.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -4927,7 +5095,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:171:closure-record.",
+            "Closure requires a maintainer-reviewed record of the executed qualification and the declared incompatibilities; the issue stays open.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         }

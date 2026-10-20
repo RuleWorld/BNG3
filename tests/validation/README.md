@@ -563,3 +563,44 @@ budget. They remain trajectory disagreements without an established cause;
 neither source-law acceptance nor equal seeds establishes full path equivalence.
 `--quantity-laws-only` selects the new bounded campaign; `--full` expands it.
 Manual workflow `bounded=true` retains PR selection on a stacked candidate.
+
+### Public API and CLI surface family
+
+`api-surface` qualifies the public Python API and the installed command-line
+interface as one family. It runs every supported simulation method
+(`ode`, `ssa`, `nf`, `pla`, `psa`) through both entry points and judges each
+route against an independent law: the closed-form first-order decay
+trajectory for the deterministic route, and the exact binomial count law of
+the same process for the stochastic routes. A route is never judged against
+the other route's output alone; the route-agreement check only records whether
+the two routes agree for the same recorded seed after both matched the law.
+
+The stochastic statements are limited to the terminal-time marginal of one
+generated decay family: a 24-replicate ensemble with recorded seeds, an
+analytic standard-error budget for the ensemble mean, a declared chi-square
+band for the ensemble dispersion, the exact binomial central range for every
+replicate, and the harness's own Hoeffding/DKW source-count-law comparator.
+They do not qualify complete stochastic equivalence.
+
+The command-line leg must import the same package and the same native
+extension as the API leg; the family refuses to compare two different builds.
+The installed console script is used when the installed distribution owns the
+imported package, and the module entry point with a pinned package root
+otherwise.
+
+Every API/CLI difference is declared in `api_surface.INTENTIONAL_INCOMPATIBILITIES`
+and exercised by the `intentional-incompatibilities` check, so an unexplained
+divergence fails instead of being reported as a benign difference. The
+declared differences are the result container, the result table columns, the
+positional method dispatch, the unsupported timeout, the action block
+execution, the exception and exit-code contract, the optional imports, and the
+explicit `None` time arguments.
+
+```bash
+# Qualify the installed public API and CLI surface on its own.
+PYTHONPATH=python:build/cpp python -m tests.validation.api_surface \
+  --report-dir /tmp/bng3-api-surface
+```
+
+The family also runs as a campaign-level stage of the integrated report, so
+its named rows reach the issue queue with the other exact-revision evidence.
