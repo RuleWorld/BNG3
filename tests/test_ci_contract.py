@@ -409,6 +409,29 @@ def test_ssts_validate_only_accepts_the_clean_locked_checkout(tmp_path: Path):
     }
 
 
+def test_pytest_tree_does_not_depend_on_an_external_sbml_suite_checkout():
+    """A pytest skip must not stand in for semantic coverage in the CI job.
+
+    The ``pytest tests/python -k atomizer`` job neither clones the official
+    SBML Test Suite nor sets a suite directory, so a test that reads the
+    suite and skips when it is absent would pass vacuously in the job most
+    contributors run.  The suite itself is exercised by
+    ``scripts/ci/validate_sbml_test_suite.py`` in the ``sbml-conformance``
+    workflow; the pytest tree stays independent of it.
+    """
+
+    markers = ("SBML_TEST_SUITE_DIR", "bng3-ssts", "cases/semantic", "cases/stochastic")
+    offenders = []
+    for path in sorted((REPO / "tests" / "python").rglob("test_*.py")):
+        text = path.read_text(encoding="utf-8")
+        if any(marker in text for marker in markers):
+            offenders.append(str(path.relative_to(REPO)))
+    assert not offenders, (
+        "tests/python must not read the official SBML Test Suite checkout: "
+        f"{offenders}"
+    )
+
+
 def test_ssts_runner_rejects_revision_mismatch_before_case_execution(tmp_path: Path):
     suite, lock, _revision = _locked_ssts_checkout(tmp_path)
     document = json.loads(lock.read_text(encoding="utf-8"))
