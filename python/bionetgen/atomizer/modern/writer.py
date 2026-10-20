@@ -540,6 +540,32 @@ def _numeric_value(value: object) -> Optional[float]:
     return number if math.isfinite(number) else None
 
 
+def _relation_expression(args: Sequence[str], operator: str) -> str:
+    """Lower a MathML relation, honouring its n-ary form.
+
+    MathML allows a relation such as ``gt`` to take more than two operands.
+    SBML defines such an n-ary relation as the conjunction of the successive
+    pairs, so ``gt(2, 1, 2)`` is ``(2 > 1) && (1 > 2)`` and is false.  A
+    C-style chained comparison would instead evaluate ``2 > 1 > 2`` as
+    ``(2 > 1) > 2``, which is a different expression and gives the wrong
+    result.  The official SBML Test Suite case ``semantic/01216`` checks
+    exactly this distinction.
+    """
+
+    arguments = [str(argument) for argument in args]
+    if not arguments:
+        return "0"
+    if len(arguments) == 1:
+        return arguments[0]
+    if len(arguments) == 2:
+        return f"({arguments[0]} {operator} {arguments[1]})"
+    pairs = [
+        f"({arguments[index]} {operator} {arguments[index + 1]})"
+        for index in range(len(arguments) - 1)
+    ]
+    return "(" + " && ".join(pairs) + ")"
+
+
 def convert_math_expression(expression: str) -> str:
     """Convert common MathML/libSBML function spellings to BNGL syntax."""
 
@@ -691,6 +717,13 @@ def convert_math_expression(expression: str) -> str:
         "leq": "<=",
         "eq": "==",
         "neq": "!=",
+    }.items():
+        result = _replace_nested_function(
+            result,
+            function,
+            lambda args, operator=operator: _relation_expression(args, operator),
+        )
+    for function, operator in {
         "and": "&&",
         "or": "||",
     }.items():
