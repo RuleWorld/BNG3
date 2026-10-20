@@ -2841,9 +2841,9 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
     for function in model.function_definitions.values():
         function.math = replace(function.math).replace(_RATE_OF_MARKER, "")
     for event in model.events:
-        event.trigger = replace(
-            event.trigger, lower_affine_history=False
-        ).replace(_RATE_OF_MARKER, "")
+        event.trigger = replace(event.trigger, lower_affine_history=False).replace(
+            _RATE_OF_MARKER, ""
+        )
         event.delay = (
             replace(event.delay).replace(_RATE_OF_MARKER, "")
             if event.delay
