@@ -125,12 +125,14 @@ so a cluster table can no longer omit the cases it forgot.
 1. **Initial-value resolution order** (PR #316). A `constant="false"`
    parameter with no `value` attribute was seeded with the default `0`,
    shadowing the value its `assignmentRule` supplies, and `initialAssignment`s
-   were evaluated before `assignmentRule`s. SBML L3 Core §4.8/§4.11 fixes the
-   order. 15 official cases move `failed → passed`.
+   were evaluated before `assignmentRule`s. SBML L3 Core §3.4.8 (the order in
+   which the values at `t ≤ 0` are established) and §4.9.3 (an assignment
+   rule's value overrides the value its target's own definition carries)
+   fix the order. 15 official cases move `failed → passed`.
 
 2. **SBML `avogadro` csymbol conflated with BNGL's `__Avogadro__`, and
    `csymbol` identified by its text** (PR #318). SBML's `avogadro` csymbol
-   has the fixed value `6.02214179e+23` (SBML L3 Core §4.2.5, which requires
+   has the fixed value `6.02214179e+23` (SBML L3 Core §3.4.6, which requires
    readers of this version to use exactly that number); BNGL's
    `__Avogadro__` is BNG's molecule-count factor and is `1`. The
    operator-position `csymbol` path also keyed on the element *text* rather
@@ -345,11 +347,23 @@ fails on the unmodified base commit.
 The first form of PR #319 multiplied the recovered mass-action constant by
 `V**(m-1)` for every amount-based law. The generated integrated-validation
 case `dimerization-v1-n20-r0-a0` uses the law `k * A * A / cell`, which
-already states its own volume dependence; the correction produced the rate law
-`0.8 * (__compartment_cell__)**1`, which BNG2's expression parser rejects
-("Unexpected operator \"*\" found at position 26") and BioNetGen 2.9.3 cannot
-simulate. The integrated cross-component validation failed, and the correction
-was narrowed to a law that does not name a compartment.
+already states its own volume dependence, so the correction changed the
+model: a kinetic law's value is the reaction's extent rate and a species'
+amount changes by `stoichiometry × extent rate` (SBML L3 Core §4.11), while
+BNGL's rate laws are always *concentration* rates, so the amount-based law
+`k * n^m` needs `V^(m-1)` and a law that already divides by the compartment
+size needs `V^(m-2)` — for the two-reactant form, the constant it was
+recovered with. The integrated cross-component validation failed, and the
+correction was narrowed to a law that does not name a compartment.
+
+Narrowing it that way also exempted a law that *multiplies* by the
+compartment (`cell * k * A * A`), whose volume dependence is the opposite of
+the divisive form's: its extent rate scales with the compartment size, so
+its BNGL constant needs `V^m` rather than the constant it was recovered
+with. On a size-10 compartment BNG3 gave `A_amt(5) = 2.222222` where the
+SBML extent-rate reading gives `0.024969`, a factor of `V**2`. The
+exemption now distinguishes the two shapes, and the multiplicative form is
+lowered exactly.
 
 ### Merge-gate exception: PRs #323 and #324
 
@@ -361,6 +375,13 @@ gate not fully met, by an explicit decision of the repository owner, so that
 a saturated CI queue would not serialize the campaign. On both pull requests
 three jobs were genuinely red; every other job marked red on those pull
 requests was `cancelled` in flight, not failed.
+
+The gate is the campaign's own convention, not a rule GitHub enforces: the
+repository has no branch protection and no rulesets on `main`
+(`GET /repos/RuleWorld/BNG3/branches/main/protection` returns 404 and
+`GET /repos/RuleWorld/BNG3/rulesets` returns an empty list), so nothing in
+the platform required the merge — the exception was a decision of the
+repository owner.
 
 * `Lint & Format` and `Check formatting and suggest patch` (the
   `autofix` workflow's `black --check --target-version py312 .` gate). This
@@ -386,9 +407,29 @@ requests was `cancelled` in flight, not failed.
   under ASan` step reports `100% tests passed, 0 tests failed out of 677`
   (`681` on #324), including `OdeIntegrator recovers after late stop
   condition failure`, and `ctest --test-dir build -R '^OdeIntegrator recovers
-  after late stop condition failure$'` passes locally. The red is therefore
-  LeakSanitizer's report in the isolated re-run of that single test, which is
-  timing/environment dependent, not a behavioural regression.
+  after late stop condition failure$'` passes locally. The red is therefore a
+  **source-confirmed defect in the `OdeIntegrator` exception path — a CVODE
+  cleanup leak — that the ASan job was deliberately wired up to expose**, and
+  it is tracked as issue 141 (`docs/PACKET4_141_ACCEPTANCE.md` and
+  `docs/packet4-141-acceptance.json`, whose acceptance criteria are still
+  `INCOMPLETE`). The mechanism is in the source:
+  `cpp/engine/OdeIntegrator.cpp` allocates
+  `void* cvode_mem = CVodeCreate(CV_BDF, sunctx)` together with an
+  `N_Vector y` and a `SUNContext`, and frees them by hand on each error
+  path, but there is no unwinding-safe cleanup, so an exception thrown out
+  of the right-hand-side evaluation after CVODE has allocated leaks all
+  three. The source-confirmed exception path is
+  `stop_if='if(time > 0, missing_name, 0)'`: the lazy `if` succeeds at
+  `t=0` and raises after CVODE allocation, so the exception bypasses the
+  normal CVODE cleanup. This is a real defect, not a timing or environment
+  artefact.
+
+A repair of the CVODE cleanup leak is in flight: a scope-guarded lifetime for
+`cvode_mem`, `y` and `sunctx`, with the expectation that the `C++ ASan
+(Ubuntu)` job turns green on every pull request afterwards. It has not
+landed in this tree, so no outcome is claimed here; the repair has to show
+the LeakSanitizer summary before and after, the full C++ suite count, and an
+**empty** SBML per-case diff, because the ODE engine is involved.
 
 The discriminating checks were green at the merged heads. The `Official SBML
 references (128 PR cases; full scheduled suite)` job passed on both pull
