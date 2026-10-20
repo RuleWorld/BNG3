@@ -3869,6 +3869,7 @@ class SBMLParser:
                 value=_float(_attribute(item, "value"), 0),
                 units=str(_attribute(item, "units", "") or ""),
                 constant=_bool(_attribute(item, "constant"), True),
+                value_set=_attribute(item, "value") is not None,
                 scope="global",
                 **_source_metadata(item),
             )
