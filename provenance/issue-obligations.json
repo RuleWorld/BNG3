@@ -1629,9 +1629,33 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:144:confirm-adr-0003-s-supported-bngsim-boundary-and-record-explicit",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngsim-boundary:decay-n20:ode:route-decision",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute the generated model and confirm that the finite-backend decision is named and recorded on the result, and that an explicit BNGsim request that cannot be honoured is refused instead of downgraded to a native run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "bngsim-boundary:functional-n20:ssa:route-decision",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute the generated model and confirm that the finite-backend decision is named and recorded on the result, and that an explicit BNGsim request that cannot be honoured is refused instead of downgraded to a native run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "bngsim-boundary:compartment-n20:ode:route-decision",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute the generated model and confirm that the finite-backend decision is named and recorded on the result, and that an explicit BNGsim request that cannot be honoured is refused instead of downgraded to a native run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "bngsim-boundary:non-reference-rate-n20:ode:route-decision",
+              "evidence_kind": "supported-execution",
+              "expectation": "Execute the generated model and confirm that the finite-backend decision is named and recorded on the result, and that an explicit BNGsim request that cannot be honoured is refused instead of downgraded to a native run.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -1644,14 +1668,13 @@
             "tests/cpp/test_pla_simulator.cpp",
             "tests/cpp/test_psa_simulator.cpp",
             "tests/python/test_finite_backend.py",
+            "tests/validation/bngsim_boundary.py",
+            "tests/validation/test_bngsim_boundary.py",
             "tests/validation/test_parity_ode.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:144:confirm-adr-0003-s-supported-bngsim-boundary-and-record-explicit.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          "unmapped_scope": []
         },
         {
           "id": "issue:144:close-selected-adapter-gaps-with-differential-ode-ssa-evidence-a",
@@ -1661,20 +1684,54 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:144:close-selected-adapter-gaps-with-differential-ode-ssa-evidence-a",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngsim-boundary:decay-n20:ode:independent-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compare the executed route against the independent closed-form law of the generated model, and compare the executable routes with each other.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "bngsim-boundary:reversible-n20:ssa:independent-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compare the executed route against the independent closed-form law of the generated model, and compare the executable routes with each other.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "bngsim-boundary:differential-native-routes",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compare the executed route against the independent closed-form law of the generated model, and compare the executable routes with each other.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "bngsim-boundary:differential-bngsim-route",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compare the executed route against the independent closed-form law of the generated model, and compare the executable routes with each other.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/cpp/test_bngsim_adapter.cpp",
+            "tests/cpp/test_finite_backend.cpp",
+            "tests/cpp/test_ode_options.cpp",
+            "tests/cpp/test_pla_simulator.cpp",
+            "tests/cpp/test_psa_simulator.cpp",
+            "tests/python/test_finite_backend.py",
+            "tests/validation/bngsim_boundary.py",
+            "tests/validation/test_bngsim_boundary.py",
+            "tests/validation/test_parity_ode.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:144:close-selected-adapter-gaps-with-differential-ode-ssa-evidence-a.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Selecting which refused adapter classes are bridged, and the staged ownership and retirement order for the native solvers, remain a maintainer decision; the named checks provide the differential ODE/SSA evidence for the generated subset only.",
+            "The differential BNGsim check needs a build that links the adapter; in a native build it reports UNSUPPORTED with that reason instead of a pass."
           ]
         },
         {
@@ -1687,17 +1744,35 @@
             {
               "id": "qualification:issue:144:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "bngsim-boundary:reversible-n80:ode:route-decision",
+              "evidence_kind": "supported-execution",
+              "expectation": "Confirm that the routing decision and the remaining limit are recorded with the result and in the boundary inventory.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/cpp/test_bngsim_adapter.cpp",
+            "tests/cpp/test_finite_backend.cpp",
+            "tests/cpp/test_ode_options.cpp",
+            "tests/cpp/test_pla_simulator.cpp",
+            "tests/cpp/test_psa_simulator.cpp",
+            "tests/python/test_finite_backend.py",
+            "tests/validation/bngsim_boundary.py",
+            "tests/validation/test_bngsim_boundary.py",
+            "tests/validation/test_parity_ode.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:144:closure-record.",
+            "The closure record itself is a maintainer record: the named checks evidence the implementation and the remaining limit, not the acceptance of the record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         }

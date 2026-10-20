@@ -549,6 +549,21 @@ controls; their unit descriptions and concentration-coordinate seed conversion
 do not establish product ingestion of physical-unit annotations. Existing
 unit-annotated SBML families and source-oracle checks remain separate.
 
+`bngsim-boundary` states the supported BNGsim boundary as an executable
+contract over a generated set of finite-network models and methods. Every
+generated case either lowers the model onto the BNGsim backend and reproduces
+the independent closed-form law, or it falls back to the native backend with a
+named route (`result.backend_route`) and a reason. The expectation is the
+analytic amount trajectory or the exact count law of the generated model, never
+another implementation's output, and an explicit BNGsim request that cannot be
+honoured is refused rather than downgraded. The family is registered as
+`bngsim-boundary:<case>:<method>:route-decision`,
+`bngsim-boundary:<case>:<method>:independent-law`,
+`bngsim-boundary:differential-native-routes` and
+`bngsim-boundary:differential-bngsim-route`; the last one reports
+`UNSUPPORTED` with its reason in a build that does not link the adapter.
+`--bngsim-boundary-only` selects the bounded family.
+
 Native BNGIR adversarial controls now execute seeds, RHS and closed-form
 trajectories after disabling BNGL parsing/rendering during reconstruction.
 Molecule-ID permutations are positive controls. Compartment controls preserve

@@ -141,6 +141,20 @@ ordering, observable names/values, initial/final point behavior, explicit
 sample times, and error handling must be parity-checked. The rest of BNG3
 does not know which backend ran.
 
+The fallback is recorded, not implied. Every finite-network result carries
+`backend` (which backend ran), `backend_route` (the named decision) and
+`backend_reason` (why). The routes are `native-explicit`, `bngsim-explicit`,
+`native-fallback:unsupported-semantics`,
+`native-fallback:bngsim-unavailable`, `native-fallback:method-not-claimed` and
+`native-policy:auto-native-during-migration`; the last one states the current
+Phase A–C migration policy, which keeps the native backend as the default
+until the differential parity gate passes. An explicit `backend="bngsim"`
+request that cannot be honoured is refused with its route and reason instead
+of being downgraded to a silent native run. The routes and the semantic
+boundary are qualified by `tests/validation/bngsim_boundary.py`; the live
+inventory of what is lowerable stays in
+[`docs/bngsim-migration-status.md`](../bngsim-migration-status.md).
+
 ## Rejection surface (summary)
 
 The adapter currently rejects — before solver construction — at least:
@@ -186,6 +200,10 @@ Python `pytest`), extended with:
 - ODE/SSA parity tests (native vs BNGsim differential harness)
 - compatibility tests (user syntax unchanged)
 - NFsim regression tests (unchanged)
+- the boundary contract (`tests/validation/bngsim_boundary.py`): a generated
+  set of finite-network models and methods whose route is recorded and whose
+  trajectory is compared against an independent closed-form law, with every
+  native fallback named
 
 See `docs/architecture.md` for the runtime layer diagram.
 

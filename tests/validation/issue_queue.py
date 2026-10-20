@@ -515,6 +515,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
     from .netrule_execution import check_ids as netrule_check_ids
     from .netrule_execution import cases as netrule_cases
+    from .bngsim_boundary import check_ids as boundary_check_ids
 
     check_ids = [
         *adversarial_check_ids(),
@@ -538,6 +539,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_quantity_laws=False,
                     include_export_format_tier=False,
                     include_netrule_execution=False,
+                    include_bngsim_boundary=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -601,6 +603,16 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             limits="Bounded generated export-format tier: BNGL/NET/SBML round trips with independent consumers and the eBNGL energy refusal boundary; no exhaustive format matrix and no structural/graph exporter qualification.",
         )
     )
+    families.append(
+        dict(
+            id="bngsim-boundary",
+            case_ids=[],
+            check_ids=boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(boundary_check_ids()), stage_timeout_seconds=300),
+            limits="Generated finite-network models with an independent closed-form law; the BNGsim route itself needs a build with the adapter linked.",
+        )
+    )
     selected = []
     for family in families:
         available = set(family["check_ids"])
@@ -640,8 +652,16 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     ["--export-format-tier-only"]
                     if family["id"] == "export-format-tier"
                     else (
-                        ["--netrule-execution-only"]
-                        if family["id"] == "network-rule-execution"
+                        (
+                            ["--netrule-execution-only"]
+                            if family["id"] == "network-rule-execution"
+                            else [
+                                argument
+                                for case_id in family["case_ids"]
+                                for argument in ("--case", case_id)
+                            ]
+                        )["--bngsim-boundary-only"]
+                        if family["id"] == "bngsim-boundary"
                         else [
                             argument
                             for case_id in family["case_ids"]
