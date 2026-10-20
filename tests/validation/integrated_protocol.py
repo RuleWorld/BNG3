@@ -18,6 +18,15 @@ expected_check_names = (
     "lifecycle-mutation-baseline",
     "lifecycle-public-routes",
     "lifecycle-topology-unavailable",
+    "lifecycle-repeated-instantiation",
+    "lifecycle-concurrent-instantiation",
+    "lifecycle-independent-rng",
+    "lifecycle-independent-caches",
+    "lifecycle-independent-solver-state",
+    "lifecycle-exception-cleanup",
+    "lifecycle-parameter-only-reuse",
+    "lifecycle-topology-invalidation",
+    "lifecycle-compartment-invalidation",
 )
 
 # Lifecycle work is deliberately bounded to a stable four-case slice. The
@@ -37,6 +46,17 @@ lifecycle_budget = {
         "remove_seed_species",
         "move_species_to_compartment",
     ),
+    # Compile-once / instantiate-many budgets. Every instance-level check
+    # compares against a fresh compilation or a closed-form law, never against
+    # the instance under test.
+    "repeated_runs_per_model": 3,
+    "concurrent_instances_per_case": 4,
+    "concurrent_seeds": (1729, 8123),
+    "rng_sample_steps": 100,
+    "solver_state_runs_per_model": 4,
+    "exception_recovery_iterations": 3,
+    "parameter_only_overrides": ("k",),
+    "volume_override_factor": 3.0,
 }
 
 _ISSUES = {
@@ -49,6 +69,15 @@ _ISSUES = {
     "lifecycle-mutation-baseline": [141, 143],
     "lifecycle-public-routes": [138, 139, 140],
     "lifecycle-topology-unavailable": [141, 143],
+    "lifecycle-repeated-instantiation": [141, 143],
+    "lifecycle-concurrent-instantiation": [141, 143],
+    "lifecycle-independent-rng": [141, 143],
+    "lifecycle-independent-caches": [141, 143],
+    "lifecycle-independent-solver-state": [141, 143],
+    "lifecycle-exception-cleanup": [141, 143],
+    "lifecycle-parameter-only-reuse": [141, 143],
+    "lifecycle-topology-invalidation": [141, 143],
+    "lifecycle-compartment-invalidation": [141, 143],
 }
 
 
@@ -567,18 +596,10 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
             if case is not None
             else "generated source case was not supplied"
         )
-        for name in (
-            "lifecycle-construction-isolation",
-            "lifecycle-mutation-baseline",
-            "lifecycle-public-routes",
-        ):
+        for name in _LIFECYCLE_CHECK_NAMES:
             rows.append(_row(case_id, name, "NOT_TESTED", detail))
     else:
-        for name, check in (
-            ("lifecycle-construction-isolation", _lifecycle_construction_isolation),
-            ("lifecycle-mutation-baseline", _lifecycle_mutation_baseline),
-            ("lifecycle-public-routes", _lifecycle_public_routes),
-        ):
+        for name, detail, check in _LIFECYCLE_CHECKS:
             try:
                 difference = check(bionetgen, case, directory)
                 rows.append(
@@ -586,7 +607,7 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
                         case_id,
                         name,
                         "FAIL" if difference else "PASS",
-                        "bounded lifecycle protocol completed; independent fresh-source controls checked",
+                        detail,
                         difference,
                     )
                 )
@@ -1103,3 +1124,519 @@ def _lifecycle_public_routes(bionetgen, case, directory):
         ],
     )
     return None
+
+
+def _lifecycle_control_source(case, directory, name):
+    """Write the native lifecycle control for a case and return its path."""
+    from .integrated_cases import reuse_bngl
+
+    path = directory / name
+    path.write_text(reuse_bngl(case))
+    return path
+
+
+def _lifecycle_deterministic_options():
+    return dict(method="ode", t_end=2.0, n_steps=10, rtol=1e-10, atol=1e-12)
+
+
+def _compiled_topology(cpp, model):
+    """Return the compiled structure a parameter-only override must preserve."""
+    snapshot = cpp._compiled_snapshot(model._model)
+    return {
+        key: snapshot.get(key)
+        for key in (
+            "molecule_types",
+            "rules",
+            "seeds",
+            "observables",
+            "functions",
+            "compartments",
+        )
+    }
+
+
+def _topology_result_difference(result, case, *, rate=None, atol=1e-8, rtol=1e-8):
+    """Compare the merged-topology trajectory with the closed-form chain law."""
+    from types import SimpleNamespace
+
+    from .integrated_cases import RATE
+
+    import numpy as np
+
+    rate = RATE if rate is None else rate
+    times = np.asarray(result.time, dtype=float)
+    initial = float(case["initial"])
+    converted = initial * np.exp(-rate * times)
+    expected = SimpleNamespace(
+        time=times,
+        observables={
+            "A": converted,
+            "B": initial - converted,
+            "D": np.full(times.shape, float(max(1, int(initial) // 4))),
+        },
+    )
+    return _result_difference(result, expected, atol=atol, rtol=rtol)
+
+
+def _lifecycle_repeated_instantiation(bionetgen, case, directory):
+    """Repeated instantiation over one compiled model keeps independent results."""
+    source = _lifecycle_control_source(case, directory, "lifecycle-repeated.bngl")
+    deterministic = _lifecycle_deterministic_options()
+    stochastic = dict(method="ssa", t_end=2.0, n_steps=10, seed=1729)
+    model = bionetgen.load(str(source))
+    expected_ode = bionetgen.load(str(source)).simulate(**deterministic)
+    expected_ssa = bionetgen.load(str(source)).simulate(**stochastic)
+    receipts = []
+    for index in range(lifecycle_budget["repeated_runs_per_model"]):
+        actual = model.simulate(**deterministic)
+        sampled = model.simulate(**stochastic)
+        receipts.append(
+            _result_receipt(actual, instance="reused", run=index, source=source.name)
+        )
+        receipts.append(
+            _result_receipt(sampled, instance="reused", run=index, source=source.name)
+        )
+        difference = _result_difference(actual, expected_ode)
+        if difference is None:
+            difference = _result_difference(sampled, expected_ssa, atol=0.0, rtol=0.0)
+        if difference is not None:
+            _write_lifecycle_receipt(
+                directory, "lifecycle-repeated-instantiation", receipts
+            )
+            return {"field": f"repeat[{index}].{difference['field']}"}
+    _write_lifecycle_receipt(directory, "lifecycle-repeated-instantiation", receipts)
+    return None
+
+
+def _lifecycle_concurrent_instantiation(bionetgen, case, directory):
+    """Concurrent instantiation keeps RNG streams, caches and solver apart."""
+    source = _lifecycle_control_source(case, directory, "lifecycle-concurrent.bngl")
+    seeds = lifecycle_budget["concurrent_seeds"]
+    count = lifecycle_budget["concurrent_instances_per_case"]
+    assignment = tuple(seeds[index % len(seeds)] for index in range(count))
+    options = dict(
+        method="ssa", t_end=2.0, n_steps=lifecycle_budget["rng_sample_steps"]
+    )
+    with ThreadPoolExecutor(max_workers=count) as pool:
+        models = list(
+            pool.map(lambda _index: bionetgen.load(str(source)), range(count))
+        )
+    with ThreadPoolExecutor(max_workers=count) as pool:
+        results = list(
+            pool.map(
+                lambda item: item[0].simulate(seed=item[1], **options),
+                list(zip(models, assignment)),
+            )
+        )
+    receipts = []
+    for index, (model, result, seed) in enumerate(zip(models, results, assignment)):
+        expected = bionetgen.load(str(source)).simulate(seed=seed, **options)
+        difference = _result_difference(result, expected, atol=0.0, rtol=0.0)
+        if difference is not None:
+            _write_lifecycle_receipt(
+                directory, "lifecycle-concurrent-instantiation", receipts
+            )
+            return {"field": f"instance[{index}].{difference['field']}"}
+        receipts.append(_result_receipt(result, instance=index, seed=seed))
+    networks = [model._network for model in models]
+    if len({id(network) for network in networks}) != count:
+        _write_lifecycle_receipt(
+            directory, "lifecycle-concurrent-instantiation", receipts
+        )
+        return {"field": "concurrent.network_cache_shared"}
+    by_seed = {}
+    for index, seed in enumerate(assignment):
+        by_seed.setdefault(seed, []).append(results[index])
+    for seed, group in sorted(by_seed.items()):
+        for other in group[1:]:
+            difference = _result_difference(group[0], other, atol=0.0, rtol=0.0)
+            if difference is not None:
+                _write_lifecycle_receipt(
+                    directory, "lifecycle-concurrent-instantiation", receipts
+                )
+                return {"field": "concurrent.same_seed_diverged", "seed": seed}
+    distinct = sorted(by_seed)
+    if len(distinct) > 1:
+        difference = _result_difference(
+            by_seed[distinct[0]][0], by_seed[distinct[1]][0], atol=0.0, rtol=0.0
+        )
+        if difference is None:
+            _write_lifecycle_receipt(
+                directory, "lifecycle-concurrent-instantiation", receipts
+            )
+            return {"field": "concurrent.seed_not_honored", "seeds": distinct}
+    _write_lifecycle_receipt(directory, "lifecycle-concurrent-instantiation", receipts)
+    return None
+
+
+def _lifecycle_independent_rng(bionetgen, case, directory):
+    """Each trajectory owns an independent RNG stream."""
+    source = _lifecycle_control_source(case, directory, "lifecycle-rng.bngl")
+    options = dict(
+        method="ssa", t_end=2.0, n_steps=lifecycle_budget["rng_sample_steps"]
+    )
+    first_seed, second_seed = lifecycle_budget["concurrent_seeds"]
+    model = bionetgen.load(str(source))
+    first = model.simulate(seed=first_seed, **options)
+    other = model.simulate(seed=second_seed, **options)
+    repeated = model.simulate(seed=first_seed, **options)
+    receipts = [
+        _result_receipt(first, phase="first", seed=first_seed),
+        _result_receipt(other, phase="other-seed", seed=second_seed),
+        _result_receipt(repeated, phase="repeated", seed=first_seed),
+    ]
+    difference = _result_difference(repeated, first, atol=0.0, rtol=0.0)
+    if difference is not None:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-rng", receipts)
+        return {"field": f"rng.replay.{difference['field']}"}
+    difference = _result_difference(other, first, atol=0.0, rtol=0.0)
+    if difference is None:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-rng", receipts)
+        return {"field": "rng.seed_not_honored"}
+    twin = bionetgen.load(str(source)).simulate(seed=first_seed, **options)
+    difference = _result_difference(twin, first, atol=0.0, rtol=0.0)
+    if difference is not None:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-rng", receipts)
+        return {"field": f"rng.twin.{difference['field']}"}
+    _write_lifecycle_receipt(directory, "lifecycle-independent-rng", receipts)
+    return None
+
+
+def _lifecycle_independent_caches(bionetgen, case, directory):
+    """Each instance owns its mutable caches."""
+    from .integrated_cases import RATE, reuse_bngl
+
+    source = _lifecycle_control_source(case, directory, "lifecycle-caches.bngl")
+    options = _lifecycle_deterministic_options()
+    left = bionetgen.load(str(source))
+    right = bionetgen.load(str(source))
+    left_network = left.generate_network()
+    right_network = right.generate_network()
+    receipts = []
+    if left_network is right_network:
+        return {"field": "caches.network_shared"}
+    changed = RATE * 0.73
+    left.set_parameter("k", changed)
+    if left._network is not None:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-caches", receipts)
+        return {"field": "caches.mutation_kept_stale_network"}
+    if right._network is not right_network:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-caches", receipts)
+        return {"field": "caches.sibling_cache_invalidated"}
+    if float(right.get_parameter("k").value) != RATE:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-caches", receipts)
+        return {
+            "field": "caches.parameter_leaked_to_sibling",
+            "observed": float(right.get_parameter("k").value),
+        }
+    left_reference = directory / "lifecycle-caches-left.bngl"
+    left_reference.write_text(reuse_bngl(case, rate=changed))
+    left_result = left.simulate(**options)
+    right_result = right.simulate(**options)
+    receipts.append(_result_receipt(left_result, instance="left"))
+    receipts.append(_result_receipt(right_result, instance="right"))
+    difference = _result_difference(
+        left_result, bionetgen.load(str(left_reference)).simulate(**options)
+    )
+    if difference is None:
+        difference = _result_difference(
+            right_result, bionetgen.load(str(source)).simulate(**options)
+        )
+    if difference is not None:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-caches", receipts)
+        return {"field": f"caches.{difference['field']}"}
+    if left._network is left_network or left._network is right_network:
+        _write_lifecycle_receipt(directory, "lifecycle-independent-caches", receipts)
+        return {"field": "caches.rebuilt_network_shared"}
+    _write_lifecycle_receipt(directory, "lifecycle-independent-caches", receipts)
+    return None
+
+
+def _lifecycle_independent_solver_state(bionetgen, case, directory):
+    """Each trajectory owns its solver state."""
+    source = _lifecycle_control_source(case, directory, "lifecycle-solver-state.bngl")
+    options = _lifecycle_deterministic_options()
+    model = bionetgen.load(str(source))
+    expected = bionetgen.load(str(source)).simulate(**options)
+    receipts = []
+    difference = None
+    for phase in ("first", "repeat"):
+        actual = model.simulate(**options)
+        receipts.append(_result_receipt(actual, phase=phase))
+        difference = _result_difference(actual, expected)
+        if difference is not None:
+            break
+    if difference is None:
+        stopped = model.simulate(stop_if="time > 1.0", **options)
+        receipts.append(_result_receipt(stopped, phase="stopped"))
+        actual = model.simulate(**options)
+        receipts.append(_result_receipt(actual, phase="after-stop"))
+        difference = _result_difference(actual, expected)
+    if difference is None:
+        sampled = model.simulate(method="ssa", t_end=2.0, n_steps=10, seed=99)
+        receipts.append(_result_receipt(sampled, phase="stochastic"))
+        actual = model.simulate(**options)
+        receipts.append(_result_receipt(actual, phase="after-stochastic"))
+        difference = _result_difference(actual, expected)
+    _write_lifecycle_receipt(directory, "lifecycle-independent-solver-state", receipts)
+    return difference
+
+
+def _lifecycle_exception_cleanup(bionetgen, case, directory):
+    """Exception paths release the trajectory-owned state."""
+    source = _lifecycle_control_source(case, directory, "lifecycle-exception.bngl")
+    options = _lifecycle_deterministic_options()
+    model = bionetgen.load(str(source))
+    expected = bionetgen.load(str(source)).simulate(**options)
+    expected_network = bionetgen.load(str(source)).generate_network()
+    receipts = []
+    difference = None
+    for index in range(lifecycle_budget["exception_recovery_iterations"]):
+        try:
+            model.simulate(
+                stop_if="if(time > 0, __lifecycle_missing_name__, 0)", **options
+            )
+        except RuntimeError as exc:
+            if "__lifecycle_missing_name__" not in str(exc):
+                difference = {"field": "exception.message", "detail": str(exc)}
+                break
+        else:
+            difference = {"field": "exception.not_raised"}
+            break
+        actual = model.simulate(**options)
+        receipts.append(
+            _result_receipt(
+                actual,
+                phase="recovered",
+                iteration=index,
+                native_resource_cleanup=(
+                    "NOT_TESTED; the ASan job's 'OdeIntegrator recovers after late "
+                    "stop condition failure' test owns the native release proof"
+                ),
+            )
+        )
+        difference = _result_difference(actual, expected)
+        if difference is not None:
+            break
+        if model._network is None or int(model._network.num_species) != int(
+            expected_network.num_species
+        ):
+            difference = {"field": "exception.network_cache_damaged"}
+            break
+    _write_lifecycle_receipt(directory, "lifecycle-exception-cleanup", receipts)
+    return difference
+
+
+def _lifecycle_parameter_only_reuse(bionetgen, case, directory):
+    """Parameter-only overrides reuse the compiled structure and match a compile."""
+    from bionetgen import _bionetgen_cpp as cpp
+
+    from .integrated_cases import RATE, reuse_bngl
+
+    source = _lifecycle_control_source(case, directory, "lifecycle-parameter-only.bngl")
+    options = _lifecycle_deterministic_options()
+    model = bionetgen.load(str(source))
+    expected = bionetgen.load(str(source)).simulate(**options)
+    receipts = []
+    difference = _analytic_result_difference(expected, case)
+    if difference is not None:
+        _write_lifecycle_receipt(directory, "lifecycle-parameter-only-reuse", receipts)
+        return {"field": f"baseline.{difference['field']}"}
+    compiled = model._model
+    topology = _compiled_topology(cpp, model)
+    for parameter in lifecycle_budget["parameter_only_overrides"]:
+        value = RATE * 1.4
+        model.set_parameter(parameter, value)
+        actual = model.simulate(**options)
+        reference_source = directory / f"lifecycle-parameter-only-{parameter}.bngl"
+        reference_source.write_text(reuse_bngl(case, rate=value))
+        fresh = bionetgen.load(str(reference_source)).simulate(**options)
+        difference = _result_difference(actual, fresh)
+        if difference is None:
+            difference = _analytic_result_difference(
+                actual, dict(case, _lifecycle_rate=value)
+            )
+        if difference is None and model._model is not compiled:
+            difference = {"field": "parameter.compiled_model_replaced"}
+        if difference is None and _compiled_topology(cpp, model) != topology:
+            difference = {"field": "parameter.compiled_structure_changed"}
+        receipts.append(_result_receipt(actual, parameter=parameter, value=value))
+        if difference is not None:
+            _write_lifecycle_receipt(
+                directory, "lifecycle-parameter-only-reuse", receipts
+            )
+            return {"field": f"parameter.{parameter}.{difference['field']}"}
+        model.set_parameter(parameter, RATE)
+        restored = model.simulate(**options)
+        difference = _result_difference(restored, expected)
+        if difference is not None:
+            _write_lifecycle_receipt(
+                directory, "lifecycle-parameter-only-reuse", receipts
+            )
+            return {"field": f"restore.{parameter}.{difference['field']}"}
+    _write_lifecycle_receipt(directory, "lifecycle-parameter-only-reuse", receipts)
+    return None
+
+
+def _lifecycle_topology_invalidation(bionetgen, case, directory):
+    """A topology change invalidates the cached network and matches a compile."""
+    from .integrated_cases import lifecycle_topology_sources
+
+    base_source, fragment_source, merged_source = lifecycle_topology_sources(case)
+    fragment_path = directory / "lifecycle-topology-fragment.bngl"
+    fragment_path.write_text(fragment_source)
+    base_path = directory / "lifecycle-topology-control.bngl"
+    base_path.write_text(base_source)
+    merged_path = directory / "lifecycle-topology-merged.bngl"
+    merged_path.write_text(merged_source)
+    options = _lifecycle_deterministic_options()
+    model = bionetgen.load(str(base_path))
+    before = list(model.generate_network().species_names)
+    model.execute()
+    receipts = []
+    if model._network is not None:
+        _write_lifecycle_receipt(directory, "lifecycle-topology-invalidation", receipts)
+        return {
+            "field": "topology.network_cache_not_invalidated",
+            "cached_species": list(model._network.species_names),
+            "species_before_action": before,
+        }
+    actual = model.simulate(**options)
+    receipts.append(_result_receipt(actual, phase="merged"))
+    fresh = bionetgen.load(str(merged_path)).simulate(**options)
+    difference = _result_difference(actual, fresh)
+    if difference is None:
+        difference = _topology_result_difference(actual, case)
+    if difference is None and list(model._network.species_names) == before:
+        difference = {"field": "topology.species_not_added", "before": before}
+    if difference is None:
+        baseline = bionetgen.load(str(base_path)).simulate(**options)
+        if _result_difference(actual, baseline) is None:
+            difference = {"field": "topology.change_not_observable"}
+    if difference is not None:
+        _write_lifecycle_receipt(directory, "lifecycle-topology-invalidation", receipts)
+        return difference
+    _write_lifecycle_receipt(directory, "lifecycle-topology-invalidation", receipts)
+    return None
+
+
+def _lifecycle_compartment_invalidation(bionetgen, case, directory):
+    """A compartment/volume change invalidates reuse and matches a compile."""
+    from .integrated_cases import lifecycle_volume_bngl
+
+    volume_case = dict(case, family="dimerization")
+    new_volume = float(case["volume"]) * lifecycle_budget["volume_override_factor"]
+    control = directory / "lifecycle-compartment.bngl"
+    control.write_text(
+        lifecycle_volume_bngl(
+            volume_case,
+            actions=f'  setVolume({{target=>"cell",value=>{new_volume:.17g}}})\n',
+        )
+    )
+    reference = directory / "lifecycle-compartment-fresh.bngl"
+    reference.write_text(lifecycle_volume_bngl(volume_case, volume=new_volume))
+    options = _lifecycle_deterministic_options()
+    model = bionetgen.load(str(control))
+    baseline = model.simulate(**options)
+    model.execute()
+    receipts = []
+    if model._network is not None:
+        _write_lifecycle_receipt(
+            directory, "lifecycle-compartment-invalidation", receipts
+        )
+        return {"field": "compartment.network_cache_not_invalidated"}
+    actual = model.simulate(**options)
+    receipts.append(_result_receipt(actual, phase="new-volume"))
+    fresh = bionetgen.load(str(reference)).simulate(**options)
+    difference = _result_difference(actual, fresh)
+    if difference is None:
+        difference = _analytic_result_difference(
+            actual, dict(volume_case, volume=new_volume)
+        )
+    if difference is None and _result_difference(actual, baseline) is None:
+        difference = {"field": "compartment.volume_change_not_observable"}
+    if difference is not None:
+        _write_lifecycle_receipt(
+            directory, "lifecycle-compartment-invalidation", receipts
+        )
+        return difference
+    _write_lifecycle_receipt(directory, "lifecycle-compartment-invalidation", receipts)
+    return None
+
+
+_LIFECYCLE_CHECKS = (
+    (
+        "lifecycle-construction-isolation",
+        "two concurrently constructed models with distinct seeds and parameters, "
+        "three interleaved SSA runs each, compared with fresh construction",
+        _lifecycle_construction_isolation,
+    ),
+    (
+        "lifecycle-mutation-baseline",
+        "volume, population and rate mutations compared with fresh compilations "
+        "and the closed-form law, then restored",
+        _lifecycle_mutation_baseline,
+    ),
+    (
+        "lifecycle-public-routes",
+        "the public CLI run route and a CLI action route compared with the API "
+        "and the closed-form law",
+        _lifecycle_public_routes,
+    ),
+    (
+        "lifecycle-repeated-instantiation",
+        "one compiled model instantiated repeatedly; every run compared with a "
+        "fresh compilation",
+        _lifecycle_repeated_instantiation,
+    ),
+    (
+        "lifecycle-concurrent-instantiation",
+        "concurrently constructed and simulated instances; every trajectory "
+        "compared with a fresh compilation and the caches kept distinct",
+        _lifecycle_concurrent_instantiation,
+    ),
+    (
+        "lifecycle-independent-rng",
+        "seeded trajectories replayed and interleaved on one instance and on an "
+        "independent instance",
+        _lifecycle_independent_rng,
+    ),
+    (
+        "lifecycle-independent-caches",
+        "one instance mutated while its sibling keeps its own parameters and its "
+        "own generated network",
+        _lifecycle_independent_caches,
+    ),
+    (
+        "lifecycle-independent-solver-state",
+        "repeated, early-stopped and interleaved stochastic runs on one instance "
+        "compared with a fresh compilation",
+        _lifecycle_independent_solver_state,
+    ),
+    (
+        "lifecycle-exception-cleanup",
+        "a late stop-condition failure followed by repeated recoveries compared "
+        "with a fresh compilation",
+        _lifecycle_exception_cleanup,
+    ),
+    (
+        "lifecycle-parameter-only-reuse",
+        "a parameter-only override compared with a fresh compilation and the "
+        "closed-form law, with the compiled structure preserved",
+        _lifecycle_parameter_only_reuse,
+    ),
+    (
+        "lifecycle-topology-invalidation",
+        "a topology-changing action invalidates the cached network; the rebuilt "
+        "trajectory compared with a fresh compilation and the closed-form law",
+        _lifecycle_topology_invalidation,
+    ),
+    (
+        "lifecycle-compartment-invalidation",
+        "a compartment-volume change invalidates reuse; the rebuilt trajectory "
+        "compared with a fresh compilation and the closed-form law",
+        _lifecycle_compartment_invalidation,
+    ),
+)
+
+_LIFECYCLE_CHECK_NAMES = tuple(name for name, _detail, _check in _LIFECYCLE_CHECKS)

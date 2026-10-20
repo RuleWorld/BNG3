@@ -18,6 +18,15 @@ def test_expected_protocol_checks_are_explicit_and_issue_linked():
         "lifecycle-mutation-baseline",
         "lifecycle-public-routes",
         "lifecycle-topology-unavailable",
+        "lifecycle-repeated-instantiation",
+        "lifecycle-concurrent-instantiation",
+        "lifecycle-independent-rng",
+        "lifecycle-independent-caches",
+        "lifecycle-independent-solver-state",
+        "lifecycle-exception-cleanup",
+        "lifecycle-parameter-only-reuse",
+        "lifecycle-topology-invalidation",
+        "lifecycle-compartment-invalidation",
     )
     assert set(protocol._ISSUES) == set(protocol.expected_check_names)
     assert {issue for issues in protocol._ISSUES.values() for issue in issues} == {
@@ -55,11 +64,47 @@ def test_lifecycle_protocol_declares_bounded_work_and_explicit_topology_gap():
             "remove_seed_species",
             "move_species_to_compartment",
         ),
+        "repeated_runs_per_model": 3,
+        "concurrent_instances_per_case": 4,
+        "concurrent_seeds": (1729, 8123),
+        "rng_sample_steps": 100,
+        "solver_state_runs_per_model": 4,
+        "exception_recovery_iterations": 3,
+        "parameter_only_overrides": ("k",),
+        "volume_override_factor": 3.0,
     }
     row = protocol._topology_unavailable_row("case")
     assert row["status"] == "UNSUPPORTED"
     assert row["check"] == "case:protocol:lifecycle-topology-unavailable"
     assert "runtime topology mutation" in row["detail"]
+
+
+def test_every_lifecycle_check_is_named_and_issue_linked():
+    names = protocol._LIFECYCLE_CHECK_NAMES
+    assert len(names) == len(set(names))
+    assert set(names) <= set(protocol.expected_check_names)
+    assert set(names) == {
+        name
+        for name in protocol.expected_check_names
+        if name.startswith("lifecycle-") and name != "lifecycle-topology-unavailable"
+    }
+    for name, detail, check in protocol._LIFECYCLE_CHECKS:
+        assert callable(check)
+        assert detail and isinstance(detail, str)
+        assert protocol._ISSUES[name]
+    instance_checks = {
+        name
+        for name in protocol._LIFECYCLE_CHECK_NAMES
+        if name
+        not in {
+            "lifecycle-construction-isolation",
+            "lifecycle-mutation-baseline",
+            "lifecycle-public-routes",
+        }
+    }
+    assert instance_checks
+    for name in instance_checks:
+        assert 141 in protocol._ISSUES[name]
 
 
 def test_lifecycle_case_slice_respects_declared_budget():
@@ -248,3 +293,110 @@ def test_lifecycle_detects_rebuilt_network_despite_equal_outputs(tmp_path):
         tmp_path,
     )
     assert difference == {"field": "network_cache_rebuilt", "model": "left"}
+
+
+def _lifecycle_case():
+    return dict(
+        id="v1-n20-r0-a0",
+        family="decay",
+        volume=1,
+        initial=20,
+        reverse=False,
+        atomize=False,
+    )
+
+
+def _stub_result(value):
+    return SimpleNamespace(
+        time=np.array([0.0, 2.0]),
+        observables={"A": np.array([value, value])},
+    )
+
+
+def test_topology_invalidation_detects_a_stale_cached_network(tmp_path):
+    class StaleModel:
+        def __init__(self):
+            self._network = SimpleNamespace(
+                species_names=["@cell::A()"], num_species=1, num_reactions=1
+            )
+
+        def generate_network(self):
+            return self._network
+
+        def execute(self):
+            return None
+
+        def simulate(self, **kwargs):
+            raise AssertionError("a stale cache must be reported before simulating")
+
+    difference = protocol._lifecycle_topology_invalidation(
+        SimpleNamespace(load=lambda path: StaleModel()), _lifecycle_case(), tmp_path
+    )
+    assert difference["field"] == "topology.network_cache_not_invalidated"
+
+
+def test_compartment_invalidation_detects_a_stale_cached_network(tmp_path):
+    class StaleModel:
+        def __init__(self):
+            self._network = SimpleNamespace(
+                species_names=["@cell::A()"], num_species=1, num_reactions=1
+            )
+
+        def execute(self):
+            return None
+
+        def simulate(self, **kwargs):
+            return _stub_result(1.0)
+
+    difference = protocol._lifecycle_compartment_invalidation(
+        SimpleNamespace(load=lambda path: StaleModel()), _lifecycle_case(), tmp_path
+    )
+    assert difference["field"] == "compartment.network_cache_not_invalidated"
+
+
+def test_repeated_instantiation_detects_a_diverging_repeat(tmp_path):
+    class DriftingModel:
+        def __init__(self):
+            self.calls = 0
+
+        def simulate(self, **kwargs):
+            self.calls += 1
+            return _stub_result(float(self.calls))
+
+    difference = protocol._lifecycle_repeated_instantiation(
+        SimpleNamespace(load=lambda path: DriftingModel()), _lifecycle_case(), tmp_path
+    )
+    assert difference["field"].startswith("repeat[0].")
+
+
+def test_independent_rng_detects_an_ignored_seed(tmp_path):
+    class SeedIgnoringModel:
+        def simulate(self, **kwargs):
+            return _stub_result(1.0)
+
+    difference = protocol._lifecycle_independent_rng(
+        SimpleNamespace(load=lambda path: SeedIgnoringModel()),
+        _lifecycle_case(),
+        tmp_path,
+    )
+    assert difference == {"field": "rng.seed_not_honored"}
+
+
+def test_independent_caches_detects_a_shared_network_cache(tmp_path):
+    shared = SimpleNamespace(
+        species_names=["@cell::A()"], num_species=1, num_reactions=1
+    )
+
+    class SharedCacheModel:
+        def __init__(self):
+            self._network = shared
+
+        def generate_network(self):
+            return shared
+
+    difference = protocol._lifecycle_independent_caches(
+        SimpleNamespace(load=lambda path: SharedCacheModel()),
+        _lifecycle_case(),
+        tmp_path,
+    )
+    assert difference == {"field": "caches.network_shared"}

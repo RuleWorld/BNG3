@@ -604,7 +604,15 @@ class BioNetGenModel:
         """Execute all actions defined in the model's action block."""
         self._require_export_supported("Action execution")
         source = self._source_path or "."
-        _cpp.execute(self._model, source, verbose=verbose)
+        try:
+            _cpp.execute(self._model, source, verbose=verbose)
+        finally:
+            # Actions can change the model's topology, seed species,
+            # compartments and parameters (include_model, readFile,
+            # setVolume, setParameter). A generated network compiled before
+            # the action would then describe a model that no longer exists,
+            # so the cached network is discarded even when the action failed.
+            self._network = None
 
     def write_xml(self, path: str) -> None:
         self._require_export_supported("BNG-XML export")

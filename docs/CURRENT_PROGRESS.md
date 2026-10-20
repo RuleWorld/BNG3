@@ -1,5 +1,64 @@
 # BNG3 current progress
 
+## Compile-once model reuse lifecycle qualification (2026-10-20 candidate)
+
+Issue #141 still had no named executable check for repeated instantiation,
+concurrent instantiation, independent RNG ownership, independent caches,
+independent solver state, exception cleanup, parameter-only reuse, topology
+invalidation and compartment invalidation. The lifecycle harness in
+`tests/validation/integrated_protocol.py` now names one check per obligation and
+runs it over the declared four-case generated slice (`v1-n20-r0-a0`,
+`reversible-v3-n80-r0-a0`, `dimerization-v1-n20-r0-a0`, `dimerization-v3-n80-r0-a0`).
+Every check compares against an independent expectation, a freshly compiled
+model or a closed-form law, and never against the instance under test.
+
+- `lifecycle-repeated-instantiation`: one compiled model instantiated three
+  times; every deterministic and every seeded trajectory equals a fresh
+  compilation of the same source.
+- `lifecycle-concurrent-instantiation`: four concurrently constructed and
+  concurrently simulated instances; every seeded trajectory equals a fresh
+  compilation with the same seed, equal seeds agree, different seeds differ,
+  and the generated-network caches are distinct objects.
+- `lifecycle-independent-rng`: an interleaved replay of one seed reproduces its
+  trajectory exactly, a second seed produces a different trajectory, and an
+  independently constructed instance reproduces the same seed.
+- `lifecycle-independent-caches`: one instance mutated while its sibling keeps
+  its own parameter values and its own generated-network object; both
+  trajectories equal fresh compilations.
+- `lifecycle-independent-solver-state`: repeated, early-stopped and interleaved
+  stochastic runs on one instance leave the deterministic trajectory equal to a
+  fresh compilation.
+- `lifecycle-exception-cleanup`: a stop-condition failure raised after the
+  solver allocated its state leaves the instance usable, and every recovered
+  trajectory equals a fresh compilation.
+- `lifecycle-parameter-only-reuse`: a rate-parameter override preserves the
+  compiled structure and reproduces a fresh compilation and the closed-form law.
+- `lifecycle-topology-invalidation`: a topology-changing `include_model` action
+  invalidates the cached network; the rebuilt trajectory equals a fresh
+  compilation of the merged source and the closed-form chain law.
+- `lifecycle-compartment-invalidation`: a `setVolume` action invalidates reuse;
+  the rebuilt trajectory equals a fresh compilation with the new volume and the
+  closed-form volume law.
+
+The topology and compartment checks exposed a product defect.
+`BioNetGenModel.execute()` applied the model's actions to the compiled model but
+left the cached generated network in place, so a model whose action changed the
+topology, the seed species, the compartments or the parameters was then
+simulated with the network compiled before the action. `python/bionetgen/model.py`
+now discards the cached network when the action block runs, in a `finally`
+clause so that a failed action cannot leave a stale cache either. The
+regressions are `tests/python/test_model_reuse_contract.py::test_action_execution_invalidates_the_cached_generated_network`
+and `::test_volume_action_invalidates_the_cached_generated_network`; both fail
+against the unrepaired model and pass against the repaired one.
+
+The nine #141 obligations in `provenance/issue-obligations.json` now name these
+checks instead of the `qualification:issue:141:*` placeholders and declare their
+scope boundaries and feature combinations. Runtime topology editing through the
+public `Model` API remains unsupported and stays an explicit boundary; the
+qualified topology route is the action protocol's `include_model`. The
+governance obligations of the issue keep their disposition checks, so the issue
+stays open.
+
 ## Native BNGIR v0.2 model functions (2026-10-19 candidate)
 
 The native BNGIR v0.2 importer refused the whole `model.functions` section, so
