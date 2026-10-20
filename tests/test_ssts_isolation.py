@@ -298,6 +298,57 @@ def test_fork_isolation_keeps_a_failing_case_from_reaching_its_neighbour(
     assert "deliberate failure" in records[0]["error"]
 
 
+@pytest.mark.skipif(
+    not hasattr(os, "fork"), reason="fork isolation requires POSIX fork"
+)
+def test_fork_isolation_does_not_leak_case_state_into_the_next_case(
+    tmp_path, monkeypatch
+):
+    """Module state written by one case must not be visible to the next.
+
+    This is the property that a batched, same-process implementation would
+    lose.  Every forked child starts from the parent's pristine state, so a
+    case that writes a module global cannot be observed by its neighbour.
+    """
+
+    monkeypatch.setattr(runner, "_LEAK_PROBE", None, raising=False)
+
+    def _leaky(case, *_args, **_kwargs):
+        if case["id"] == "00001":
+            runner._LEAK_PROBE = "leaked"
+        return {
+            "category": case["category"],
+            "id": case["id"],
+            "version": case["version"],
+            "source": str(case["path"]),
+            "status": "passed",
+            "core_passed": True,
+            "observed_probe": runner._LEAK_PROBE,
+            "official_conformance": {"status": "passed"},
+        }
+
+    monkeypatch.setattr(runner, "_validate_case", _leaky)
+    cases = [
+        {
+            "category": "semantic",
+            "id": "00001",
+            "version": "l3v2",
+            "path": str(tmp_path / "a.xml"),
+        },
+        {
+            "category": "semantic",
+            "id": "00002",
+            "version": "l3v2",
+            "path": str(tmp_path / "b.xml"),
+        },
+    ]
+    args = _namespace(tmp_path, case_timeout=60)
+    records = runner._run_forked_cases(cases, args, None, {}, 1)
+
+    assert records[0]["observed_probe"] == "leaked"
+    assert records[1]["observed_probe"] is None
+
+
 def test_busy_verification_slot_never_blocks_or_fails_a_run(tmp_path):
     """A busy slot must be reported and must not fail the run."""
 
