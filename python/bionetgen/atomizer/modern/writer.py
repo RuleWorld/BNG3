@@ -60,8 +60,11 @@ from .types import (
 )
 
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
-# SBML Level 3's built-in avogadro symbol has an exact SI-defined value.
-_SBML_AVOGADRO = 6.02214076e23
+# SBML Level 3 Version 2 Core fixes the value of the built-in ``avogadro``
+# csymbol at 6.02214179e+23 and requires every reader of this SBML version to
+# use exactly that number.  BNGL's ``__Avogadro__`` is BNG's molecule-count
+# factor and is 1, so the two quantities are not interchangeable.
+_SBML_AVOGADRO = 6.02214179e23
 _MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
 _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
 
@@ -441,7 +444,7 @@ def _number(value: object) -> str:
         number = float(value)
     except (OverflowError, TypeError, ValueError):
         return str(value)
-    if number.is_integer():
+    if number.is_integer() and abs(number) < 1e15:
         return str(int(number))
     return format(number, ".15g")
 
