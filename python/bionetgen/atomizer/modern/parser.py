@@ -1187,6 +1187,21 @@ _RATE_OF_CALL = re.compile(
 )
 
 
+def _rate_of_before_start_guard(body: str) -> str:
+    """Return ``body`` guarded to be zero before the simulation starts.
+
+    SBML Level 3 Version 2 Core Sec. 3.4.8 ("Initial conditions and special
+    considerations") fixes the ``rateOf`` of any valid target at zero for
+    ``t < 0``.  A delayed read of a rate therefore observes zero while the
+    delayed time is still before the start of the simulation.
+    """
+
+    text = str(body or "").strip()
+    if not text or text == "0":
+        return text
+    return f"if(time < 0, 0, {text})"
+
+
 def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
     """Replace ``rateOf`` of a reaction-local parameter by zero.
 
@@ -1262,7 +1277,9 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
             replacement = rate_rules.get(key)
             if replacement is None or key in stack:
                 return match.group(0)
-            return f"({expand(replacement, (*stack, key))})"
+            return _rate_of_before_start_guard(
+                f"({expand(replacement, (*stack, key))})"
+            )
 
         return _RATE_OF_CALL.sub(replace, source)
 
@@ -1629,7 +1646,9 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             replacement = rate_of_expressions.get(
                 identifier, rate_of_expressions.get(standardize_name(identifier))
             )
-            return f"({replacement})" if replacement is not None else match.group(0)
+            if replacement is None:
+                return match.group(0)
+            return _rate_of_before_start_guard(f"({replacement})")
 
         return _RATE_OF_CALL.sub(substitute, str(expression or ""))
 
@@ -2700,14 +2719,32 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                         if standardize_name(identifier) in rate_rules
                         or standardize_name(identifier) in reaction_rate_rules
                     ]
+                    # A delayed read is evaluated at ``t - duration``: the
+                    # simulation time inside the delayed expression moves with
+                    # it, and the states it reads are replaced by their own
+                    # history.
+                    delayed_first = (
+                        re.sub(
+                            r"\btime\b",
+                            f"(time - ({second}))",
+                            first,
+                            flags=re.IGNORECASE,
+                        )
+                        if re.search(r"\btime\b", first, re.IGNORECASE)
+                        else first
+                    )
                     safe = bool(dynamic) and lower_affine_history
                     for identifier in identifiers:
                         if identifier in dynamic or is_static(identifier, extra_static):
                             continue
+                        if identifier.lower() == "time":
+                            # The delayed expression's own clock moves with
+                            # the delayed read.
+                            continue
                         safe = False
                         break
                     if safe:
-                        shifted_expression = first
+                        shifted_expression = delayed_first
                         for identifier in dynamic:
                             history = delayed_constant_rate(identifier, second)
                             if history is None:
