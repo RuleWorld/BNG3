@@ -30,6 +30,14 @@ from typing import Any, Iterable
 
 import numpy as np
 
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.ci.imported_package_guard import (
+    ForeignPackageError,
+    package_source_digest,
+    verify_imported_package,
+)
+
 USER_AGENT = "BNG3-curated-BioModels-roundtrip-validator/2"
 NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
 # libRoadRunner and BNG3 use independent CVODE builds and Jacobian paths;
@@ -57,6 +65,19 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _runtime_provenance(package_trace: dict[str, Any]) -> dict[str, Any]:
+    """Record which Python package the corpus gate measured."""
+
+    import bionetgen
+
+    package_file = Path(bionetgen.__file__).resolve()
+    return {
+        "bionetgen_package_path": str(package_file),
+        "python_package_source_sha256": package_source_digest(package_file.parent),
+        "imported_package_trace": package_trace,
+    }
 
 
 def _fetch_json(url: str) -> dict[str, Any]:
@@ -1376,6 +1397,18 @@ def main() -> int:
     parser.add_argument("--simulation-atol", type=float, default=1e-12)
     args = parser.parse_args()
 
+    try:
+        package_trace = verify_imported_package(Path(__file__).resolve().parents[2])
+    except ForeignPackageError as exc:
+        print(f"package preflight failed: {exc}", file=sys.stderr)
+        return 1
+    if package_trace["package_file"]:
+        print(
+            f"bionetgen package: {package_trace['package_file']} "
+            f"(trace: {package_trace['rule']})",
+            file=sys.stderr,
+        )
+
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     args.cache_dir.mkdir(parents=True, exist_ok=True)
     inventory = _enumerate_inventory(
@@ -1608,6 +1641,7 @@ def main() -> int:
         "schema_version": 4,
         "manifest": str(args.manifest.resolve()),
         "cache_dir": str(args.cache_dir.resolve()),
+        "runtime_provenance": _runtime_provenance(package_trace),
         "writer_sbml_version": "L3V2",
         "inventory": inventory,
         "completeness": completeness,
