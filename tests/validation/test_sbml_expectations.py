@@ -580,3 +580,111 @@ def test_a_failed_verdict_is_a_finding_and_not_a_construct_gap():
         for stage in gap:
             assert entry[stage] == "unsupported", (case, stage)
         assert gap[stage]["construct"] != "other", (case, stage)
+
+
+# --------------------------------------------------------------------------
+# The workflow's manifest step must not fail a branch that predates the
+# manifest, and it must say why it did not compare.
+# --------------------------------------------------------------------------
+
+WORKFLOW = REPO / ".github" / "workflows" / "sbml-conformance.yml"
+MANIFEST_STEP_NAME = "Compare the run against the committed expectation manifest"
+
+
+def _manifest_step_script() -> str:
+    from tests.workflow_yaml import parse_workflow
+
+    workflow = parse_workflow(WORKFLOW)
+    steps = workflow["jobs"]["conformance"]["steps"]
+    for step in steps:
+        if step.get("name") == MANIFEST_STEP_NAME:
+            return str(step["run"])
+    raise AssertionError(f"the workflow has no step named {MANIFEST_STEP_NAME!r}")
+
+
+def _stub_tool(root: Path, body: str) -> Path:
+    """Write a stand-in for the campaign inventory tool."""
+
+    tool = root / "scripts" / "ci" / "sbml_campaign_inventory.py"
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    tool.write_text(body, encoding="utf-8")
+    return tool
+
+
+def _run_manifest_step(root: Path, tmp_path: Path):
+    """Run the workflow's manifest step against ``root`` as the checkout."""
+
+    runner = tmp_path / "runner"
+    runner.mkdir(parents=True, exist_ok=True)
+    (runner / "report.json").write_text("{}", encoding="utf-8")
+    environment = {
+        **os.environ,
+        "RUNNER_TEMP": str(runner),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+    }
+    return subprocess.run(
+        ["bash", "-c", _manifest_step_script()],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+
+def test_the_manifest_step_skips_a_branch_that_predates_the_manifest(tmp_path):
+    """A tool without ``--expectations`` must skip, visibly, not fail."""
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _stub_tool(
+        root,
+        "import sys\n"
+        "if '--help' in sys.argv:\n"
+        "    print('usage: sbml_campaign_inventory.py [-h] [--suite-report X] --out OUT')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(2)\n",
+    )
+    result = _run_manifest_step(root, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "::notice::" in result.stdout
+    assert "does not apply" in result.stdout
+    assert "predates" in result.stdout
+
+
+def test_the_manifest_step_skips_a_branch_without_the_tool(tmp_path):
+    root = tmp_path / "checkout"
+    root.mkdir()
+    result = _run_manifest_step(root, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "::notice::" in result.stdout
+    assert "does not apply" in result.stdout
+
+
+def test_the_manifest_step_still_fails_on_a_real_difference(tmp_path):
+    """The skip must not become a blanket pass."""
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _stub_tool(
+        root,
+        "import sys\n"
+        "if '--help' in sys.argv:\n"
+        "    print('usage: sbml_campaign_inventory.py [-h] [--suite-report X] [--expectations X] --out OUT')\n"
+        "    raise SystemExit(0)\n"
+        "print('1 expectation difference(s) against the manifest:', file=sys.stderr)\n"
+        "print('  semantic/00001 [conversion]: expected passed, observed unsupported (regression)', file=sys.stderr)\n"
+        "raise SystemExit(1)\n",
+    )
+    result = _run_manifest_step(root, tmp_path)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "::notice::" not in result.stdout
+    assert "semantic/00001" in result.stderr
+
+
+def test_the_manifest_step_documents_the_selection_limit():
+    """A reader must not take a green pull-request gate as a current manifest."""
+
+    script = _manifest_step_script()
+    assert "128-case feature-cover" in script
+    assert "scheduled full run compares every case" in script

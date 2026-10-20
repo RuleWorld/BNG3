@@ -463,6 +463,22 @@ python scripts/ci/sbml_campaign_inventory.py \
   --measurement-date "$(date -u +%Y-%m-%d)"
 ```
 
+### What the pull-request gate covers, and the merge-flow convention
+
+The official conformance workflow compares a run against the manifest, but a
+pull-request run executes only the **128-case feature-cover selection** of
+the official suite. The comparison covers the cases that run executed; the
+rest are reported as *not executed* rather than as differences. Only the
+**scheduled** workflow run executes the full 1923 cases and compares every
+one of them. **A green pull-request gate is therefore not evidence that the
+manifest is current.**
+
+The manifest is a ratchet: a merge that changes a verdict leaves `main`'s
+manifest stale, and the gate then fails on `main` until the manifest is
+regenerated. After each such merge the manifest is regenerated from the new
+`main` and landed as a small follow-up commit; the exact command is in
+[`provenance/sbml-campaign/README.md`](../provenance/sbml-campaign/README.md).
+
 ### Comparing a run against the manifest
 
 ```bash
