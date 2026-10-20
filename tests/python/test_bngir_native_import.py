@@ -1250,10 +1250,16 @@ def test_native_import_rejects_unknown_fields_and_provenance():
 @pytest.mark.parametrize(
     ("field", "value", "expected"),
     [
-        ("bidirectional", True, "forward ordinary rule"),
-        ("bidirectional", 0, "forward ordinary rule"),
-        ("modifiers", ["DeleteMolecules"], "forward ordinary rule"),
-        ("reverse", {}, "unsupported reverse"),
+        ("bidirectional", True, "missing its reverse direction"),
+        ("bidirectional", 0, "bidirectional flag must be a boolean"),
+        ("modifiers", ["DeleteMolecules"], "rule modifier must be an object"),
+        ("modifiers", [{}], "rule modifier is missing its kind"),
+        (
+            "modifiers",
+            [{"kind": "include_reactants"}],
+            "modifier kind is not supported",
+        ),
+        ("reverse", {}, "reverse direction on a forward rule"),
     ],
 )
 def test_direct_native_builder_refuses_unrepresented_rule_semantics(
@@ -1263,6 +1269,25 @@ def test_direct_native_builder_refuses_unrepresented_rule_semantics(
     document["model"]["rules"][0][field] = value
     with pytest.raises(RuntimeError, match=expected):
         _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_accepts_a_bidirectional_rule_with_its_reverse():
+    document = _document()
+    forward = document["model"]["rules"][0]["forward"]
+    reverse = copy.deepcopy(forward)
+    reverse["reactants"] = forward["products"]
+    reverse["products"] = forward["reactants"]
+    document["model"]["rules"][0]["bidirectional"] = True
+    document["model"]["rules"][0]["reverse"] = reverse
+    model = _cpp._model_from_bngir_v02(document["model"])
+    assert model.reaction_rules[0].is_bidirectional
+
+
+def test_direct_native_builder_accepts_a_rule_modifier():
+    document = _document()
+    document["model"]["rules"][0]["modifiers"] = [{"kind": "total_rate"}]
+    model = _cpp._model_from_bngir_v02(document["model"])
+    assert list(model.reaction_rules[0].modifiers) == ["TotalRate"]
 
 
 @pytest.mark.parametrize("field", ["filters", "local_scopes"])

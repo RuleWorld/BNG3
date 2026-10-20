@@ -131,7 +131,9 @@ public:
         std::string label,
         std::vector<Expression> rates,
         std::vector<SpeciesGraph> reactantPatterns,
-        std::vector<SpeciesGraph> productPatterns);
+        std::vector<SpeciesGraph> productPatterns,
+        std::vector<std::string> modifiers = {},
+        bool bidirectional = false);
     ~ReactionRule();
     ReactionRule(ReactionRule&&) noexcept;
     ReactionRule& operator=(ReactionRule&&) noexcept;

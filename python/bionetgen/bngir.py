@@ -323,6 +323,25 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
                 f"BNGIR {STRUCTURAL_VERSION} cannot represent "
                 f"{observable.type!r} observable kinds; use version {VERSION!r}"
             )
+    # The v0.2 rule format has no driving-work field. Silently dropping the
+    # drive would change the model's thermodynamics, so refuse explicitly and
+    # point at the version that can represent it. A zero-valued drive is
+    # equivalent to no drive: dG - 0 recovers the undriven rate.
+    for rule in native.reaction_rules:
+        if not rule.has_driving_work:
+            continue
+        drive = str(rule.driving_work).strip()
+        if not drive:
+            continue
+        try:
+            if float(drive) == 0.0:
+                continue
+        except ValueError:
+            pass
+        raise ValueError(
+            f"BNGIR {STRUCTURAL_VERSION} cannot represent rule driving_work "
+            f"({drive!r}); use version {VERSION!r}"
+        )
     try:
         from .model import _cpp
 
@@ -461,6 +480,13 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     model = _require_mapping(root["model"], "model")
     if model.get("population_maps"):
         raise ValueError("BNGIR population_maps deserialization is not yet supported")
+    if model.get("barrier_patterns"):
+        # A barrier needs a barrier energy the engine can compile. Rendering one
+        # without it produces a model the compiler rejects with an internal
+        # error, so refuse the feature explicitly instead.
+        raise ValueError(
+            "BNGIR barrier_patterns deserialization is not yet supported"
+        )
 
     lines: list[str] = []
     if model.get("version"):
@@ -1929,7 +1955,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     rule_names: set[str] = set()
     for index, raw in enumerate(model["rules"]):
         rule = _require_mapping(raw, f"model.rules[{index}]")
-        _native_exact_keys(
+        _native_required_optional_keys(
             rule,
             {
                 "id",
@@ -1938,6 +1964,17 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 "bidirectional",
                 "modifiers",
                 "forward",
+                "molecule_mappings",
+                "component_mappings",
+            },
+            {
+                "id",
+                "name",
+                "label",
+                "bidirectional",
+                "modifiers",
+                "forward",
+                "reverse",
                 "molecule_mappings",
                 "component_mappings",
             },
@@ -1957,10 +1994,66 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         ):
             raise ValueError(f"native BNGIR model.rules[{index}] has invalid names")
         rule_names.add(rule["name"])
-        if rule["bidirectional"] is not False or rule["modifiers"] != []:
+        if not isinstance(rule["bidirectional"], bool):
             raise ValueError(
-                f"native BNGIR model.rules[{index}] must be a forward ordinary rule"
+                f"native BNGIR model.rules[{index}] has an invalid bidirectional flag"
             )
+        if rule["bidirectional"]:
+            # The compiler materializes the reverse direction by swapping the
+            # forward patterns, so the document's reverse direction must be
+            # exactly that swap or the native model would differ from it.
+            if "reverse" not in rule:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] is bidirectional but has "
+                    "no reverse direction"
+                )
+            reverse = _require_mapping(
+                rule["reverse"], f"model.rules[{index}].reverse"
+            )
+            _native_exact_keys(
+                reverse,
+                {
+                    "reactants",
+                    "products",
+                    "rate",
+                    "filters",
+                    "local_scopes",
+                    "mutations",
+                    "transformations_complete",
+                },
+                f"model.rules[{index}].reverse",
+            )
+            forwardDirection = _require_mapping(
+                rule["forward"], f"model.rules[{index}].forward"
+            )
+            if (
+                reverse["reactants"] != forwardDirection["products"]
+                or reverse["products"] != forwardDirection["reactants"]
+            ):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] reverse direction does not "
+                    "swap the forward patterns"
+                )
+        elif "reverse" in rule:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] carries a reverse direction "
+                "on a forward rule"
+            )
+        native_modifier_kinds = {
+            "delete_molecules",
+            "move_connected",
+            "match_once",
+            "total_rate",
+        }
+        for modifier_index, raw_modifier in enumerate(rule["modifiers"]):
+            modifier = _require_mapping(
+                raw_modifier, f"model.rules[{index}].modifiers[modifier_index]"
+            )
+            if modifier.get("kind") not in native_modifier_kinds:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].modifiers[modifier_index] "
+                    "has an unsupported modifier kind"
+                )
         if not isinstance(rule["molecule_mappings"], list) or not isinstance(
             rule["component_mappings"], list
         ):
@@ -2668,6 +2761,18 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
         )
 
     native = _cpp.parse_string(source)
+    if root["version"] == VERSION:
+        # A v0.1 document can describe a model the compiler does not accept,
+        # for example a pattern that names a component the molecule type does
+        # not declare. Refuse the document here instead of letting the failure
+        # surface later as an internal snapshot error.
+        try:
+            _cpp._compiled_snapshot(native)
+        except RuntimeError as exc:
+            raise ValueError(
+                f"BNGIR {VERSION} document does not describe a model the "
+                f"compiler accepts: {exc}"
+            ) from exc
     result = BioNetGenModel(native)
     if name:
         result._model.set_model_name(name)

@@ -139,14 +139,19 @@ def test_version_matrix_contract_reports_a_silently_dropped_feature_as_failure(
     assert matrix["first_difference"]["cells"][0]["id"] == "parameters"
 
 
-def test_version_matrix_fails_when_a_gap_is_not_recorded(tmp_path, monkeypatch):
+def test_version_matrix_fails_when_a_gap_has_no_catalog_owner(tmp_path, monkeypatch):
+    cells = [dict(cell) for cell in reconstruction.MATRIX]
+    for cell in cells:
+        if cell["id"] == "parameters":
+            cell["present"] = lambda model: False
+    monkeypatch.setattr(reconstruction, "MATRIX", cells)
     recorded = dict(reconstruction.KNOWN_GAPS)
-    recorded.pop("rule-driving-work")
+    recorded["parameters"] = "issue:154:not-a-real-obligation"
     monkeypatch.setattr(reconstruction, "KNOWN_GAPS", recorded)
     rows = reconstruction.run_worker(tmp_path / "unrecorded")
     matrix = next(row for row in rows if row["id"] == reconstruction._FEATURE_MATRIX)
     assert matrix["status"] == "FAIL"
-    assert matrix["first_difference"]["cells"][0]["id"] == "rule-driving-work"
+    assert matrix["first_difference"]["cells"][0]["id"] == "parameters"
 
 
 def test_version_matrix_fails_when_a_recorded_gap_no_longer_reproduces(
@@ -157,6 +162,9 @@ def test_version_matrix_fails_when_a_recorded_gap_no_longer_reproduces(
         if cell["id"] == "rule-driving-work":
             cell["present"] = lambda model: True
     monkeypatch.setattr(reconstruction, "MATRIX", cells)
+    recorded = dict(reconstruction.KNOWN_GAPS)
+    recorded["rule-driving-work"] = reconstruction._OWNER_DECLARATIONS
+    monkeypatch.setattr(reconstruction, "KNOWN_GAPS", recorded)
     rows = reconstruction.run_worker(tmp_path / "stale")
     matrix = next(row for row in rows if row["id"] == reconstruction._FEATURE_MATRIX)
     assert matrix["status"] == "FAIL"

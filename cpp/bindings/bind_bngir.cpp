@@ -750,14 +750,48 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         const auto rule = py::cast<py::dict>(rawRule);
         static const std::vector<std::string> ruleKeys = {
             "id", "name", "label", "bidirectional", "modifiers", "forward",
+            "molecule_mappings", "component_mappings", "reverse",
+        };
+        static const std::vector<std::string> requiredRuleKeys = {
+            "id", "name", "label", "bidirectional", "modifiers", "forward",
             "molecule_mappings", "component_mappings",
         };
-        requireObjectKeys(rule, ruleKeys, ruleKeys, "rule");
+        requireObjectKeys(rule, requiredRuleKeys, ruleKeys, "rule");
         const py::handle bidirectional = rule["bidirectional"];
-        if (!PyBool_Check(bidirectional.ptr()) || py::cast<bool>(bidirectional) ||
-            !py::cast<py::list>(rule["modifiers"]).empty()) {
+        if (!PyBool_Check(bidirectional.ptr())) {
             throw std::runtime_error(
-                "native BNGIR requires a forward ordinary rule");
+                "native BNGIR rule bidirectional flag must be a boolean");
+        }
+        // The keyword modifiers the compiler understands. Include/exclude
+        // semantics live in direction.filters and are not modifier text.
+        static const std::map<std::string, std::string> modifierNames = {
+            {"delete_molecules", "DeleteMolecules"},
+            {"move_connected", "MoveConnected"},
+            {"match_once", "MatchOnce"},
+            {"total_rate", "TotalRate"},
+        };
+        std::vector<std::string> modifiers;
+        for (const auto& rawModifier : py::cast<py::list>(rule["modifiers"])) {
+            if (!py::isinstance<py::dict>(rawModifier)) {
+                throw std::runtime_error(
+                    "native BNGIR rule modifier must be an object");
+            }
+            const auto modifier = py::cast<py::dict>(rawModifier);
+            if (!modifier.contains("kind")) {
+                throw std::runtime_error(
+                    "native BNGIR rule modifier is missing its kind");
+            }
+            const auto kind = py::cast<std::string>(modifier["kind"]);
+            const auto found = modifierNames.find(kind);
+            if (found == modifierNames.end()) {
+                throw std::runtime_error(
+                    "native BNGIR rule modifier kind is not supported: " + kind);
+            }
+            modifiers.push_back(found->second);
+        }
+        if (!py::cast<bool>(bidirectional) && rule.contains("reverse")) {
+            throw std::runtime_error(
+                "native BNGIR rule carries a reverse direction on a forward rule");
         }
         const auto direction = py::cast<py::dict>(rule["forward"]);
         static const std::vector<std::string> directionKeys = {
@@ -845,11 +879,26 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         std::vector<Expression> rates;
         rates.push_back(expressionFromBngir(
             py::cast<py::dict>(rate["expression"]), modelScope));
+        if (py::cast<bool>(bidirectional)) {
+            // A bidirectional rule states its reverse direction. The compiler
+            // materializes the reverse rule from the forward one and takes the
+            // reverse rate from the second rate, so the document's reverse
+            // rate is what the reverse direction must use.
+            if (!rule.contains("reverse")) {
+                throw std::runtime_error(
+                    "native BNGIR bidirectional rule is missing its reverse direction");
+            }
+            const auto reverse = py::cast<py::dict>(rule["reverse"]);
+            const auto reverseRate = py::cast<py::dict>(reverse["rate"]);
+            rates.push_back(expressionFromBngir(
+                py::cast<py::dict>(reverseRate["expression"]), modelScope));
+        }
         model->addReactionRule(ReactionRule::fromResolvedPatterns(
             py::cast<std::string>(rule["name"]),
             py::cast<std::string>(rule["label"]),
             std::move(rates),
-            std::move(reactantGraphs), std::move(productGraphs)));
+            std::move(reactantGraphs), std::move(productGraphs),
+            std::move(modifiers), py::cast<bool>(bidirectional)));
     }
 
     // The function bodies are rebuilt last: a body may name a parameter, one

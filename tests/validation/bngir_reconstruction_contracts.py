@@ -95,11 +95,7 @@ _OWNER_SOURCE_INDEPENDENCE = (
 # Features the v0.1 to v0.2 migration does not preserve. Each entry names the
 # catalog obligation that owns the recorded gap. A cell that fails without such
 # a record is an unrecorded silent loss and fails the matrix check.
-KNOWN_GAPS = {
-    "rule-driving-work": _OWNER_DECLARATIONS,
-    "rule-modifiers": _OWNER_DECLARATIONS,
-    "barrier-patterns": _OWNER_EXECUTION,
-}
+KNOWN_GAPS = {}
 
 # Phrases that mark an explicit, intentional refusal of an unsupported feature.
 # Anything else is a rejection without an explicit boundary and is recorded as
@@ -438,7 +434,7 @@ MATRIX = (
     {
         "id": "rule-modifiers",
         "mutate": lambda document: document["model"]["rules"][0].update(
-            {"modifiers": ["A()"]}
+            {"modifiers": ["TotalRate"]}
         ),
         "present": _has_rule_modifiers,
         "site_free": True,
@@ -496,7 +492,7 @@ MATRIX = (
         "mutate": lambda document: document["model"].update(
             {
                 "observables": [
-                    {"name": "Atot", "type": "molecules", "patterns": ["A(x~u)"]}
+                    {"name": "Atot", "type": "Molecules", "patterns": ["A()"]}
                 ]
             }
         ),

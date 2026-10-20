@@ -587,30 +587,37 @@ investigation-packet paths.
 | `constant-seed` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `constant-seed.v02.json` |
 | `compartment-seed` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `compartment-seed.v02.json` |
 | `rules` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rules.v02.json` |
-| `reversible-rules` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `reversible-rules.v02.json` |
-| `rule-modifiers` | REJECTED_UNCLEAR | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rule-modifiers.v01.json` |
-| `rule-driving-work` | LOST | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rule-driving-work.v02.json` |
+| `reversible-rules` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `reversible-rules.v02.json` |
+| `rule-modifiers` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rule-modifiers.v02.json` |
+| `rule-driving-work` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `rule-driving-work.v01.json` |
 | `declaration-metadata` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `declaration-metadata.v02.json` |
 | `substance-units` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `substance-units.v02.json` |
 | `compartments` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `compartments.v02.json` |
 | `functions` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `functions.v02.json` |
-| `observables` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `observables.v01.json` |
+| `observables` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `observables.v02.json` |
 | `energy-patterns` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `energy-patterns.v02.json` |
-| `barrier-patterns` | REJECTED_UNCLEAR | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `barrier-patterns.v01.json` |
+| `barrier-patterns` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `barrier-patterns.v01.json` |
 | `population-maps` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-maps.v01.json` |
 | `population-types` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-types.v01.json` |
 | `protocol-actions` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `protocol-actions.v01.json` |
 | `versioned-features` | PRESERVED | `issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind` | `versioned-features.v02.json` |
 
-Ten cells preserve the feature and import natively. Nine are refused explicitly by the
-migration or by the native reader. One is a silent loss and two are rejected without an
-explicit refusal; all three are recorded in the obligation catalog with the owning
-requirement, and the repairs stay separate from this validation work.
+Thirteen cells preserve the feature and import natively. Nine are refused explicitly by the
+migration, by the v0.1 reader, or by the native reader. No cell loses a feature silently and
+no cell is rejected without an explicit reason: the migration, the v0.1 reader and the native
+reader all fail closed with a message that names the unsupported feature.
 
-The v0.2 rule features the native reader refuses are recorded the same way: rule filters,
-local scopes and rule mutations are all explicitly refused, and the difference between the
-Python reader, which accepts filters, and the native reader, which does not, is recorded
-against the declaration-coverage obligation.
+Three defects were found and repaired while the matrix was extended, and their records were
+removed from the obligation catalog:
+
+- The v0.2 writer silently dropped a rule's non-empty `driving_work`, because the v0.2 rule
+  format has no field for it. It now refuses the feature and points at the version that can
+  represent it.
+- A v0.1 document carrying barrier patterns failed with an internal snapshot error. The v0.1
+  reader now refuses barrier patterns explicitly, and every v0.1 document is checked against
+  the compiler before it is accepted, so an invalid model is refused instead of failing later.
+- The native reader refused reversible rule directions and keyword rule modifiers. Both are
+  now natively supported.
 
 ### Export contract scope
 
