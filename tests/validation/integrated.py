@@ -110,6 +110,7 @@ def expected_contract_ids(
     include_graph_identity=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_netrule_execution=True,
     full=False,
 ):
     return [
@@ -156,6 +157,7 @@ def expected_contract_ids(
         include_graph_identity=include_graph_identity,
         include_bngir_adversarial=include_bngir_adversarial,
         include_quantity_laws=include_quantity_laws,
+        include_netrule_execution=include_netrule_execution,
         full=full,
     )
 
@@ -939,6 +941,7 @@ def main(argv=None):
     parser.add_argument("--graph-identity-only", action="store_true")
     parser.add_argument("--bngir-adversarial-only", action="store_true")
     parser.add_argument("--quantity-laws-only", action="store_true")
+    parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -948,6 +951,7 @@ def main(argv=None):
                 args.graph_identity_only,
                 args.bngir_adversarial_only,
                 args.quantity_laws_only,
+                args.netrule_execution_only,
             )
         )
         > 1
@@ -973,6 +977,7 @@ def main(argv=None):
         or args.graph_identity_only
         or args.bngir_adversarial_only
         or args.quantity_laws_only
+        or args.netrule_execution_only
     ):
         selected = []
     for name in (
@@ -999,24 +1004,40 @@ def main(argv=None):
     )
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "0"
+    focused = (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
+        or args.netrule_execution_only
+    )
     qualification_selection = dict(
         include_boundaries=not (
             args.graph_identity_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
+            or args.netrule_execution_only
         ),
         include_graph_identity=not (
             args.boundaries_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
+            or args.netrule_execution_only
         ),
         include_bngir_adversarial=not (
-            args.boundaries_only or args.graph_identity_only or args.quantity_laws_only
+            args.boundaries_only
+            or args.graph_identity_only
+            or args.quantity_laws_only
+            or args.netrule_execution_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.netrule_execution_only
     )
+    qualification_selection["include_netrule_execution"] = not focused
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1034,6 +1055,10 @@ def main(argv=None):
             )
         if qualification_selection["include_quantity_laws"]:
             integrated_extensions.invoke("quantity-laws", args, rows, env, run_stage)
+        if qualification_selection["include_netrule_execution"]:
+            integrated_extensions.invoke(
+                "netrule-execution", args, rows, env, run_stage
+            )
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1071,29 +1096,22 @@ def main(argv=None):
     ):
         replay_base += ["--" + name.replace("_", "-"), str(getattr(args, name))]
     replay_base += ["--ensemble-runs", str(args.ensemble_runs)]
+    focused_qualifications = {
+        "quantity-laws": ["--quantity-laws-only"],
+        "boundaries": ["--boundaries-only"],
+        "bngir-adversarial": ["--bngir-adversarial-only"],
+        "graph-identity": ["--graph-identity-only"],
+        "netrule-execution": ["--netrule-execution-only"],
+    }
     for row in rows:
         case_id = row.get("integration_case")
+        selection = focused_qualifications.get(row.get("qualification"))
+        if selection is None:
+            selection = ["--case", case_id] if case_id else []
         row["command"] = (
             replay_base
             + (["--full"] if args.full else [])
-            + (
-                ["--quantity-laws-only"]
-                if row.get("qualification") == "quantity-laws"
-                else []
-            )
-            + (
-                ["--boundaries-only"]
-                if row.get("qualification") == "boundaries"
-                else (
-                    ["--bngir-adversarial-only"]
-                    if row.get("qualification") == "bngir-adversarial"
-                    else (
-                        ["--graph-identity-only"]
-                        if row.get("qualification") == "graph-identity"
-                        else (["--case", case_id] if case_id else [])
-                    )
-                )
-            )
+            + selection
             + [
                 "--report-dir",
                 str(args.report_dir.parent / ("replay-" + (case_id or "preflight"))),
@@ -1138,6 +1156,11 @@ def main(argv=None):
                     "tests/validation/bngir_reconstruction_contracts.py",
                 ],
                 "graph-identity": "tests/validation/graph_identity.py",
+                "netrule-execution": [
+                    "tests/validation/netrule_execution.py",
+                    "cpp/engine/NetworkRulePlan.cpp",
+                    "cpp/engine/LegacyNetworkRuleKernel.cpp",
+                ],
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1146,6 +1169,10 @@ def main(argv=None):
             )
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
+            if row["stage"] == "netrule-execution":
+                row["question"] = (
+                    "compile-owned-network-rule-contract-vs-legacy-path-and-oracle"
+                )
         if row["stage"] == "rate-trace":
             row["source_locations"] = [
                 "tests/validation/integrated_traces.py",
@@ -1165,6 +1192,8 @@ def main(argv=None):
                 issues = [143, 146, 151, 167]
             elif stage == "graph-identity":
                 issues = [142]
+            elif stage == "netrule-execution":
+                issues = [139]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -1186,6 +1215,10 @@ def main(argv=None):
                 issues = [138, 140, 143, 163]
             row["related_issues"] = issues
         row["capabilities"] = ["integration.cross-component"]
+        if row["stage"] == "netrule-execution":
+            # The compile-owned network-rule contract qualification is the
+            # independent evidence for the network expansion capability.
+            row["capabilities"].append("network.expansion")
     import yaml
 
     matrix = yaml.safe_load((ROOT / "provenance/capability-matrix.yml").read_text())
@@ -1240,6 +1273,7 @@ def main(argv=None):
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
+                ROOT / "tests/validation/netrule_execution.py",
                 ROOT / "tests/validation/compare.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",

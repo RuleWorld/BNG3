@@ -513,6 +513,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
+    from .netrule_execution import check_ids as netrule_check_ids
+    from .netrule_execution import cases as netrule_cases
 
     check_ids = [
         *adversarial_check_ids(),
@@ -534,6 +536,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_graph_identity=False,
                     include_bngir_adversarial=False,
                     include_quantity_laws=False,
+                    include_netrule_execution=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -550,6 +553,20 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             runner="tests.validation.integrated",
             budget=dict(checks=len(check_ids), stage_timeout_seconds=60),
             limits="Bounded generated native reader shapes; no complete migration or arbitrary graph coverage.",
+        )
+    )
+    families.append(
+        dict(
+            id="network-rule-execution",
+            case_ids=[case["id"] for case in netrule_cases()],
+            check_ids=netrule_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(netrule_check_ids()), stage_timeout_seconds=120),
+            limits=(
+                "Single-molecule rule shapes without bonds, compartments or "
+                "delete-molecules; no legacy network-rule path is retired by "
+                "this evidence and other rule shapes remain unqualified."
+            ),
         )
     )
     from .integrated_marginals import source_law_check_ids
@@ -604,11 +621,15 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             else (
                 ["--quantity-laws-only"]
                 if family["id"] == "quantity-source-laws"
-                else [
-                    argument
-                    for case_id in family["case_ids"]
-                    for argument in ("--case", case_id)
-                ]
+                else (
+                    ["--netrule-execution-only"]
+                    if family["id"] == "network-rule-execution"
+                    else [
+                        argument
+                        for case_id in family["case_ids"]
+                        for argument in ("--case", case_id)
+                    ]
+                )
             )
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)

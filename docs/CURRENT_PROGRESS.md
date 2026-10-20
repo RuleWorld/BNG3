@@ -1,5 +1,31 @@
 # BNG3 current progress
 
+## Network-rule execution contract qualification (2026-10-20 candidate)
+
+Issue #139 asks for the compile-owned network-rule execution contract and the
+legacy path to agree before any legacy path is retired. Nothing compared them,
+so the family had no generated check at all.
+
+`tests/validation/netrule_execution.py` now qualifies the two views against
+each other and against an expectation that neither of them produced. The
+compile-owned view is read from the compiled model: the reactant and product
+patterns of each direction, the resolved rate-law expression, the rule filters,
+the local scopes and the forward/reverse directions. The legacy view is the
+network the engine's rule execution produces, observed through the generated
+`.net` artifact and through the engine's compiled per-reaction rate
+coefficients. The independent expectation is a hand-derived closed-form law per
+case, plus the canonical Perl BNG2 network as an external oracle.
+
+The qualified slice is declared: single-molecule rule patterns without bonds,
+compartments or delete-molecules, with explicit site states. A case outside
+that slice is reported as `UNSUPPORTED` with its reason instead of being
+skipped quietly. Nine named checks cover the reaction graph, the compiled rate
+law, rule filters, local scopes and reversible rule directions, and the
+integrated campaign imports them under the `netrule-execution` qualification.
+
+The evidence qualifies that slice only. The `LegacyNetworkRuleKernel`
+reconstruction is not replaced by it and no legacy path is retired.
+
 ## Native BNGIR v0.2 model functions (2026-10-19 candidate)
 
 The native BNGIR v0.2 importer refused the whole `model.functions` section, so
