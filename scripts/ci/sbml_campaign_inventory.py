@@ -90,9 +90,7 @@ def suite_inventory(report: dict[str, Any]) -> dict[str, Any]:
         official_counts[official_status] += 1
 
         status = str(record.get("status", "unknown"))
-        reason = str(
-            record.get("unsupported_reason") or record.get("error") or ""
-        )
+        reason = str(record.get("unsupported_reason") or record.get("error") or "")
         signature = reason_signature(reason) if status != "passed" else ""
         if status != "passed" and not signature:
             signature = "other"
@@ -122,9 +120,7 @@ def suite_inventory(report: dict[str, Any]) -> dict[str, Any]:
 
         roundtrip = record.get("roundtrip_passed")
         roundtrip_bucket = stage_counts.setdefault("roundtrip_structure", Counter())
-        roundtrip_bucket[
-            "passed" if roundtrip is True else "not-tested"
-        ] += 1
+        roundtrip_bucket["passed" if roundtrip is True else "not-tested"] += 1
 
         comparison = record.get("simulation_comparison") or {}
         independent_bucket = stage_counts.setdefault(
@@ -220,9 +216,7 @@ def main() -> int:
     if args.biomodels_report:
         report = json.loads(args.biomodels_report.read_text(encoding="utf-8"))
         inventory["biomodels"] = biomodels_inventory(report)
-        inventory["biomodels"]["source_report_sha256"] = _digest(
-            args.biomodels_report
-        )
+        inventory["biomodels"]["source_report_sha256"] = _digest(args.biomodels_report)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(
