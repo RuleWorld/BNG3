@@ -2083,9 +2083,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     f"native BNGIR model.rules[{index}] is bidirectional but has "
                     "no reverse direction"
                 )
-            reverse = _require_mapping(
-                rule["reverse"], f"model.rules[{index}].reverse"
-            )
+            reverse = _require_mapping(rule["reverse"], f"model.rules[{index}].reverse")
             _native_exact_keys(
                 reverse,
                 {
