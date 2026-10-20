@@ -1,0 +1,320 @@
+"""Contracts for the native ``bng3_events`` lowering of SBML events.
+
+A state-dependent SBML trigger has no finite schedule of BNGL actions, so
+the modern Atomizer hands it to the native BNG3 event runtime, which locates
+the trigger's rising edge with continuous root finding.  These tests pin the
+lowered model, the unit conversion between an SBML value and the observable
+the runtime observes, the delay semantics, and the boundaries that stay
+explicitly unsupported.
+"""
+
+import numpy as np
+import pytest
+
+from bionetgen.atomizer.modern import Atomizer
+
+
+def atomize(xml, **kwargs):
+    atomizer = Atomizer(atomize=False, quiet_mode=True, **kwargs)
+    result = atomizer.atomize(xml)
+    result.import_warnings = list(atomizer.model.import_warnings)
+    return result
+
+
+def coupled_event_model(
+    *,
+    delay: str = "",
+    persistent: str = "true",
+    operator: str = "lt",
+    threshold: str = "0.75",
+    use_values_from_trigger_time: str = "true",
+    assignment: str = '<eventAssignment variable="S2">'
+    '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>'
+    "</eventAssignment>",
+    compartment_size: str = "1",
+    substance_units: str = "true",
+) -> str:
+    """A model whose trigger species has no provable analytic trajectory.
+
+    ``S1`` is consumed by a bimolecular reaction and replenished by a
+    first-order one, so the crossing time cannot be solved in closed form
+    and the event has to reach the native runtime.
+    """
+
+    delay_element = (
+        f'<delay><math xmlns="http://www.w3.org/1998/Math/MathML">'
+        f"<cn>{delay}</cn></math></delay>"
+        if delay
+        else ""
+    )
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="native_event">
+    <listOfCompartments>
+      <compartment id="C" size="{compartment_size}" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="{substance_units}"/>
+      <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="{substance_units}"/>
+      <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="{substance_units}"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k1" value="0.75" constant="true"/>
+      <parameter id="k2" value="0.25" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="consume" reversible="false">
+        <listOfReactants>
+          <speciesReference species="S1"/>
+          <speciesReference species="S2" stoichiometry="2"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="S3"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="release" reversible="false">
+        <listOfReactants><speciesReference species="S3"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference species="S1"/>
+          <speciesReference species="S2"/>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k2</ci><ci>S3</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="reset" useValuesFromTriggerTime="{use_values_from_trigger_time}">
+        <trigger initialValue="true" persistent="{persistent}">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><{operator}/><ci>S1</ci><cn>{threshold}</cn></apply>
+          </math>
+        </trigger>
+        {delay_element}
+        <listOfEventAssignments>{assignment}</listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+
+def test_state_dependent_trigger_is_lowered_to_the_native_event_block():
+    result = atomize(coupled_event_model())
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "trigger: S1_amt < 0.75" in result.bngl
+    assert "assignment: S2_amt = 1" in result.bngl
+    # The event is executed, so the reference marker for a dropped event and
+    # the refusal note must both be absent.
+    assert "# Events NOT simulated" not in result.bngl
+    assert "state-dependent or non-constant event(s) remain untranslated" not in result.bngl
+    assert "setConcentration(" not in result.bngl
+
+
+def test_native_event_lowering_reports_an_informational_diagnostic():
+    result = atomize(coupled_event_model())
+
+    diagnostics = [
+        warning
+        for warning in (result.import_warnings or [])
+        if warning.get("category") == "event"
+    ]
+    assert diagnostics, "the event lowering must report what it did"
+    assert all(
+        "native BNG3 event runtime" in warning.get("message", "")
+        for warning in diagnostics
+    )
+    assert {warning.get("severity") for warning in diagnostics} == {"info"}
+
+
+def test_native_event_delay_is_carried_into_the_event_block():
+    result = atomize(coupled_event_model(delay="1.5"))
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "delay: 1.5" in result.bngl
+
+
+def test_non_strict_state_trigger_stays_explicitly_untranslated():
+    result = atomize(coupled_event_model(operator="leq"))
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" not in result.bngl
+    assert "# Events NOT simulated" in result.bngl
+    assert "trigger is not a simple time threshold" in result.bngl
+
+
+def test_non_persistent_trigger_stays_explicitly_untranslated():
+    result = atomize(coupled_event_model(persistent="false"))
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" not in result.bngl
+    assert "# Events NOT simulated" in result.bngl
+
+
+def test_stochastic_run_keeps_the_explicit_refusal():
+    result = Atomizer(
+        atomize=False,
+        quiet_mode=True,
+        t_end=1,
+        n_steps=10,
+        actions='simulate({method=>"ssa", t_end=>1, n_steps=>10})',
+    ).atomize(coupled_event_model())
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" not in result.bngl
+    assert "state-triggered SBML events require stochastic jump scheduling" in result.bngl
+
+
+def test_two_state_trigger_is_lowered_to_the_native_event_block():
+    xml = coupled_event_model(operator="gt", threshold="0.5").replace(
+        "<ci>S1</ci><cn>0.5</cn>", "<ci>S1</ci><ci>S2</ci>"
+    )
+    result = atomize(xml)
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "trigger: S1_amt > S2_amt" in result.bngl
+
+
+def test_rate_rule_parameter_trigger_is_lowered_to_the_native_event_block():
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="rate_rule_event">
+    <listOfParameters>
+      <parameter id="P" value="1" constant="false"/>
+      <parameter id="Q" value="0" constant="false"/>
+    </listOfParameters>
+    <listOfRules>
+      <rateRule variable="P"><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>Q</ci></math></rateRule>
+      <rateRule variable="Q"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><ci>P</ci></apply></math></rateRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="crossing" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><lt/><ci>P</ci><cn>0.75</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="P">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+    result = atomize(xml)
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "trigger: P_amt < 0.75" in result.bngl
+    assert "assignment: P_amt = 1" in result.bngl
+
+
+def test_species_values_are_converted_into_the_observed_amount_units():
+    # A species that reports concentrations is observed as an amount, so the
+    # comparison and the assignment both carry the compartment size.
+    result = atomize(
+        coupled_event_model(compartment_size="0.25", substance_units="false")
+    )
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    # S1 reports a concentration, so the threshold is an amount: 0.75 * 0.25.
+    assert "trigger: S1_amt < (0.25 * (0.75))" in result.bngl
+    # The assignment sets a concentration too, so the amount is 1 * 0.25.
+    assert "assignment: S2_amt = (1 * (0.25))" in result.bngl
+
+
+def _load(result, tmp_path):
+    from bionetgen.model import load
+
+    path = tmp_path / "native_event.bngl"
+    path.write_text(result.bngl)
+    return load(str(path))
+
+
+def test_native_event_trajectory_matches_independent_roadrunner(tmp_path):
+    roadrunner = pytest.importorskip("roadrunner")
+    xml = coupled_event_model()
+    result = atomize(xml)
+
+    model = _load(result, tmp_path)
+    actual = model.simulate(method="ode", t_end=1.0, n_steps=50)
+
+    oracle = roadrunner.RoadRunner(xml)
+    oracle.integrator.relative_tolerance = 1e-10
+    oracle.integrator.absolute_tolerance = 1e-12
+    expected = oracle.simulate(0, 1.0, 51, selections=["time", "S1", "S2", "S3"])
+
+    np.testing.assert_allclose(
+        actual.observables["S1_amt"], expected[:, 1], rtol=2e-6, atol=2e-6
+    )
+    np.testing.assert_allclose(
+        actual.observables["S2_amt"], expected[:, 2], rtol=2e-6, atol=2e-6
+    )
+    np.testing.assert_allclose(
+        actual.observables["S3_amt"], expected[:, 3], rtol=2e-6, atol=2e-6
+    )
+
+
+def _delayed_trajectory(tmp_path, name, **kwargs):
+    result = atomize(coupled_event_model(**kwargs))
+    model = _load(result, tmp_path)
+    actual = model.simulate(method="ode", t_end=1.0, n_steps=400)
+    times = np.asarray(actual.time, dtype=float)
+    s1 = np.asarray(actual.observables["S1_amt"], dtype=float)
+    s2 = np.asarray(actual.observables["S2_amt"], dtype=float)
+    crossing = int(np.argmax(s1 < 0.75))
+    after = int(np.searchsorted(times, times[crossing] + 0.5))
+    assert crossing > 0
+    assert after < times.size
+    return times, s1, s2, crossing, after
+
+
+def test_native_event_delay_runs_the_assignment_after_the_delay(tmp_path):
+    times, s1, s2, crossing, after = _delayed_trajectory(
+        tmp_path, "delayed", delay="0.5"
+    )
+
+    # The trigger fires when S1 falls below 0.75; the assignment then runs
+    # half a second later, so S2 is still on its original trajectory when the
+    # trigger is crossed and is reset to 1 once the delay elapses.
+    assert s2[after] == pytest.approx(1.0, abs=0.35)
+    assert s2[after] < s2[crossing]
+
+
+def test_native_event_uses_the_trigger_time_values(tmp_path):
+    times, s1, s2, crossing, after = _delayed_trajectory(
+        tmp_path,
+        "trigger-time",
+        delay="0.5",
+        assignment='<eventAssignment variable="S2">'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><ci>S1</ci></math>'
+        "</eventAssignment>",
+    )
+
+    # The assignment reads S1 at the trigger time, where it has just fallen
+    # below the threshold, not at the execution time, where it has decayed
+    # further.
+    assert s2[after] == pytest.approx(0.75, abs=0.01)
+    assert abs(s2[after] - s1[after]) > 0.02
+
+
+def test_native_event_can_read_the_execution_time_values(tmp_path):
+    times, s1, s2, crossing, after = _delayed_trajectory(
+        tmp_path,
+        "execution-time",
+        delay="0.5",
+        use_values_from_trigger_time="false",
+        assignment='<eventAssignment variable="S2">'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><ci>S1</ci></math>'
+        "</eventAssignment>",
+    )
+
+    # Without the trigger-time snapshot the assignment reads S1 where it is
+    # when the delay elapses.
+    assert s2[after] == pytest.approx(s1[after], rel=2e-3)

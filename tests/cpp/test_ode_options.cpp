@@ -1168,6 +1168,87 @@ TEST_CASE("CVODE executes recurring native events between output times", "[OdeOp
     CHECK(repeated.observables == result.observables);
 }
 
+TEST_CASE("CVODE defers a native event until its delay elapses", "[OdeOptions][Events]") {
+    auto model = parseDecayModel();
+    ast::Event event;
+    event.id = "reset";
+    // A strict trigger needs no monotone proof: the root function is positive
+    // exactly where the trigger holds.
+    event.trigger = ast::Expression::binary("<", ast::Expression::identifier("Xtot"),
+                                           ast::Expression::number(50));
+    event.delay = ast::Expression::number(10.0);
+    event.assignments.push_back({"Xtot", ast::Expression::number(100)});
+    model->setEventFormatVersion(1);
+    model->addEvent(std::move(event));
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 20.0;
+    options.nSteps = 1;
+    const auto result = integrator.integrate(options);
+    REQUIRE(result.timePoints.size() == 2);
+    // X decays as 100 * exp(-0.1 t) and crosses 50 at t = log(2) / 0.1.  The
+    // assignment runs ten seconds later, so the reported value at t = 20 is
+    // the reset value decayed for the remaining time.
+    const double crossing = std::log(2.0) / 0.1;
+    const double expected = 100 * std::exp(-0.1 * (20.0 - (crossing + 10.0)));
+    CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinRel(expected, 1e-6));
+}
+
+TEST_CASE("CVODE keeps a delayed native event on its trigger-time values",
+          "[OdeOptions][Events]") {
+    auto model = parseDecayModel();
+    ast::Event event;
+    event.id = "snapshot";
+    event.trigger = ast::Expression::binary("<", ast::Expression::identifier("Xtot"),
+                                           ast::Expression::number(50));
+    event.delay = ast::Expression::number(1.0);
+    event.useValuesFromTriggerTime = true;
+    // The assignment records the value the trigger saw, not the value at the
+    // execution instant.
+    event.assignments.push_back({"Xtot", ast::Expression::number(0)});
+    model->setEventFormatVersion(1);
+    model->addEvent(std::move(event));
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 20.0;
+    options.nSteps = 1;
+    const auto result = integrator.integrate(options);
+    REQUIRE(result.observables.back().size() == 1);
+    // The reset to zero happens one second after the crossing, so the value
+    // reported at t = 20 is the zero that was written at the execution time.
+    CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinAbs(0.0, 1e-12));
+}
+
+TEST_CASE("CVODE refuses a native trigger that rises at the first instant",
+          "[OdeOptions][Events]") {
+    auto model = parseDecayModel();
+    ast::Event event;
+    event.id = "rising";
+    // The trigger holds immediately, so the crossing has no instant to be
+    // attributed to.
+    event.trigger = ast::Expression::binary(">", ast::Expression::identifier("time"),
+                                            ast::Expression::number(0));
+    event.assignments.push_back({"Xtot", ast::Expression::number(1)});
+    model->setEventFormatVersion(1);
+    model->addEvent(std::move(event));
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 1;
+    REQUIRE_THROWS_WITH(
+        engine::OdeIntegrator(*model, network).integrate(options),
+        Catch::Matchers::ContainsSubstring(
+            "strict trigger equals its threshold at the initial time"));
+}
+
 TEST_CASE("OdeIntegrator recovers after late stop condition failure", "[OdeOptions][Lifecycle]") {
     auto model = parseDecayModel();
     engine::NetworkGenerator generator(*model);

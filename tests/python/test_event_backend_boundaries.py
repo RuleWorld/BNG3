@@ -42,7 +42,7 @@ end model
 
 
 @pytest.mark.parametrize(
-    "writer", ["write_xml", "write_net", "write_sbml", "write_matlab", "write_latex"]
+    "writer", ["write_xml", "write_net", "write_matlab", "write_latex"]
 )
 def test_export_refuses_before_creating_eventless_file(event_model, tmp_path, writer):
     model, network = event_model
@@ -55,6 +55,18 @@ def test_export_refuses_before_creating_eventless_file(event_model, tmp_path, wr
     with pytest.raises(RuntimeError, match="event"):
         getattr(cpp.io, writer)(*arguments)
     assert not destination.exists()
+
+
+def test_sbml_export_preserves_the_native_event(event_model, tmp_path):
+    model, network = event_model
+    destination = tmp_path / "output.xml"
+    cpp.io.write_sbml(model, network, str(destination))
+    text = destination.read_text()
+    assert "<listOfEvents>" in text
+    # The trigger keeps its observable and the assignment targets the network
+    # species that the observable covers.
+    assert "<ci> X </ci>" in text
+    assert 'eventAssignment variable="S1"' in text
 
 
 @pytest.mark.parametrize(

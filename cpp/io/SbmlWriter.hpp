@@ -66,6 +66,8 @@ private:
         // arity.  A function with arguments has no SBML counterpart in this
         // writer, so a name that also spells an SBML operator is ambiguous.
         std::unordered_map<std::string, std::size_t> parameterizedFunctions;
+        // The SBML id allocated to each native event.
+        std::unordered_map<std::string, std::string> events;
     };
 
     // Observable-to-species weight mapping
@@ -104,6 +106,14 @@ private:
         const engine::GeneratedNetwork& network,
         const ast::Model& model,
         const SymbolIds& symbolIds,
+        int level);
+    // Serialize the native event block as SBML events so an exported model
+    // keeps the trigger semantics that the BNGL block carried.
+    static std::string writeEvents(
+        const ast::Model& model,
+        const std::vector<ObservableGroup>& groups,
+        const SymbolIds& symbolIds,
+        const engine::GeneratedNetwork* network,
         int level);
 
     static std::vector<ObservableGroup> computeObservableGroups(

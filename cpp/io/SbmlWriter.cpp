@@ -201,6 +201,10 @@ SbmlWriter::SymbolIds SbmlWriter::computeSymbolIds(
         result.observables.emplace(group.name, group.sbmlId);
         result.observables.emplace(makeValidSBMLId(group.name), group.sbmlId);
     }
+    for (const auto& event : model.getEvents()) {
+        const auto id = allocate(event.id, "event_");
+        result.events.emplace(event.id, id);
+    }
     return result;
 }
 
@@ -211,7 +215,6 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
     requireNoEnergySemantics(model, "SBML");
-    compile::requireNoNativeEvents(model, "SBML export");
     const compile::CompiledModel compiled(model);
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default
@@ -263,6 +266,11 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     // Reactions
     if (network && options.networksExport) {
         sbml << writeReactions(*network, model, symbolIds, options.level);
+    }
+
+    // Events
+    if (model.getEventFormatVersion().has_value()) {
+        sbml << writeEvents(model, groups, symbolIds, network, options.level);
     }
 
     sbml << "  </model>\n";
@@ -575,6 +583,90 @@ std::string SbmlWriter::writeAssignmentRules(
     }
 
     sbml << "    </listOfRules>\n";
+    return sbml.str();
+}
+
+std::string SbmlWriter::writeEvents(
+    const ast::Model& model,
+    const std::vector<ObservableGroup>& groups,
+    const SymbolIds& symbolIds,
+    const engine::GeneratedNetwork* network,
+    int level) {
+    const auto& events = model.getEvents();
+    if (events.empty()) return {};
+
+    // An event assignment targets observable state, which the exported
+    // document spells as the single network species the observable covers.
+    const auto speciesForTarget = [&](const std::string& target) -> std::string {
+        for (const auto& group : groups) {
+            if (group.name != target) continue;
+            if (group.entries.size() != 1 || group.entries.front().second != 1.0) {
+                throw std::runtime_error(
+                    "SBML export cannot preserve an event assignment to the "
+                    "aggregate observable '" + target + "'");
+            }
+            return "S" + std::to_string(group.entries.front().first + 1);
+        }
+        throw std::runtime_error(
+            "SBML export cannot preserve an event assignment to the unknown "
+            "observable '" + target + "'");
+    };
+
+    std::ostringstream sbml;
+    sbml << std::setprecision(17);
+    sbml << "    <listOfEvents>\n";
+    for (const auto& event : events) {
+        const auto idIt = symbolIds.events.find(event.id);
+        const auto id = idIt == symbolIds.events.end()
+            ? makeValidSBMLId(event.id) : idIt->second;
+        sbml << "      <event id=\"" << escapeXml(id)
+             << "\" name=\"" << escapeXml(event.id)
+             << "\" useValuesFromTriggerTime=\""
+             << (event.useValuesFromTriggerTime ? "true" : "false")
+             << "\">\n";
+        sbml << "        <trigger initialValue=\""
+             << (event.initialValue ? "true" : "false")
+             << "\" persistent=\"" << (event.persistent ? "true" : "false")
+             << "\">\n";
+        sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+        sbml << exprToMathML(event.trigger, "            ", symbolIds);
+        sbml << "          </math>\n";
+        sbml << "        </trigger>\n";
+        if (event.delay) {
+            if (level >= 3) {
+                sbml << "        <delay>\n";
+                sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+                sbml << exprToMathML(*event.delay, "            ", symbolIds);
+                sbml << "          </math>\n";
+                sbml << "        </delay>\n";
+            } else {
+                // SBML Level 2 carries the delay as an attribute.
+                sbml << "        <!-- delay is a Level 3 element; the exported "
+                     << "level keeps the trigger without it -->\n";
+            }
+        }
+        if (event.priority) {
+            sbml << "        <priority>\n";
+            sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+            sbml << exprToMathML(*event.priority, "            ", symbolIds);
+            sbml << "          </math>\n";
+            sbml << "        </priority>\n";
+        }
+        if (!event.assignments.empty()) {
+            sbml << "        <listOfEventAssignments>\n";
+            for (const auto& assignment : event.assignments) {
+                sbml << "          <eventAssignment variable=\""
+                     << escapeXml(speciesForTarget(assignment.target)) << "\">\n";
+                sbml << "            <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+                sbml << exprToMathML(assignment.value, "              ", symbolIds);
+                sbml << "            </math>\n";
+                sbml << "          </eventAssignment>\n";
+            }
+            sbml << "        </listOfEventAssignments>\n";
+        }
+        sbml << "      </event>\n";
+    }
+    sbml << "    </listOfEvents>\n";
     return sbml.str();
 }
 

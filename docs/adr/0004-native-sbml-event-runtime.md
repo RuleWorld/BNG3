@@ -104,9 +104,13 @@ ODE solver, event queue, stochastic engine, and conformance tests.
 
 1. [x] Define the versioned event-block grammar and structured event model
    types.
-2. [ ] Add root-function and event-queue support to native CVODE execution.
+2. [x] Add root-function and event-queue support to native CVODE execution.
+   The runtime registers a continuous root function, applies the assignment
+   at the crossing, and queues a delayed event until its delay elapses.
 3. [ ] Add trigger transition, delayed execution, persistence, snapshot, and
-   priority tests grounded in official SBML cases.
+   priority tests grounded in official SBML cases. Trigger transition and
+   delayed execution are covered; persistence, multiple events, priority
+   ordering, and the remaining snapshot combinations are not.
 4. [ ] Add stochastic event-queue semantics and seeded random ordering.
 5. [x] Round-trip the event block through the BNGL parser/writer. The public
    Python CVODE path executes one immediate event with simultaneous species
@@ -119,11 +123,29 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    output-grid independence and explicit tangent-surface refusal.
    Delays, priorities, multiple events, parameter/compartment assignments,
    stochastic execution and strict initial-threshold equality remain
-   unsupported. Exporters and alternate execution backends explicitly reject
+   unsupported by that first slice; item 6 widens the delay and trigger
+   classes. Exporters and alternate execution backends explicitly reject
    event-bearing models when they cannot preserve the event semantics;
    `tests/python/test_event_backend_boundaries.py` checks these boundaries.
    The legacy unsupported CLI fixture retains explicit rejection.
-6. [ ] Re-run full SSTS only after a meaningful implementation batch; keep
+6. [x] Widen the ODE slice to the event class the modern Atomizer can
+   express exactly: one event, no priority, a persistent trigger, a single
+   strict continuous inequality over observable state, assignments to
+   observable state, and an optional constant delay. A strict inequality is
+   true exactly on one side of its root, so a sign change of the root
+   function is the rising trigger edge and no monotonicity proof on the
+   state is needed; a non-strict inequality keeps the monotone proof because
+   it is also true at a tangential contact. A constant delay queues the
+   event, and `useValuesFromTriggerTime` selects the trigger-time values.
+   A trigger whose two sides are equal at the start of the simulation is a
+   falling edge, so the event waits for the next rising edge; only an
+   immediate rising edge stays explicitly unsupported. The SBML export
+   writes the event back out, so an exported model keeps the trigger
+   semantics for a reader such as libRoadRunner.
+   `tests/python/test_modern_atomizer_native_events.py` and the C++ event
+   cases in `tests/cpp/test_ode_options.cpp` check the lowered model, the
+   unit conversion, the delay semantics and the refusal boundaries.
+7. [ ] Re-run full SSTS only after a meaningful implementation batch; keep
    BioModels validation stopped until requested.
 
 ## References
