@@ -443,7 +443,7 @@ def _number(value: object) -> str:
         return str(value)
     if number.is_integer():
         return str(int(number))
-    return format(number, ".15g")
+    return repr(number)
 
 
 def _factorial(value: float) -> int:
@@ -1849,7 +1849,14 @@ def check_mass_action(
     # it.  Exact zero still passes naturally because its variance and
     # coefficient of variation are both zero.
     coefficient_of_variation = math.sqrt(variance) / (abs(mean) + 1e-60)
-    return mean if coefficient_of_variation < 1e-4 else None
+    if coefficient_of_variation >= 1e-4:
+        return None
+    if coefficient_of_variation < 1e-12:
+        # The samples agree to well below the noise of the evaluation, so the
+        # constant is exact and only the probe's own rounding remains.  Report
+        # the clean value so the emitted model does not carry that noise.
+        return float(format(mean, ".15g"))
+    return mean
 
 
 def _prepared_kinetic_math(

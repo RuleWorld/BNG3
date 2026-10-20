@@ -614,25 +614,6 @@ def _flatten_comp_package(
     return flattened, None
 
 
-# MathML operators that ``_mathml_to_formula`` passes through as a call of the
-# same name and that BNGL's built-in function table does not define.  The
-# relation operators are deliberately absent: the event lowering consumes
-# their comparisons, so they are not unrepresentable.  These trigonometric
-# reciprocals have no built-in and no exact built-in spelling, so a model that
-# uses one cannot be evaluated and has to be reported.
-_MATHML_OPERATORS_WITHOUT_BNGL_FUNCTION = frozenset(
-    {
-        "sec",
-        "csc",
-        "cot",
-        "arcsec",
-        "arcsech",
-        "arccsc",
-        "arccsch",
-        "arccot",
-    }
-)
-
 # ``log`` with a base of ten is already lowered to ``log10``.  Any other base
 # becomes a ``log(base, x)`` call, which the engine does not define.
 _DECIMAL_LOG_BASES = frozenset({"10", "10.0", "1e1", "10.00"})
@@ -2768,11 +2749,6 @@ class SBMLParser:
                     add(
                         "<notanumber> constant encountered in math; cannot be represented."
                     )
-                elif tag in _MATHML_OPERATORS_WITHOUT_BNGL_FUNCTION:
-                    add(
-                        f"<{tag}> in math; BNGL has no built-in function of that "
-                        f"name, so {tag}(...) cannot be evaluated."
-                    )
                 elif tag == "logbase":
                     if _mathml_to_formula(element).strip() not in _DECIMAL_LOG_BASES:
                         add(
@@ -3141,7 +3117,10 @@ class SBMLParser:
                         "category": "fastReaction",
                         "message": (
                             f'Reaction "{reaction_id}" is marked fast '
-                            '(fast="true"); BNGL/BNG has no fast-equilibrium '
+                            '(fast="true"); SBML Level 3 Core Sec. 4.11 asks '
+                            "for a pseudo steady-state approximation of such a "
+                            "reaction, so treating it as an ordinary reaction "
+                            "changes the trajectory. BNG3 has no fast-equilibrium "
                             "solve, so it is treated as an ordinary reaction."
                         ),
                         "count": 1,
@@ -3582,6 +3561,48 @@ class SBMLParser:
                     continue
                 reference.stoichiometry = value
                 reference.variable_stoichiometry = False
+
+        # A species reference whose id is assigned by an initial assignment or
+        # rule takes its stoichiometry from that assignment, not from the
+        # ``stoichiometry`` attribute (SBML Level 3 Version 2 Core, Sec. 4.11.3:
+        # "the ``stoichiometry`` attribute in that case is ignored").  When the
+        # assigned value cannot be resolved to a number, say so instead of
+        # silently keeping the attribute's value.
+        initial_assignment_targets = {
+            str(assignment.symbol)
+            for assignment in model.initial_assignments
+            if assignment.symbol
+        }
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                reference_id = str(reference.id or "")
+                if not reference_id or reference_id not in initial_assignment_targets:
+                    continue
+                if not reference.constant:
+                    # A reference with constant="false" may be changed by a
+                    # rule or an event, and the writer has a dedicated path
+                    # for that; only a fixed reference takes its value from
+                    # the initial assignment alone.
+                    continue
+                if static_symbols.get(reference_id) is not None or (
+                    static_symbols.get(standardize_name(reference_id)) is not None
+                ):
+                    continue
+                if reference.stoichiometry_math:
+                    continue
+                model.import_warnings.append(
+                    {
+                        "category": "stoichiometry",
+                        "message": (
+                            f'The stoichiometry of species "{reference.species}" '
+                            f'in reaction "{reaction.id}" is assigned by '
+                            f'"{reference_id}", whose value could not be '
+                            "resolved to a number at initialization."
+                        ),
+                        "count": 1,
+                        "severity": "dropped",
+                    }
+                )
 
         folded_reference_ids = {
             str(reference.id)
