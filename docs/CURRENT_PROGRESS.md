@@ -430,6 +430,27 @@ failures for outer-compartment changes and loss of a non-default local
 compartment. This was a harness representation discrepancy, not evidence of a
 BNG3 graph-identity defect.
 
+The identity-contract qualification (2026-10-20 candidate) adds a second
+generated #142 detector to the same campaign. For seven generated families it
+compares the two native graph encodings -- BNGcore's `PatternGraph` canonical
+label and NFsim's `Complex` canonical label -- and the network species identity
+against the independent validation graph matcher, at the layer each surface
+declares in the shared identity contract (`cpp/core/IdentityContract.hpp`): the
+network label decides the structure layer (compartments excluded), the NFsim
+label decides the structure and compartment layers (NFcore carries the
+compartment on the molecule), and the network species identity decides the
+species layer. Every result names the layer it decided, so a surface that
+decides a different layer is visible instead of silent, and a label is never
+accepted as proof of identity: the partition a label induces is compared with
+the partition the independent matcher computes, so two different graphs that
+share a label are a mismatch and not a merge. The generated families are 3-, 4-
+and 5-molecule symmetric rings under bond renumbering, reversed traversal and
+swapped site order, per-molecule and species compartment distinctions, and
+site-state and bond-topology controls. The comparison is bounded to those
+families; the standalone NFsim binary is not executed by it, and it does not
+establish general network equivalence. #142's implementation/contract criteria
+remain open.
+
 The next integrated-campaign slice preserves the 48-case baseline (18
 PR-selected cases) and adds six generated semantic siblings to PR runs and
 twelve to full runs. Three function-definition cases pass a rate through a

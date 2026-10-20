@@ -29,6 +29,7 @@ OPERATIONS = (
     "protocol",
     "nf-marginals",
     "graph-identity",
+    "graph-identity-contract",
     "bngir-adversarial",
     "quantity-laws",
     "export-format-tier",
@@ -41,6 +42,7 @@ FOCUS_FLAGS = {
     "boundaries": "--boundaries-only",
     "bngir-adversarial": "--bngir-adversarial-only",
     "graph-identity": "--graph-identity-only",
+    "graph-identity-contract": "--graph-identity-contract-only",
     "export-format-tier": "--export-format-tier-only",
 }
 
@@ -61,6 +63,14 @@ def check_ids(operation, case=None, *, full=False):
         from .graph_identity import CASES
 
         return [f"graph-identity:{case['id']}" for case in CASES]
+    if operation == "graph-identity-contract":
+        from .graph_identity_contract import CASES, CHECKS
+
+        return [
+            f"graph-identity-contract:{case['id']}:{check}"
+            for case in CASES
+            for check in CHECKS
+        ]
     if operation == "bngir-adversarial":
         return [
             *bngir_adversarial.check_ids(),
@@ -81,6 +91,7 @@ def expected_ids(
     *,
     include_boundaries=True,
     include_graph_identity=True,
+    include_graph_identity_contract=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
     include_export_format_tier=True,
@@ -94,6 +105,13 @@ def expected_ids(
         ids.extend(["campaign:boundaries", *check_ids("boundaries")])
     if include_graph_identity:
         ids.extend(["campaign:graph-identity", *check_ids("graph-identity")])
+    if include_graph_identity_contract:
+        ids.extend(
+            [
+                "campaign:graph-identity-contract",
+                *check_ids("graph-identity-contract"),
+            ]
+        )
     if include_bngir_adversarial:
         ids.extend(["campaign:bngir-adversarial", *check_ids("bngir-adversarial")])
     if include_export_format_tier:
@@ -121,6 +139,10 @@ def run_worker(operation, args):
         from .graph_identity import run_worker as run_graph_identity
 
         return run_graph_identity(Path.cwd())
+    if operation == "graph-identity-contract":
+        from .graph_identity_contract import run_worker as run_graph_identity_contract
+
+        return run_graph_identity_contract(Path.cwd())
     if operation == "bngir-adversarial":
         return [
             *bngir_adversarial.run_worker(Path.cwd()),
