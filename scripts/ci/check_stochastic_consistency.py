@@ -1305,8 +1305,10 @@ def _sweep_case(
     record["network"].update(population)
 
     # A rule that produced no reaction leaves the converted model without the
-    # dynamics of its source.  The two readings would then agree trivially,
-    # so this is recorded as a conversion finding, never as agreement.
+    # reaction of its source, so there is no rate law whose propensity could
+    # be compared.  The converted trajectory is then flat, and the flat
+    # trajectory of the deterministic reading agrees with it trivially, so
+    # this is recorded as a conversion finding, never as agreement.
     source_reactions = len(parsed.reactions)
     if source_reactions and int(network.num_reactions) == 0:
         record.update(
@@ -1314,9 +1316,10 @@ def _sweep_case(
             reason=(
                 "conversion finding: the source model declares "
                 f"{source_reactions} reaction(s) but the generated network has "
-                "none, so the converted model does not simulate the source "
-                "dynamics and there is no rate law whose propensity could be "
-                "compared"
+                "none, so there is no rate law whose propensity could be "
+                "compared; the converted trajectory is flat and would agree "
+                "with the deterministic reading trivially, which is not "
+                "evidence of a consistent stochastic reading"
             ),
         )
         record["findings"] = ["no_reaction_produced"]

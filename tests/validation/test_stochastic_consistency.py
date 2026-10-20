@@ -284,6 +284,28 @@ def mini_suite(tmp_path_factory) -> Path:
         },
         results=_csv(_boundary_reference(100.0, 0.5, times)),
     )
+    # 10005: a source reaction that produces no network reaction.  A rule
+    # whose pattern does not name a molecule type yields a network with zero
+    # reactions; the two readings then agree trivially, which must never be
+    # reported as agreement.
+    _write_case(
+        cases / "10005",
+        "10005",
+        species=[("A", 1.0, False), ("B", 1.0, False)],
+        parameters=[("k", 1.0)],
+        reactions=[("r1", ["A", "B"], ["A", "B"], ["c", "k"])],
+        settings={
+            "start": "0",
+            "duration": "10",
+            "steps": "50",
+            "variables": "A, B",
+            "absolute": "1.000000e-006",
+            "relative": "0.0001",
+            "amount": "A, B",
+            "concentration": "",
+        },
+        results=_csv([["time", "A", "B"]] + [[f"{t:.17g}", "1", "1"] for t in times]),
+    )
     return root
 
 
@@ -324,10 +346,28 @@ def test_sweep_reports_every_case(sweep_report):
         "10002",
         "10003",
         "10004",
+        "10005",
     }
     assert sweep_report["budget"]["batch_size"] == 800
     assert sweep_report["budget"]["seed_base"] == DEFAULT_SEED_BASE
     assert sweep_report["budget"]["k_sigma"] > 0
+
+
+def test_a_rule_that_produced_no_reaction_is_a_finding(sweep_report):
+    """A network with no reaction must never be reported as agreement.
+
+    A rule whose pattern does not name a molecule type parses without error
+    but yields a network with zero reactions; every sampler then reports zero
+    events and a flat trajectory, which looks like a working "no
+    disagreement" result rather than a broken model.
+    """
+
+    record = _case(sweep_report, "10005")
+    assert record["status"] != "consistent"
+    assert record["status"] == "not_comparable", record.get("reason")
+    assert "no_reaction_produced" in record["findings"]
+    assert record["network"]["reactions"] == 0
+    assert any(entry["id"] == "10005" for entry in sweep_report["conversion_findings"])
 
 
 def test_linear_decay_is_consistent(sweep_report):
