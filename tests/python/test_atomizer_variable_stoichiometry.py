@@ -298,9 +298,7 @@ def test_rate_ruled_stoichiometry_coupled_to_the_species():
     decaying = (1.0 - 0.1 / root) / 2.0
     for index, amount in enumerate(observables["S1_amt"]):
         time = float(index)
-        expected = growing * math.exp(root * time) + decaying * math.exp(
-            -root * time
-        )
+        expected = growing * math.exp(root * time) + decaying * math.exp(-root * time)
         assert math.isclose(amount, expected, rel_tol=1e-6, abs_tol=1e-8), (
             index,
             amount,
@@ -322,9 +320,7 @@ def test_rate_ruled_stoichiometry_without_an_initial_value_is_reported():
             '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>'
             "</rateRule>"
         ),
-        products=(
-            '<speciesReference id="S1_stoich" species="S1" constant="false"/>'
-        ),
+        products=('<speciesReference id="S1_stoich" species="S1" constant="false"/>'),
     )
     atomizer, _result = _atomize(sbml)
 
@@ -338,7 +334,18 @@ def test_rate_ruled_stoichiometry_without_an_initial_value_is_reported():
 
 @pytest.mark.parametrize(
     "case_id",
-    ["01103", "01637", "01718", "01727", "01728", "01729", "01736", "01737", "01738", "01742"],
+    [
+        "01103",
+        "01637",
+        "01718",
+        "01727",
+        "01728",
+        "01729",
+        "01736",
+        "01737",
+        "01738",
+        "01742",
+    ],
 )
 def test_official_suite_cases_match_their_reference_trajectories(case_id):
     """The official suite cases reproduce their published trajectories.
@@ -367,9 +374,7 @@ def test_official_suite_cases_match_their_reference_trajectories(case_id):
     duration = float(settings["duration"])
     steps = int(settings["steps"])
     amounts = [
-        name.strip()
-        for name in settings.get("amount", "").split(",")
-        if name.strip()
+        name.strip() for name in settings.get("amount", "").split(",") if name.strip()
     ]
 
     with open(xml_path) as handle:

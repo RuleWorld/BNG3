@@ -4420,9 +4420,7 @@ def _seed_symbol_values(
         str(getattr(assignment, "symbol", "") or "")
         for assignment in model.initial_assignments
     }
-    for reference_id, value in _species_reference_stoichiometry_symbols(
-        model
-    ).items():
+    for reference_id, value in _species_reference_stoichiometry_symbols(model).items():
         if value is None or reference_id in initial_assignment_symbols:
             continue
         if reference_id in symbols or standardize_name(reference_id) in symbols:
