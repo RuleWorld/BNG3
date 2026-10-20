@@ -18,12 +18,16 @@ from typing import Any, Dict, Iterable, Mapping, Optional
 from .core import (
     EditDistanceMatrixResult,
     ModificationInference,
+    MODIFICATION_SITES,
+    SBO_ADDITIVE_MODIFICATIONS,
+    SBO_REMOVAL_MODIFICATIONS,
     addToDependencyGraph,
     add_to_dependency_graph,
     analyzeNamingConventions,
     analyze_naming_conventions,
     analyzeReactions,
     analyze_reactions,
+    analyze_structural_topology,
     buildSpeciesCompositionTable,
     build_species_composition_table,
     classifyReaction,
@@ -42,9 +46,12 @@ from .core import (
     getSeedSpecies,
     infer_modification,
     levenshtein,
+    normalize_sbo_term,
     reconcile_sct,
     reconcileSCT,
+    sbo_modification,
     similarity,
+    structural_report,
     topological_sort,
     topologicalSort,
 )
@@ -487,6 +494,11 @@ class Atomizer:
             annotation = (
                 self._annotation_data() if self.options.get("annotation") else None
             )
+            structural = (
+                structural_report(self.sct)
+                if bool(self.options.get("atomize", False))
+                else None
+            )
             return AtomizerResult(
                 bngl=bngl,
                 database=self.databases,
@@ -494,6 +506,7 @@ class Atomizer:
                 observable_map=observable_map,
                 log=logger.getMessages(),
                 success=True,
+                structural_inference=structural,
             )
         except Exception as exc:
             logger.error("ATM010", f"Atomization failed: {exc}")
@@ -572,6 +585,19 @@ class Atomizer:
     def analyze_reaction_patterns(self):
         return analyze_reactions(self.model) if self.model is not None else None
 
+    def structural_report(self) -> Optional[Dict[str, Any]]:
+        """Return the machine-readable structural atomization record.
+
+        The report names the inferred molecules, sites, bonds and states for
+        every species, the confidence of each inference, and the alternative
+        readings that remain consistent with the SBML source.  It is
+        ``None`` when the flat (non-atomized) translation was used.
+        """
+
+        if self.sct is None:
+            return None
+        return structural_report(self.sct)
+
     def clear(self) -> None:
         self.model = None
         self.sct = None
@@ -623,6 +649,7 @@ Atomizer.getUniProtIds = Atomizer.get_uniprot_ids
 Atomizer.getDatabases = Atomizer.get_databases
 Atomizer.analyzeNaming = Atomizer.analyze_naming
 Atomizer.analyzeReactionPatterns = Atomizer.analyze_reaction_patterns
+Atomizer.structuralReport = Atomizer.structural_report
 
 
 def sbml_to_bngl(
@@ -677,7 +704,10 @@ __all__ = [
     "MemoizeMapped",
     "Molecule",
     "ModificationInference",
+    "MODIFICATION_SITES",
     "NamingConventions",
+    "SBO_ADDITIVE_MODIFICATIONS",
+    "SBO_REMOVAL_MODIFICATIONS",
     "MultiParseResult",
     "ParsedAnnotation",
     "Rule",
@@ -695,6 +725,7 @@ __all__ = [
     "analyzeNamingConventions",
     "analyze_reactions",
     "analyzeReactions",
+    "analyze_structural_topology",
     "analyze_rate_law",
     "annotations_to_json",
     "annotations_to_yaml",
@@ -817,6 +848,9 @@ __all__ = [
     "similarity",
     "topological_sort",
     "topologicalSort",
+    "structural_report",
+    "normalize_sbo_term",
+    "sbo_modification",
     "synthesize_event_actions",
     "standardizeName",
     "unit_conversion_factor",
