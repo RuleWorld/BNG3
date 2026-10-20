@@ -845,6 +845,17 @@ jobs:
         env:
           SYMPY_USE_GMPY: "0"
 
+      - name: Qualify the Atomizer structural reconstruction and round trip
+        # The generated family reconstructs structural SBML models, executes
+        # them and compares the execution and the semantic round trip against
+        # an independent law and an independent simulator. A model the
+        # reconstruction cannot represent must be refused.
+        run: |
+          python -m tests.validation.atomizer_reconstruction \
+            --report-dir "$RUNNER_TEMP/atomizer-reconstruction"
+        env:
+          SYMPY_USE_GMPY: "0"
+
   # ═══════════════════════════════════════════════════════════════════════════
   # Source Distribution Installation Smoke Test
   # ═══════════════════════════════════════════════════════════════════════════

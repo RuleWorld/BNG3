@@ -43,7 +43,10 @@ jobs:
   conformance:
     name: Official SBML references (128 PR cases; full scheduled suite)
     runs-on: ubuntu-22.04
-    timeout-minutes: 360
+    # The qualification family below re-executes the same locked-suite runner
+    # over the same selection, so the reported outcomes describe the corpus of
+    # the run above them. The budget covers both runs.
+    timeout-minutes: 600
     env:
       BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
       BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -123,6 +126,7 @@ jobs:
             --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
             2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
 
+<<<<<<< HEAD
       - name: Compare the run against the committed expectation manifest
         shell: bash
         run: |
@@ -134,6 +138,27 @@ jobs:
           python scripts/ci/sbml_campaign_inventory.py \
             --suite-report "$RUNNER_TEMP/ssts-artifacts/report.json" \
             --expectations provenance/sbml-campaign/expectations.json
+=======
+      - name: Report the locked-suite outcomes separately
+        # The qualification family runs the same locked-suite runner on the
+        # identified build and reports the conversion, round trip,
+        # official-reference conformance and independent comparison as four
+        # separate outcomes, so a green conversion cannot mask a failed
+        # reference comparison.  The event-target cases and the zero-observable
+        # cases are reported as their own cohorts.
+        run: |
+          set -euo pipefail
+          # The same selection the runner step above used, so the four
+          # reported outcomes describe the same corpus.
+          selection=(--categories semantic --max-cases 128 --selection-strategy feature-cover)
+          if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
+            selection=(--categories semantic stochastic)
+          fi
+          python -m tests.validation.sbml_conformance \
+            --report-dir "$RUNNER_TEMP/ssts-artifacts/conformance-family" \
+            --suite-dir "$RUNNER_TEMP/official-ssts" \
+            "${selection[@]}"
+>>>>>>> codex/bngir-sbmlqual
 
       - name: Triage retained stages with the common conformance tools
         if: always()

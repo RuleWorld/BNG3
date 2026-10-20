@@ -122,6 +122,12 @@ def expected_contract_ids(
     include_jax_backend_measurement=True,
     include_rate_law_contract=True,
     include_nfnext_slices=True,
+    include_api_surface=True,
+    include_stochastic_parity=True,
+    include_graph_identity_contract=True,
+    include_sbml_support_boundary=True,
+    include_atomizer_symbol_resolution=True,
+    include_atomizer_reconstruction=True,
     full=False,
 ):
     return [
@@ -174,6 +180,12 @@ def expected_contract_ids(
         include_jax_backend_measurement=include_jax_backend_measurement,
         include_rate_law_contract=include_rate_law_contract,
         include_nfnext_slices=include_nfnext_slices,
+        include_api_surface=include_api_surface,
+        include_stochastic_parity=include_stochastic_parity,
+        include_graph_identity_contract=include_graph_identity_contract,
+        include_sbml_support_boundary=include_sbml_support_boundary,
+        include_atomizer_symbol_resolution=include_atomizer_symbol_resolution,
+        include_atomizer_reconstruction=include_atomizer_reconstruction,
         full=full,
     )
 
@@ -972,6 +984,9 @@ def select_qualifications(focused_flags):
         "include_atomizer_symbol_resolution": not _other_focused(
             "atomizer-symbol-resolution"
         ),
+        "include_atomizer_reconstruction": not _other_focused(
+            "atomizer-reconstruction"
+        ),
     }
 
 
@@ -1005,6 +1020,7 @@ def main(argv=None):
     parser.add_argument("--graph-identity-contract-only", action="store_true")
     parser.add_argument("--sbml-support-boundary-only", action="store_true")
     parser.add_argument("--atomizer-symbol-resolution-only", action="store_true")
+    parser.add_argument("--atomizer-reconstruction-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1097,6 +1113,7 @@ def main(argv=None):
         "graph-identity-contract": args.graph_identity_contract_only,
         "sbml-support-boundary": args.sbml_support_boundary_only,
         "atomizer-symbol-resolution": args.atomizer_symbol_resolution_only,
+        "atomizer-reconstruction": args.atomizer_reconstruction_only,
     }
     qualification_selection = select_qualifications(focused_flags)
     required_ids = expected_contract_ids(
@@ -1148,6 +1165,10 @@ def main(argv=None):
             integrated_extensions.invoke(
                 "atomizer-symbol-resolution", args, rows, env, run_stage
             )
+        if qualification_selection["include_atomizer_reconstruction"]:
+            integrated_extensions.invoke(
+                "atomizer-reconstruction", args, rows, env, run_stage
+            )
         if qualification_selection["include_rate_law_contract"]:
             integrated_extensions.invoke(
                 "rate-law-contract", args, rows, env, run_stage
@@ -1198,6 +1219,7 @@ def main(argv=None):
         "graph-identity-contract": ["--graph-identity-contract-only"],
         "sbml-support-boundary": ["--sbml-support-boundary-only"],
         "atomizer-symbol-resolution": ["--atomizer-symbol-resolution-only"],
+        "atomizer-reconstruction": ["--atomizer-reconstruction-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1292,6 +1314,9 @@ def main(argv=None):
                 "atomizer-symbol-resolution": (
                     "tests/validation/atomizer_symbol_resolution.py"
                 ),
+                "atomizer-reconstruction": (
+                    "tests/validation/atomizer_reconstruction.py"
+                ),
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1357,6 +1382,8 @@ def main(argv=None):
                 issues = [160]
             elif stage == "atomizer-symbol-resolution":
                 issues = [164]
+            elif stage == "atomizer-reconstruction":
+                issues = [161]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

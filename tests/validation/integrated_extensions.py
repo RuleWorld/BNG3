@@ -13,6 +13,7 @@ from . import (
     integrated_boundaries,
     bngir_adversarial,
     api_surface,
+    atomizer_reconstruction,
     sbml_support_boundary,
     atomizer_symbol_resolution,
     stochastic_parity,
@@ -51,6 +52,7 @@ OPERATIONS = (
     "graph-identity-contract",
     "sbml-support-boundary",
     "atomizer-symbol-resolution",
+    "atomizer-reconstruction",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -68,6 +70,7 @@ FOCUS_FLAGS = {
     "graph-identity-contract": "--graph-identity-contract-only",
     "sbml-support-boundary": "--sbml-support-boundary-only",
     "atomizer-symbol-resolution": "--atomizer-symbol-resolution-only",
+    "atomizer-reconstruction": "--atomizer-reconstruction-only",
 }
 
 
@@ -88,6 +91,8 @@ def check_ids(operation, case=None, *, full=False):
         return sbml_support_boundary.check_ids()
     if operation == "atomizer-symbol-resolution":
         return atomizer_symbol_resolution.check_ids()
+    if operation == "atomizer-reconstruction":
+        return atomizer_reconstruction.check_ids()
     if operation == "stochastic-parity":
         return stochastic_parity.check_ids()
     if operation == "graph-identity-contract":
@@ -107,6 +112,8 @@ def check_ids(operation, case=None, *, full=False):
         return sbml_support_boundary.run_worker(Path.cwd())
     if operation == "atomizer-symbol-resolution":
         return atomizer_symbol_resolution.run_worker(Path.cwd())
+    if operation == "atomizer-reconstruction":
+        return atomizer_reconstruction.run(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":
@@ -155,6 +162,7 @@ def expected_ids(
     include_api_surface=True,
     include_sbml_support_boundary=True,
     include_atomizer_symbol_resolution=True,
+    include_atomizer_reconstruction=True,
     include_stochastic_parity=True,
     include_graph_identity_contract=True,
     full=False,
@@ -201,6 +209,13 @@ def expected_ids(
                 *check_ids("atomizer-symbol-resolution"),
             ]
         )
+    if include_atomizer_reconstruction:
+        ids.extend(
+            [
+                "campaign:atomizer-reconstruction",
+                *check_ids("atomizer-reconstruction"),
+            ]
+        )
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     if include_graph_identity_contract:
@@ -237,6 +252,8 @@ def run_worker(operation, args):
         return sbml_support_boundary.check_ids()
     if operation == "atomizer-symbol-resolution":
         return atomizer_symbol_resolution.check_ids()
+    if operation == "atomizer-reconstruction":
+        return atomizer_reconstruction.check_ids()
     if operation == "stochastic-parity":
         return stochastic_parity.check_ids()
     if operation == "graph-identity-contract":
@@ -256,6 +273,8 @@ def run_worker(operation, args):
         return sbml_support_boundary.run_worker(Path.cwd())
     if operation == "atomizer-symbol-resolution":
         return atomizer_symbol_resolution.run_worker(Path.cwd())
+    if operation == "atomizer-reconstruction":
+        return atomizer_reconstruction.run(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":

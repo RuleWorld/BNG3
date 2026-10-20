@@ -258,6 +258,54 @@ maintainer disposition. #171 stays open: the family qualifies one generated
 model family, and notebook execution, third-party integrations and other
 model shapes remain outside the executed scope.
 
+## Locked SBML conformance and Atomizer reconstruction qualification (2026-10-20 candidate)
+
+Issue #159 asked for the existing locked-suite runner to be executed on an
+identified build with the conversion, round trip, official-reference
+conformance and independent comparison reported separately. The
+`sbml-conformance` family in `tests/validation/sbml_conformance.py` does that:
+it runs `scripts/ci/validate_sbml_test_suite.py` in a child process against
+the locked official SBML Test Suite revision, retains the runner's per-case
+artifacts, and turns the runner's own stage buckets into four separate rows.
+A green conversion therefore cannot stand in for a failed reference
+comparison. The event-target cases and the zero-observable cases are reported
+as their own cohorts; a case with no observable output carries no reference
+evidence and is never counted as independent-oracle evidence. A stage that was
+not executed is `NOT_TESTED`, a stage whose cases are all explicitly
+unsupported is `UNSUPPORTED`, and a failed or timed-out case is `FAIL`.
+
+The locked suite is an external, revision-locked corpus. Where the checkout is
+absent, every row is `NOT_TESTED` with the reason: a missing corpus is not
+conformance evidence. The full-suite, all-category and stochastic-ensemble
+results still need the hosted environment; the local run covers the bounded
+128-case semantic feature cover only.
+
+Issue #161 asked for the structural Atomizer to be qualified on reconstruction,
+reaction and bond changes, compartments, quantities and retained metadata, and
+for the full execution and the semantic round trip to be compared with
+independent references instead of a successful parse. The
+`atomizer-reconstruction` family in
+`tests/validation/atomizer_reconstruction.py` generates that family: nine
+SBML models covering a plain conversion, complex formation, complex
+dissociation, a reversible bond, a non-unit compartment, a concentration-valued
+species, an annotated model, an SBML Multi state change and one model the
+reconstruction cannot represent.
+
+Each supported case is reconstructed with the modern Atomizer, executed with
+the BNG3 engine, written to SBML, read back, reconstructed again and executed
+again. Both executions are compared against two independent references: the
+closed-form law of the generated model, derived from the case parameters, and
+libRoadRunner running the source SBML. The unrepresentable case must be
+refused with a named import diagnostic; a parse that drops a construct is a
+failure rather than a success, and no execution claim is made for it.
+
+The named checks are recorded in `provenance/issue-obligations.json` for the
+behavioral obligations of #159 and #161, and the closure records are explicit
+maintainer dispositions. Both issues stay open: the conformance family covers
+one bounded selection of one suite revision, and the reconstruction family
+covers a generated structural slice whose event semantics, dynamic-rule
+classes and SBML packages remain outside it.
+
 ## Native BNGIR v0.2 model functions (2026-10-19 candidate)
 
 The native BNGIR v0.2 importer refused the whole `model.functions` section, so

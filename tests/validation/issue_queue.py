@@ -521,6 +521,10 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .stochastic_parity import check_ids as stochastic_parity_check_ids
     from .sbml_support_boundary import check_ids as sbml_boundary_check_ids
     from .atomizer_symbol_resolution import check_ids as symbol_resolution_check_ids
+    from .atomizer_reconstruction import (
+        check_ids as atomizer_reconstruction_check_ids,
+    )
+    from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
 
@@ -753,6 +757,40 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="atomizer-reconstruction",
+            case_ids=[],
+            check_ids=atomizer_reconstruction_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(atomizer_reconstruction_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated structural reconstruction families only: reaction "
+                "and bond changes, compartments, quantities and retained metadata, "
+                "compared against independent references."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="official-sbml-conformance",
+            case_ids=[],
+            check_ids=conformance_check_ids(),
+            runner="tests.validation.sbml_conformance",
+            budget=dict(
+                checks=len(conformance_check_ids()), stage_timeout_seconds=3600
+            ),
+            limits=(
+                "One invocation of the existing locked-suite runner over the "
+                "locked official SBML Test Suite revision. The conversion, round "
+                "trip, official-reference and independent-comparison outcomes are "
+                "reported separately; a missing suite checkout is not evidence."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -866,16 +904,25 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                                                                 "id"
                                                                             ]
                                                                             == "atomizer-symbol-resolution"
-                                                                            else [
-                                                                                argument
-                                                                                for case_id in family[
-                                                                                    "case_ids"
+                                                                            else (
+                                                                                [
+                                                                                    "--atomizer-reconstruction-only"
                                                                                 ]
-                                                                                for argument in (
-                                                                                    "--case",
-                                                                                    case_id,
-                                                                                )
-                                                                            ]
+                                                                                if family[
+                                                                                    "id"
+                                                                                ]
+                                                                                == "atomizer-reconstruction"
+                                                                                else [
+                                                                                    argument
+                                                                                    for case_id in family[
+                                                                                        "case_ids"
+                                                                                    ]
+                                                                                    for argument in (
+                                                                                        "--case",
+                                                                                        case_id,
+                                                                                    )
+                                                                                ]
+                                                                            )
                                                                         )
                                                                     )
                                                                 )
