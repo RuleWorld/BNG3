@@ -112,6 +112,7 @@ def expected_contract_ids(
     include_quantity_laws=True,
     include_export_format_tier=True,
     include_netrule_execution=True,
+    include_jax_backend_measurement=True,
     full=False,
 ):
     return [
@@ -160,6 +161,7 @@ def expected_contract_ids(
         include_quantity_laws=include_quantity_laws,
         include_export_format_tier=include_export_format_tier,
         include_netrule_execution=include_netrule_execution,
+        include_jax_backend_measurement=include_jax_backend_measurement,
         full=full,
     )
 
@@ -945,6 +947,7 @@ def main(argv=None):
     parser.add_argument("--quantity-laws-only", action="store_true")
     parser.add_argument("--export-format-tier-only", action="store_true")
     parser.add_argument("--netrule-execution-only", action="store_true")
+    parser.add_argument("--jax-backend-measurement-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -956,6 +959,7 @@ def main(argv=None):
                 args.quantity_laws_only,
                 args.export_format_tier_only,
                 args.netrule_execution_only,
+                args.jax_backend_measurement_only,
             )
         )
         > 1
@@ -983,6 +987,7 @@ def main(argv=None):
         or args.quantity_laws_only
         or args.export_format_tier_only
         or args.netrule_execution_only
+        or args.jax_backend_measurement_only
     ):
         selected = []
     for name in (
@@ -1015,6 +1020,7 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.netrule_execution_only
+        or args.jax_backend_measurement_only
     )
     qualification_selection = dict(
         include_boundaries=not (
@@ -1023,6 +1029,7 @@ def main(argv=None):
             or args.quantity_laws_only
             or args.export_format_tier_only
             or args.netrule_execution_only
+            or args.jax_backend_measurement_only
         ),
         include_graph_identity=not (
             args.boundaries_only
@@ -1030,6 +1037,7 @@ def main(argv=None):
             or args.quantity_laws_only
             or args.export_format_tier_only
             or args.netrule_execution_only
+            or args.jax_backend_measurement_only
         ),
         include_bngir_adversarial=not (
             args.boundaries_only
@@ -1043,6 +1051,7 @@ def main(argv=None):
             or args.bngir_adversarial_only
             or args.quantity_laws_only
             or args.netrule_execution_only
+            or args.jax_backend_measurement_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
@@ -1051,8 +1060,10 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.export_format_tier_only
         or args.netrule_execution_only
+        or args.jax_backend_measurement_only
     )
     qualification_selection["include_netrule_execution"] = not focused
+    qualification_selection["include_jax_backend_measurement"] = not focused
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1077,6 +1088,10 @@ def main(argv=None):
         if qualification_selection["include_netrule_execution"]:
             integrated_extensions.invoke(
                 "netrule-execution", args, rows, env, run_stage
+            )
+        if qualification_selection["include_jax_backend_measurement"]:
+            integrated_extensions.invoke(
+                "jax-backend-measurement", args, rows, env, run_stage
             )
         for case in selected:
             run_case(case, args, rows, env)
@@ -1122,6 +1137,7 @@ def main(argv=None):
         "graph-identity": ["--graph-identity-only"],
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
+        "jax-backend-measurement": ["--jax-backend-measurement-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1182,6 +1198,11 @@ def main(argv=None):
                     "cpp/engine/NetworkRulePlan.cpp",
                     "cpp/engine/LegacyNetworkRuleKernel.cpp",
                 ],
+                "jax-backend-measurement": [
+                    "tests/validation/jax_backend_measurement.py",
+                    "python/bionetgen/jax_ode.py",
+                    "python/bionetgen/jax_ssa.py",
+                ],
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1193,6 +1214,10 @@ def main(argv=None):
             if row["stage"] == "netrule-execution":
                 row["question"] = (
                     "compile-owned-network-rule-contract-vs-legacy-path-and-oracle"
+                )
+            if row["stage"] == "jax-backend-measurement":
+                row["question"] = (
+                    "jax-backend-stage-profile-vs-independent-closed-form-law"
                 )
         if row["stage"] == "rate-trace":
             row["source_locations"] = [
@@ -1217,6 +1242,8 @@ def main(argv=None):
                 issues = [163]
             elif stage == "netrule-execution":
                 issues = [139]
+            elif stage == "jax-backend-measurement":
+                issues = [174]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):

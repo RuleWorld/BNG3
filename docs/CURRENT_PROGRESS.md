@@ -1,5 +1,47 @@
 # BNG3 current progress
 
+## JAX backend stage profile (2026-10-20 candidate)
+
+Issue #174 asks for representative speed and memory baselines on a fixed
+revision: parse/compile/generate, ODE/SSA/NFsim, scans, cold/warm setup, peak
+memory and allocations, with independent semantic oracles, controlled A/A
+timing, the exact environment and corpus, and retained no-win results. The
+family had no generated check, so the two technical obligations of #174 were
+unqualified.
+
+`tests/validation/jax_backend_measurement.py` now measures that profile for
+the JAX backend family on a fixed generated corpus of three mass-action cases
+(two first-order conversions of different size and one dimerization). The JAX
+backend is the candidate arm; the native engine is the incumbent arm for the
+stages where the JAX backend has no route.
+
+Four rules keep the numbers honest:
+
+* Every timing carries an independent correctness control. The control is the
+  closed-form law of the case, derived from the case parameters and not from
+  anything the measured code produced. A timing whose correctness control
+  failed is not recorded as a result.
+* Every timed stage is measured by repeating the same arm (an A/A control) and
+  the spread of those repetitions is recorded. A stage whose spread exceeds
+  the noise limit is not recorded as a result either, so a noisy host cannot
+  be mistaken for a measurement. The A/A control reports a host-noise
+  observation as a failed control, never as a product failure.
+* A comparison that does not show the candidate winning is recorded as
+  `NO-WIN`. It is a result, not a failure to hide.
+* The environment, the corpus digest, the revision and the host load are
+  recorded with the numbers.
+
+The stages the JAX backend does not provide (SSA, NFsim, parameter scans) are
+recorded as explicit boundaries: the JAX SSA entry point refuses, the public
+`simulate()` API rejects `method="jax"`, and the JAX family's public API
+declares no NFsim or scan route. The measured SSA, NFsim and scan stages
+therefore belong to the native engine arm and are labelled as such.
+
+The evidence qualifies the JAX backend family on one host, one revision and
+one corpus. The numbers are machine-specific; the C++ allocation counters of
+`tools/memory_allocs` are not exercised, and the issue's acceptance threshold
+and the other backends' profiles remain unqualified.
+
 ## Network-rule execution contract qualification (2026-10-20 candidate)
 
 Issue #139 asks for the compile-owned network-rule execution contract and the

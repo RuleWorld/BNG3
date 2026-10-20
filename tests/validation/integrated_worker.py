@@ -739,6 +739,7 @@ def main():
             "quantity-laws",
             "export-format-tier",
             "netrule-execution",
+            "jax-backend-measurement",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -834,6 +835,7 @@ def main():
         "quantity-laws",
         "export-format-tier",
         "netrule-execution",
+        "jax-backend-measurement",
     ):
         from tests.validation.integrated_extensions import run_worker
 

@@ -18,6 +18,7 @@ from . import (
     integrated_marginals,
     integrated_protocol,
     export_format_tier,
+    jax_backend_measurement,
     netrule_execution,
 )
 from .integrated_cases import generated_cases
@@ -33,6 +34,7 @@ OPERATIONS = (
     "quantity-laws",
     "export-format-tier",
     "netrule-execution",
+    "jax-backend-measurement",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -42,6 +44,7 @@ FOCUS_FLAGS = {
     "bngir-adversarial": "--bngir-adversarial-only",
     "graph-identity": "--graph-identity-only",
     "export-format-tier": "--export-format-tier-only",
+    "jax-backend-measurement": "--jax-backend-measurement-only",
 }
 
 
@@ -52,6 +55,8 @@ def check_ids(operation, case=None, *, full=False):
         return integrated_boundaries.expected_check_ids()
     if operation == "netrule-execution":
         return netrule_execution.check_ids()
+    if operation == "jax-backend-measurement":
+        return jax_backend_measurement.check_ids()
     if operation == "protocol":
         return [
             f"{case['id']}:protocol:{name}"
@@ -85,6 +90,7 @@ def expected_ids(
     include_quantity_laws=True,
     include_export_format_tier=True,
     include_netrule_execution=True,
+    include_jax_backend_measurement=True,
     full=False,
 ):
     ids = []
@@ -100,6 +106,13 @@ def expected_ids(
         ids.extend(["campaign:export-format-tier", *check_ids("export-format-tier")])
     if include_netrule_execution:
         ids.extend(["campaign:netrule-execution", *check_ids("netrule-execution")])
+    if include_jax_backend_measurement:
+        ids.extend(
+            [
+                "campaign:jax-backend-measurement",
+                *check_ids("jax-backend-measurement"),
+            ]
+        )
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -117,6 +130,8 @@ def run_worker(operation, args):
         return integrated_boundaries.run(Path.cwd())
     if operation == "netrule-execution":
         return netrule_execution.run_worker(Path.cwd())
+    if operation == "jax-backend-measurement":
+        return jax_backend_measurement.run_worker(Path.cwd())
     if operation == "graph-identity":
         from .graph_identity import run_worker as run_graph_identity
 
@@ -201,7 +216,11 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
             else (
                 240
                 if operation == "nf-marginals"
-                else (300 if operation == "export-format-tier" else 120)
+                else (
+                    300
+                    if operation == "export-format-tier"
+                    else (600 if operation == "jax-backend-measurement" else 120)
+                )
             )
         ),
     )

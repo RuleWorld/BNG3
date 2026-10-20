@@ -515,6 +515,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
     from .netrule_execution import check_ids as netrule_check_ids
     from .netrule_execution import cases as netrule_cases
+    from .jax_backend_measurement import check_ids as jax_measurement_check_ids
 
     check_ids = [
         *adversarial_check_ids(),
@@ -538,6 +539,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_quantity_laws=False,
                     include_export_format_tier=False,
                     include_netrule_execution=False,
+                    include_jax_backend_measurement=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -601,6 +603,26 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             limits="Bounded generated export-format tier: BNGL/NET/SBML round trips with independent consumers and the eBNGL energy refusal boundary; no exhaustive format matrix and no structural/graph exporter qualification.",
         )
     )
+    families.append(
+        dict(
+            id="jax-backend-measurement",
+            case_ids=[],
+            check_ids=jax_measurement_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(jax_measurement_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "Measured profile of the JAX backend on a fixed generated corpus "
+                "on one host: the stage timings, the A/A repeatability control, "
+                "the independent closed-form controls and the no-win verdicts "
+                "are machine-specific, and the stages the JAX backend does not "
+                "provide (SSA, NFsim, parameter scans) are recorded as explicit "
+                "boundaries rather than measured through another backend."
+            ),
+        )
+    )
     selected = []
     for family in families:
         available = set(family["check_ids"])
@@ -642,11 +664,15 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     else (
                         ["--netrule-execution-only"]
                         if family["id"] == "network-rule-execution"
-                        else [
-                            argument
-                            for case_id in family["case_ids"]
-                            for argument in ("--case", case_id)
-                        ]
+                        else (
+                            ["--jax-backend-measurement-only"]
+                            if family["id"] == "jax-backend-measurement"
+                            else [
+                                argument
+                                for case_id in family["case_ids"]
+                                for argument in ("--case", case_id)
+                            ]
+                        )
                     )
                 )
             )

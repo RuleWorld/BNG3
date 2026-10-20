@@ -563,3 +563,31 @@ budget. They remain trajectory disagreements without an established cause;
 neither source-law acceptance nor equal seeds establishes full path equivalence.
 `--quantity-laws-only` selects the new bounded campaign; `--full` expands it.
 Manual workflow `bounded=true` retains PR selection on a stacked candidate.
+
+### JAX backend stage profile
+
+`jax-backend-measurement` measures the performance and resource profile of the
+JAX backend family on a fixed generated corpus of three mass-action cases. It
+is selected on its own with `--jax-backend-measurement-only`.
+
+Every timed stage (parse, generate, JAX compilation cold and warm, the JAX ODE
+integration, the native ODE, SSA, NFsim and parameter-scan stages, the cold and
+warm setup and the allocation measurement) carries an independent correctness
+control: the closed-form law of the case, derived from the case parameters and
+not from anything the measured code produced. A timing whose correctness
+control failed is not recorded as a result.
+
+Each timed stage is also measured by repeating the same arm. The spread of
+those repetitions is the A/A control and is recorded per stage. A stage whose
+spread exceeds the noise limit is not recorded as a result either, so a busy
+host produces no timing rather than an unreliable one; the A/A control reports
+that as a host-noise observation and never as a product failure. The
+environment, the corpus digest, the revision and the host load are recorded
+with the numbers, and the numbers are specific to that machine.
+
+A comparison that does not show the JAX backend winning is recorded as
+`NO-WIN`. The stages the JAX backend does not provide (SSA, NFsim, parameter
+scans) are recorded as explicit boundaries: the JAX SSA entry point refuses,
+the public `simulate()` API rejects `method="jax"`, and the JAX family's
+public API declares no NFsim or scan route, so the measured SSA, NFsim and scan
+stages belong to the native engine arm.
