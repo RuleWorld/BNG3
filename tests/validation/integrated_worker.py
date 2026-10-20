@@ -740,6 +740,7 @@ def main():
             "export-format-tier",
             "netrule-execution",
             "bngsim-boundary",
+            "jax-backend-measurement",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -836,6 +837,7 @@ def main():
         "export-format-tier",
         "netrule-execution",
         "bngsim-boundary",
+        "jax-backend-measurement",
     ):
         from tests.validation.integrated_extensions import run_worker
 

@@ -957,6 +957,7 @@ validation_capabilities:
   tests:
   - tests/python/test_jax_ode.py
   - tests/python/test_jax_ssa.py
+  - tests/validation/jax_backend_measurement.py
   issues:
   - 174
   reference: jax
@@ -1080,6 +1081,19 @@ validation_capabilities:
   reference: bionetgen-and-molecular-unit-conservation
   support: partial
   notes: A named identical-reactant dimer probe checks k/2, distinct Molecules/Species weights, full cdat agreement and conservation; does not qualify arbitrary automorphisms.
+
+- id: platform.jax-backend
+  sources:
+  - python/bionetgen/jax_ode.py
+  - python/bionetgen/jax_ssa.py
+  tests:
+  - tests/python/test_jax_ode.py
+  - tests/python/test_jax_ssa.py
+  - tests/validation/jax_backend_measurement.py
+  issues: [174]
+  reference: independent-closed-form-law-of-the-generated-corpus
+  support: partial
+  notes: The JAX ODE backend is executed against the closed-form law of a fixed generated mass-action corpus, with a controlled A/A repeatability control and an explicit no-win comparison against the native engine; the JAX SSA backend refuses explicitly, and the measured numbers are specific to one host and revision.
 
 - id: integration.cross-component
   sources:

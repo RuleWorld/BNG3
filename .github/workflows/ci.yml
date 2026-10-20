@@ -624,6 +624,15 @@ jobs:
         env:
           JAX_ENABLE_X64: "true"
 
+      - name: Measure the JAX backend stage profile on the pinned CPU device
+        # Issue #174 asks for a measured profile with an A/A repeatability
+        # control and independent correctness evidence. The CPU-pinned device
+        # keeps this job deterministic; the recorded numbers are specific to
+        # the runner and are not a portable baseline.
+        run: python -m pytest tests/validation/test_jax_backend_measurement.py -q
+        env:
+          JAX_ENABLE_X64: "false"
+
   python-test:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
     needs: [cpp-build]

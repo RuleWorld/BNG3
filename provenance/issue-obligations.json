@@ -6196,9 +6196,313 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:174:measure-parse-compile-generate-ode-ssa-nfsim-scans-cold-warm-set",
+              "id": "jax-backend-measurement:conversion-small:parse-timing",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The generated case's BNGL source is parsed by the native engine and the parsed model carries the case's declared parameters, molecule types, seed species and reaction rule; the parse stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:generate-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The generated case's network generation produces the species and the reaction count the case declares; the generate stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:jax-compile-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend compiles the case's right-hand side and the compiled derivative equals the analytic derivative of the case; the cold compilation stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:jax-compile-warm-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend reuses the cached executable of the compiled right-hand side and the reused derivative still equals the analytic derivative of the case; the warm compilation stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:jax-ode-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend integrates the case with its fixed-step RK4 solver and the trajectory reproduces the closed-form law of the case; the ODE stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:native-ode-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine integrates the same case on the same time grid and its trajectory reproduces the closed-form law of the case; the native ODE stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:native-ssa-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's network SSA runs the case with the recorded seed and run budget, its ensemble mean stays inside the recorded error band around the closed-form law and every run conserves the case's weighted total; the SSA stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:native-nfsim-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's network-free NFsim route runs the case with the recorded seed and run budget, its ensemble mean stays inside the recorded error band around the closed-form law and every run conserves the case's weighted total; the NFsim stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:native-scan-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's parameter scan evaluates the case at every recorded scanned rate and each scanned value reproduces the closed-form law at that rate; the scan stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:setup-cold-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "In a fresh interpreter the JAX backend's cold setup (import, parse, network generation, compilation and first integration) reproduces the closed-form law of the case; the cold setup stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:setup-warm-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "In the warm interpreter the JAX backend's setup (compilation and integration) reproduces the closed-form law of the case; the warm setup stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:allocations-measurement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX ODE stage's Python-traced allocations and the device memory statistics are recorded with the process' peak resident set; the measurement is recorded only when the trajectory it produced reproduces the closed-form law of the case.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:parse-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The generated case's BNGL source is parsed by the native engine and the parsed model carries the case's declared parameters, molecule types, seed species and reaction rule; the parse stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:generate-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The generated case's network generation produces the species and the reaction count the case declares; the generate stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:jax-compile-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend compiles the case's right-hand side and the compiled derivative equals the analytic derivative of the case; the cold compilation stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:jax-compile-warm-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend reuses the cached executable of the compiled right-hand side and the reused derivative still equals the analytic derivative of the case; the warm compilation stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:jax-ode-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend integrates the case with its fixed-step RK4 solver and the trajectory reproduces the closed-form law of the case; the ODE stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:native-ode-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine integrates the same case on the same time grid and its trajectory reproduces the closed-form law of the case; the native ODE stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:native-ssa-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's network SSA runs the case with the recorded seed and run budget, its ensemble mean stays inside the recorded error band around the closed-form law and every run conserves the case's weighted total; the SSA stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:native-nfsim-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's network-free NFsim route runs the case with the recorded seed and run budget, its ensemble mean stays inside the recorded error band around the closed-form law and every run conserves the case's weighted total; the NFsim stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:native-scan-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's parameter scan evaluates the case at every recorded scanned rate and each scanned value reproduces the closed-form law at that rate; the scan stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:setup-cold-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "In a fresh interpreter the JAX backend's cold setup (import, parse, network generation, compilation and first integration) reproduces the closed-form law of the case; the cold setup stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:setup-warm-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "In the warm interpreter the JAX backend's setup (compilation and integration) reproduces the closed-form law of the case; the warm setup stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:allocations-measurement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX ODE stage's Python-traced allocations and the device memory statistics are recorded with the process' peak resident set; the measurement is recorded only when the trajectory it produced reproduces the closed-form law of the case.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:parse-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The generated case's BNGL source is parsed by the native engine and the parsed model carries the case's declared parameters, molecule types, seed species and reaction rule; the parse stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:generate-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The generated case's network generation produces the species and the reaction count the case declares; the generate stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:jax-compile-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend compiles the case's right-hand side and the compiled derivative equals the analytic derivative of the case; the cold compilation stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:jax-compile-warm-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend reuses the cached executable of the compiled right-hand side and the reused derivative still equals the analytic derivative of the case; the warm compilation stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:jax-ode-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend integrates the case with its fixed-step RK4 solver and the trajectory reproduces the closed-form law of the case; the ODE stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:native-ode-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine integrates the same case on the same time grid and its trajectory reproduces the closed-form law of the case; the native ODE stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:native-ssa-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's network SSA runs the case with the recorded seed and run budget, its ensemble mean stays inside the recorded error band around the closed-form law and every run conserves the case's weighted total; the SSA stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:native-nfsim-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's network-free NFsim route runs the case with the recorded seed and run budget, its ensemble mean stays inside the recorded error band around the closed-form law and every run conserves the case's weighted total; the NFsim stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:native-scan-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native engine's parameter scan evaluates the case at every recorded scanned rate and each scanned value reproduces the closed-form law at that rate; the scan stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:setup-cold-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "In a fresh interpreter the JAX backend's cold setup (import, parse, network generation, compilation and first integration) reproduces the closed-form law of the case; the cold setup stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:setup-warm-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "In the warm interpreter the JAX backend's setup (compilation and integration) reproduces the closed-form law of the case; the warm setup stage is timed only when that independent control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:allocations-measurement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX ODE stage's Python-traced allocations and the device memory statistics are recorded with the process' peak resident set; the measurement is recorded only when the trajectory it produced reproduces the closed-form law of the case.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:family:jax-ssa-refusal",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The JAX backend's SSA entry point refuses explicitly, so no JAX SSA timing is claimed and the SSA stage belongs to the native engine arm.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:family:jax-public-api-route-absence",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The public simulate() API rejects method='jax', so the JAX backend is reached only through its own modules and no public-API JAX route is claimed.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:family:jax-family-route-absence",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The JAX family's public API declares no NFsim and no parameter-scan route, so the measured NFsim and scan stages belong to the native engine arm and are recorded as such.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -6206,12 +6510,16 @@
           ],
           "test_references": [
             "tests/python/test_jax_ode.py",
-            "tests/python/test_jax_ssa.py"
+            "tests/python/test_jax_ssa.py",
+            "tests/validation/jax_backend_measurement.py",
+            "tests/validation/test_jax_backend_measurement.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:174:measure-parse-compile-generate-ode-ssa-nfsim-scans-cold-warm-set.",
+            "The measured profile covers the JAX backend family on a fixed generated corpus of three mass-action cases on one host; the numbers are machine-specific and are not a portable speed or memory claim.",
+            "The stages the JAX backend does not provide (SSA, NFsim, parameter scans) are measured on the native engine arm and recorded as explicit JAX boundaries; the JAX backend's own SSA, NFsim and scan routes remain unqualified.",
+            "The A/A control refuses a timing when the host's repeatability spread exceeds the limit, so a noisy host produces no timing result instead of an unreliable one; the C++ allocation counters of tools/memory_allocs are not exercised by this evidence.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -6223,19 +6531,95 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:174:retain-controlled-a-a-timing-independent-correctness-evidence-ex",
+              "id": "jax-backend-measurement:conversion-small:aa-control",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The A/A control measures the same arm repeatedly for every timed stage of the case and records the spread; a stage whose spread exceeds the noise limit of the host is not recorded as a timing result.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:correctness-control",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independent closed-form control of the case holds for every timed stage of the case, so the recorded timings measure a correct run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-small:ode-comparison",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend's ODE stage and the native engine's ODE stage are compared on the same corpus and the measured verdict (a win or a no-win) is recorded as measured, not filtered.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:aa-control",
+              "evidence_kind": "supported-execution",
+              "expectation": "The A/A control measures the same arm repeatedly for every timed stage of the case and records the spread; a stage whose spread exceeds the noise limit of the host is not recorded as a timing result.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:correctness-control",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independent closed-form control of the case holds for every timed stage of the case, so the recorded timings measure a correct run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:conversion-large:ode-comparison",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend's ODE stage and the native engine's ODE stage are compared on the same corpus and the measured verdict (a win or a no-win) is recorded as measured, not filtered.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:aa-control",
+              "evidence_kind": "supported-execution",
+              "expectation": "The A/A control measures the same arm repeatedly for every timed stage of the case and records the spread; a stage whose spread exceeds the noise limit of the host is not recorded as a timing result.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:correctness-control",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independent closed-form control of the case holds for every timed stage of the case, so the recorded timings measure a correct run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:dimerization:ode-comparison",
+              "evidence_kind": "supported-execution",
+              "expectation": "The JAX backend's ODE stage and the native engine's ODE stage are compared on the same corpus and the measured verdict (a win or a no-win) is recorded as measured, not filtered.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "jax-backend-measurement:family:environment-record",
+              "evidence_kind": "supported-execution",
+              "expectation": "The revision, the environment, the corpus digest and the host load the measurement ran on are recorded with the numbers.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/jax_backend_measurement.py",
+            "tests/validation/test_jax_backend_measurement.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:174:retain-controlled-a-a-timing-independent-correctness-evidence-ex.",
+            "The A/A control, the independent closed-form controls, the environment and corpus record and the no-win verdicts are retained per case; a comparison that does not show the JAX backend winning is recorded as a no-win result rather than filtered out.",
+            "The retained numbers describe one host, one revision and one corpus; they do not establish a portable baseline, a performance acceptance threshold or a comparison against another revision.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
