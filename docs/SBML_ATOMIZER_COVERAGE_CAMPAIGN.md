@@ -172,6 +172,50 @@ one change enables another):
 | other | 2 | 00951 01820 |
 | `AlgebraicRule` | 1 | 01575 |
 
+## Merged result (2026-10-20)
+
+All seven campaign pull requests are merged into `main`:
+
+| PR | Title | Merge commit |
+| --- | --- | --- |
+| #316 | Fix SBML initial-value resolution order in atomizer seed values | `3910dccd` |
+| #317 | Add machine-readable SBML Atomizer coverage inventory and campaign baseline | `25451a65` |
+| #318 | Interpret SBML csymbols by definitionURL and fold static parameter initial assignments | `d4ec1ee2` |
+| #319 | Preserve amount-based SBML rate laws in non-unity compartments | `0fbda8fd` |
+| #320 | Lower an n-ary MathML relation as the conjunction of its successive pairs | `aa427e70` |
+| #321 | Report a parameter assignment rule's value as the quantity SBML defines | `451884f5` |
+| #322 | Support MathML trigonometric reciprocals and report an unresolvable assigned stoichiometry | `fa53a8e8` |
+
+Measured on the merged `main` (`fa53a8e8`) against the campaign baseline
+(`219c76da`):
+
+| Stage | Before | After |
+| --- | --- | --- |
+| Conversion | 1712 passed / 211 unsupported / 0 failed | **1724 passed / 199 unsupported / 0 failed** |
+| Official reference | 1115 passed / 701 unsupported / 107 failed | **1191 passed / 693 unsupported / 39 failed** |
+
+81 cases change status: 67 move `failed → passed`, 9 move `unsupported →
+passed`, 4 move `unsupported → unsupported` (the conversion stage improves
+while the official reference stays unevaluated), and 1 moves `failed →
+unsupported` (a case whose defect is now reported explicitly instead of
+producing a wrong trajectory). **No case regresses.**
+
+The Python suite on the merged tree is 1552 passed / 28 skipped / 2 xfailed,
+with one pre-existing failure
+(`test_generated_notebooks_execute_in_qualified_kernel`) that also fails on
+the unmodified base commit.
+
+### A regression the campaign's own validation caught
+
+The first form of PR #319 multiplied the recovered mass-action constant by
+`V**(m-1)` for every amount-based law. The generated integrated-validation
+case `dimerization-v1-n20-r0-a0` uses the law `k * A * A / cell`, which
+already states its own volume dependence; the correction produced the rate law
+`0.8 * (__compartment_cell__)**1`, which BNG2's expression parser rejects
+("Unexpected operator \"*\" found at position 26") and BioNetGen 2.9.3 cannot
+simulate. The integrated cross-component validation failed, and the correction
+was narrowed to a law that does not name a compartment.
+
 ## Invariants for this campaign
 
 * A conversion success is not a conformance claim. Official conformance is
