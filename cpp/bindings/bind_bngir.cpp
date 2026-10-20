@@ -377,6 +377,10 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
         throw std::runtime_error(
             "native BNGIR pattern requires exactly one molecule");
     }
+    // A bond group is shared by the sites it joins, and those sites can live on
+    // different molecules of the same pattern, so the bond node is shared per
+    // pattern rather than per molecule.
+    std::map<int, BNGcore::Node*> bondNodesByGroup;
     for (const auto& rawMolecule : molecules) {
         const auto molecule = py::cast<py::dict>(rawMolecule);
         static const std::vector<std::string> requiredMoleculeKeys = {
@@ -450,7 +454,6 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
         // A site is a component of the molecule type with a state constraint.
         // The native pattern graph keeps each component as its own node joined
         // to the molecule node, which is how the parser lowers a site too.
-        std::map<int, BNGcore::Node*> bondNodesByGroup;
         for (const auto& rawSite : sites) {
             const auto site = py::cast<py::dict>(rawSite);
             const auto componentName = py::cast<std::string>(site["component"]);

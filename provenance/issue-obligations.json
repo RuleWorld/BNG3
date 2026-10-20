@@ -487,7 +487,9 @@
           "criterion": "Test repeated and concurrent instantiation with independent RNGs, caches, solver state and exception cleanup.",
           "scope": "Exception paths must release or restore trajectory-owned state safely.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Repaired: the CVODE path releases the solver state, the state vector, the linear solver, the matrix and the SUNDIALS context through one resource guard, so a stop-condition failure raised after CVODE has allocated its state no longer leaks. The native regression is the ASan job's 'OdeIntegrator recovers after late stop condition failure' test."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:141:exception-cleanup",

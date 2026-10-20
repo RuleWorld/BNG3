@@ -2686,13 +2686,37 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         SUNContext_Free(&sunctx);
         throw std::runtime_error("Failed to create CVODE solver");
     }
+    // Every exit from the CVODE path must release the solver state, the state
+    // vector and the SUNDIALS context. A failure raised while the integration
+    // loop evaluates the stop condition happens after CVODE has allocated its
+    // state, so the cleanup cannot live only on the explicit error paths.
+    struct CvodeResources {
+        void*& cvode;
+        N_Vector& y;
+        SUNContext& sunctx;
+        SUNLinearSolver ls = nullptr;
+        SUNMatrix matrix = nullptr;
+        bool released = false;
+
+        void release() {
+            if (released) return;
+            released = true;
+            if (ls != nullptr) { SUNLinSolFree(ls); ls = nullptr; }
+            if (matrix != nullptr) { SUNMatDestroy(matrix); matrix = nullptr; }
+            if (cvode != nullptr) { CVodeFree(&cvode); cvode = nullptr; }
+            if (y != nullptr) { N_VDestroy(y); y = nullptr; }
+            if (sunctx != nullptr) { SUNContext_Free(&sunctx); sunctx = nullptr; }
+        }
+
+        ~CvodeResources() { release(); }
+    };
+
+    CvodeResources resources{cvode_mem, y, sunctx};
 
     // Initialize CVODE at the requested start time (critical for continue=1 phases)
     flag = CVodeInit(cvode_mem, cvodeCallbackWrapper, opts.tStart, y);
     if (flag != CV_SUCCESS) {
-        CVodeFree(&cvode_mem);
-        N_VDestroy(y);
-        SUNContext_Free(&sunctx);
+        resources.release();
         throw std::runtime_error("CVodeInit failed with flag " + std::to_string(flag));
     }
     // Keep the standard BDF order ceiling. The component-scaled state
@@ -2706,9 +2730,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     // amounts and far too loose for molecule-number states.
     N_Vector scaledAbsTol = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
     if (scaledAbsTol == nullptr) {
-        CVodeFree(&cvode_mem);
-        N_VDestroy(y);
-        SUNContext_Free(&sunctx);
+        resources.release();
         throw std::runtime_error("Failed to allocate CVODE absolute tolerances");
     }
     for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -2717,9 +2739,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     flag = CVodeSVtolerances(cvode_mem, opts.rtol, scaledAbsTol);
     N_VDestroy(scaledAbsTol);
     if (flag != CV_SUCCESS) {
-        CVodeFree(&cvode_mem);
-        N_VDestroy(y);
-        SUNContext_Free(&sunctx);
+        resources.release();
         throw std::runtime_error("CVodeSStolerances failed");
     }
 
@@ -2739,9 +2759,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         if (canConstrainStates) {
             N_Vector constraints = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
             if (constraints == nullptr) {
-                CVodeFree(&cvode_mem);
-                N_VDestroy(y);
-                SUNContext_Free(&sunctx);
+                resources.release();
                 throw std::runtime_error("Failed to allocate CVODE constraints");
             }
             for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -2750,9 +2768,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
             flag = CVodeSetConstraints(cvode_mem, constraints);
             N_VDestroy(constraints);
             if (flag != CV_SUCCESS) {
-                CVodeFree(&cvode_mem);
-                N_VDestroy(y);
-                SUNContext_Free(&sunctx);
+                resources.release();
                 throw std::runtime_error("CVodeSetConstraints failed");
             }
         }
@@ -2762,9 +2778,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     CVodeSetUserData(cvode_mem, this);
     if (!!nativeEvent_.has_value()) {
         if (CVodeRootInit(cvode_mem, 1, cvodeEventRootWrapper) != CV_SUCCESS) {
-            CVodeFree(&cvode_mem);
-            N_VDestroy(y);
-            SUNContext_Free(&sunctx);
+            resources.release();
             throw std::runtime_error("bng3_events CVodeRootInit failed");
         }
         int direction = 1;
@@ -2776,9 +2790,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     if (opts.maxStep > 0.0) {
         flag = CVodeSetMaxStep(cvode_mem, opts.maxStep);
         if (flag != CV_SUCCESS) {
-            CVodeFree(&cvode_mem);
-            N_VDestroy(y);
-            SUNContext_Free(&sunctx);
+            resources.release();
             throw std::runtime_error("CVodeSetMaxStep failed");
         }
     }
@@ -2798,43 +2810,32 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         A = SUNDenseMatrix(static_cast<sunindextype>(nSpecies_),
                            static_cast<sunindextype>(nSpecies_), sunctx);
         if (A == nullptr) {
-            CVodeFree(&cvode_mem);
-            N_VDestroy(y);
-            SUNContext_Free(&sunctx);
+            resources.release();
             throw std::runtime_error("SUNDenseMatrix failed");
         }
+        resources.matrix = A;
         LS = SUNLinSol_Dense(y, A, sunctx);
+        resources.ls = LS;
         if (LS == nullptr) {
-            SUNMatDestroy(A);
-            CVodeFree(&cvode_mem);
-            N_VDestroy(y);
-            SUNContext_Free(&sunctx);
+            resources.release();
             throw std::runtime_error("SUNLinSol_Dense failed");
         }
         flag = CVodeSetLinearSolver(cvode_mem, LS, A);
         if (flag != CV_SUCCESS) {
-            SUNLinSolFree(LS);
-            SUNMatDestroy(A);
-            CVodeFree(&cvode_mem);
-            N_VDestroy(y);
-            SUNContext_Free(&sunctx);
+            resources.release();
             throw std::runtime_error("CVodeSetLinearSolver (dense) failed");
         }
     } else {
         // GMRES iterative solver (better for large sparse systems)
         LS = SUNLinSol_SPGMR(y, SUN_PREC_NONE, 0, sunctx);
+        resources.ls = LS;
         if (LS == nullptr) {
-            CVodeFree(&cvode_mem);
-            N_VDestroy(y);
-            SUNContext_Free(&sunctx);
+            resources.release();
             throw std::runtime_error("SUNLinSol_SPGMR failed");
         }
         flag = CVodeSetLinearSolver(cvode_mem, LS, nullptr);
         if (flag != CV_SUCCESS) {
-            SUNLinSolFree(LS);
-            CVodeFree(&cvode_mem);
-            N_VDestroy(y);
-            SUNContext_Free(&sunctx);
+            resources.release();
             throw std::runtime_error("CVodeSetLinearSolver (GMRES) failed");
         }
     }
@@ -2863,20 +2864,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                         try {
                             applyEvent(t, state);
                         } catch (...) {
-                            SUNLinSolFree(LS);
-                            if (A) SUNMatDestroy(A);
-                            CVodeFree(&cvode_mem);
-                            N_VDestroy(y);
-                            SUNContext_Free(&sunctx);
+            resources.release();
                             throw;
                         }
                         for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
                         if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
-                            SUNLinSolFree(LS);
-                            if (A) SUNMatDestroy(A);
-                            CVodeFree(&cvode_mem);
-                            N_VDestroy(y);
-                            SUNContext_Free(&sunctx);
+            resources.release();
                             throw std::runtime_error("bng3_events CVodeReInit failed");
                         }
                     }
@@ -2892,11 +2885,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     // that makes a per-model validation job time out.
                     constexpr long int maxInternalSteps = 10000;
                     if (maxSteps >= maxInternalSteps) {
-                        SUNLinSolFree(LS);
-                        if (A) SUNMatDestroy(A);
-                        CVodeFree(&cvode_mem);
-                        N_VDestroy(y);
-                        SUNContext_Free(&sunctx);
+            resources.release();
                         throw std::runtime_error(
                             "CVODE failed with flag " + std::to_string(flag) +
                             " after reaching the internal step budget");
@@ -2906,11 +2895,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     CVodeSetMaxNumSteps(cvode_mem, maxSteps);
                     continue;
                 } else {
-                    SUNLinSolFree(LS);
-                    if (A) SUNMatDestroy(A);
-                    CVodeFree(&cvode_mem);
-                    N_VDestroy(y);
-                    SUNContext_Free(&sunctx);
+            resources.release();
                     throw std::runtime_error("CVODE failed with flag " + std::to_string(flag));
                 }
             }
@@ -2992,11 +2977,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     }
 
     // Cleanup (v7: also free linear solver, matrix, and context)
-    SUNLinSolFree(LS);
-    if (A) SUNMatDestroy(A);
-    CVodeFree(&cvode_mem);
-    N_VDestroy(y);
-    SUNContext_Free(&sunctx);
+            resources.release();
 
     return result;
 }

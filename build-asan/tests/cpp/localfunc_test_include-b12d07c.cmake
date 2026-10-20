@@ -1,0 +1,5 @@
+if(EXISTS "/private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/localfunc_test_tests-b12d07c.cmake")
+  include("/private/tmp/bng3-issue-reconcile/build-asan/tests/cpp/localfunc_test_tests-b12d07c.cmake")
+else()
+  add_test(localfunc_test_NOT_BUILT-b12d07c localfunc_test_NOT_BUILT-b12d07c)
+endif()
