@@ -4643,7 +4643,9 @@ class SBMLParser:
         version: Optional[int] = None,
     ) -> Dict[str, SBMLFunctionDefinition]:
         result: Dict[str, SBMLFunctionDefinition] = OrderedDict()
-        items = SBMLParser._xml_items(model, "listOfFunctionDefinitions", "functionDefinition")
+        items = SBMLParser._xml_items(
+            model, "listOfFunctionDefinitions", "functionDefinition"
+        )
         if not items:
             return result
         parents = {child: parent for parent in model.iter() for child in parent}

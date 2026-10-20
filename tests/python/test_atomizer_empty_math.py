@@ -65,7 +65,9 @@ def _limitations(atomizer: Atomizer) -> list[dict]:
     ]
 
 
-def _sbml(body: str, *, level: int = 3, version: int = 2, namespace: str | None = None) -> str:
+def _sbml(
+    body: str, *, level: int = 3, version: int = 2, namespace: str | None = None
+) -> str:
     if namespace is None:
         namespace = (
             f"http://www.sbml.org/sbml/level{level}/version{version}/core"
@@ -87,16 +89,14 @@ def _sbml(body: str, *, level: int = 3, version: int = 2, namespace: str | None 
 def test_level3v2_initial_assignment_without_math_is_a_no_op():
     """SBML Level 3 Version 2 Core Sec. 4.8.3 (official case semantic/01234)."""
 
-    sbml = _sbml(
-        """
+    sbml = _sbml("""
         <listOfParameters>
           <parameter id="p" value="3" constant="true"/>
         </listOfParameters>
         <listOfInitialAssignments>
           <initialAssignment symbol="p"/>
         </listOfInitialAssignments>
-        """
-    )
+        """)
     atomizer, result = _atomize(sbml)
 
     warnings = _warnings(atomizer)
@@ -125,16 +125,14 @@ def test_level3v2_initial_assignment_without_math_is_a_no_op():
 def test_level3v2_rule_without_math_is_a_no_op(rule, kind):
     """SBML Level 3 Version 2 Core Sec. 4.9.1 (official cases 01235/01236/01244)."""
 
-    sbml = _sbml(
-        f"""
+    sbml = _sbml(f"""
         <listOfParameters>
           <parameter id="p" value="3" constant="false"/>
         </listOfParameters>
         <listOfRules>
           {rule}
         </listOfRules>
-        """
-    )
+        """)
     atomizer, result = _atomize(sbml)
 
     warnings = _warnings(atomizer)
@@ -161,16 +159,14 @@ def test_level3v2_unused_function_definition_without_math_is_not_emitted():
     function would invent a definition the source never made.
     """
 
-    sbml = _sbml(
-        """
+    sbml = _sbml("""
         <listOfFunctionDefinitions>
           <functionDefinition id="foo"/>
         </listOfFunctionDefinitions>
         <listOfParameters>
           <parameter id="p1" value="2" constant="true"/>
         </listOfParameters>
-        """
-    )
+        """)
     atomizer, result = _atomize(sbml)
 
     warnings = _warnings(atomizer)
@@ -191,8 +187,7 @@ def test_level3v2_called_function_definition_without_math_stays_unsupported():
     meaningless, so the model is not claimed to be supported.
     """
 
-    sbml = _sbml(
-        f"""
+    sbml = _sbml(f"""
         <listOfFunctionDefinitions>
           <functionDefinition id="foo"/>
         </listOfFunctionDefinitions>
@@ -206,8 +201,7 @@ def test_level3v2_called_function_definition_without_math_stays_unsupported():
             </math>
           </initialAssignment>
         </listOfInitialAssignments>
-        """
-    )
+        """)
     atomizer, _ = _atomize(sbml)
 
     warnings = _warnings(atomizer)
@@ -271,8 +265,7 @@ def test_reaction_without_kinetic_law_is_emitted_with_rate_zero():
     the mathematical model intact.
     """
 
-    sbml = _sbml(
-        """
+    sbml = _sbml("""
         <listOfCompartments>
           <compartment id="C" size="1" constant="true"/>
         </listOfCompartments>
@@ -290,8 +283,7 @@ def test_reaction_without_kinetic_law_is_emitted_with_rate_zero():
             </listOfProducts>
           </reaction>
         </listOfReactions>
-        """
-    )
+        """)
     atomizer, result = _atomize(sbml)
 
     warnings = _warnings(atomizer)
@@ -317,8 +309,7 @@ def test_reaction_without_kinetic_law_is_emitted_with_rate_zero():
 def test_rational_cn_with_separator_is_lowered_exactly():
     """A rational ``cn`` is ``numerator<sep/>denominator`` in MathML 2.0."""
 
-    sbml = _sbml(
-        f"""
+    sbml = _sbml(f"""
         <listOfParameters>
           <parameter id="p" value="0" constant="true"/>
         </listOfParameters>
@@ -329,8 +320,7 @@ def test_rational_cn_with_separator_is_lowered_exactly():
             </math>
           </initialAssignment>
         </listOfInitialAssignments>
-        """
-    )
+        """)
     atomizer, result = _atomize(sbml)
 
     assert not [w for w in atomizer.model.import_warnings if w["category"] == "mathml"]
@@ -345,8 +335,7 @@ def test_cn_with_separator_and_an_impermissible_type_is_reported_as_invalid():
     rather than a construct BNG3 declines to support.
     """
 
-    sbml = _sbml(
-        f"""
+    sbml = _sbml(f"""
         <listOfParameters>
           <parameter id="p" value="0" constant="true"/>
         </listOfParameters>
@@ -357,8 +346,7 @@ def test_cn_with_separator_and_an_impermissible_type_is_reported_as_invalid():
             </math>
           </initialAssignment>
         </listOfInitialAssignments>
-        """
-    )
+        """)
     atomizer, _ = _atomize(sbml)
 
     warnings = [
@@ -385,8 +373,7 @@ def test_mathml_constants_remain_an_approximation(constant):
     finite-double model, so the model stays an approximation.
     """
 
-    sbml = _sbml(
-        f"""
+    sbml = _sbml(f"""
         <listOfParameters>
           <parameter id="p" value="0" constant="true"/>
         </listOfParameters>
@@ -395,8 +382,7 @@ def test_mathml_constants_remain_an_approximation(constant):
             <math xmlns="{SBML_NS}"><{constant}/></math>
           </initialAssignment>
         </listOfInitialAssignments>
-        """
-    )
+        """)
     atomizer, _ = _atomize(sbml)
 
     warnings = [
