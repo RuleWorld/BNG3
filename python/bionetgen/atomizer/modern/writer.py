@@ -2084,11 +2084,134 @@ def _strip_compartment_rate_factors(
     return result.strip() or "1"
 
 
+def _law_references_compartment(expression: str, model: SBMLModel) -> bool:
+    """Report whether a rate law names a compartment's size explicitly.
+
+    A law that carries the compartment factor already states its own volume
+    dependence, so the amount-based correction does not apply to it.
+    """
+
+    for compartment_id in model.compartments:
+        name = standardize_name(str(compartment_id))
+        if re.search(rf"\b{re.escape(str(compartment_id))}\b", expression):
+            return True
+        if re.search(rf"\b{re.escape(name)}\b", expression):
+            return True
+        if re.search(rf"\b{re.escape('__compartment_' + name + '__')}\b", expression):
+            return True
+    return False
+
+
+def _amount_based_mass_action_constant(
+    mass_action_constant: float,
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    reactants: Sequence[str],
+    complete_flux: bool = False,
+    law_references_compartment: bool = False,
+) -> str:
+    """Correct a recovered mass-action constant for an amount-based law.
+
+    An SBML kinetic law's value is the rate of change of the reaction's
+    extent, so the species' amounts change by ``stoichiometry * extent
+    rate`` (SBML Level 3 Version 2 Core, Sec. 4.11).  BNGL's rate law is a
+    concentration rate: a rule ``A + B -> C`` with constant ``k`` produces
+    ``d[A]/dt = -k*[A]*[B]``, and the reaction's extent rate is that value
+    times the compartment volume.
+
+    An amount-based law ``k * n1 * ... * nm`` is an extent rate in
+    substance/time, so the BNGL constant must be ``k * V**(m-1)``: the
+    concentration form of the same law needs one volume factor per reactant
+    except the one that the concentration form already carries.  A
+    zero-order law (``m = 0``) is correspondingly divided by the volume.
+
+    A concentration-based law already carries the compartment factor that
+    SBML's convention requires, and needs no correction.  A rate that is
+    emitted as a complete flux (``complete_flux``) is the extent rate
+    itself and likewise needs no correction.
+    """
+
+    constant = _number(mass_action_constant)
+    if complete_flux or law_references_compartment:
+        # A complete flux already is the extent rate, and a law that names the
+        # compartment states its own volume dependence.
+        return constant
+    if not _amount_based_extent_rate(reaction, model, reactants):
+        return constant
+    order = len(reactants)
+    if order < 2:
+        # A unimolecular law needs no volume factor, and a zero-order law is
+        # emitted as a complete flux, which already is the extent rate.
+        return constant
+    volume = _reaction_volume_expression(reaction, model)
+    return f"({constant}) * ({volume})**{order - 1}"
+
+
+def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str:
+    """Return the BNGL size expression of a reaction's compartment.
+
+    The compartment is the reaction's own ``compartment`` attribute when it
+    has one, otherwise the compartment of the first participant that declares
+    one.
+    """
+
+    compartment_id = str(reaction.compartment or "")
+    if not compartment_id:
+        for reference in [*reaction.reactants, *reaction.products]:
+            if reference.species == "EmptySet":
+                continue
+            species = model.species.get(reference.species)
+            if species is not None and species.compartment:
+                compartment_id = str(species.compartment)
+                break
+    if not compartment_id or compartment_id not in model.compartments:
+        return "1"
+    return f"__compartment_{standardize_name(compartment_id)}__"
+
+
+def _amount_based_extent_rate(
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    reactants: Sequence[str],
+) -> bool:
+    """Report whether a reaction's kinetic law is an amount-based extent rate.
+
+    SBML Level 3 Version 2 Core (Sec. 4.11) states that the numeric value of
+    a kinetic law is the rate of change of the reaction's *extent*, and that a
+    species' amount changes by ``stoichiometry * extent rate``.  A model
+    therefore writes a concentration-based law with an explicit compartment
+    factor (``compartment * k * S1 * S2``), which already carries the
+    volume, while an amount-based law (``k * S1 * S2``) does not.
+
+    BNGL's rate laws are always concentration rates, so only an amount-based
+    law needs a volume correction when it is lowered.  A law is amount-based
+    when every species it operates on is amount-valued
+    (``hasOnlySubstanceUnits="true"``); a law without species operands is
+    classified by the reaction's participants.
+    """
+
+    participants = [
+        reference.species
+        for reference in [*reaction.reactants, *reaction.products]
+        if reference.species and reference.species != "EmptySet"
+    ]
+    operated = list(reactants) or participants
+    if not operated:
+        return False
+    known = [
+        model.species[species_id]
+        for species_id in operated
+        if species_id in model.species
+    ]
+    if not known:
+        return False
+    return all(species.has_only_substance_units for species in known)
+
+
 def _requires_explicit_compartment_flux(
     reaction: SBMLReaction, model: SBMLModel
 ) -> bool:
     """Keep SBML's full flux where BNGL geometry cannot track its volume."""
-
     compartment_ids = set()
     if reaction.compartment:
         compartment_ids.add(reaction.compartment)
@@ -2151,6 +2274,7 @@ def _rate_for_reaction(
     reactant_ids: Optional[Sequence[str]] = None,
     prepared_math: Optional[str] = None,
     replace_loc_params: bool = True,
+    complete_flux: bool = False,
 ) -> str:
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
@@ -2239,6 +2363,7 @@ def _rate_for_reaction(
         not model.species[species_id].has_only_substance_units
         for species_id in reactants
     )
+    law_references_compartment = _law_references_compartment(math, model)
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
     functional = _is_functional_rate_expression(math)
     if reactant_structures:
@@ -2381,7 +2506,16 @@ def _rate_for_reaction(
             reaction_order=concentration_order,
         )
         if mass_action_constant is not None:
-            return apply_conversion(_number(mass_action_constant))
+            return apply_conversion(
+                _amount_based_mass_action_constant(
+                    mass_action_constant,
+                    reaction,
+                    model,
+                    reactants,
+                    complete_flux=complete_flux,
+                    law_references_compartment=law_references_compartment,
+                )
+            )
 
     # The Playground writer keeps nonlinear laws intact and maps their species
     # operands to concentration functions (or amount observables for Sat/MM/
@@ -2473,7 +2607,16 @@ def _rate_for_reaction(
             reaction_order=concentration_order,
         )
         if mass_action_constant is not None:
-            return apply_conversion(_number(mass_action_constant))
+            return apply_conversion(
+                _amount_based_mass_action_constant(
+                    mass_action_constant,
+                    reaction,
+                    model,
+                    reactants,
+                    complete_flux=complete_flux,
+                    law_references_compartment=law_references_compartment,
+                )
+            )
 
     stripped = _strip_mass_action_factors(converted, reactants)
     return apply_conversion(
@@ -2560,10 +2703,11 @@ def _rate_requires_total_rate(
     parts = _split_reversible_rate(rate) or (rate,)
     reactants = list(reactant_ids or [])
     if not reactants:
-        return any(
-            _evaluate_arithmetic(convert_math_expression(part)) is None
-            for part in parts
-        )
+        # A reaction without reactants has no reactant population for BNGL to
+        # multiply, and an SBML kinetic law's value is the reaction's extent
+        # rate (SBML Level 3 Version 2 Core, Sec. 4.11), so the rule states the
+        # complete flux.
+        return True
     saw_dynamic_part = False
     source_parts = (
         list(_split_reversible_rate(source_rate) or (source_rate,))
@@ -5859,6 +6003,7 @@ def write_reaction_rules(
                     reactant_ids=[],
                     prepared_math=prepared_math,
                     replace_loc_params=replace_loc_params,
+                    complete_flux=True,
                 )
         processed = process_reaction_rate(
             reaction,
