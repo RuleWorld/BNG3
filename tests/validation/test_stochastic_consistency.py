@@ -429,6 +429,18 @@ def test_no_case_is_reported_as_a_failure_outside_the_taxonomy(sweep_report):
             assert record.get("comparison"), "a compared case needs its numbers"
 
 
+def test_the_sweep_uses_the_reproducible_single_worker_pool(sweep_report):
+    """The recorded seed policy has to determine the numbers.
+
+    The multi-worker CPU batch pool shares one ``OdeIntegrator`` across its
+    threads and the SSA path writes that integrator's observable scratch when a
+    model has a state-dependent rate law, so the multi-worker result is not
+    bit-reproducible.  The sweep therefore runs the single-worker pool.
+    """
+
+    assert sweep_report["budget"]["cpu_threads"] == 1
+
+
 def test_statistical_criterion_uses_the_ensemble_standard_error():
     """The band is the ensemble standard error, not a fixed tolerance."""
 
