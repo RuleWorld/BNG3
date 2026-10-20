@@ -1758,3 +1758,26 @@ def test_parity_script_cpu_mode_translates_a_failed_gate_into_a_nonzero_exit():
         "the CPU gate must be invoked from main() and tested independently of "
         "the GPU comparison"
     )
+
+
+def test_issue141_cleanup_probe_enables_leaks_and_requires_a_selected_test():
+    workflow = parse_workflow(CI_WORKFLOW)
+    steps = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("name") == "Qualify issue 141 late CVODE exception cleanup"
+    ]
+    assert len(steps) == 1
+    step = steps[0]
+    assert step["env"]["ASAN_OPTIONS"] == "detect_leaks=1"
+    assert "--no-tests=error" in step["run"]
+    assert (
+        "-R '^OdeIntegrator recovers after late stop condition failure$'" in step["run"]
+    )
+    assert not step.get("continue-on-error", False)
+    source = (REPO / "tests/cpp/test_ode_options.cpp").read_text()
+    assert (
+        'TEST_CASE("OdeIntegrator recovers after late stop condition failure"' in source
+    )
+    assert 'options.stopIf = "if(time > 0, missing_name, 0)"' in source

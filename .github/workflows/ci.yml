@@ -251,6 +251,13 @@ jobs:
           ASAN_OPTIONS: detect_leaks=0
         run: ctest --test-dir build --output-on-failure
 
+      - name: Qualify issue 141 late CVODE exception cleanup
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+        run: >-
+          ctest --test-dir build --output-on-failure --no-tests=error
+          -R '^OdeIntegrator recovers after late stop condition failure$'
+
 
   # ═══════════════════════════════════════════════════════════════════════════
   # CUDA batch-SSA backend
