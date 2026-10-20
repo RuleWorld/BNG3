@@ -1068,6 +1068,66 @@ reopened with their full unmet criteria:
 [#146](https://github.com/RuleWorld/BNG3/issues/146#issuecomment-6089843989),
 [#154](https://github.com/RuleWorld/BNG3/issues/154#issuecomment-6089844484).
 
+## Unsupported SBML construct classes and Atomizer symbol resolution (2026-10-20 candidate)
+
+Issue #160 asked for the current unsupported SBML cases to be grouped by
+dynamic rules and events, history, algebraic constraints, stoichiometry, fast
+reactions and packages, and for that grouping to be executable. Issue #164
+asked for characterization tests around symbol resolution, feature checks,
+event planning, units, structural mapping and text output. Neither family had
+a named executable check.
+
+Two qualifications now cover them, both wired into the existing campaign
+harness and both generated and parameterized:
+
+* `tests/validation/sbml_support_boundary.py` generates one SBML model per
+  unsupported construct and requires the Atomizer to report a diagnostic that
+  identifies the construct and records the class it belongs to. The
+  expectation is written from the SBML semantics of the construct, never read
+  back from the Atomizer, so a model refused for an unnamed reason fails
+  instead of joining a generic bucket. A corpus check requires every refusal
+  in the generated corpus to carry a named class, so a newly unsupported
+  construct becomes visible.
+* `tests/validation/atomizer_symbol_resolution.py` generates models that
+  declare a named symbol in a given scope and carry a given SBML feature, and
+  compares the resolver's answer against an independently stated expectation.
+  The family covers global parameters, reaction-local parameters, a
+  reaction-local symbol used out of scope, species, compartments, user
+  functions, rate-rule targets and conversion factors, and it requires the
+  emitted model to compile.
+
+Two product changes were required by these checks.
+
+Every Atomizer import diagnostic now records the unsupported-construct class
+it belongs to, in a new `group` field on the diagnostic record. The class is a
+property of the diagnostic's identity, not of its message, so a reworded
+message cannot silently change the grouping. The taxonomy lives in
+`python/bionetgen/atomizer/modern/types.py` and covers the seven classes issue
+#160 names plus the classes of the constructs that are refused outside them.
+
+The symbol-resolution family exposed a product defect: a reaction whose
+kinetic law references another reaction's local parameter was emitted with
+that undeclared symbol in its rate law, and the generated model then failed to
+compile with `unresolved expression symbol`. The writer now refuses that
+reaction by name, records the `scope` diagnostic that already named it, and
+omits the rule, so the emitted model still compiles. The regression is
+`tests/python/test_modern_atomizer_scope.py`.
+
+The checks are fail-closed: against the pre-change product the
+support-boundary family reports an empty class for every refusal, and the
+symbol-resolution family reports the broken rule and the missing class. Both
+families pass against the repaired product.
+
+The #160 and #164 obligations in `provenance/issue-obligations.json` now name
+these checks, and their rows in
+`provenance/issue-reconciliation-2026-10-19.md` match. The issues keep their
+original scope and stay open: the generated corpus covers one construct per
+class rather than the full current unsupported-case set, the symbol-resolution
+family does not cover event planning, units, structural mapping or text
+output, and the per-class supported-subset decisions remain maintainer
+dispositions. The exact-revision campaign evidence for this candidate is
+pending; no retained campaign run has selected these families yet.
+
 ## Candidates under review
 
 | Issues | PR / head | Qualification boundary |
