@@ -2798,13 +2798,23 @@
           "scope": "Add a native export contract.",
           "dependencies": [],
           "boundaries": [
-            "The executed native export contract covers the site-free v0.2 envelope only; the site-bearing envelope is an explicit unsupported boundary."
+            "The executed native export contract covers the site-free v0.2 envelope only; the site-bearing envelope is an explicit unsupported boundary.",
+            "The site-bearing export contract is exercised through the Python reader; the native reader refuses site-bearing molecule types, so the two contracts are reported separately."
           ],
           "required_checks": [
             {
               "id": "bngir-export:v02-independent-roundtrip",
               "evidence_kind": "native-bngir-semantic-control",
               "expectation": "Native import and export of the retained site-free v0.2 document reproduces it exactly.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-export:v02-site-bearing-roundtrip",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Python import and export reproduce the frozen site-bearing v0.2 document; the native reader refuses this envelope, so the two contracts stay distinct.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"

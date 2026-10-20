@@ -9,12 +9,19 @@ from pathlib import Path
 from .campaign import STATUSES
 
 ISSUES = [155, 156]
+_ROUNDTRIP_NATIVE = "bngir-export:v02-independent-roundtrip"
+_ROUNDTRIP_SITE_BEARING = "bngir-export:v02-site-bearing-roundtrip"
+_SITE_BEARING_UNSUPPORTED = "bngir-export:v02-site-bearing-unsupported"
+_CANONICAL_BYTES = "bngir-export:canonical-bytes-determinism"
+_EQUALITY = "bngir-equality:v01-v02-identity-provenance"
+_VERSION_POLICY = "bngir-equality:approved-default-v01-explicit-v02"
 CHECKS = (
-    "bngir-export:v02-independent-roundtrip",
-    "bngir-export:v02-site-bearing-unsupported",
-    "bngir-export:canonical-bytes-determinism",
-    "bngir-equality:v01-v02-identity-provenance",
-    "bngir-equality:approved-default-v01-explicit-v02",
+    _ROUNDTRIP_NATIVE,
+    _ROUNDTRIP_SITE_BEARING,
+    _SITE_BEARING_UNSUPPORTED,
+    _CANONICAL_BYTES,
+    _EQUALITY,
+    _VERSION_POLICY,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +124,41 @@ def _native_roundtrip(directory, artifact, document, check):
     )
 
 
+def _python_roundtrip(directory, artifact, document, check):
+    """Round-trip a retained document through the Python reader and writer.
+
+    This covers the site-bearing envelope that the native reader refuses, and is
+    kept distinct from the native contract rather than merged into it.
+    """
+    import bionetgen
+
+    try:
+        restored = bionetgen.from_bngir(document)
+        observed = json.loads(bionetgen.to_bngir(restored, version="0.2"))
+    except Exception as exc:
+        return _row(
+            check,
+            "HARNESS_ERROR",
+            f"python round trip could not be evaluated: {type(exc).__name__}: {exc}",
+            artifact,
+            {"field": "python-roundtrip", "exception": type(exc).__name__},
+        )
+    if observed == document:
+        return _row(
+            check,
+            "PASS",
+            "python import and export reproduce the frozen site-bearing v0.2 document",
+            artifact,
+        )
+    return _row(
+        check,
+        "FAIL",
+        "python export differs from the frozen site-bearing v0.2 document",
+        artifact,
+        {"field": "document", "expected": document, "actual": observed},
+    )
+
+
 def run_worker(directory: Path):
     import bionetgen
 
@@ -130,13 +172,19 @@ def run_worker(directory: Path):
             directory,
             site_free_artifact,
             _fixture("v0.2-site-free-version-bridge.json"),
-            CHECKS[0],
+            _ROUNDTRIP_NATIVE,
+        ),
+        _python_roundtrip(
+            directory,
+            site_bearing_artifact,
+            _fixture("v0.2-version-bridge.json"),
+            _ROUNDTRIP_SITE_BEARING,
         ),
         _native_roundtrip(
             directory,
             site_bearing_artifact,
             _fixture("v0.2-version-bridge.json"),
-            CHECKS[1],
+            _SITE_BEARING_UNSUPPORTED,
         ),
     ]
 
@@ -152,7 +200,7 @@ def run_worker(directory: Path):
         ok = first == second == expected_wire
         rows.append(
             _row(
-                CHECKS[2],
+                _CANONICAL_BYTES,
                 "PASS" if ok else "FAIL",
                 (
                     "repeated serialization is byte-identical to the frozen canonical v0.2 wire fixture"
@@ -173,7 +221,7 @@ def run_worker(directory: Path):
         detail = "formatting-insensitive round-trip equality preserves serialized identity; provenance is outside semantic_equal's model API"
         rows.append(
             _row(
-                CHECKS[3],
+                _EQUALITY,
                 "PASS" if ok else "FAIL",
                 (
                     detail
@@ -208,7 +256,7 @@ def run_worker(directory: Path):
         )
         rows.append(
             _row(
-                CHECKS[4],
+                _VERSION_POLICY,
                 "PASS" if ok else "FAIL",
                 (
                     "approved contract: v0.1 default, explicit v0.2 opt-in, unknown versions refused"
@@ -220,7 +268,7 @@ def run_worker(directory: Path):
             )
         )
     except Exception as exc:
-        for check in CHECKS[2:]:
+        for check in (_CANONICAL_BYTES, _EQUALITY, _VERSION_POLICY):
             rows.append(
                 _row(
                     check,
