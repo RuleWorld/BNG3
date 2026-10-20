@@ -2267,9 +2267,7 @@ def _forked_case_child(
         os._exit(0)
 
 
-def _forked_timeout_record(
-    case: dict[str, Any], case_timeout: int
-) -> dict[str, Any]:
+def _forked_timeout_record(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
     """Return the timeout verdict used by every isolation mode."""
 
     reason = f"per-case timeout after {case_timeout}s"
@@ -2285,9 +2283,7 @@ def _forked_timeout_record(
     }
 
 
-def _forked_failure_record(
-    case: dict[str, Any], message: str
-) -> dict[str, Any]:
+def _forked_failure_record(case: dict[str, Any], message: str) -> dict[str, Any]:
     """Return the failure verdict used when a forked child produces no record."""
 
     return {
@@ -2370,6 +2366,11 @@ def _run_forked_cases(
                 except OSError as exc:
                     os.close(read_fd)
                     os.close(write_fd)
+                    for running in list(active):
+                        try:
+                            os.kill(running, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
                     raise SystemExit(
                         f"cannot fork an isolated case worker: {exc}"
                     ) from exc

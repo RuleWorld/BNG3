@@ -176,8 +176,7 @@ def _run_gate(
 def _verdicts(report: Path) -> dict[str, dict]:
     document = json.loads(report.read_text(encoding="utf-8"))
     return {
-        f"{record['category']}/{record['id']}": record
-        for record in document["records"]
+        f"{record['category']}/{record['id']}": record for record in document["records"]
     }
 
 
@@ -232,9 +231,7 @@ def test_fork_and_process_isolation_agree_on_every_verdict(tmp_path):
 @pytest.mark.skipif(
     not hasattr(os, "fork"), reason="fork isolation requires POSIX fork"
 )
-def test_fork_isolation_reports_a_timeout_like_the_process_mode(
-    tmp_path, monkeypatch
-):
+def test_fork_isolation_reports_a_timeout_like_the_process_mode(tmp_path, monkeypatch):
     """A hanging case must be bounded and reported identically in both modes."""
 
     def _hang(*_args, **_kwargs):

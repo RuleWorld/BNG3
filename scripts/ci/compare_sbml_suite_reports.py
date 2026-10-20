@@ -94,9 +94,7 @@ def compare_reports(
             differences.append(f"{label}: missing from the second report")
             differing_cases.append(label)
             continue
-        case_differences = _difference(
-            left_records[key], right_records[key], label
-        )
+        case_differences = _difference(left_records[key], right_records[key], label)
         if case_differences:
             differing_cases.append(label)
             differences.extend(case_differences)
@@ -118,9 +116,7 @@ def compare_reports(
     ):
         if field not in left and field not in right:
             continue
-        report_differences.extend(
-            _difference(left.get(field), right.get(field), field)
-        )
+        report_differences.extend(_difference(left.get(field), right.get(field), field))
     return differences + report_differences, differing_cases
 
 
