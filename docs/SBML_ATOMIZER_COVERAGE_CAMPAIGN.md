@@ -84,27 +84,34 @@ Derived from each case's own `componentTags` metadata in the suite's
 
 ## Known root causes (verified)
 
-1. **Initial-value resolution order** (fixed in PR #316). A
-   `constant="false"` parameter with no `value` attribute was seeded with the
-   default `0`, shadowing the value its `assignmentRule` supplies, and
-   `initialAssignment`s were evaluated before `assignmentRule`s. SBML L3 Core
-   §4.8/§4.11 fixes the order. 15 official cases move `failed → passed`.
+1. **Initial-value resolution order** (PR #316). A `constant="false"`
+   parameter with no `value` attribute was seeded with the default `0`,
+   shadowing the value its `assignmentRule` supplies, and `initialAssignment`s
+   were evaluated before `assignmentRule`s. SBML L3 Core §4.8/§4.11 fixes the
+   order. 15 official cases move `failed → passed`.
 
-2. **SBML `avogadro` csymbol conflated with BNGL's `__Avogadro__`.** SBML's
-   `avogadro` csymbol has the fixed value `6.02214179e+23` (SBML L3 Core
-   §4.2.5); BNGL's `__Avogadro__` is `1`. The modern Atomizer maps the
-   `csymbol` to `__Avogadro__`, and the operator-position `csymbol` path keys
-   on the element *text* rather than on `definitionURL`, so
-   `<csymbol definitionURL="…/avogadro">time</csymbol>` is read as the symbol
-   `time`. 15 official failures.
+2. **SBML `avogadro` csymbol conflated with BNGL's `__Avogadro__`, and
+   `csymbol` identified by its text** (PR #318). SBML's `avogadro` csymbol
+   has the fixed value `6.02214179e+23` (SBML L3 Core §4.2.5, which requires
+   readers of this version to use exactly that number); BNGL's
+   `__Avogadro__` is BNG's molecule-count factor and is `1`. The
+   operator-position `csymbol` path also keyed on the element *text* rather
+   than on `definitionURL`, so
+   `<csymbol definitionURL="…/avogadro">time</csymbol>` was read as the
+   symbol `time`. A static `initialAssignment` for a parameter was also
+   re-evaluated at every time point instead of being folded into the
+   parameter's value. 20 official cases move `failed → passed`.
 
 3. **Amount-based (`hasOnlySubstanceUnits="true"`) rate laws in a
-   non-unity compartment.** SBML L3 Core §4.11.5: an amount-based rate is a
-   flux (mol/s), while BNGL's rate law is a concentration rate. The
-   transformation needs a factor of `V^(m-1)` for a rate with `m` reactant
-   species factors. Cases 01002/01003/01005/01006/01009/01010 diverge from
-   the official reference by exactly the missing volume factor; the
-   volume-1 sibling case 00061 passes.
+   non-unity compartment** (PR #319). SBML L3 Core §4.11: a kinetic law's
+   value is the reaction's *extent* rate, and a species' amount changes by
+   `stoichiometry × extent rate`. BNGL rate laws are always *concentration*
+   rates, so an amount-based law needs a factor of `V^(m-1)` for a law with
+   `m` reactant factors. 19 official cases move `failed → passed`.
+
+Combined effect of PRs #316, #318 and #319 on the official-reference stage:
+**1115 → 1169 passed**, 107 → 53 failed, **0 regressions**. The conversion
+stage is unchanged at 1712 passed / 211 unsupported / 0 failed.
 
 ## Workstreams
 
