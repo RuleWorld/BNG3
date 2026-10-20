@@ -1159,6 +1159,7 @@ def _with_reference_output_functions(
 
     expressions: dict[str, str] = {}
     used_names = set(re.findall(r"(?m)^\s*([A-Za-z_][A-Za-z_0-9]*)\s*\(", bngl))
+    declared_functions = set(used_names)
     for index, (variable, target) in enumerate(targets.items()):
         base = f"SSTSREF_{case_id}_{index:04d}"
         alias = base
@@ -1168,10 +1169,18 @@ def _with_reference_output_functions(
             suffix += 1
         used_names.add(alias)
         expressions[variable] = alias
-    additions = "".join(
-        f"  {expressions[variable]}() = {target}\n"
+    # A target that names a declared zero-argument BNGL function has to be
+    # called.  A parameter or observable of the same name is referenced
+    # without parentheses, so only a declared function spelling is rewritten.
+    aliases = "".join(
+        (
+            f"  {expressions[variable]}() = " f"{target}()\n"
+            if target in declared_functions
+            else f"  {expressions[variable]}() = {target}\n"
+        )
         for variable, target in targets.items()
     )
+    additions = aliases
     end_functions = re.search(r"(?im)^\s*end functions\s*$", bngl)
     if end_functions:
         bngl = bngl[: end_functions.start()] + additions + bngl[end_functions.start() :]
