@@ -510,6 +510,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
         raise ValueError("campaign family budget must be between zero and ten")
     from .integrated_cases import generated_cases
     from .integrated import expected_contract_ids
+    from . import api_surface
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
@@ -534,6 +535,9 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_graph_identity=False,
                     include_bngir_adversarial=False,
                     include_quantity_laws=False,
+                    # The public API/CLI surface family is a campaign-level
+                    # stage, not a per-case one.
+                    include_api_surface=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -567,6 +571,16 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                 stage_timeout_seconds=900,
             ),
             limits="Finite prelowered physical-law and bare BNGL count controls; no unit-annotation ingestion or joint-law qualification.",
+        )
+    )
+    families.append(
+        dict(
+            id="public-api-surface",
+            case_ids=[],
+            check_ids=api_surface.check_ids(),
+            runner="tests.validation.api_surface",
+            budget=dict(checks=len(api_surface.check_ids()), stage_timeout_seconds=300),
+            limits="One generated first-order decay family; the stochastic statements cover the terminal-time marginal only; notebook execution and third-party integrations are outside the family.",
         )
     )
     selected = []
@@ -604,11 +618,15 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             else (
                 ["--quantity-laws-only"]
                 if family["id"] == "quantity-source-laws"
-                else [
-                    argument
-                    for case_id in family["case_ids"]
-                    for argument in ("--case", case_id)
-                ]
+                else (
+                    ["--report-dir", "<new-empty-directory>"]
+                    if family["id"] == "public-api-surface"
+                    else [
+                        argument
+                        for case_id in family["case_ids"]
+                        for argument in ("--case", case_id)
+                    ]
+                )
             )
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
