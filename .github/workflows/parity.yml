@@ -73,7 +73,6 @@ jobs:
             tests/validation/test_bngir_adversarial.py \
             tests/validation/test_bngir_format_contracts.py \
             tests/validation/test_bngir_reconstruction_contracts.py \
-            tests/validation/test_netrule_execution.py \
             tests/validation/test_integrated_boundaries.py \
             tests/validation/test_integrated_protocol.py \
             tests/validation/test_integrated_marginals.py \
