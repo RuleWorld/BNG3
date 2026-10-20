@@ -738,16 +738,13 @@ def run_physical_bridge(directory, *, full=False, runs=32, alpha=None):
             rows={row["check"]: row["status"] for row in rows},
         )
 
-    output.extend(
-        _physical_bridge_obligations(cases, observations, directory, runs=runs)
-    )
+    output.extend(_physical_bridge_obligations(cases, observations, runs=runs))
     output.extend(_physical_bridge_refusals(directory))
     return output
 
 
-def _physical_bridge_obligations(cases, observations, directory, *, runs):
+def _physical_bridge_obligations(cases, observations, *, runs):
     """Summarise the typed bridge cases into the named obligation checks."""
-    import bionetgen  # noqa: F401  (the product is exercised by the caller)
 
     def observation(case_id):
         return observations.get(case_id)
