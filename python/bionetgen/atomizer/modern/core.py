@@ -1083,7 +1083,9 @@ def _strip_complex_suffix(name: str) -> str:
 
 
 def _name_complex_candidates(
-    name: str, known_names: Mapping[str, str]
+    name: str,
+    known_names: Mapping[str, str],
+    require_known: bool = True,
 ) -> List[Tuple[str, List[str]]]:
     """Return the complex readings a species name admits.
 
@@ -1091,7 +1093,9 @@ def _name_complex_candidates(
     separator that is also used for ordinary identifiers (``-`` and ``_``)
     only yields a reading when every part names an existing species; the
     explicit bond separator ``!`` and the BNGL molecule separator ``.``
-    always do.
+    always do.  With ``require_known`` disabled the uncorroborated readings
+    are returned as well, so that a rejected reading can still be reported
+    as an alternative instead of being lost.
     """
 
     text = _strip_complex_suffix(str(name or "").strip())
@@ -1107,7 +1111,7 @@ def _name_complex_candidates(
             continue
         if not all(_is_molecule_name(part) for part in parts):
             continue
-        if separator in "-_":
+        if require_known and separator in "-_":
             if not all(part in known_names for part in parts):
                 continue
         candidates.append((separator, parts))
@@ -1482,11 +1486,17 @@ def _infer_species_structure(
         "the SBML source does not determine a molecular structure for the "
         "species, so the exact flat representation is kept",
     )
-    for separator, parts in name_candidates:
+    for separator, parts in _name_complex_candidates(
+        name, context.names_to_ids, require_known=False
+    ):
+        if (separator, parts) in name_candidates:
+            continue
         record.alternatives.append(
             _alternative_inference(
                 "name-heuristic",
-                f'the species name splits on "{separator}" into ' + ", ".join(parts),
+                f'the species name splits on "{separator}" into '
+                + ", ".join(parts)
+                + ", but not every part names an existing species",
                 molecules=list(parts),
             )
         )

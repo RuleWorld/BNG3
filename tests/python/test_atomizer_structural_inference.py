@@ -350,6 +350,29 @@ def test_name_complex_candidates_ignore_organism_names():
     assert _name_complex_candidates("C. elegans", {}) == []
 
 
+def test_uncorroborated_name_reading_is_reported_as_an_alternative():
+    """A rejected name reading must not disappear silently."""
+
+    sbml = build_sbml(
+        "uncorroborated_model",
+        [
+            ("A", "A", 4.0, None),
+            ("AB", "A-B", 2.0, None),
+        ],
+        [],
+        [],
+    )
+
+    record = _inference(sbml, "AB")
+
+    assert record["confidence"] == "elemental"
+    assert record["molecules"] == ["AB"]
+    assert any(
+        alternative["molecules"] == ["A", "B"]
+        for alternative in record["alternatives"]
+    )
+
+
 def test_separator_tolerant_modification_suffix():
     assert infer_modification("A-P", ["A"]).modification == "Phosphorylation"
     assert infer_modification("A-PP", ["A"]).modification == "Double-Phosphorylation"
