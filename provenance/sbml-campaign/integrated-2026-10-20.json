@@ -6866,7 +6866,8 @@
       "campaign/atomizer-seed-values",
       "campaign/atomizer-csymbol",
       "campaign/atomizer-volume-factor",
-      "campaign/atomizer-nary-relations"
+      "campaign/atomizer-nary-relations",
+      "campaign/atomizer-assignment-rule-targets"
     ],
     "measurement_date": "2026-10-20",
     "measurement_host": "darwin, CPython 3.14, libsbml 5.21.1, roadrunner 2.10.0",
@@ -16953,7 +16954,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "00999",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/00999",
         "version": "l3v2"
@@ -19012,7 +19013,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01198",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01198",
         "version": "l3v2"
@@ -19082,7 +19083,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01205",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01205",
         "version": "l3v2"
@@ -19092,7 +19093,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01206",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01206",
         "version": "l3v2"
@@ -19102,7 +19103,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01207",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01207",
         "version": "l3v2"
@@ -19112,7 +19113,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01208",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01208",
         "version": "l3v2"
@@ -21857,7 +21858,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01478",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01478",
         "version": "l3v2"
@@ -22219,7 +22220,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01513",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01513",
         "version": "l3v2"
@@ -25223,7 +25224,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01796",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01796",
         "version": "l2v5"
@@ -25487,7 +25488,7 @@
         "causes": [],
         "conversion": "passed",
         "id": "01822",
-        "official_reference": "failed",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01822",
         "version": "l3v2"
@@ -26800,11 +26801,11 @@
       }
     ],
     "official_reference_counts": {
-      "failed": 50,
-      "passed": 1172,
+      "failed": 40,
+      "passed": 1182,
       "unsupported": 701
     },
-    "source_report_sha256": "d283910ef64d17c9e633cab492503ccfda6054e1bd1dcfb63054081f0e9cfe8c",
+    "source_report_sha256": "1f720a7b4f4e11742311b798d48db43ffc451d78f2f3b96d4ff6602617e60a12",
     "stage_counts": {
       "conversion": {
         "passed": 1712,
