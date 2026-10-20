@@ -125,6 +125,46 @@ public `Model` API remains unsupported and stays an explicit boundary; the
 qualified topology route is the action protocol's `include_model`. The
 governance obligations of the issue keep their disposition checks, so the issue
 stays open.
+## Public API and CLI surface qualification (2026-10-20 candidate)
+
+Issue #171 asked for the PyBioNetGen public compatibility matrix to name an
+executable check. The `api-surface` family in `tests/validation/api_surface.py`
+adds one: it drives all five supported simulation methods (`ode`, `ssa`, `nf`,
+`pla`, `psa`) through the public Python API and through the installed
+command-line interface, and judges each route against an independent law
+rather than against the other route's output.
+
+The law is a generated first-order decay model. The deterministic route is
+compared with the closed-form trajectory; the stochastic routes are compared
+with the exact binomial count law of the same process through a 24-replicate
+ensemble with recorded seeds, an analytic standard-error budget for the
+ensemble mean, a declared chi-square band for the ensemble dispersion, the
+exact binomial central range for every replicate, and the existing
+Hoeffding/DKW source-count-law comparator. The stochastic statements cover the
+terminal-time marginal of that one family only.
+
+The same family covers the documented surface: signatures and defaults,
+positional dispatch, timeouts, the action block, result containers and written
+files, exceptions, and the optional distributions that must stay optional. The
+eight API/CLI differences are declared explicitly and each one is exercised,
+so an unexplained divergence fails instead of being reported as a benign
+difference. The command-line leg must import the same package and the same
+native extension as the API leg; the family refuses to compare two different
+builds.
+
+The family exposed one product defect: `Model.simulate(seed=...)` silently
+ignored the seed for the PLA and PSA routes, because the bindings never
+forwarded it even though both simulators already honoured `OdeOptions::seed`.
+The bindings now take the seed, the Python wrapper passes it, and
+`tests/python/test_stochastic_seed_contract.py` is the focused regression.
+Before the repair the new route-agreement checks for `pla` and `psa` fail;
+after it they pass.
+
+The named checks are recorded in `provenance/issue-obligations.json` for the
+two behavioral obligations of #171, and the closure record is now an explicit
+maintainer disposition. #171 stays open: the family qualifies one generated
+model family, and notebook execution, third-party integrations and other
+model shapes remain outside the executed scope.
 
 ## Native BNGIR v0.2 model functions (2026-10-19 candidate)
 

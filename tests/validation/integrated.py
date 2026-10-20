@@ -115,6 +115,7 @@ def expected_contract_ids(
     include_netrule_execution=True,
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
+    include_api_surface=True,
     full=False,
 ):
     return [
@@ -165,6 +166,7 @@ def expected_contract_ids(
         include_netrule_execution=include_netrule_execution,
         include_bngsim_boundary=include_bngsim_boundary,
         include_jax_backend_measurement=include_jax_backend_measurement,
+        include_api_surface=include_api_surface,
         full=full,
     )
 
@@ -1070,8 +1072,17 @@ def main(argv=None):
         or args.export_format_tier_only
         or args.netrule_execution_only
         or args.bngsim_boundary_only
+        or args.api_surface_only
     )
     qualification_selection["include_bngsim_boundary"] = not (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
+        or args.jax_backend_measurement_only
+        or args.api_surface_only
+    )
+    qualification_selection["include_api_surface"] = not (
         args.boundaries_only
         or args.graph_identity_only
         or args.bngir_adversarial_only
@@ -1111,6 +1122,8 @@ def main(argv=None):
             integrated_extensions.invoke(
                 "jax-backend-measurement", args, rows, env, run_stage
             )
+        if qualification_selection["include_api_surface"]:
+            integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1247,6 +1260,7 @@ def main(argv=None):
                     "python/bionetgen/jax_ode.py",
                     "python/bionetgen/jax_ssa.py",
                 ],
+                "api-surface": "tests/validation/api_surface.py",
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1290,6 +1304,8 @@ def main(argv=None):
                 issues = [144]
             elif stage == "jax-backend-measurement":
                 issues = [174]
+            elif stage == "api-surface":
+                issues = [171]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):

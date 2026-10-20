@@ -834,6 +834,16 @@ jobs:
         env:
           SYMPY_USE_GMPY: "0"
 
+      - name: Qualify the installed public API and CLI surface
+        # The generated family drives every supported simulation method through
+        # the installed Python API and the installed console script and judges
+        # each route against an independent closed-form law.
+        run: |
+          python -m tests.validation.api_surface \
+            --report-dir "$RUNNER_TEMP/api-surface"
+        env:
+          SYMPY_USE_GMPY: "0"
+
   # ═══════════════════════════════════════════════════════════════════════════
   # Source Distribution Installation Smoke Test
   # ═══════════════════════════════════════════════════════════════════════════

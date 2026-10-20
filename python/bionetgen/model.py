@@ -254,7 +254,9 @@ class BioNetGenModel:
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
-            Random seed (SSA/NF only; 0 = system default).
+            Random seed (SSA/NF/PLA/PSA only; 0 = system default). A non-zero
+            value selects a reproducible random stream for the stochastic
+            methods.
         pla_config : str
             PLA configuration string (PLA only).
         psa_poplevel : float
@@ -576,6 +578,7 @@ class BioNetGenModel:
                     n_steps=n_steps,
                     config_str=pla_config,
                     t_start=t_start,
+                    seed=seed,
                 )
                 if isinstance(raw, dict) and "backend" not in raw:
                     raw["backend"] = "native"
@@ -589,6 +592,7 @@ class BioNetGenModel:
                     n_steps=n_steps,
                     poplevel=psa_poplevel,
                     t_start=t_start,
+                    seed=seed,
                 )
                 if isinstance(raw, dict) and "backend" not in raw:
                     raw["backend"] = "native"

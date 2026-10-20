@@ -741,6 +741,7 @@ def main():
             "netrule-execution",
             "bngsim-boundary",
             "jax-backend-measurement",
+            "api-surface",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -838,6 +839,7 @@ def main():
         "netrule-execution",
         "bngsim-boundary",
         "jax-backend-measurement",
+        "api-surface",
     ):
         from tests.validation.integrated_extensions import run_worker
 
