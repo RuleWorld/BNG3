@@ -91,6 +91,14 @@ bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
     return false;
 }
 
+// The statistical factor the NET writer applies to a reaction's rate
+// constant: the 1/n! correction for identical reactant patterns.  A total-rate
+// rule states a macroscopic rate, so no pair correction is applied to it.
+double statisticalFactor(const ast::Rxn& reaction, const ast::Model& model) {
+    if (hasTotalRateModifier(model, reaction.getOriginRuleName())) return 1.0;
+    return reaction.getFactor();
+}
+
 // Simple recursive evaluator for mathematical expressions
 // Handles: numbers, parameters, +, -, *, /, (), exp(), and nested expressions
 double evaluateExpressionString(const std::string& expr,
@@ -866,12 +874,22 @@ std::string formatSpecies(const ast::Species& species) {
 }
 
 std::string formatFactor(double factor) {
-    if (std::abs(factor - std::round(factor)) < 1e-9) {
+    // A factor is written as an integer only when it rounds to a nonzero
+    // integer that fits the 64-bit range.  A tiny factor must not collapse to
+    // zero (the reaction would stop firing) and a huge one must not overflow
+    // the integer conversion.
+    const auto decimal = [&]() {
+        std::ostringstream out;
+        out << std::setprecision(12) << factor;
+        return out.str();
+    };
+    if (!std::isfinite(factor)) return decimal();
+    const double rounded = std::round(factor);
+    if (rounded != 0.0 && std::abs(factor) <= 9.0e18 &&
+        std::abs(factor - rounded) < 1e-9) {
         return std::to_string(static_cast<long long>(std::llround(factor)));
     }
-    std::ostringstream out;
-    out << std::setprecision(12) << factor;
-    return out.str();
+    return decimal();
 }
 
 std::string compactExpression(std::string text) {
@@ -1222,7 +1240,20 @@ std::optional<double> unitConversionFactor(const ast::Rxn& reaction, const ast::
                     "unit-aware rate conversion failed for '" + reaction.getRateLaw() + "': " +
                     converted.error);
             }
-            return converted.factor;
+            // A typed rate constant states the physical rate per distinct
+            // reactant pair, while BNG2's statistical factor converts the
+            // count propensity from the ordered-pair convention into that
+            // distinct-pair convention.  The NET writer applies the factor to
+            // the rate constant separately, so the typed conversion cancels it
+            // here; otherwise the pair correction is counted twice and an
+            // identical-reactant rule runs at half its physical rate.
+            const double statFactor = statisticalFactor(reaction, model);
+            if (!std::isfinite(statFactor) || statFactor <= 0.0) {
+                throw std::runtime_error(
+                    "unit-aware rate conversion requires a positive statistical factor for '" +
+                    reaction.getRateLaw() + "'");
+            }
+            return *converted.factor / statFactor;
         }
     }
 
