@@ -92,6 +92,7 @@ def annotate_acceptance_evidence(rows):
         )
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
     consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
+    consumers.update(integrated_extensions.check_ids("stochastic-parity"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -116,6 +117,7 @@ def expected_contract_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_stochastic_parity=True,
     full=False,
 ):
     return [
@@ -167,6 +169,7 @@ def expected_contract_ids(
         include_bngsim_boundary=include_bngsim_boundary,
         include_jax_backend_measurement=include_jax_backend_measurement,
         include_api_surface=include_api_surface,
+        include_stochastic_parity=include_stochastic_parity,
         full=full,
     )
 
@@ -996,6 +999,7 @@ def main(argv=None):
         or args.netrule_execution_only
         or args.bngsim_boundary_only
         or args.jax_backend_measurement_only
+        or args.stochastic_parity_only
     ):
         selected = []
     for name in (
@@ -1029,6 +1033,7 @@ def main(argv=None):
         or args.quantity_laws_only
         or args.netrule_execution_only
         or args.jax_backend_measurement_only
+        or args.stochastic_parity_only
     )
     qualification_selection = dict(
         include_boundaries=not (
@@ -1088,9 +1093,11 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.jax_backend_measurement_only
+        or args.stochastic_parity_only
     )
     qualification_selection["include_netrule_execution"] = not focused
     qualification_selection["include_jax_backend_measurement"] = not focused
+    qualification_selection["include_stochastic_parity"] = not focused
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1121,6 +1128,10 @@ def main(argv=None):
         if qualification_selection["include_jax_backend_measurement"]:
             integrated_extensions.invoke(
                 "jax-backend-measurement", args, rows, env, run_stage
+            )
+        if qualification_selection["include_stochastic_parity"]:
+            integrated_extensions.invoke(
+                "stochastic-parity", args, rows, env, run_stage
             )
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
@@ -1261,6 +1272,7 @@ def main(argv=None):
                     "python/bionetgen/jax_ssa.py",
                 ],
                 "api-surface": "tests/validation/api_surface.py",
+                "stochastic-parity": "tests/validation/stochastic_parity.py",
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1304,6 +1316,8 @@ def main(argv=None):
                 issues = [144]
             elif stage == "jax-backend-measurement":
                 issues = [174]
+            elif stage == "stochastic-parity":
+                issues = [167]
             elif stage == "api-surface":
                 issues = [171]
             elif stage in integrated_consumers.ISSUES:

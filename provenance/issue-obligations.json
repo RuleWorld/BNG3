@@ -5781,12 +5781,16 @@
           "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
           "scope": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified slice states the convention of one distinct reactant (the elementary parameter, a local function, a builtin call, a TFUN table, the Sat and Hill special rates) and the elementary bimolecular rule with two identical reactants; every other rate convention stays outside the slice.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another.",
+            "A saturated or Hill law with repeated identical reactants is outside the slice: BNG3's stochastic backends do not reproduce the canonical BioNetGen propensity for that form, so the case is refused instead of being judged. The recorded divergence for `A() + A() -> D() Sat(kcat,K)` with N=20, kcat=0.4 and K=10 is a BNG3 SSA mean final count of 12.03 over 150 seeded trajectories against 17.00 over 60 canonical Perl BNG2 2.9.3 trajectories (standard error 0.30)."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:167:encode-the-exact-supported-special-rate-local-function-tfun-and",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Every generated case of the qualified slice reproduces the independent count law of its rate convention under the recorded seed policy and run budget, and the observed law is separated from the declared misreading of that convention by the same exact test.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5795,12 +5799,13 @@
           "test_references": [
             "tests/architecture_contracts",
             "tests/python/test_ssa_closed_form_parity.py",
-            "tests/validation/test_parity_stochastic.py"
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_parity_stochastic.py",
+            "tests/validation/test_stochastic_parity.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:167:encode-the-exact-supported-special-rate-local-function-tfun-and.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -5809,22 +5814,28 @@
           "criterion": "Prove the selected refinement statements; explicitly exclude unproved floating-point solver behavior.",
           "scope": "Prove the selected refinement statements; explicitly exclude unproved floating-point solver behavior.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The selected refinement statement is that the stochastic ensemble mean is the analytic mean of the declared law at every sampled time, within the recorded statistical error budget; the Lean kernel-verification theorem statements are not selected by this check and stay unqualified.",
+            "The reference is the analytic law; no deterministic solver output is used, so the statement claims nothing about the floating-point accuracy of a solver.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:167:prove-the-selected-refinement-statements-explicitly-exclude-unpr",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The ensemble mean of every judged case agrees with the analytic mean of the declared law at every sampled time under an exact two-sided test whose null distribution is the law's own mass function; the recorded alpha bounds the family-wise error rate over the sampled timepoints.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:167:prove-the-selected-refinement-statements-explicitly-exclude-unpr.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -5851,6 +5862,222 @@
             "Missing required qualification ID: qualification:issue:167:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:167:executed-slice:elementary-parameter",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "The elementary parameter rate law of one distinct reactant.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:parameter-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:167:executed-slice:local-function",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "A local function with a constant body used as a rate law.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:local-function-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:167:executed-slice:local-function-state",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "A local function whose body depends on the current state, used as a rate law.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:local-function-state-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:167:executed-slice:builtin",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "A builtin call in the rate law.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:builtin-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:167:executed-slice:tfun",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "A table function in the rate law.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:tfun-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:167:executed-slice:special-rate-saturation",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "The saturation special rate of one distinct reactant.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:saturation-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:167:executed-slice:special-rate-hill",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "The Hill special rate of one distinct reactant.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:hill-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:167:executed-slice:elementary-bimolecular",
+          "criterion": "Encode the exact supported special-rate, local-function, TFUN and builtin conventions and full propensity/event-selection contracts.",
+          "scope": "The elementary bimolecular rule with two identical reactants, whose statistical factor belongs to the propensity.",
+          "dependencies": [],
+          "boundaries": [
+            "One generated case of the named convention, compared with the independent count law of that convention under the recorded seed policy and run budget.",
+            "The comparison is distributional over the recorded ensemble under a fixed seed policy and a fixed run budget; it is not a pathwise claim and it never compares one backend against another."
+          ],
+          "required_checks": [
+            {
+              "id": "stochastic-parity:elementary-bimolecular-n20-k04:ssa.law-cdf",
+              "evidence_kind": "supported-execution",
+              "expectation": "The sampled count distribution of the named case matches the independent count law of its convention within the recorded statistical error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/stochastic_parity.py",
+            "tests/validation/test_stochastic_parity.py"
+          ],
+          "completion_condition": "Only the named finite slice is demonstrated by passing exact-candidate execution.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },

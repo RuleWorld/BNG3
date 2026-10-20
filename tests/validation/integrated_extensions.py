@@ -15,6 +15,7 @@ from . import (
     bngir_format_contracts,
     bngir_reconstruction_contracts,
     api_surface,
+    stochastic_parity,
     bngsim_boundary,
     integrated_consumers,
     integrated_marginals,
@@ -39,6 +40,7 @@ OPERATIONS = (
     "bngsim-boundary",
     "jax-backend-measurement",
     "api-surface",
+    "stochastic-parity",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -82,6 +84,8 @@ def check_ids(operation, case=None, *, full=False):
         return export_format_tier.check_ids()
     if operation == "api-surface":
         return api_surface.check_ids()
+    if operation == "stochastic-parity":
+        return stochastic_parity.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -101,6 +105,7 @@ def expected_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_stochastic_parity=True,
     full=False,
 ):
     ids = []
@@ -127,6 +132,8 @@ def expected_ids(
         )
     if include_api_surface:
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
+    if include_stochastic_parity:
+        ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -162,6 +169,8 @@ def run_worker(operation, args):
         return export_format_tier.run_worker(Path.cwd(), bng_cpp=args.bng_cpp)
     if operation == "api-surface":
         return api_surface.run(Path.cwd())
+    if operation == "stochastic-parity":
+        return stochastic_parity.run_worker(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)

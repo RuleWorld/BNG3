@@ -742,6 +742,8 @@ def main():
             "bngsim-boundary",
             "jax-backend-measurement",
             "api-surface",
+            "stochastic-parity",
+            "stochastic-parity",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -840,6 +842,7 @@ def main():
         "bngsim-boundary",
         "jax-backend-measurement",
         "api-surface",
+        "stochastic-parity",
     ):
         from tests.validation.integrated_extensions import run_worker
 

@@ -511,6 +511,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated_cases import generated_cases
     from .integrated import expected_contract_ids
     from . import api_surface
+    from .stochastic_parity import check_ids as stochastic_parity_check_ids
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
@@ -636,6 +637,22 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                 "are machine-specific, and the stages the JAX backend does not "
                 "provide (SSA, NFsim, parameter scans) are recorded as explicit "
                 "boundaries rather than measured through another backend."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="stochastic-parity",
+            case_ids=[],
+            check_ids=stochastic_parity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(stochastic_parity_check_ids()), stage_timeout_seconds=600
+            ),
+            limits=(
+                "Generated stochastic rate conventions against the exact binomial "
+                "count law with a recorded seed and a stated error budget; the "
+                "claims cover the terminal-time marginal, not pathwise equivalence."
             ),
         )
     )
