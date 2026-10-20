@@ -153,6 +153,25 @@ private:
                                const std::vector<double>& derivatives) const;
     double eventRootDerivative(const ast::Expression& trigger, double time,
                                const std::vector<double>& derivatives) const;
+    // The trigger's signed root function: positive exactly where the trigger
+    // holds.  A conjunction is the conjunction of its conjuncts, so its root
+    // function is the smallest of the conjunct root functions.
+    double eventRootValue(const ast::Expression& trigger, double time,
+                          const double* state) const;
+    // The conjuncts of a trigger; a single inequality is one conjunct.
+    static std::vector<const ast::Expression*> triggerConjuncts(
+        const ast::Expression& trigger);
+    // True when every conjunct of the trigger is a strict inequality.
+    static bool isStrictTrigger(const ast::Expression& trigger);
+    // The difference that decides the sign of the trigger at a given time and
+    // the rate of change of that difference.
+    struct TriggerSurface {
+        double difference = 0.0;
+        double derivative = 0.0;
+    };
+    TriggerSurface triggerSurface(const ast::Expression& trigger, double time,
+                                  const double* state,
+                                  const std::vector<double>& derivatives) const;
     void applyEvent(double time, std::vector<double>& state) const;
     std::vector<double> eventValues(double time, const double* state) const;
     void assignEventValues(std::vector<double>& state,

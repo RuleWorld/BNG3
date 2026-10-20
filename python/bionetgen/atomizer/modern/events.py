@@ -2916,10 +2916,66 @@ def _native_scaled_static(
     return f"({_format_number(factor)} * ({static}))"
 
 
+def _native_conjunction_expression(
+    trigger: str, context: EventTranslationContext
+) -> Optional[str]:
+    """Lower a conjunction of state comparisons to a native BNGL expression.
+
+    A conjunction holds only where every conjunct holds, so the native
+    runtime compares the smallest of the conjunct differences with zero.  The
+    runtime needs every conjunct to be a strict comparison, because only a
+    strict comparison has a rising edge that a sign change can attribute.
+    """
+    terms = _split_call_arguments(str(trigger or "").strip())
+    if terms is None or len(terms) < 2:
+        return None
+    rendered: List[str] = []
+    for term in terms:
+        comparison = _match_comparison_call(term)
+        if comparison is None:
+            return None
+        operator, arguments_text = comparison
+        if operator not in _NATIVE_COMPARISON_OPERATORS:
+            return None
+        arguments = _split_arguments(arguments_text)
+        if arguments is None or len(arguments) != 2:
+            return None
+        left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+        left_state = _native_state_target(left_text, context)
+        right_state = _native_state_target(right_text, context)
+        symbol = _NATIVE_COMPARISON_OPERATORS[operator]
+        if left_state is not None and right_state is not None:
+            if left_state.amount_factor != right_state.amount_factor:
+                return None
+            rendered.append(f"{left_state.observable} {symbol} {right_state.observable}")
+            continue
+        if left_state is not None:
+            scaled = _native_scaled_static(
+                right_text, left_state.amount_factor, context
+            )
+            if scaled is None:
+                return None
+            rendered.append(f"{left_state.observable} {symbol} {scaled}")
+            continue
+        if right_state is not None:
+            scaled = _native_scaled_static(
+                left_text, right_state.amount_factor, context
+            )
+            if scaled is None:
+                return None
+            rendered.append(f"{scaled} {symbol} {right_state.observable}")
+            continue
+        return None
+    return " && ".join(f"({part})" for part in rendered)
+
+
 def _native_trigger_expression(
     event: SBMLEvent, context: EventTranslationContext
 ) -> Optional[str]:
     """Lower a state-dependent SBML trigger to a native BNGL inequality."""
+    conjunction = _native_conjunction_expression(event.trigger, context)
+    if conjunction is not None:
+        return conjunction
     comparison = _match_comparison_call(event.trigger)
     if comparison is None:
         return None

@@ -1195,7 +1195,9 @@ def test_conjunctive_event_outside_horizon_is_safely_omitted():
 
     longer_result = Atomizer(quiet_mode=True, t_end=3).atomize(xml)
     assert longer_result.success, longer_result.error
-    assert "state-dependent or non-constant event" in longer_result.bngl
+    # Beyond the horizon the analytic path can prove, the event reaches the
+    # native runtime instead of being reported as untranslated.
+    assert "begin bng3_events version 1" in longer_result.bngl
 
 
 def test_event_controls_deterministic_species_reference_flux():

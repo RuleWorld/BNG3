@@ -1707,6 +1707,9 @@ void OdeIntegrator::validateEventRootSurface() {
     // continuous root finder therefore locates the SBML trigger transition
     // without a monotonicity proof on the state.
     if (operatorName == "<" || operatorName == ">") return;
+    // A conjunction of strict inequalities has the same property: its root
+    // function is the smallest of the conjunct root functions.
+    if (triggerConjuncts(nativeEvent_->trigger).size() > 1) return;
     // A non-strict inequality is also true at a tangential contact that does
     // not change the sign of the root function.  Such a contact is invisible
     // to a sign-change detector, so it needs a proven transversal crossing.
@@ -1824,6 +1827,67 @@ double OdeIntegrator::eventRootDerivative(const ast::Expression& trigger,
     return trigger.name()[0] == '<' ? -difference : difference;
 }
 
+std::vector<const ast::Expression*> OdeIntegrator::triggerConjuncts(
+    const ast::Expression& trigger) {
+    std::vector<const ast::Expression*> conjuncts;
+    if (trigger.kind() == ast::ExpressionKind::Binary && trigger.name() == "&&") {
+        for (const auto& child : trigger.args()) {
+            for (const auto* conjunct : triggerConjuncts(child)) {
+                conjuncts.push_back(conjunct);
+            }
+        }
+        return conjuncts;
+    }
+    conjuncts.push_back(&trigger);
+    return conjuncts;
+}
+
+bool OdeIntegrator::isStrictTrigger(const ast::Expression& trigger) {
+    for (const auto* conjunct : triggerConjuncts(trigger)) {
+        if (conjunct->name() != "<" && conjunct->name() != ">") return false;
+    }
+    return true;
+}
+
+double OdeIntegrator::eventRootValue(const ast::Expression& trigger, double time,                                      const double* state) const {
+    const auto conjuncts = triggerConjuncts(trigger);
+    if (conjuncts.size() == 1) {
+        const auto& arguments = conjuncts.front()->args();
+        const double difference =
+            eventValue(arguments[0], time, state) -
+            eventValue(arguments[1], time, state);
+        return conjuncts.front()->name()[0] == '<' ? -difference : difference;
+    }
+    // A conjunction holds only where every conjunct holds, so its root
+    // function is the smallest of the conjunct root functions.
+    double smallest = std::numeric_limits<double>::infinity();
+    for (const auto* conjunct : conjuncts) {
+        smallest = std::min(smallest, eventRootValue(*conjunct, time, state));
+    }
+    return smallest;
+}
+
+OdeIntegrator::TriggerSurface OdeIntegrator::triggerSurface(
+    const ast::Expression& trigger, double time, const double* state,
+    const std::vector<double>& derivatives) const {
+    TriggerSurface surface;
+    const auto conjuncts = triggerConjuncts(trigger);
+    double smallest = std::numeric_limits<double>::infinity();
+    const ast::Expression* active = nullptr;
+    for (const auto* conjunct : conjuncts) {
+        const double value = eventRootValue(*conjunct, time, state);
+        if (value < smallest) {
+            smallest = value;
+            active = conjunct;
+        }
+    }
+    surface.difference = smallest;
+    if (active != nullptr) {
+        surface.derivative = eventRootDerivative(*active, time, derivatives);
+    }
+    return surface;
+}
+
 void OdeIntegrator::applyEvent(double time, std::vector<double>& state) const {
     assignEventValues(state, eventValues(time, state.data()));
 }
@@ -1835,10 +1899,7 @@ double OdeIntegrator::eventDelay() const {
 double OdeIntegrator::cvodeEventRoot(double time, const double* scaledState) const {
     std::vector<double> state(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = scaledState[i] * cvodeStateScale_[i];
-    const auto& trigger = nativeEvent_->trigger;
-    const double difference = eventValue(trigger.args()[0], time, state.data()) -
-                              eventValue(trigger.args()[1], time, state.data());
-    return trigger.name()[0] == '<' ? -difference : difference;
+    return eventRootValue(nativeEvent_->trigger, time, state.data());
 }
 
 OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
@@ -2742,19 +2803,20 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     if (!!nativeEvent_.has_value()) {
         const auto& event = *nativeEvent_;
         const auto& trigger = event.trigger;
-        if ((trigger.name() == ">" || trigger.name() == "<") &&
-            eventValue(trigger.args()[0], opts.tStart, initialState.data()) ==
-            eventValue(trigger.args()[1], opts.tStart, initialState.data())) {
-            // A strict trigger is false while its two sides are equal, so the
-            // equality at the start of the simulation is a falling edge and
-            // the event still waits for the next rising edge.  That is only
-            // decidable when the trigger does not also become true straight
-            // away: the very first instant has no crossing to attribute.
-            bool rising = false;
+        // A strict trigger is false while its two sides are equal, so an
+        // equality at the start of the simulation is a falling edge and the
+        // event still waits for the next rising edge.  That is only decidable
+        // when the trigger does not also become true straight away: the very
+        // first instant has no crossing to attribute.
+        const bool strict = isStrictTrigger(trigger);
+        if (strict) {
+            bool rising = true;
             try {
                 std::vector<double> initialRates(nSpecies_);
                 derivs(opts.tStart, initialState.data(), initialRates.data());
-                rising = eventRootDerivative(trigger, opts.tStart, initialRates) >= 0.0;
+                const auto surface = triggerSurface(
+                    trigger, opts.tStart, initialState.data(), initialRates);
+                rising = surface.difference == 0.0 && !(surface.derivative < 0.0);
             } catch (const std::exception&) {
                 rising = true;
             }

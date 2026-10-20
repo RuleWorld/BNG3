@@ -237,6 +237,83 @@ def _load(result, tmp_path):
     return load(str(path))
 
 
+def conjunctive_event_model() -> str:
+    """A trigger that holds only where both of its comparisons hold."""
+
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="conjunctive_event">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+      <species id="S2" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="1" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="decay" reversible="false">
+        <listOfReactants><speciesReference species="S1"/></listOfReactants>
+        <listOfProducts><speciesReference species="S2"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k</ci><ci>S1</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="threshold" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/>
+              <apply><lt/><ci>S1</ci><cn>0.1</cn></apply>
+              <apply><lt/><ci>S2</ci><cn>0.95</cn></apply>
+            </apply>
+          </math>
+        </trigger>
+        <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></delay>
+        <listOfEventAssignments>
+          <eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+
+def test_conjunctive_state_trigger_is_lowered_to_the_native_event_block():
+    result = atomize(conjunctive_event_model())
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "trigger: (S1_amt < 0.1) && (S2_amt < 0.95)" in result.bngl
+    assert "delay: 1" in result.bngl
+    assert "# Events NOT simulated" not in result.bngl
+
+
+def test_conjunctive_native_event_matches_independent_roadrunner(tmp_path):
+    roadrunner = pytest.importorskip("roadrunner")
+    xml = conjunctive_event_model()
+    result = atomize(xml)
+
+    model = _load(result, tmp_path)
+    actual = model.simulate(method="ode", t_end=5.0, n_steps=50)
+
+    oracle = roadrunner.RoadRunner(xml)
+    oracle.integrator.relative_tolerance = 1e-10
+    oracle.integrator.absolute_tolerance = 1e-12
+    expected = oracle.simulate(0, 5.0, 51, selections=["time", "S1", "S2"])
+
+    np.testing.assert_allclose(
+        actual.observables["S1_amt"], expected[:, 1], rtol=2e-6, atol=2e-6
+    )
+    np.testing.assert_allclose(
+        actual.observables["S2_amt"], expected[:, 2], rtol=2e-6, atol=2e-6
+    )
+
+
 def test_native_event_trajectory_matches_independent_roadrunner(tmp_path):
     roadrunner = pytest.importorskip("roadrunner")
     xml = coupled_event_model()

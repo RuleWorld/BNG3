@@ -24,11 +24,23 @@ inline void validateNativeEventSubset(const Model& model) {
         fail("non-persistent triggers are unsupported");
     }
     const auto& trigger = event.trigger;
-    if (trigger.kind() != ExpressionKind::Binary || trigger.args().size() != 2 ||
-        (trigger.name() != ">" && trigger.name() != ">=" &&
-         trigger.name() != "<" && trigger.name() != "<=")) {
-        fail("trigger must be a continuous scalar inequality");
-    }
+    // A trigger is a strict inequality or a conjunction of them.  A
+    // conjunction holds only where every conjunct holds, so its root function
+    // is the smallest of the conjunct root functions.
+    std::function<void(const Expression&)> checkTrigger = [&](const Expression& expression) {
+        if (expression.kind() != ExpressionKind::Binary) {
+            fail("trigger must be a continuous scalar inequality");
+        }
+        if (expression.name() == "&&") {
+            for (const auto& child : expression.args()) checkTrigger(child);
+            return;
+        }
+        if (expression.name() != ">" && expression.name() != ">=" &&
+            expression.name() != "<" && expression.name() != "<=") {
+            fail("trigger must be a continuous scalar inequality");
+        }
+    };
+    checkTrigger(trigger);
     const auto dynamicIdentifier = [&](const Expression& expression) {
         if (expression.kind() != ExpressionKind::Identifier) return false;
         if (expression.name() == "time") return true;
@@ -37,28 +49,37 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         return false;
     };
-    const bool leftDynamic = dynamicIdentifier(trigger.args()[0]);
-    const bool rightDynamic = dynamicIdentifier(trigger.args()[1]);
-    if (!leftDynamic && !rightDynamic) {
-        fail("trigger requires one time or species observable against a static threshold");
-    }
-    // A side that is not itself a bare time or species observable has to be a
-    // static threshold: a mixed expression such as ``time - 1`` would make
-    // the crossing surface time-dependent in a way the runtime cannot
-    // classify.  Two bare observables are allowed: a difference of two
-    // species is a continuous state surface like any other.
-    for (std::size_t side = 0; side < 2; ++side) {
-        if (side == 0 ? leftDynamic : rightDynamic) continue;
-        for (const auto& name : trigger.args()[side].getDependencies()) {
-            if (name == "time") fail("event threshold must be static");
-            for (const auto& observable : model.getObservables()) {
-                if (observable.getName() == name) fail("event threshold must be static");
-            }
-            try {
-                if (model.getParameters().isTimeDependent(name)) fail("event threshold must be static");
-            } catch (const std::exception&) { fail("event threshold requires static parameters"); }
+    // Every conjunct of the trigger has to compare a time or species
+    // observable against a static threshold or another observable.
+    std::function<void(const Expression&)> checkSides = [&](const Expression& expression) {
+        if (expression.kind() == ExpressionKind::Binary && expression.name() == "&&") {
+            for (const auto& child : expression.args()) checkSides(child);
+            return;
         }
-    }
+        const bool leftDynamic = dynamicIdentifier(expression.args()[0]);
+        const bool rightDynamic = dynamicIdentifier(expression.args()[1]);
+        if (!leftDynamic && !rightDynamic) {
+            fail("trigger requires one time or species observable against a static threshold");
+        }
+        // A side that is not itself a bare time or species observable has to be
+        // a static threshold: a mixed expression such as ``time - 1`` would make
+        // the crossing surface time-dependent in a way the runtime cannot
+        // classify.  Two bare observables are allowed: a difference of two
+        // species is a continuous state surface like any other.
+        for (std::size_t side = 0; side < 2; ++side) {
+            if (side == 0 ? leftDynamic : rightDynamic) continue;
+            for (const auto& name : expression.args()[side].getDependencies()) {
+                if (name == "time") fail("event threshold must be static");
+                for (const auto& observable : model.getObservables()) {
+                    if (observable.getName() == name) fail("event threshold must be static");
+                }
+                try {
+                    if (model.getParameters().isTimeDependent(name)) fail("event threshold must be static");
+                } catch (const std::exception&) { fail("event threshold requires static parameters"); }
+            }
+        }
+    };
+    checkSides(trigger);
     std::set<std::string> visiting;
     std::function<void(const Expression&)> continuous = [&](const Expression& expression) {
         if (expression.kind() == ExpressionKind::Number) {
@@ -86,8 +107,16 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         fail("only continuous polynomial event expressions are supported");
     };
-    continuous(trigger.args()[0]);
-    continuous(trigger.args()[1]);
+    // Every conjunct of the trigger is a continuous polynomial expression.
+    std::function<void(const Expression&)> continuousTrigger = [&](const Expression& expression) {
+        if (expression.kind() == ExpressionKind::Binary && expression.name() == "&&") {
+            for (const auto& child : expression.args()) continuousTrigger(child);
+            return;
+        }
+        continuous(expression.args()[0]);
+        continuous(expression.args()[1]);
+    };
+    continuousTrigger(trigger);
     if (event.delay) {
         // A delay is a scheduling offset, so it has to be a static constant.
         for (const auto& name : event.delay->getDependencies()) {
