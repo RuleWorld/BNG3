@@ -157,19 +157,18 @@ Per-change contribution:
 | J | Time-dependent stoichiometry (rate-ruled `speciesReference`) | agent J | not started (~10 cases) |
 | — | Independent review of each implementation PR | separate reviewer | required before merge |
 
-### Remaining official-reference failures (50), by cluster
+### Remaining official-reference failures (40), by cluster
 
 | Cluster | n | Cases |
 | --- | --- | --- |
 | `CSymbolDelay` | 12 | 00938 00940 00941 00942 00943 01400 01401 01403 01406 01409 01419 01534 |
-| `AssignmentRule` | 11 | 00999 01198 01205 01206 01207 01208 01216 01478 01492 01493 01796 |
 | `RateRule` (variable stoichiometry) | 10 | 01103 01637 01718 01727 01728 01729 01736 01737 01738 01742 |
+| `InitialAssignment` | 7 | 00785 00786 00879 01514 01516 01631 01633 |
 | `CSymbolRateOf` | 3 | 01460 01542 01822 |
-| `InitialAssignment` | 8 | 00785 00786 00879 01513 01514 01516 01631 01633 |
+| `AssignmentRule` | 3 | 01216 01492 01493 |
 | `CSymbolAvogadro` | 2 | 01121 01723 |
 | other | 2 | 00951 01820 |
 | `AlgebraicRule` | 1 | 01575 |
-| `InitialAssignment` (species) | 1 | 01821 |
 
 ## Invariants for this campaign
 
