@@ -322,6 +322,137 @@ def test_the_cli_rejects_a_run_against_another_suite_revision(tmp_path):
     assert "suite revision mismatch" in result.stderr
 
 
+def test_biomodels_causes_are_derived_when_a_report_omits_the_labels():
+    """A report that carries only the mode-level reason still yields counts."""
+
+    report = {
+        "records": [
+            {
+                "id": "BIOMD0000000001",
+                "format": "SBML",
+                "status": "unsupported",
+                "modes": [
+                    {
+                        "mode": "flat",
+                        "status": "unsupported",
+                        "unsupported_reason": (
+                            "SBML fbc package is present; flux-balance "
+                            "constraints/objectives define a constraint-based "
+                            "model with no kinetic BNGL equivalent."
+                        ),
+                    }
+                ],
+            },
+            {
+                "id": "BIOMD0000000002",
+                "format": "SBML",
+                "status": "passed",
+                "modes": [{"mode": "flat", "status": "passed"}],
+            },
+        ]
+    }
+    reduced = inventory.biomodels_inventory(report)
+    assert reduced["status_counts"] == {"passed": 1, "unsupported": 1}
+    assert reduced["cause_counts"] == {"constraints": 1}
+    assert reduced["cases"][0]["causes"] == ["constraints"]
+    assert (
+        reduced["cases"][0]["reason_signature"]
+        == "constraints:flux-balance-not-kinetic"
+    )
+    assert reduced["cases"][1]["causes"] == []
+    assert reduced["cases"][1]["reason_signature"] == ""
+
+
+def test_biomodels_causes_prefer_the_labels_the_harness_recorded():
+    report = {
+        "records": [
+            {
+                "id": "BIOMD0000000003",
+                "format": "SBML",
+                "status": "unsupported",
+                "unsupported_reason": "1 SBML event(s) parsed; untranslated.",
+                "unsupported_causes": ["events", "mathml"],
+                "modes": [
+                    {
+                        "mode": "flat",
+                        "status": "unsupported",
+                        "unsupported_reason": "1 SBML event(s) parsed; untranslated.",
+                    }
+                ],
+            }
+        ]
+    }
+    reduced = inventory.biomodels_inventory(report)
+    assert reduced["cases"][0]["causes"] == ["events", "mathml"]
+    assert reduced["cause_counts"] == {"events": 1, "mathml": 1}
+
+
+def test_biomodels_extraction_keeps_every_status_separate():
+    report = {
+        "records": [
+            {"id": "a", "status": "passed"},
+            {"id": "b", "status": "unsupported"},
+            {"id": "c", "status": "unsupported_format"},
+            {"id": "d", "status": "failed"},
+            {"id": "e", "status": "timeout"},
+        ]
+    }
+    reduced = inventory.biomodels_inventory(report)
+    assert reduced["status_counts"] == {
+        "failed": 1,
+        "passed": 1,
+        "timeout": 1,
+        "unsupported": 1,
+        "unsupported_format": 1,
+    }
+    assert reduced["cause_counts"] == {"format": 1, "other": 1}
+
+
+def _generated_region(document: str, name: str) -> str:
+    begin = f"<!-- BEGIN GENERATED: {name} -->"
+    end = f"<!-- END GENERATED: {name} -->"
+    start = document.index(begin) + len(begin)
+    stop = document.index(end)
+    return document[start:stop]
+
+
+@pytest.mark.smoke
+def test_the_campaign_document_tables_state_the_committed_measurement():
+    document = (REPO / "docs" / "SBML_ATOMIZER_COVERAGE_CAMPAIGN.md").read_text(
+        encoding="utf-8"
+    )
+    committed = json.loads(INVENTORY.read_text(encoding="utf-8"))
+    suite = committed["sbml_test_suite"]
+    counts = dict(suite["stage_counts"])
+    official = suite["official_reference_counts"]
+    counts["official_reference"] = {
+        "passed": official.get("passed", 0),
+        "unsupported": official.get("unsupported", 0),
+        "failed": official.get("failed", 0),
+        "not-tested": sum(
+            official.get(status, 0)
+            for status in ("timed-out", "invalid-source", "pending", "missing")
+        ),
+    }
+    region = _generated_region(document, "sbml-campaign-current")
+    labels = {
+        "conversion": "Conversion (SBML → BNGL)",
+        "roundtrip_structure": "Round-trip structure",
+        "independent_comparison": "Independent libRoadRunner comparison",
+        "official_reference": "Official reference comparison",
+    }
+    for stage, label in labels.items():
+        expected = counts[stage]
+        row = "| {} | {} | {} | {} | {} |".format(
+            label,
+            expected.get("passed", 0),
+            expected.get("unsupported", 0),
+            expected.get("failed", 0),
+            expected.get("not-tested", 0),
+        )
+        assert row in region, stage
+
+
 def _live_gate(tmp_path: Path) -> subprocess.CompletedProcess[str]:
     suite_dir = os.environ.get("BNG3_SBML_SUITE_DIR", "")
     if not suite_dir or not Path(suite_dir).is_dir():
