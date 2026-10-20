@@ -2695,7 +2695,7 @@
           "scope": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
           "dependencies": [],
           "boundaries": [
-            "Recorded boundary: the native model carries no actions, so the native reader refuses a document that states protocol actions."
+            "Recorded boundary: a barrier pattern whose transition does not reduce to one supported reaction center is refused, because such a barrier has no center to contribute to."
           ],
           "required_checks": [
             {
@@ -2733,7 +2733,7 @@
           "scope": "Round-trip and execute reconstructed models with source-text independence and fail-closed malformed-reference handling.",
           "dependencies": [],
           "boundaries": [
-            "The qualified matrix covers the v0.1 to v0.2 migration path only; the native reader's remaining refusals (rule local scopes, and a barrier pattern whose transition has no supported reaction center) are explicit boundaries, not supported execution."
+            "The qualified matrix covers the v0.1 to v0.2 migration path only. Every feature cell in it is preserved; the refusals that remain are per-feature and named: a barrier pattern whose transition has no supported reaction center, a population map without a mapping rate, and a rule modifier kind the native rule parser does not know."
           ],
           "required_checks": [
             {
@@ -3147,7 +3147,7 @@
           "scope": "Add a native export contract.",
           "dependencies": [],
           "boundaries": [
-            "The executed native export contract covers the site-free v0.2 envelope only; the site-bearing envelope is an explicit unsupported boundary."
+            "The native export contract covers the site-free and the site-bearing v0.2 envelope, and the Python reader and writer cover the site-bearing envelope separately, so a failure in one path cannot be hidden by the other."
           ],
           "required_checks": [
             {
