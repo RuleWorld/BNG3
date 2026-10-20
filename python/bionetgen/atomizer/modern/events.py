@@ -2915,6 +2915,36 @@ def _native_scaled_static(
     return f"({_format_number(factor)} * ({static}))"
 
 
+def _native_comparison_expression(
+    left_text: str,
+    right_text: str,
+    operator: str,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Render one comparison of state and static quantities in BNGL terms."""
+    symbol = _NATIVE_COMPARISON_OPERATORS[operator]
+    left_state = _native_state_target(left_text, context)
+    right_state = _native_state_target(right_text, context)
+    if left_state is not None and right_state is not None:
+        # Two states compare directly only when they share their units; a
+        # difference of two species in different compartments would need a
+        # ratio that the native trigger grammar cannot express.
+        if left_state.amount_factor != right_state.amount_factor:
+            return None
+        return f"{left_state.observable} {symbol} {right_state.observable}"
+    if left_state is not None:
+        scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
+        if scaled is None:
+            return None
+        return f"{left_state.observable} {symbol} {scaled}"
+    if right_state is not None:
+        scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
+        if scaled is None:
+            return None
+        return f"{scaled} {symbol} {right_state.observable}"
+    return None
+
+
 def _native_conjunction_expression(
     trigger: str, context: EventTranslationContext
 ) -> Optional[str]:
@@ -2940,34 +2970,13 @@ def _native_conjunction_expression(
         if arguments is None or len(arguments) != 2:
             return None
         left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
-        left_state = _native_state_target(left_text, context)
-        right_state = _native_state_target(right_text, context)
-        symbol = _NATIVE_COMPARISON_OPERATORS[operator]
-        if left_state is not None and right_state is not None:
-            if left_state.amount_factor != right_state.amount_factor:
-                return None
-            rendered.append(
-                f"{left_state.observable} {symbol} {right_state.observable}"
-            )
-            continue
-        if left_state is not None:
-            scaled = _native_scaled_static(
-                right_text, left_state.amount_factor, context
-            )
-            if scaled is None:
-                return None
-            rendered.append(f"{left_state.observable} {symbol} {scaled}")
-            continue
-        if right_state is not None:
-            scaled = _native_scaled_static(
-                left_text, right_state.amount_factor, context
-            )
-            if scaled is None:
-                return None
-            rendered.append(f"{scaled} {symbol} {right_state.observable}")
-            continue
-        return None
-    return " && ".join(f"({part})" for part in rendered)
+        expression = _native_comparison_expression(
+            left_text, right_text, operator, context
+        )
+        if expression is None:
+            return None
+        rendered.append(f"({expression})")
+    return " && ".join(rendered)
 
 
 def _native_trigger_expression(
@@ -2991,27 +3000,7 @@ def _native_trigger_expression(
     if arguments is None or len(arguments) != 2:
         return None
     left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
-    left_state = _native_state_target(left_text, context)
-    right_state = _native_state_target(right_text, context)
-    symbol = _NATIVE_COMPARISON_OPERATORS[operator]
-    if left_state is not None and right_state is not None:
-        # Two states compare directly only when they share their units; a
-        # difference of two species in different compartments would need a
-        # ratio that the native trigger grammar cannot express.
-        if left_state.amount_factor != right_state.amount_factor:
-            return None
-        return f"{left_state.observable} {symbol} {right_state.observable}"
-    if left_state is not None:
-        scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
-        if scaled is None:
-            return None
-        return f"{left_state.observable} {symbol} {scaled}"
-    if right_state is not None:
-        scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
-        if scaled is None:
-            return None
-        return f"{scaled} {symbol} {right_state.observable}"
-    return None
+    return _native_comparison_expression(left_text, right_text, operator, context)
 
 
 def _native_fold_term(
