@@ -6766,6 +6766,24 @@ def generate_bngl(
     augmented_molecule_types = list(molecule_types)
     augmented_seed_species = list(seed_species)
     seed_symbol_values = _seed_symbol_values(model, seed_species)
+    # A compartment's ``size`` attribute is ignored when an initial assignment
+    # or an assignment rule defines the size (SBML Level 3 Version 2 Core,
+    # Sec. 4.8.5).  The resolved size has to be the one the generated model
+    # emits, both as the compartment's own size and as the volume parameter
+    # the seed amounts and the rate laws use.  Two compartments whose ids
+    # normalize to the same BNGL name share that name, so their sizes cannot
+    # be told apart and are left as they are.
+    compartment_name_counts: Dict[str, int] = {}
+    for compartment_id in model.compartments:
+        name = standardize_name(str(compartment_id))
+        compartment_name_counts[name] = compartment_name_counts.get(name, 0) + 1
+    for compartment_id, compartment in model.compartments.items():
+        name = standardize_name(str(compartment_id))
+        if compartment_name_counts.get(name, 0) != 1:
+            continue
+        resolved = seed_symbol_values.get(f"__compartment_{name}__")
+        if resolved is not None and math.isfinite(resolved):
+            compartment.size = resolved
     synthetic_rate_rule_variables: Set[str] = set()
     default_compartment = next(iter(model.compartments), "")
     existing_seed_ids = {seed.sbml_id for seed in augmented_seed_species}

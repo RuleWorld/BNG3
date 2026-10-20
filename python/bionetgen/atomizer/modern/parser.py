@@ -2743,23 +2743,10 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     # simulation time inside the delayed expression moves with
                     # it, and the states it reads are replaced by their own
                     # history.
-                    delayed_first = (
-                        re.sub(
-                            r"\btime\b",
-                            f"(time - ({second}))",
-                            delayed_expression,
-                            flags=re.IGNORECASE,
-                        )
-                        if re.search(r"\btime\b", delayed_expression, re.IGNORECASE)
-                        else delayed_expression
-                    )
+                    delayed_first = delayed_expression
                     safe = bool(dynamic) and lower_affine_history
                     for identifier in identifiers:
                         if identifier in dynamic or is_static(identifier, extra_static):
-                            continue
-                        if identifier.lower() == "time":
-                            # The delayed expression's own clock moves with
-                            # the delayed read.
                             continue
                         safe = False
                         break
@@ -2854,7 +2841,9 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
     for function in model.function_definitions.values():
         function.math = replace(function.math).replace(_RATE_OF_MARKER, "")
     for event in model.events:
-        event.trigger = replace(event.trigger).replace(_RATE_OF_MARKER, "")
+        event.trigger = replace(
+            event.trigger, lower_affine_history=False
+        ).replace(_RATE_OF_MARKER, "")
         event.delay = (
             replace(event.delay).replace(_RATE_OF_MARKER, "")
             if event.delay
@@ -2867,7 +2856,9 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         )
         for assignment in event.assignments:
             if hasattr(assignment, "math"):
-                assignment.math = replace(assignment.math).replace(_RATE_OF_MARKER, "")
+                assignment.math = replace(
+                    assignment.math, lower_affine_history=False
+                ).replace(_RATE_OF_MARKER, "")
     for assignment in model.initial_assignments:
         assignment.math = replace(assignment.math).replace(_RATE_OF_MARKER, "")
 

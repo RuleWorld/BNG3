@@ -93,3 +93,44 @@ def test_assignment_ruled_compartment_size_is_not_the_declared_attribute():
 
     assert "@comp2:M_S2() 6" not in bngl
     assert "@comp2:$M_S4() 4" not in bngl
+
+
+_INITIAL_ASSIGNMENT_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="compartment_initial_assignment">
+    <listOfCompartments>
+      <compartment id="C" spatialDimensions="3" size="1" constant="false"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="C" initialConcentration="1"
+               hasOnlySubstanceUnits="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="50" constant="true"/>
+    </listOfParameters>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="C">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci> k </ci><cn> 0.1 </cn></apply>
+        </math>
+      </initialAssignment>
+    </listOfInitialAssignments>
+  </model>
+</sbml>"""
+
+
+def test_initial_assignment_replaces_the_ignored_size_attribute():
+    """The compartment's volume parameter must agree with its seed amount.
+
+    The official cases ``semantic/00781``, ``00783`` and ``00794`` set a
+    compartment's size with an initial assignment.  The declared attribute is
+    ignored, so the volume the model emits, the seed amount of the species in
+    the compartment and the concentration that is reported from them all have
+    to use the resolved size.
+    """
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_INITIAL_ASSIGNMENT_MODEL)
+    assert result.success, result.error
+    bngl = result.bngl
+
+    assert "__compartment_C__ 5" in bngl
+    assert "@C:M_S1() 5" in bngl
