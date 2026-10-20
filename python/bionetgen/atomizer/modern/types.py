@@ -391,6 +391,29 @@ class ReactionPattern:
 
 
 @dataclass
+class StructuralInference:
+    """Machine-readable record of one structural atomization decision.
+
+    The record states which molecular interpretation was inferred for an SBML
+    species, how confident that interpretation is, and which alternative
+    interpretations remain consistent with the SBML source.  ``confidence`` is
+    one of ``explicit-pattern``, ``sbo-term``, ``reaction-topology``,
+    ``name-heuristic`` or ``elemental``.
+    """
+
+    species_id: str
+    name: str = ""
+    molecules: List[str] = field(default_factory=list)
+    sites: List[str] = field(default_factory=list)
+    bonds: List[Tuple[str, str]] = field(default_factory=list)
+    states: Dict[str, str] = field(default_factory=dict)
+    confidence: str = "elemental"
+    reason: str = ""
+    alternatives: List[Dict[str, Any]] = field(default_factory=list)
+    is_elemental: bool = True
+
+
+@dataclass
 class SCTEntry:
     structure: Species
     components: List[str]
@@ -399,6 +422,7 @@ class SCTEntry:
     modifications: Dict[str, str] = field(default_factory=dict)
     weight: int = 0
     bonds: List[Tuple[str, str]] = field(default_factory=list)
+    inference: Optional[StructuralInference] = None
 
 
 @dataclass
@@ -408,6 +432,7 @@ class SpeciesCompositionTable:
     reverse_dependencies: Mapping[str, set] = field(default_factory=OrderedDict)
     sorted_species: List[str] = field(default_factory=list)
     weights: List[Tuple[str, int]] = field(default_factory=list)
+    inferences: Mapping[str, StructuralInference] = field(default_factory=OrderedDict)
 
 
 @dataclass
@@ -428,6 +453,9 @@ class AtomizerResult:
     success: bool = True
     error: Optional[str] = None
     archive_metadata: Mapping[str, Any] = field(default_factory=OrderedDict)
+    # Machine-readable structural atomization record.  Present for the
+    # atomized translation; ``None`` for the flat translation.
+    structural_inference: Optional[Mapping[str, Any]] = None
 
 
 @dataclass
@@ -537,9 +565,13 @@ SpeciesCompositionTable.reverseDependencies = _alias_property("reverse_dependenc
 SpeciesCompositionTable.sortedSpecies = _alias_property("sorted_species")
 SeedSpeciesEntry.sbmlId = _alias_property("sbml_id")
 AtomizerResult.observableMap = _alias_property("observable_map")
+AtomizerResult.structuralInference = _alias_property("structural_inference")
 NamingConventions.modificationList = _alias_property("modification_list")
 NamingConventions.reactionSite = _alias_property("reaction_site")
 NamingConventions.reactionState = _alias_property("reaction_state")
+
+StructuralInference.speciesId = _alias_property("species_id")
+StructuralInference.isElemental = _alias_property("is_elemental")
 
 
 DEFAULT_NAMING_PATTERNS = {
@@ -959,6 +991,7 @@ __all__ = [
     "SCTEntry",
     "SeedSpeciesEntry",
     "SpeciesCompositionTable",
+    "StructuralInference",
     "DEFAULT_NAMING_CONVENTIONS",
     "DEFAULT_NAMING_PATTERNS",
     "get_kinetic_math",
