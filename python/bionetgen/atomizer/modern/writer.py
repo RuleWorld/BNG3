@@ -2123,9 +2123,7 @@ def _amount_based_mass_action_constant(
     return f"({constant}) * ({volume})**{order - 1}"
 
 
-def _reaction_volume_expression(
-    reaction: SBMLReaction, model: SBMLModel
-) -> str:
+def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str:
     """Return the BNGL size expression of a reaction's compartment.
 
     The compartment is the reaction's own ``compartment`` attribute when it

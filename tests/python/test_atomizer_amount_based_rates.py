@@ -79,9 +79,7 @@ def test_amount_based_unimolecular_rate_keeps_its_constant():
             species=_species(),
             reactants='<speciesReference species="S1" stoichiometry="1"/>',
             products='<speciesReference species="S3" stoichiometry="1"/>',
-            law=(
-                '<apply><times/><ci>k1</ci><ci>S1</ci></apply>'
-            ),
+            law=("<apply><times/><ci>k1</ci><ci>S1</ci></apply>"),
         )
     )
 
@@ -100,9 +98,7 @@ def test_amount_based_bimolecular_rate_gains_one_volume_factor():
                 '<speciesReference species="S2" stoichiometry="1"/>'
             ),
             products='<speciesReference species="S3" stoichiometry="1"/>',
-            law=(
-                '<apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>'
-            ),
+            law=("<apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>"),
         )
     )
 
@@ -123,9 +119,7 @@ def test_concentration_based_rate_keeps_its_constant():
                 '<speciesReference species="S2" stoichiometry="1"/>'
             ),
             products='<speciesReference species="S3" stoichiometry="1"/>',
-            law=(
-                '<apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>'
-            ),
+            law=("<apply><times/><ci>C</ci><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>"),
         )
     )
 
