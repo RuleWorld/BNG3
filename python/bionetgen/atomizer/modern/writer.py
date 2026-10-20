@@ -4002,7 +4002,18 @@ def _curated_parameter_value(model: SBMLModel, parameter_id: str, value: object)
         )
         return "0"
     if math.isinf(number):
-        return "-1e20" if number < 0 else "1e20"
+        # An infinite quantity has no finite BNGL spelling.  Report the
+        # approximation instead of silently substituting a large finite
+        # number, so the model is not presented as exact when it is not.
+        emitted = "-1e20" if number < 0 else "1e20"
+        _record_import_warning(
+            model,
+            f'Parameter "{parameter_id}" has an infinite value; emitted '
+            f"{emitted} as a finite BNGL approximation.",
+            category="parameter",
+            severity="approximated",
+        )
+        return emitted
     return _number(number)
 
 

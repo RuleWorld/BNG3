@@ -1094,6 +1094,14 @@ def _reference_output_target(
     """Map an SBML result id to its exact generated BNGL output symbol."""
 
     if variable == "time":
+        # A model may declare a parameter whose identifier is ``time``.  BNGL
+        # reserves ``time`` as a built-in operand, so the Atomizer emits that
+        # parameter under a non-reserved spelling and the reference variable
+        # is the parameter, not the simulation time.  Only a model without
+        # such a parameter means the simulation time here.
+        parameter_name = standardize_name(variable)
+        if parameter_name in parsed.parameters:
+            return parameter_name
         return "time"
 
     def compartment_volume(compartment_id: str) -> str | None:

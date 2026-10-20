@@ -312,6 +312,43 @@ def test_official_concentration_uses_amount_and_current_compartment_volume():
     assert target == "S_amt / C_amt"
 
 
+def test_reference_time_variable_maps_to_a_declared_time_parameter():
+    # A model may declare a parameter whose identifier is ``time``.  BNGL
+    # reserves ``time`` as a built-in operand, so the Atomizer emits that
+    # parameter under a non-reserved spelling and the reference variable is
+    # the parameter rather than the simulation time.
+    from bionetgen.atomizer.modern.types import standardize_name
+
+    validator = _load_validator("validate_sbml_test_suite")
+    reference = {"amount": [], "concentration": []}
+
+    declared = SimpleNamespace(
+        species={},
+        compartments={},
+        parameters={"time_id": object()},
+        rules=[],
+    )
+    assert (
+        validator._reference_output_target(
+            "time", reference, declared, {}, standardize_name
+        )
+        == "time_id"
+    )
+
+    without = SimpleNamespace(
+        species={},
+        compartments={},
+        parameters={},
+        rules=[],
+    )
+    assert (
+        validator._reference_output_target(
+            "time", reference, without, {}, standardize_name
+        )
+        == "time"
+    )
+
+
 def test_curated_biomodel_gate_blocks_approximated_semantics():
     validator = _load_validator("validate_published_biomodels")
     warnings = [
