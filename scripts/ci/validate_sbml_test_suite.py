@@ -15,6 +15,7 @@ import argparse
 import concurrent.futures
 import contextlib
 import csv
+import errno
 import hashlib
 import importlib
 import importlib.metadata
@@ -2479,17 +2480,15 @@ def _jobs_advisory(jobs: int) -> str | None:
     return None
 
 
-class VerificationSlotBusy(RuntimeError):
-    """Raised when the shared full-suite verification slot is held elsewhere."""
-
-
 @contextlib.contextmanager
 def _verification_slot(lock_path: Path, wait_seconds: float):
-    """Hold the shared full-suite verification slot for the duration of a run.
+    """Coordinate full-suite runs through a shared verification slot.
 
-    Only one full-suite verification may run on a machine at a time, so a
-    campaign of agents does not push the load average past the machine's
-    capacity.  The slot never changes a verdict: it only serializes runs.
+    The slot is advisory.  It serialises the runs that are willing to wait
+    for it, and it never blocks, fails, or changes the verdict of a run that
+    cannot take it: an unusable lock file, an unsupported platform, or a slot
+    that stays busy past the bounded wait all fall through to the run
+    proceeding without the slot.
     """
 
     try:
@@ -2502,26 +2501,45 @@ def _verification_slot(lock_path: Path, wait_seconds: float):
         handle = lock_path.open("a+", encoding="utf-8")
     except OSError as exc:
         print(
-            f"warning: verification slot {lock_path} is unusable ({exc}); "
-            "continuing without the shared slot",
+            f"warning: the shared verification slot {lock_path} is unusable "
+            f"({exc}); continuing without the slot",
             file=sys.stderr,
         )
         yield None
         return
     deadline = time.monotonic() + max(0.0, wait_seconds)
+    announced = False
     while True:
         try:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             break
-        except OSError:
-            if time.monotonic() >= deadline:
-                handle.close()
-                raise VerificationSlotBusy(
-                    f"the shared SBML verification slot {lock_path} is busy; "
-                    "wait for the running verification or pass --lock-wait to "
-                    "extend the wait"
+        except OSError as exc:
+            if exc.errno not in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK):
+                print(
+                    f"warning: the shared verification slot {lock_path} cannot be "
+                    f"locked ({exc}); continuing without the slot",
+                    file=sys.stderr,
                 )
-            time.sleep(1.0)
+                handle.close()
+                yield None
+                return
+            if not announced:
+                print(
+                    f"the shared SBML verification slot {lock_path} is busy; "
+                    f"waiting up to {wait_seconds:g}s",
+                    file=sys.stderr,
+                )
+                announced = True
+            if time.monotonic() >= deadline:
+                print(
+                    f"the shared SBML verification slot {lock_path} is still busy; "
+                    "continuing without the slot",
+                    file=sys.stderr,
+                )
+                handle.close()
+                yield None
+                return
+            time.sleep(2.0)
     try:
         handle.seek(0)
         handle.truncate()
@@ -2662,7 +2680,10 @@ def main() -> int:
         "--lock-wait",
         type=float,
         default=0.0,
-        help="seconds to wait for the shared full-suite verification slot",
+        help=(
+            "seconds to wait for the shared full-suite verification slot; the "
+            "run proceeds without the slot when the wait expires"
+        ),
     )
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--simulation-t-end", type=float, default=1.0)
@@ -2753,22 +2774,21 @@ def main() -> int:
         ) from exc
     runtime_info = _runtime_provenance(cpp)
 
-    isolation_mode = args.isolation_mode if args.isolate_cases else "none"
+    isolation_mode = "none"
     if args.isolate_cases and not args.worker:
         if args.jobs < 1:
             raise SystemExit("--jobs must be at least one")
         advisory = _jobs_advisory(args.jobs)
         if advisory:
             print(f"warning: {advisory}", file=sys.stderr)
-        if args.isolation_mode == "fork" and not hasattr(os, "fork"):
+        isolation_mode = args.isolation_mode
+        if isolation_mode == "fork" and not hasattr(os, "fork"):
             print(
                 "warning: fork isolation is unavailable on this platform; "
                 "using one fresh interpreter per case",
                 file=sys.stderr,
             )
             isolation_mode = "process"
-        else:
-            isolation_mode = args.isolation_mode
 
     records = []
     take_slot = not args.no_lock and not args.worker and not partial
@@ -2777,55 +2797,52 @@ def main() -> int:
         if take_slot
         else contextlib.nullcontext(None)
     )
-    try:
-        with slot:
-            with tempfile.TemporaryDirectory(prefix="bng3-sbml-suite-") as temp:
-                work_dir = Path(temp)
-                if args.isolate_cases and not args.worker:
-                    if isolation_mode == "fork":
-                        # The fork mode reports each case as it completes.
-                        records = _run_forked_cases(
-                            selected, args, cpp, runtime_info, args.jobs
-                        )
-                    else:
-                        with concurrent.futures.ThreadPoolExecutor(
-                            max_workers=args.jobs
-                        ) as pool:
-                            records = list(
-                                pool.map(
-                                    lambda case: _run_isolated_case(
-                                        case, args, runtime_info
-                                    ),
-                                    selected,
-                                )
-                            )
-                        for case, record in zip(selected, records):
-                            print(
-                                f"{case['category']}/{case['id']}: "
-                                f"{record['status'].upper()}",
-                                flush=True,
-                            )
+    slot_handle = None
+    with slot as slot_handle:
+        with tempfile.TemporaryDirectory(prefix="bng3-sbml-suite-") as temp:
+            work_dir = Path(temp)
+            if args.isolate_cases and not args.worker:
+                if isolation_mode == "fork":
+                    # The fork mode reports each case as it completes.
+                    records = _run_forked_cases(
+                        selected, args, cpp, runtime_info, args.jobs
+                    )
                 else:
-                    for case in selected:
-                        record = _validate_case(
-                            case,
-                            cpp,
-                            work_dir,
-                            args.simulation_t_end,
-                            args.simulation_n_steps,
-                            args.simulation_rtol,
-                            args.simulation_atol,
-                            args.artifacts_dir,
+                    with concurrent.futures.ThreadPoolExecutor(
+                        max_workers=args.jobs
+                    ) as pool:
+                        records = list(
+                            pool.map(
+                                lambda case: _run_isolated_case(
+                                    case, args, runtime_info
+                                ),
+                                selected,
+                            )
                         )
-                        records.append(record)
+                    for case, record in zip(selected, records):
                         print(
                             f"{case['category']}/{case['id']}: "
                             f"{record['status'].upper()}",
                             flush=True,
                         )
-    except VerificationSlotBusy as exc:
-        print(f"verification slot busy: {exc}", file=sys.stderr)
-        return 2
+            else:
+                for case in selected:
+                    record = _validate_case(
+                        case,
+                        cpp,
+                        work_dir,
+                        args.simulation_t_end,
+                        args.simulation_n_steps,
+                        args.simulation_rtol,
+                        args.simulation_atol,
+                        args.artifacts_dir,
+                    )
+                    records.append(record)
+                    print(
+                        f"{case['category']}/{case['id']}: "
+                        f"{record['status'].upper()}",
+                        flush=True,
+                    )
 
     unsupported_summary = _unsupported_summary(records)
     counts = {
@@ -2891,7 +2908,9 @@ def main() -> int:
             "mode": isolation_mode,
             "jobs": args.jobs if args.isolate_cases and not args.worker else None,
             "case_timeout": args.case_timeout,
-            "verification_slot": str(args.lock_file) if take_slot else None,
+            "verification_slot": (
+                str(args.lock_file) if slot_handle is not None else None
+            ),
         },
         "case_inventory": len(cases),
         "full_suite_inventory": full_suite_inventory,

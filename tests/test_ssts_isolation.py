@@ -301,8 +301,8 @@ def test_fork_isolation_keeps_a_failing_case_from_reaching_its_neighbour(
     assert "deliberate failure" in records[0]["error"]
 
 
-def test_full_suite_run_takes_the_shared_verification_slot(tmp_path):
-    """A second full-suite run must be refused while the slot is held."""
+def test_busy_verification_slot_never_blocks_or_fails_a_run(tmp_path):
+    """A busy slot must be reported and must not fail the run."""
 
     pytest.importorskip("bionetgen._bionetgen_cpp")
     suite, lock = _locked_ssts_checkout(tmp_path)
@@ -315,33 +315,25 @@ def test_full_suite_run_takes_the_shared_verification_slot(tmp_path):
             lock,
             report,
             "fork",
-            ["--lock-file", str(slot)],
+            ["--lock-file", str(slot), "--lock-wait", "0"],
             categories=["semantic", "stochastic"],
         )
-        assert result.returncode == 2, result.stdout + result.stderr
-        assert "verification slot busy" in result.stderr
-        assert not report.exists()
-
-        opted_out = _run_gate(
-            suite,
-            lock,
-            report,
-            "fork",
-            ["--lock-file", str(slot), "--no-lock"],
-            categories=["semantic", "stochastic"],
-        )
-        assert "verification slot busy" not in opted_out.stderr
+        assert "verification slot" in result.stderr
         assert report.is_file()
 
+        document = json.loads(report.read_text(encoding="utf-8"))
+        assert document["case_isolation"]["verification_slot"] is None
+        assert document["records"]
 
-def test_verification_slot_is_released_after_a_run(tmp_path):
+
+def test_verification_slot_is_held_for_the_run_and_released_after(tmp_path):
     """The slot must not survive the run that took it."""
 
     slot = tmp_path / "verification.lock"
-    with runner._verification_slot(slot, 0.0):
-        pass
-    with runner._verification_slot(slot, 0.0):
-        pass
+    with runner._verification_slot(slot, 0.0) as handle:
+        assert handle is not None
+    with runner._verification_slot(slot, 0.0) as handle:
+        assert handle is not None
 
 
 def test_jobs_advisory_warns_when_the_run_oversubscribes_the_machine():
