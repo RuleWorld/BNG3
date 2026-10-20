@@ -11,14 +11,14 @@ from .campaign import STATUSES
 ISSUES = [155, 156]
 _ROUNDTRIP_NATIVE = "bngir-export:v02-independent-roundtrip"
 _ROUNDTRIP_SITE_BEARING = "bngir-export:v02-site-bearing-roundtrip"
-_SITE_BEARING_UNSUPPORTED = "bngir-export:v02-site-bearing-unsupported"
+_SITE_BEARING_PYTHON = "bngir-export:v02-site-bearing-python-roundtrip"
 _CANONICAL_BYTES = "bngir-export:canonical-bytes-determinism"
 _EQUALITY = "bngir-equality:v01-v02-identity-provenance"
 _VERSION_POLICY = "bngir-equality:approved-default-v01-explicit-v02"
 CHECKS = (
     _ROUNDTRIP_NATIVE,
     _ROUNDTRIP_SITE_BEARING,
-    _SITE_BEARING_UNSUPPORTED,
+    _SITE_BEARING_PYTHON,
     _CANONICAL_BYTES,
     _EQUALITY,
     _VERSION_POLICY,
@@ -174,17 +174,17 @@ def run_worker(directory: Path):
             _fixture("v0.2-site-free-version-bridge.json"),
             _ROUNDTRIP_NATIVE,
         ),
-        _python_roundtrip(
+        _native_roundtrip(
             directory,
             site_bearing_artifact,
             _fixture("v0.2-version-bridge.json"),
             _ROUNDTRIP_SITE_BEARING,
         ),
-        _native_roundtrip(
+        _python_roundtrip(
             directory,
             site_bearing_artifact,
             _fixture("v0.2-version-bridge.json"),
-            _SITE_BEARING_UNSUPPORTED,
+            _SITE_BEARING_PYTHON,
         ),
     ]
 

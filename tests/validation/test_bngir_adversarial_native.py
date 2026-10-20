@@ -30,14 +30,14 @@ def test_native_bngir_export_equality_and_version_contracts(tmp_path):
     assert [row["status"] for row in rows] == [
         "PASS",
         "PASS",
-        "UNSUPPORTED",
+        "PASS",
         "PASS",
         "PASS",
         "PASS",
     ]
     assert "reproduces the frozen hand-reviewed v0.2 document" in rows[0]["detail"]
-    assert "site-bearing v0.2 document" in rows[1]["detail"]
-    assert "site-bearing molecule type" in rows[2]["detail"]
+    assert "reproduces the frozen hand-reviewed v0.2 document" in rows[1]["detail"]
+    assert "site-bearing v0.2 document" in rows[2]["detail"]
     for row in rows:
         assert row["related_issues"] == [155, 156]
         assert row["status"] in format_contracts.STATUSES

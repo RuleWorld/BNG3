@@ -2378,11 +2378,7 @@
           "scope": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
           "dependencies": [],
           "boundaries": [
-            "Recorded boundary: the C++ native importer accepts a conversion expressed with an empty mutation list while the Python-level native adapter refuses the same document because the compiled semantics differ; the qualified reconstruction uses the C++ native importer.",
-            "Recorded boundary: the native model carries no actions, so the native reader refuses a document that states protocol actions.",
-            "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free envelope only.",
-            "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free v0.2 envelope only.",
-            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+            "Recorded boundary: the native model carries no actions, so the native reader refuses a document that states protocol actions."
           ],
           "required_checks": [
             {
@@ -2586,13 +2582,8 @@
           "scope": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "dependencies": [],
           "boundaries": [
-            "Recorded boundary: the native reader refuses a rule mutation whose site reference is out of range; a site-bearing molecule type is outside the native envelope.",
-            "Recorded boundary: the native reader refuses energy patterns, site-bearing molecule types, and rule filters and local scopes; the migration preserves them and the native import refuses them explicitly.",
-            "Recorded boundary: the native reader refuses rule filters and local scopes explicitly; the Python reader accepts filters, so the two entry points differ.",
             "Recorded boundary: the native reader refuses rule local scopes, because the native rule collects them from pattern text the wire format does not carry.",
-            "Recorded boundary: the native reader refuses site-bearing molecule types and rule filters and local scopes; the migration preserves them and the native import refuses them explicitly.",
-            "Recorded boundary: the v0.2 rule format has no driving-work field, so the v0.2 writer refuses a rule that carries one and points at the version that can represent it.",
-            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+            "Recorded boundary: the v0.2 rule format has no driving-work field, so the v0.2 writer refuses a rule that carries one and points at the version that can represent it."
           ],
           "required_checks": [
             {
@@ -2650,12 +2641,7 @@
           "scope": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
           "dependencies": [],
           "boundaries": [
-            "Recorded boundary: population types, population maps and protocol actions are refused explicitly.",
-            "Recorded boundary: the v0.1 reader refuses barrier patterns and population maps because the engine does not compile them; each refusal names the feature.",
-            "Recorded boundary: the v0.1 reader refuses barrier patterns because the engine does not compile a barrier pattern, and refuses population maps because the wire format does not carry a population map's rate.",
-            "Recorded boundary: the v0.1 reader refuses barrier patterns, population types, population maps and protocol actions because the engine does not compile them; each refusal names the feature.",
-            "Recorded boundary: v0.2 cannot represent 'molecules' observable kinds; the migration refuses them explicitly.",
-            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+            "Recorded boundary: the v0.1 reader refuses barrier patterns because the engine does not compile a barrier pattern, and refuses population maps because the wire format does not carry a population map's rate."
           ],
           "required_checks": [
             {
@@ -2829,20 +2815,8 @@
           "criterion": "Add native import/export contracts, version migration and deterministic serialization fixtures.",
           "scope": "Add a native import contract.",
           "dependencies": [],
-          "boundaries": [
-            "The native reader refuses site-bearing molecule types; only the site-free v0.2 envelope is natively importable."
-          ],
-          "required_checks": [
-            {
-              "id": "bngir-export:v02-site-bearing-unsupported",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "Native import of the retained site-bearing v0.2 document is explicitly refused as an ordinary site-free type.",
-              "identity_requirements": [
-                "source.revision",
-                "subject.sha256"
-              ]
-            }
-          ],
+          "boundaries": [],
+          "required_checks": [],
           "test_references": [
             "tests/validation/bngir_format_contracts.py"
           ],
@@ -2858,8 +2832,7 @@
           "scope": "Add a native export contract.",
           "dependencies": [],
           "boundaries": [
-            "The executed native export contract covers the site-free v0.2 envelope only; the site-bearing envelope is an explicit unsupported boundary.",
-            "The site-bearing export contract is exercised through the Python reader; the native reader refuses site-bearing molecule types, so the two contracts are reported separately."
+            "The executed native export contract covers the site-free v0.2 envelope only; the site-bearing envelope is an explicit unsupported boundary."
           ],
           "required_checks": [
             {
@@ -2875,6 +2848,15 @@
               "id": "bngir-export:v02-site-bearing-roundtrip",
               "evidence_kind": "native-bngir-semantic-control",
               "expectation": "Python import and export reproduce the frozen site-bearing v0.2 document; the native reader refuses this envelope, so the two contracts stay distinct.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-export:v02-site-bearing-python-roundtrip",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Python import and export of the retained site-bearing v0.2 document reproduces it exactly.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"

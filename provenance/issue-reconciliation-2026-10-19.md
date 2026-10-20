@@ -638,7 +638,8 @@ removed from the obligation catalog:
   the include/exclude modifier text the native rule parser understands.
 - The native reader refused site-bearing molecule types and the patterns that use them. The
   importer now builds the molecule type's components and lowers each site to the component
-  node the parser's own pattern builder produces, with the state constraint and the bond.
+  node the parser's own pattern builder produces, with the state constraint and the bond. The
+  native export contract now covers the site-bearing envelope as well as the site-free one.
 - The native reader refused a rule's state change. The document's state change is now checked
   against the product pattern's site state, because the native rule derives the change from
   the reactant and product patterns.
@@ -654,6 +655,7 @@ not carry.
 ### Export contract scope
 
 `bngir-export:v02-site-bearing-roundtrip` exercises the site-bearing v0.2 envelope through
-the Python reader and writer, and is reported separately from the native contract because
-the native reader refuses site-bearing molecule types. The native export contract therefore
-covers the site-free envelope only; that remains an explicit boundary, not a silent gap.
+the native reader and writer, and `bngir-export:v02-site-bearing-python-roundtrip` exercises
+the same envelope through the Python reader and writer. Both reproduce the retained document
+exactly. The site-free envelope has its own contract, `bngir-export:v02-independent-roundtrip`,
+so the two envelopes stay separately visible.
