@@ -736,3 +736,33 @@ def test_the_manifests_stage_counts_agree_with_its_per_case_verdicts():
         tally = Counter(entry[stage] for entry in cases.values())
         assert dict(sorted(tally.items())) == recorded[stage], stage
         assert sum(recorded[stage].values()) == len(cases), stage
+
+
+def test_the_manifest_step_compares_whenever_the_tool_supports_expectations(
+    tmp_path,
+):
+    """A tool that can compare must never be mistaken for one that cannot.
+
+    The step reads the tool's usage text rather than piping it into a
+    matcher, so a tool that writes a long usage text cannot lose the
+    comparison to a broken pipe.
+    """
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _stub_tool(
+        root,
+        "import sys\n"
+        "if '--help' in sys.argv:\n"
+        "    print('usage: sbml_campaign_inventory.py [-h] [--suite-report X] "
+        "[--expectations X] --out OUT')\n"
+        "    for index in range(2000):\n"
+        "        print('filler line ' + str(index))\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+    )
+    result = _run_manifest_step(root, tmp_path)
+    # The tool supports --expectations, so the step must compare and fail on
+    # the tool's non-zero exit, not skip.
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "::notice::" not in result.stdout

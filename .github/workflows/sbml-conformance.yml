@@ -147,7 +147,14 @@ jobs:
             echo "::notice::This branch predates the campaign inventory tool, so there is no expectation manifest to compare against and the comparison does not apply here."
             exit 0
           fi
-          if ! python "$tool" --help | grep -q -- '--expectations'; then
+          # Capture the usage text instead of piping it: grep -q exits at the
+          # first match, and with pipefail a SIGPIPE in the tool would look
+          # like a missing option and skip the comparison silently.
+          if ! usage="$(python "$tool" --help 2>&1)"; then
+            echo "::error::The campaign inventory tool could not report its usage; the expectation-manifest comparison cannot run."
+            exit 1
+          fi
+          if ! grep -q -- '--expectations' <<<"$usage"; then
             echo "::notice::This branch's campaign inventory tool predates the SBML expectation manifest, so the run is not compared against it and the comparison does not apply here. The scheduled full-suite run on main compares every case."
             exit 0
           fi
