@@ -32,9 +32,13 @@ def _workflow_runs(payload: Any) -> list[dict[str, Any]]:
 
 
 def qualify_workflow_runs(
-    payload: Any, candidate_sha: str, required_workflows: tuple[str, ...] | list[str]
+    payload: Any,
+    candidate_sha: str,
+    required_workflows: tuple[str, ...] | list[str],
+    *,
+    event: str = "push",
 ) -> list[str]:
-    """Return required workflows without a successful push run on exact main SHA."""
+    """Return workflows without a successful run for the event on exact main SHA."""
 
     runs = _workflow_runs(payload)
     missing = []
@@ -43,7 +47,7 @@ def qualify_workflow_runs(
             run.get("name") == workflow
             and run.get("head_sha") == candidate_sha
             and run.get("head_branch") == "main"
-            and run.get("event") == "push"
+            and run.get("event") == event
             and run.get("status") == "completed"
             and run.get("conclusion") == "success"
             for run in runs
@@ -56,6 +60,7 @@ def qualify_workflow_runs(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs-json", type=Path, required=True)
+    parser.add_argument("--sbml-runs-json", type=Path, required=True)
     parser.add_argument("--sha", required=True)
     args = parser.parse_args()
 
@@ -64,18 +69,30 @@ def main() -> int:
     try:
         payload = json.loads(args.runs_json.read_text(encoding="utf-8"))
         missing = qualify_workflow_runs(payload, args.sha, REQUIRED_WORKFLOWS)
+        sbml_payload = json.loads(args.sbml_runs_json.read_text(encoding="utf-8"))
+        missing.extend(
+            qualify_workflow_runs(
+                sbml_payload,
+                args.sha,
+                ["Official SBML conformance subset"],
+                event="workflow_dispatch",
+            )
+        )
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"Cannot qualify release candidate: {exc}", file=sys.stderr)
         return 2
 
     if missing:
         print(
-            "Release blocked; no successful completed main push run for exact "
+            "Release blocked; missing successful completed exact-main workflow run for "
             f"SHA {args.sha}: {', '.join(missing)}",
             file=sys.stderr,
         )
         return 1
-    print(f"Required main push workflows passed for exact SHA {args.sha}.")
+    print(
+        "Required exact-main workflow runs passed for candidate SHA "
+        f"{args.sha} (four push workflows and official SBML manual evidence)."
+    )
     return 0
 
 

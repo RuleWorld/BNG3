@@ -959,12 +959,15 @@ def test_release_workflow_requires_exact_main_sha_qualification():
     assert "fetch-depth: 0" in qualify
     assert "git merge-base --is-ancestor" in qualify
     assert "gh api" in qualify
+    assert "event=workflow_dispatch" in qualify
+    assert "--sbml-runs-json" in qualify
 
     qualification_script = (
         REPO / "scripts" / "ci" / "qualify_release_candidate.py"
     ).read_text(encoding="utf-8")
     for workflow_name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"):
         assert f'"{workflow_name}"' in qualification_script
+    assert '"Official SBML conformance subset"' in qualification_script
 
 
 def test_release_binaries_smoke_before_packaging():
@@ -1009,6 +1012,103 @@ def test_release_run_qualification_requires_success_for_each_exact_main_push():
 
     failed = [dict(run, conclusion="failure") for run in runs]
     assert qualify_workflow_runs({"workflow_runs": failed}, sha, names) == names
+
+
+@pytest.mark.parametrize(
+    "overrides, expected",
+    [
+        (None, ["Official SBML conformance subset"]),
+        (
+            {"status": "in_progress", "conclusion": None},
+            ["Official SBML conformance subset"],
+        ),
+        ({"conclusion": "failure"}, ["Official SBML conformance subset"]),
+        ({"head_sha": "b" * 40}, ["Official SBML conformance subset"]),
+        ({"head_branch": "release"}, ["Official SBML conformance subset"]),
+        ({"event": "push"}, ["Official SBML conformance subset"]),
+        ({}, []),
+    ],
+)
+def test_release_run_qualification_requires_official_sbml_manual_run(
+    overrides, expected
+):
+    from scripts.ci.qualify_release_candidate import qualify_workflow_runs
+
+    run = {
+        "name": "Official SBML conformance subset",
+        "head_sha": "a" * 40,
+        "head_branch": "main",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+    }
+    if overrides is not None:
+        run.update(overrides)
+    payload = {"workflow_runs": [] if overrides is None else [run]}
+    assert (
+        qualify_workflow_runs(
+            payload,
+            "a" * 40,
+            ["Official SBML conformance subset"],
+            event="workflow_dispatch",
+        )
+        == expected
+    )
+
+
+def test_release_qualification_cli_consumes_both_workflow_payloads(tmp_path):
+    sha = "a" * 40
+    push_runs = [
+        {
+            "name": name,
+            "head_sha": sha,
+            "head_branch": "main",
+            "event": "push",
+            "status": "completed",
+            "conclusion": "success",
+        }
+        for name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL")
+    ]
+    push_path = tmp_path / "push.json"
+    sbml_path = tmp_path / "sbml.json"
+    push_path.write_text(json.dumps({"workflow_runs": push_runs}), encoding="utf-8")
+    sbml_path.write_text(json.dumps({"workflow_runs": []}), encoding="utf-8")
+    command = [
+        sys.executable,
+        str(REPO / "scripts" / "ci" / "qualify_release_candidate.py"),
+        "--runs-json",
+        str(push_path),
+        "--sbml-runs-json",
+        str(sbml_path),
+        "--sha",
+        sha,
+    ]
+
+    missing = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert missing.returncode == 1
+    assert "Official SBML conformance subset" in missing.stderr
+
+    sbml_path.write_text(
+        json.dumps(
+            {
+                "workflow_runs": [
+                    {
+                        "name": "Official SBML conformance subset",
+                        "head_sha": sha,
+                        "head_branch": "main",
+                        "event": "workflow_dispatch",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    accepted = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert accepted.returncode == 0
+    assert "official SBML manual evidence" in accepted.stdout
+    assert "bounded" not in accepted.stdout
 
 
 def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):

@@ -49,12 +49,14 @@ def acceptance_markdown(report):
         "| --- | --- | --- | --- |",
     ]
     for row in report["queue"]:
+        if row["rank"] is None:
+            continue
         lines.append(
             f"| {row['rank']} | #{row['number']} | {safe(row['obligation_outcomes'])} | {safe(', '.join(row['remaining_obligations']))} |"
         )
     lines += [
         "",
-        "Ranking: confirmed failing obligations, shared selected-family impact, then remaining obligations. Counts are not completion percentages.",
+        "Ranking (live OPEN issues only; inactive evidence is retained below): confirmed failing obligations, shared selected-family impact, then remaining obligations. Counts are not completion percentages.",
         "",
         "## Evidence audit",
         "",
@@ -64,7 +66,7 @@ def acceptance_markdown(report):
     for row in report["queue"]:
         lines += [
             "",
-            f"## #{row['number']}",
+            f"## #{row['number']} ({row['state']})",
             "",
             safe(row["ranking_basis"]) + ". " + row["ranking_explanation"],
             "",

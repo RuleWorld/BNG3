@@ -441,8 +441,20 @@ def assess_obligations(obligations, reports, revision):
     return dict(obligations=assessed, evidence_audit=audit)
 
 
-def select_campaign(obligations, *, findings=(), max_families=3):
+def select_campaign(obligations, *, findings=(), max_families=3, active_issues=None):
     """Choose plans from existing generators; this never authorizes execution."""
+    if active_issues is not None:
+        obligations = [o for o in obligations if o.get("issue") in active_issues]
+        findings = [
+            dict(
+                row,
+                related_issues=sorted(
+                    set(row.get("related_issues", [])) & active_issues
+                ),
+            )
+            for row in findings
+            if set(row.get("related_issues", [])) & active_issues
+        ]
     if type(max_families) is not int or not 0 <= max_families <= 10:
         raise ValueError("campaign family budget must be between zero and ten")
     from .integrated_cases import generated_cases
@@ -607,7 +619,7 @@ def acceptance_dashboard(queue, assessment, campaigns):
             "Confirmed failing obligations first, then shared selected-family impact, then concrete remaining obligations; decisions and unmapped scope remain blocking."
         )
     ranked = sorted(
-        queue,
+        (row for row in queue if row["state"] == "OPEN"),
         key=lambda r: (
             -r["ranking_basis"]["confirmed_failures"],
             -r["ranking_basis"]["shared_issues"],
@@ -617,7 +629,13 @@ def acceptance_dashboard(queue, assessment, campaigns):
     )
     for index, row in enumerate(ranked, 1):
         row["rank"] = index
-    return ranked
+    inactive = sorted(
+        (row for row in queue if row["state"] != "OPEN"),
+        key=lambda row: row["number"],
+    )
+    for row in inactive:
+        row["rank"] = None
+    return ranked + inactive
 
 
 def source_drift(lock, heads):
@@ -794,6 +812,9 @@ def main(argv=None):
             assessment["obligations"],
             findings=[row for r in usable for row in r.get("results", [])],
             max_families=args.max_families,
+            active_issues={
+                issue["number"] for issue in issues if issue.get("state") == "OPEN"
+            },
         )
         queue = acceptance_dashboard(
             build_queue(issues, usable, args.revision), assessment, campaigns
