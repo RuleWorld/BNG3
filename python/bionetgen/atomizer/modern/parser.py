@@ -2051,6 +2051,16 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         for assignment in event.assignments
         if getattr(assignment, "variable", None)
     )
+    # An initial assignment keeps its target in effect for every time before
+    # the simulation starts, and its value may differ at each of those times
+    # (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of time").  A symbol
+    # with such an assignment is therefore not a compile-time constant, and a
+    # delayed read of it must not be replaced by its value at ``t = 0``.
+    controlled.update(
+        standardize_name(str(assignment.symbol))
+        for assignment in model.initial_assignments
+        if getattr(assignment, "symbol", None)
+    )
     algebraic_symbols = {
         standardize_name(name)
         for rule in model.rules
@@ -3068,7 +3078,7 @@ class SBMLParser:
         # alias substitution, so that a model parameter whose id is ``time``
         # keeps its own meaning while the csymbol keeps denoting the
         # simulation time.
-        return normalized.replace(_SBML_CSYMBOL_TIME, "time")
+        return re.sub(rf"\b{re.escape(_SBML_CSYMBOL_TIME)}\b", "time", normalized)
 
     @staticmethod
     def _parse_xml_model(

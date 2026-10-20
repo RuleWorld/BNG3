@@ -3351,6 +3351,16 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             slope = initial_expression(derivative, require_immutable_symbols=True)
             return (initial, slope) if slope is not None else None
 
+        if any(rule.type == "algebraic" for rule in target_rules):
+            return None
+        parameter = model.parameters.get(target)
+        if parameter is not None:
+            # A parameter that no rule and no event assignment touches keeps
+            # the value its initial assignment gave it at ``t = 0`` for the
+            # whole run (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of
+            # time"), so its trajectory is constant.
+            return (initial, 0.0)
+
         species = model.species.get(target)
         if species is None:
             return None
@@ -3536,6 +3546,10 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             return None
         if history is None:
             history = repr(initial)
+        if slope == 0:
+            # A state with a constant trajectory holds the same value at every
+            # time, so the delayed read is that value.
+            return f"if(time < {duration!r}, {history}, {initial!r})"
         return f"if(time < {duration!r}, {history}, ({target} - {displacement!r}))"
 
     def fold_bounded_delays(
@@ -3706,6 +3720,29 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 reference.stoichiometry_set = True
                 reference.variable_stoichiometry = False
                 lowered += count
+
+    # An initial assignment is evaluated once, at the start of the simulation
+    # (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of time"): a symbol
+    # that no rule and no event assignment touches keeps the value it had at
+    # ``t = 0`` for the whole run.  The pre-simulation history has already
+    # been folded into the delayed reads above, so the assignment may now be
+    # reduced to that value instead of being re-evaluated at every time.
+    for assignment in model.initial_assignments:
+        symbol = str(getattr(assignment, "symbol", "") or "")
+        if not symbol or symbol in model.species:
+            continue
+        if any(rule.variable == symbol for rule in model.rules):
+            continue
+        if any(
+            getattr(event_assignment, "variable", None) == symbol
+            for event in model.events
+            for event_assignment in event.assignments
+        ):
+            continue
+        value = initial_value(symbol)
+        if value is None or not math.isfinite(value):
+            continue
+        assignment.math = repr(value)
 
     if not lowered:
         return 0
