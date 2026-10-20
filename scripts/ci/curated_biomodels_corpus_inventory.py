@@ -496,6 +496,12 @@ def main() -> int:
             "base_commit": args.base_commit,
             "measurement_date": args.measurement_date,
             "tool_versions": _tool_versions(),
+            "note": (
+                "The per-record status is the status the reduced harness report "
+                "records.  The effect of the change under review is stated "
+                "separately, in residuals.branch_effect, with the records it "
+                "touches and where they were measured."
+            ),
             "reports": {
                 "flat": {
                     "path": str(args.flat_report),
