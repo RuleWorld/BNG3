@@ -108,7 +108,10 @@ def test_state_dependent_trigger_is_lowered_to_the_native_event_block():
     # The event is executed, so the reference marker for a dropped event and
     # the refusal note must both be absent.
     assert "# Events NOT simulated" not in result.bngl
-    assert "state-dependent or non-constant event(s) remain untranslated" not in result.bngl
+    assert (
+        "state-dependent or non-constant event(s) remain untranslated"
+        not in result.bngl
+    )
     assert "setConcentration(" not in result.bngl
 
 
@@ -164,7 +167,9 @@ def test_stochastic_run_keeps_the_explicit_refusal():
 
     assert result.success, result.error
     assert "begin bng3_events version 1" not in result.bngl
-    assert "state-triggered SBML events require stochastic jump scheduling" in result.bngl
+    assert (
+        "state-triggered SBML events require stochastic jump scheduling" in result.bngl
+    )
 
 
 def test_two_state_trigger_is_lowered_to_the_native_event_block():

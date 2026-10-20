@@ -603,9 +603,9 @@ class EventTranslationContext:
     # or a rate-rule parameter) to the BNGL observable that carries its
     # state, the factor that converts the SBML value into that observable's
     # units, and the compartment the state lives in.
-    resolve_native_state: Callable[
-        [str], Optional["NativeStateTarget"]
-    ] = lambda _identifier: None
+    resolve_native_state: Callable[[str], Optional["NativeStateTarget"]] = (
+        lambda _identifier: None
+    )
 
     @property
     def resolveSpeciesPattern(self):
@@ -1295,7 +1295,6 @@ _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "g
 # inequality.  A non-strict inequality is also true at a tangential contact
 # that leaves no sign change, so only the strict relations are lowered there.
 _NATIVE_COMPARISON_OPERATORS = {"lt": "<", "gt": ">"}
-
 
 
 # Names a trigger expression uses for built-in functions rather than model
@@ -2947,7 +2946,9 @@ def _native_conjunction_expression(
         if left_state is not None and right_state is not None:
             if left_state.amount_factor != right_state.amount_factor:
                 return None
-            rendered.append(f"{left_state.observable} {symbol} {right_state.observable}")
+            rendered.append(
+                f"{left_state.observable} {symbol} {right_state.observable}"
+            )
             continue
         if left_state is not None:
             scaled = _native_scaled_static(
@@ -3001,9 +3002,7 @@ def _native_trigger_expression(
             return None
         return f"{left_state.observable} {symbol} {right_state.observable}"
     if left_state is not None:
-        scaled = _native_scaled_static(
-            right_text, left_state.amount_factor, context
-        )
+        scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
         if scaled is None:
             return None
         return f"{left_state.observable} {symbol} {scaled}"
@@ -3090,7 +3089,10 @@ def _native_factor_constant(
 
 
 def _native_term_expression(
-    sign: int, node: ast.AST, target: NativeStateTarget, context: EventTranslationContext
+    sign: int,
+    node: ast.AST,
+    target: NativeStateTarget,
+    context: EventTranslationContext,
 ) -> Optional[str]:
     """Render one assignment term in the units of the assignment target."""
     folded = _native_fold_term(node, context)
@@ -3101,8 +3103,7 @@ def _native_term_expression(
         if target.amount_factor == 1.0:
             return _format_number(value)
         return (
-            f"({_format_number(value)} * "
-            f"({_format_number(target.amount_factor)}))"
+            f"({_format_number(value)} * " f"({_format_number(target.amount_factor)}))"
         )
     factors = _native_multiplicative_factors(node)
     if factors is None:
@@ -3231,7 +3232,8 @@ def synthesize_native_event_block(
         f"    trigger: {trigger}",
         "    initial_value: "
         + ("true" if event.trigger_initial_value is not False else "false"),
-        "    persistent: " + ("true" if event.trigger_persistent is not False else "false"),
+        "    persistent: "
+        + ("true" if event.trigger_persistent is not False else "false"),
         "    use_values_from_trigger_time: "
         + ("true" if event.use_values_from_trigger_time is not False else "false"),
     ]

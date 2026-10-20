@@ -10838,9 +10838,7 @@ def generate_bngl(
                 resolve_affine_event_rate(identifier, event)
             ),
             resolve_affine_priority_rate=lambda identifier, event: (
-                resolve_affine_event_rate(
-                    identifier, event, ignore_simultaneous=True
-                )
+                resolve_affine_event_rate(identifier, event, ignore_simultaneous=True)
             ),
             resolve_exponential_rate=resolve_exponential_event_rate,
             resolve_exponential_rate_for_event=lambda identifier, event: (
@@ -10908,10 +10906,7 @@ def generate_bngl(
             native_event_block = synthesize_native_event_block(
                 model.events, event_context
             )
-        _update_event_translation_warning(
-            model, event_result, native_event_block
-        )
-        )
+        _update_event_translation_warning(model, event_result, native_event_block)
 
     if native_event_block:
         # The native event block belongs inside the model block: the grammar
