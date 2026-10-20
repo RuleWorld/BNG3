@@ -32,11 +32,13 @@ from .campaign import STATUSES
 ISSUES = [153, 154]
 _RECONSTRUCTION = "bngir-reconstruction:source-text-independent-v02"
 _RULE_FEATURES = "bngir-reconstruction:v02-scopes-filters-and-mutations"
+_SURFACE = "bngir-reconstruction:v02-observables-and-compartments"
 _FEATURE_MATRIX = "bngir-version-migration:v01-v02-feature-matrix"
 _REFUSAL_OWNERSHIP = "bngir-version-migration:v01-v02-refusal-ownership"
 CHECKS = (
     _RECONSTRUCTION,
     _RULE_FEATURES,
+    _SURFACE,
     _FEATURE_MATRIX,
     _REFUSAL_OWNERSHIP,
 )
@@ -940,6 +942,8 @@ def _scope_filter_mutation_probes():
         }
     ]
 
+    for document in (filtered, scoped, mutated):
+        _declare_features(document)
     return (
         ("rule-filters", filtered, _OWNER_DECLARATIONS),
         ("rule-local-scopes", scoped, _OWNER_DECLARATIONS),
@@ -947,9 +951,65 @@ def _scope_filter_mutation_probes():
     )
 
 
+def _declare_features(document):
+    """Keep the declared feature vocabulary consistent with the model content."""
+    model = document["model"]
+    used = ["structured_patterns", "structured_expressions"]
+    for section in ("compartments", "functions", "observables", "rules", "seeds"):
+        if model.get(section):
+            used.append(section)
+    document["features"]["used"] = sorted(used)
+    document["features"]["required"] = [
+        "structured_patterns",
+        "structured_expressions",
+    ]
+
+
+def _observable_and_compartment_probes():
+    """Probe the native reader with the v0.2 surface features."""
+    pattern = _pattern("A", 0)
+
+    molecules = copy.deepcopy(independent_document())
+    molecules["model"]["observables"] = [
+        {"name": "Atot", "type": "Molecules", "patterns": ["A()"]}
+    ]
+    _declare_features(molecules)
+
+    species = copy.deepcopy(independent_document())
+    species["model"]["observables"] = [
+        {"name": "Atot", "type": "Species", "patterns": ["A()"]}
+    ]
+    _declare_features(species)
+
+    compartmented = copy.deepcopy(independent_document())
+    compartmented["model"]["compartments"] = [
+        {"id": 0, "name": "cell", "dimension": 3, "volume": 1.0}
+    ]
+    _declare_features(compartmented)
+
+    compartmented_seed = copy.deepcopy(compartmented)
+    compartmented_seed["model"]["seeds"][0]["pattern"]["molecules"][0][
+        "compartment_prefix"
+    ] = True
+
+    return (
+        ("observable-molecules", molecules, _OWNER_DECLARATIONS),
+        ("observable-species", species, _OWNER_DECLARATIONS),
+        ("compartments", compartmented, _OWNER_DECLARATIONS),
+        (
+            "compartmented-seed-pattern",
+            compartmented_seed,
+            _OWNER_DECLARATIONS,
+        ),
+    )
+
+
 def _scope_row(directory):
     """Record the native disposition of the v0.2 rule features."""
-    import bionetgen
+    import bionetgen.bngir as bngir_module
+    from bionetgen.model import _cpp
+
+    from .bngir_adversarial import _native_import_without_bngl_fallback
 
     records = []
     for identifier, document, owner in _scope_filter_mutation_probes():
@@ -964,7 +1024,9 @@ def _scope_row(directory):
             "evidence_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
         }
         try:
-            bionetgen.from_bngir(document, native=True)
+            _native_import_without_bngl_fallback(
+                _cpp, bngir_module, copy.deepcopy(document)
+            )
         except Exception as exc:
             record["outcome"] = (
                 "UNSUPPORTED" if _is_explicit_refusal(exc) else "REJECTED_UNCLEAR"
@@ -973,7 +1035,10 @@ def _scope_row(directory):
             record["explicit_refusal"] = _is_explicit_refusal(exc)
         else:
             record["outcome"] = "SUPPORTED"
-            record["detail"] = "native import accepted the feature"
+            record["detail"] = (
+                "native import accepted a document carrying the feature; acceptance at "
+                "import level does not establish the feature's semantic effect"
+            )
             record["explicit_refusal"] = False
         records.append(record)
     receipt = directory / "v02-scopes-filters-and-mutations.outcomes.json"
@@ -997,11 +1062,73 @@ def _scope_row(directory):
     return _row(_RULE_FEATURES, "PASS", detail, receipt)
 
 
+def _surface_row(directory):
+    """Record the native disposition of the v0.2 observable and compartment surface."""
+    import bionetgen.bngir as bngir_module
+    from bionetgen.model import _cpp
+
+    from .bngir_adversarial import _native_import_without_bngl_fallback
+
+    records = []
+    for identifier, document, owner in _observable_and_compartment_probes():
+        artifact = directory / f"{identifier}.bngir.json"
+        artifact.write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        record = {
+            "id": identifier,
+            "owner": owner,
+            "evidence": artifact.name,
+            "evidence_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        }
+        try:
+            _native_import_without_bngl_fallback(
+                _cpp, bngir_module, copy.deepcopy(document)
+            )
+        except Exception as exc:
+            record["outcome"] = (
+                "UNSUPPORTED" if _is_explicit_refusal(exc) else "REJECTED_UNCLEAR"
+            )
+            record["detail"] = f"native import rejected the feature: {exc}"
+            record["explicit_refusal"] = _is_explicit_refusal(exc)
+        else:
+            record["outcome"] = "SUPPORTED"
+            record["detail"] = (
+                "native import accepted a document carrying the feature; acceptance at "
+                "import level does not establish the feature's semantic effect"
+            )
+            record["explicit_refusal"] = False
+        records.append(record)
+    receipt = directory / "v02-observables-and-compartments.outcomes.json"
+    receipt.write_text(json.dumps(records, indent=2) + "\n", encoding="utf-8")
+    owners = _catalog_owners()
+    unowned = [
+        item
+        for item in records
+        if item["outcome"] != "SUPPORTED" and item["owner"] not in owners
+    ]
+    if unowned:
+        return _row(
+            _SURFACE,
+            "FAIL",
+            "a rejected v0.2 surface feature lacks an owning requirement",
+            receipt,
+            {"field": "ownership", "cells": unowned},
+        )
+    detail = (
+        "every v0.2 observable and compartment probe has an explicit native disposition "
+        "and an owning requirement"
+    )
+    detail += "; " + ", ".join(f"{item['id']}={item['outcome']}" for item in records)
+    return _row(_SURFACE, "PASS", detail, receipt)
+
+
 def run_worker(directory: Path):
     directory.mkdir(parents=True, exist_ok=True)
     rows = [
         _reconstruction_row(directory),
         _scope_row(directory),
+        _surface_row(directory),
         _matrix_row(directory),
         _ownership_row(directory),
     ]

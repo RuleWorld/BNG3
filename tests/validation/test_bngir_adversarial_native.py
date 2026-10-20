@@ -79,7 +79,13 @@ def test_native_bngir_reconstruction_and_version_migration_contracts(tmp_path):
     directory = tmp_path / "reconstruction-contracts"
     rows = reconstruction.run_worker(directory)
     assert [row["id"] for row in rows] == reconstruction.check_ids()
-    assert [row["status"] for row in rows] == ["PASS", "PASS", "PASS", "PASS"]
+    assert [row["status"] for row in rows] == [
+        "PASS",
+        "PASS",
+        "PASS",
+        "PASS",
+        "PASS",
+    ]
     for row in rows:
         assert row["related_issues"] == [153, 154]
         assert row["supported_execution"] is True

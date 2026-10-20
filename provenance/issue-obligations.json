@@ -2584,6 +2584,7 @@
           "scope": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "dependencies": [],
           "boundaries": [
+            "Recorded boundary: the native importer accepts a rule mutation that the Python-level native adapter refuses as an out-of-range site reference; the two native entry points differ.",
             "Recorded boundary: the native reader refuses a rule mutation whose site reference is out of range; a site-bearing molecule type is outside the native envelope.",
             "Recorded boundary: the native reader refuses reversible rule directions, energy patterns and substance-unit metadata; the migration preserves them and the native import refuses them explicitly.",
             "Recorded boundary: the native reader refuses rule filters and local scopes explicitly; the Python reader accepts filters, so the two entry points differ.",
@@ -2614,6 +2615,15 @@
               "id": "bngir-reconstruction:v02-scopes-filters-and-mutations",
               "evidence_kind": "native-bngir-semantic-control",
               "expectation": "The native reader has an explicit disposition for rule filters, local scopes and rule mutations, and each disposition names the requirement that owns it.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "bngir-reconstruction:v02-observables-and-compartments",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "The native reader has an explicit disposition for the v0.2 observable and compartment surface, and each disposition names the requirement that owns it.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
