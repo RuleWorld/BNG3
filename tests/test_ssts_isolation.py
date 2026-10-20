@@ -384,6 +384,28 @@ def test_verification_slot_is_held_for_the_run_and_released_after(tmp_path):
         assert handle is not None
 
 
+def test_stale_verification_slot_file_does_not_block_a_run(tmp_path):
+    """A leftover lock file must not stop a run from taking the slot.
+
+    The slot is an advisory lock, not a marker file: only a live holder
+    keeps it, so a file left behind by a killed run cannot deadlock CI.
+    """
+
+    slot = tmp_path / "verification.lock"
+    slot.write_text("pid=1 since=long ago\n", encoding="utf-8")
+    with runner._verification_slot(slot, 0.0) as handle:
+        assert handle is not None
+
+
+def test_unusable_verification_slot_fails_open(tmp_path):
+    """A lock file that cannot be created must not fail the run."""
+
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("occupied\n", encoding="utf-8")
+    with runner._verification_slot(blocker / "verification.lock", 0.0) as handle:
+        assert handle is None
+
+
 def test_jobs_advisory_warns_when_the_run_oversubscribes_the_machine():
     cpu_count = os.cpu_count() or 1
     assert runner._jobs_advisory(cpu_count + 1) is not None
