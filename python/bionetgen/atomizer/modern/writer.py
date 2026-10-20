@@ -68,6 +68,10 @@ _SBML_AVOGADRO = 6.02214179e23
 _MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
 _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
 
+# ⚡ Bolt: Hoist static regexes to module level to avoid inline re.compile overhead
+_NUMERIC_ONLY = re.compile(r"[0-9eE+*/^().\s-]+")
+_DELAY_CALL = re.compile(r"\bdelay\s*\(", re.IGNORECASE)
+
 # ``standardize_name`` runs on a raw SBML id only at emission, so a species,
 # reaction, rule-variable or function id such as ``A-B`` reaches the writer in
 # its source spelling and is invisible to the ``[A-Za-z_][A-Za-z0-9_]*`` tokens
@@ -1728,7 +1732,6 @@ def _contains_static_zero_divisor(expression: str) -> bool:
     """Detect a literal arithmetic division by zero in an SBML expression."""
 
     text = str(expression or "")
-    numeric_only = re.compile(r"[0-9eE+*/^().\s-]+")
     for match in re.finditer(r"/", text):
         index = match.end()
         while index < len(text) and text[index].isspace():
@@ -1756,7 +1759,7 @@ def _contains_static_zero_divisor(expression: str) -> bool:
                 continue
             index += number.end()
             divisor = text[start:index]
-        if not numeric_only.fullmatch(divisor):
+        if not _NUMERIC_ONLY.fullmatch(divisor):
             continue
         if _safe_numeric_expression(divisor, {}) == 0.0:
             return True
@@ -3170,7 +3173,6 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         for assignment in model.initial_assignments
         if assignment.symbol
     }
-    delay_call = re.compile(r"\bdelay\s*\(", re.IGNORECASE)
 
     def initial_value(target: str) -> Optional[float]:
         target_rules = [rule for rule in model.rules if rule.variable == target]
@@ -3621,7 +3623,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
     ) -> Tuple[str, int]:
         replacements: List[Tuple[int, int, str]] = []
         position = 0
-        while (match := delay_call.search(expression, position)) is not None:
+        while (match := _DELAY_CALL.search(expression, position)) is not None:
             opening = match.end() - 1
             depth = 1
             closing = opening + 1

@@ -662,6 +662,13 @@ EventActionsResult = EventTranslationResult
 # nothing and the expression refuses.
 _SBML_ID_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
+# ⚡ Bolt: Hoist static regexes to module level to avoid inline re.compile overhead
+_RATE_OF = re.compile(r"^rateof\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", re.I)
+_DELAY_CALL = re.compile(
+    r"\bdelay\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([^()]*)\)",
+    re.IGNORECASE,
+)
+
 _TOKEN = re.compile(
     r"\s*("
     r"[A-Za-z_][A-Za-z0-9_-]*|"
@@ -2479,8 +2486,7 @@ def _parse_rate_of_state_threshold(
     if arguments is None or len(arguments) != 2:
         return None
     left, right = (_strip_outer_parens(value) for value in arguments)
-    rate_of = re.compile(r"^rateof\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$", re.I)
-    left_match, right_match = rate_of.fullmatch(left), rate_of.fullmatch(right)
+    left_match, right_match = _RATE_OF.fullmatch(left), _RATE_OF.fullmatch(right)
     if left_match is not None:
         return left_match.group(1), operator, right
     if right_match is not None:
@@ -3576,12 +3582,8 @@ def synthesize_event_actions(
 
         def fold_rate_assignment(expression: str, time_value: float) -> Optional[float]:
             expanded = str(expression or "")
-            delay_call = re.compile(
-                r"\bdelay\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([^()]*)\)",
-                re.IGNORECASE,
-            )
             while True:
-                match = delay_call.search(expanded)
+                match = _DELAY_CALL.search(expanded)
                 if match is None:
                     break
                 if standardize_name(match.group(1)) != standardize_name(
