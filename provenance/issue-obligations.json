@@ -6389,9 +6389,81 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:160:group-current-unsupported-cases-by-dynamic-rules-events-history",
+              "id": "sbml-support-boundary:species-assignment-rule:named-diagnostic",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:state-dependent-event:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:delayed-history:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:algebraic-rule:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:sbml-constraint:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:negative-stoichiometry:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:fast-reaction:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:fbc-package:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:spatial-package:named-diagnostic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:corpus:every-refusal-classified",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The Atomizer reports a diagnostic that names the unsupported construct and records the unsupported-construct class it belongs to, so a refusal is never an unnamed one.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -6401,13 +6473,16 @@
             "tests/cpp/test_sbml_reader.cpp",
             "tests/cpp/test_sbml_units.cpp",
             "tests/python/test_modern_atomizer_package_diagnostics.py",
+            "tests/python/test_modern_atomizer_scope.py",
             "tests/python/test_modern_atomizer_units.py",
-            "tests/python/test_sbml_import.py"
+            "tests/python/test_sbml_import.py",
+            "tests/validation/sbml_support_boundary.py",
+            "tests/validation/test_sbml_support_boundary.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:160:group-current-unsupported-cases-by-dynamic-rules-events-history.",
+            "The named checks cover a generated corpus of one unsupported construct per class; the full current unsupported-case set of the issue scope is not yet enumerated.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -6993,21 +7068,144 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:164:establish-characterization-tests-around-symbol-resolution-featur",
+              "id": "atomizer-symbol-resolution:global-parameter-k:resolution-contract",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:global-parameter-kf:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:global-parameter-rate_1:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:reaction-local-parameter-lr:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:reaction-local-parameter-k_local:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:reaction-local-out-of-scope-lr:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:reaction-local-out-of-scope-k_local:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:species-S1:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:species-S2:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:compartment-cell:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:compartment-cytosol:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:function-twice:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:function-lin:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:rate-rule-S1:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:conversion-factor-cf:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-symbol-resolution:conversion-factor-scale_2:resolution-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer resolves the generated name, scope and feature combination as the independently stated expectation requires, and the emitted model still compiles.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/python/test_modern_atomizer_core.py"
+            "tests/python/test_modern_atomizer_core.py",
+            "tests/python/test_modern_atomizer_scope.py",
+            "tests/validation/atomizer_symbol_resolution.py",
+            "tests/validation/test_atomizer_symbol_resolution.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:164:establish-characterization-tests-around-symbol-resolution-featur.",
+            "The named checks characterize symbol resolution, feature checks and the compile of the emitted model for a generated family of scopes; event planning, units, structural mapping and text output are not covered by them.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },

@@ -27,6 +27,8 @@ QUALIFICATIONS = {
     "api-surface": "include_api_surface",
     "stochastic-parity": "include_stochastic_parity",
     "graph-identity-contract": "include_graph_identity_contract",
+    "sbml-support-boundary": "include_sbml_support_boundary",
+    "atomizer-symbol-resolution": "include_atomizer_symbol_resolution",
 }
 
 

@@ -94,6 +94,8 @@ def annotate_acceptance_evidence(rows):
     consumers.update(integrated_extensions.check_ids("api-surface"))
     consumers.update(integrated_extensions.check_ids("stochastic-parity"))
     consumers.update(integrated_extensions.check_ids("graph-identity-contract"))
+    consumers.update(integrated_extensions.check_ids("sbml-support-boundary"))
+    consumers.update(integrated_extensions.check_ids("atomizer-symbol-resolution"))
     consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
@@ -966,6 +968,10 @@ def select_qualifications(focused_flags):
         "include_graph_identity_contract": not _other_focused(
             "graph-identity-contract"
         ),
+        "include_sbml_support_boundary": not _other_focused("sbml-support-boundary"),
+        "include_atomizer_symbol_resolution": not _other_focused(
+            "atomizer-symbol-resolution"
+        ),
     }
 
 
@@ -997,6 +1003,8 @@ def main(argv=None):
     parser.add_argument("--api-surface-only", action="store_true")
     parser.add_argument("--stochastic-parity-only", action="store_true")
     parser.add_argument("--graph-identity-contract-only", action="store_true")
+    parser.add_argument("--sbml-support-boundary-only", action="store_true")
+    parser.add_argument("--atomizer-symbol-resolution-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1087,6 +1095,8 @@ def main(argv=None):
         "api-surface": args.api_surface_only,
         "stochastic-parity": args.stochastic_parity_only,
         "graph-identity-contract": args.graph_identity_contract_only,
+        "sbml-support-boundary": args.sbml_support_boundary_only,
+        "atomizer-symbol-resolution": args.atomizer_symbol_resolution_only,
     }
     qualification_selection = select_qualifications(focused_flags)
     required_ids = expected_contract_ids(
@@ -1129,6 +1139,14 @@ def main(argv=None):
         if qualification_selection["include_graph_identity_contract"]:
             integrated_extensions.invoke(
                 "graph-identity-contract", args, rows, env, run_stage
+            )
+        if qualification_selection["include_sbml_support_boundary"]:
+            integrated_extensions.invoke(
+                "sbml-support-boundary", args, rows, env, run_stage
+            )
+        if qualification_selection["include_atomizer_symbol_resolution"]:
+            integrated_extensions.invoke(
+                "atomizer-symbol-resolution", args, rows, env, run_stage
             )
         if qualification_selection["include_rate_law_contract"]:
             integrated_extensions.invoke(
@@ -1178,6 +1196,8 @@ def main(argv=None):
         "api-surface": ["--api-surface-only"],
         "stochastic-parity": ["--stochastic-parity-only"],
         "graph-identity-contract": ["--graph-identity-contract-only"],
+        "sbml-support-boundary": ["--sbml-support-boundary-only"],
+        "atomizer-symbol-resolution": ["--atomizer-symbol-resolution-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1268,6 +1288,10 @@ def main(argv=None):
                 "graph-identity-contract": (
                     "tests/validation/graph_identity_contract.py"
                 ),
+                "sbml-support-boundary": ("tests/validation/sbml_support_boundary.py"),
+                "atomizer-symbol-resolution": (
+                    "tests/validation/atomizer_symbol_resolution.py"
+                ),
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1329,6 +1353,10 @@ def main(argv=None):
                 issues = [167]
             elif stage == "graph-identity-contract":
                 issues = [142]
+            elif stage == "sbml-support-boundary":
+                issues = [160]
+            elif stage == "atomizer-symbol-resolution":
+                issues = [164]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

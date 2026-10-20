@@ -519,6 +519,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .rate_law_contract import check_ids as rate_law_check_ids
     from . import api_surface
     from .stochastic_parity import check_ids as stochastic_parity_check_ids
+    from .sbml_support_boundary import check_ids as sbml_boundary_check_ids
+    from .atomizer_symbol_resolution import check_ids as symbol_resolution_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
 
@@ -720,6 +722,37 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="sbml-support-boundary",
+            case_ids=[],
+            check_ids=sbml_boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(sbml_boundary_check_ids()), stage_timeout_seconds=300
+            ),
+            limits=(
+                "The generated unsupported-construct groups only; a construct the "
+                "engine now supports must be reported as such rather than grouped "
+                "as unsupported."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="atomizer-symbol-resolution",
+            case_ids=[],
+            check_ids=symbol_resolution_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(symbol_resolution_check_ids()), stage_timeout_seconds=300
+            ),
+            limits=(
+                "The generated symbol-resolution contract only: names, scopes and "
+                "feature checks resolved against an independent expectation."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -819,16 +852,32 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                                                     ]
                                                                     if family["id"]
                                                                     == "capability-inventory"
-                                                                    else [
-                                                                        argument
-                                                                        for case_id in family[
-                                                                            "case_ids"
+                                                                    else (
+                                                                        [
+                                                                            "--sbml-support-boundary-only"
                                                                         ]
-                                                                        for argument in (
-                                                                            "--case",
-                                                                            case_id,
+                                                                        if family["id"]
+                                                                        == "sbml-support-boundary"
+                                                                        else (
+                                                                            [
+                                                                                "--atomizer-symbol-resolution-only"
+                                                                            ]
+                                                                            if family[
+                                                                                "id"
+                                                                            ]
+                                                                            == "atomizer-symbol-resolution"
+                                                                            else [
+                                                                                argument
+                                                                                for case_id in family[
+                                                                                    "case_ids"
+                                                                                ]
+                                                                                for argument in (
+                                                                                    "--case",
+                                                                                    case_id,
+                                                                                )
+                                                                            ]
                                                                         )
-                                                                    ]
+                                                                    )
                                                                 )
                                                             )
                                                         )
