@@ -1170,6 +1170,44 @@ _RATE_OF_CALL = re.compile(
 )
 
 
+def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
+    """Replace ``rateOf`` of a reaction-local parameter by zero.
+
+    SBML Level 3 Version 2 Core Sec. 4.3.5: "The ``rateOf`` for any symbol
+    declared constant is zero.  Note that in SBML Level 3 Version 2,
+    ``LocalParameter`` objects must always be constant; therefore, their
+    ``rateOf`` value is always zero."  A reaction-local parameter shadows the
+    global parameter of the same name inside the reaction's kinetic law, so a
+    global rate rule for that name must not be used here.
+    """
+
+    local_parameters = (
+        kinetic_law.get("localParameters", [])
+        if isinstance(kinetic_law, Mapping)
+        else getattr(kinetic_law, "local_parameters", [])
+    )
+    masked = str(expression or "")
+    for parameter in local_parameters or []:
+        parameter_id = (
+            parameter.get("id")
+            if isinstance(parameter, Mapping)
+            else getattr(parameter, "id", None)
+        )
+        if not parameter_id:
+            continue
+        masked = _RATE_OF_CALL.sub(
+            lambda match: (
+                "0"
+                if match.group(1) == str(parameter_id)
+                or standardize_name(match.group(1))
+                == standardize_name(str(parameter_id))
+                else match.group(0)
+            ),
+            masked,
+        )
+    return masked
+
+
 def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
     """Inline ``rateOf`` calls whose targets have explicit SBML rate rules.
 
@@ -1220,7 +1258,8 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
             if isinstance(kinetic_law, Mapping)
             else getattr(kinetic_law, "math", "")
         )
-        new_math = expand(old_math)
+        new_math = _mask_reaction_local_rate_of(old_math, kinetic_law)
+        new_math = expand(new_math)
         if isinstance(kinetic_law, Mapping):
             kinetic_law["math"] = new_math
         if hasattr(kinetic_law, "math"):

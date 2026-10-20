@@ -3120,6 +3120,35 @@ def _report_unspellable_identifiers(model: SBMLModel) -> None:
                 )
 
 
+def _unrepresentable_math_function_reason(function_name: str) -> str:
+    """Return the reason an SBML math function has no executable equivalent."""
+
+    if function_name in {"delay", "rateOf"}:
+        return (
+            "the C++ SBML writer serializes the call, but neither the BNG3 "
+            "engine nor libRoadRunner can evaluate SBML "
+            f"{function_name} semantics"
+        )
+    return "BNGL has no built-in function with those semantics"
+
+
+def _unrepresentable_math_function_message(function_name: str) -> str:
+    """Describe why an SBML math function has no executable BNG3 equivalent.
+
+    The C++ SBML writer can serialize the SBML Level 3 Version 2 spelling of
+    ``delay`` and ``rateOf`` (Core Sec. 4.3.4 and Sec. 4.3.5), so the
+    remaining boundary is the execution path: the BNG3 engine has no
+    delayed-history or derivative semantics for these calls, and libRoadRunner
+    rejects a model that uses ``delay`` at all.
+    """
+
+    return (
+        f'SBML math function "{function_name}" is not losslessly representable '
+        "in the C++ SBML writer/libRoadRunner path: "
+        f"{_unrepresentable_math_function_reason(function_name)}."
+    )
+
+
 def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
     """Fold delayed history that stays at or before simulation start.
 
@@ -3521,18 +3550,71 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             return None
         return event_time, initial_duration, assigned_duration
 
+    def pre_simulation_history(target: str, duration: float) -> Optional[str]:
+        """Return the exact history of a delayed symbol before ``t = 0``.
+
+        SBML Level 3 Version 2 Core Sec. 4.3 ("Meaning of time") keeps an
+        ``initialAssignment`` in effect for times before the simulation
+        starts: "Any InitialAssignment definition continues to take effect.
+        Since these contain mathematical formulas, different values may be
+        computed at each time step".  A delayed read of such a symbol
+        therefore returns the assignment evaluated at the delayed time, not
+        the symbol's value at ``t = 0``.
+
+        The assignment may only depend on time and on symbols that keep the
+        same value before the simulation starts; anything else would need the
+        history of a symbol this lowering cannot evaluate.
+        """
+
+        if target not in initial_assignment_targets:
+            return None
+        assignments = [
+            assignment
+            for assignment in model.initial_assignments
+            if str(getattr(assignment, "symbol", "")) == target
+        ]
+        if len(assignments) != 1:
+            return None
+        expression = str(getattr(assignments[0], "math", "") or "")
+        if not expression:
+            return None
+        for call in re.finditer(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(", expression):
+            if call.group(1) in model.function_definitions:
+                return None
+        for identifier in re.findall(
+            r"\b[A-Za-z_][A-Za-z0-9_]*\b(?!\s*\()", expression
+        ):
+            if identifier.lower() == "time":
+                continue
+            if identifier in model.species or identifier in model.compartments:
+                return None
+            if identifier in initial_assignment_targets or identifier in event_targets:
+                return None
+            parameter = model.parameters.get(identifier)
+            if parameter is None or not parameter.constant:
+                return None
+        return re.sub(
+            r"\btime\b",
+            f"(time - {duration!r})",
+            expression,
+            flags=re.IGNORECASE,
+        )
+
     def affine_delayed_value(
         target: str, trajectory: Tuple[float, float], duration: float
     ) -> Optional[str]:
         initial, slope = trajectory
         if duration == 0:
             return target
+        history = pre_simulation_history(target, duration)
         if duration >= t_end:
-            return repr(initial)
+            return repr(initial) if history is None else history
         displacement = slope * duration
         if not math.isfinite(displacement):
             return None
-        return f"if(time < {duration!r}, {initial!r}, ({target} - {displacement!r}))"
+        if history is None:
+            history = repr(initial)
+        return f"if(time < {duration!r}, {history}, ({target} - {displacement!r}))"
 
     def fold_bounded_delays(
         expression: str, *, lower_affine_state_history: bool = True
@@ -3599,13 +3681,8 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                     if not lower_affine_state_history:
                         position = call_end
                         continue
-                    initial, slope = trajectory
-                    displacement = slope * duration
-                    if math.isfinite(displacement):
-                        replacement = (
-                            f"if(time < {duration!r}, {initial!r}, "
-                            f"({target} - {displacement!r}))"
-                        )
+                    replacement = affine_delayed_value(target, trajectory, duration)
+                    if replacement is not None:
                         replacements.append((match.start(), call_end, replacement))
                         position = call_end
                         continue
@@ -5945,10 +6022,19 @@ def write_reaction_rules(
                     species_compartment_prefix=species_compartment_prefix,
                 )
             products.extend([product_pattern] * int(round(reference.stoichiometry)))
-        if not reactants and not products and not source_is_noop:
+        if (
+            not reactants
+            and not products
+            and not source_is_noop
+            and not deterministic_flux_lowering
+        ):
             # A reaction whose only participant is rate-rule-controlled has no
             # independent stoichiometric effect after the target is removed.
             # Its kinetic law remains available to rate-rule inlining above.
+            # A reaction with fractional stoichiometry is different: its
+            # pattern list is empty because the count rounds to zero, while
+            # the deterministic flux lowering below still emits the
+            # species-specific rate rules that carry its stoichiometry.
             continue
         label = standardize_name(reaction.name or reaction_id)
         candidate = label
@@ -6557,8 +6643,7 @@ def generate_bngl(
         ):
             _record_import_warning(
                 model,
-                f'SBML math function "{function_name}" is not losslessly '
-                "representable in the C++ SBML writer/libRoadRunner path.",
+                _unrepresentable_math_function_message(function_name),
                 category="mathml",
                 severity="dropped",
             )
@@ -10265,14 +10350,24 @@ def generate_bngl(
     # limitation on the model so validation reports it globally rather than
     # accepting a malformed or semantically altered round trip.
     for function_name in ("gcd", "lcm", "rint", "delay", "rateOf"):
-        if re.search(rf"\b{re.escape(function_name)}\s*\(", model_text, re.IGNORECASE):
-            _record_import_warning(
-                model,
-                f'Generated BNGL math function "{function_name}" is not '
-                "losslessly representable in the C++ SBML writer/libRoadRunner path.",
-                category="mathml",
-                severity="dropped",
-            )
+        if not re.search(
+            rf"\b{re.escape(function_name)}\s*\(", model_text, re.IGNORECASE
+        ):
+            continue
+        if any(
+            f'SBML math function "{function_name}"' in str(warning.get("message"))
+            for warning in model.import_warnings
+        ):
+            # The source-level diagnostic already reported this construct.
+            continue
+        _record_import_warning(
+            model,
+            f'Generated BNGL math function "{function_name}" is not '
+            "losslessly representable in the C++ SBML writer/libRoadRunner "
+            f"path: {_unrepresentable_math_function_reason(function_name)}.",
+            category="mathml",
+            severity="dropped",
+        )
 
     has_multi = bool(
         model.multi_molecule_types
