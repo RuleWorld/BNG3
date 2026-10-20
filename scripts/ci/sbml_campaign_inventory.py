@@ -369,6 +369,28 @@ def _official_status(record: dict[str, Any]) -> str:
     return OFFICIAL_STATUS_MAP.get(status, "not_tested")
 
 
+GAP_SIDES: tuple[str, ...] = ("harness", "atomizer", "not-applicable")
+
+
+def gap_side(construct: str) -> str:
+    """Classify a gap by the side of the boundary it sits on.
+
+    A *harness-side* gap is a measurement limitation: the gate could not
+    evaluate the case, so the case is not a claim about the Atomizer.  An
+    *Atomizer-side* gap is a representational one: a construct is not
+    representable today.  A case that defines no official reference is
+    neither.
+    """
+
+    if construct.startswith("harness:"):
+        return "harness"
+    if construct == "reference:not-applicable":
+        return "not-applicable"
+    if construct == "reference:no-result-mapping":
+        return "harness"
+    return "atomizer"
+
+
 def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
     """Name the construct that keeps a stage from producing a verdict.
 
@@ -391,7 +413,12 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
             causes = sorted(
                 set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
             )
-        return {"construct": reason_signature(reason), "causes": causes}
+        construct = reason_signature(reason)
+        return {
+            "construct": construct,
+            "causes": causes,
+            "side": gap_side(construct),
+        }
 
     if stage == "official_reference":
         official = record.get("official_conformance") or {}
@@ -401,7 +428,12 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
         causes = sorted(
             set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
         )
-        return {"construct": reason_signature(reason), "causes": causes}
+        construct = reason_signature(reason)
+        return {
+            "construct": construct,
+            "causes": causes,
+            "side": gap_side(construct),
+        }
 
     return None
 

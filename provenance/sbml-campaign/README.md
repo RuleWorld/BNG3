@@ -63,8 +63,17 @@ human to read two large reports side by side.
   labels for it (`causes`):
 
   ```json
-  "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["constraints"]}}}
+  "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["constraints"], "side": "atomizer"}}}
   ```
+
+  The `side` says which boundary the gap sits on. A **harness-side** gap is a
+  measurement limitation — the gate could not evaluate the case, so the case
+  is not a claim about the Atomizer (the reference runner cannot execute
+  actions on the official grid, the official reference needs an ensemble, the
+  result mapping is missing). An **Atomizer-side** gap is a representational
+  one: a construct is not representable today. A case that defines no
+  official reference is `not-applicable`. The two kinds are different and
+  must not be counted together.
 
   No entry claims that a currently-unsupported construct should become
   supported. An `unsupported` entry is never counted as support, and a case

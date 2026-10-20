@@ -766,3 +766,56 @@ def test_the_manifest_step_compares_whenever_the_tool_supports_expectations(
     # the tool's non-zero exit, not skip.
     assert result.returncode == 1, result.stdout + result.stderr
     assert "::notice::" not in result.stdout
+
+
+@pytest.mark.smoke
+def test_every_gap_records_the_side_of_the_boundary_it_sits_on():
+    """A harness-side gap is a measurement limit; an Atomizer-side one is not."""
+
+    manifest = _manifest()
+    sides = set()
+    for case, entry in manifest["cases"].items():
+        for stage, gap in entry.get("gap", {}).items():
+            assert gap["side"] in inventory.GAP_SIDES, (case, stage)
+            sides.add(gap["side"])
+            if gap["construct"].startswith("harness:"):
+                assert gap["side"] == "harness", (case, stage)
+            if gap["construct"] == "reference:not-applicable":
+                assert gap["side"] == "not-applicable", (case, stage)
+            if gap["construct"] == "reference:no-result-mapping":
+                assert gap["side"] == "harness", (case, stage)
+    assert sides == set(inventory.GAP_SIDES)
+
+
+def test_the_failure_clusters_follow_the_official_feature_tags():
+    """The cluster a case lands in is decided by its own official metadata."""
+
+    from scripts.ci import sbml_campaign_tables as tables
+
+    assert tables.FAILURE_CLUSTER_TAGS == (
+        ("CSymbolDelay", "CSymbolDelay"),
+        ("CSymbolRateOf", "CSymbolRateOf"),
+        ("CSymbolAvogadro", "CSymbolAvogadro"),
+        ("AlgebraicRule", "AlgebraicRule"),
+        ("InitialAssignment", "InitialAssignment"),
+        ("AssignmentRule", "AssignmentRule"),
+        ("RateRule", "RateRule"),
+    )
+
+    def cluster_for(tags: list[str]) -> str:
+        for tag, label in tables.FAILURE_CLUSTER_TAGS:
+            if tag in tags:
+                return label
+        return tables.FAILURE_CLUSTER_OTHER
+
+    # The most specific tag wins, so a case that also carries an
+    # InitialAssignment tag is still reported as a delay case.
+    assert cluster_for(["Compartment", "CSymbolDelay", "InitialAssignment"]) == (
+        "CSymbolDelay"
+    )
+    assert cluster_for(["CSymbolAvogadro", "Parameter"]) == "CSymbolAvogadro"
+    assert cluster_for(["InitialAssignment", "Species"]) == "InitialAssignment"
+    assert cluster_for(["AssignmentRule", "Parameter"]) == "AssignmentRule"
+    assert cluster_for(["RateRule", "Reaction", "Species"]) == "RateRule"
+    assert cluster_for(["AlgebraicRule", "Parameter"]) == "AlgebraicRule"
+    assert cluster_for(["Compartment", "Reaction", "Species"]) == "other"
