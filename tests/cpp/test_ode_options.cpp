@@ -173,7 +173,7 @@ end bng3_events
 
     REQUIRE_THROWS_WITH(
         engine::OdeIntegrator(*model, network),
-        Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
+        Catch::Matchers::ContainsSubstring("BNG3 native event execution is not implemented"));
 }
 
 TEST_CASE("OdeIntegrator evaluates user-defined function rates", "[OdeOptions]") {

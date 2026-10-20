@@ -277,6 +277,67 @@ def test_sbml_export_preserves_the_delayed_event(tmp_path):
     assert abs(delay.getMath().getValue() - 1.5) < 1e-12
 
 
+def test_sbml_export_keeps_the_event_executable_after_a_reimport(tmp_path):
+    result = atomize(coupled_event_model(delay="1.5"))
+
+    model = cpp.parse_string(result.bngl)
+    network = cpp.generate_network(model, max_iter=100)
+    destination = tmp_path / "exported.xml"
+    cpp.io.write_sbml(model, network, str(destination))
+
+    reimported = atomize(destination.read_text())
+    assert reimported.success, reimported.error
+    # The exported trigger names the network species the observable covers, so
+    # the re-imported document still executes the event.
+    assert "begin bng3_events version 1" in reimported.bngl
+    assert "trigger: S1_amt < 0.75" in reimported.bngl
+    assert "delay: 1.5" in reimported.bngl
+
+
+def test_runtime_refusal_of_an_initial_rising_edge_stays_unsupported(tmp_path):
+    # A strict trigger that equals its threshold at the start of the
+    # simulation and rises immediately has no crossing to attribute.  The
+    # refusal has to read as an unsupported construct, not as a failure.
+    from bionetgen.model import BioNetGenModel
+
+    source = tmp_path / "rising.bngl"
+    source.write_text("""begin model
+begin parameters
+ k 1
+end parameters
+begin molecule types
+ A()
+end molecule types
+begin seed species
+ A() 10
+end seed species
+begin observables
+ Molecules X A()
+end observables
+begin reaction rules
+ A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+ event "rising"
+ trigger: time > 0
+ initial_value: false
+ persistent: true
+ use_values_from_trigger_time: true
+ assignment: X = 0
+ end event
+end bng3_events
+end model
+""")
+    model = cpp.parse_file(str(source))
+    with pytest.raises(RuntimeError) as error:
+        BioNetGenModel(model).simulate(method="ode", t_end=1, n_steps=1)
+    message = str(error.value)
+    assert "strict trigger equals its threshold at the initial time" in message
+    # The harness classifies a refusal by its text, so the refusal has to
+    # carry a marker that reads as "unsupported".
+    assert "not implemented" in message
+
+
 def _load(result, tmp_path):
     from bionetgen.model import load
 

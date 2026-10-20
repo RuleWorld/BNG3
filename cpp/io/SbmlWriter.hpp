@@ -68,6 +68,11 @@ private:
         std::unordered_map<std::string, std::size_t> parameterizedFunctions;
         // The SBML id allocated to each native event.
         std::unordered_map<std::string, std::string> events;
+        // The network species an observable equals, when the observable
+        // covers exactly one species with weight one.  An event that names
+        // such an observable can be written against that species, so a
+        // re-imported document keeps the event executable.
+        std::unordered_map<std::string, std::string> observableSpecies;
     };
 
     // Observable-to-species weight mapping
@@ -123,7 +128,8 @@ private:
     static std::string exprToMathML(
         const ast::Expression& expr,
         const std::string& indent,
-        const SymbolIds& symbolIds);
+        const SymbolIds& symbolIds,
+        bool preferSpecies = false);
     static std::string rateLawToMathML(
         const ast::Rxn& rxn,
         const ast::Model& model,

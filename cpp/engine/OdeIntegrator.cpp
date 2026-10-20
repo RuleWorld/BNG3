@@ -2786,6 +2786,9 @@ struct CvodeSession {
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
+    // A queued event belongs to one run: a second integration of the same
+    // integrator must not inherit it.
+    pendingEvents_.clear();
 
     std::vector<double> initialState(nSpecies_);
     std::vector<double> initialDerivatives(nSpecies_);
@@ -2818,7 +2821,9 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                 rising = true;
             }
             if (rising) {
-                throw std::runtime_error("bng3_events strict trigger equals its threshold at the initial time");
+                throw std::runtime_error(
+                    std::string(ast::kUnsupportedEventExecutionMessage) +
+                    ": strict trigger equals its threshold at the initial time");
             }
         }
         if (!event.initialValue && eventValue(event.trigger, opts.tStart, initialState.data()) != 0.0) {
@@ -3023,7 +3028,9 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                         for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                         // The session owns the SUNDIALS handles: an
                         // exception here unwinds the integration and the
-                        // session releases them exactly once.
+                        // session releases the linear solver, the matrix,
+                        // the solver memory, the vector and the context
+                        // exactly once.
                         if (eventDelay_ > 0.0) {
                             // The trigger edge queues the event; the
                             // assignments run once the delay elapses.
@@ -3038,6 +3045,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                             for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
                             if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
                                 throw std::runtime_error("bng3_events CVodeReInit failed");
+                            }
+                        }
                             }
                         }
                     }
@@ -3069,6 +3078,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     }
                     if (applied) {
                         if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
+                            // The session releases the SUNDIALS handles.
                             throw std::runtime_error("bng3_events CVodeReInit failed");
                         }
                         continue;

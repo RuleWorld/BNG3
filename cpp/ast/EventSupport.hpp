@@ -39,6 +39,9 @@ inline void validateNativeEventSubset(const Model& model) {
             expression.name() != "<" && expression.name() != "<=") {
             fail("trigger must be a continuous scalar inequality");
         }
+        if (expression.args().size() != 2) {
+            fail("trigger must compare two quantities");
+        }
     };
     checkTrigger(trigger);
     const auto dynamicIdentifier = [&](const Expression& expression) {

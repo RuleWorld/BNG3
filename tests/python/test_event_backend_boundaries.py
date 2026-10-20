@@ -63,9 +63,9 @@ def test_sbml_export_preserves_the_native_event(event_model, tmp_path):
     cpp.io.write_sbml(model, network, str(destination))
     text = destination.read_text()
     assert "<listOfEvents>" in text
-    # The trigger keeps its observable and the assignment targets the network
-    # species that the observable covers.
-    assert "<ci> X </ci>" in text
+    # The trigger and the assignment name the network species that the
+    # observable covers, so a re-imported document keeps the event.
+    assert "<ci> S1 </ci>" in text
     assert 'eventAssignment variable="S1"' in text
 
 

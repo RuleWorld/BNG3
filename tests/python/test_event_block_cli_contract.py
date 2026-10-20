@@ -19,7 +19,8 @@ import bionetgen
 
 # Verbatim from cpp/ast/Model.hpp: kUnsupportedEventExecutionMessage.
 UNSUPPORTED_EVENT_EXECUTION_MESSAGE = (
-    "BNG3 event execution is not implemented; bng3_events models cannot be simulated"
+    "BNG3 native event execution is not implemented for this consumer or "
+    "construct; bng3_events models cannot be simulated here"
 )
 
 _EVENT_BLOCK = """begin bng3_events version 1

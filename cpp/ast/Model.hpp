@@ -21,8 +21,13 @@
 namespace bng {
 namespace ast {
 
+// The message names a construct or a consumer that the native event
+// runtime does not implement.  It keeps the "not implemented" marker so a
+// tool that classifies a refusal by its text still reads it as an
+// unsupported feature rather than a failure.
 inline constexpr char kUnsupportedEventExecutionMessage[] =
-    "BNG3 event execution is not implemented; bng3_events models cannot be simulated";
+    "BNG3 native event execution is not implemented for this consumer or "
+    "construct; bng3_events models cannot be simulated here";
 
 struct Action {
     std::string name;

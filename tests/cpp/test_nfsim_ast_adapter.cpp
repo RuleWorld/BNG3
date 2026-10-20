@@ -1094,7 +1094,7 @@ end bng3_events
 
     CHECK(system == nullptr);
     CHECK_THAT(unavailableReason,
-               Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
+               Catch::Matchers::ContainsSubstring("BNG3 native event execution is not implemented"));
 }
 
 TEST_CASE("NFsim AST adapter accepts legacy single-ended seed bond metadata") {
