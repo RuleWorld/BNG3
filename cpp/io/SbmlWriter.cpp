@@ -912,6 +912,31 @@ std::string SbmlWriter::exprToMathML(
                     out << exprToMathML(arg, indent + "  ", symbolIds);
                 }
                 out << indent << "</apply>\n";
+            } else if (funcName == "delay" || funcName == "rateOf") {
+                // SBML Level 3 Version 2 spells the delay and rateOf csymbols
+                // as <csymbol> elements inside <apply> (Core Sec. 4.3.4 and
+                // Sec. 4.3.5).  MathML has no <delay/> or <rateOf/> operator,
+                // so emitting such an element would produce a document that
+                // libSBML rejects.  libSBML 5.21.1 serializes both csymbols in
+                // exactly this form.
+                const std::size_t expected =
+                    funcName == "delay" ? 2U : 1U;
+                if (expr.args().size() != expected) {
+                    throw std::invalid_argument(
+                        "SBML writer cannot lower " + funcName + " with " +
+                        std::to_string(expr.args().size()) +
+                        " arguments; SBML Level 3 Version 2 requires " +
+                        std::to_string(expected));
+                }
+                out << indent << "<apply>\n";
+                out << indent
+                    << "  <csymbol encoding=\"text\" definitionURL=\""
+                    << "http://www.sbml.org/sbml/symbols/" << funcName << "\">"
+                    << " " << funcName << " </csymbol>\n";
+                for (const auto& arg : expr.args()) {
+                    out << exprToMathML(arg, indent + "  ", symbolIds);
+                }
+                out << indent << "</apply>\n";
             } else if (funcName == "if" && expr.args().size() == 3) {
                 // Piecewise for if(cond, then, else)
                 out << indent << "<piecewise>\n";
