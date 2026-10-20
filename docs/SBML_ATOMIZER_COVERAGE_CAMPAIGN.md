@@ -216,6 +216,55 @@ already states its own volume dependence; the correction produced the rate law
 simulate. The integrated cross-component validation failed, and the correction
 was narrowed to a law that does not name a compartment.
 
+### Merge-gate exception: PRs #323 and #324
+
+The campaign's stated merge gate is that all required CI checks pass. Two
+further campaign pull requests — #323 (carry a rate-ruled species-reference
+stoichiometry's initial value) and #324 (preserve SBML `delay`/`rateOf`
+semantics in the Atomizer and the C++ SBML writer) — were merged with that
+gate not fully met, by an explicit decision of the repository owner, so that
+a saturated CI queue would not serialize the campaign. On both pull requests
+three jobs were genuinely red; every other job marked red on those pull
+requests was `cancelled` in flight, not failed.
+
+* `Lint & Format` and `Check formatting and suggest patch` (the
+  `autofix` workflow's `black --check --target-version py312 .` gate). This
+  was a formatting-only defect: the agents' Python was not formatted with the
+  repository's pinned `black==26.10.0`. The same formatting-only change was
+  landed on `main` afterwards, in PR #325 (commit `b3de638e`, merged as
+  `03a577dd`); `black --check --diff --target-version py312 .` and
+  `ruff check python/ tests/ scripts/ formal/` are clean on the merged tree,
+  and no semantics changed (the three reformatted files parse to an
+  identical AST before and after).
+* `C++ ASan (Ubuntu)`, failing at the step `Qualify issue 141 late CVODE
+  exception cleanup`. This failure is **not** attributable to the merged
+  changes. The same job fails on `main` itself at the campaign's base commit
+  `219c76da` (run `39345689608`, job `118377593427`), at the same step, with
+  the same LeakSanitizer signature (`SUMMARY: AddressSanitizer: 12592 byte(s)
+  leaked in 137 allocation(s)`). PR #323's `cpp/` tree is byte-identical to
+  `219c76da` — the campaign changed no C++ before #324 — and PR #324's only
+  C++ changes are in `cpp/io/SbmlReader.cpp` and `cpp/io/SbmlWriter.cpp`,
+  which the leak stacks do not reach: the reported leaks originate in
+  `__static_initialization_and_destruction_0` frames under
+  `BNGcore::BondNodeFunction::clone()`, not in the ODE integrator. The
+  *functional* issue-141 test passes: in the same ASan job, the `Run tests
+  under ASan` step reports `100% tests passed, 0 tests failed out of 677`
+  (`681` on #324), including `OdeIntegrator recovers after late stop
+  condition failure`, and `ctest --test-dir build -R '^OdeIntegrator recovers
+  after late stop condition failure$'` passes locally. The red is therefore
+  LeakSanitizer's report in the isolated re-run of that single test, which is
+  timing/environment dependent, not a behavioural regression.
+
+The discriminating checks were green at the merged heads. The `Official SBML
+references (128 PR cases; full scheduled suite)` job passed on both pull
+requests, and the agents' own pinned-suite runs with per-case diffs against
+the merged baseline were the primary evidence: #323 ran all 1923 pinned
+cases (1823 semantic plus 100 stochastic) and moved 14 cases `failed →
+passed` with 0 regressions; #324 ran the 1823 semantic cases and moved 7
+cases `failed → passed` with 0 regressions. The independent subagent reviews
+of #323 and #324 were still outstanding at merge time and are being completed
+after the fact.
+
 ## Invariants for this campaign
 
 * A conversion success is not a conformance claim. Official conformance is
