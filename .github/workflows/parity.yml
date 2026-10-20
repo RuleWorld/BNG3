@@ -561,6 +561,20 @@ jobs:
             --bng-cpp build/cpp/bng_cpp \
             -q -ra
 
+      - name: Check the unsupported SBML construct classes
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_sbml_support_boundary.py \
+            -q -ra
+
+      - name: Check the Atomizer symbol resolution contract
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_atomizer_symbol_resolution.py \
+            -q -ra
+
       - name: Check the network-rule execution contract against the legacy path
         if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest -c tests/validation/pytest.ini \

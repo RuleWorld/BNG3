@@ -492,6 +492,27 @@ def assess_obligations(obligations, reports, revision):
     return dict(obligations=assessed, evidence_audit=audit)
 
 
+def _selection_arguments(family):
+    """Return the command arguments that reproduce one selected family."""
+    focused = {
+        "native-bngir-adversarial": ["--bngir-adversarial-only"],
+        "quantity-source-laws": ["--quantity-laws-only"],
+        "export-format-tier": ["--export-format-tier-only"],
+        "network-rule-execution": ["--netrule-execution-only"],
+        "bngsim-boundary": ["--bngsim-boundary-only"],
+        "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "public-api-surface": ["--report-dir", "<new-empty-directory>"],
+        "sbml-support-boundary": ["--sbml-support-boundary-only"],
+        "atomizer-symbol-resolution": ["--atomizer-symbol-resolution-only"],
+    }
+    arguments = focused.get(family["id"])
+    if arguments is not None:
+        return list(arguments)
+    return [
+        argument for case_id in family["case_ids"] for argument in ("--case", case_id)
+    ]
+
+
 def select_campaign(obligations, *, findings=(), max_families=3, active_issues=None):
     """Choose plans from existing generators; this never authorizes execution."""
     if active_issues is not None:
@@ -546,6 +567,10 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     # The public API/CLI surface family is a campaign-level
                     # stage, not a per-case one.
                     include_api_surface=False,
+                    # The unsupported-construct boundary and the symbol
+                    # resolution family are campaign-level stages too.
+                    include_sbml_support_boundary=False,
+                    include_atomizer_symbol_resolution=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -581,6 +606,10 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated_marginals import source_law_check_ids
     from .integrated_cases import source_law_cases
     from .export_format_tier import check_ids as export_format_tier_check_ids
+    from .sbml_support_boundary import check_ids as support_boundary_check_ids
+    from .atomizer_symbol_resolution import (
+        check_ids as symbol_resolution_check_ids,
+    )
 
     families.append(
         dict(
@@ -649,6 +678,32 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             limits="One generated first-order decay family; the stochastic statements cover the terminal-time marginal only; notebook execution and third-party integrations are outside the family.",
         )
     )
+    families.append(
+        dict(
+            id="sbml-support-boundary",
+            case_ids=[],
+            check_ids=support_boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(support_boundary_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits="Bounded generated corpus of one unsupported SBML construct per case; the check proves that each refusal names its construct and records its class, not that the construct is supported.",
+        )
+    )
+    families.append(
+        dict(
+            id="atomizer-symbol-resolution",
+            case_ids=[],
+            check_ids=symbol_resolution_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(symbol_resolution_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits="Bounded generated family of SBML symbol scopes and feature checks; the check proves the resolution contract of the generated cases, not general SBML scope support.",
+        )
+    )
     selected = []
     for family in families:
         available = set(family["check_ids"])
@@ -678,39 +733,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             authorization="PLAN_ONLY",
             complete_corpus_coverage=False,
         )
-        family["selection_arguments"] = (
-            ["--bngir-adversarial-only"]
-            if family["id"] == "native-bngir-adversarial"
-            else (
-                ["--quantity-laws-only"]
-                if family["id"] == "quantity-source-laws"
-                else (
-                    ["--export-format-tier-only"]
-                    if family["id"] == "export-format-tier"
-                    else (
-                        ["--netrule-execution-only"]
-                        if family["id"] == "network-rule-execution"
-                        else (
-                            ["--bngsim-boundary-only"]
-                            if family["id"] == "bngsim-boundary"
-                            else (
-                                ["--jax-backend-measurement-only"]
-                                if family["id"] == "jax-backend-measurement"
-                                else (
-                                    ["--report-dir", "<new-empty-directory>"]
-                                    if family["id"] == "public-api-surface"
-                                    else [
-                                        argument
-                                        for case_id in family["case_ids"]
-                                        for argument in ("--case", case_id)
-                                    ]
-                                )
-                            )
-                        )
-                    )
-                )
-            )
-        )
+        family["selection_arguments"] = _selection_arguments(family)
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
         selected.append(family)
     return sorted(

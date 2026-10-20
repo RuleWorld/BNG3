@@ -15,6 +15,7 @@ from . import (
     bngir_format_contracts,
     bngir_reconstruction_contracts,
     api_surface,
+    atomizer_symbol_resolution,
     bngsim_boundary,
     integrated_consumers,
     integrated_marginals,
@@ -22,6 +23,7 @@ from . import (
     export_format_tier,
     jax_backend_measurement,
     netrule_execution,
+    sbml_support_boundary,
 )
 from .integrated_cases import generated_cases
 
@@ -39,6 +41,8 @@ OPERATIONS = (
     "bngsim-boundary",
     "jax-backend-measurement",
     "api-surface",
+    "sbml-support-boundary",
+    "atomizer-symbol-resolution",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -49,6 +53,8 @@ FOCUS_FLAGS = {
     "graph-identity": "--graph-identity-only",
     "export-format-tier": "--export-format-tier-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "sbml-support-boundary": "--sbml-support-boundary-only",
+    "atomizer-symbol-resolution": "--atomizer-symbol-resolution-only",
 }
 
 
@@ -80,6 +86,10 @@ def check_ids(operation, case=None, *, full=False):
         ]
     if operation == "export-format-tier":
         return export_format_tier.check_ids()
+    if operation == "sbml-support-boundary":
+        return sbml_support_boundary.check_ids()
+    if operation == "atomizer-symbol-resolution":
+        return atomizer_symbol_resolution.check_ids()
     if operation == "api-surface":
         return api_surface.check_ids()
     return [
@@ -101,6 +111,8 @@ def expected_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_sbml_support_boundary=True,
+    include_atomizer_symbol_resolution=True,
     full=False,
 ):
     ids = []
@@ -127,6 +139,20 @@ def expected_ids(
         )
     if include_api_surface:
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
+    if include_sbml_support_boundary:
+        ids.extend(
+            [
+                "campaign:sbml-support-boundary",
+                *check_ids("sbml-support-boundary"),
+            ]
+        )
+    if include_atomizer_symbol_resolution:
+        ids.extend(
+            [
+                "campaign:atomizer-symbol-resolution",
+                *check_ids("atomizer-symbol-resolution"),
+            ]
+        )
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -160,6 +186,10 @@ def run_worker(operation, args):
         ]
     if operation == "export-format-tier":
         return export_format_tier.run_worker(Path.cwd(), bng_cpp=args.bng_cpp)
+    if operation == "sbml-support-boundary":
+        return sbml_support_boundary.run_worker(Path.cwd())
+    if operation == "atomizer-symbol-resolution":
+        return atomizer_symbol_resolution.run_worker(Path.cwd())
     if operation == "api-surface":
         return api_surface.run(Path.cwd())
     if operation == "protocol":

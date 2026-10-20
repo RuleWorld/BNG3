@@ -116,6 +116,8 @@ def expected_contract_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_sbml_support_boundary=True,
+    include_atomizer_symbol_resolution=True,
     full=False,
 ):
     return [
@@ -167,6 +169,8 @@ def expected_contract_ids(
         include_bngsim_boundary=include_bngsim_boundary,
         include_jax_backend_measurement=include_jax_backend_measurement,
         include_api_surface=include_api_surface,
+        include_sbml_support_boundary=include_sbml_support_boundary,
+        include_atomizer_symbol_resolution=include_atomizer_symbol_resolution,
         full=full,
     )
 
@@ -954,6 +958,9 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
+    parser.add_argument("--sbml-support-boundary-only", action="store_true")
+    parser.add_argument("--atomizer-symbol-resolution-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -967,6 +974,9 @@ def main(argv=None):
                 args.netrule_execution_only,
                 args.bngsim_boundary_only,
                 args.jax_backend_measurement_only,
+                args.api_surface_only,
+                args.sbml_support_boundary_only,
+                args.atomizer_symbol_resolution_only,
             )
         )
         > 1
@@ -996,6 +1006,9 @@ def main(argv=None):
         or args.netrule_execution_only
         or args.bngsim_boundary_only
         or args.jax_backend_measurement_only
+        or args.api_surface_only
+        or args.sbml_support_boundary_only
+        or args.atomizer_symbol_resolution_only
     ):
         selected = []
     for name in (
@@ -1029,6 +1042,9 @@ def main(argv=None):
         or args.quantity_laws_only
         or args.netrule_execution_only
         or args.jax_backend_measurement_only
+        or args.api_surface_only
+        or args.sbml_support_boundary_only
+        or args.atomizer_symbol_resolution_only
     )
     qualification_selection = dict(
         include_boundaries=not (
@@ -1039,6 +1055,9 @@ def main(argv=None):
             or args.netrule_execution_only
             or args.bngsim_boundary_only
             or args.jax_backend_measurement_only
+            or args.api_surface_only
+            or args.sbml_support_boundary_only
+            or args.atomizer_symbol_resolution_only
         ),
         include_graph_identity=not (
             args.boundaries_only
@@ -1048,12 +1067,18 @@ def main(argv=None):
             or args.netrule_execution_only
             or args.bngsim_boundary_only
             or args.jax_backend_measurement_only
+            or args.api_surface_only
+            or args.sbml_support_boundary_only
+            or args.atomizer_symbol_resolution_only
         ),
         include_bngir_adversarial=not (
             args.boundaries_only
             or args.graph_identity_only
             or args.quantity_laws_only
             or args.export_format_tier_only
+            or args.api_surface_only
+            or args.sbml_support_boundary_only
+            or args.atomizer_symbol_resolution_only
         ),
         include_export_format_tier=not (
             args.boundaries_only
@@ -1063,6 +1088,9 @@ def main(argv=None):
             or args.netrule_execution_only
             or args.bngsim_boundary_only
             or args.jax_backend_measurement_only
+            or args.api_surface_only
+            or args.sbml_support_boundary_only
+            or args.atomizer_symbol_resolution_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
@@ -1073,6 +1101,8 @@ def main(argv=None):
         or args.netrule_execution_only
         or args.bngsim_boundary_only
         or args.api_surface_only
+        or args.sbml_support_boundary_only
+        or args.atomizer_symbol_resolution_only
     )
     qualification_selection["include_bngsim_boundary"] = not (
         args.boundaries_only
@@ -1081,6 +1111,8 @@ def main(argv=None):
         or args.quantity_laws_only
         or args.jax_backend_measurement_only
         or args.api_surface_only
+        or args.sbml_support_boundary_only
+        or args.atomizer_symbol_resolution_only
     )
     qualification_selection["include_api_surface"] = not (
         args.boundaries_only
@@ -1088,7 +1120,11 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.jax_backend_measurement_only
+        or args.sbml_support_boundary_only
+        or args.atomizer_symbol_resolution_only
     )
+    qualification_selection["include_sbml_support_boundary"] = not focused
+    qualification_selection["include_atomizer_symbol_resolution"] = not focused
     qualification_selection["include_netrule_execution"] = not focused
     qualification_selection["include_jax_backend_measurement"] = not focused
     required_ids = expected_contract_ids(
@@ -1124,6 +1160,14 @@ def main(argv=None):
             )
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
+        if qualification_selection["include_sbml_support_boundary"]:
+            integrated_extensions.invoke(
+                "sbml-support-boundary", args, rows, env, run_stage
+            )
+        if qualification_selection["include_atomizer_symbol_resolution"]:
+            integrated_extensions.invoke(
+                "atomizer-symbol-resolution", args, rows, env, run_stage
+            )
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1169,6 +1213,9 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "api-surface": ["--api-surface-only"],
+        "sbml-support-boundary": ["--sbml-support-boundary-only"],
+        "atomizer-symbol-resolution": ["--atomizer-symbol-resolution-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1261,6 +1308,16 @@ def main(argv=None):
                     "python/bionetgen/jax_ssa.py",
                 ],
                 "api-surface": "tests/validation/api_surface.py",
+                "sbml-support-boundary": [
+                    "tests/validation/sbml_support_boundary.py",
+                    "python/bionetgen/atomizer/modern/parser.py",
+                    "python/bionetgen/atomizer/modern/writer.py",
+                ],
+                "atomizer-symbol-resolution": [
+                    "tests/validation/atomizer_symbol_resolution.py",
+                    "python/bionetgen/atomizer/modern/parser.py",
+                    "python/bionetgen/atomizer/modern/writer.py",
+                ],
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1306,6 +1363,10 @@ def main(argv=None):
                 issues = [174]
             elif stage == "api-surface":
                 issues = [171]
+            elif stage == "sbml-support-boundary":
+                issues = [160]
+            elif stage == "atomizer-symbol-resolution":
+                issues = [164]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -1386,6 +1447,8 @@ def main(argv=None):
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
                 ROOT / "tests/validation/export_format_tier.py",
+                ROOT / "tests/validation/sbml_support_boundary.py",
+                ROOT / "tests/validation/atomizer_symbol_resolution.py",
                 ROOT / "tests/validation/netrule_execution.py",
                 ROOT / "tests/validation/bngsim_boundary.py",
                 ROOT / "tests/validation/compare.py",
