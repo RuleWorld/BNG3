@@ -1221,6 +1221,34 @@ def _topology_matches_molecules(
     return not remaining
 
 
+def _modification_inference_fires(
+    model: SBMLModel,
+    derived_id: str,
+    base_id: str,
+    sbo_term: Optional[str],
+    naming_config: Optional[NamingPatternConfig],
+) -> bool:
+    """Report whether a modification inference will produce a structure.
+
+    An SBO term always names the modification.  A name fragment only does
+    when the derived species name spells the modification state of the base
+    species name.
+    """
+
+    if sbo_modification(sbo_term) is not None:
+        return True
+    derived = model.species.get(derived_id, SBMLSpecies(derived_id))
+    base = model.species.get(base_id, SBMLSpecies(base_id))
+    derived_name = derived.name or derived_id
+    base_name = base.name or base_id
+    return (
+        infer_modification(
+            derived_name, [base_name, base_id], naming_config
+        ).modification
+        is not None
+    )
+
+
 def _components_are_monomers(
     components: Sequence[str], context: _StructuralContext
 ) -> bool:
@@ -1623,7 +1651,15 @@ def build_species_composition_table(
             bases = modification_bases.setdefault(derived_id, [])
             if base_id not in bases:
                 bases.append(base_id)
-            dependencies.setdefault(derived_id, set()).add(base_id)
+            # The base species has to be resolved before the derived one, but
+            # only when the inference actually fires.  A one-reactant reaction
+            # whose names carry no modification produces no structure, and
+            # ordering it after its reactant would change the species order
+            # of the atomized translation without changing any structure.
+            if _modification_inference_fires(
+                model, derived_id, base_id, info.get("sbo"), naming_config
+            ):
+                dependencies.setdefault(derived_id, set()).add(base_id)
         for product_id, components in topology["complexes"].items():
             dependencies.setdefault(product_id, set()).update(components)
         for complex_id, components in topology["unbindings"].items():
