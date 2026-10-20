@@ -415,6 +415,46 @@ def _mixed_model() -> GroundTruthModel:
     )
 
 
+def _removal_model() -> GroundTruthModel:
+    """A species whose SBO term names it as the unmodified form."""
+
+    sbml = build_sbml(
+        "removal_model",
+        [
+            ("A", "A", 10.0, None),
+            ("AP", "A-P", 4.0, "SBO:0000216"),
+            ("A0", "A0", 1.0, "SBO:0000330"),
+        ],
+        [
+            _reaction_xml("phos", ["A"], ["AP"], "kcat", ["A"]),
+            _reaction_xml("dephos", ["AP"], ["A0"], "kdp", ["AP"]),
+        ],
+        [("kcat", 0.1), ("kdp", 0.05)],
+    )
+    return GroundTruthModel(
+        "removal",
+        sbml,
+        {
+            "AP": {
+                "molecules": ["A"],
+                "modification_sites": ["phosphorylation"],
+                "states": {"phosphorylation": "P"},
+                "bonded": False,
+                "binding_sites": 0,
+                "confidence": "sbo-term",
+            },
+            "A0": {
+                "molecules": ["A"],
+                "modification_sites": ["phosphorylation"],
+                "states": {"phosphorylation": "0"},
+                "bonded": False,
+                "binding_sites": 0,
+                "confidence": "sbo-term",
+            },
+        },
+    )
+
+
 GROUND_TRUTH_MODELS: Tuple[GroundTruthModel, ...] = (
     _complex_model(),
     _phosphorylation_model(),
@@ -422,6 +462,7 @@ GROUND_TRUTH_MODELS: Tuple[GroundTruthModel, ...] = (
     _binding_site_model(),
     _unbinding_model(),
     _name_complex_model(),
+    _removal_model(),
     _mixed_model(),
 )
 

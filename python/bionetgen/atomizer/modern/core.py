@@ -469,9 +469,11 @@ def infer_modification(
                 level = len(product_run.group(0))
                 best = ModificationInference(
                     best.base,
-                    "Double-Phosphorylation"
-                    if level == 2
-                    else "Triple-Phosphorylation",
+                    (
+                        "Double-Phosphorylation"
+                        if level == 2
+                        else "Triple-Phosphorylation"
+                    ),
                     best.confidence,
                 )
         return best
@@ -720,9 +722,7 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
         unit_reactants = all(
             stoichiometry == 1 for _species, stoichiometry in reactants
         )
-        unit_products = all(
-            stoichiometry == 1 for _species, stoichiometry in products
-        )
+        unit_products = all(stoichiometry == 1 for _species, stoichiometry in products)
         expanded_reactants = _expanded_species(reactants)
         expanded_products = _expanded_species(products)
         if (
@@ -970,9 +970,7 @@ def _modified_species(
     return result
 
 
-def _removal_species(
-    base: Optional[SCTEntry], modification: str
-) -> Optional[Species]:
+def _removal_species(base: Optional[SCTEntry], modification: str) -> Optional[Species]:
     """Return the unmodified form of a base species, or ``None``.
 
     A removal term ("dephosphorylation") states that the species is the
@@ -1264,9 +1262,7 @@ def _infer_species_structure(
             topology_components, explicit, context
         ):
             components = list(topology_components)
-            structure = _complex_species(
-                components, context.entries, context.use_id
-            )
+            structure = _complex_species(components, context.entries, context.use_id)
             _sanitize_structure(structure)
             record = _structure_inference(
                 species_id,
@@ -1283,9 +1279,7 @@ def _infer_species_structure(
                     molecules=explicit.get_molecule_names(),
                 )
             )
-            _report_unparsed_fragments(
-                context.model, species_id, name, unparsed
-            )
+            _report_unparsed_fragments(context.model, species_id, name, unparsed)
             record.alternatives.extend(alternatives)
             return structure, components, {}, record
         _sanitize_structure(explicit)
@@ -1331,9 +1325,7 @@ def _infer_species_structure(
                 f'SBML sboTerm "{sbo}" names the {modification.lower()} state '
                 f'of species "{base_id}"',
             )
-            _report_unparsed_fragments(
-                context.model, species_id, name, unparsed
-            )
+            _report_unparsed_fragments(context.model, species_id, name, unparsed)
             record.alternatives = alternatives
             return structure, [base_id], {"state": modification}, record
 
@@ -1382,8 +1374,7 @@ def _infer_species_structure(
                 record.alternatives.append(
                     _alternative_inference(
                         "sbo-term",
-                        f'SBML sboTerm "{sbo}" names '
-                        f'{resolved[0].lower()} instead',
+                        f'SBML sboTerm "{sbo}" names ' f"{resolved[0].lower()} instead",
                         modification=resolved[0],
                     )
                 )
@@ -1435,9 +1426,7 @@ def _infer_species_structure(
                     f'the species name "{name}" names the '
                     f'{modification.lower()} state of species "{naming_base}"',
                 )
-                _report_unparsed_fragments(
-                    context.model, species_id, name, unparsed
-                )
+                _report_unparsed_fragments(context.model, species_id, name, unparsed)
                 record.alternatives.extend(alternatives)
                 return (
                     structure,
@@ -1462,17 +1451,14 @@ def _infer_species_structure(
     if name_candidates:
         separator, parts = name_candidates[0]
         resolved_parts = [context.names_to_ids.get(part, part) for part in parts]
-        structure = _complex_species(
-            resolved_parts, context.entries, context.use_id
-        )
+        structure = _complex_species(resolved_parts, context.entries, context.use_id)
         _sanitize_structure(structure)
         record = _structure_inference(
             species_id,
             name,
             structure,
             "name-heuristic",
-            f'the species name splits on "{separator}" into '
-            + ", ".join(parts),
+            f'the species name splits on "{separator}" into ' + ", ".join(parts),
         )
         for other_separator, other_parts in name_candidates[1:]:
             record.alternatives.append(
@@ -1500,8 +1486,7 @@ def _infer_species_structure(
         record.alternatives.append(
             _alternative_inference(
                 "name-heuristic",
-                f'the species name splits on "{separator}" into '
-                + ", ".join(parts),
+                f'the species name splits on "{separator}" into ' + ", ".join(parts),
                 molecules=list(parts),
             )
         )
@@ -1829,9 +1814,7 @@ def structural_report(sct: SpeciesCompositionTable) -> Dict[str, Any]:
             "reason": inference.reason,
             "alternatives": list(inference.alternatives),
         }
-        confidence[inference.confidence] = (
-            confidence.get(inference.confidence, 0) + 1
-        )
+        confidence[inference.confidence] = confidence.get(inference.confidence, 0) + 1
         if inference.alternatives:
             uncertain.append(species_id)
         if inference.confidence != "elemental":

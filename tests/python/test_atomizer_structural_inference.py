@@ -71,9 +71,7 @@ def test_explicit_pattern_trigger_accepts_sites_without_bonds():
 
     assert structure is not None
     assert structure.get_molecule_names() == ["A"]
-    assert [component.name for component in structure.molecules[0].components] == [
-        "b1"
-    ]
+    assert [component.name for component in structure.molecules[0].components] == ["b1"]
     assert unparsed == []
 
 
@@ -142,9 +140,7 @@ def test_unparsable_name_fragment_does_not_block_the_translation():
 def test_sbo_term_is_normalized_from_every_spelling():
     assert normalize_sbo_term("SBO:0000216") == "SBO:0000216"
     assert normalize_sbo_term("0000216") == "SBO:0000216"
-    assert (
-        normalize_sbo_term("http://identifiers.org/SBO:0000216") == "SBO:0000216"
-    )
+    assert normalize_sbo_term("http://identifiers.org/SBO:0000216") == "SBO:0000216"
     assert normalize_sbo_term("") is None
     assert normalize_sbo_term(None) is None
 
@@ -211,6 +207,32 @@ def test_sbo_term_without_a_single_reactant_reaction_stays_elemental():
 
     assert record["confidence"] == "reaction-topology"
     assert record["molecules"] == ["A", "B"]
+
+
+def test_removal_sbo_term_yields_the_unmodified_form():
+    """A removal term names the species as the unmodified form."""
+
+    sbml = build_sbml(
+        "removal_model",
+        [
+            ("A", "A", 10.0, None),
+            ("AP", "A-P", 4.0, "SBO:0000216"),
+            ("A2", "A", 1.0, "SBO:0000330"),
+        ],
+        [
+            _reaction("phos", ["A"], ["AP"], "kcat", ["A"]),
+            _reaction("dephos", ["AP"], ["A2"], "kdp", ["AP"]),
+        ],
+        [("kcat", 0.1), ("kdp", 0.05)],
+    )
+
+    modified = _inference(sbml, "AP")
+    unmodified = _inference(sbml, "A2")
+
+    assert modified["confidence"] == "sbo-term"
+    assert modified["states"] == {"phosphorylation": "P"}
+    assert unmodified["confidence"] == "sbo-term"
+    assert unmodified["states"] == {"phosphorylation": "0"}
 
 
 # ---------------------------------------------------------------------------
@@ -330,9 +352,7 @@ def test_name_complex_candidates_ignore_organism_names():
 
 def test_separator_tolerant_modification_suffix():
     assert infer_modification("A-P", ["A"]).modification == "Phosphorylation"
-    assert (
-        infer_modification("A-PP", ["A"]).modification == "Double-Phosphorylation"
-    )
+    assert infer_modification("A-PP", ["A"]).modification == "Double-Phosphorylation"
     assert infer_modification("A_act", ["A"]).modification == "Activation"
     assert infer_modification("A-P", ["A"]).base == "A"
 

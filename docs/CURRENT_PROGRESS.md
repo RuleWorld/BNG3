@@ -1,5 +1,51 @@
 # BNG3 current progress
 
+## Structural SBML atomization recovers molecular identity
+
+The atomized SBML translation (`atomize=True`) recognized a molecular
+structure only when a species name spelled a BNGL pattern that also
+contained a bond, so most real BioModels species names silently degraded
+to the elemental flat representation and lost every binding site, bond and
+modification state.
+
+The structural path now recognizes a structure from four sources, in
+decreasing order of confidence.
+
+1. An explicit BNGL pattern in the species name. A name that names more
+   than one molecule, or one molecule with a binding or modification site,
+   is a molecular pattern; the previous trigger required a bond and
+   therefore rejected `A.B`, `A(B)` and every site-only name.
+2. The SBML `sboTerm` of a species that a one-reactant/one-product
+   reaction produces. The SBO term is the only machine-readable
+   statement in the SBML source that names the modification, so it outranks
+   any name heuristic. The supported terms are the SBO ids for
+   phosphorylation, glycosylation, methylation, acetylation,
+   ubiquitination, hydroxylation, the lipidation family, activation and
+   inactivation, plus dephosphorylation for the unmodified form.
+3. Reaction topology. A species produced by a reaction with two or more
+   reactant molecules is a complex of those molecules, and the composition
+   follows the source stoichiometry. A species that a reaction dissociates
+   into several products is a complex of them; the previous heuristic
+   required the complex name to contain every product name.
+4. A name fragment. A trailing `-P`, `_P`, `.P` or `_act` fragment names a
+   modification state of the base species the reaction derives it from, and
+   a `-`/`_` separated name names a complex when every part names an
+   existing species.
+
+Every decision is recorded. `AtomizerResult.structural_inference` and
+`Atomizer.structural_report()` return, per species, the inferred
+molecules, sites, bonds and states, the confidence of the decision
+(`explicit-pattern`, `sbo-term`, `reaction-topology`, `name-heuristic` or
+`elemental`), the reason for it, and the alternative readings that remain
+consistent with the SBML source. A name fragment that is not a valid BNGL
+molecule identifier is reported as an informational diagnostic instead of
+being dropped silently; the species keeps its exact flat representation in
+that case.
+
+The flat translation is unchanged. The structural evidence is consulted only
+by the atomized path, so the official suite results are the same before and
+after the change.
+
 ## Native BNGIR v0.2 model functions (2026-10-19 candidate)
 
 The native BNGIR v0.2 importer refused the whole `model.functions` section, so

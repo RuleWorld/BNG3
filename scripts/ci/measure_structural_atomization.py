@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -91,9 +90,7 @@ def _measure_one(
 
     problems: List[str] = []
     try:
-        flat_network = cpp.generate_network(
-            cpp.parse_string(flat.bngl), max_iter=100
-        )
+        flat_network = cpp.generate_network(cpp.parse_string(flat.bngl), max_iter=100)
         atomized_network = cpp.generate_network(
             cpp.parse_string(atomized.bngl), max_iter=100
         )
@@ -279,9 +276,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     inventory = _load_inventory(args.inventory_json)
     if not inventory:
         candidates = sorted(cache_dir.glob("*.xml"))
-        inventory = [
-            {"id": path.name, "filename": path.name} for path in candidates
-        ]
+        inventory = [{"id": path.name, "filename": path.name} for path in candidates]
     payloads: List[Tuple[str, str, float, bool]] = []
     missing: List[str] = []
     for entry in inventory:
@@ -290,7 +285,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             missing.append(str(entry.get("id", "")))
             continue
         payloads.append(
-            (str(entry.get("id", "")), str(path), args.model_timeout, bool(args.simulate))
+            (
+                str(entry.get("id", "")),
+                str(path),
+                args.model_timeout,
+                bool(args.simulate),
+            )
         )
     if args.limit:
         payloads = payloads[: args.limit]
@@ -332,12 +332,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     different = [
         record for record in records if record.get("equivalence") == "different"
     ]
-    timed_out = [
-        record for record in records if record.get("equivalence") == "timeout"
-    ]
-    not_translated = [
-        record for record in records if not record.get("translated")
-    ]
+    timed_out = [record for record in records if record.get("equivalence") == "timeout"]
+    not_translated = [record for record in records if not record.get("translated")]
     not_applicable = [
         record for record in records if record.get("equivalence") == "not-applicable"
     ]
