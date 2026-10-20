@@ -252,3 +252,71 @@ def test_official_01002_trajectory_is_reproduced():
     assert math.isclose(samples[1][0], 0.001075732452247863, rel_tol=1e-5)
     # The official reference at t=0.6 is S1 = 0.001143844032353959.
     assert math.isclose(samples[2][0], 0.001143844032353959, rel_tol=1e-5)
+
+
+def test_amount_based_law_that_names_the_compartment_keeps_its_own_volume_factor():
+    """A law that states its own volume dependence needs no correction.
+
+    The generated integrated-validation case ``dimerization-v1-n20-r0-a0``
+    uses the rate law ``k * A * A / cell`` in a size-1 compartment.  The
+    amount-based correction would multiply the constant by the compartment
+    size, but the law already carries that factor, and BNGL's rate-law
+    grammar and BNG2's expression parser do not accept a compartment
+    parameter raised to a power inside a rate law.
+    """
+
+    sbml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="dimerization">
+        <listOfUnitDefinitions>
+          <unitDefinition id="litre_per_item_second">
+            <listOfUnits>
+              <unit kind="litre" exponent="1" scale="0" multiplier="1"/>
+              <unit kind="item" exponent="-1" scale="0" multiplier="1"/>
+              <unit kind="second" exponent="-1" scale="0" multiplier="1"/>
+            </listOfUnits>
+          </unitDefinition>
+        </listOfUnitDefinitions>
+        <listOfCompartments>
+          <compartment id="cell" spatialDimensions="3" units="litre" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cell" initialAmount="20" substanceUnits="item"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="D" compartment="cell" initialAmount="0" substanceUnits="item"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="0.4" units="litre_per_item_second" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="dimerize" reversible="false">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="2" constant="true"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="D" stoichiometry="1" constant="true"/>
+            </listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><divide/>
+                  <apply><times/><ci>k</ci><ci>A</ci><ci>A</ci></apply>
+                  <ci>cell</ci>
+                </apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert result.success, result.error
+    rule = next(
+        line.strip()
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("dimerize:")
+    )
+    # The rate law keeps the constant it was derived from; no compartment
+    # factor is added to it.
+    assert "__compartment_cell__" not in rule
+    assert rule.endswith("0.8")

@@ -2081,12 +2081,31 @@ def _strip_compartment_rate_factors(
     return result.strip() or "1"
 
 
+def _law_references_compartment(expression: str, model: SBMLModel) -> bool:
+    """Report whether a rate law names a compartment's size explicitly.
+
+    A law that carries the compartment factor already states its own volume
+    dependence, so the amount-based correction does not apply to it.
+    """
+
+    for compartment_id in model.compartments:
+        name = standardize_name(str(compartment_id))
+        if re.search(rf"\b{re.escape(str(compartment_id))}\b", expression):
+            return True
+        if re.search(rf"\b{re.escape(name)}\b", expression):
+            return True
+        if re.search(rf"\b{re.escape('__compartment_' + name + '__')}\b", expression):
+            return True
+    return False
+
+
 def _amount_based_mass_action_constant(
     mass_action_constant: float,
     reaction: SBMLReaction,
     model: SBMLModel,
     reactants: Sequence[str],
     complete_flux: bool = False,
+    law_references_compartment: bool = False,
 ) -> str:
     """Correct a recovered mass-action constant for an amount-based law.
 
@@ -2110,7 +2129,9 @@ def _amount_based_mass_action_constant(
     """
 
     constant = _number(mass_action_constant)
-    if complete_flux:
+    if complete_flux or law_references_compartment:
+        # A complete flux already is the extent rate, and a law that names the
+        # compartment states its own volume dependence.
         return constant
     if not _amount_based_extent_rate(reaction, model, reactants):
         return constant
@@ -2339,6 +2360,7 @@ def _rate_for_reaction(
         not model.species[species_id].has_only_substance_units
         for species_id in reactants
     )
+    law_references_compartment = _law_references_compartment(math, model)
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
     functional = _is_functional_rate_expression(math)
     if reactant_structures:
@@ -2488,6 +2510,7 @@ def _rate_for_reaction(
                     model,
                     reactants,
                     complete_flux=complete_flux,
+                    law_references_compartment=law_references_compartment,
                 )
             )
 
@@ -2588,6 +2611,7 @@ def _rate_for_reaction(
                     model,
                     reactants,
                     complete_flux=complete_flux,
+                    law_references_compartment=law_references_compartment,
                 )
             )
 
