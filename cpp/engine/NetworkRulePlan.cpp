@@ -1,8 +1,6 @@
 #include "engine/NetworkRulePlan.hpp"
 
-#include "ast/RateCandidateContext.hpp"
-#include "ast/SpeciesGraph.hpp"
-
+#include "compile/RateCandidateContext.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,7 +13,8 @@
 #include <tuple>
 #include <utility>
 
-#include "compile/LegacyAstLowering.hpp"
+#include "compile/CompiledRule.hpp"
+#include "compile/PatternLowering.hpp"
 #include "core/List.hpp"
 #include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
@@ -156,7 +155,7 @@ struct RuntimeFilter {
     bool include = false;
     bool products = false;
     std::size_t patternIndex = 0;
-    std::vector<ast::SpeciesGraph> patterns;
+    std::vector<BNGcore::PatternGraph> patterns;
 };
 
 struct RuntimeObservable {
@@ -169,8 +168,8 @@ struct RuntimeObservable {
     std::optional<std::size_t> moleculeOccurrence;
     std::optional<std::size_t> inputPatternIndex;
   std::optional<std::size_t> inputMoleculeOccurrence;
-  std::vector<ast::SpeciesGraph> patterns;
-  std::optional<ast::SpeciesGraph> scopePattern;
+  std::vector<BNGcore::PatternGraph> patterns;
+  std::optional<BNGcore::PatternGraph> scopePattern;
 };
 
 std::vector<RuntimeFilter> lowerFilters(
@@ -186,7 +185,7 @@ std::vector<RuntimeFilter> lowerFilters(
         runtime.patterns.reserve(filter.patterns.size());
         for (const auto& pattern : filter.patterns) {
             runtime.patterns.push_back(
-                compile::lowerPatternToSpeciesGraph(pattern, context));
+                compile::lowerPatternToBNGcore(pattern, context));
         }
         result.push_back(std::move(runtime));
     }
@@ -245,7 +244,7 @@ std::vector<RuntimeObservable> lowerLocalObservableDependencies(
     }
     if (key.side == compile::PatternSide::Product &&
         key.patternIndex < direction.productPatterns.size()) {
-      runtime.scopePattern = compile::lowerPatternToSpeciesGraph(
+      runtime.scopePattern = compile::lowerPatternToBNGcore(
           direction.productPatterns[key.patternIndex], context);
     }
     runtime.patterns.reserve(observable->terms.size());
@@ -261,7 +260,7 @@ std::vector<RuntimeObservable> lowerLocalObservableDependencies(
                     "local-rate fingerprint");
             }
             runtime.patterns.push_back(
-                compile::lowerPatternToSpeciesGraph(term.pattern, context));
+                compile::lowerPatternToBNGcore(term.pattern, context));
         }
         result.push_back(std::move(runtime));
     }
@@ -272,7 +271,8 @@ std::vector<RuntimeObservable> lowerLocalObservableDependencies(
     return result;
 }
 
-bool passesFilterPatterns(const RuntimeFilter& filter, const ast::SpeciesGraph& species) {
+bool passesFilterPatterns(const RuntimeFilter& filter,
+                          const BNGcore::PatternGraph& species) {
     // BioNetGen include_* semantics are disjunctive across the supplied
     // patterns (at least one must match); exclude_* rejects when any supplied
     // pattern matches. This mirrors the legacy Perl implementation.
@@ -311,14 +311,14 @@ std::optional<double> evaluateStructuralExpression(
     const compile::CompiledModel& model,
     const compile::CompiledRuleDirection& direction,
     const std::vector<RuntimeObservable>& localObservables,
-    const ast::RateCandidateContext& candidate,
+    const compile::RateCandidateContext& candidate,
     std::set<std::size_t>& activeFunctions);
 
 std::optional<double> evaluateLocalObservable(
     const compile::ResolvedExpression& expression,
     const compile::CompiledRuleDirection& direction,
     const std::vector<RuntimeObservable>& localObservables,
-    const ast::RateCandidateContext& candidate) {
+    const compile::RateCandidateContext& candidate) {
     if (!expression.symbol.has_value() || expression.arguments.size() != 1) {
         return std::nullopt;
     }
@@ -358,7 +358,7 @@ std::optional<double> evaluateLocalObservable(
         for (const auto& pattern : observable->patterns) {
             if (scope->kind == compile::LocalScopeKind::Species) {
                 count += core::countPatternMatches(
-                    pattern.getGraph(), *candidate.speciesGraphs[scope->patternIndex]);
+                    pattern, *candidate.speciesGraphs[scope->patternIndex]);
             } else {
                 count += core::countPatternMatchesForScopedMolecule(
                     pattern, *candidate.speciesGraphs[scope->patternIndex], scopedMolecule);
@@ -378,8 +378,8 @@ std::optional<double> evaluateLocalObservable(
             return std::nullopt;
         }
         std::size_t moleculeIndex = 0;
-        for (auto node = observable->scopePattern->getGraph().begin();
-             node != observable->scopePattern->getGraph().end(); ++node) {
+        for (auto node = observable->scopePattern->begin();
+             node != observable->scopePattern->end(); ++node) {
             if (!isPatternMoleculeNode(**node)) continue;
             if (moleculeIndex++ == *scope->moleculeOccurrence) {
                 scopePatternMolecule = *node;
@@ -400,7 +400,7 @@ std::optional<double> evaluateLocalObservable(
         const auto* productGraph = candidate.productSpeciesGraphs[productIndex];
         if (scope->kind == compile::LocalScopeKind::Molecule) {
             BNGcore::UllmannSGIso matcher(
-                observable->scopePattern->getGraph(), *productGraph);
+                *observable->scopePattern, *productGraph);
             BNGcore::List<BNGcore::Map> maps;
             matcher.find_maps(maps);
             if (maps.begin() == maps.end()) return std::nullopt;
@@ -428,7 +428,7 @@ std::optional<double> evaluateLocalObservable(
             continue;
         }
         for (const auto& pattern : observable->patterns) {
-            count += core::countPatternMatches(pattern.getGraph(), *productGraph);
+            count += core::countPatternMatches(pattern, *productGraph);
         }
     }
     if (!foundProduct) return std::nullopt;
@@ -440,7 +440,7 @@ std::optional<double> evaluateStructuralExpression(
     const compile::CompiledModel& model,
     const compile::CompiledRuleDirection& direction,
     const std::vector<RuntimeObservable>& localObservables,
-    const ast::RateCandidateContext& candidate,
+    const compile::RateCandidateContext& candidate,
     std::set<std::size_t>& activeFunctions) {
     using ExpressionKind = compile::ResolvedExpressionKind;
     using UnaryOp = compile::UnaryOp;
@@ -618,7 +618,7 @@ struct NetworkRulePlan::Impl {
     std::unique_ptr<LegacyNetworkRuleKernel> kernel;
     std::vector<RuntimeFilter> filters;
     std::vector<RuntimeObservable> localObservables;
-    LegacyNetworkRuleHooks hooks;
+    compile::CompiledRuleExecutionHooks hooks;
   bool functionProductRate = false;
 
   Impl(const compile::CompiledRule& compiledRule,
@@ -644,18 +644,18 @@ struct NetworkRulePlan::Impl {
         }()) {
         if (!filters.empty()) {
             hooks.reactantFilter = [this](std::size_t patternIndex,
-                                          const ast::SpeciesGraph& species) {
+                                          const BNGcore::PatternGraph& species) {
                 for (const auto& filter : filters) {
                     if (filter.products || filter.patternIndex != patternIndex) continue;
                     if (!passesFilterPatterns(filter, species)) return false;
                 }
                 return true;
             };
-            hooks.productFilter = [this](const std::vector<ast::SpeciesGraph>& products) {
+            hooks.productFilter = [this](const std::vector<const BNGcore::PatternGraph*>& products) {
                 for (const auto& filter : filters) {
                     if (!filter.products) continue;
                     if (filter.patternIndex >= products.size()) return false;
-                    if (!passesFilterPatterns(filter, products[filter.patternIndex])) return false;
+                    if (!passesFilterPatterns(filter, *products[filter.patternIndex])) return false;
                 }
                 return true;
             };
@@ -728,7 +728,7 @@ struct NetworkRulePlan::Impl {
             };
 
         hooks.productLocalRateFingerprint =
-            [this](const std::vector<ast::SpeciesGraph> &products,
+            [this](const std::vector<const BNGcore::PatternGraph*> &products,
                    const std::vector<std::size_t> &productPatternIndices) {
               std::ostringstream out;
               for (const auto &observable : localObservables) {
@@ -746,8 +746,8 @@ struct NetworkRulePlan::Impl {
                 if (observable.scopePattern &&
                     observable.moleculeOccurrence.has_value()) {
                   std::size_t moleculeIndex = 0;
-                  for (auto node = observable.scopePattern->getGraph().begin();
-                       node != observable.scopePattern->getGraph().end();
+                  for (auto node = observable.scopePattern->begin();
+                       node != observable.scopePattern->end();
                        ++node) {
                     if (!isPatternMoleculeNode(**node))
                       continue;
@@ -775,7 +775,7 @@ struct NetworkRulePlan::Impl {
                     continue;
                   }
                   foundScopeProduct = true;
-                  const auto &productGraph = products[productIndex].getGraph();
+                  const auto &productGraph = *products[productIndex];
                   if (observable.scopeKind ==
                       compile::LocalScopeKind::Species) {
                     for (const auto &pattern : observable.patterns) {
@@ -785,7 +785,7 @@ struct NetworkRulePlan::Impl {
                   }
 
                   BNGcore::UllmannSGIso matcher(
-                      observable.scopePattern->getGraph(), productGraph);
+                      *observable.scopePattern, productGraph);
                   BNGcore::List<BNGcore::Map> maps;
                   matcher.find_maps(maps);
                   if (maps.begin() == maps.end())
@@ -812,7 +812,7 @@ struct NetworkRulePlan::Impl {
       }
     }
         if (pruneZeroRates && direction.rateLaw.has_value()) {
-            hooks.rejectZeroRate = [this](const ast::RateCandidateContext& candidate) {
+            hooks.rejectZeroRate = [this](const compile::RateCandidateContext& candidate) {
                 std::set<std::size_t> activeFunctions;
                 const auto value = evaluateStructuralExpression(
                     this->direction.rateLaw->resolvedExpression(), this->model,
@@ -849,7 +849,7 @@ std::size_t NetworkRulePlan::expand(
     ast::SpeciesList& species,
     ast::RxnList& reactions,
     std::size_t currentIteration,
-    const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
+    const std::function<bool(const BNGcore::PatternGraph&)>& productFilter,
     std::size_t speciesBoundary) {
     return impl_->kernel->expand(
         species, reactions, currentIteration, productFilter, speciesBoundary);

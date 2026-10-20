@@ -66,7 +66,58 @@ law, rule filters, local scopes and reversible rule directions, and the
 integrated campaign imports them under the `netrule-execution` qualification.
 
 The evidence qualifies that slice only. The `LegacyNetworkRuleKernel`
-reconstruction is not replaced by it and no legacy path is retired.
+reconstruction is not replaced by it and no legacy path is retired. The
+compile-owned execution contract that later takes over the plan's decisions is
+described under "Legacy compatibility-path migration slice" below.
+
+## Legacy compatibility-path migration slice (2026-10-20 candidate)
+
+Issues #138, #139 and #172 asked for product migration: an executable
+dependency inventory of the legacy compatibility paths, the retirement of the
+paths whose callers are already covered by a qualified contract, and an
+explicit blocker for every path that cannot be retired yet.
+
+`tools/check_legacy_dependency_inventory.py` is the executable inventory. It
+walks the live Python import graph and the live C++ include graph and records,
+per legacy path, the live product callers, the live test callers, the status
+and the precise blocker. The recorded graph lives in
+`provenance/architecture/legacy_dependency_inventory.json` and the check fails
+when the live graph drifts away from it, when a retired path is still imported
+and when a retained path does not state its blocker. It runs as the ctest
+`architecture_legacy_dependency_inventory` and as
+`tests/python/test_legacy_dependency_inventory.py`.
+
+The legacy pure-Python network reader (`python/bionetgen/network/`) was
+retired: no live module imported it, the native `bng::io::NetReader`
+supersedes it, and the `.net` reading behaviour is covered by
+`tests/cpp/test_sbml_reader.cpp` and by the harness `.net` comparison checks.
+Its two test callers were removed with it. Importing the retired path now
+fails with an explicit `ModuleNotFoundError` that names the missing module
+instead of the misleading Cement `ImportError` the package used to raise.
+
+The `modelapi`, `simulator` and Cement paths stay. Their callers are live
+(`bionetgen.bngmodel`, `bionetgen.sim_getter`, the legacy Cement CLI and the
+modelapi package itself), their behaviour is covered by qualified checks, and
+none of them has a native replacement yet, so each is retained as the
+deliberate compatibility adapter with its blocker recorded in the inventory.
+The missing-Cement and missing-libRoadRunner cases were already diagnostic:
+they raise `ImportError` instead of degrading silently, and the
+`api-surface:surface:optional-imports` check keeps that contract honest.
+
+For #139 the network-rule execution contract is now compile-owned.
+`compile::CompiledRuleExecutionHooks`
+(`cpp/compile/CompiledRuleExecution.hpp`) carries the rule's filters, local
+scopes and zero-rate decision in backend-neutral types, and
+`compile::RateCandidateContext` moved out of the AST layer for the same
+reason. `cpp/engine/NetworkRulePlan.cpp` therefore no longer includes the
+legacy AST and left `provenance/architecture/ast_compat_allowlist.txt`
+(42 entries before this change, 41 after); the compatibility kernel adapts the
+compile-owned contract to the AST expansion hooks instead of recovering the
+decisions from a reconstructed rule. The AST expansion algorithm behind
+`LegacyNetworkRuleKernel` is unchanged, so the kernel is not retired and the
+netrule-execution family still compares the engine's rule execution against
+the hand-derived closed form and the canonical Perl BNG2 oracle.
+
 ## Compile-once model reuse lifecycle qualification (2026-10-20 candidate)
 
 Issue #141 still had no named executable check for repeated instantiation,
