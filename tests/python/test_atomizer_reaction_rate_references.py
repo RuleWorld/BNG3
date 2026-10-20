@@ -27,8 +27,7 @@ def _model(reaction_count: int) -> str:
 
     reactions = []
     for index in range(reaction_count):
-        reactions.append(
-            f"""
+        reactions.append(f"""
           <reaction id="rx{index}" reversible="false">
             <listOfReactants>
               <speciesReference species="S" stoichiometry="1" constant="true"/>
@@ -41,8 +40,7 @@ def _model(reaction_count: int) -> str:
                 <apply><times/><ci>k</ci><ci>S</ci></apply>
               </math>
             </kineticLaw>
-          </reaction>"""
-        )
+          </reaction>""")
     references = " + ".join(f"<ci>rx{index}</ci>" for index in range(reaction_count))
     return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="reaction_rate_references">
@@ -87,9 +85,9 @@ def test_every_reaction_id_in_a_rule_is_replaced_by_its_rate():
     assert result.success, result.error
     body = _rule_body(result.bngl, "total")
     for index in range(7):
-        assert not re.search(rf"\brx{index}\b", body), (
-            f"reaction id rx{index} survived into the emitted rule: {body}"
-        )
+        assert not re.search(
+            rf"\brx{index}\b", body
+        ), f"reaction id rx{index} survived into the emitted rule: {body}"
     # The rate of each reaction is ``k * S``; the rule sums seven of them.
     assert body.count("0.5 * S_amt") == 7, body
 

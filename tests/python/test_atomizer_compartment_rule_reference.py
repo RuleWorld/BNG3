@@ -20,7 +20,6 @@ from bionetgen.atomizer.modern import Atomizer
 
 from _extdep import require_extension
 
-
 _SBML = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
   <model id="compartment_initial_assignment">
     <listOfCompartments>
