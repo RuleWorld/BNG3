@@ -17,6 +17,7 @@ from . import (
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
+    export_format_tier,
 )
 from .integrated_cases import generated_cases
 
@@ -29,7 +30,17 @@ OPERATIONS = (
     "graph-identity",
     "bngir-adversarial",
     "quantity-laws",
+    "export-format-tier",
 )
+
+# The focused-campaign flag that reproduces one qualification on its own.
+FOCUS_FLAGS = {
+    "quantity-laws": "--quantity-laws-only",
+    "boundaries": "--boundaries-only",
+    "bngir-adversarial": "--bngir-adversarial-only",
+    "graph-identity": "--graph-identity-only",
+    "export-format-tier": "--export-format-tier-only",
+}
 
 
 def check_ids(operation, case=None, *, full=False):
@@ -52,6 +63,8 @@ def check_ids(operation, case=None, *, full=False):
             *bngir_format_contracts.check_ids(),
             *bngir_reconstruction_contracts.check_ids(),
         ]
+    if operation == "export-format-tier":
+        return export_format_tier.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -66,6 +79,7 @@ def expected_ids(
     include_graph_identity=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_export_format_tier=True,
     full=False,
 ):
     ids = []
@@ -77,6 +91,8 @@ def expected_ids(
         ids.extend(["campaign:graph-identity", *check_ids("graph-identity")])
     if include_bngir_adversarial:
         ids.extend(["campaign:bngir-adversarial", *check_ids("bngir-adversarial")])
+    if include_export_format_tier:
+        ids.extend(["campaign:export-format-tier", *check_ids("export-format-tier")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -102,6 +118,8 @@ def run_worker(operation, args):
             *bngir_format_contracts.run_worker(Path.cwd()),
             *bngir_reconstruction_contracts.run_worker(Path.cwd()),
         ]
+    if operation == "export-format-tier":
+        return export_format_tier.run_worker(Path.cwd(), bng_cpp=args.bng_cpp)
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)
@@ -157,6 +175,8 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
         ]
     if operation == "quantity-laws" and getattr(args, "full", False):
         command += ["--full"]
+    if operation == "export-format-tier":
+        command += ["--bng-cpp", str(args.bng_cpp)]
     parent = run_stage(
         key,
         operation,
@@ -169,7 +189,11 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
         timeout=(
             900
             if operation == "quantity-laws"
-            else (240 if operation == "nf-marginals" else 120)
+            else (
+                240
+                if operation == "nf-marginals"
+                else (300 if operation == "export-format-tier" else 120)
+            )
         ),
     )
     if not case:

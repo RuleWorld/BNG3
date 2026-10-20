@@ -737,6 +737,7 @@ def main():
             "graph-identity",
             "bngir-adversarial",
             "quantity-laws",
+            "export-format-tier",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -750,6 +751,7 @@ def main():
     parser.add_argument("--ensemble-runs", type=int, default=32)
     parser.add_argument("--ensemble-cases", type=int, default=48)
     parser.add_argument("--xml-out", type=Path)
+    parser.add_argument("--bng-cpp", type=Path)
     args = parser.parse_args()
     consumer_operations = (
         "bngir-v01",
@@ -829,6 +831,7 @@ def main():
         "graph-identity",
         "bngir-adversarial",
         "quantity-laws",
+        "export-format-tier",
     ):
         from tests.validation.integrated_extensions import run_worker
 
