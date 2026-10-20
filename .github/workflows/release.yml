@@ -40,9 +40,13 @@ jobs:
           set -euo pipefail
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&branch=main&event=push&per_page=100" \
-            > "$RUNNER_TEMP/workflow-runs.json"
+            > "$RUNNER_TEMP/push-workflow-runs.json"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&branch=main&event=workflow_dispatch&per_page=100" \
+            > "$RUNNER_TEMP/sbml-workflow-runs.json"
           python scripts/ci/qualify_release_candidate.py \
-            --runs-json "$RUNNER_TEMP/workflow-runs.json" \
+            --runs-json "$RUNNER_TEMP/push-workflow-runs.json" \
+            --sbml-runs-json "$RUNNER_TEMP/sbml-workflow-runs.json" \
             --sha "$GITHUB_SHA"
 
   # ═══════════════════════════════════════════════════════════════════════════
