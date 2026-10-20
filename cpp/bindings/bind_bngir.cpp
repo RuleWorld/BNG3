@@ -393,10 +393,6 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
                 "native BNGIR pattern requires molecule occurrence zero");
         }
         const auto sites = py::cast<py::list>(molecule["sites"]);
-        if (!sites.empty()) {
-            throw std::runtime_error(
-                "native BNGIR pattern does not support molecule sites");
-        }
         const auto typeId =
             indexFromBngir(molecule["type_id"], "molecule type reference");
         if (typeId >= model.getMoleculeTypes().size()) {
@@ -450,7 +446,80 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
             node.set_compartment(moleculeCompartment);
         }
 
-        graph.add_node(node);
+        auto* moleculeNode = graph.add_node(node);
+        // A site is a component of the molecule type with a state constraint.
+        // The native pattern graph keeps each component as its own node joined
+        // to the molecule node, which is how the parser lowers a site too.
+        std::map<int, BNGcore::Node*> bondNodesByGroup;
+        for (const auto& rawSite : sites) {
+            const auto site = py::cast<py::dict>(rawSite);
+            const auto componentName = py::cast<std::string>(site["component"]);
+            const bng::ast::ComponentType* componentType = nullptr;
+            for (const auto& candidate : moleculeType.getComponents()) {
+                if (candidate.name == componentName) {
+                    componentType = &candidate;
+                    break;
+                }
+            }
+            if (componentType == nullptr) {
+                throw std::runtime_error(
+                    "native BNGIR pattern molecule names a component the "
+                    "molecule type does not declare");
+            }
+            BNGcore::Node componentNodeValue(
+                model.getGraphTypeRegistry().ensureComponentType(
+                    moleculeType, *componentType));
+            auto* componentNode = graph.add_node(componentNodeValue);
+            graph.add_edge(moleculeNode, componentNode);
+
+            const auto state = py::cast<py::dict>(site["state"]);
+            const auto stateKind = py::cast<std::string>(state["kind"]);
+            const auto& runtimeStateType =
+                componentNode->get_type().get_state_type();
+            if (const auto* labelStateType =
+                    dynamic_cast<const BNGcore::LabelStateType*>(&runtimeStateType)) {
+                if (stateKind == "exact") {
+                    componentNode->set_state(BNGcore::LabelState(
+                        *labelStateType, py::cast<std::string>(state["value"])));
+                } else if (stateKind == "any") {
+                    componentNode->set_state(
+                        BNGcore::LabelState(*labelStateType, "?"));
+                } else {
+                    throw std::runtime_error(
+                        "native BNGIR pattern molecule site state kind is not "
+                        "supported: " + stateKind);
+                }
+            }
+
+            const auto bond = py::cast<py::dict>(site["bond"]);
+            const auto bondKind = py::cast<std::string>(bond["kind"]);
+            BNGcore::Node* bondNode = nullptr;
+            if (bondKind == "bound" || bondKind == "exact") {
+                const int group = bond.contains("group")
+                    ? py::cast<int>(bond["group"])
+                    : 0;
+                const auto found = bondNodesByGroup.find(group);
+                if (found != bondNodesByGroup.end()) {
+                    bondNode = found->second;
+                } else {
+                    BNGcore::Node bondNodeValue(BNGcore::BOND_NODE_TYPE);
+                    bondNode = graph.add_node(bondNodeValue);
+                    bondNode->set_state(BNGcore::BOUND_STATE);
+                    bondNodesByGroup.emplace(group, bondNode);
+                }
+            } else {
+                BNGcore::Node bondNodeValue(BNGcore::BOND_NODE_TYPE);
+                bondNode = graph.add_node(bondNodeValue);
+                if (bondKind == "any") {
+                    bondNode->set_state(BNGcore::BondState(
+                        BNGcore::BOND_STATE_TYPE, BNGcore::WILDCARD_STRING));
+                } else {
+                    // An unbound or unspecified bond cannot be a bound one.
+                    bondNode->set_state(BNGcore::UNBOUND_STATE);
+                }
+            }
+            graph.add_edge(componentNode, bondNode);
+        }
     }
     SpeciesGraph result(graph, outerCompartment);
     result.setCompartmentIsPrefix(isPrefix);
@@ -521,6 +590,34 @@ std::vector<BngirFunction> functionsFromBngir(
     return result;
 }
 
+
+// Build the include/exclude filter modifier text the native rule parser
+// understands: the pattern index is one-based and the molecule name selects
+// the molecule the filter applies to.
+std::string filterModifierText(const py::dict& filter) {
+    const auto include = py::cast<bool>(filter["include"]);
+    const auto side = py::cast<std::string>(filter["side"]);
+    if (side != "reactant" && side != "product") {
+        throw std::runtime_error("native BNGIR filter side is not supported");
+    }
+    const auto patternIndex = indexFromBngir(
+        filter["pattern_index"], "filter pattern index");
+    const auto patterns = py::cast<py::list>(filter["patterns"]);
+    if (patterns.size() == 0) {
+        throw std::runtime_error("native BNGIR filter has no pattern");
+    }
+    const auto pattern = py::cast<py::dict>(patterns[0]);
+    const auto molecules = py::cast<py::list>(pattern["molecules"]);
+    if (molecules.size() == 0) {
+        throw std::runtime_error("native BNGIR filter pattern has no molecule");
+    }
+    const auto molecule = py::cast<py::dict>(molecules[0]);
+    const auto moleculeName = py::cast<std::string>(molecule["type"]);
+    return std::string(include ? "include_" : "exclude_") +
+           (side == "product" ? "products" : "reactants") + "(" +
+           std::to_string(patternIndex + 1) + "," + moleculeName + ")";
+}
+
 std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
                                         const py::object& protocol) {
     rejectUnsupportedModelSections(document);
@@ -549,11 +646,6 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
         if (!PyBool_Check(population.ptr())) {
             throw std::runtime_error(
                 "native BNGIR molecule type population must be boolean");
-        }
-        const auto components = py::cast<py::list>(moleculeType["components"]);
-        if (!components.empty()) {
-            throw std::runtime_error(
-                "native BNGIR molecule type components are unsupported");
         }
     }
 
@@ -654,8 +746,22 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
             throw std::runtime_error(
                 "native BNGIR molecule type names must be unique");
         }
+        std::vector<bng::ast::ComponentType> componentTypes;
+        for (const auto& rawComponent :
+             py::cast<py::list>(moleculeType["components"])) {
+            const auto component = py::cast<py::dict>(rawComponent);
+            bng::ast::ComponentType componentType;
+            componentType.name = py::cast<std::string>(component["name"]);
+            for (const auto& rawState :
+                 py::cast<py::list>(component["states"])) {
+                componentType.allowedStates.push_back(
+                    py::cast<std::string>(rawState));
+            }
+            componentTypes.push_back(std::move(componentType));
+        }
         model->addMoleculeType(MoleculeType(
-            name, {}, py::cast<bool>(moleculeType[py::str("population")])));
+            name, std::move(componentTypes),
+            py::cast<bool>(moleculeType[py::str("population")])));
     }
 
     std::set<std::string> uniqueCompartmentNames;
@@ -796,10 +902,9 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
             "mutations", "transformations_complete",
         };
         requireObjectKeys(direction, directionKeys, directionKeys, "rule direction");
-        if (!py::cast<py::list>(direction["filters"]).empty() ||
-            !py::cast<py::list>(direction["local_scopes"]).empty()) {
+        if (!py::cast<py::list>(direction["local_scopes"]).empty()) {
             throw std::runtime_error(
-                "native BNGIR does not support filters or local scopes");
+                "native BNGIR does not support local scopes");
         }
         const auto reactants = py::cast<py::list>(direction["reactants"]);
         const auto products = py::cast<py::list>(direction["products"]);
@@ -872,6 +977,25 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
                 }
             }
         }
+        std::vector<std::string> filterModifiers;
+        for (const auto& rawFilter :
+             py::cast<py::list>(direction["filters"])) {
+            filterModifiers.push_back(
+                filterModifierText(py::cast<py::dict>(rawFilter)));
+        }
+        if (rule.contains("reverse")) {
+            const auto reverse = py::cast<py::dict>(rule["reverse"]);
+            for (const auto& rawFilter :
+                 py::cast<py::list>(reverse["filters"])) {
+                filterModifiers.push_back(
+                    filterModifierText(py::cast<py::dict>(rawFilter)));
+            }
+        }
+        // The include/exclude filters are carried as the modifier text the
+        // native rule parser understands; they are the semantic content of the
+        // filter, not a separate field.
+        modifiers.insert(
+            modifiers.end(), filterModifiers.begin(), filterModifiers.end());
         const auto rate = py::cast<py::dict>(direction["rate"]);
         std::vector<Expression> rates;
         rates.push_back(expressionFromBngir(
@@ -895,7 +1019,8 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
             py::cast<std::string>(rule["label"]),
             std::move(rates),
             std::move(reactantGraphs), std::move(productGraphs),
-            std::move(modifiers), py::cast<bool>(bidirectional)));
+            std::move(modifiers), py::cast<bool>(bidirectional),
+            !filterModifiers.empty()));
     }
 
     // The energy patterns give a transition-state energy to the patterns they

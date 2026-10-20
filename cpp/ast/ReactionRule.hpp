@@ -133,7 +133,8 @@ public:
         std::vector<SpeciesGraph> reactantPatterns,
         std::vector<SpeciesGraph> productPatterns,
         std::vector<std::string> modifiers = {},
-        bool bidirectional = false);
+        bool bidirectional = false,
+        bool parseTextModifiers = false);
     ~ReactionRule();
     ReactionRule(ReactionRule&&) noexcept;
     ReactionRule& operator=(ReactionRule&&) noexcept;

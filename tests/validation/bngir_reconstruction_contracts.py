@@ -107,6 +107,8 @@ _REFUSAL_MARKERS = (
     "does not support",
     "must be an ordinary site-free type",
     "out of range",
+    "cannot be deserialized",
+    "not supported",
 )
 
 

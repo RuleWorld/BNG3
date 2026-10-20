@@ -491,13 +491,18 @@ def _action_lines(action: Mapping[str, Any]) -> str:
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     model = _require_mapping(root["model"], "model")
     if model.get("population_maps"):
-        raise ValueError("BNGIR population_maps deserialization is not yet supported")
-    if model.get("barrier_patterns"):
-        # A barrier needs a barrier energy the engine can compile. Rendering one
-        # without it produces a model the compiler rejects with an internal
-        # error, so refuse the feature explicitly instead.
+        # A population map's rate is not part of the wire format, so the map
+        # cannot be rebuilt with the rate the engine needs.
         raise ValueError(
-            "BNGIR barrier_patterns deserialization is not yet supported"
+            "BNGIR population_maps cannot be deserialized because the wire "
+            "format does not carry a population map's rate"
+        )
+    if model.get("barrier_patterns"):
+        # The engine does not compile a barrier pattern, so a document that
+        # carries one cannot be turned into a model.
+        raise ValueError(
+            "BNGIR barrier_patterns cannot be deserialized because the engine "
+            "does not compile barrier patterns"
         )
 
     lines: list[str] = []
@@ -1610,8 +1615,44 @@ def _native_pattern_v02(
         raise ValueError(f"native BNGIR {where} references an unknown molecule type id")
     if not isinstance(molecule["type"], str) or not molecule["type"]:
         raise ValueError(f"native BNGIR {where} has no molecule type name")
-    if molecule["sites"] != []:
-        raise ValueError(f"native BNGIR {where} does not support molecule sites")
+    for site_index, raw_site in enumerate(molecule["sites"]):
+        site = _require_mapping(raw_site, f"{where}.molecules[0].sites[{site_index}]")
+        _native_required_optional_keys(
+            site,
+            {"occurrence", "component", "state", "bond"},
+            {"occurrence", "component", "component_index", "label", "state", "bond"},
+            f"{where}.molecules[0].sites[{site_index}]",
+        )
+        if (
+            isinstance(site["occurrence"], bool)
+            or not isinstance(site["occurrence"], int)
+            or site["occurrence"] != 0
+        ):
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] requires "
+                "site occurrence zero"
+            )
+        if not isinstance(site["component"], str) or not site["component"]:
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] has no "
+                "component name"
+            )
+        state = _require_mapping(
+            site["state"], f"{where}.molecules[0].sites[{site_index}].state"
+        )
+        if state.get("kind") not in {"any", "exact", "set"}:
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] has an "
+                "unsupported state constraint kind"
+            )
+        bond = _require_mapping(
+            site["bond"], f"{where}.molecules[0].sites[{site_index}].bond"
+        )
+        if bond.get("kind") not in {"unspecified", "unbound", "bound", "any", "exact"}:
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] has an "
+                "unsupported bond constraint kind"
+            )
 
 
 def _native_multi_pattern_direction_v02(
@@ -1791,10 +1832,32 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"native BNGIR molecule type {name!r} has an invalid population flag"
             )
-        if molecule["components"] != []:
-            raise ValueError(
-                f"native BNGIR molecule type {name!r} must be an ordinary site-free type"
+        for component_index, raw_component in enumerate(molecule["components"]):
+            component = _require_mapping(
+                raw_component,
+                f"model.molecule_types[{index}].components[{component_index}]",
             )
+            _native_exact_keys(
+                component,
+                {"index", "name", "states"},
+                f"model.molecule_types[{index}].components[{component_index}]",
+            )
+            if component["index"] != component_index:
+                raise ValueError(
+                    f"native BNGIR molecule type {name!r} component indices must "
+                    "be dense and ordered"
+                )
+            if not isinstance(component["name"], str) or not component["name"]:
+                raise ValueError(
+                    f"native BNGIR molecule type {name!r} has an invalid component name"
+                )
+            if not isinstance(component["states"], list) or not all(
+                isinstance(state, str) for state in component["states"]
+            ):
+                raise ValueError(
+                    f"native BNGIR molecule type {name!r} component states must be "
+                    "a string array"
+                )
         molecule_ids.add(index)
         molecule_names.add(name)
 
@@ -2087,10 +2150,34 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             },
             f"model.rules[{index}].forward",
         )
-        if direction["filters"] != [] or direction["local_scopes"] != []:
+        if direction["local_scopes"] != []:
             raise ValueError(
-                f"native BNGIR model.rules[{index}] does not support filters or local scopes"
+                f"native BNGIR model.rules[{index}] does not support local scopes"
             )
+        for filter_index, raw_filter in enumerate(direction["filters"]):
+            filter_ = _require_mapping(
+                raw_filter, f"model.rules[{index}].forward.filters[{filter_index}]"
+            )
+            if not isinstance(filter_.get("include"), bool):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] must have a boolean include flag"
+                )
+            if filter_.get("side") not in {"reactant", "product"}:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] has an unsupported side"
+                )
+            if not _is_json_integer(filter_.get("pattern_index")):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] must have an integer pattern index"
+                )
+            if not isinstance(filter_.get("patterns"), list):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] must have a pattern array"
+                )
         if direction["transformations_complete"] is not True:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] has incomplete transformations"
@@ -2150,10 +2237,9 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     raise ValueError(
                         f"native BNGIR model.rules[{index}] has an out-of-slice molecule mapping reference"
                     )
-        if rule["component_mappings"]:
-            raise ValueError(
-                f"native BNGIR model.rules[{index}] does not support component mappings"
-            )
+        # The native rule derives its component mappings from the reactant and
+        # product patterns. The document states them so a consumer can read the
+        # mapping without deriving it; the native importer checks the two agree.
         rate = _require_mapping(direction["rate"], f"model.rules[{index}].forward.rate")
         _native_exact_keys(
             rate, {"kind", "expression"}, f"model.rules[{index}].forward.rate"
@@ -2184,10 +2270,87 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             if not isinstance(kind, str) or kind not in {
                 "add_molecule",
                 "delete_molecule",
+                "change_state",
             }:
                 raise ValueError(
                     f"native BNGIR model.rules[{index}] has unsupported mutation kind {kind!r}"
                 )
+            if kind == "change_state":
+                # The native rule derives a state change from the reactant and
+                # product patterns. The document states it so a consumer can
+                # read it without deriving it, and the two must agree.
+                _native_exact_keys(
+                    mutation,
+                    {"kind", "source", "state", "state_index"},
+                    f"model.rules[{index}].forward.mutations[{mutation_index}]",
+                )
+                source = _require_mapping(
+                    mutation["source"],
+                    f"model.rules[{index}].forward.mutations[{mutation_index}].source",
+                )
+                _native_exact_keys(
+                    source,
+                    {"side", "pattern", "molecule", "site"},
+                    f"model.rules[{index}].forward.mutations[{mutation_index}].source",
+                )
+                if source["side"] != "reactant":
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change must come "
+                        "from the reactant side"
+                    )
+                if (
+                    isinstance(source["pattern"], bool)
+                    or not isinstance(source["pattern"], int)
+                    or not 0 <= source["pattern"] < len(direction["reactants"])
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown reactant pattern"
+                    )
+                if (
+                    isinstance(source["molecule"], bool)
+                    or not isinstance(source["molecule"], int)
+                    or source["molecule"] != 0
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown reactant molecule"
+                    )
+                reactant = direction["reactants"][source["pattern"]]
+                reactantMolecules = reactant["molecules"]
+                if source["molecule"] >= len(reactantMolecules):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown reactant molecule"
+                    )
+                product = direction["products"][source["pattern"]]
+                if source["pattern"] >= len(direction["products"]):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown product pattern"
+                    )
+                productMolecules = product["molecules"]
+                if source["molecule"] >= len(productMolecules):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown product molecule"
+                    )
+                reactantSites = reactantMolecules[source["molecule"]].get("sites", [])
+                productSites = productMolecules[source["molecule"]].get("sites", [])
+                if source["site"] >= len(reactantSites) or source["site"] >= len(
+                    productSites
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown site"
+                    )
+                target = productSites[source["site"]]
+                if target.get("state", {}).get("value") != mutation["state"]:
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change does not "
+                        "match the product pattern state"
+                    )
+                continue
             _native_exact_keys(
                 mutation,
                 {"kind", "molecule"},

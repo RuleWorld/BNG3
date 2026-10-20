@@ -581,7 +581,7 @@ investigation-packet paths.
 |---|---|---|---|
 | `parameters` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `parameters.v02.json` |
 | `molecule-types` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `molecule-types.v02.json` |
-| `molecule-components` | UNSUPPORTED | `issue:153:reconstruct-the-supported-resolved-model-without-rendering-or-pa` | `molecule-components.v02.json` |
+| `molecule-components` | PRESERVED | `issue:153:reconstruct-the-supported-resolved-model-without-rendering-or-pa` | `molecule-components.v02.json` |
 | `site-free-molecule-types` | PRESERVED | `issue:153:reconstruct-the-supported-resolved-model-without-rendering-or-pa` | `site-free-molecule-types.v02.json` |
 | `seeds` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `seeds.v02.json` |
 | `constant-seed` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `constant-seed.v02.json` |
@@ -602,12 +602,12 @@ investigation-packet paths.
 | `protocol-actions` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `protocol-actions.v02.json` |
 | `versioned-features` | PRESERVED | `issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind` | `versioned-features.v02.json` |
 
-Eighteen cells preserve the feature and import natively. Four are refused explicitly by the
-migration, by the v0.1 reader, or by the native reader. No cell loses a feature silently and
-no cell is rejected without an explicit reason: the migration, the v0.1 reader and the native
-reader all fail closed with a message that names the unsupported feature.
+Nineteen cells preserve the feature and import natively. Three are refused explicitly by the
+migration or by the v0.1 reader. No cell loses a feature silently and no cell is rejected
+without an explicit reason: the migration, the v0.1 reader and the native reader all fail
+closed with a message that names the unsupported feature.
 
-Nine defects were found and repaired while the matrix was extended, and their records were
+Twelve defects were found and repaired while the matrix was extended, and their records were
 removed from the obligation catalog:
 
 - The v0.2 writer silently dropped a rule's non-empty `driving_work`, because the v0.2 rule
@@ -634,10 +634,22 @@ removed from the obligation catalog:
 - The native reader refused energy patterns that the native model can carry. The importer
   lowers each energy pattern to the same expression and graph the compiler uses, with the
   pattern text retained as provenance.
+- The native reader refused rule filters that the native model can carry. The importer builds
+  the include/exclude modifier text the native rule parser understands.
+- The native reader refused site-bearing molecule types and the patterns that use them. The
+  importer now builds the molecule type's components and lowers each site to the component
+  node the parser's own pattern builder produces, with the state constraint and the bond.
+- The native reader refused a rule's state change. The document's state change is now checked
+  against the product pattern's site state, because the native rule derives the change from
+  the reactant and product patterns.
 
-The remaining four cells are explicit unsupported boundaries, each with an owning requirement:
-site-bearing molecule types, rule filters and local scopes, barrier patterns, and population
-maps.
+The three remaining cells are explicit unsupported boundaries, each with an owning requirement:
+a rule's non-empty driving work, barrier patterns, and population maps. The first has no
+field in the v0.2 wire format and is refused in favour of the version that has one; the
+second is refused because the engine does not compile a barrier pattern; the third is refused
+because the wire format carries no population map's rate. The native reader also refuses rule
+local scopes, because the native rule collects them from pattern text the wire format does
+not carry.
 
 ### Export contract scope
 

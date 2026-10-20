@@ -922,16 +922,17 @@ ReactionRule ReactionRule::fromResolvedPatterns(
     std::vector<SpeciesGraph> reactantPatterns,
     std::vector<SpeciesGraph> productPatterns,
     std::vector<std::string> modifiers,
-    bool bidirectional) {
+    bool bidirectional,
+    bool parseTextModifiers) {
     std::vector<std::string> reactants(reactantPatterns.size());
     std::vector<std::string> products(productPatterns.size());
-    // The modifier text is the compiler's authority for the keyword modifiers;
-    // it is not parsed here as source text, so include/exclude filter text is
-    // not accepted through this route.
+    // The modifier text is the compiler's authority for the keyword modifiers.
+    // Include/exclude filter text is parsed into the rule's filters when the
+    // caller asks for it, because the filters are the semantic content.
     return ReactionRule(
         std::move(ruleName), std::move(label), std::move(reactants),
         std::move(products), std::move(rates), std::move(modifiers), bidirectional,
-        std::move(reactantPatterns), std::move(productPatterns), false);
+        std::move(reactantPatterns), std::move(productPatterns), parseTextModifiers);
 }
 
 ReactionRule::ReactionRule(

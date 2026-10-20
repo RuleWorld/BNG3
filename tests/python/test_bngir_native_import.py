@@ -257,23 +257,21 @@ def test_direct_native_builder_preserves_supported_models_and_executes(
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
 
 
-def test_direct_native_builder_rejects_molecule_type_components():
+def test_direct_native_builder_accepts_molecule_type_components():
     document = _document()
     document["model"]["molecule_types"][0]["components"] = [
         {"index": 0, "name": "x", "states": ["u", "p"]}
     ]
 
-    with pytest.raises(RuntimeError, match="molecule type components are unsupported"):
-        _cpp._model_from_bngir_v02(document["model"])
+    model = _cpp._model_from_bngir_v02(document["model"])
+    imported = next(item for item in model.molecule_types if item.name == "A")
+    assert [component.name for component in imported.components] == ["x"]
 
 
 @pytest.mark.parametrize("location", ["seed", "reactant", "product"])
-def test_direct_native_builder_rejects_molecule_sites(location):
+def test_direct_native_builder_accepts_molecule_sites(location):
     document = _document(SITES_SOURCE)
     model = document["model"]
-    # Isolate the pattern-site boundary from the earlier molecule-type guard.
-    for molecule_type in model["molecule_types"]:
-        molecule_type["components"] = []
 
     patterns = {
         "seed": model["seeds"][0]["pattern"],
@@ -285,8 +283,8 @@ def test_direct_native_builder_rejects_molecule_sites(location):
         pattern["molecules"][0]["sites"] = []
     patterns[location]["molecules"][0]["sites"] = selected_sites
 
-    with pytest.raises(RuntimeError, match="does not support molecule sites"):
-        _cpp._model_from_bngir_v02(model)
+    imported = _cpp._model_from_bngir_v02(model)
+    assert imported is not None
 
 
 @pytest.mark.parametrize(
@@ -1280,11 +1278,10 @@ def test_direct_native_builder_accepts_a_rule_modifier():
     assert list(model.reaction_rules[0].modifiers) == ["TotalRate"]
 
 
-@pytest.mark.parametrize("field", ["filters", "local_scopes"])
-def test_direct_native_builder_refuses_unrepresented_direction_semantics(field):
+def test_direct_native_builder_refuses_unrepresented_direction_semantics():
     document = _document()
-    document["model"]["rules"][0]["forward"][field] = [{}]
-    with pytest.raises(RuntimeError, match="filters or local scopes"):
+    document["model"]["rules"][0]["forward"]["local_scopes"] = [{}]
+    with pytest.raises(RuntimeError, match="does not support local scopes"):
         _cpp._model_from_bngir_v02(document["model"])
 
 
