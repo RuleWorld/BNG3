@@ -2041,6 +2041,40 @@ def _law_references_compartment(expression: str, model: SBMLModel) -> bool:
     return False
 
 
+def _compartment_factor_shape(expression: str, compartment_id: str) -> str:
+    """Classify how a rate law uses a compartment's size.
+
+    Returns ``"multiplicative"`` when the law multiplies by the
+    compartment's size, ``"divisive"`` when it divides by it, and
+    ``"none"`` when the law does not name the compartment at all.  A law
+    that names the compartment in both positions is reported as
+    ``"none"``: the two factors cancel and the law carries no net volume
+    dependence.
+    """
+
+    if not compartment_id:
+        return "none"
+    name = standardize_name(str(compartment_id))
+    identifiers = {
+        str(compartment_id),
+        name,
+        f"__compartment_{name}__",
+    }
+    multiplicative = False
+    divisive = False
+    for identifier in identifiers:
+        escaped = re.escape(identifier)
+        if re.search(rf"\*\s*{escaped}\b", expression) or re.search(
+            rf"^\s*{escaped}\b\s*\*", expression
+        ):
+            multiplicative = True
+        if re.search(rf"/\s*{escaped}\b", expression):
+            divisive = True
+    if multiplicative == divisive:
+        return "none"
+    return "multiplicative" if multiplicative else "divisive"
+
+
 def _amount_based_mass_action_constant(
     mass_action_constant: float,
     reaction: SBMLReaction,
@@ -2048,6 +2082,7 @@ def _amount_based_mass_action_constant(
     reactants: Sequence[str],
     complete_flux: bool = False,
     law_references_compartment: bool = False,
+    compartment_factor_shape: str = "none",
 ) -> str:
     """Correct a recovered mass-action constant for an amount-based law.
 
@@ -2064,6 +2099,16 @@ def _amount_based_mass_action_constant(
     except the one that the concentration form already carries.  A
     zero-order law (``m = 0``) is correspondingly divided by the volume.
 
+    A law that names the compartment states its own volume dependence, and
+    the shape of that dependence decides the exponent.  A law that divides
+    by the compartment (``k * A * A / cell``) already carries the ``1/V``
+    that the amount-based reading needs, so it keeps the constant it was
+    recovered with.  A law that multiplies by the compartment
+    (``cell * k * A * A``) states the opposite dependence and needs one more
+    volume factor than a law that does not name the compartment at all, so
+    its constant becomes ``k * V**m``.  Reporting the multiplicative form
+    without that factor would leave the constant off by ``V**m``.
+
     A concentration-based law already carries the compartment factor that
     SBML's convention requires, and needs no correction.  A rate that is
     emitted as a complete flux (``complete_flux``) is the extent rate
@@ -2071,23 +2116,31 @@ def _amount_based_mass_action_constant(
     """
 
     constant = _number(mass_action_constant)
-    if complete_flux or law_references_compartment:
-        # A complete flux already is the extent rate, and a law that names the
-        # compartment states its own volume dependence.
+    multiplicative = compartment_factor_shape == "multiplicative"
+    if complete_flux:
+        # A complete flux already is the extent rate.
+        return constant
+    if law_references_compartment and not multiplicative:
+        # A law that names the compartment states its own volume dependence.
         return constant
     if not _amount_based_extent_rate(reaction, model, reactants):
         return constant
     order = len(reactants)
-    if order < 2:
-        # A unimolecular law needs no volume factor, and a zero-order law is
-        # emitted as a complete flux, which already is the extent rate.
+    if order == 0:
+        # A zero-order law is emitted as a complete flux, which already is the
+        # extent rate.
+        return constant
+    if order == 1 and not multiplicative:
+        # A unimolecular law that does not name the compartment needs no
+        # volume factor.
         return constant
     volume = _reaction_volume_expression(reaction, model)
-    return f"({constant}) * ({volume})**{order - 1}"
+    exponent = order if multiplicative else order - 1
+    return f"({constant}) * ({volume})**{exponent}"
 
 
-def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str:
-    """Return the BNGL size expression of a reaction's compartment.
+def _reaction_compartment_id(reaction: SBMLReaction, model: SBMLModel) -> str:
+    """Return the identifier of a reaction's compartment.
 
     The compartment is the reaction's own ``compartment`` attribute when it
     has one, otherwise the compartment of the first participant that declares
@@ -2104,6 +2157,15 @@ def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str
                 compartment_id = str(species.compartment)
                 break
     if not compartment_id or compartment_id not in model.compartments:
+        return ""
+    return compartment_id
+
+
+def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str:
+    """Return the BNGL size expression of a reaction's compartment."""
+
+    compartment_id = _reaction_compartment_id(reaction, model)
+    if not compartment_id:
         return "1"
     return f"__compartment_{standardize_name(compartment_id)}__"
 
@@ -2303,6 +2365,12 @@ def _rate_for_reaction(
         for species_id in reactants
     )
     law_references_compartment = _law_references_compartment(math, model)
+    # A law that names its compartment states its own volume dependence, and
+    # the shape of that dependence decides how the amount-based correction
+    # has to account for it.
+    compartment_factor_shape = _compartment_factor_shape(
+        math, _reaction_compartment_id(reaction, model)
+    )
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
     functional = _is_functional_rate_expression(math)
     if reactant_structures:
@@ -2453,6 +2521,7 @@ def _rate_for_reaction(
                     reactants,
                     complete_flux=complete_flux,
                     law_references_compartment=law_references_compartment,
+                    compartment_factor_shape=compartment_factor_shape,
                 )
             )
 
@@ -2554,6 +2623,7 @@ def _rate_for_reaction(
                     reactants,
                     complete_flux=complete_flux,
                     law_references_compartment=law_references_compartment,
+                    compartment_factor_shape=compartment_factor_shape,
                 )
             )
 
@@ -4373,7 +4443,9 @@ def _seed_symbol_values(
 ) -> Dict[str, float]:
     """Resolve numeric SBML values needed by expression-valued seed species.
 
-    Initial values are established in SBML specification order:
+    Initial values are established in SBML specification order (Sec. 3.4.8,
+    "Initial conditions and special considerations", lists the steps that
+    establish the values at t <= 0):
 
       1. explicit initial values from attributes (parameter ``value``,
          compartment ``size``, species amount/concentration) form the base;
@@ -4794,12 +4866,12 @@ def write_observables(
                 # An SBML species identifier in an expression denotes the
                 # species' amount or concentration according to its
                 # ``hasOnlySubstanceUnits`` attribute (SBML Level 3 Version 2
-                # Core, Sec. 4.8).  A concentration-valued operand makes the
-                # rule's value a concentration, which no BNGL observable can
-                # report: a ``Molecules`` observable counts molecules and a
-                # ``Species`` observable of a pattern reports the same count.
-                # Leave the rule to the function writer, which can express the
-                # concentration exactly.
+                # Core, Sec. 4.6 "Species").  A concentration-valued operand
+                # makes the rule's value a concentration, which no BNGL
+                # observable can report: a ``Molecules`` observable counts
+                # molecules and a ``Species`` observable of a pattern reports
+                # the same count.  Leave the rule to the function writer,
+                # which can express the concentration exactly.
                 concentration_operands = True
         if not pattern_counts:
             continue
@@ -5436,9 +5508,9 @@ def write_functions(
         )
         # An SBML species identifier denotes the species' amount or
         # concentration according to its ``hasOnlySubstanceUnits`` attribute
-        # (SBML Level 3 Version 2 Core, Sec. 4.8).  The concentration helper
-        # divides by the compartment's current size, so it is also correct
-        # when the compartment is driven by a rule.
+        # (SBML Level 3 Version 2 Core, Sec. 4.6 "Species").  The
+        # concentration helper divides by the compartment's current size, so
+        # it is also correct when the compartment is driven by a rule.
         body = _rewrite_declared_id_runs(
             body,
             concentration_species,

@@ -260,9 +260,11 @@ def test_amount_based_law_that_names_the_compartment_keeps_its_own_volume_factor
     The generated integrated-validation case ``dimerization-v1-n20-r0-a0``
     uses the rate law ``k * A * A / cell`` in a size-1 compartment.  The
     amount-based correction would multiply the constant by the compartment
-    size, but the law already carries that factor, and BNGL's rate-law
-    grammar and BNG2's expression parser do not accept a compartment
-    parameter raised to a power inside a rate law.
+    size, but the law already carries that factor: the kinetic law's value is
+    the reaction's extent rate, and ``k * A * A / cell`` divides the extent
+    rate by the compartment size, which is exactly the ``1 / V`` the
+    amount-based reading needs.  Applying the correction as well would make
+    the rate ``V`` times too fast.
     """
 
     sbml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
@@ -320,3 +322,106 @@ def test_amount_based_law_that_names_the_compartment_keeps_its_own_volume_factor
     # factor is added to it.
     assert "__compartment_cell__" not in rule
     assert rule.endswith("0.8")
+
+
+def _multiplicative_compartment_model() -> str:
+    """A dimerization whose law multiplies by the compartment's size.
+
+    The law is ``cell * k * A * A`` in a size-10 compartment, with
+    amount-valued species.  SBML reads the law's value as the reaction's
+    extent rate, so the extent rate scales with the compartment size and
+    the species' amounts change by ``stoichiometry * extent rate``.
+    """
+
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="multiplicative_compartment">
+        <listOfCompartments>
+          <compartment id="cell" spatialDimensions="3" size="10" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cell" initialAmount="20"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="D" compartment="cell" initialAmount="0"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="0.4" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="dimerize" reversible="false">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="2" constant="true"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="D" stoichiometry="1" constant="true"/>
+            </listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/>
+                  <ci>cell</ci>
+                  <apply><times/><ci>k</ci><ci>A</ci><ci>A</ci></apply>
+                </apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+
+def test_multiplicative_compartment_factor_gains_one_more_volume_factor():
+    """A law that multiplies by the compartment is not exempt from the volume.
+
+    ``cell * k * A * A`` states the opposite volume dependence of
+    ``k * A * A / cell``: the extent rate scales with the compartment size,
+    so the amount-based constant needs ``V**m`` for a law with ``m`` reactant
+    factors, where a law that does not name the compartment needs
+    ``V**(m-1)``.
+    """
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _multiplicative_compartment_model()
+    )
+    assert result.success, result.error
+    rule = next(
+        line.strip()
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("dimerize:")
+    )
+    assert "(0.8) * (__compartment_cell__)**2" in rule
+
+
+def test_multiplicative_compartment_factor_reproduces_the_extent_rate_reading():
+    """The lowered model must reproduce SBML's extent-rate reading.
+
+    The kinetic law's value is the extent rate ``v = cell * k * A * A`` and
+    the species' amounts change by ``stoichiometry * v``, so
+    ``dA/dt = -2 * V * k * A**2`` and ``A(t) = A0 / (1 + 2 * V * k * A0 * t)``.
+    The independent libRoadRunner reference gives the same trajectory.
+    """
+
+    import numpy as np
+
+    from bionetgen import BioNetGenModel
+    import bionetgen._bionetgen_cpp as cpp
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _multiplicative_compartment_model()
+    )
+    assert result.success, result.error
+
+    simulation = BioNetGenModel(cpp.parse_string(result.bngl)).simulate(
+        method="ode",
+        t_start=0,
+        t_end=5,
+        n_steps=0,
+        sample_times=list(np.linspace(0, 5, 11)),
+        rtol=1e-10,
+        atol=1e-14,
+    )
+    amounts = [float(value) for value in simulation.observables["A_amt"]]
+
+    volume, constant, initial = 10.0, 0.4, 20.0
+    for time, amount in zip(simulation.time, amounts):
+        expected = initial / (1 + 2 * volume * constant * initial * float(time))
+        assert math.isclose(amount, expected, rel_tol=1e-5), (time, amount, expected)
