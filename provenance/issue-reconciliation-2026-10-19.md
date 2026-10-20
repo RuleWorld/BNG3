@@ -493,11 +493,26 @@ Keep the exact current criterion on a parent tracking issue, and split its compo
 - **Version migration** — exercise explicit v0.1/v0.2 fixtures; refuse any feature the destination version cannot preserve and state unit/population limitations.
 - **Generated reference refusal** — generate schema-valid invalid-index and name/ID-mismatch controls for seed, rule-reactant, and rule-product molecule-type references; import directly through native BNGIR; compare with an independently authored positive control. Missing importer is `HARNESS_ERROR`/`NOT_TESTED`; explicit refusal is diagnostic PASS, never supported semantic execution. Four new deterministic rule-side controls do not establish arbitrary property-based coverage, export determinism, migration, or complete round-trips.
 
-## Next three tasks
+## The three planned tasks, and what they became
 
-1. **#155 export and deterministic serialization** — add `bngir-export:v02-independent-roundtrip` and `bngir-export:canonical-bytes-order-invariance`; each must name an independent consumer and compare the documented supported subset. Complete when exact-head hosted reports select and execute both checks, round-trip semantics match, canonical bytes are invariant under permitted declaration ordering, and unsupported fields refuse explicitly.
-2. **#153/#154 reconstruction, semantics, and version refusal** — add `bngir-reconstruction:source-text-independent-v02` and `bngir-version-migration:v01-v02-feature-matrix` with authored positive and loss/refusal fixtures for declaration metadata, protocol, versioned fields, and semantic trajectory. Complete when each matrix cell is executed on exact head or explicitly marked unsupported with an owning requirement and retained evidence.
-3. **#156 maintainer policy and semantic equality** — obtain the human decision for public default/migration; then add `bngir-equality:v01-v02-identity-provenance` to assert the selected `semantic_equal` contract across versions. Complete when the decision is recorded outside automated repair selection and the named check executes against the documented equality semantics on exact head.
+1. **#155 export and deterministic serialization** — planned `bngir-export:v02-independent-roundtrip`
+   and `bngir-export:canonical-bytes-order-invariance`. Delivered as
+   `bngir-export:v02-independent-roundtrip`, `bngir-export:v02-site-bearing-roundtrip`,
+   `bngir-export:v02-site-bearing-python-roundtrip` and
+   `bngir-export:canonical-bytes-determinism`. Each names an independent consumer: the
+   native importer, the Python reader and writer, and the retained canonical bytes.
+2. **#153/#154 reconstruction, semantics, and version refusal** — planned
+   `bngir-reconstruction:source-text-independent-v02` and
+   `bngir-version-migration:v01-v02-feature-matrix`. Delivered together with
+   `bngir-reconstruction:v02-scopes-filters-and-mutations`,
+   `bngir-reconstruction:v02-observables-and-compartments` and
+   `bngir-version-migration:v01-v02-refusal-ownership`. The matrix covers 22 feature
+   cells; each either preserves the feature or is refused with an owning requirement.
+3. **#156 maintainer policy and semantic equality** — the human decision was recorded
+   (keep v0.1 as the public default, require an explicit v0.2 opt-in, refuse unknown
+   versions) and is held on the obligation, outside the automated repair queue.
+   `bngir-equality:v01-v02-identity-provenance` and
+   `bngir-equality:approved-default-v01-explicit-v02` assert the recorded contract.
 
 ## #155/#156 export, determinism, and equality detector
 
