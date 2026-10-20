@@ -538,6 +538,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_quantity_laws=False,
                     include_export_format_tier=False,
                     include_netrule_execution=False,
+                    include_stochastic_parity=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -573,6 +574,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated_marginals import source_law_check_ids
     from .integrated_cases import source_law_cases
     from .export_format_tier import check_ids as export_format_tier_check_ids
+    from .stochastic_parity import check_ids as stochastic_parity_check_ids
 
     families.append(
         dict(
@@ -586,6 +588,24 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                 stage_timeout_seconds=900,
             ),
             limits="Finite prelowered physical-law and bare BNGL count controls; no unit-annotation ingestion or joint-law qualification.",
+        )
+    )
+    families.append(
+        dict(
+            id="stochastic-rate-conventions",
+            case_ids=[],
+            check_ids=stochastic_parity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(stochastic_parity_check_ids()),
+                ensemble_runs=64,
+                stage_timeout_seconds=900,
+            ),
+            limits=(
+                "One distinct reactant plus the elementary bimolecular rule; a "
+                "saturated or Hill law with repeated identical reactants and "
+                "every other rate convention stay outside the slice."
+            ),
         )
     )
     families.append(
@@ -642,11 +662,15 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     else (
                         ["--netrule-execution-only"]
                         if family["id"] == "network-rule-execution"
-                        else [
-                            argument
-                            for case_id in family["case_ids"]
-                            for argument in ("--case", case_id)
-                        ]
+                        else (
+                            ["--stochastic-parity-only"]
+                            if family["id"] == "stochastic-rate-conventions"
+                            else [
+                                argument
+                                for case_id in family["case_ids"]
+                                for argument in ("--case", case_id)
+                            ]
+                        )
                     )
                 )
             )

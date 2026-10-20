@@ -91,6 +91,7 @@ def annotate_acceptance_evidence(rows):
             }
         )
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
+    consumers.update(integrated_extensions.check_ids("stochastic-parity"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -112,6 +113,7 @@ def expected_contract_ids(
     include_quantity_laws=True,
     include_export_format_tier=True,
     include_netrule_execution=True,
+    include_stochastic_parity=True,
     full=False,
 ):
     return [
@@ -160,6 +162,7 @@ def expected_contract_ids(
         include_quantity_laws=include_quantity_laws,
         include_export_format_tier=include_export_format_tier,
         include_netrule_execution=include_netrule_execution,
+        include_stochastic_parity=include_stochastic_parity,
         full=full,
     )
 
@@ -945,6 +948,7 @@ def main(argv=None):
     parser.add_argument("--quantity-laws-only", action="store_true")
     parser.add_argument("--export-format-tier-only", action="store_true")
     parser.add_argument("--netrule-execution-only", action="store_true")
+    parser.add_argument("--stochastic-parity-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -956,6 +960,7 @@ def main(argv=None):
                 args.quantity_laws_only,
                 args.export_format_tier_only,
                 args.netrule_execution_only,
+                args.stochastic_parity_only,
             )
         )
         > 1
@@ -983,6 +988,7 @@ def main(argv=None):
         or args.quantity_laws_only
         or args.export_format_tier_only
         or args.netrule_execution_only
+        or args.stochastic_parity_only
     ):
         selected = []
     for name in (
@@ -1015,6 +1021,7 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.netrule_execution_only
+        or args.stochastic_parity_only
     )
     qualification_selection = dict(
         include_boundaries=not (
@@ -1023,6 +1030,7 @@ def main(argv=None):
             or args.quantity_laws_only
             or args.export_format_tier_only
             or args.netrule_execution_only
+            or args.stochastic_parity_only
         ),
         include_graph_identity=not (
             args.boundaries_only
@@ -1030,12 +1038,14 @@ def main(argv=None):
             or args.quantity_laws_only
             or args.export_format_tier_only
             or args.netrule_execution_only
+            or args.stochastic_parity_only
         ),
         include_bngir_adversarial=not (
             args.boundaries_only
             or args.graph_identity_only
             or args.quantity_laws_only
             or args.export_format_tier_only
+            or args.stochastic_parity_only
         ),
         include_export_format_tier=not (
             args.boundaries_only
@@ -1043,12 +1053,22 @@ def main(argv=None):
             or args.bngir_adversarial_only
             or args.quantity_laws_only
             or args.netrule_execution_only
+            or args.stochastic_parity_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
         args.boundaries_only
         or args.graph_identity_only
         or args.bngir_adversarial_only
+        or args.export_format_tier_only
+        or args.netrule_execution_only
+        or args.stochastic_parity_only
+    )
+    qualification_selection["include_stochastic_parity"] = not (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
         or args.export_format_tier_only
         or args.netrule_execution_only
     )
@@ -1077,6 +1097,10 @@ def main(argv=None):
         if qualification_selection["include_netrule_execution"]:
             integrated_extensions.invoke(
                 "netrule-execution", args, rows, env, run_stage
+            )
+        if qualification_selection["include_stochastic_parity"]:
+            integrated_extensions.invoke(
+                "stochastic-parity", args, rows, env, run_stage
             )
         for case in selected:
             run_case(case, args, rows, env)
@@ -1122,6 +1146,7 @@ def main(argv=None):
         "graph-identity": ["--graph-identity-only"],
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
+        "stochastic-parity": ["--stochastic-parity-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1182,6 +1207,7 @@ def main(argv=None):
                     "cpp/engine/NetworkRulePlan.cpp",
                     "cpp/engine/LegacyNetworkRuleKernel.cpp",
                 ],
+                "stochastic-parity": "tests/validation/stochastic_parity.py",
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1217,6 +1243,8 @@ def main(argv=None):
                 issues = [163]
             elif stage == "netrule-execution":
                 issues = [139]
+            elif stage == "stochastic-parity":
+                issues = [167]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -1295,6 +1323,7 @@ def main(argv=None):
                 ROOT / "tests/validation/bngir_adversarial.py",
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
+                ROOT / "tests/validation/stochastic_parity.py",
                 ROOT / "tests/validation/integrated_cases.py",
                 ROOT / "tests/validation/export_format_tier.py",
                 ROOT / "tests/validation/netrule_execution.py",

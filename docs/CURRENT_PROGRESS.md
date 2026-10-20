@@ -1,5 +1,45 @@
 # BNG3 current progress
 
+## Stochastic rate-convention parity qualification (2026-10-20 candidate)
+
+Issue #167 asks for the exact supported special-rate, local-function, TFUN and
+builtin conventions and the full propensity/event-selection contract to be
+stated and checked. Its two executable obligations still named no check, so the
+stochastic backends had no distributional evidence against an independent
+expectation.
+
+`tests/validation/stochastic_parity.py` now states each convention as a count
+law and compares the direct-method SSA and the embedded NFsim engine against
+it. The laws are the canonical BioNetGen ones - the binomial thinning law of a
+first-order rule, the finite pure-death generator of a count-dependent
+propensity, the saturation hazard `kcat*n/(K+n)`, the Hill hazard
+`Vmax*n^h/(Kh^h+n^h)` and the elementary bimolecular hazard `k*C(n,2)` -
+computed in the harness from the master equation, so a stochastic result is
+never compared against the product's own output. Each case also declares one
+specific misreading of its convention (a doubled rate constant, a dropped
+saturation factor, a missing statistical factor, a function value frozen at the
+initial state) that the observed ensemble must be separated from.
+
+The statistical control is stated rather than assumed: the ensemble mean is
+compared with the analytic mean of the law by an exact two-sided test whose
+null distribution is the law's own mass function, corrected over the sampled
+timepoints by a union bound, and the empirical count distribution is compared
+with the law by the DKW bound. The seed policy (`17 + 7919 * (index + 1)`) and
+the run budget (64 trajectories) are fixed and recorded, so the sampling error
+of a result is a number rather than a tolerance that drifts.
+
+The qualified slice is declared: one distinct reactant (elementary parameter,
+local function, builtin call, TFUN table, `Sat` and `Hill` special rates) plus
+the elementary bimolecular rule with two identical reactants. The embedded
+NFsim route does not construct a model whose rate law carries a function, so
+the TFUN case is `UNSUPPORTED` for that backend. A saturated or Hill law with
+repeated identical reactants is outside the slice and is not judged: for
+`A() + A() -> D() Sat(kcat,K)` with `N=20`, `kcat=0.4` and `K=10` the BNG3 SSA
+mean final count over 150 seeded trajectories is 12.03 while the canonical
+Perl BNG2 2.9.3 gives 17.00 over 60 (standard error 0.30). The evidence
+qualifies that slice only; the Lean kernel-verification theorem statements are
+not selected by it.
+
 ## Network-rule execution contract qualification (2026-10-20 candidate)
 
 Issue #139 asks for the compile-owned network-rule execution contract and the

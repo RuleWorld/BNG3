@@ -77,6 +77,7 @@ jobs:
             tests/validation/test_integrated_boundaries.py \
             tests/validation/test_integrated_protocol.py \
             tests/validation/test_integrated_marginals.py \
+            tests/validation/test_stochastic_parity.py \
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_graph_identity.py \
             tests/validation/test_nfsim_sweep_gate.py \

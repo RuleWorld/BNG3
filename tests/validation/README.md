@@ -563,3 +563,19 @@ budget. They remain trajectory disagreements without an established cause;
 neither source-law acceptance nor equal seeds establishes full path equivalence.
 `--quantity-laws-only` selects the new bounded campaign; `--full` expands it.
 Manual workflow `bounded=true` retains PR selection on a stacked candidate.
+
+`stochastic-parity` compares the stochastic backends with the independent count
+law of each supported rate convention: the elementary parameter law, a local
+function (constant and state-dependent), a builtin call, a TFUN table, the `Sat`
+and `Hill` special rates and the elementary bimolecular rule. The law is
+computed in the harness from the master equation of the declared convention, so
+a stochastic result is never compared against the product's own output, and
+every case also declares one specific misreading of its convention that the
+observed ensemble must be separated from. The seed policy
+(`17 + 7919 * (index + 1)`) and the run budget (64 trajectories) are fixed and
+recorded; the mean comparison is an exact two-sided test whose null
+distribution is the law's own mass function, corrected over the sampled
+timepoints by a union bound, and the count distribution is compared with the
+DKW bound. The qualified slice covers one distinct reactant plus the
+elementary bimolecular rule; a case outside it is reported as `UNSUPPORTED`
+with its reason. `--stochastic-parity-only` selects that campaign on its own.
