@@ -1849,7 +1849,8 @@ bool OdeIntegrator::isStrictTrigger(const ast::Expression& trigger) {
     return true;
 }
 
-double OdeIntegrator::eventRootValue(const ast::Expression& trigger, double time,                                      const double* state) const {
+double OdeIntegrator::eventRootValue(const ast::Expression& trigger, double time,
+                                      const double* state) const {
     const auto conjuncts = triggerConjuncts(trigger);
     if (conjuncts.size() == 1) {
         const auto& arguments = conjuncts.front()->args();
@@ -1890,10 +1891,6 @@ OdeIntegrator::TriggerSurface OdeIntegrator::triggerSurface(
 
 void OdeIntegrator::applyEvent(double time, std::vector<double>& state) const {
     assignEventValues(state, eventValues(time, state.data()));
-}
-
-double OdeIntegrator::eventDelay() const {
-    return eventDelay_;
 }
 
 double OdeIntegrator::cvodeEventRoot(double time, const double* scaledState) const {

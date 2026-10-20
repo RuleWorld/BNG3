@@ -176,7 +176,6 @@ private:
     std::vector<double> eventValues(double time, const double* state) const;
     void assignEventValues(std::vector<double>& state,
                             const std::vector<double>& values) const;
-    double eventDelay() const;
     // A trigger edge that is waiting for its delay to elapse.
     struct PendingEvent {
         double executionTime = 0.0;
