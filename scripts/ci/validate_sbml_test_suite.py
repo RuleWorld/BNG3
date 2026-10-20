@@ -72,6 +72,8 @@ DEFAULT_SUITE_LOCK = (
 SUITE_LOCK_NAME = "sbml-test-suite"
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 ISOLATION_MODES = ("fork", "process")
+INVALID_SOURCE_CATEGORY = "invalidSource"
+RECORD_STATUSES = ("passed", "unsupported", "failed", "timeout", "invalid-source")
 DEFAULT_VERIFICATION_LOCK = (
     Path(tempfile.gettempdir()) / "bng3-sbml-suite-verification.lock"
 )
@@ -1027,7 +1029,18 @@ def _is_partial_run(
     return bool(max_cases or only_case or set(categories) != {"semantic", "stochastic"})
 
 
-def _classify_error(message: str) -> str:
+def _classify_error(message: str, warnings: list[dict[str, Any]] | None = None) -> str:
+    """Classify a failure as invalid-source, unsupported, or failed.
+
+    An invalid SBML source is a property of the source, not of the
+    converter, so it is reported separately from an unsupported construct.
+    A warning whose category is ``invalidSource`` carries that meaning even
+    when libSBML itself accepted the document.
+    """
+
+    for warning in warnings or []:
+        if str(warning.get("category", "")) == INVALID_SOURCE_CATEGORY:
+            return "invalid-source"
     lower = message.lower()
     return (
         "unsupported"
@@ -1977,24 +1990,22 @@ def _validate_case(
         record["core_passed"] = record["status"] == "passed"
     except Exception as exc:
         message = f"{type(exc).__name__}: {exc}"
-        warning_limitations = _warning_limitations(
-            record.get("source_model", {}).get("warnings", [])
+        source_warnings = record.get("source_model", {}).get("warnings", [])
+        warning_limitations = _warning_limitations(source_warnings)
+        classification = _classify_error(
+            message + " " + " ".join(warning_limitations), source_warnings
         )
-        record["status"] = _classify_error(
-            message + " " + " ".join(warning_limitations)
-        )
+        # An invalid SBML source is a property of the source, not of the
+        # converter, so it is reported as its own verdict rather than as a
+        # converter failure.
+        record["status"] = "invalid-source" if not source_xml_valid else classification
         record["core_passed"] = False
         record["error"] = message
         if record["official_conformance"]["status"] == "pending":
             if not source_xml_valid:
                 official_status = "invalid-source"
             else:
-                official_status = (
-                    "unsupported"
-                    if _classify_error(message + " " + " ".join(warning_limitations))
-                    == "unsupported"
-                    else "failed"
-                )
+                official_status = classification
             record["official_conformance"] = {
                 "status": official_status,
                 "reason": message,
@@ -2556,6 +2567,19 @@ def _verification_slot(lock_path: Path, wait_seconds: float):
             handle.close()
 
 
+def _record_counts(records: list[dict[str, Any]]) -> dict[str, int]:
+    """Count every record by status so that no case is dropped from the report.
+
+    Every recorded verdict has a bucket here, including an invalid source,
+    so the counts always add up to the number of cases that were run.
+    """
+
+    return {
+        status: sum(record["status"] == status for record in records)
+        for status in RECORD_STATUSES
+    }
+
+
 def _stage_summary(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     """Count observed stages; structural round-trip is not numerical equivalence.
 
@@ -2846,17 +2870,14 @@ def main() -> int:
                     )
 
     unsupported_summary = _unsupported_summary(records)
-    counts = {
-        status: sum(record["status"] == status for record in records)
-        for status in ("passed", "unsupported", "failed", "timeout")
-    }
+    counts = _record_counts(records)
     by_category = {
         category: {
             status: sum(
                 record["category"] == category and record["status"] == status
                 for record in records
             )
-            for status in ("passed", "unsupported", "failed", "timeout")
+            for status in RECORD_STATUSES
         }
         for category in args.categories
     }
@@ -2963,9 +2984,14 @@ def main() -> int:
             and counts["failed"] == 0
             and counts["unsupported"] == 0
             and counts["timeout"] == 0
+            and counts["invalid-source"] == 0
         ),
         "supported_surface_passed": (
-            not partial and counts["failed"] == 0 and counts["timeout"] == 0
+            # An invalid source is not part of the supported surface: the
+            # converter is not what it failed on.
+            not partial
+            and counts["failed"] == 0
+            and counts["timeout"] == 0
         ),
     }
     args.json.parent.mkdir(parents=True, exist_ok=True)
@@ -2974,6 +3000,7 @@ def main() -> int:
         f"cases={len(records)} passed={counts['passed']} "
         f"unsupported={counts['unsupported']} failed={counts['failed']} "
         f"timeouts={counts['timeout']} "
+        f"invalid_sources={counts['invalid-source']} "
         f"official_passed={official_counts['passed']} "
         f"official_unsupported={official_counts['unsupported']} "
         f"official_failed={official_counts['failed']} "

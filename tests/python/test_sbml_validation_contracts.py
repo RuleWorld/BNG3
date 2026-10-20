@@ -718,3 +718,74 @@ def test_observable_comparison_rejects_different_nonfinite_math_results():
 
     assert result["passed"] is False
     assert result["nonfinite_equivalent"] is False
+
+
+def test_invalid_source_is_classified_apart_from_a_converter_failure():
+    """An invalid SBML source is a source property, not a converter failure."""
+
+    validator = _load_validator("validate_sbml_test_suite")
+
+    assert validator._classify_error("RuntimeError: boom") == "failed"
+    assert (
+        validator._classify_error("RuntimeError: construct is not representable")
+        == "unsupported"
+    )
+    assert (
+        validator._classify_error(
+            "RuntimeError: boom",
+            [{"category": "invalidSource", "message": "malformed model"}],
+        )
+        == "invalid-source"
+    )
+    assert (
+        validator._classify_error(
+            "RuntimeError: construct is not representable",
+            [{"category": "invalidSource", "message": "malformed model"}],
+        )
+        == "invalid-source"
+    )
+
+
+def test_record_counts_account_for_every_case(tmp_path):
+    """No recorded verdict may be dropped from the report's counts."""
+
+    validator = _load_validator("validate_sbml_test_suite")
+    records = [
+        {"status": "passed"},
+        {"status": "unsupported"},
+        {"status": "failed"},
+        {"status": "timeout"},
+        {"status": "invalid-source"},
+    ]
+
+    counts = validator._record_counts(records)
+
+    assert counts == {
+        "passed": 1,
+        "unsupported": 1,
+        "failed": 1,
+        "timeout": 1,
+        "invalid-source": 1,
+    }
+    assert sum(counts.values()) == len(records)
+
+
+def test_malformed_source_is_reported_as_invalid_source(tmp_path):
+    """A source libSBML rejects is reported as invalid-source, not failed."""
+
+    validator = _load_validator("validate_sbml_test_suite")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    source = tmp_path / "00003-sbml-l3v2.xml"
+    source.write_text("<sbml><model><listOfSpecies>", encoding="utf-8")
+    case = {
+        "category": "semantic",
+        "id": "00003",
+        "version": "l3v2",
+        "path": source,
+    }
+
+    record = validator._validate_case(case, cpp, tmp_path, 1.0, 10, 1e-7, 1e-12, None)
+
+    assert record["status"] == "invalid-source"
+    assert record["official_conformance"]["status"] == "invalid-source"
+    assert record["core_passed"] is False
