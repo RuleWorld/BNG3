@@ -646,3 +646,63 @@ PYTHONPATH=python:build/cpp python -m tests.validation.api_surface \
 
 The family also runs as a campaign-level stage of the integrated report, so
 its named rows reach the issue queue with the other exact-revision evidence.
+
+### Locked official SBML conformance family
+
+`sbml-conformance` runs the existing locked-suite runner
+(`scripts/ci/validate_sbml_test_suite.py`) on the identified candidate build
+over the locked official SBML Test Suite revision, retains the runner's
+per-case artifacts, and reports the runner's outcomes as **four separately
+recorded rows**: `conversion`, `roundtrip`, `official-reference` and
+`independent-oracle`. A green conversion therefore cannot mask a failed
+reference comparison, because the four outcomes are independent rows and the
+family fails when any one of them fails.
+
+The event-target cases and the zero-observable cases are reported as their own
+cohorts. A case with no observable output carries no reference evidence, so it
+is listed and never counted as independent-oracle evidence. A stage that was
+not executed is `NOT_TESTED`, a stage whose cases are all explicitly
+unsupported is `UNSUPPORTED`, and a failed or timed-out case is `FAIL`; none
+of those is reported as a pass.
+
+The locked suite is an external, revision-locked corpus. When the checkout is
+absent every row is `NOT_TESTED` with the reason: a missing corpus is not
+conformance evidence.
+
+```bash
+# Qualify the locked official conformance outcomes on their own.
+PYTHONPATH=python:build/cpp python -m tests.validation.sbml_conformance \
+  --report-dir /tmp/bng3-sbml-conformance \
+  --suite-dir /absolute/path/to/locked/sbml-test-suite \
+  --categories semantic --max-cases 128 --selection-strategy feature-cover
+```
+
+The official SBML conformance workflow runs the family with the same selection
+as the runner step above it, so the reported outcomes describe the same
+corpus.
+
+### Atomizer structural reconstruction family
+
+`atomizer-reconstruction` qualifies the structural Atomizer on a generated
+family of SBML models. For every generated case the family reconstructs the
+model with the modern Atomizer, executes the reconstruction, writes it to
+SBML, reads it back, reconstructs it again and executes that. Both
+executions are compared against two independent references: the **closed-form
+law** of the generated model, derived from the case parameters, and
+**libRoadRunner** running the source SBML (with the Multi package
+declarations removed, because the core model states the reaction explicitly).
+
+The generated family covers reconstruction, reaction and bond changes,
+compartments, quantities, retained metadata, SBML Multi and one model the
+reconstruction cannot represent. That last case must be **refused** with a
+named import diagnostic: a parse that drops a construct is a failure, not a
+success, and no execution claim is made for it.
+
+```bash
+# Qualify the Atomizer reconstruction family on its own.
+PYTHONPATH=python:build/cpp python -m tests.validation.atomizer_reconstruction \
+  --report-dir /tmp/bng3-atomizer-reconstruction
+```
+
+The family also runs as a campaign-level stage of the integrated report, so
+its named rows reach the issue queue with the other exact-revision evidence.

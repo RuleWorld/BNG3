@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import (
     campaign,
+    atomizer_reconstruction,
     integrated_boundaries,
     bngir_adversarial,
     bngir_format_contracts,
@@ -39,6 +40,7 @@ OPERATIONS = (
     "bngsim-boundary",
     "jax-backend-measurement",
     "api-surface",
+    "atomizer-reconstruction",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -82,6 +84,8 @@ def check_ids(operation, case=None, *, full=False):
         return export_format_tier.check_ids()
     if operation == "api-surface":
         return api_surface.check_ids()
+    if operation == "atomizer-reconstruction":
+        return atomizer_reconstruction.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -101,6 +105,7 @@ def expected_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_atomizer_reconstruction=True,
     full=False,
 ):
     ids = []
@@ -127,6 +132,13 @@ def expected_ids(
         )
     if include_api_surface:
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
+    if include_atomizer_reconstruction:
+        ids.extend(
+            [
+                "campaign:atomizer-reconstruction",
+                *check_ids("atomizer-reconstruction"),
+            ]
+        )
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -162,6 +174,8 @@ def run_worker(operation, args):
         return export_format_tier.run_worker(Path.cwd(), bng_cpp=args.bng_cpp)
     if operation == "api-surface":
         return api_surface.run(Path.cwd())
+    if operation == "atomizer-reconstruction":
+        return atomizer_reconstruction.run(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)
@@ -237,7 +251,11 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                 else (
                     300
                     if operation == "export-format-tier"
-                    else (600 if operation == "jax-backend-measurement" else 120)
+                    else (
+                        600
+                        if operation == "jax-backend-measurement"
+                        else (300 if operation == "atomizer-reconstruction" else 120)
+                    )
                 )
             )
         ),

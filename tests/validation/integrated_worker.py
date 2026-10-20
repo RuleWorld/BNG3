@@ -742,6 +742,7 @@ def main():
             "bngsim-boundary",
             "jax-backend-measurement",
             "api-surface",
+            "atomizer-reconstruction",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -840,6 +841,7 @@ def main():
         "bngsim-boundary",
         "jax-backend-measurement",
         "api-surface",
+        "atomizer-reconstruction",
     ):
         from tests.validation.integrated_extensions import run_worker
 

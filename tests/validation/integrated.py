@@ -92,6 +92,7 @@ def annotate_acceptance_evidence(rows):
         )
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
     consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
+    consumers.update(integrated_extensions.check_ids("atomizer-reconstruction"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -116,6 +117,7 @@ def expected_contract_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_atomizer_reconstruction=True,
     full=False,
 ):
     return [
@@ -167,6 +169,7 @@ def expected_contract_ids(
         include_bngsim_boundary=include_bngsim_boundary,
         include_jax_backend_measurement=include_jax_backend_measurement,
         include_api_surface=include_api_surface,
+        include_atomizer_reconstruction=include_atomizer_reconstruction,
         full=full,
     )
 
@@ -954,6 +957,7 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--atomizer-reconstruction-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -996,6 +1000,7 @@ def main(argv=None):
         or args.netrule_execution_only
         or args.bngsim_boundary_only
         or args.jax_backend_measurement_only
+        or args.atomizer_reconstruction_only
     ):
         selected = []
     for name in (
@@ -1029,6 +1034,7 @@ def main(argv=None):
         or args.quantity_laws_only
         or args.netrule_execution_only
         or args.jax_backend_measurement_only
+        or args.atomizer_reconstruction_only
     )
     qualification_selection = dict(
         include_boundaries=not (
@@ -1039,6 +1045,7 @@ def main(argv=None):
             or args.netrule_execution_only
             or args.bngsim_boundary_only
             or args.jax_backend_measurement_only
+            or args.atomizer_reconstruction_only
         ),
         include_graph_identity=not (
             args.boundaries_only
@@ -1048,12 +1055,14 @@ def main(argv=None):
             or args.netrule_execution_only
             or args.bngsim_boundary_only
             or args.jax_backend_measurement_only
+            or args.atomizer_reconstruction_only
         ),
         include_bngir_adversarial=not (
             args.boundaries_only
             or args.graph_identity_only
             or args.quantity_laws_only
             or args.export_format_tier_only
+            or args.atomizer_reconstruction_only
         ),
         include_export_format_tier=not (
             args.boundaries_only
@@ -1063,6 +1072,7 @@ def main(argv=None):
             or args.netrule_execution_only
             or args.bngsim_boundary_only
             or args.jax_backend_measurement_only
+            or args.atomizer_reconstruction_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
@@ -1072,7 +1082,8 @@ def main(argv=None):
         or args.export_format_tier_only
         or args.netrule_execution_only
         or args.bngsim_boundary_only
-        or args.api_surface_only
+        or getattr(args, "api_surface_only", False)
+        or args.atomizer_reconstruction_only
     )
     qualification_selection["include_bngsim_boundary"] = not (
         args.boundaries_only
@@ -1080,7 +1091,8 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.jax_backend_measurement_only
-        or args.api_surface_only
+        or getattr(args, "api_surface_only", False)
+        or args.atomizer_reconstruction_only
     )
     qualification_selection["include_api_surface"] = not (
         args.boundaries_only
@@ -1088,9 +1100,11 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.jax_backend_measurement_only
+        or args.atomizer_reconstruction_only
     )
     qualification_selection["include_netrule_execution"] = not focused
     qualification_selection["include_jax_backend_measurement"] = not focused
+    qualification_selection["include_atomizer_reconstruction"] = not focused
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1124,6 +1138,10 @@ def main(argv=None):
             )
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
+        if qualification_selection["include_atomizer_reconstruction"]:
+            integrated_extensions.invoke(
+                "atomizer-reconstruction", args, rows, env, run_stage
+            )
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1169,6 +1187,7 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "atomizer-reconstruction": ["--atomizer-reconstruction-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1261,6 +1280,11 @@ def main(argv=None):
                     "python/bionetgen/jax_ssa.py",
                 ],
                 "api-surface": "tests/validation/api_surface.py",
+                "atomizer-reconstruction": [
+                    "tests/validation/atomizer_reconstruction.py",
+                    "python/bionetgen/atomizer/modern/writer.py",
+                    "python/bionetgen/atomizer/modern/parser.py",
+                ],
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1306,6 +1330,8 @@ def main(argv=None):
                 issues = [174]
             elif stage == "api-surface":
                 issues = [171]
+            elif stage == "atomizer-reconstruction":
+                issues = [161]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):

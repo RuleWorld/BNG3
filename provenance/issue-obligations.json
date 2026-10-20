@@ -4939,22 +4939,25 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:159:run-the-existing-locked-suite-runner-on-an-identified-final-bng3",
+              "id": "sbml-conformance:runner-execution",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The existing locked-suite runner executes on the identified candidate build and suite revision, and its per-case artifacts are retained.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
+            "scripts/ci/validate_sbml_test_suite.py",
+            "tests/validation/sbml_conformance.py",
+            "tests/validation/test_sbml_conformance.py",
             "tests/cpp/test_sbml_reader.cpp",
             "tests/python/test_sbml_import.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:159:run-the-existing-locked-suite-runner-on-an-identified-final-bng3.",
+            "The sbml-conformance family reports one invocation of the existing locked-suite runner over the locked official SBML Test Suite revision; the full-suite, all-category and stochastic-ensemble results are not part of this family.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4966,19 +4969,63 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:159:report-conversion-round-trip-official-reference-conformance-and",
+              "id": "sbml-conformance:conversion",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The conversion stage of the locked-suite runner is reported as its own outcome, and a failed or unexecuted conversion is not reported as a pass.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-conformance:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The structural round-trip stage of the locked-suite runner is reported as its own outcome, separately from the conversion.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-conformance:official-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The official-reference conformance of the locked-suite runner is reported as its own outcome, so a green conversion cannot mask a failed reference comparison.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-conformance:independent-oracle",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independent libRoadRunner comparison of the locked-suite runner is reported as its own outcome, separately from the official reference.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-conformance:event-target-cases",
+              "evidence_kind": "supported-execution",
+              "expectation": "The cases that declare SBML event targets are reported as their own cohort, with the official-reference outcome of each case.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-conformance:zero-observable-cases",
+              "evidence_kind": "supported-execution",
+              "expectation": "The cases that declare no observable output are reported as their own cohort and are not counted as independent-oracle evidence.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "scripts/ci/validate_sbml_test_suite.py",
+            "tests/validation/sbml_conformance.py",
+            "tests/validation/test_sbml_conformance.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:159:report-conversion-round-trip-official-reference-conformance-and.",
+            "The four outcomes are the runner's own stage buckets for one bounded selection; the runner's partial-run flags stay in force and an unsupported case stays unsupported instead of being counted as a pass.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4990,9 +5037,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:159:closure-record",
+              "id": "manual:issue:159:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5002,7 +5049,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:159:closure-record.",
+            "Closure requires a maintainer-reviewed record of the executed qualification, the exact candidate revision and the retained locked-suite artifacts; the issue stays open.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         }
@@ -5104,15 +5151,98 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:161:cover-reconstruction-reaction-bond-changes-compartments-quantiti",
+              "id": "atomizer-reconstruction:conversion:reconstruction",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The reconstruction of the generated reconstruction case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:complex-formation:reconstruction",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reconstruction of the generated reconstruction, bond-change case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:complex-dissociation:reconstruction",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reconstruction of the generated reconstruction, bond-change case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:reversible-complex:reconstruction",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reconstruction of the generated reconstruction, bond-change case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:compartment-volume:reconstruction",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reconstruction of the generated compartment, quantity case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:concentration-species:reconstruction",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reconstruction of the generated quantity, compartment case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:annotated-model:reconstruction",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reconstruction of the generated metadata case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:multi-state-change:reconstruction",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reconstruction of the generated multi, reconstruction case exposes one observable per source species and carries the reconstructed bond.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:refusal-cyclic-species-assignment:reconstruction",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A model the reconstruction cannot represent is refused with an explicit import diagnostic instead of being reported as a successful parse.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:metadata:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The retained source metadata payload survives the SBML round trip.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:family:coverage",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The generated family covers reconstruction, reaction and bond changes, compartments, quantities, retained metadata, SBML Multi and one explicit refusal.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
+            "tests/validation/atomizer_reconstruction.py",
+            "tests/validation/test_atomizer_reconstruction.py",
+            "python/bionetgen/atomizer/modern/writer.py",
             "tests/python/test_modern_atomizer_annotations.py",
             "tests/python/test_modern_atomizer_multi.py",
             "tests/python/test_modern_atomizer_rulifier.py",
@@ -5121,7 +5251,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:161:cover-reconstruction-reaction-bond-changes-compartments-quantiti.",
+            "The atomizer-reconstruction family qualifies a generated structural SBML family; the SBML feature space outside reconstruction, bond changes, compartments, quantities, retained metadata, SBML Multi and the named refusal still requires review.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -5133,19 +5263,142 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:161:compare-full-execution-and-semantic-round-trips-with-independent",
+              "id": "atomizer-reconstruction:conversion:execution",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:conversion:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:complex-formation:execution",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:complex-formation:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:complex-dissociation:execution",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:complex-dissociation:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:reversible-complex:execution",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:reversible-complex:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:compartment-volume:execution",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:compartment-volume:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:concentration-species:execution",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:concentration-species:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:annotated-model:execution",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:annotated-model:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:multi-state-change:execution",
+              "evidence_kind": "supported-execution",
+              "expectation": "The executed reconstruction of the generated case reproduces the independent closed-form law of the model and the independent simulator on the source SBML.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "atomizer-reconstruction:multi-state-change:roundtrip",
+              "evidence_kind": "supported-execution",
+              "expectation": "The semantic round trip of the generated case -- write, re-read, reconstruct and execute -- reproduces the same independent references.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/atomizer_reconstruction.py",
+            "tests/validation/test_atomizer_reconstruction.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:161:compare-full-execution-and-semantic-round-trips-with-independent.",
+            "The comparison uses the independent closed-form law of each generated model and libRoadRunner on the source SBML; a successful parse is never substituted for dynamics, and the SBML event semantics stay outside this family.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -5157,9 +5410,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:161:closure-record",
+              "id": "manual:issue:161:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -5169,7 +5422,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:161:closure-record.",
+            "Closure requires a maintainer-reviewed record of the executed qualification, the exact candidate revision and the remaining limits of the generated family; the issue stays open.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         }

@@ -518,6 +518,10 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .netrule_execution import cases as netrule_cases
     from .bngsim_boundary import check_ids as boundary_check_ids
     from .jax_backend_measurement import check_ids as jax_measurement_check_ids
+    from .atomizer_reconstruction import (
+        check_ids as atomizer_reconstruction_check_ids,
+    )
+    from .sbml_conformance import check_ids as conformance_check_ids
 
     check_ids = [
         *adversarial_check_ids(),
@@ -641,6 +645,43 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="atomizer-reconstruction",
+            case_ids=[],
+            check_ids=atomizer_reconstruction_check_ids(),
+            runner="tests.validation.atomizer_reconstruction",
+            budget=dict(
+                checks=len(atomizer_reconstruction_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "A generated structural SBML family judged against an analytic "
+                "law and an independent simulator: the reconstruction, the full "
+                "execution, the semantic round trip, the retained metadata and "
+                "one explicit refusal. It does not qualify the whole SBML "
+                "feature space, the official suite, or the event semantics."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="official-sbml-conformance",
+            case_ids=[],
+            check_ids=conformance_check_ids(),
+            runner="tests.validation.sbml_conformance",
+            budget=dict(
+                checks=len(conformance_check_ids()), stage_timeout_seconds=3600
+            ),
+            limits=(
+                "One invocation of the existing locked-suite runner over the "
+                "locked official SBML Test Suite revision. The conversion, round "
+                "trip, official-reference and independent-comparison outcomes are "
+                "reported separately; a missing suite checkout is not evidence, "
+                "and the stochastic ensemble statistics stay unsupported."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="public-api-surface",
             case_ids=[],
             check_ids=api_surface.check_ids(),
@@ -699,11 +740,24 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                 else (
                                     ["--report-dir", "<new-empty-directory>"]
                                     if family["id"] == "public-api-surface"
-                                    else [
-                                        argument
-                                        for case_id in family["case_ids"]
-                                        for argument in ("--case", case_id)
-                                    ]
+                                    else (
+                                        [
+                                            "--report-dir",
+                                            "<new-empty-directory>",
+                                            "--suite-dir",
+                                            "<locked-sbml-test-suite-checkout>",
+                                        ]
+                                        if family["id"] == "official-sbml-conformance"
+                                        else (
+                                            ["--report-dir", "<new-empty-directory>"]
+                                            if family["id"] == "atomizer-reconstruction"
+                                            else [
+                                                argument
+                                                for case_id in family["case_ids"]
+                                                for argument in ("--case", case_id)
+                                            ]
+                                        )
+                                    )
                                 )
                             )
                         )
