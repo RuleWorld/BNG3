@@ -21,6 +21,8 @@ from . import (
     export_format_tier,
     jax_backend_measurement,
     netrule_execution,
+    nfnext_slices,
+    rate_law_contract,
 )
 from .integrated_cases import generated_cases
 
@@ -37,6 +39,8 @@ OPERATIONS = (
     "netrule-execution",
     "bngsim-boundary",
     "jax-backend-measurement",
+    "rate-law-contract",
+    "nfnext-slices",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -47,6 +51,8 @@ FOCUS_FLAGS = {
     "graph-identity": "--graph-identity-only",
     "export-format-tier": "--export-format-tier-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "rate-law-contract": "--rate-law-contract-only",
+    "nfnext-slices": "--nfnext-slices-only",
 }
 
 
@@ -61,6 +67,10 @@ def check_ids(operation, case=None, *, full=False):
         return netrule_execution.check_ids()
     if operation == "jax-backend-measurement":
         return jax_backend_measurement.check_ids()
+    if operation == "rate-law-contract":
+        return rate_law_contract.check_ids()
+    if operation == "nfnext-slices":
+        return nfnext_slices.check_ids()
     if operation == "protocol":
         return [
             f"{case['id']}:protocol:{name}"
@@ -96,6 +106,8 @@ def expected_ids(
     include_netrule_execution=True,
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
+    include_rate_law_contract=True,
+    include_nfnext_slices=True,
     full=False,
 ):
     ids = []
@@ -120,6 +132,10 @@ def expected_ids(
                 *check_ids("jax-backend-measurement"),
             ]
         )
+    if include_rate_law_contract:
+        ids.extend(["campaign:rate-law-contract", *check_ids("rate-law-contract")])
+    if include_nfnext_slices:
+        ids.extend(["campaign:nfnext-slices", *check_ids("nfnext-slices")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -141,6 +157,10 @@ def run_worker(operation, args):
         return netrule_execution.run_worker(Path.cwd())
     if operation == "jax-backend-measurement":
         return jax_backend_measurement.run_worker(Path.cwd())
+    if operation == "rate-law-contract":
+        return rate_law_contract.run_worker(Path.cwd())
+    if operation == "nfnext-slices":
+        return nfnext_slices.run_worker(Path.cwd())
     if operation == "graph-identity":
         from .graph_identity import run_worker as run_graph_identity
 
@@ -279,7 +299,12 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                     row["first_difference"], dict
                 ):
                     raise ValueError("invalid first-difference observation")
-                if operation in ("bngir-adversarial", "netrule-execution"):
+                if operation in (
+                    "bngir-adversarial",
+                    "netrule-execution",
+                    "rate-law-contract",
+                    "nfnext-slices",
+                ):
                     artifact_name = row.get("source_artifact")
                     digest = row.get("source_sha256")
                     artifact = (

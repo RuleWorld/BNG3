@@ -741,6 +741,8 @@ def main():
             "netrule-execution",
             "bngsim-boundary",
             "jax-backend-measurement",
+            "rate-law-contract",
+            "nfnext-slices",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -838,6 +840,8 @@ def main():
         "netrule-execution",
         "bngsim-boundary",
         "jax-backend-measurement",
+        "rate-law-contract",
+        "nfnext-slices",
     ):
         from tests.validation.integrated_extensions import run_worker
 

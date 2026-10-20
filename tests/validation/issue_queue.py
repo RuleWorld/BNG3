@@ -515,6 +515,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
     from .netrule_execution import check_ids as netrule_check_ids
     from .netrule_execution import cases as netrule_cases
+    from .nfnext_slices import check_ids as nfnext_slice_check_ids
+    from .rate_law_contract import check_ids as rate_law_check_ids
     from .bngsim_boundary import check_ids as boundary_check_ids
     from .jax_backend_measurement import check_ids as jax_measurement_check_ids
 
@@ -542,6 +544,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_netrule_execution=False,
                     include_bngsim_boundary=False,
                     include_jax_backend_measurement=False,
+                    include_rate_law_contract=False,
+                    include_nfnext_slices=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -635,6 +639,46 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             ),
         )
     )
+    families.append(
+        dict(
+            id="rate-law-contract",
+            case_ids=[],
+            check_ids=rate_law_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(rate_law_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The declared rate-law slice only: elementary parameter rates, "
+                "the Saturation/MichaelisMenten/Hill special rates, table "
+                "functions, local molecule scopes, elementary mass-action "
+                "multiplicity and observable-dependent rates, compared against "
+                "closed-form laws; compartment-scoped, filtered, modified, "
+                "energy-bearing and population-mapped models stay outside the "
+                "slice and are reported as unsupported with their reason."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="nfnext-slices",
+            case_ids=[],
+            check_ids=nfnext_slice_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(nfnext_slice_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The approved NFnext slice only: unary site-state rules with a "
+                "static elementary rate, isolated integer seeds and unary "
+                "Molecules observables; the dynamic-rate, filter, modifier, "
+                "compartment, population-map and energy families are checked as "
+                "named refusals and are not qualified as supported."
+            ),
+        )
+    )
     selected = []
     for family in families:
         available = set(family["check_ids"])
@@ -682,11 +726,19 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                             else (
                                 ["--jax-backend-measurement-only"]
                                 if family["id"] == "jax-backend-measurement"
-                                else [
-                                    argument
-                                    for case_id in family["case_ids"]
-                                    for argument in ("--case", case_id)
-                                ]
+                                else (
+                                    ["--rate-law-contract-only"]
+                                    if family["id"] == "rate-law-contract"
+                                    else (
+                                        ["--nfnext-slices-only"]
+                                        if family["id"] == "nfnext-slices"
+                                        else [
+                                            argument
+                                            for case_id in family["case_ids"]
+                                            for argument in ("--case", case_id)
+                                        ]
+                                    )
+                                )
                             )
                         )
                     )

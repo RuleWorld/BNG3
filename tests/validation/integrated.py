@@ -115,6 +115,8 @@ def expected_contract_ids(
     include_netrule_execution=True,
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
+    include_rate_law_contract=True,
+    include_nfnext_slices=True,
     full=False,
 ):
     return [
@@ -165,6 +167,8 @@ def expected_contract_ids(
         include_netrule_execution=include_netrule_execution,
         include_bngsim_boundary=include_bngsim_boundary,
         include_jax_backend_measurement=include_jax_backend_measurement,
+        include_rate_law_contract=include_rate_law_contract,
+        include_nfnext_slices=include_nfnext_slices,
         full=full,
     )
 
@@ -928,6 +932,35 @@ def _preflight(args):
     return references
 
 
+def select_qualifications(focused_flags):
+    """Return the qualification selection for the focused campaign flags.
+
+    Every focused campaign flag selects exactly its own qualification and
+    excludes the others. The selection is derived from the flag table so a
+    new qualification cannot silently exclude itself.
+    """
+    if not isinstance(focused_flags, dict) or not focused_flags:
+        raise ValueError("the focused flag table must be a non-empty mapping")
+
+    def _other_focused(name):
+        return any(value for key, value in focused_flags.items() if key != name)
+
+    return {
+        "include_boundaries": not _other_focused("boundaries"),
+        "include_graph_identity": not _other_focused("graph-identity"),
+        "include_bngir_adversarial": not _other_focused("bngir-adversarial"),
+        "include_export_format_tier": not _other_focused("export-format-tier"),
+        "include_quantity_laws": not _other_focused("quantity-laws"),
+        "include_bngsim_boundary": not _other_focused("bngsim-boundary"),
+        "include_netrule_execution": not _other_focused("netrule-execution"),
+        "include_jax_backend_measurement": not _other_focused(
+            "jax-backend-measurement"
+        ),
+        "include_rate_law_contract": not _other_focused("rate-law-contract"),
+        "include_nfnext_slices": not _other_focused("nfnext-slices"),
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in (
@@ -952,6 +985,8 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--rate-law-contract-only", action="store_true")
+    parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -965,6 +1000,8 @@ def main(argv=None):
                 args.netrule_execution_only,
                 args.bngsim_boundary_only,
                 args.jax_backend_measurement_only,
+                args.rate_law_contract_only,
+                args.nfnext_slices_only,
             )
         )
         > 1
@@ -994,6 +1031,8 @@ def main(argv=None):
         or args.netrule_execution_only
         or args.bngsim_boundary_only
         or args.jax_backend_measurement_only
+        or args.rate_law_contract_only
+        or args.nfnext_slices_only
     ):
         selected = []
     for name in (
@@ -1020,66 +1059,22 @@ def main(argv=None):
     )
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "0"
-    focused = (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.netrule_execution_only
-        or args.jax_backend_measurement_only
-    )
-    qualification_selection = dict(
-        include_boundaries=not (
-            args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_graph_identity=not (
-            args.boundaries_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_bngir_adversarial=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-        ),
-        include_export_format_tier=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-    )
-    qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.export_format_tier_only
-        or args.netrule_execution_only
-        or args.bngsim_boundary_only
-    )
-    qualification_selection["include_bngsim_boundary"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.jax_backend_measurement_only
-    )
-    qualification_selection["include_netrule_execution"] = not focused
-    qualification_selection["include_jax_backend_measurement"] = not focused
+    # Every focused campaign flag selects exactly its own qualification and
+    # excludes the others. The selection is derived from the flag table so a
+    # new qualification cannot silently exclude itself.
+    focused_flags = {
+        "boundaries": args.boundaries_only,
+        "graph-identity": args.graph_identity_only,
+        "bngir-adversarial": args.bngir_adversarial_only,
+        "quantity-laws": args.quantity_laws_only,
+        "export-format-tier": args.export_format_tier_only,
+        "netrule-execution": args.netrule_execution_only,
+        "bngsim-boundary": args.bngsim_boundary_only,
+        "jax-backend-measurement": args.jax_backend_measurement_only,
+        "rate-law-contract": args.rate_law_contract_only,
+        "nfnext-slices": args.nfnext_slices_only,
+    }
+    qualification_selection = select_qualifications(focused_flags)
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1111,6 +1106,12 @@ def main(argv=None):
             integrated_extensions.invoke(
                 "jax-backend-measurement", args, rows, env, run_stage
             )
+        if qualification_selection["include_rate_law_contract"]:
+            integrated_extensions.invoke(
+                "rate-law-contract", args, rows, env, run_stage
+            )
+        if qualification_selection["include_nfnext_slices"]:
+            integrated_extensions.invoke("nfnext-slices", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1156,6 +1157,8 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "rate-law-contract": ["--rate-law-contract-only"],
+        "nfnext-slices": ["--nfnext-slices-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")

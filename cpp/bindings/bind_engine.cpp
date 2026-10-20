@@ -508,6 +508,30 @@ void bind_engine(py::module_& m) {
     }, py::arg("model"), py::arg("network"), py::arg("time"), py::arg("state"),
        "Internal parity-validation hook for compiled per-reaction rate coefficients");
 
+    // Private validation hook: return the engine's SSA propensities for the
+    // compiled reactions. The discrete convention (identical reactants use
+    // n*(n-1)*..., a total-rate law is not multiplied by the reactant
+    // population) is the engine's own, so an independent check can compare
+    // it against a closed-form law instead of inferring it from a sampled
+    // trajectory.
+    m.def("_validation_ssa_propensities", [](Model& model,
+                                             GeneratedNetwork& network,
+                                             double time,
+                                             const std::vector<double>& state) {
+        if (state.size() != network.species.size()) {
+            throw std::invalid_argument(
+                "propensity state length must match generated network species count");
+        }
+        std::vector<double> propensities;
+        {
+            py::gil_scoped_release release;
+            OdeIntegrator integrator(model, network);
+            propensities = integrator.evaluatePropensities(time, state.data());
+        }
+        return propensities;
+    }, py::arg("model"), py::arg("network"), py::arg("time"), py::arg("state"),
+       "Internal parity-validation hook for compiled SSA propensities");
+
     m.def("simulate_ode", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, double t_start,
                              double rtol, double atol, const std::string& method,
