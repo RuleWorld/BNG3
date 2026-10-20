@@ -1243,8 +1243,9 @@ def test_native_import_rejects_unknown_fields_and_provenance():
 
     document = _document()
     document["model"]["metadata"]["substance_units"] = "mole"
-    with pytest.raises(ValueError, match="substance-unit metadata"):
-        bionetgen.from_bngir(document, native=True)
+    model = bionetgen.from_bngir(document, native=True)
+    exported = json.loads(model.to_bngir(version="0.2"))
+    assert exported["model"]["metadata"]["substance_units"] == "mole"
 
 
 @pytest.mark.parametrize(

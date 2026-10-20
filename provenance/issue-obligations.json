@@ -1971,8 +1971,8 @@
             "issue:151:slice:compiled-net-rate-multiset"
           ],
           "boundaries": [
-            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
-            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified.",
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator"
           ],
           "required_checks": [
             {
@@ -2014,8 +2014,8 @@
             "issue:151:slice:compiled-net-rate-multiset"
           ],
           "boundaries": [
-            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
-            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified.",
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator"
           ],
           "required_checks": [
             {
@@ -2054,8 +2054,8 @@
           "scope": "Source-law versus BNG3 compiled reaction-rate multiset control for one generated baseline case.",
           "dependencies": [],
           "boundaries": [
-            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
-            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified.",
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator"
           ],
           "required_checks": [
             {
@@ -2092,8 +2092,8 @@
           "scope": "Compiled rate multiset versus emitted NET control for one generated baseline case.",
           "dependencies": [],
           "boundaries": [
-            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator",
-            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified."
+            "A passing result is a source-law control only; the physical-unit count-rate bridge remains unqualified.",
+            "Generated item-count SBML -> Atomizer -> compiled rate/NET or native NFsim -> source-law comparator"
           ],
           "required_checks": [
             {
@@ -2380,6 +2380,7 @@
           "boundaries": [
             "Recorded boundary: the C++ native importer accepts a conversion expressed with an empty mutation list while the Python-level native adapter refuses the same document because the compiled semantics differ; the qualified reconstruction uses the C++ native importer.",
             "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free envelope only.",
+            "Recorded boundary: the native reader refuses site-bearing molecule types, so the native reconstruction and native export contracts cover the site-free v0.2 envelope only.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],
           "required_checks": [
@@ -2584,10 +2585,10 @@
           "scope": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "dependencies": [],
           "boundaries": [
-            "Recorded boundary: the native importer accepts a rule mutation that the Python-level native adapter refuses as an out-of-range site reference; the two native entry points differ.",
             "Recorded boundary: the native reader refuses a rule mutation whose site reference is out of range; a site-bearing molecule type is outside the native envelope.",
-            "Recorded boundary: the native reader refuses energy patterns and substance-unit metadata; the migration preserves them and the native import refuses them explicitly. Reversible rule directions and the keyword rule modifiers are natively supported.",
+            "Recorded boundary: the native reader refuses energy patterns, site-bearing molecule types, and rule filters and local scopes; the migration preserves them and the native import refuses them explicitly.",
             "Recorded boundary: the native reader refuses rule filters and local scopes explicitly; the Python reader accepts filters, so the two entry points differ.",
+            "Recorded boundary: the v0.2 rule format has no driving-work field, so the v0.2 writer refuses a rule that carries one and points at the version that can represent it.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],
           "required_checks": [
@@ -2647,6 +2648,7 @@
           "dependencies": [],
           "boundaries": [
             "Recorded boundary: population types, population maps and protocol actions are refused explicitly.",
+            "Recorded boundary: the v0.1 reader refuses barrier patterns, population types, population maps and protocol actions because the engine does not compile them; each refusal names the feature.",
             "Recorded boundary: v0.2 cannot represent 'molecules' observable kinds; the migration refuses them explicitly.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],

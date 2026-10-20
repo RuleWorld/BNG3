@@ -321,8 +321,8 @@ def _has_population_types(model):
     return bool(model["population_types"])
 
 
-def _has_protocol_actions(model):
-    return bool(model["protocol"]["actions"])
+def _has_protocol_actions(document):
+    return bool((document.get("protocol") or {}).get("actions"))
 
 
 def _has_declared_metadata(model):
@@ -557,9 +557,19 @@ MATRIX = (
     {
         "id": "protocol-actions",
         "mutate": lambda document: document.__setitem__(
-            "protocol", {"actions": [{"kind": "add", "target": "A"}]}
+            "protocol",
+            {
+                "actions": [
+                    {
+                        "scope": "model",
+                        "name": "generate_network",
+                        "arguments": {"overwrite": "1"},
+                    }
+                ]
+            },
         ),
         "present": _has_protocol_actions,
+        "document": _has_protocol_actions,
         "site_free": True,
         "owner": _OWNER_EXECUTION,
     },

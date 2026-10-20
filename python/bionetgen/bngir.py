@@ -466,14 +466,26 @@ def _quote_string(value: Any) -> str:
     return f'"{escaped}"'
 
 
+# The actions whose grammar form is positional: a quoted target and a value.
+# Every other action takes a bracketed named-argument list.
+_POSITIONAL_ACTIONS = frozenset(
+    {"setparameter", "setconcentration", "addconcentration"}
+)
+
+
 def _action_lines(action: Mapping[str, Any]) -> str:
+    name = str(action.get("name", ""))
     arguments = action.get("arguments", {})
+    if name.lower() in _POSITIONAL_ACTIONS:
+        target = _quote_string(arguments.get("target", ""))
+        value = _action_value(arguments.get("value", ""))
+        return f"  {name}({target}, {value})"
     if not arguments:
-        return f"  {action['name']}()"
+        return f"  {name}()"
     pairs = ", ".join(
         f"{key}=>{_action_value(value)}" for key, value in arguments.items()
     )
-    return f"  {action['name']}({{{pairs}}})"
+    return f"  {name}({{{pairs}}})"
 
 
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
@@ -1699,8 +1711,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     for key in ("name", "version", "substance_units"):
         if not isinstance(metadata[key], str):
             raise ValueError(f"native BNGIR model.metadata.{key} must be a string")
-    if metadata["substance_units"]:
-        raise ValueError("native BNGIR does not support substance-unit metadata")
     options = _require_mapping(metadata["options"], "model.metadata.options")
     if not all(
         isinstance(key, str) and isinstance(value, str)

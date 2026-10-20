@@ -610,9 +610,19 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
     root["rules"] = std::move(rules);
 
     py::list actions;
-    for (const auto& action : document.protocol().actions) {
+    // Both scopes are part of the wire protocol. Model-level writer and
+    // generation actions keep their scope so the reader can tell them from
+    // simulation-protocol actions.
+    for (const auto& action : document.protocol().modelActions()) {
         py::dict item;
-        item["scope"] = action.scope == ActionScope::Model ? "model" : "simulation_protocol";
+        item["scope"] = "model";
+        item["name"] = action.name;
+        item["arguments"] = action.arguments;
+        actions.append(std::move(item));
+    }
+    for (const auto& action : document.protocol().simulationActions()) {
+        py::dict item;
+        item["scope"] = "simulation_protocol";
         item["name"] = action.name;
         item["arguments"] = action.arguments;
         actions.append(std::move(item));
