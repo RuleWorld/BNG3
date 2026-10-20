@@ -64,13 +64,16 @@ The statistical control is stated, not assumed:
   *exact* two-sided test on the ensemble total, whose null distribution is the
   exact convolution of the law's own mass function over the recorded number
   of trajectories.  The per-timepoint error rate is corrected over the sampled
-  timepoints by a union bound, so the recorded ``alpha`` bounds the
-  family-wise error rate of the whole case;
+  timepoints by a union bound;
 * the empirical count distribution is compared with the law's distribution by
   the Dvoretzky-Kiefer-Wolfowitz bound, which is distribution free and holds
   for the discrete laws used here;
 * the decoy is rejected by the same exact test, so the separation claim has
   the same error control as the agreement claim.
+
+The two controls each spend half of the recorded ``alpha``, so the
+family-wise error rate of a case over its sampled timepoints stays below
+``alpha``.
 
 The seed policy and the run budget are fixed and recorded, so the sampling
 error of a result is a number rather than a tolerance that drifts.
@@ -505,7 +508,9 @@ def _assess(case, backend, samples, masses, means, runs, alpha):
     """Compare one sampled ensemble with the declared law and its decoy."""
     population = int(case["law"]["population"])
     times = np.asarray(TIMES, dtype=float)
-    per_timepoint = alpha / len(times)
+    # The two statistical controls each spend half of the case's alpha, so the
+    # family-wise error rate over the sampled timepoints stays below alpha.
+    per_timepoint = alpha / (2 * len(times))
 
     if (
         samples.ndim != 2
