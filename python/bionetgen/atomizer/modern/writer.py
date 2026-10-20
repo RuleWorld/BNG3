@@ -4072,7 +4072,26 @@ def _substitute_seed_symbols(
 def _seed_symbol_values(
     model: SBMLModel, seed_species: Sequence[SeedSpeciesEntry]
 ) -> Dict[str, float]:
-    """Resolve numeric SBML values needed by expression-valued seed species."""
+    """Resolve numeric SBML values needed by expression-valued seed species.
+
+    Initial values are established in SBML specification order (SBML Level 3
+    Core \u00a74.8 "Rules" and \u00a74.11: assignment rules determine their targets'
+    values at t=0 before initial assignments are evaluated, so an initial
+    assignment may reference a variable defined by an assignment rule):
+
+      1. explicit initial values from attributes (parameter ``value``,
+         compartment ``size``, species amount/concentration) form the base;
+      2. assignment rules determine the t=0 value of their targets.  A
+         ``constant="false"`` parameter without a ``value`` attribute has no
+         defined initial value in SBML, so it is deliberately left out of the
+         base here -- its assignment rule supplies the value instead of a
+         silent default ``0`` that would shadow the rule;
+      3. initial assignments are then evaluated using those values and may
+         reference assignment-rule targets and other initial assignments.
+
+    Seed species expressions are folded last so their resolved amounts become
+    available to later retries of the initial-assignment loop.
+    """
 
     symbols: Dict[str, float] = {}
     _add_seed_symbol(symbols, "__Avogadro__", 1)
@@ -4080,8 +4099,14 @@ def _seed_symbol_values(
     # symbol as that initial value so expression-valued seeds become numeric
     # BNGL seed amounts instead of invalid runtime expressions.
     _add_seed_symbol(symbols, "time", 0)
+
+    # --- Base: explicit initial values from attributes ---------------------
+    # A constant parameter defaults to 0 when SBML omits its ``value``
+    # attribute.  A non-constant parameter without a ``value`` attribute has no
+    # defined initial value and is deliberately not added here.
     for parameter_id, parameter in model.parameters.items():
-        _add_seed_symbol(symbols, parameter_id, getattr(parameter, "value", None))
+        if parameter.value_set or parameter.constant:
+            _add_seed_symbol(symbols, parameter_id, parameter.value)
     for compartment_id, compartment in model.compartments.items():
         size = getattr(compartment, "size", None)
         _add_seed_symbol(symbols, compartment_id, size)
@@ -4102,24 +4127,17 @@ def _seed_symbol_values(
             value in species_ids or standardize_name(value) in standardized_species_ids
         )
 
-    def add_resolved(identifier: object, expression: object) -> bool:
+    def set_resolved(identifier: object, expression: object) -> bool:
+        """Resolve an expression and (re)set its symbol, overriding any prior value."""
         if identifier is None or not expression:
             return False
         value = _substitute_seed_symbols(str(expression), symbols)
-        return _add_seed_symbol(symbols, identifier, value)
+        return _set_seed_symbol_if_changed(symbols, identifier, value)
 
     for _ in range(12):
         changed = False
-        # Initial assignments supersede a parameter's literal value.  Resolve
-        # them before constant functions and assignment rules, and allow a few
-        # passes for dependencies between initial assignments.
-        for assignment in model.initial_assignments:
-            symbol = getattr(assignment, "symbol", "")
-            value = _substitute_seed_symbols(
-                str(getattr(assignment, "math", "") or ""), symbols
-            )
-            changed = _set_seed_symbol_if_changed(symbols, symbol, value) or changed
-
+        # Function definitions that resolve to constants are available to the
+        # assignment rules and initial assignments below.
         for function_id, function in model.function_definitions.items():
             if getattr(function, "arguments", None):
                 continue
@@ -4136,15 +4154,24 @@ def _seed_symbol_values(
                 for candidate in candidates:
                     changed = _add_seed_symbol(symbols, candidate, value) or changed
 
+        # Assignment rules determine their targets' t=0 values and override
+        # attribute defaults.  Species assignment rules are handled elsewhere
+        # (_fold_static_species_assignments) and are not resolved here.
         for rule in model.rules:
             variable = getattr(rule, "variable", None)
             if not variable or getattr(rule, "type", "") != "assignment":
                 continue
             if is_species(variable):
                 continue
-            if variable in symbols or standardize_name(variable) in symbols:
-                continue
-            changed = add_resolved(variable, getattr(rule, "math", "")) or changed
+            changed = set_resolved(variable, getattr(rule, "math", "")) or changed
+
+        # Initial assignments are evaluated after assignment rules so they can
+        # reference rule-derived values, and they override attribute defaults.
+        for assignment in model.initial_assignments:
+            symbol = getattr(assignment, "symbol", "")
+            changed = (
+                set_resolved(symbol, getattr(assignment, "math", "")) or changed
+            )
 
         for seed in seed_species:
             identifier = seed.sbml_id
@@ -4166,6 +4193,7 @@ def _seed_symbol_values(
                 )
         if not changed:
             break
+
     return symbols
 
 
