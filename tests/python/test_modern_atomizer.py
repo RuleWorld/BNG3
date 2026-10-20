@@ -844,6 +844,56 @@ def test_playground_parser_surfaces_fast_and_reaction_conversion_diagnostics():
     )
 
 
+@pytest.mark.parametrize(
+    ("level", "spatial_dimensions", "message"),
+    [
+        (3, 7, "BNG3"),
+        (3, 3.5, "BNG3"),
+        (2, 7, "SBML Level 2 permits only values 0 through 3"),
+        (3, -1, "finite, non-negative"),
+    ],
+)
+def test_spatial_dimension_limit_diagnostic(level, spatial_dimensions, message):
+    from bionetgen.atomizer.modern import SBMLParser
+
+    version = 2 if level == 3 else 4
+    sbml = f"""<sbml xmlns="http://www.sbml.org/sbml/level{level}/version{version}"
+              level="{level}" version="{version}">
+      <model id="dimension_limit">
+        <listOfCompartments><compartment id="C"
+          spatialDimensions="{spatial_dimensions}"/></listOfCompartments>
+      </model>
+    </sbml>"""
+
+    model = SBMLParser().parse(sbml)
+    warning = next(
+        warning
+        for warning in model.import_warnings
+        if warning["category"] == "compartment"
+    )
+
+    assert warning["severity"] == "dropped"
+    assert message in warning["message"]
+
+
+def test_level3_fractional_dimension_below_three_keeps_existing_admission():
+    from bionetgen.atomizer.modern import SBMLParser
+
+    model = SBMLParser().parse(
+        """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+              level="3" version="2">
+      <model id="fractional_dimension">
+        <listOfCompartments><compartment id="C" spatialDimensions="2.5"/></listOfCompartments>
+      </model>
+    </sbml>"""
+    )
+
+    assert model.compartments["C"].spatial_dimensions == 2.5
+    assert not any(
+        warning["category"] == "compartment" for warning in model.import_warnings
+    )
+
+
 def test_playground_parser_reports_unsupported_packages_events_and_constraints():
     from bionetgen.atomizer.modern import SBMLParser
 
