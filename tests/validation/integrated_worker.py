@@ -741,6 +741,8 @@ def main():
             "netrule-execution",
             "bngsim-boundary",
             "jax-backend-measurement",
+            "energy-qualification",
+            "workload-profile",
             "api-surface",
         ),
     )
@@ -839,6 +841,8 @@ def main():
         "netrule-execution",
         "bngsim-boundary",
         "jax-backend-measurement",
+        "energy-qualification",
+        "workload-profile",
         "api-surface",
     ):
         from tests.validation.integrated_extensions import run_worker

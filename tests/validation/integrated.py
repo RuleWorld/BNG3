@@ -115,6 +115,8 @@ def expected_contract_ids(
     include_netrule_execution=True,
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
+    include_energy_qualification=True,
+    include_workload_profile=True,
     include_api_surface=True,
     full=False,
 ):
@@ -166,6 +168,8 @@ def expected_contract_ids(
         include_netrule_execution=include_netrule_execution,
         include_bngsim_boundary=include_bngsim_boundary,
         include_jax_backend_measurement=include_jax_backend_measurement,
+        include_energy_qualification=include_energy_qualification,
+        include_workload_profile=include_workload_profile,
         include_api_surface=include_api_surface,
         full=full,
     )
@@ -954,6 +958,9 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--energy-qualification-only", action="store_true")
+    parser.add_argument("--workload-profile-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -967,6 +974,9 @@ def main(argv=None):
                 args.netrule_execution_only,
                 args.bngsim_boundary_only,
                 args.jax_backend_measurement_only,
+                args.energy_qualification_only,
+                args.workload_profile_only,
+                args.api_surface_only,
             )
         )
         > 1
@@ -996,6 +1006,8 @@ def main(argv=None):
         or args.netrule_execution_only
         or args.bngsim_boundary_only
         or args.jax_backend_measurement_only
+        or args.energy_qualification_only
+        or args.workload_profile_only
     ):
         selected = []
     for name in (
@@ -1022,75 +1034,28 @@ def main(argv=None):
     )
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "0"
-    focused = (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.netrule_execution_only
-        or args.jax_backend_measurement_only
-    )
-    qualification_selection = dict(
-        include_boundaries=not (
-            args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_graph_identity=not (
-            args.boundaries_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-        include_bngir_adversarial=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.quantity_laws_only
-            or args.export_format_tier_only
-        ),
-        include_export_format_tier=not (
-            args.boundaries_only
-            or args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-            or args.netrule_execution_only
-            or args.bngsim_boundary_only
-            or args.jax_backend_measurement_only
-        ),
-    )
-    qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.export_format_tier_only
-        or args.netrule_execution_only
-        or args.bngsim_boundary_only
-        or args.api_surface_only
-    )
-    qualification_selection["include_bngsim_boundary"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.jax_backend_measurement_only
-        or args.api_surface_only
-    )
-    qualification_selection["include_api_surface"] = not (
-        args.boundaries_only
-        or args.graph_identity_only
-        or args.bngir_adversarial_only
-        or args.quantity_laws_only
-        or args.jax_backend_measurement_only
-    )
-    qualification_selection["include_netrule_execution"] = not focused
-    qualification_selection["include_jax_backend_measurement"] = not focused
+    # One table of the focused qualifications. A focused run executes exactly
+    # the selected qualification; an unfocused run executes all of them.
+    focused_qualifications = {
+        "boundaries": args.boundaries_only,
+        "graph-identity": args.graph_identity_only,
+        "bngir-adversarial": args.bngir_adversarial_only,
+        "quantity-laws": args.quantity_laws_only,
+        "export-format-tier": args.export_format_tier_only,
+        "netrule-execution": args.netrule_execution_only,
+        "bngsim-boundary": args.bngsim_boundary_only,
+        "jax-backend-measurement": args.jax_backend_measurement_only,
+        "energy-qualification": args.energy_qualification_only,
+        "workload-profile": args.workload_profile_only,
+        "api-surface": args.api_surface_only,
+    }
+    focused = any(focused_qualifications.values())
+    qualification_selection = {
+        f"include_{name.replace('-', '_')}": (
+            not focused or focused_qualifications[name]
+        )
+        for name in focused_qualifications
+    }
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1122,6 +1087,12 @@ def main(argv=None):
             integrated_extensions.invoke(
                 "jax-backend-measurement", args, rows, env, run_stage
             )
+        if qualification_selection["include_energy_qualification"]:
+            integrated_extensions.invoke(
+                "energy-qualification", args, rows, env, run_stage
+            )
+        if qualification_selection["include_workload_profile"]:
+            integrated_extensions.invoke("workload-profile", args, rows, env, run_stage)
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
         for case in selected:
@@ -1169,6 +1140,9 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "energy-qualification": ["--energy-qualification-only"],
+        "workload-profile": ["--workload-profile-only"],
+        "api-surface": ["--api-surface-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1260,6 +1234,16 @@ def main(argv=None):
                     "python/bionetgen/jax_ode.py",
                     "python/bionetgen/jax_ssa.py",
                 ],
+                "energy-qualification": [
+                    "tests/validation/energy_qualification.py",
+                    "cpp/compile/energy/DrivenEnergy.cpp",
+                    "cpp/io/NetWriter.cpp",
+                ],
+                "workload-profile": [
+                    "tests/validation/workload_profile.py",
+                    "cpp/engine/BatchSsa.cpp",
+                    "cpp/nfsim/NFcore/system.cpp",
+                ],
                 "api-surface": "tests/validation/api_surface.py",
             }[row["stage"]]
             row["source_locations"] = (
@@ -1276,6 +1260,14 @@ def main(argv=None):
             if row["stage"] == "jax-backend-measurement":
                 row["question"] = (
                     "jax-backend-stage-profile-vs-independent-closed-form-law"
+                )
+            if row["stage"] == "energy-qualification":
+                row["question"] = (
+                    "energy-extension-rates-vs-analytic-law-and-independent-oracle"
+                )
+            if row["stage"] == "workload-profile":
+                row["question"] = (
+                    "recorded-cpu-plan-vs-implemented-surface-and-measured-profile"
                 )
         if row["stage"] == "rate-trace":
             row["source_locations"] = [
@@ -1304,6 +1296,10 @@ def main(argv=None):
                 issues = [144]
             elif stage == "jax-backend-measurement":
                 issues = [174]
+            elif stage == "energy-qualification":
+                issues = [177]
+            elif stage == "workload-profile":
+                issues = [176]
             elif stage == "api-surface":
                 issues = [171]
             elif stage in integrated_consumers.ISSUES:

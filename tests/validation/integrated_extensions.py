@@ -16,12 +16,14 @@ from . import (
     bngir_reconstruction_contracts,
     api_surface,
     bngsim_boundary,
+    energy_qualification,
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
     export_format_tier,
     jax_backend_measurement,
     netrule_execution,
+    workload_profile,
 )
 from .integrated_cases import generated_cases
 
@@ -38,6 +40,8 @@ OPERATIONS = (
     "netrule-execution",
     "bngsim-boundary",
     "jax-backend-measurement",
+    "energy-qualification",
+    "workload-profile",
     "api-surface",
 )
 
@@ -49,6 +53,8 @@ FOCUS_FLAGS = {
     "graph-identity": "--graph-identity-only",
     "export-format-tier": "--export-format-tier-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "energy-qualification": "--energy-qualification-only",
+    "workload-profile": "--workload-profile-only",
 }
 
 
@@ -63,6 +69,10 @@ def check_ids(operation, case=None, *, full=False):
         return netrule_execution.check_ids()
     if operation == "jax-backend-measurement":
         return jax_backend_measurement.check_ids()
+    if operation == "energy-qualification":
+        return energy_qualification.check_ids()
+    if operation == "workload-profile":
+        return workload_profile.check_ids()
     if operation == "protocol":
         return [
             f"{case['id']}:protocol:{name}"
@@ -100,6 +110,8 @@ def expected_ids(
     include_netrule_execution=True,
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
+    include_energy_qualification=True,
+    include_workload_profile=True,
     include_api_surface=True,
     full=False,
 ):
@@ -125,6 +137,20 @@ def expected_ids(
                 *check_ids("jax-backend-measurement"),
             ]
         )
+    if include_energy_qualification:
+        ids.extend(
+            [
+                "campaign:energy-qualification",
+                *check_ids("energy-qualification"),
+            ]
+        )
+    if include_workload_profile:
+        ids.extend(
+            [
+                "campaign:workload-profile",
+                *check_ids("workload-profile"),
+            ]
+        )
     if include_api_surface:
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
     for case in cases:
@@ -148,6 +174,10 @@ def run_worker(operation, args):
         return netrule_execution.run_worker(Path.cwd())
     if operation == "jax-backend-measurement":
         return jax_backend_measurement.run_worker(Path.cwd())
+    if operation == "energy-qualification":
+        return energy_qualification.run_worker(Path.cwd())
+    if operation == "workload-profile":
+        return workload_profile.run_worker(Path.cwd())
     if operation == "graph-identity":
         from .graph_identity import run_worker as run_graph_identity
 
@@ -237,7 +267,16 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                 else (
                     300
                     if operation == "export-format-tier"
-                    else (600 if operation == "jax-backend-measurement" else 120)
+                    else (
+                        600
+                        if operation
+                        in (
+                            "jax-backend-measurement",
+                            "energy-qualification",
+                            "workload-profile",
+                        )
+                        else 120
+                    )
                 )
             )
         ),

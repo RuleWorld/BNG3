@@ -517,7 +517,9 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .netrule_execution import check_ids as netrule_check_ids
     from .netrule_execution import cases as netrule_cases
     from .bngsim_boundary import check_ids as boundary_check_ids
+    from .energy_qualification import check_ids as energy_check_ids
     from .jax_backend_measurement import check_ids as jax_measurement_check_ids
+    from .workload_profile import check_ids as workload_profile_check_ids
 
     check_ids = [
         *adversarial_check_ids(),
@@ -543,6 +545,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_netrule_execution=False,
                     include_bngsim_boundary=False,
                     include_jax_backend_measurement=False,
+                    include_energy_qualification=False,
+                    include_workload_profile=False,
                     # The public API/CLI surface family is a campaign-level
                     # stage, not a per-case one.
                     include_api_surface=False,
@@ -641,6 +645,50 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="energy-qualification",
+            case_ids=[],
+            check_ids=energy_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(energy_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "Energy extension qualification on a fixed generated corpus of "
+                "two-state energy models and one driven cycle: the rate "
+                "claims are compared against the closed-form law, the "
+                "canonical Perl BNG2 oracle is an independent reference only "
+                "for the plain eBNGL Arrhenius subset it implements, the "
+                "extension stays experimental and opt-in, and the refusing "
+                "exporters are checked for an explicit refusal. Other model "
+                "shapes and the other exporters remain unqualified."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="workload-profile",
+            case_ids=[],
+            check_ids=workload_profile_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(workload_profile_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "Reconciliation of the recorded NFsim CPU/ensemble/device plan "
+                "against the implemented surface, plus the measured workload "
+                "profile of the network-SSA and network-free execution modes "
+                "on a fixed generated corpus with an A/A repeatability "
+                "control: the numbers are machine-specific, the ensemble "
+                "scope is pinned to a fixed seed, a fixed run budget and a "
+                "stated error control, and the device result is supplementary "
+                "to the CPU-pinned contract."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="public-api-surface",
             case_ids=[],
             check_ids=api_surface.check_ids(),
@@ -697,13 +745,21 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                 ["--jax-backend-measurement-only"]
                                 if family["id"] == "jax-backend-measurement"
                                 else (
-                                    ["--report-dir", "<new-empty-directory>"]
-                                    if family["id"] == "public-api-surface"
-                                    else [
-                                        argument
-                                        for case_id in family["case_ids"]
-                                        for argument in ("--case", case_id)
-                                    ]
+                                    ["--energy-qualification-only"]
+                                    if family["id"] == "energy-qualification"
+                                    else (
+                                        ["--workload-profile-only"]
+                                        if family["id"] == "workload-profile"
+                                        else (
+                                            ["--report-dir", "<new-empty-directory>"]
+                                            if family["id"] == "public-api-surface"
+                                            else [
+                                                argument
+                                                for case_id in family["case_ids"]
+                                                for argument in ("--case", case_id)
+                                            ]
+                                        )
+                                    )
                                 )
                             )
                         )
