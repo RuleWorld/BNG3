@@ -338,7 +338,9 @@ namespace BNGcore
             NodeType ( const std::string & type_name, const NodeType & parent_type,
                                                       const StateType & state_type  ); 
             // destructor
-            virtual ~NodeType ( ) { };
+            // Defined out of line: the node functions it owns are only
+            // complete further down this header.
+            virtual ~NodeType ( );
             
             // equivalent operator
             bool  operator== ( const NodeType & type2 ) const;

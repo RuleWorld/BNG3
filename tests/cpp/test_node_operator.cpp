@@ -122,3 +122,36 @@ TEST_CASE("PatternGraph BNG2 strings retain their exact format", "[BNGcore][Patt
 
     REQUIRE(graph.get_BNG2_string() == "A(B)");
 }
+
+namespace {
+
+// Counts the node functions that are alive, so a test can observe whether a
+// node type released the ones it owns.
+int g_liveNodeFunctions = 0;
+
+class CountingNodeFunction : public NodeFunction {
+public:
+    CountingNodeFunction() { ++g_liveNodeFunctions; }
+    CountingNodeFunction(const CountingNodeFunction&) { ++g_liveNodeFunctions; }
+    NodeFunction* clone() const override { return new CountingNodeFunction(*this); }
+    ~CountingNodeFunction() override { --g_liveNodeFunctions; }
+};
+
+}  // namespace
+
+TEST_CASE("NodeType releases the node functions it owns", "[BNGcore][Node][Lifecycle]") {
+    // The edge maps of a node type own the node functions they hold: every
+    // entry is created with `new` or with `NodeFunction::clone()`.  A node
+    // type that does not release them leaks one function per edge, which
+    // the header-scope static node types of BNGcore.hpp did once per
+    // translation unit.
+    const int liveBefore = g_liveNodeFunctions;
+    {
+        NodeType type("A", ENTITY_NODE_TYPE, NULL_STATE_TYPE);
+        CountingNodeFunction fcn;
+        REQUIRE(type.add_edges_in(ENTITY_NODE_TYPE, fcn));
+        // The edge map holds a clone of the function next to the original.
+        REQUIRE(g_liveNodeFunctions == liveBefore + 2);
+    }
+    REQUIRE(g_liveNodeFunctions == liveBefore);
+}
