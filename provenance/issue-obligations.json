@@ -99,21 +99,26 @@
             {
               "id": "qualification:issue:138:inventory-the-43-allowed-ast-dependent-compatibility-files-and-m",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the inventory of AST-dependent compatibility files as an executable artifact: provenance/architecture/ast_compat_allowlist.txt is enforced by the ctest `architecture_layer_dependencies` (tools/check_architecture_dependencies.py), and the callers of the legacy compatibility paths are recorded in provenance/architecture/legacy_dependency_inventory.json and enforced by the ctest `architecture_legacy_dependency_inventory` (tools/check_legacy_dependency_inventory.py).",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
+            "provenance/architecture/ast_compat_allowlist.txt",
+            "provenance/architecture/legacy_dependency_inventory.json",
             "tests/architecture_contracts",
-            "tests/cpp/test_symbol_table.cpp"
+            "tests/cpp/test_symbol_table.cpp",
+            "tests/python/test_legacy_dependency_inventory.py",
+            "tools/check_architecture_dependencies.py",
+            "tools/check_legacy_dependency_inventory.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:138:inventory-the-43-allowed-ast-dependent-compatibility-files-and-m.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The inventory is executable rather than a prose list: the dependency ratchet fails on a stale allowlist entry, and the legacy-path inventory check fails when the live import graph drifts away from the recorded callers."
           ]
         },
         {
@@ -123,68 +128,6 @@
           "dependencies": [],
           "boundaries": [],
           "required_checks": [
-            {
-              "id": "qualification:issue:138:reduce-the-compatibility-allowlist-only-after-corresponding-beha",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            }
-          ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:138:reduce-the-compatibility-allowlist-only-after-corresponding-beha.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
-        },
-        {
-          "id": "issue:138:closure-record",
-          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
-          "scope": "Record implementation or disposition, exact revision, validation commands and results, and remaining limits.",
-          "dependencies": [],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "qualification:issue:138:closure-record",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            }
-          ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:138:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
-        }
-      ]
-    },
-    {
-      "number": 139,
-      "body_sha256": "4b72f72e7f42dbd18365cceae3c684cce0ad1663aa46c91c31c391eb5e7d61b9",
-      "obligations": [
-        {
-          "id": "issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit",
-          "criterion": "Replace the necessary LegacyNetworkRuleKernel reconstruction with a compile-owned execution contract in bounded slices.",
-          "scope": "Replace the necessary LegacyNetworkRuleKernel reconstruction with a compile-owned execution contract in bounded slices.",
-          "dependencies": [],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "qualification:issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
             {
               "id": "netrule-execution:conversion-r0:graph",
               "evidence_kind": "supported-execution",
@@ -268,17 +211,160 @@
             }
           ],
           "test_references": [
-            "tests/cpp/test_network_generator.cpp",
-            "tests/cpp/test_reaction_rule_expansion.cpp",
-            "tests/python/test_legacy_symmetry_factor.py",
-            "tests/validation/test_parity_net.py",
-            "tests/validation/netrule_execution.py"
+            "provenance/architecture/ast_compat_allowlist.txt",
+            "tests/python/test_architecture_dependencies.py",
+            "tools/check_architecture_dependencies.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit.",
-            "The LegacyNetworkRuleKernel reconstruction is not replaced by this evidence: the parity checks qualify a bounded slice and retire no legacy path.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The reduction is bounded to the entries whose behaviour the named parity checks cover: cpp/engine/NetworkRulePlan.cpp left the allowlist because the compile-owned network-rule plan no longer depends on the legacy AST and the netrule-execution family qualifies its behaviour against a hand-derived closed form and the canonical Perl BNG2 oracle. Every remaining allowlist entry still needs its own parity evidence."
+          ]
+        },
+        {
+          "id": "issue:138:closure-record",
+          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Record implementation or disposition, exact revision, validation commands and results, and remaining limits.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:138:closure-record",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:138:closure-record.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        }
+      ]
+    },
+    {
+      "number": 139,
+      "body_sha256": "4b72f72e7f42dbd18365cceae3c684cce0ad1663aa46c91c31c391eb5e7d61b9",
+      "obligations": [
+        {
+          "id": "issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit",
+          "criterion": "Replace the necessary LegacyNetworkRuleKernel reconstruction with a compile-owned execution contract in bounded slices.",
+          "scope": "Replace the necessary LegacyNetworkRuleKernel reconstruction with a compile-owned execution contract in bounded slices.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "netrule-execution:conversion-r0:graph",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:graph",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the declared supported slice the compiled reactant and product patterns, the reaction graph produced by the legacy network-rule path and the canonical Perl BNG2 network name the same reaction edges and products, and both agree with the hand-derived closed-form network.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r0:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:conversion-r1:rate",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rate law resolves to the closed-form coefficient and the engine's executed per-reaction rate coefficients equal it; the canonical Perl BNG2 network states the same coefficient.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:filter-include:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:filter-exclude:filter",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the filter the closed form states, and the generated network is the one that filter implies: the filtered rule contributes no reaction and no product species where it rejects the match.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:local-scope:local-scope",
+              "evidence_kind": "supported-execution",
+              "expectation": "The compiled rule declares the local scope and the scoped rate law, and the executed local rate equals the closed-form law that adds the local observable count to the base rate.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:reversible-r0:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "netrule-execution:reversible-r1:reversible",
+              "evidence_kind": "supported-execution",
+              "expectation": "Both directions of the compiled reversible rule are declared with their own rate laws, the legacy network-rule path executes both, and the canonical Perl BNG2 network states the same pair.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "qualification:issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit",
+              "evidence_kind": "disposition",
+              "expectation": "Record the compile-owned execution contract: compile::CompiledRuleExecutionHooks (cpp/compile/CompiledRuleExecution.hpp) carries the rule's filters, local scopes and zero-rate decision in backend-neutral types, and cpp/engine/NetworkRulePlan.cpp no longer includes the legacy AST, so the compile-owned plan leaves the AST compatibility allowlist. The AST expansion algorithm behind LegacyNetworkRuleKernel is unchanged.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "cpp/compile/CompiledRuleExecution.hpp",
+            "cpp/compile/RateCandidateContext.hpp",
+            "cpp/engine/LegacyNetworkRuleKernel.cpp",
+            "cpp/engine/NetworkRulePlan.cpp",
+            "provenance/architecture/ast_compat_allowlist.txt",
+            "tests/cpp/test_network_generator.cpp",
+            "tests/cpp/test_reaction_rule_expansion.cpp",
+            "tests/python/test_legacy_symmetry_factor.py",
+            "tests/validation/netrule_execution.py",
+            "tests/validation/test_parity_net.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "The compile-owned execution contract now owns the rule's execution decisions (filters, local scopes, zero-rate rejection) and the plan no longer depends on the legacy AST, but the AST expansion algorithm behind LegacyNetworkRuleKernel still reconstructs an ast::ReactionRule; the parity checks qualify a bounded slice and retire no legacy path.",
             "The qualified slice is bounded: single-molecule rule patterns without bonds, compartments or delete-molecules. Other rule shapes and the replacement of the legacy path itself remain unqualified.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
@@ -8080,22 +8166,33 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:172:trace-imports-and-callers-of-modelapi-legacy-network-parser-simu",
+              "id": "api-surface:surface:optional-imports",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The retained legacy paths keep their optional dependencies optional and diagnostic: importing bionetgen resolves no optional distribution, and a missing one surfaces as an ImportError rather than a silent None. The trace itself is the executable inventory enforced by the ctest `architecture_legacy_dependency_inventory` (tools/check_legacy_dependency_inventory.py) against provenance/architecture/legacy_dependency_inventory.json.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "qualification:issue:172:trace-imports-and-callers-of-modelapi-legacy-network-parser-simu",
+              "evidence_kind": "disposition",
+              "expectation": "Record the dependency inventory: which live modules still import the modelapi, legacy network/parser/simulator and Cement paths, which compatibility adapter is retained deliberately, and the precise blocker for every retained path.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/python/test_bngfile_compat.py"
+            "provenance/architecture/legacy_dependency_inventory.json",
+            "tests/python/test_bngfile_compat.py",
+            "tests/python/test_legacy_dependency_inventory.py",
+            "tools/check_legacy_dependency_inventory.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:172:trace-imports-and-callers-of-modelapi-legacy-network-parser-simu.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The trace is an executable artifact: provenance/architecture/legacy_dependency_inventory.json records, per legacy path, the live product callers, the live test callers, the status and the precise blocker; the check fails when the live import graph drifts."
           ]
         },
         {
@@ -8106,20 +8203,33 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:172:remove-only-superseded-paths-after-contracts-pass-and-make-missi",
+              "id": "api-surface:surface:optional-imports",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Missing required functionality stays diagnostic: a missing optional dependency of the retained legacy paths surfaces as an ImportError rather than a silent None, and the retired legacy network reader fails with an explicit ModuleNotFoundError that names the missing module.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "qualification:issue:172:remove-only-superseded-paths-after-contracts-pass-and-make-missi",
+              "evidence_kind": "disposition",
+              "expectation": "Record the retirement: only the legacy pure-Python network reader (bionetgen.network) was removed, because the native bng::io::NetReader supersedes it and the .net reading behaviour is covered by tests/cpp/test_sbml_reader.cpp and the harness .net comparison checks. Every other legacy path is retained with its blocker recorded in provenance/architecture/legacy_dependency_inventory.json.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "provenance/architecture/legacy_dependency_inventory.json",
+            "tests/cpp/test_sbml_reader.cpp",
+            "tests/python/test_legacy_dependency_inventory.py",
+            "tools/check_legacy_dependency_inventory.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:172:remove-only-superseded-paths-after-contracts-pass-and-make-missi.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "Only the legacy pure-Python network reader was retired. The modelapi, simulator and Cement paths keep live callers and have no native replacement yet, so they are retained as the deliberate compatibility adapter with their blocker recorded in the inventory."
           ]
         },
         {

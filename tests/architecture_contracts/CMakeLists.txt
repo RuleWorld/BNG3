@@ -163,4 +163,13 @@ if(Python3_Interpreter_FOUND)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_architecture_dependencies.py)
     set_tests_properties(architecture_layer_dependencies PROPERTIES
         LABELS "architecture;dependency-ratchet" TIMEOUT 30)
+
+    # Dependency inventory for the legacy compatibility paths (#172): the
+    # recorded callers of the modelapi, legacy network/parser/simulator and
+    # Cement paths must match the live import/include graph.
+    add_test(
+        NAME architecture_legacy_dependency_inventory
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_legacy_dependency_inventory.py)
+    set_tests_properties(architecture_legacy_dependency_inventory PROPERTIES
+        LABELS "architecture;dependency-ratchet" TIMEOUT 60)
 endif()

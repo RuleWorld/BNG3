@@ -120,8 +120,15 @@ std::size_t countPatternMatchesForScopedMolecule(
     const ast::SpeciesGraph& patternSpecies,
     const BNGcore::PatternGraph& target,
     const BNGcore::Node* scopedMolecule) {
+    return countPatternMatchesForScopedMolecule(
+        patternSpecies.getGraph(), target, scopedMolecule);
+}
+
+std::size_t countPatternMatchesForScopedMolecule(
+    const BNGcore::PatternGraph& pattern,
+    const BNGcore::PatternGraph& target,
+    const BNGcore::Node* scopedMolecule) {
     if (scopedMolecule == nullptr) return 0;
-    const auto& pattern = patternSpecies.getGraph();
     if (pattern.empty() || target.empty()) return 0;
 
     BNGcore::Node* firstPatternMolecule = nullptr;
