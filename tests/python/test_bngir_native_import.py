@@ -647,7 +647,6 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
 @pytest.mark.parametrize(
     "section",
     [
-        "energy_patterns",
         "barrier_patterns",
         "population_maps",
         "population_types",
@@ -1024,22 +1023,10 @@ def test_native_import_rejects_malformed_declaration_ids_before_building(monkeyp
 
 def test_native_import_rejects_out_of_slice_semantics_without_fallback(monkeypatch):
     document = _document()
-    document["model"]["energy_patterns"].append(
+    document["model"]["population_types"].append(
         {
             "id": 0,
-            "label": "dG",
-            "pattern": {
-                "compartment_prefix": False,
-                "molecules": [
-                    {
-                        "occurrence": 0,
-                        "sites": [],
-                        "type": "A",
-                        "type_id": 0,
-                    }
-                ],
-            },
-            "expression": {"kind": "number", "value": 1.0},
+            "name": "P",
         }
     )
 
@@ -1048,7 +1035,8 @@ def test_native_import_rejects_out_of_slice_semantics_without_fallback(monkeypat
 
     monkeypatch.setattr(_cpp, "parse_string", forbidden)
     with pytest.raises(
-        ValueError, match="native BNGIR.*energy_patterns|energy_patterns.*native BNGIR"
+        ValueError,
+        match="native BNGIR.*population_types|population_types.*native BNGIR",
     ):
         bionetgen.from_bngir(document, native=True)
 

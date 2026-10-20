@@ -1696,7 +1696,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     }
     _native_exact_keys(model, sections, "model")
     for section in (
-        "energy_patterns",
         "barrier_patterns",
         "population_maps",
         "population_types",
@@ -2222,13 +2221,39 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
 
     protocol = _require_mapping(root["protocol"], "protocol")
     _native_exact_keys(protocol, {"actions"}, "protocol")
-    if protocol["actions"] != []:
-        raise ValueError("native BNGIR does not support protocol actions")
+    for action_index, raw_action in enumerate(protocol["actions"]):
+        action = _require_mapping(raw_action, f"protocol.actions[{action_index}]")
+        _native_exact_keys(
+            action, {"scope", "name", "arguments"}, f"protocol.actions[{action_index}]"
+        )
+        if action["scope"] not in {"model", "simulation_protocol"}:
+            raise ValueError(
+                f"native BNGIR protocol.actions[{action_index}] has an unsupported scope"
+            )
+        if not isinstance(action["name"], str) or not action["name"]:
+            raise ValueError(
+                f"native BNGIR protocol.actions[{action_index}] has an invalid name"
+            )
+        arguments = _require_mapping(
+            action["arguments"], f"protocol.actions[{action_index}].arguments"
+        )
+        if not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in arguments.items()
+        ):
+            raise ValueError(
+                f"native BNGIR protocol.actions[{action_index}].arguments must map "
+                "strings to strings"
+            )
     expected_used = sorted(
         ["structured_patterns", "structured_expressions"]
         + (["compartments"] if model.get("compartments") else [])
+        + (["energy_patterns"] if model.get("energy_patterns") else [])
         + (["functions"] if model["functions"] else [])
         + (["observables"] if model["observables"] else [])
+        + (["population_maps"] if model.get("population_maps") else [])
+        + (["population_types"] if model.get("population_types") else [])
+        + (["protocol"] if protocol["actions"] else [])
         + (["rules"] if model["rules"] else [])
         + (["seeds"] if model["seeds"] else [])
     )
@@ -2749,7 +2774,7 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
             }
             for observable in model_data["observables"]
         ]
-        result_cpp = _cpp._model_from_bngir_v02(native_data)
+        result_cpp = _cpp._model_from_bngir_v02(native_data, root["protocol"])
         result = BioNetGenModel(result_cpp)
         rebuilt = _parse_document(to_bngir(result, version=STRUCTURAL_VERSION))
         if rebuilt != root:

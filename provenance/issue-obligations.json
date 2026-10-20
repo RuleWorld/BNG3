@@ -2589,6 +2589,7 @@
             "Recorded boundary: the native reader refuses a rule mutation whose site reference is out of range; a site-bearing molecule type is outside the native envelope.",
             "Recorded boundary: the native reader refuses energy patterns, site-bearing molecule types, and rule filters and local scopes; the migration preserves them and the native import refuses them explicitly.",
             "Recorded boundary: the native reader refuses rule filters and local scopes explicitly; the Python reader accepts filters, so the two entry points differ.",
+            "Recorded boundary: the native reader refuses site-bearing molecule types and rule filters and local scopes; the migration preserves them and the native import refuses them explicitly.",
             "Recorded boundary: the v0.2 rule format has no driving-work field, so the v0.2 writer refuses a rule that carries one and points at the version that can represent it.",
             "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
           ],

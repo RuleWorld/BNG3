@@ -595,19 +595,19 @@ investigation-packet paths.
 | `compartments` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `compartments.v02.json` |
 | `functions` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `functions.v02.json` |
 | `observables` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `observables.v02.json` |
-| `energy-patterns` | UNSUPPORTED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `energy-patterns.v02.json` |
+| `energy-patterns` | PRESERVED | `issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi` | `energy-patterns.v02.json` |
 | `barrier-patterns` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `barrier-patterns.v01.json` |
 | `population-maps` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-maps.v01.json` |
 | `population-types` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `population-types.v02.json` |
-| `protocol-actions` | UNSUPPORTED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `protocol-actions.v02.json` |
+| `protocol-actions` | PRESERVED | `issue:154:check-semantic-execution-as-well-as-document-shape-reject-every` | `protocol-actions.v02.json` |
 | `versioned-features` | PRESERVED | `issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind` | `versioned-features.v02.json` |
 
-Sixteen cells preserve the feature and import natively. Six are refused explicitly by the
+Eighteen cells preserve the feature and import natively. Four are refused explicitly by the
 migration, by the v0.1 reader, or by the native reader. No cell loses a feature silently and
 no cell is rejected without an explicit reason: the migration, the v0.1 reader and the native
 reader all fail closed with a message that names the unsupported feature.
 
-Seven defects were found and repaired while the matrix was extended, and their records were
+Nine defects were found and repaired while the matrix was extended, and their records were
 removed from the obligation catalog:
 
 - The v0.2 writer silently dropped a rule's non-empty `driving_work`, because the v0.2 rule
@@ -629,10 +629,15 @@ removed from the obligation catalog:
   refusal is removed and the round trip is asserted.
 - The native reader refused population molecule types that the native model can carry. The
   population flag now reaches the native molecule type and the import is asserted.
+- The native reader refused protocol actions that the native model can carry. The importer
+  takes the protocol section and adds each action to the model or the simulation protocol.
+- The native reader refused energy patterns that the native model can carry. The importer
+  lowers each energy pattern to the same expression and graph the compiler uses, with the
+  pattern text retained as provenance.
 
-The remaining six cells are explicit unsupported boundaries, each with an owning requirement:
-site-bearing molecule types, energy patterns, rule filters and local scopes, barrier patterns,
-population maps, and protocol actions in the native model.
+The remaining four cells are explicit unsupported boundaries, each with an owning requirement:
+site-bearing molecule types, rule filters and local scopes, barrier patterns, and population
+maps.
 
 ### Export contract scope
 

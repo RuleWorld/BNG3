@@ -11,6 +11,7 @@
 
 #include <pybind11/pybind11.h>
 
+#include "ast/EnergyPattern.hpp"
 #include "ast/Expression.hpp"
 #include "ast/Function.hpp"
 #include "ast/Model.hpp"
@@ -131,8 +132,7 @@ void requireExpressionProperties(const py::dict& expression,
 
 void rejectUnsupportedModelSections(const py::dict& document) {
     static const std::vector<std::string> sections = {
-        "energy_patterns", "barrier_patterns", "population_maps",
-        "population_types",
+        "barrier_patterns", "population_maps", "population_types",
     };
     for (const auto& section : sections) {
         const py::str key(section);
@@ -521,7 +521,8 @@ std::vector<BngirFunction> functionsFromBngir(
     return result;
 }
 
-std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
+std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
+                                        const py::object& protocol) {
     rejectUnsupportedModelSections(document);
     const auto parameters = py::cast<py::list>(document["parameters"]);
     const auto moleculeTypes = py::cast<py::list>(document["molecule_types"]);
@@ -897,6 +898,45 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             std::move(modifiers), py::cast<bool>(bidirectional)));
     }
 
+    // The energy patterns give a transition-state energy to the patterns they
+    // match. The compiled factor takes the expression and the graph as its
+    // semantic content, so the document's structured pattern is lowered the
+    // same way a rule pattern is.
+    for (const auto& rawEnergyPattern :
+         py::cast<py::list>(document["energy_patterns"])) {
+        const auto energyPattern = py::cast<py::dict>(rawEnergyPattern);
+        const auto label = py::cast<std::string>(energyPattern["label"]);
+        const auto pattern =
+            patternFromBngir(*model, py::cast<py::dict>(energyPattern["pattern"]));
+        const auto expression = expressionFromBngir(
+            py::cast<py::dict>(energyPattern["expression"]), modelScope);
+        model->addEnergyPattern(bng::ast::EnergyPattern(
+            label, pattern.toString(), std::move(expression), std::move(pattern)));
+    }
+
+    // The protocol actions are execution instructions. The native model keeps
+    // them beside the model scope so a document that states an action does not
+    // lose it.
+    if (!protocol.is_none()) {
+        const auto protocolObject = py::cast<py::dict>(protocol);
+        for (const auto& rawAction :
+             py::cast<py::list>(protocolObject["actions"])) {
+            const auto actionObject = py::cast<py::dict>(rawAction);
+            bng::ast::Action action;
+            action.name = py::cast<std::string>(actionObject["name"]);
+            const auto arguments = py::cast<py::dict>(actionObject["arguments"]);
+            for (const auto& entry : arguments) {
+                action.arguments[py::cast<std::string>(entry.first)] =
+                    py::cast<std::string>(entry.second);
+            }
+            if (py::cast<std::string>(actionObject["scope"]) == "model") {
+                model->addAction(std::move(action));
+            } else {
+                model->addProtocolAction(std::move(action));
+            }
+        }
+    }
+
     // The function bodies are rebuilt last: a body may name a parameter, one
     // of its own arguments, another model function or an observable, and the
     // compiler resolves those names in that order.
@@ -917,6 +957,6 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
 
 void bind_bngir(py::module_& module) {
     module.def("_model_from_bngir_v02", &modelFromBngirV02,
-               py::arg("model"),
+               py::arg("model"), py::arg("protocol") = py::none(),
                "Build the supported BNGIR v0.2 subset directly from native structures.");
 }
