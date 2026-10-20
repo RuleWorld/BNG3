@@ -5,6 +5,7 @@ import json
 
 from tests.validation import bngir_adversarial as adversarial
 from tests.validation import bngir_format_contracts as format_contracts
+from tests.validation import bngir_reconstruction_contracts as reconstruction
 
 
 def test_native_worker_consumes_independent_documents_and_analytic_controls(tmp_path):
@@ -70,3 +71,54 @@ def test_native_bngir_export_contract_reports_a_perturbed_export_as_failure(
     assert (
         rows[0]["first_difference"]["expected"] != rows[0]["first_difference"]["actual"]
     )
+
+
+def test_native_bngir_reconstruction_and_version_migration_contracts(tmp_path):
+    directory = tmp_path / "reconstruction-contracts"
+    rows = reconstruction.run_worker(directory)
+    assert [row["id"] for row in rows] == reconstruction.check_ids()
+    assert [row["status"] for row in rows] == ["PASS", "PASS"]
+    for row in rows:
+        assert row["related_issues"] == [153, 154]
+        assert row["supported_execution"] is True
+        artifact = directory / row["source_artifact"]
+        assert artifact.is_file()
+        assert hashlib.sha256(artifact.read_bytes()).hexdigest() == row["source_sha256"]
+    outcomes = json.loads(
+        (directory / "v01-v02-feature-matrix.outcomes.json").read_text(encoding="utf-8")
+    )
+    assert {item["id"] for item in outcomes} == {
+        cell["id"] for cell in reconstruction.MATRIX
+    }
+    assert all(
+        item["outcome"] in {"PASS", "UNSUPPORTED"} for item in outcomes
+    ), outcomes
+
+
+def test_reconstruction_contract_reports_a_perturbed_document_as_failure(
+    tmp_path, monkeypatch
+):
+    original = reconstruction.independent_document
+
+    def perturbed():
+        document = original()
+        document["model"]["parameters"][0]["expression"]["value"] = 0.5
+        return document
+
+    monkeypatch.setattr(reconstruction, "independent_document", perturbed)
+    rows = reconstruction.run_worker(tmp_path / "perturbed")
+    assert rows[0]["status"] == "FAIL"
+    assert rows[0]["first_difference"]["field"].startswith("rhs")
+
+
+def test_version_matrix_contract_reports_a_silently_dropped_feature_as_failure(
+    tmp_path, monkeypatch
+):
+    cells = list(reconstruction.MATRIX)
+    for cell in cells:
+        if cell["id"] == "parameters":
+            cell["present"] = lambda model: False
+    monkeypatch.setattr(reconstruction, "MATRIX", cells)
+    rows = reconstruction.run_worker(tmp_path / "dropped")
+    assert rows[1]["status"] == "FAIL"
+    assert rows[1]["first_difference"]["cells"][0]["id"] == "parameters"

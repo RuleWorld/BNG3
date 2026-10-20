@@ -8,6 +8,7 @@ from pathlib import Path
 from tests.validation import (
     bngir_adversarial,
     bngir_format_contracts,
+    bngir_reconstruction_contracts,
     graph_identity,
     integrated_extensions as extensions,
     integrated_cases,
@@ -20,6 +21,18 @@ def args(tmp_path):
     )
 
 
+_RELATED_ISSUES = {
+    **{
+        check: bngir_format_contracts.ISSUES
+        for check in bngir_format_contracts.check_ids()
+    },
+    **{
+        check: bngir_reconstruction_contracts.ISSUES
+        for check in bngir_reconstruction_contracts.check_ids()
+    },
+}
+
+
 def test_final_registry_covers_each_stage_and_namespaced_check_once():
     cases = integrated_cases.generated_cases()
     ids = extensions.expected_ids(cases)
@@ -29,6 +42,7 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
     assert "campaign:bngir-adversarial" in ids
     assert set(bngir_adversarial.check_ids()).issubset(ids)
     assert set(bngir_format_contracts.check_ids()).issubset(ids)
+    assert set(bngir_reconstruction_contracts.check_ids()).issubset(ids)
     assert not set(
         extensions.expected_ids(cases, include_bngir_adversarial=False)
     ).intersection(
@@ -36,6 +50,7 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
             "campaign:bngir-adversarial",
             *bngir_adversarial.check_ids(),
             *bngir_format_contracts.check_ids(),
+            *bngir_reconstruction_contracts.check_ids(),
         }
     )
     assert set(extensions.check_ids("graph-identity")) == {
@@ -60,10 +75,8 @@ def test_bngir_adversarial_extension_requires_exact_issue_linked_checks(tmp_path
                 "check": identity.rsplit(":", 1)[-1],
                 "status": "PASS",
                 "detail": "native structural control",
-                "related_issues": (
-                    list(bngir_format_contracts.ISSUES)
-                    if identity in bngir_format_contracts.check_ids()
-                    else [153, 154, 155, 156]
+                "related_issues": list(
+                    _RELATED_ISSUES.get(identity, [153, 154, 155, 156])
                 ),
                 "evidence_kind": "diagnostic-only",
                 "supported_execution": False,
@@ -91,11 +104,7 @@ def test_bngir_adversarial_extension_requires_exact_issue_linked_checks(tmp_path
     assert [row["id"] for row in rows[1:]] == extensions.check_ids("bngir-adversarial")
     assert all(
         row["related_issues"]
-        == (
-            [155, 156]
-            if row["id"] in bngir_format_contracts.check_ids()
-            else [153, 154, 155, 156]
-        )
+        == list(_RELATED_ISSUES.get(row["id"], [153, 154, 155, 156]))
         for row in rows[1:]
     )
 

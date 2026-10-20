@@ -1135,6 +1135,7 @@ def main(argv=None):
                 "bngir-adversarial": [
                     "tests/validation/bngir_adversarial.py",
                     "tests/validation/bngir_format_contracts.py",
+                    "tests/validation/bngir_reconstruction_contracts.py",
                 ],
                 "graph-identity": "tests/validation/graph_identity.py",
             }[row["stage"]]

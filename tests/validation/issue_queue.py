@@ -512,8 +512,13 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated import expected_contract_ids
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
+    from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
 
-    check_ids = [*adversarial_check_ids(), *format_check_ids()]
+    check_ids = [
+        *adversarial_check_ids(),
+        *format_check_ids(),
+        *reconstruction_check_ids(),
+    ]
 
     cases = generated_cases(full=False)
     families = []

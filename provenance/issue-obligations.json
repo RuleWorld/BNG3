@@ -2377,24 +2377,27 @@
           "criterion": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
           "scope": "Reconstruct the supported resolved model without rendering or parsing BNGL.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:153:reconstruct-the-supported-resolved-model-without-rendering-or-pa",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-reconstruction:source-text-independent-v02",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "An independently authored v0.2 document reconstructs the BNGL source seed and ODE right-hand side without rendering or parsing BNGL.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
           "test_references": [
-            "tests/python/test_bngir_native_import.py"
+            "tests/python/test_bngir_native_import.py",
+            "tests/validation/bngir_reconstruction_contracts.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:153:reconstruct-the-supported-resolved-model-without-rendering-or-pa.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -2403,22 +2406,26 @@
           "criterion": "Round-trip and execute reconstructed models with source-text independence and fail-closed malformed-reference handling.",
           "scope": "Round-trip and execute reconstructed models with source-text independence and fail-closed malformed-reference handling.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-reconstruction:source-text-independent-v02",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "An independently authored v0.2 document reconstructs the BNGL source seed and ODE right-hand side without rendering or parsing BNGL.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/bngir_reconstruction_contracts.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -2565,26 +2572,29 @@
           "criterion": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "scope": "Cover declarations/IDs, reversible directions, mutations, scopes/filters, units, compartments, energy, population metadata and protocol.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi",
-              "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-version-migration:v01-v02-feature-matrix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Every v0.1 to v0.2 feature cell is preserved or refused explicitly; a silently dropped feature fails.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
           "test_references": [
             "tests/python/test_bngir.py",
             "tests/python/test_bngir_native_import.py",
-            "tests/python/test_bngir_version_bridge.py"
+            "tests/python/test_bngir_version_bridge.py",
+            "tests/validation/bngir_reconstruction_contracts.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -2593,22 +2603,26 @@
           "criterion": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
           "scope": "Check semantic execution as well as document shape; reject every feature the selected wire version cannot preserve.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The qualified matrix covers the v0.1 to v0.2 migration path only; the site-bearing molecule type, protocol actions and population types are explicitly refused boundaries, not supported execution."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:154:check-semantic-execution-as-well-as-document-shape-reject-every",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "bngir-version-migration:v01-v02-feature-matrix",
+              "evidence_kind": "native-bngir-semantic-control",
+              "expectation": "Every v0.1 to v0.2 feature cell is preserved or refused explicitly; a silently dropped feature fails.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/bngir_reconstruction_contracts.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:154:check-semantic-execution-as-well-as-document-shape-reject-every.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
