@@ -753,6 +753,7 @@ QUALIFICATION_OPERATIONS = (
     "engine-routes",
     "boundary-extraction",
     "release-candidate",
+    "event-semantics",
 )
 
 

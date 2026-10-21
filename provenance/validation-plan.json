@@ -6,7 +6,9 @@
     180,
     181,
     161,
-    171
+    171,
+    157,
+    158
   ],
   "related_prs": [
     195
@@ -48,6 +50,7 @@
         "tests/validation/test_integrated_extensions.py",
         "tests/validation/test_api_surface.py",
         "tests/validation/test_atomizer_reconstruction.py",
+        "tests/validation/test_event_semantics.py",
         "tests/validation/test_acceptance_queue.py"
       ],
       "question": "harness-self-test"

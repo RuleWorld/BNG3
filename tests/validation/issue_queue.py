@@ -537,6 +537,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated_engine_routes import check_ids as engine_route_check_ids
     from .boundary_extraction import check_ids as boundary_extraction_check_ids
     from .release_candidate import check_ids as release_candidate_check_ids
+    from . import event_semantics
     from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
@@ -1033,6 +1034,27 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="event-semantics",
+            case_ids=[],
+            check_ids=event_semantics.check_ids(),
+            runner="tests.validation.event_semantics",
+            budget=dict(
+                checks=len(event_semantics.check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The declared event families only: the native event runtime, "
+                "the Atomizer's event lowering and the scheduled stochastic "
+                "route, each compared against a closed-form law. The official "
+                "SBML suite, a second independent engine, the delay, snapshot, "
+                "persistence, cancellation and cascade semantics and the "
+                "native parameter and compartment assignment targets stay "
+                "outside the slice and are refused by name."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -1258,16 +1280,25 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                                                                                                                         "id"
                                                                                                                                     ]
                                                                                                                                     == "release-candidate-evidence"
-                                                                                                                                    else [
-                                                                                                                                        argument
-                                                                                                                                        for case_id in family[
-                                                                                                                                            "case_ids"
+                                                                                                                                    else (
+                                                                                                                                        [
+                                                                                                                                            "--event-semantics-only"
                                                                                                                                         ]
-                                                                                                                                        for argument in (
-                                                                                                                                            "--case",
-                                                                                                                                            case_id,
-                                                                                                                                        )
-                                                                                                                                    ]
+                                                                                                                                        if family[
+                                                                                                                                            "id"
+                                                                                                                                        ]
+                                                                                                                                        == "event-semantics"
+                                                                                                                                        else [
+                                                                                                                                            argument
+                                                                                                                                            for case_id in family[
+                                                                                                                                                "case_ids"
+                                                                                                                                            ]
+                                                                                                                                            for argument in (
+                                                                                                                                                "--case",
+                                                                                                                                                case_id,
+                                                                                                                                            )
+                                                                                                                                        ]
+                                                                                                                                    )
                                                                                                                                 )
                                                                                                                             )
                                                                                                                         )

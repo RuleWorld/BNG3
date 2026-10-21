@@ -43,6 +43,7 @@ QUALIFICATIONS = {
     "engine_routes": "include_engine_routes",
     "boundary_extraction": "include_boundary_extraction",
     "release_candidate": "include_release_candidate",
+    "event_semantics": "include_event_semantics",
 }
 
 

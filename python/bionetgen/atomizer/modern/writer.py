@@ -451,6 +451,21 @@ def _factorial(value: float) -> int:
     return math.factorial(int(value))
 
 
+def _requested_simulation_seed(actions: Optional[str]) -> Optional[int]:
+    """Return the seed the requested action block asks the simulator to use.
+
+    A generated event schedule replaces the requested action block, so the
+    seed has to be carried into the generated ``simulate`` phases.  Dropping
+    it would silently return a run the caller did not ask for.
+    """
+    if not actions:
+        return None
+    match = re.search(r"seed\s*=>\s*(\d+)", actions)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
 def _evaluate_arithmetic(expression: str) -> Optional[float]:
     """Evaluate a restricted numeric expression used for constant seed folding."""
 
@@ -10461,6 +10476,7 @@ def generate_bngl(
                     )
                     else "ode"
                 ),
+                seed=_requested_simulation_seed(actions),
                 base_t_end=float(t_end),
                 base_steps=max(1, int(n_steps)),
                 resolve_initial_value=resolve_initial_event_value,

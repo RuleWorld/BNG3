@@ -141,6 +141,7 @@ def expected_contract_ids(
     include_engine_routes=True,
     include_boundary_extraction=True,
     include_release_candidate=True,
+    include_event_semantics=True,
     full=False,
 ):
     return [
@@ -212,6 +213,7 @@ def expected_contract_ids(
         include_engine_routes=include_engine_routes,
         include_boundary_extraction=include_boundary_extraction,
         include_release_candidate=include_release_candidate,
+        include_event_semantics=include_event_semantics,
         full=full,
     )
 
@@ -1009,6 +1011,7 @@ FOCUS_FLAGS = {
     "engine_routes": "engine_routes_only",
     "boundary_extraction": "boundary_extraction_only",
     "release_candidate": "release_candidate_only",
+    "event_semantics": "event_semantics_only",
 }
 
 
@@ -1083,6 +1086,7 @@ def main(argv=None):
     parser.add_argument("--engine-routes-only", action="store_true")
     parser.add_argument("--boundary-extraction-only", action="store_true")
     parser.add_argument("--release-candidate-only", action="store_true")
+    parser.add_argument("--event-semantics-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1235,6 +1239,8 @@ def main(argv=None):
             integrated_extensions.invoke(
                 "boundary-extraction", args, rows, env, run_stage
             )
+        if qualification_selection["include_event_semantics"]:
+            integrated_extensions.invoke("event-semantics", args, rows, env, run_stage)
         if qualification_selection["include_release_candidate"]:
             integrated_extensions.invoke(
                 "release-candidate", args, rows, env, run_stage
@@ -1317,6 +1323,7 @@ def main(argv=None):
         "engine-routes": ["--engine-routes-only"],
         "boundary-extraction": ["--boundary-extraction-only"],
         "release-candidate": ["--release-candidate-only"],
+        "event-semantics": ["--event-semantics-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1427,6 +1434,7 @@ def main(argv=None):
                 "engine-routes": "tests/validation/integrated_engine_routes.py",
                 "boundary-extraction": "tests/validation/boundary_extraction.py",
                 "release-candidate": "tests/validation/release_candidate.py",
+                "event-semantics": "tests/validation/event_semantics.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1520,6 +1528,8 @@ def main(argv=None):
                 issues = [164]
             elif stage == "release-candidate":
                 issues = [184]
+            elif stage == "event-semantics":
+                issues = [157, 158]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:
