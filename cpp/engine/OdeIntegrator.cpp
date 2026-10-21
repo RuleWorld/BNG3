@@ -1392,14 +1392,19 @@ std::vector<double> OdeIntegrator::evaluateRateCoefficients(
         rates.push_back(rxn.rateConstant);
     }
     if (hasFunctionalRates_) {
-        evaluateFunctionalRateCoefficients(t, y, rates.data());
+        // A local scratch keeps this query free of the shared member the ODE
+        // path reuses, so it stays safe to call on an integrator that other
+        // threads are using.
+        std::vector<double> groupValues;
+        evaluateFunctionalRateCoefficients(t, y, rates.data(), groupValues);
     }
     return rates;
 }
 
 void OdeIntegrator::evaluateFunctionalRateCoefficients(
-    double t, const double* y, double* rates, bool failOnError) const {
-    updateGroups(y, groupValues_);
+    double t, const double* y, double* rates,
+    std::vector<double>& groupValues, bool failOnError) const {
+    updateGroups(y, groupValues);
 
     // Build resolver with O(1) observable lookup. Keep this shared with the
     // validation value hook so it exercises the same compiled expression
@@ -1434,7 +1439,7 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
 
         const auto observable = observableIndex_.find(name);
         if (observable != observableIndex_.end()) {
-            return groupValues_[observable->second];
+            return groupValues[observable->second];
         }
 
         // `t` must be passed: a parameter whose expression reads `time` is
@@ -1481,7 +1486,7 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
     // Update observables for functional rates (using pre-allocated buffer)
     if (hasFunctionalRates_) {
         evaluateFunctionalRateCoefficients(
-            t, y, functionalRateCoefficients_.data());
+            t, y, functionalRateCoefficients_.data(), groupValues_);
     }
 
     // Process constant-rate reactions first (no expression evaluation needed).
@@ -3024,6 +3029,12 @@ struct SsaScratch {
     std::vector<double> prefixSums;
     std::vector<std::size_t> depOffset;
     std::vector<std::size_t> depReactions;
+    // Observable scratch for state-dependent rate laws.  It lives here, not on
+    // the OdeIntegrator, because the batched CPU pool shares one integrator
+    // across its worker threads: a member scratch would be written by every
+    // worker at once, and a rate expression that reads an observable would
+    // then resolve against another trajectory's state.
+    std::vector<double> groupValues;
 };
 
 } // namespace
@@ -3142,7 +3153,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     auto recomputeAll = [&]() {
         if (hasFunctionalRates_) {
             evaluateFunctionalRateCoefficients(
-                t, y.data(), rateCoefficients.data(), true);
+                t, y.data(), rateCoefficients.data(), scratch.groupValues, true);
         }
         totalPropensity = 0.0;
         monotonePrefix = true;
@@ -3218,7 +3229,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             // model, so refresh every functional coefficient after a state
             // change. Constant-rate reactions retain dependency-indexed work.
             evaluateFunctionalRateCoefficients(
-                t, y.data(), rateCoefficients.data(), true);
+                t, y.data(), rateCoefficients.data(), scratch.groupValues, true);
             for (const auto r : functionalRxnIndices_) {
                 propensities[r] = computePropensity(
                     compiledRxns_[r], y, rateCoefficients[r]);

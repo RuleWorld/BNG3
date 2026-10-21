@@ -201,6 +201,30 @@ target_link_libraries(test_gpu_batch_ssa_backend PRIVATE
 )
 catch_discover_tests(test_gpu_batch_ssa_backend)
 
+# test_batch_ssa_reproducibility — the multi-worker CPU batch pool must give
+# the same ensemble for the same seed, including for a state-dependent rate
+# law, which resolves its rate against an observable.
+add_executable(test_batch_ssa_reproducibility test_batch_ssa_reproducibility.cpp)
+target_compile_definitions(test_batch_ssa_reproducibility PRIVATE
+    BNG3_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+target_include_directories(test_batch_ssa_reproducibility PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+    ${sundials_SOURCE_DIR}/include
+    ${sundials_BINARY_DIR}/include
+)
+target_link_libraries(test_batch_ssa_reproducibility PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_ast
+    antlr4_static
+)
+catch_discover_tests(test_batch_ssa_reproducibility)
+
 # test_hybrid_model_generator
 add_executable(test_hybrid_model_generator test_hybrid_model_generator.cpp)
 target_link_libraries(test_hybrid_model_generator PRIVATE
