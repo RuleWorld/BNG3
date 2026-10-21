@@ -187,6 +187,10 @@ SbmlWriter::SymbolIds SbmlWriter::computeSymbolIds(
         result.parameters.emplace(makeValidSBMLId(parameter.getName()), id);
     }
     for (const auto& function : model.getFunctions()) {
+        if (!function.getArgs().empty()) {
+            result.parameterizedFunctions.emplace(
+                function.getName(), function.getArgs().size());
+        }
         if (function.getArgs().empty() && !isInternalFunction(function.getName())) {
             const auto id = allocate(function.getName(), "func_");
             result.functions.emplace(function.getName(), id);
@@ -919,6 +923,21 @@ std::string SbmlWriter::exprToMathML(
                 // so emitting such an element would produce a document that
                 // libSBML rejects.  libSBML 5.21.1 serializes both csymbols in
                 // exactly this form.
+                //
+                // The csymbols are operators, not identifiers, so they are
+                // only the right lowering when the model does not declare a
+                // function of the same name.  A declared function with
+                // arguments has no SBML counterpart here, and writing the
+                // history operator for it would silently change the model's
+                // meaning, so the writer refuses instead.
+                const auto declared = symbolIds.parameterizedFunctions.find(funcName);
+                if (declared != symbolIds.parameterizedFunctions.end()) {
+                    throw std::invalid_argument(
+                        "SBML writer cannot write the model function '" + funcName +
+                        "' with " + std::to_string(declared->second) +
+                        " argument(s): the name collides with the SBML Level 3 "
+                        "Version 2 " + funcName + " csymbol");
+                }
                 const std::size_t expected =
                     funcName == "delay" ? 2U : 1U;
                 if (expr.args().size() != expected) {

@@ -62,6 +62,10 @@ private:
         std::unordered_map<std::string, std::string> parameters;
         std::unordered_map<std::string, std::string> functions;
         std::unordered_map<std::string, std::string> observables;
+        // Every declared model function that takes arguments, with its
+        // arity.  A function with arguments has no SBML counterpart in this
+        // writer, so a name that also spells an SBML operator is ambiguous.
+        std::unordered_map<std::string, std::size_t> parameterizedFunctions;
     };
 
     // Observable-to-species weight mapping

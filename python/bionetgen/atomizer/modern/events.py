@@ -2802,6 +2802,33 @@ def _render_set(kind: str, target: str, value: float) -> str:
     return f'{command}("{target}", "{_format_number(value)}")'
 
 
+def _assignment_action(
+    context: EventTranslationContext,
+    variable: str,
+    event: SBMLEvent,
+    time: float,
+    value: float,
+    pattern: Optional[str],
+) -> Tuple[str, str, float]:
+    """Return the scheduled action that applies one SBML assignment value.
+
+    An SBML assignment sets the assigned symbol's *value*.  For a species
+    whose identifier denotes a concentration (``hasOnlySubstanceUnits="false"``)
+    that value is a concentration and the species' amount is the assigned value
+    times the size of the species' compartment (SBML Level 3 Version 2 Core,
+    Sec. 4.6.5 and Sec. 4.6.8).  BNGL keeps the amount as the species' state
+    and ``setConcentration`` assigns that state (BNG2 writes the species'
+    ``Concentrations`` entry, which is the amount), so the conversion belongs
+    to the lowering rather than to the action.
+    """
+
+    if pattern is None:
+        return ("param", standardize_name(variable), value)
+    volume = context.resolve_species_concentration_volume(variable, event, time)
+    amount = value * volume if volume is not None else value
+    return ("conc", pattern, amount)
+
+
 def _render_sets(sets: Sequence[Tuple[str, str, float]]) -> List[str]:
     lines: List[str] = []
     for kind, target, value in sets:
@@ -3836,15 +3863,13 @@ def synthesize_event_actions(
                 (
                     execution_time,
                     [
-                        (
-                            (
-                                "conc"
-                                if context.resolve_species_pattern(variable)
-                                else "param"
-                            ),
-                            context.resolve_species_pattern(variable)
-                            or standardize_name(variable),
+                        _assignment_action(
+                            context,
+                            variable,
+                            event,
+                            execution_time,
                             float(value),
+                            context.resolve_species_pattern(variable),
                         )
                         for variable, value in assignment_values.items()
                     ],
@@ -3961,7 +3986,9 @@ def synthesize_event_actions(
         if reset_value is None or not math.isfinite(reset_value):
             continue
 
-        def assignment_actions(self_value: float) -> List[Tuple[str, str, float]]:
+        def assignment_actions(
+            self_value: float, execution_time: float
+        ) -> List[Tuple[str, str, float]]:
             values = {identifier: self_value, **companion_values}
             actions: List[Tuple[str, str, float]] = []
             for variable in assignment_map:
@@ -3970,12 +3997,16 @@ def synthesize_event_actions(
                     if context.is_param(variable)
                     else context.resolve_species_pattern(variable)
                 )
-                if target_species:
-                    actions.append(("conc", target_species, float(values[variable])))
-                else:
-                    actions.append(
-                        ("param", standardize_name(variable), float(values[variable]))
+                actions.append(
+                    _assignment_action(
+                        context,
+                        variable,
+                        event,
+                        execution_time,
+                        float(values[variable]),
+                        target_species,
                     )
+                )
             return actions
 
         reset_is_false = (
@@ -3995,7 +4026,9 @@ def synthesize_event_actions(
             scheduled.append(
                 (
                     first_trigger + float(delay),
-                    assignment_actions(float(reset_value)),
+                    assignment_actions(
+                        float(reset_value), first_trigger + float(delay)
+                    ),
                     0.0,
                     None,
                     False,
@@ -4042,7 +4075,9 @@ def synthesize_event_actions(
             if value is None or not math.isfinite(value):
                 recurrence = []
                 break
-            recurrence.append((execution_time, assignment_actions(float(value)), 0.0))
+            recurrence.append(
+                (execution_time, assignment_actions(float(value), execution_time), 0.0)
+            )
             count += 1
             if count > 10_000:
                 recurrence = []
@@ -4891,7 +4926,16 @@ def synthesize_event_actions(
                                 ):
                                     cycle_event_is_supported = False
                                     break
-                                scheduled_sets.append(("conc", pattern, float(value)))
+                                scheduled_sets.append(
+                                    _assignment_action(
+                                        context,
+                                        variable,
+                                        event,
+                                        crossing_time,
+                                        float(value),
+                                        pattern,
+                                    )
+                                )
                                 normalized_variable = standardize_name(variable)
                                 event_values.append((normalized_variable, float(value)))
                                 target_id = next(
@@ -5330,8 +5374,15 @@ def synthesize_event_actions(
                                 )
                                 transfer_state[actual_target] = value
                             event_sets = [
-                                ("conc", pattern, value)
-                                for _variable, pattern, value in due_updates.values()
+                                _assignment_action(
+                                    context,
+                                    variable,
+                                    event,
+                                    current_time,
+                                    value,
+                                    pattern,
+                                )
+                                for variable, pattern, value in due_updates.values()
                             ]
                             event_values = [
                                 (variable, value)
@@ -5464,8 +5515,10 @@ def synthesize_event_actions(
                         break
 
                     event_sets = [
-                        ("conc", pattern, value)
-                        for _variable, pattern, value in updates.values()
+                        _assignment_action(
+                            context, variable, event, current_time, value, pattern
+                        )
+                        for variable, pattern, value in updates.values()
                     ]
                     event_values = [
                         (variable, value)
@@ -5664,7 +5717,16 @@ def synthesize_event_actions(
                         chain_schedule.append(
                             (
                                 current_time,
-                                [("conc", pattern, assignment_number)],
+                                [
+                                    _assignment_action(
+                                        context,
+                                        variable,
+                                        event,
+                                        current_time,
+                                        assignment_number,
+                                        pattern,
+                                    )
+                                ],
                                 0.0,
                                 event,
                                 False,
@@ -5737,7 +5799,16 @@ def synthesize_event_actions(
                     chain_schedule.append(
                         (
                             current_time,
-                            [("conc", pattern, assignment_number)],
+                            [
+                                _assignment_action(
+                                    context,
+                                    variable,
+                                    event,
+                                    current_time,
+                                    assignment_number,
+                                    pattern,
+                                )
+                            ],
                             0.0,
                             event,
                             False,
@@ -6419,7 +6490,16 @@ def synthesize_event_actions(
                         quadratic_group_supported = False
                         break
                     numeric_value = float(value)
-                    scheduled_sets.append(("conc", pattern, numeric_value))
+                    scheduled_sets.append(
+                        _assignment_action(
+                            context,
+                            variable,
+                            event,
+                            event_time,
+                            numeric_value,
+                            pattern,
+                        )
+                    )
                     event_values.append((standardize_name(variable), numeric_value))
                     next_state[variable] = numeric_value
                 if not quadratic_group_supported:
@@ -6743,7 +6823,16 @@ def synthesize_event_actions(
                         if value is None or not math.isfinite(value):
                             recurrence_is_proven = False
                             break
-                        scheduled_sets.append(("conc", pattern, float(value)))
+                        scheduled_sets.append(
+                            _assignment_action(
+                                context,
+                                variable,
+                                event,
+                                crossing_time,
+                                float(value),
+                                pattern,
+                            )
+                        )
                         event_values.append((standardize_name(variable), float(value)))
                         next_state[variable] = value
                     if not recurrence_is_proven:
@@ -7661,11 +7750,10 @@ def synthesize_event_actions(
                 # assignments (SBML Test Suite 01779).  BNGL keeps the
                 # amount as the species' state, so the scale factor has to be
                 # applied here.
-                volume = context.resolve_species_concentration_volume(
-                    variable, event, execution_time
-                )
                 sets.append(
-                    ("conc", pattern, value * volume if volume is not None else value)
+                    _assignment_action(
+                        context, variable, event, execution_time, value, pattern
+                    )
                 )
             elif context.is_compartment(variable):
                 state_pattern = context.resolve_compartment_state_pattern(variable)
