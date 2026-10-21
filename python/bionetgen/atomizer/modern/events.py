@@ -457,6 +457,10 @@ class EventTranslationContext:
     resolve_param: Callable[[str], Optional[float]]
     is_param: Callable[[str], bool]
     method: str = "ode"
+    # The seed the caller asked for.  A generated schedule must carry it into
+    # every generated ``simulate`` phase, otherwise the seed the caller asked
+    # for is silently dropped and the run is no longer reproducible.
+    seed: Optional[int] = None
     base_t_end: float = 10
     base_steps: int = 100
     # Only immutable SBML identifiers may be folded into scheduled actions.
@@ -8847,19 +8851,28 @@ def synthesize_event_actions(
 
     phase_start = 0.0
     first = True
+    # The requested seed belongs to every generated phase.  A stochastic
+    # schedule that dropped it would not be the run the caller asked for.
+    seed_argument = (
+        f", seed=>{int(context.seed)}"
+        if context.seed is not None and method.lower() == "ssa"
+        else ""
+    )
     for end in boundaries[1:]:
         steps = steps_for(phase_start, end)
         if first:
             lines.append(
                 f'simulate({{method=>"{method}", t_start=>0, '
-                f"t_end=>{_format_number(end)}, n_steps=>{steps}}})"
+                f"t_end=>{_format_number(end)}, n_steps=>{steps}"
+                f"{seed_argument}}})"
             )
             first = False
         else:
             lines.append(
                 f'simulate({{continue=>1, method=>"{method}", '
                 f"t_start=>{_format_number(phase_start)}, "
-                f"t_end=>{_format_number(end)}, n_steps=>{steps}}})"
+                f"t_end=>{_format_number(end)}, n_steps=>{steps}"
+                f"{seed_argument}}})"
             )
         for time, sets in merged:
             if time > 0 and abs(time - end) < 1e-12:
@@ -8871,7 +8884,8 @@ def synthesize_event_actions(
             f'simulate({{continue=>1, method=>"{method}", '
             f"t_start=>{_format_number(phase_start)}, "
             f"t_end=>{_format_number(t_final)}, "
-            f"n_steps=>{steps_for(phase_start, t_final)}}})"
+            f"n_steps=>{steps_for(phase_start, t_final)}"
+            f"{seed_argument}}})"
         )
 
     return EventTranslationResult(

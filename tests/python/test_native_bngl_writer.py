@@ -28,8 +28,7 @@ def test_native_writer_emits_a_rate_law_spelling_the_reader_accepts(
     again, and canonical BioNetGen rejected it as well.
     """
     source = tmp_path / "model.bngl"
-    source.write_text(
-        f"""begin model
+    source.write_text(f"""begin model
 begin parameters
   phi 0.5
   Ea 1
@@ -60,8 +59,7 @@ begin reaction rules
   convert: A() -> B() {rate}
 end reaction rules
 end model
-"""
-    )
+""")
     model = bionetgen.load(source)
     target = tmp_path / "written.bngl"
     model.write_bngl(str(target))
