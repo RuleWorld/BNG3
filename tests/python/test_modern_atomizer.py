@@ -3080,7 +3080,10 @@ def test_playground_atomizer_emits_and_executes_event_actions_and_diagnostics_in
     )
 
     assert "begin actions" in bngl
-    assert 'setConcentration("@cell:M_A()", "3")' in bngl
+    # "A" denotes a concentration (hasOnlySubstanceUnits="false") in a
+    # compartment of size 2, so the event assigns the amount 3 * 2 = 6
+    # (SBML Level 3 Version 2 Core Sec. 4.6).
+    assert 'setConcentration("@cell:M_A()", "6")' in bngl
     assert "Events NOT simulated" in bngl
     assert "state_dependent" in bngl
 
@@ -3168,7 +3171,10 @@ def test_playground_fixed_event_folds_uncontrolled_mutable_parameter():
         model, sct, get_molecule_types(sct), get_seed_species(sct, model)
     )
 
-    assert 'setConcentration("@cell:M_A()", "3")' in bngl
+    # "A" denotes a concentration (hasOnlySubstanceUnits="false") in a
+    # compartment of size 2, so the event assigns the amount 3 * 2 = 6
+    # (SBML Level 3 Version 2 Core Sec. 4.6).
+    assert 'setConcentration("@cell:M_A()", "6")' in bngl
     assert "t_end=>5" in bngl
     assert 'setParameter("control_time", "2")' in bngl
     assert "controlled_threshold" in bngl
