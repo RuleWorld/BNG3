@@ -646,3 +646,55 @@ PYTHONPATH=python:build/cpp python -m tests.validation.api_surface \
 
 The family also runs as a campaign-level stage of the integrated report, so
 its named rows reach the issue queue with the other exact-revision evidence.
+
+### Event semantics family
+
+`event-semantics` qualifies the two event execution routes BNG3 maintains and
+judges each route against an independent law rather than against the other
+route's output.
+
+The `native` group carries a generated `bng3_events` block through the
+canonical compiled model and the native CVODE root-finding runtime. It checks
+the initial edge, the rising edge, the state update, the recurrence of a
+re-armed event and the solver re-synchronization after an assignment. The
+crossing time is estimated from the observed trajectory and compared with the
+analytic crossing time of the closed-form first-order decay, and the same
+closed form must hold on every declared output grid, so the event time cannot
+depend on the grid the caller asks for.
+
+The `atomizer` group carries generated SBML events through the Atomizer's
+scheduled lowering into BNGL actions. It checks the state, parameter and
+compartment updates against the closed form of the process the source model
+describes: the decay before and after a rate change, the assigned state after
+a crossing, and the compartment size and the compartment-volume parameter
+after a volume change.
+
+The `stochastic` group carries generated SBML events through the stochastic
+route. It checks the stochastic event transition against the exact binomial
+count law of a first-order death process with a recorded seed, a 32-replicate
+ensemble, an analytic standard-error budget for the ensemble mean, a declared
+band for the ensemble dispersion and the exact binomial central range for every
+replicate. It also checks that the recorded seed reproduces the trajectory and
+that a different recorded seed changes it, and that two simultaneous
+equal-priority events with independent assignments are executed while two
+equal-priority events with conflicting assignments are refused instead of being
+serialized in an arbitrarily ordered deterministic action sequence.
+
+The `refusal` group asserts that the combinations the family does not claim are
+refused with their own diagnostic: native parameter and compartment assignment
+targets, multiple native events, native delays and priorities, the stochastic
+and NFsim routes for a native event model, and a state-triggered SBML event on
+the stochastic route. A refusal check never claims supported execution.
+
+A sample recorded exactly at a discontinuity carries one of the two limits of
+the closed form: the state just before the event, or the state the event
+assigns. The native runtime records the limit from after the event; the
+scheduled phase split records the limit from before it, as the BNG2 action
+semantics do. Such a sample is judged against both limits, and the event time
+and the assigned value are checked separately.
+
+```bash
+# Qualify the generated event semantics on its own.
+PYTHONPATH=python:build/cpp python -m tests.validation.event_semantics \
+  --report-dir /tmp/bng3-event-semantics
+```

@@ -844,6 +844,18 @@ jobs:
         env:
           SYMPY_USE_GMPY: "0"
 
+      - name: Qualify the generated event semantics
+        # The generated family carries generated event models through the
+        # canonical compiled model and through the Atomizer's scheduled
+        # lowering and judges every route against a closed-form law or the
+        # exact binomial count law, and refuses the combinations it does not
+        # claim.
+        run: |
+          python -m tests.validation.event_semantics \
+            --report-dir "$RUNNER_TEMP/event-semantics"
+        env:
+          SYMPY_USE_GMPY: "0"
+
   # ═══════════════════════════════════════════════════════════════════════════
   # Source Distribution Installation Smoke Test
   # ═══════════════════════════════════════════════════════════════════════════

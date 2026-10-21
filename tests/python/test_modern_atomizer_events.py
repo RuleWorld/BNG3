@@ -3199,3 +3199,192 @@ def test_static_initial_gate_is_not_reused_across_distinct_event_edges():
     assert 'setConcentration("S1()", "1")' in result.actions_block
     assert len(result.untranslated) == 1
     assert result.untranslated[0][0].id == "later-gate"
+
+
+def _simultaneous_equal_priority_sbml():
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+        level="3" version="2">
+      <model id="equal_priority_conflict">
+        <listOfCompartments>
+          <compartment id="c" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="c" initialAmount="10"
+            hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfEvents>
+          <event id="first" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>time</ci><cn>1</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="S1">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="second" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>time</ci><cn>1</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="S1">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_simultaneous_equal_priority_conflicting_assignments_are_refused():
+    """Two equal-priority events that disagree must not be serialized in an
+    arbitrarily ordered action sequence."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(
+        _simultaneous_equal_priority_sbml()
+    )
+
+    assert result.success, result.error
+    assert "begin actions" not in result.bngl
+    assert "Events NOT simulated" in result.bngl
+    assert (
+        "simultaneous equal-priority events with conflicting assignments" in result.bngl
+    )
+    assert 'setConcentration("@c:M_S1()", "2")' not in result.bngl
+    assert 'setConcentration("@c:M_S1()", "3")' not in result.bngl
+
+
+def test_simultaneous_equal_priority_independent_assignments_are_executed():
+    """Equal-priority events that assign distinct targets stay executable."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+        level="3" version="2">
+      <model id="equal_priority_independent">
+        <listOfCompartments>
+          <compartment id="c" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="c" initialAmount="10"
+            hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S2" compartment="c" initialAmount="10"
+            hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfEvents>
+          <event id="first" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>time</ci><cn>1</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="S1">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="second" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>time</ci><cn>1</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="S2">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+    result = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    assert 'setConcentration("@c:M_S1()", "2")' in result.bngl
+    assert 'setConcentration("@c:M_S2()", "3")' in result.bngl
+
+
+def test_generated_stochastic_schedule_carries_the_requested_seed(tmp_path):
+    """The generated action block must run with the seed the caller asked for."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    sbml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+        level="3" version="2">
+      <model id="seeded_schedule">
+        <listOfCompartments>
+          <compartment id="c" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="c" initialAmount="10"
+            hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="1" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="decay" reversible="false">
+            <listOfReactants>
+              <speciesReference species="S1" stoichiometry="1" constant="true"/>
+            </listOfReactants>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>k</ci><ci>S1</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="reset" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><geq/><ci>time</ci><cn>1</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="S1">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+    def build(seed, directory):
+        result = Atomizer(
+            quiet_mode=True,
+            t_end=2,
+            n_steps=20,
+            actions=(
+                'simulate({method=>"ssa", t_end=>2, n_steps=>20, seed=>'
+                + str(seed)
+                + "})"
+            ),
+        ).atomize(sbml)
+        assert result.success, result.error
+        assert "seed=>" + str(seed) in result.bngl
+        path = tmp_path / directory / "model.bngl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(result.bngl, encoding="utf-8")
+        return path
+
+    import bionetgen
+
+    first = build(7, "first")
+    second = build(7, "second")
+    other = build(11, "other")
+    bionetgen.load(str(first)).execute()
+    bionetgen.load(str(second)).execute()
+    bionetgen.load(str(other)).execute()
+    repeated = (tmp_path / "first" / "model.gdat").read_text(encoding="utf-8")
+    assert repeated == (tmp_path / "second" / "model.gdat").read_text(encoding="utf-8")
+    assert repeated != (tmp_path / "other" / "model.gdat").read_text(encoding="utf-8")

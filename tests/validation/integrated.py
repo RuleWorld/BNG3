@@ -116,6 +116,7 @@ def expected_contract_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_event_semantics=True,
     full=False,
 ):
     return [
@@ -167,6 +168,7 @@ def expected_contract_ids(
         include_bngsim_boundary=include_bngsim_boundary,
         include_jax_backend_measurement=include_jax_backend_measurement,
         include_api_surface=include_api_surface,
+        include_event_semantics=include_event_semantics,
         full=full,
     )
 
@@ -954,6 +956,8 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
+    parser.add_argument("--event-semantics-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -967,6 +971,8 @@ def main(argv=None):
                 args.netrule_execution_only,
                 args.bngsim_boundary_only,
                 args.jax_backend_measurement_only,
+                args.api_surface_only,
+                args.event_semantics_only,
             )
         )
         > 1
@@ -996,6 +1002,8 @@ def main(argv=None):
         or args.netrule_execution_only
         or args.bngsim_boundary_only
         or args.jax_backend_measurement_only
+        or args.api_surface_only
+        or args.event_semantics_only
     ):
         selected = []
     for name in (
@@ -1088,6 +1096,15 @@ def main(argv=None):
         or args.bngir_adversarial_only
         or args.quantity_laws_only
         or args.jax_backend_measurement_only
+        or args.event_semantics_only
+    )
+    qualification_selection["include_event_semantics"] = not (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
+        or args.jax_backend_measurement_only
+        or args.api_surface_only
     )
     qualification_selection["include_netrule_execution"] = not focused
     qualification_selection["include_jax_backend_measurement"] = not focused
@@ -1124,6 +1141,8 @@ def main(argv=None):
             )
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
+        if qualification_selection["include_event_semantics"]:
+            integrated_extensions.invoke("event-semantics", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1169,6 +1188,7 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "event-semantics": ["--event-semantics-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1261,6 +1281,11 @@ def main(argv=None):
                     "python/bionetgen/jax_ssa.py",
                 ],
                 "api-surface": "tests/validation/api_surface.py",
+                "event-semantics": [
+                    "tests/validation/event_semantics.py",
+                    "python/bionetgen/atomizer/modern/events.py",
+                    "cpp/engine/OdeIntegrator.cpp",
+                ],
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1306,6 +1331,8 @@ def main(argv=None):
                 issues = [174]
             elif stage == "api-surface":
                 issues = [171]
+            elif stage == "event-semantics":
+                issues = [157, 158]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):

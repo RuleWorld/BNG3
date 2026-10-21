@@ -166,6 +166,63 @@ maintainer disposition. #171 stays open: the family qualifies one generated
 model family, and notebook execution, third-party integrations and other
 model shapes remain outside the executed scope.
 
+## Event semantics qualification (2026-10-20 candidate)
+
+Issues #157 and #158 asked for the native event runtime and the stochastic
+event contract to name executable checks. The `event-semantics` family in
+`tests/validation/event_semantics.py` adds them: it carries generated event
+models through the canonical compiled model and through the Atomizer's
+scheduled lowering, and judges every route against an independent law rather
+than against the other route's output.
+
+The native group carries a generated `bng3_events` block through the compiled
+model and the native CVODE root-finding runtime. It checks the initial edge,
+the rising edge, the state update, the recurrence of a re-armed event and the
+solver re-synchronization after an assignment. The crossing time is estimated
+from the observed trajectory and compared with the analytic crossing time of the
+closed-form first-order decay, and the same closed form must hold on every
+declared output grid, so the event time cannot depend on the grid the caller
+asks for.
+
+The Atomizer group carries generated SBML events through the scheduled
+lowering into BNGL actions. It checks the state, parameter and compartment
+updates against the closed form of the process the source model describes: the
+decay before and after a rate change, the assigned state after a crossing, and
+the compartment size and the compartment-volume parameter after a volume
+change.
+
+The stochastic group checks the stochastic event transition against the exact
+binomial count law of a first-order death process with a recorded seed, a
+32-replicate ensemble, an analytic standard-error budget for the ensemble
+mean, a declared band for the ensemble dispersion and the exact binomial
+central range for every replicate. It also checks that the recorded seed
+reproduces the trajectory and that a different recorded seed changes it, and
+that two simultaneous equal-priority events with independent assignments are
+executed while two equal-priority events with conflicting assignments are
+refused.
+
+The family also exposed two product defects. The general Atomizer event path
+serialized two simultaneous equal-priority events whose assignments conflicted
+on a shared target into one arbitrarily ordered deterministic action sequence,
+which ADR 0004 forbids; the group is now refused with a diagnostic, matching
+the static parameter event path. And the generated action block dropped the
+seed the caller asked for, so the same seed produced different stochastic runs;
+the seed is now carried into every generated `simulate` phase.
+
+The combinations the family does not claim are refused with their own
+diagnostic rather than accepted quietly: native parameter and compartment
+assignment targets, multiple native events, native delays and priorities, the
+stochastic and NFsim routes for a native event model, and a state-triggered
+SBML event on the stochastic route. A refusal check never claims supported
+execution.
+
+The named checks are recorded in `provenance/issue-obligations.json` for the
+behavioral obligations of #157 and #158, and the closure records stay explicit
+maintainer dispositions. Both issues stay open: the family qualifies one
+generated first-order decay family, and delays, priorities, multiple native
+events, official SBML Test Suite cases and a second independent engine remain
+outside the executed scope.
+
 ## Native BNGIR v0.2 model functions (2026-10-19 candidate)
 
 The native BNGIR v0.2 importer refused the whole `model.functions` section, so

@@ -4779,21 +4779,104 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:157:carry-the-existing-event-ast-through-the-canonical-compiled-mode",
+              "id": "event-semantics:native:decay-reset:rising-edge",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The native event fires at the analytic crossing time of the closed-form first-order decay, and the recorded trajectory matches that closed form on every declared output grid.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:decay-reset:state-update",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native event applies exactly the value the closed form requires after the crossing.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:decay-reset:solver-resync",
+              "evidence_kind": "supported-execution",
+              "expectation": "After the native event fires, the trajectory follows the closed form restarted from the assigned value, so the solver was re-initialized and continued from the new state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:recurrence:rising-edge",
+              "evidence_kind": "supported-execution",
+              "expectation": "The re-armed native event fires at the analytic crossing time on every declared output grid.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:recurrence:recurrence",
+              "evidence_kind": "supported-execution",
+              "expectation": "The re-armed native event fires once per analytic period inside the horizon and the trajectory matches the closed form of every segment.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:recurrence:solver-resync",
+              "evidence_kind": "supported-execution",
+              "expectation": "The trajectory of the re-armed native event matches the closed form restarted from the assigned value at every firing.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:native-parameter-target",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A native event that assigns a parameter is refused with a diagnostic instead of being executed with a changed meaning.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:native-compartment-target",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A native event that assigns a compartment is refused with a diagnostic instead of being executed with a changed meaning.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:native-multiple-events",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A native model with more than one event is refused with a diagnostic instead of executing an arbitrarily chosen event.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:native-delay",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A native event with a delay is refused with a diagnostic instead of executing the event at the wrong time.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:native-priority",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A native event with a priority is refused with a diagnostic instead of ignoring the priority.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/python/test_modern_atomizer_events.py"
+            "tests/python/test_native_events.py",
+            "tests/python/test_modern_atomizer_events.py",
+            "tests/validation/event_semantics.py",
+            "tests/validation/test_event_semantics.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:157:carry-the-existing-event-ast-through-the-canonical-compiled-mode.",
+            "The event-semantics family qualifies the native event subset that the canonical compiled model carries: one immediate event with a continuous scalar trigger, species-observable assignments and constant-rate monotone dynamics. Delays, priorities, multiple events, parameter and compartment assignment targets, stochastic execution and strict initial-threshold equality stay outside the family and are covered by its refusal checks.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4805,19 +4888,96 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:157:verify-initial-rising-edges-state-parameter-compartment-updates",
+              "id": "event-semantics:atomizer:state-trigger:rising-edge",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The Atomizer lowers the state-triggered event to the analytic crossing time of the closed-form first-order decay and the executed trajectory matches that closed form.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:atomizer:state-trigger:state-update",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer's scheduled state update applies exactly the value the closed form requires after the crossing.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:atomizer:parameter-update:parameter-update",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer's scheduled parameter update changes the rate constant, and the executed trajectory matches the closed form of the decay before and after the update.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:atomizer:compartment-update:compartment-update",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer's scheduled compartment update sets the compartment size and keeps the compartment-volume parameter in sync with it, and the executed trajectory matches the closed form of the decay.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:initial-edge:initial-edge",
+              "evidence_kind": "supported-execution",
+              "expectation": "The native event's initial edge fires at the start of the run and the recorded trajectory matches the closed form restarted from the assigned value.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:initial-edge:solver-resync",
+              "evidence_kind": "supported-execution",
+              "expectation": "After the native event's initial edge fires, the trajectory follows the closed form restarted from the assigned value, so the solver was re-initialized and continued from the new state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:atomizer:initial-edge:initial-edge",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Atomizer's initial edge fires at the start of the run and the executed trajectory matches the closed form restarted from the assigned value.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:decay-reset:solver-resync",
+              "evidence_kind": "supported-execution",
+              "expectation": "After the native event fires, the trajectory follows the closed form restarted from the assigned value, so the solver was re-initialized and continued from the new state.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:native-stochastic",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A native event model is refused by the stochastic route with a diagnostic instead of running without its event semantics.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:native-nf",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A native event model is refused by the NFsim route with a diagnostic instead of running without its event semantics.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/python/test_native_events.py",
+            "tests/python/test_modern_atomizer_events.py",
+            "tests/validation/event_semantics.py",
+            "tests/validation/test_event_semantics.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:157:verify-initial-rising-edges-state-parameter-compartment-updates.",
+            "The event-semantics family qualifies the initial edge, the rising edge, the state, parameter and compartment updates and the solver re-synchronization against closed-form laws on generated models. Official SBML Test Suite event cases and a second independent engine remain outside the family, and the boundary sample of a scheduled phase split records the limit from before the event.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4829,19 +4989,21 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:157:closure-record",
+              "id": "manual:issue:157:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the implemented qualification, the exact revision, the validation commands and results and the remaining limits before closing.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/event_semantics.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:157:closure-record.",
+            "Closure requires a maintainer-reviewed record of the executed qualification and the remaining limits; the issue stays open.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         }
@@ -4859,21 +5021,39 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:158:implement-approved-delay-snapshot-persistence-cancellation-prior",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "event-semantics:stochastic:equal-priority:conflicting-target",
+              "evidence_kind": "supported-execution",
+              "expectation": "Two simultaneous equal-priority events whose assignments conflict on a shared target are refused instead of being serialized in an arbitrarily ordered deterministic action sequence.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:stochastic:equal-priority:independent-targets",
+              "evidence_kind": "supported-execution",
+              "expectation": "Two simultaneous equal-priority events whose assignments are independent are executed, and their outcome does not depend on the order.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:native:recurrence:recurrence",
+              "evidence_kind": "supported-execution",
+              "expectation": "The re-armed native event fires once per analytic period inside the horizon and the trajectory matches the closed form of every segment.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/python/test_modern_atomizer_events.py"
+            "tests/python/test_modern_atomizer_events.py",
+            "tests/validation/event_semantics.py",
+            "tests/validation/test_event_semantics.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:158:implement-approved-delay-snapshot-persistence-cancellation-prior.",
+            "The event-semantics family qualifies the priority ordering of simultaneous events and the recurrence of a re-armed event. Delay, snapshot, persistence, cancellation and cascade semantics are not implemented and stay outside the family; the native runtime refuses delays and priorities explicitly.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4885,19 +5065,47 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:158:validate-stochastic-event-transitions-and-seeded-equal-priority",
+              "id": "event-semantics:stochastic:time-trigger:transition",
+              "evidence_kind": "supported-execution",
+              "expectation": "The stochastic event transition follows the exact binomial count law of the first-order death process at the recorded seed and the declared error budget.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:stochastic:time-trigger:post-event-state",
+              "evidence_kind": "supported-execution",
+              "expectation": "The state after the stochastic event follows the exact binomial count law of the population the event assigns.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:stochastic:time-trigger:seeded-repeat",
+              "evidence_kind": "supported-execution",
+              "expectation": "The recorded seed reproduces the stochastic trajectory and a different recorded seed changes it, so the seed decides the run.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "event-semantics:refusal:atomizer-stochastic-state-trigger",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A state-triggered SBML event is refused by the stochastic route with a diagnostic instead of running without its event semantics.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/python/test_modern_atomizer_events.py",
+            "tests/validation/event_semantics.py",
+            "tests/validation/test_event_semantics.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:158:validate-stochastic-event-transitions-and-seeded-equal-priority.",
+            "The event-semantics family qualifies the stochastic transition of a time-triggered event against the exact binomial count law with a recorded seed and a declared error budget, and the seeded ordering of simultaneous equal-priority events. State-triggered stochastic events are refused explicitly and stay outside the family.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -4909,19 +5117,21 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:158:closure-record",
+              "id": "manual:issue:158:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the implemented qualification, the exact revision, the validation commands and results and the remaining limits before closing.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/event_semantics.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:158:closure-record.",
+            "Closure requires a maintainer-reviewed record of the executed qualification and the remaining limits; the issue stays open.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         }

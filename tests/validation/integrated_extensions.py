@@ -16,6 +16,7 @@ from . import (
     bngir_reconstruction_contracts,
     api_surface,
     bngsim_boundary,
+    event_semantics,
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
@@ -39,6 +40,7 @@ OPERATIONS = (
     "bngsim-boundary",
     "jax-backend-measurement",
     "api-surface",
+    "event-semantics",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -49,6 +51,7 @@ FOCUS_FLAGS = {
     "graph-identity": "--graph-identity-only",
     "export-format-tier": "--export-format-tier-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "event-semantics": "--event-semantics-only",
 }
 
 
@@ -82,6 +85,8 @@ def check_ids(operation, case=None, *, full=False):
         return export_format_tier.check_ids()
     if operation == "api-surface":
         return api_surface.check_ids()
+    if operation == "event-semantics":
+        return event_semantics.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -101,6 +106,7 @@ def expected_ids(
     include_bngsim_boundary=True,
     include_jax_backend_measurement=True,
     include_api_surface=True,
+    include_event_semantics=True,
     full=False,
 ):
     ids = []
@@ -127,6 +133,8 @@ def expected_ids(
         )
     if include_api_surface:
         ids.extend(["campaign:api-surface", *check_ids("api-surface")])
+    if include_event_semantics:
+        ids.extend(["campaign:event-semantics", *check_ids("event-semantics")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -162,6 +170,8 @@ def run_worker(operation, args):
         return export_format_tier.run_worker(Path.cwd(), bng_cpp=args.bng_cpp)
     if operation == "api-surface":
         return api_surface.run(Path.cwd())
+    if operation == "event-semantics":
+        return event_semantics.run(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)

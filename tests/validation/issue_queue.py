@@ -511,6 +511,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated_cases import generated_cases
     from .integrated import expected_contract_ids
     from . import api_surface
+    from . import event_semantics
     from .bngir_adversarial import check_ids as adversarial_check_ids
     from .bngir_format_contracts import check_ids as format_check_ids
     from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
@@ -546,6 +547,7 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     # The public API/CLI surface family is a campaign-level
                     # stage, not a per-case one.
                     include_api_surface=False,
+                    include_event_semantics=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -649,6 +651,26 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             limits="One generated first-order decay family; the stochastic statements cover the terminal-time marginal only; notebook execution and third-party integrations are outside the family.",
         )
     )
+    families.append(
+        dict(
+            id="event-semantics",
+            case_ids=[],
+            check_ids=event_semantics.check_ids(),
+            runner="tests.validation.event_semantics",
+            budget=dict(
+                checks=len(event_semantics.check_ids()), stage_timeout_seconds=600
+            ),
+            limits=(
+                "Generated event models carried through the canonical compiled "
+                "model and through the Atomizer's scheduled lowering, judged "
+                "against closed-form laws and the exact binomial count law; "
+                "delays, priorities, multiple native events, parameter and "
+                "compartment assignment targets in the native runtime and "
+                "state-triggered stochastic events stay outside the family "
+                "and are covered by its refusal checks."
+            ),
+        )
+    )
     selected = []
     for family in families:
         available = set(family["check_ids"])
@@ -698,7 +720,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                 if family["id"] == "jax-backend-measurement"
                                 else (
                                     ["--report-dir", "<new-empty-directory>"]
-                                    if family["id"] == "public-api-surface"
+                                    if family["id"]
+                                    in ("public-api-surface", "event-semantics")
                                     else [
                                         argument
                                         for case_id in family["case_ids"]
