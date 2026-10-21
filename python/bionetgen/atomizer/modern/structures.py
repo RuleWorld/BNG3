@@ -801,10 +801,19 @@ def _split_top_level(value: str, separator: str) -> List[str]:
     return parts
 
 
-def read_from_string(pattern_str: str) -> Species:
-    """Parse a BNGL pattern, including species and molecule compartments."""
+def read_from_string_with_diagnostics(
+    pattern_str: str,
+) -> Tuple[Species, List[str]]:
+    """Parse a BNGL pattern and report the fragments that could not be parsed.
+
+    ``read_from_string`` historically dropped molecule text that did not match
+    the BNGL molecule grammar without reporting it, which silently lost
+    structure.  This variant returns the unparsed fragments alongside the
+    parsed species so callers can emit an explicit diagnostic.
+    """
 
     species = Species()
+    unparsed: List[str] = []
     working = pattern_str.strip()
     species_compartment = ""
     prefix = re.match(r"^@([^:]+)::", working)
@@ -821,6 +830,7 @@ def read_from_string(pattern_str: str) -> Species:
             molecule_text,
         )
         if not match:
+            unparsed.append(molecule_text)
             continue
         molecule = Molecule(match.group(1))
         molecule.set_compartment(match.group(3) or species_compartment)
@@ -839,11 +849,19 @@ def read_from_string(pattern_str: str) -> Species:
                         component.add_bond(value)
                 molecule.add_component(component)
         species.add_molecule(molecule)
+    return species, unparsed
+
+
+def read_from_string(pattern_str: str) -> Species:
+    """Parse a BNGL pattern, including species and molecule compartments."""
+
+    species, _unparsed = read_from_string_with_diagnostics(pattern_str)
     return species
 
 
 # Preserve the source module's parser helper spelling for direct callers.
 readFromString = read_from_string
+readFromStringWithDiagnostics = read_from_string_with_diagnostics
 
 
 # Preserve the public method spellings from the TypeScript structures module
@@ -897,5 +915,7 @@ __all__ = [
     "Species",
     "States",
     "readFromString",
+    "readFromStringWithDiagnostics",
     "read_from_string",
+    "read_from_string_with_diagnostics",
 ]

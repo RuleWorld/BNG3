@@ -2882,12 +2882,45 @@ class SBMLParser:
         def add(message: str) -> None:
             messages[message] = messages.get(message, 0) + 1
 
+        # A MathML ``<apply>`` names its operator with its first child.  When
+        # that child is a ``<ci>``, the operator is a function call, and SBML
+        # defines such a call only for a declared ``<functionDefinition>``
+        # (or for the factor laws the writer supports).  An operator that
+        # names nothing is not a rate expression at all: the emitted rule
+        # would call a function the model never declares, and the generated
+        # BNGL would not parse.
+        declared_functions = {
+            str(_attribute(element, "id", "") or "")
+            for element in root.iter()
+            if _local_name(element.tag).lower() == "functiondefinition"
+        }
+        declared_functions.discard("")
+        factor_law_operators = {"sat", "mm", "hill"}
+
         for math_element in root.iter():
             if _local_name(math_element.tag).lower() != "math":
                 continue
             for element in math_element.iter():
                 tag = _local_name(element.tag).lower()
-                if tag == "infinity":
+                if tag == "apply":
+                    children = list(element)
+                    if not children:
+                        continue
+                    operator = children[0]
+                    if _local_name(operator.tag).lower() != "ci":
+                        continue
+                    name = str(operator.text or "").strip()
+                    if (
+                        name
+                        and name not in declared_functions
+                        and name.lower() not in factor_law_operators
+                    ):
+                        add(
+                            f"<apply> uses the undefined operator '{name}'; the "
+                            "model names no such function, so the rate expression "
+                            "cannot be represented."
+                        )
+                elif tag == "infinity":
                     add(
                         "<infinity> constant encountered in math; emitted as a large finite value."
                     )
