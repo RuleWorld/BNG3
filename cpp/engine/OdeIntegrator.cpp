@@ -1,5 +1,6 @@
 #include "compile/LegacyAstLowering.hpp"
 #include "compile/SimulationMethod.hpp"
+#include "compile/TotalRate.hpp"
 #include "ast/EventSupport.hpp"
 #include "OdeIntegrator.hpp"
 
@@ -31,7 +32,6 @@
 #include "ast/Function.hpp"
 #include "ast/ReactionRule.hpp"
 #include "compile/CompiledRateLaw.hpp"
-#include "compile/TotalRate.hpp"
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -336,7 +336,6 @@ void OdeIntegrator::compile() {
     const auto totalRateForOrigin = [&](const std::string& origin) {
         // The compile layer owns the decision; the local set is only a cache
         // of the rules that carry the modifier.
-        if (totalRateRules.find(origin) != totalRateRules.end()) return true;
         return bng::compile::isTotalRateReaction(model_, origin);
     };
 
@@ -894,6 +893,9 @@ void OdeIntegrator::compile() {
                     const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
                     if (uf.has_value()) combinedFactor *= *uf;
                 }
+                // The symmetry factor of identical reactants belongs to the
+                // rule, so it applies to a total rate as well: BNG2 writes it
+                // as a prefix on the rate law whatever the rate law's type.
                 if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     funcExpr = ast::Expression::binary("*",
@@ -2643,6 +2645,39 @@ static int cvodeEventRootWrapper(sunrealtype time, N_Vector state,
     } catch (...) { return -1; }
 }
 
+namespace {
+
+// Owns the SUNDIALS resources of one CVODE integration.
+//
+// CVODE, its state vector, the linear solver, the matrix and the SUNDIALS
+// context are raw handles with manual cleanup.  When an exception unwinds
+// the integration -- for example the right-hand side of a lazy ``stop_if``
+// expression -- none of the explicit cleanup blocks run and every handle
+// leaks.  Releasing them from one owner keeps the release order identical
+// to the manual sequence and makes it impossible for an exception to skip
+// it.
+struct CvodeSession {
+    SUNContext sunctx = nullptr;
+    N_Vector y = nullptr;
+    void* cvode_mem = nullptr;
+    SUNMatrix A = nullptr;
+    SUNLinearSolver LS = nullptr;
+
+    CvodeSession() = default;
+    CvodeSession(const CvodeSession&) = delete;
+    CvodeSession& operator=(const CvodeSession&) = delete;
+
+    ~CvodeSession() {
+        if (LS) { SUNLinSolFree(LS); LS = nullptr; }
+        if (A) { SUNMatDestroy(A); A = nullptr; }
+        if (cvode_mem) { CVodeFree(&cvode_mem); }
+        if (y) { N_VDestroy(y); y = nullptr; }
+        if (sunctx) { SUNContext_Free(&sunctx); }
+    }
+};
+
+}  // namespace
+
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
@@ -2670,17 +2705,26 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         }
     }
 
+    // The SUNDIALS handles used below are raw pointers with manual
+    // cleanup.  ``CvodeSession`` owns them, so an exception that unwinds
+    // this function releases them instead of leaking them.  The aliases
+    // keep the rest of the function unchanged.
+    CvodeSession session;
+    SUNContext& sunctx = session.sunctx;
+    N_Vector& y = session.y;
+    void*& cvode_mem = session.cvode_mem;
+    SUNMatrix& A = session.A;
+    SUNLinearSolver& LS = session.LS;
+
     // SUNDIALS v7: Create context (required for all SUNDIALS objects)
-    SUNContext sunctx = nullptr;
     int flag = SUNContext_Create(SUN_COMM_NULL, &sunctx);
     if (flag != 0) {
         throw std::runtime_error("SUNContext_Create failed");
     }
 
     // Initialize state vector (v7: takes sunctx)
-    N_Vector y = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
+    y = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
     if (y == nullptr) {
-        SUNContext_Free(&sunctx);
         throw std::runtime_error("Failed to allocate CVODE state vector");
     }
 
@@ -2703,43 +2747,14 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     }
 
     // Create CVODE solver (v7: BDF with context, Newton is default)
-    void* cvode_mem = CVodeCreate(CV_BDF, sunctx);
+    cvode_mem = CVodeCreate(CV_BDF, sunctx);
     if (cvode_mem == nullptr) {
-        N_VDestroy(y);
-        SUNContext_Free(&sunctx);
         throw std::runtime_error("Failed to create CVODE solver");
     }
-    // Every exit from the CVODE path must release the solver state, the state
-    // vector and the SUNDIALS context. A failure raised while the integration
-    // loop evaluates the stop condition happens after CVODE has allocated its
-    // state, so the cleanup cannot live only on the explicit error paths.
-    struct CvodeResources {
-        void*& cvode;
-        N_Vector& y;
-        SUNContext& sunctx;
-        SUNLinearSolver ls = nullptr;
-        SUNMatrix matrix = nullptr;
-        bool released = false;
-
-        void release() {
-            if (released) return;
-            released = true;
-            if (ls != nullptr) { SUNLinSolFree(ls); ls = nullptr; }
-            if (matrix != nullptr) { SUNMatDestroy(matrix); matrix = nullptr; }
-            if (cvode != nullptr) { CVodeFree(&cvode); cvode = nullptr; }
-            if (y != nullptr) { N_VDestroy(y); y = nullptr; }
-            if (sunctx != nullptr) { SUNContext_Free(&sunctx); sunctx = nullptr; }
-        }
-
-        ~CvodeResources() { release(); }
-    };
-
-    CvodeResources resources{cvode_mem, y, sunctx};
 
     // Initialize CVODE at the requested start time (critical for continue=1 phases)
     flag = CVodeInit(cvode_mem, cvodeCallbackWrapper, opts.tStart, y);
     if (flag != CV_SUCCESS) {
-        resources.release();
         throw std::runtime_error("CVodeInit failed with flag " + std::to_string(flag));
     }
     // Keep the standard BDF order ceiling. The component-scaled state
@@ -2753,7 +2768,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     // amounts and far too loose for molecule-number states.
     N_Vector scaledAbsTol = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
     if (scaledAbsTol == nullptr) {
-        resources.release();
         throw std::runtime_error("Failed to allocate CVODE absolute tolerances");
     }
     for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -2762,7 +2776,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     flag = CVodeSVtolerances(cvode_mem, opts.rtol, scaledAbsTol);
     N_VDestroy(scaledAbsTol);
     if (flag != CV_SUCCESS) {
-        resources.release();
         throw std::runtime_error("CVodeSStolerances failed");
     }
 
@@ -2782,7 +2795,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         if (canConstrainStates) {
             N_Vector constraints = N_VNew_Serial(static_cast<sunindextype>(nSpecies_), sunctx);
             if (constraints == nullptr) {
-                resources.release();
                 throw std::runtime_error("Failed to allocate CVODE constraints");
             }
             for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -2791,7 +2803,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
             flag = CVodeSetConstraints(cvode_mem, constraints);
             N_VDestroy(constraints);
             if (flag != CV_SUCCESS) {
-                resources.release();
                 throw std::runtime_error("CVodeSetConstraints failed");
             }
         }
@@ -2801,7 +2812,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     CVodeSetUserData(cvode_mem, this);
     if (!!nativeEvent_.has_value()) {
         if (CVodeRootInit(cvode_mem, 1, cvodeEventRootWrapper) != CV_SUCCESS) {
-            resources.release();
             throw std::runtime_error("bng3_events CVodeRootInit failed");
         }
         int direction = 1;
@@ -2813,7 +2823,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     if (opts.maxStep > 0.0) {
         flag = CVodeSetMaxStep(cvode_mem, opts.maxStep);
         if (flag != CV_SUCCESS) {
-            resources.release();
             throw std::runtime_error("CVodeSetMaxStep failed");
         }
     }
@@ -2823,9 +2832,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     // CVodeSetStabLimDet(cvode_mem, 1);
 
     // Linear solver setup (v7 API: SUNMatrix + SUNLinearSolver + CVodeSetLinearSolver)
-    SUNMatrix A = nullptr;
-    SUNLinearSolver LS = nullptr;
-
     // Choose solver based on network size and sparse option
     // Dense for small networks, GMRES for large/sparse networks
     if (!opts.sparse && nSpecies_ < 500) {
@@ -2833,32 +2839,24 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         A = SUNDenseMatrix(static_cast<sunindextype>(nSpecies_),
                            static_cast<sunindextype>(nSpecies_), sunctx);
         if (A == nullptr) {
-            resources.release();
             throw std::runtime_error("SUNDenseMatrix failed");
         }
-        resources.matrix = A;
         LS = SUNLinSol_Dense(y, A, sunctx);
-        resources.ls = LS;
         if (LS == nullptr) {
-            resources.release();
             throw std::runtime_error("SUNLinSol_Dense failed");
         }
         flag = CVodeSetLinearSolver(cvode_mem, LS, A);
         if (flag != CV_SUCCESS) {
-            resources.release();
             throw std::runtime_error("CVodeSetLinearSolver (dense) failed");
         }
     } else {
         // GMRES iterative solver (better for large sparse systems)
         LS = SUNLinSol_SPGMR(y, SUN_PREC_NONE, 0, sunctx);
-        resources.ls = LS;
         if (LS == nullptr) {
-            resources.release();
             throw std::runtime_error("SUNLinSol_SPGMR failed");
         }
         flag = CVodeSetLinearSolver(cvode_mem, LS, nullptr);
         if (flag != CV_SUCCESS) {
-            resources.release();
             throw std::runtime_error("CVodeSetLinearSolver (GMRES) failed");
         }
     }
@@ -2884,15 +2882,11 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     if (rootInfo > 0) {
                         std::vector<double> state(nSpecies_);
                         for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
-                        try {
-                            applyEvent(t, state);
-                        } catch (...) {
-            resources.release();
-                            throw;
-                        }
+                        // An exception here unwinds the integration; the
+                        // session releases the SUNDIALS handles.
+                        applyEvent(t, state);
                         for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
                         if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
-            resources.release();
                             throw std::runtime_error("bng3_events CVodeReInit failed");
                         }
                     }
@@ -2908,7 +2902,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     // that makes a per-model validation job time out.
                     constexpr long int maxInternalSteps = 10000;
                     if (maxSteps >= maxInternalSteps) {
-            resources.release();
                         throw std::runtime_error(
                             "CVODE failed with flag " + std::to_string(flag) +
                             " after reaching the internal step budget");
@@ -2918,7 +2911,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     CVodeSetMaxNumSteps(cvode_mem, maxSteps);
                     continue;
                 } else {
-            resources.release();
                     throw std::runtime_error("CVODE failed with flag " + std::to_string(flag));
                 }
             }
@@ -2999,9 +2991,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                   << ", \"n_species\": " << nSpecies_ << "}\n";
     }
 
-    // Cleanup (v7: also free linear solver, matrix, and context)
-            resources.release();
-
+    // Cleanup (v7: also free linear solver, matrix, and context) happens
+    // when ``session`` goes out of scope, after the result is returned.
     return result;
 }
 

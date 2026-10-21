@@ -1,0 +1,377 @@
+"""Regression tests for the official cases whose gap is an algebraic rule.
+
+SBML Level 3 Version 2 Core Sec. 4.9 (``Rules``) defines ``AlgebraicRule`` as
+an equation that determines a variable's value *implicitly*: the equation
+holds at every time, and the variables it names are solved for as a system.
+Sec. 4.9.3 defines what an ``AssignmentRule`` does instead -- it *overrides*
+the value the object defining the symbol assigns to it, so it is a
+substitution rather than a constraint.
+
+Two official SBML Test Suite cases exercise the difference, and they are the
+only two whose recorded gap is an algebraic rule that BNG3 does not apply:
+
+``semantic/01575``
+    An algebraic rule over two rate-ruled parameters (``k1 - k2 = 0``) and a
+    persistent event with a delay.  The rule is a linear relation that can be
+    solved for one variable, so it is representable.  The *event* is not: its
+    trigger reads ``k2``, whose value follows the rate-ruled ``k1``, and the
+    trigger becomes true during the run (at ``t = 2.5`` the reference shows
+    ``k2`` passing through ``3.5``).  The case must therefore be reported as
+    unsupported: executing the model without the event would report a
+    trajectory that the official reference contradicts.
+
+``semantic/00761``
+    An algebraic rule over two species (``(1 + k3) * S1 - T = 0``) and an
+    event whose trigger reads a species produced by a reaction.  The Atomizer
+    does not apply the rule, so the source dynamics are unknown.  No
+    conclusion about the event may then be drawn from the generated model
+    either -- in particular the event must not be reported as "lowered to
+    scheduled actions" when no action was scheduled at all.
+
+Both cases must be *refused*, and the refusal must name the construct that
+BNG3 cannot represent.  The tests assert the harness's verdict and its cause
+classification, not a diagnostic string.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+import pytest
+
+
+def _load_validator(name: str):
+    path = Path(__file__).parents[2] / "scripts" / "ci" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# ``semantic/01575``: an algebraic rule over rate-ruled parameters and a
+# persistent event with a delay.  The event's trigger is true while
+# ``3.5 < k2 < 4``; with ``k1' = 1`` and ``k1(0) = 1`` that window opens at
+# ``t = 2.5`` and the delayed execution happens at ``t = 3.6``.
+_01575_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+         level="3" version="2">
+  <model id="case01575" name="case01575">
+    <listOfParameters>
+      <parameter id="k1" value="1" constant="false"/>
+      <parameter id="k2" constant="false"/>
+    </listOfParameters>
+    <listOfRules>
+      <algebraicRule>
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><minus/><ci> k1 </ci><ci> k2 </ci></apply>
+        </math>
+      </algebraicRule>
+      <rateRule variable="k1">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1 </cn></math>
+      </rateRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/>
+              <apply><gt/><ci> k2 </ci><cn> 3.5 </cn></apply>
+              <apply><lt/><ci> k2 </ci><cn type="integer"> 4 </cn></apply>
+            </apply>
+          </math>
+        </trigger>
+        <delay>
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1.1 </cn></math>
+        </delay>
+        <listOfEventAssignments>
+          <eventAssignment variable="k1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1 </cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+_01575_SETTINGS = """start: 0
+duration: 10
+steps: 10
+variables: k1, k2
+absolute: 0.0001
+relative: 0.0001
+amount:
+concentration:
+"""
+
+# The official reference of ``semantic/01575``.  The event fires at
+# ``t = 3.6`` and resets ``k1`` to 1, which the reference rows show.
+_01575_RESULTS = """Time,k1,k2
+0,1,1
+1,2,2
+2,3,3
+3,4,4
+4,1.4,1.4
+5,2.4,2.4
+6,3.4,3.4
+7,4.4,4.4
+8,1.8,1.8
+9,2.8,2.8
+10,3.8,3.8
+"""
+
+# ``semantic/00761``: an algebraic rule over two species and an event whose
+# trigger reads a reaction product.
+_00761_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+         level="3" version="2">
+  <model id="case00761" name="case00761" timeUnits="time">
+    <listOfFunctionDefinitions>
+      <functionDefinition id="greaterthan" name="greaterthan">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <lambda>
+            <bvar><ci> x </ci></bvar>
+            <bvar><ci> y </ci></bvar>
+            <apply><gt/><ci> x </ci><ci> y </ci></apply>
+          </lambda>
+        </math>
+      </functionDefinition>
+      <functionDefinition id="add" name="add">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <lambda>
+            <bvar><ci> x </ci></bvar>
+            <bvar><ci> y </ci></bvar>
+            <apply><plus/><ci> x </ci><ci> y </ci></apply>
+          </lambda>
+        </math>
+      </functionDefinition>
+    </listOfFunctionDefinitions>
+    <listOfCompartments>
+      <compartment id="C" name="C" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="X0" name="X0" compartment="C" initialAmount="1"
+               hasOnlySubstanceUnits="false" boundaryCondition="false"
+               constant="false"/>
+      <species id="X1" name="X1" compartment="C" initialAmount="0"
+               hasOnlySubstanceUnits="false" boundaryCondition="false"
+               constant="false"/>
+      <species id="T" name="T" compartment="C" initialAmount="0"
+               hasOnlySubstanceUnits="false" boundaryCondition="false"
+               constant="false"/>
+      <species id="S1" name="S1" compartment="C" initialAmount="0"
+               hasOnlySubstanceUnits="false" boundaryCondition="false"
+               constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k1" name="k1" value="0.1" constant="true"/>
+      <parameter id="k2" name="k2" value="0.375" constant="true"/>
+      <parameter id="k3" name="k3" value="2.5" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <algebraicRule>
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><plus/>
+            <apply><times/><ci> S1 </ci>
+              <apply><ci> add </ci><cn type="integer"> 1 </cn><ci> k3 </ci></apply>
+            </apply>
+            <apply><times/><cn type="integer"> -1 </cn><ci> T </ci></apply>
+          </apply>
+        </math>
+      </algebraicRule>
+    </listOfRules>
+    <listOfReactions>
+      <reaction id="reaction1" name="reaction1" reversible="false">
+        <listOfReactants>
+          <speciesReference species="X0" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="T" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> C </ci><ci> k1 </ci><ci> X0 </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="reaction2" name="reaction2" reversible="false">
+        <listOfReactants>
+          <speciesReference species="T" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="X1" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <listOfModifiers>
+          <modifierSpeciesReference species="S1"/>
+        </listOfModifiers>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> C </ci><ci> k2 </ci><ci> S1 </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="event1" name="event1" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><ci> greaterthan </ci><ci> X1 </ci><cn> 0.5 </cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="X1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1 </cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+_00761_SETTINGS = """start: 0
+duration: 40.0
+steps: 50
+variables: X0, X1, T, S1
+absolute: 1.000000e-003
+relative: 0.0001
+amount: X0, X1, T, S1
+concentration:
+"""
+
+_00761_RESULTS = """time,X0,X1,T,S1
+0,1.,2.138552610247586e-30,-2.197198502093979e-24,9.67026976726205e-12
+0.8,0.9231163451889691,0.003244933713928174,0.07363872109710263,0.02103963459917219
+1.6,0.8521437887162755,0.01228934238564433,0.1355668688980801,0.03873339111373719
+2.4,0.786627859535143,0.02619044073253581,0.1871816997323211,0.05348048563780594
+3.2,0.7261490354291663,0.04411877451320064,0.2297321900576329,0.06563776858789513
+4.,0.6703200445499893,0.06534610753976989,0.2643338479102406,0.075523956545783
+4.8,0.6187833914968956,0.08923458508610325,0.2919820234170009,0.08342343526200027
+5.6,0.5712090627291711,0.1152269433305583,0.3135639939402704,0.08958971255436298
+6.4,0.5272924244905951,0.1428377516878315,0.3298698238215733,0.09424852109187811
+7.2,0.4867522554029566,0.1716454656148573,0.3416022789821859,0.09760065113776747
+8.,0.4493289646829047,0.2012853796811326,0.3493856556359624,0.09982447303884638
+8.8,0.4147829117829972,0.2314432079939618,0.3537738802230408,0.1010782514922973
+9.6,0.3828928864342857,0.2618494024571859,0.3552577111085281,0.1015022031738652
+10.4,0.3534546826623529,0.2922740025613215,0.3542713147763255,0.1012203756503787
+11.2,0.32627979502984,0.3225220501166841,0.3511981548534758,0.100342329958136
+12.,0.3011942130097296,0.3524294783092463,0.3463763086810239,0.09896465962314969
+12.8,0.2780373009419539,0.38185941920361,0.340103279854436,0.097172365672696
+13.6,0.2566607781205618,0.4106989305066555,0.3326402913727826,0.09504008324936645
+14.4,0.2369277593606532,0.4388560378517291,0.3242162027876177,0.09263320079646214
+15.2,0.2187118879677983,0.4662571292663049,0.3150309827658966,0.09000885221882765
+16.,0.2018965180426676,0.4928446039100782,0.305258878047254,0.08721682229921558
+16.8,0.1863740009876559,1.018574755823207,0.2950512427025137,0.08430035505786112
+17.6,0.172044885984899,1.043416087815171,0.2845390257133063,0.08129686448951467
+18.4,0.1588174503477969,1.067347417728526,0.2738351314370534,0.07823860898201544
+19.2,0.1466069866686047,1.090356566184669,0.2630364466601022,0.07515327047431548
+20.,0.1353353085696214,1.112439051957319,0.2522256389864365,0.07206446828183858
+20.8,0.1249302321120566,1.133596911004964,0.2414728563963562,0.06899224468467228
+21.6,0.11532513595071,1.15383773391899,0.2308371296436768,0.0659534656124802
+22.4,0.1064585106050199,1.173173726514419,0.220367762393937,0.06296221782683769
+23.2,0.09827358330895673,1.191620956227265,0.2101054599771557,0.06003013142204536
+24.,0.09071794676298784,1.209198651188965,0.2000834015614235,0.0571666861604134
+24.8,0.08374321952520674,1.225928589353538,0.1903281906346319,0.05437948303844833
+25.6,0.07730473844601465,1.241834573027488,0.1808606880398746,0.0516744822971055
+26.4,0.071361270020189,1.256941967352235,0.1716967621409527,0.04905621775456805
+27.2,0.06587475438272259,1.271277313450075,0.1628479316805788,0.04652798048004194
+28.,0.06081006315685783,1.284867983269628,0.1543219530868909,0.04409198659674173
+28.8,0.05613476852374712,1.297741871607027,0.1461233593826019,0.04174953125096096
+29.6,0.05181892392226671,1.309927121418986,0.1382539541721243,0.0395011297658462
+30.4,0.04783489541193537,1.321451942843897,0.1307131612575442,0.03734661749998786
+31.2,0.04415717006896345,1.332344403403221,0.1234984260411924,0.03528526456480921
+32.,0.04076220093552568,1.342632288320278,0.1166055102575724,0.03331586011376166
+32.8,0.03762825523230895,1.352342952123768,0.1100287921572989,0.03143679779533636
+33.6,0.03473525897164842,1.36150321109865,0.1037615294430774,0.02964615127555122
+34.4,0.03206468522853021,1.370139266844675,0.09779604744017042,0.02794172782258457
+35.2,0.02959943346710135,1.378276632986186,0.09212393306008882,0.02632112372712448
+36.,0.027323722180051,1.385940071423197,0.08673620591012841,0.02478177315357742
+36.8,0.02522297708797724,1.393153559849365,0.08162346257603446,0.02332098926613955
+37.6,0.02328374526144436,1.39994025251584,0.07677600173609196,0.02193600042949677
+38.4,0.0214936087607868,1.406322464522599,0.07218392622999024,0.02062397904478536
+39.2,0.01984110420435494,1.412321657365297,0.0678372379437243,0.01938206804361763
+40.,0.01831565024968183,1.417958433514777,0.06372591574891751,0.01820740449969071
+"""
+
+
+def _write_case(tmp_path: Path, case_id: str, model: str, settings: str, results: str):
+    source = tmp_path / f"{case_id}-sbml-l3v2.xml"
+    source.write_text(model, encoding="utf-8")
+    (tmp_path / f"{case_id}-settings.txt").write_text(settings, encoding="utf-8")
+    (tmp_path / f"{case_id}-results.csv").write_text(results, encoding="utf-8")
+    return {
+        "category": "semantic",
+        "id": case_id,
+        "version": "l3v2",
+        "path": source,
+    }
+
+
+def test_persistent_event_over_an_algebraic_rule_is_refused_as_unsupported(tmp_path):
+    """``semantic/01575`` must be refused, not executed without its event.
+
+    The official reference shows the event firing: ``k1`` is reset to 1 at
+    ``t = 3.6``, so the reference value at ``t = 4`` is 1.4 and not the 5.0
+    that the un-evented trajectory produces.  A model that reports the
+    un-evented trajectory is a wrong number, so the case has to be reported
+    as ``unsupported`` rather than ``failed``.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    case = _write_case(tmp_path, "01575", _01575_MODEL, _01575_SETTINGS, _01575_RESULTS)
+
+    record = validator._validate_case(case, cpp, tmp_path, 10.0, 10, 1e-9, 1e-14, None)
+    validator._unsupported_summary([record])
+
+    assert record["status"] == "unsupported"
+    assert record["official_conformance"]["status"] == "unsupported"
+    # The refusal names the event, which is the construct the BNGL action
+    # engine cannot schedule.
+    assert "events" in record["unsupported_causes"]
+    assert record["unsupported_subcauses"]["events"] == [
+        "state_trigger_not_schedulable"
+    ]
+
+
+def test_algebraic_rule_over_species_is_refused_with_its_event_named(tmp_path):
+    """``semantic/00761`` must name the event it cannot evaluate.
+
+    The Atomizer does not apply the algebraic rule, so the generated model
+    does not reproduce the source dynamics.  The event's trigger therefore
+    cannot be evaluated, and the event must not be reported as "lowered to
+    scheduled actions" when no action was scheduled.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    case = _write_case(tmp_path, "00761", _00761_MODEL, _00761_SETTINGS, _00761_RESULTS)
+
+    record = validator._validate_case(case, cpp, tmp_path, 40.0, 50, 1e-9, 1e-14, None)
+    validator._unsupported_summary([record])
+
+    assert record["status"] == "unsupported"
+    assert record["official_conformance"]["status"] == "unsupported"
+    # Both constructs are named: the algebraic rule that BNG3 does not apply
+    # and the event whose trigger cannot be evaluated without it.
+    assert "algebraic_rules" in record["unsupported_causes"]
+    assert "events" in record["unsupported_causes"]
+    assert record["unsupported_subcauses"]["events"] == ["algebraic_rule_blocks_event"]
+
+
+def test_unapplied_algebraic_rule_does_not_schedule_a_state_event():
+    """The event of ``semantic/00761`` is never claimed to be scheduled.
+
+    ``synthesize_event_actions`` reports an event it certified inactive as a
+    converted event, and the summary then claimed that it had been "lowered to
+    scheduled BNGL actions" although the generated model contains no action at
+    all.  A model with an unapplied algebraic rule has unknown dynamics, so
+    the event must be reported as untranslated instead.
+    """
+
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_00761_MODEL)
+    assert result.success, result.error
+
+    # The generated model carries the refusal, and no scheduled action.
+    assert "# Events NOT simulated" in result.bngl
+    assert "begin actions" not in result.bngl

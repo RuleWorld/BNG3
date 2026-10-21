@@ -93,7 +93,9 @@ jobs:
             tests/validation/test_minimize.py \
             tests/validation/test_conformance_cli.py \
             tests/validation/test_conformance_ci_wiring.py \
-            tests/validation/test_sbml_expectations.py
+            tests/validation/test_sbml_expectations.py \
+            tests/validation/test_corpus_expectations.py \
+            tests/test_biomodels_report_comparison.py
 
       - name: Discover capability inventory without qualification claims
         id: capability_inventory

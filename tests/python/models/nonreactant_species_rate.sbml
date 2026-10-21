@@ -1,0 +1,1905 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" layout:required="false" level="3" render:required="false" version="1" xmlns:layout="http://www.sbml.org/sbml/level3/version1/layout/version1" xmlns:render="http://www.sbml.org/sbml/level3/version1/render/version1">
+  <model areaUnits="area" extentUnits="substance" id="Pandey2018_reversible_transition_between_quiescence_and_proliferation" lengthUnits="length" metaid="COPASI0" name="Pandey2018-reversible transition between quiescence and proliferation" substanceUnits="substance" timeUnits="time" volumeUnits="volume">
+      <listOfFunctionDefinitions>
+      <functionDefinition id="Rate_Law_for_reaction_CycDT_decay" metaid="COPASI116" name="Rate Law for reaction CycDT decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdcycd </ci>
+            </bvar>
+            <bvar>
+              <ci> CycDT </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kdcycd </ci>
+              <ci> CycDT </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_E2FT_decay" metaid="COPASI117" name="Rate Law for reaction E2FT decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kde2f </ci>
+            </bvar>
+            <bvar>
+              <ci> kde2fa </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> E2FT </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kde2f </ci>
+                <apply>
+                  <times/>
+                  <ci> kde2fa </ci>
+                  <ci> CycA </ci>
+                </apply>
+              </apply>
+              <ci> E2FT </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_Comp2_decay" metaid="COPASI118" name="Rate Law for reaction Comp2 decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdise2f </ci>
+            </bvar>
+            <bvar>
+              <ci> comp2 </ci>
+            </bvar>
+            <bvar>
+              <ci> kdprbp </ci>
+            </bvar>
+            <bvar>
+              <ci> JdpRb </ci>
+            </bvar>
+            <bvar>
+              <ci> kprbp </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> JpRbp </ci>
+            </bvar>
+            <bvar>
+              <ci> kde2f </ci>
+            </bvar>
+            <bvar>
+              <ci> kde2fa </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kdise2f </ci>
+                <ci> comp2 </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kdprbp </ci>
+                <apply>
+                  <divide/>
+                  <ci> comp2 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JdpRb </ci>
+                    <ci> comp2 </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kprbp </ci>
+                <apply>
+                  <plus/>
+                  <ci> CycE </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> comp2 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JpRbp </ci>
+                    <ci> comp2 </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <apply>
+                  <plus/>
+                  <ci> kde2f </ci>
+                  <apply>
+                    <times/>
+                    <ci> kde2fa </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                </apply>
+                <ci> comp2 </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_CycET_decay" metaid="COPASI119" name="Rate Law for reaction CycET decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdcyce </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcycea </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> CycET </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdcyce </ci>
+                <apply>
+                  <times/>
+                  <ci> kdcycea </ci>
+                  <ci> CycA </ci>
+                </apply>
+              </apply>
+              <ci> CycET </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_CycAT_decay" metaid="COPASI120" name="Rate Law for reaction CycAT decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdcyca </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcycac </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> CycAT </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdcyca </ci>
+                <apply>
+                  <times/>
+                  <ci> kdcycac </ci>
+                  <ci> Cdh1 </ci>
+                </apply>
+              </apply>
+              <ci> CycAT </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Myc_production" metaid="COPASI121" name="Rate Law for reaction for Myc production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> ksm </ci>
+            </bvar>
+            <bvar>
+              <ci> S </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> ksm </ci>
+              <ci> S </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycET_production" metaid="COPASI122" name="Rate Law for reaction for CycET production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kscyceb </ci>
+            </bvar>
+            <bvar>
+              <ci> kscycem </ci>
+            </bvar>
+            <bvar>
+              <ci> Myc </ci>
+            </bvar>
+            <bvar>
+              <ci> kscyce </ci>
+            </bvar>
+            <bvar>
+              <ci> E2F </ci>
+            </bvar>
+            <bvar>
+              <ci> khcyce </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <ci> kscyceb </ci>
+              <apply>
+                <times/>
+                <ci> kscycem </ci>
+                <ci> Myc </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kscyce </ci>
+                <apply>
+                  <divide/>
+                  <ci> E2F </ci>
+                  <apply>
+                    <plus/>
+                    <ci> khcyce </ci>
+                    <ci> E2F </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycDT_production" metaid="COPASI123" name="Rate Law for reaction for CycDT production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kscycdm </ci>
+            </bvar>
+            <bvar>
+              <ci> Myc </ci>
+            </bvar>
+            <bvar>
+              <ci> kscycds </ci>
+            </bvar>
+            <bvar>
+              <ci> S </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kscycdm </ci>
+                <ci> Myc </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kscycds </ci>
+                <ci> S </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycAT_production" metaid="COPASI124" name="Rate Law for reaction for CycAT production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kscyca </ci>
+            </bvar>
+            <bvar>
+              <ci> E2F </ci>
+            </bvar>
+            <bvar>
+              <ci> khcyca </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kscyca </ci>
+              <apply>
+                <divide/>
+                <ci> E2F </ci>
+                <apply>
+                  <plus/>
+                  <ci> khcyca </ci>
+                  <ci> E2F </ci>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Myc_decay" metaid="COPASI125" name="Rate Law for reaction for Myc decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdm </ci>
+            </bvar>
+            <bvar>
+              <ci> myc </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kdm </ci>
+              <ci> myc </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_E2FT_production" metaid="COPASI126" name="Rate Law for reaction for E2FT production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kse2fb </ci>
+            </bvar>
+            <bvar>
+              <ci> kse2fm </ci>
+            </bvar>
+            <bvar>
+              <ci> Myc </ci>
+            </bvar>
+            <bvar>
+              <ci> kse2f </ci>
+            </bvar>
+            <bvar>
+              <ci> E2F </ci>
+            </bvar>
+            <bvar>
+              <ci> khe2f </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <ci> kse2fb </ci>
+              <apply>
+                <times/>
+                <ci> kse2fm </ci>
+                <ci> Myc </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kse2f </ci>
+                <apply>
+                  <divide/>
+                  <ci> E2F </ci>
+                  <apply>
+                    <plus/>
+                    <ci> khe2f </ci>
+                    <ci> E2F </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_Comp1_production" metaid="COPASI127" name="Rate Law for reaction Comp1 production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kase2f </ci>
+            </bvar>
+            <bvar>
+              <ci> E2F </ci>
+            </bvar>
+            <bvar>
+              <ci> Rb </ci>
+            </bvar>
+            <bvar>
+              <ci> kdprbp </ci>
+            </bvar>
+            <bvar>
+              <ci> comp2 </ci>
+            </bvar>
+            <bvar>
+              <ci> JdpRb </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kase2f </ci>
+                <ci> E2F </ci>
+                <ci> Rb </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kdprbp </ci>
+                <apply>
+                  <divide/>
+                  <ci> comp2 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JdpRb </ci>
+                    <ci> comp2 </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_Comp1_decay" metaid="COPASI128" name="Rate Law for reaction Comp1 decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdise2f </ci>
+            </bvar>
+            <bvar>
+              <ci> comp1 </ci>
+            </bvar>
+            <bvar>
+              <ci> kprb </ci>
+            </bvar>
+            <bvar>
+              <ci> CycD </ci>
+            </bvar>
+            <bvar>
+              <ci> JpRb </ci>
+            </bvar>
+            <bvar>
+              <ci> kpprb </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> JpRbp </ci>
+            </bvar>
+            <bvar>
+              <ci> kde2f </ci>
+            </bvar>
+            <bvar>
+              <ci> kde2fa </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kdise2f </ci>
+                <ci> comp1 </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kprb </ci>
+                <ci> CycD </ci>
+                <apply>
+                  <divide/>
+                  <ci> comp1 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JpRb </ci>
+                    <ci> comp1 </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kpprb </ci>
+                <apply>
+                  <plus/>
+                  <ci> CycE </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> comp1 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JpRbp </ci>
+                    <ci> comp1 </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <apply>
+                  <plus/>
+                  <ci> kde2f </ci>
+                  <apply>
+                    <times/>
+                    <ci> kde2fa </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                </apply>
+                <ci> comp1 </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Comp2_production" metaid="COPASI129" name="Rate Law for reaction for Comp2 production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kase2f </ci>
+            </bvar>
+            <bvar>
+              <ci> E2F </ci>
+            </bvar>
+            <bvar>
+              <ci> Rbp </ci>
+            </bvar>
+            <bvar>
+              <ci> kprb </ci>
+            </bvar>
+            <bvar>
+              <ci> CycD </ci>
+            </bvar>
+            <bvar>
+              <ci> comp1 </ci>
+            </bvar>
+            <bvar>
+              <ci> JpRb </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kase2f </ci>
+                <ci> E2F </ci>
+                <ci> Rbp </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kprb </ci>
+                <ci> CycD </ci>
+                <apply>
+                  <divide/>
+                  <ci> comp1 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JpRb </ci>
+                    <ci> comp1 </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CkiT_production" metaid="COPASI130" name="Rate Law for reaction for CkiT production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kscki </ci>
+            </bvar>
+            <ci> kscki </ci>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_EmiC_decay" metaid="COPASI131" name="Rate Law for reaction for EmiC decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdiscdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> kdemi </ci>
+            </bvar>
+            <bvar>
+              <ci> kdemi1c </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> EmiC </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdiscdh1 </ci>
+                <ci> kdemi </ci>
+                <apply>
+                  <times/>
+                  <ci> kdemi1c </ci>
+                  <ci> Cdh1 </ci>
+                </apply>
+              </apply>
+              <ci> EmiC </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_UbI_decay" metaid="COPASI132" name="Rate Law for reaction for UbI decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdubl </ci>
+            </bvar>
+            <bvar>
+              <ci> kdublc </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Ubl </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdubl </ci>
+                <apply>
+                  <times/>
+                  <ci> kdublc </ci>
+                  <ci> Cdh1 </ci>
+                </apply>
+              </apply>
+              <ci> Ubl </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycACki_production" metaid="COPASI133" name="Rate Law for reaction for CycACki production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kascki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> CkiT </ci>
+            </bvar>
+            <bvar>
+              <ci> CycECki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycDCki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycACki </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kascki </ci>
+              <ci> CycA </ci>
+              <apply>
+                <minus/>
+                <apply>
+                  <minus/>
+                  <apply>
+                    <minus/>
+                    <ci> CkiT </ci>
+                    <ci> CycECki </ci>
+                  </apply>
+                  <ci> CycDCki </ci>
+                </apply>
+                <ci> CycACki </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Rbpp_production" metaid="COPASI134" name="Rate Law for reaction for Rbpp production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kprbp </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> Rbp </ci>
+            </bvar>
+            <bvar>
+              <ci> Jprbp </ci>
+            </bvar>
+            <bvar>
+              <ci> Comp2 </ci>
+            </bvar>
+            <bvar>
+              <ci> kpprb </ci>
+            </bvar>
+            <bvar>
+              <ci> Rb </ci>
+            </bvar>
+            <bvar>
+              <ci> Jpprb </ci>
+            </bvar>
+            <bvar>
+              <ci> Comp1 </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kprbp </ci>
+                <apply>
+                  <plus/>
+                  <ci> CycE </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> Rbp </ci>
+                  <apply>
+                    <plus/>
+                    <ci> Jprbp </ci>
+                    <ci> Rbp </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kprbp </ci>
+                <apply>
+                  <plus/>
+                  <ci> CycE </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> Comp2 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> Jprbp </ci>
+                    <ci> Comp2 </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kpprb </ci>
+                <apply>
+                  <plus/>
+                  <ci> CycE </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> Rb </ci>
+                  <apply>
+                    <plus/>
+                    <ci> Jpprb </ci>
+                    <ci> Rb </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kpprb </ci>
+                <apply>
+                  <plus/>
+                  <ci> CycE </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> Comp1 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> Jpprb </ci>
+                    <ci> Comp1 </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Rbpp_decay" metaid="COPASI135" name="Rate Law for reaction for Rbpp decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdprbpp </ci>
+            </bvar>
+            <bvar>
+              <ci> Rbpp </ci>
+            </bvar>
+            <bvar>
+              <ci> Jdprb </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kdprbpp </ci>
+              <apply>
+                <divide/>
+                <ci> Rbpp </ci>
+                <apply>
+                  <plus/>
+                  <ci> Jdprb </ci>
+                  <ci> Rbpp </ci>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycACki_decay" metaid="COPASI136" name="Rate Law for reaction for CycACki decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdiscki </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcyca </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcycac </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcki </ci>
+            </bvar>
+            <bvar>
+              <ci> kdckic </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> UbI </ci>
+            </bvar>
+            <bvar>
+              <ci> CycACki </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdiscki </ci>
+                <ci> kdcyca </ci>
+                <apply>
+                  <times/>
+                  <ci> kdcycac </ci>
+                  <ci> Cdh1 </ci>
+                </apply>
+                <ci> kdcki </ci>
+                <apply>
+                  <times/>
+                  <ci> kdckic </ci>
+                  <apply>
+                    <plus/>
+                    <ci> CycE </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                  <ci> UbI </ci>
+                </apply>
+              </apply>
+              <ci> CycACki </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Cdh1dp_production" metaid="COPASI137" name="Rate Law for reaction for Cdh1dp production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kacdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1T </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1dp </ci>
+            </bvar>
+            <bvar>
+              <ci> Jdpcdh1 </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kacdh1 </ci>
+              <apply>
+                <divide/>
+                <apply>
+                  <minus/>
+                  <ci> Cdh1T </ci>
+                  <ci> Cdh1dp </ci>
+                </apply>
+                <apply>
+                  <plus/>
+                  <ci> Jdpcdh1 </ci>
+                  <apply>
+                    <minus/>
+                    <ci> Cdh1T </ci>
+                    <ci> Cdh1dp </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Cdh1dp_decay" metaid="COPASI138" name="Rate Law for reaction for Cdh1dp decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kicdh1e </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> kicdh1a </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1dp </ci>
+            </bvar>
+            <bvar>
+              <ci> Jpcdh1 </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <apply>
+                  <times/>
+                  <ci> kicdh1e </ci>
+                  <ci> CycE </ci>
+                </apply>
+                <apply>
+                  <times/>
+                  <ci> kicdh1a </ci>
+                  <ci> CycA </ci>
+                </apply>
+              </apply>
+              <apply>
+                <divide/>
+                <ci> Cdh1dp </ci>
+                <apply>
+                  <plus/>
+                  <ci> Jpcdh1 </ci>
+                  <ci> Cdh1dp </ci>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Emi1T_production" metaid="COPASI139" name="Rate Law for reaction for Emi1T production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> ksemi1 </ci>
+            </bvar>
+            <bvar>
+              <ci> E2F </ci>
+            </bvar>
+            <bvar>
+              <ci> khemi1 </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> ksemi1 </ci>
+              <apply>
+                <divide/>
+                <ci> E2F </ci>
+                <apply>
+                  <plus/>
+                  <ci> khemi1 </ci>
+                  <ci> E2F </ci>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reactionfor_Rbp_production" metaid="COPASI140" name="Rate Law for reactionfor Rbp production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kprb </ci>
+            </bvar>
+            <bvar>
+              <ci> CycD </ci>
+            </bvar>
+            <bvar>
+              <ci> Rb </ci>
+            </bvar>
+            <bvar>
+              <ci> JpRb </ci>
+            </bvar>
+            <bvar>
+              <ci> kdise2f </ci>
+            </bvar>
+            <bvar>
+              <ci> comp2 </ci>
+            </bvar>
+            <bvar>
+              <ci> kde2f </ci>
+            </bvar>
+            <bvar>
+              <ci> kde2fa </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kprb </ci>
+                <ci> CycD </ci>
+                <apply>
+                  <divide/>
+                  <ci> Rb </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JpRb </ci>
+                    <ci> Rb </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kdise2f </ci>
+                <ci> comp2 </ci>
+              </apply>
+              <apply>
+                <times/>
+                <apply>
+                  <plus/>
+                  <ci> kde2f </ci>
+                  <apply>
+                    <times/>
+                    <ci> kde2fa </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                </apply>
+                <ci> comp2 </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Rbp_decay" metaid="COPASI141" name="Rate Law for reaction for Rbp decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kase2f </ci>
+            </bvar>
+            <bvar>
+              <ci> E2F </ci>
+            </bvar>
+            <bvar>
+              <ci> Rbp </ci>
+            </bvar>
+            <bvar>
+              <ci> kdprbp </ci>
+            </bvar>
+            <bvar>
+              <ci> JpRbp </ci>
+            </bvar>
+            <bvar>
+              <ci> kprbp </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> JpRb </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kase2f </ci>
+                <ci> E2F </ci>
+                <ci> Rbp </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kdprbp </ci>
+                <apply>
+                  <divide/>
+                  <ci> Rbp </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JpRb </ci>
+                    <ci> Rbp </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kprbp </ci>
+                <apply>
+                  <plus/>
+                  <ci> CycE </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> Rbp </ci>
+                  <apply>
+                    <plus/>
+                    <ci> JpRbp </ci>
+                    <ci> Rbp </ci>
+                  </apply>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycECki_decay" metaid="COPASI142" name="Rate Law for reaction for CycECki decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdiscki </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcyce </ci>
+            </bvar>
+            <bvar>
+              <ci> kcdycea </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcki </ci>
+            </bvar>
+            <bvar>
+              <ci> kdckic </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> UbI </ci>
+            </bvar>
+            <bvar>
+              <ci> CycECki </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdiscki </ci>
+                <ci> kdcyce </ci>
+                <apply>
+                  <times/>
+                  <ci> kcdycea </ci>
+                  <ci> CycA </ci>
+                </apply>
+                <ci> kdcki </ci>
+                <apply>
+                  <times/>
+                  <ci> kdckic </ci>
+                  <apply>
+                    <plus/>
+                    <ci> CycE </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                  <ci> UbI </ci>
+                </apply>
+              </apply>
+              <ci> CycECki </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Emi1T_decay" metaid="COPASI143" name="Rate Law for reaction for Emi1T decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdemi1 </ci>
+            </bvar>
+            <bvar>
+              <ci> kdemi1c </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Emi1T </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdemi1 </ci>
+                <apply>
+                  <times/>
+                  <ci> kdemi1c </ci>
+                  <ci> Cdh1 </ci>
+                </apply>
+              </apply>
+              <ci> Emi1T </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_EmiC_production" metaid="COPASI144" name="Rate Law for reaction for EmiC production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> Cdh1T </ci>
+            </bvar>
+            <bvar>
+              <ci> EmiC </ci>
+            </bvar>
+            <bvar>
+              <ci> kascdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Emi1T </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kascdh1 </ci>
+              <apply>
+                <minus/>
+                <ci> Cdh1T </ci>
+                <ci> EmiC </ci>
+              </apply>
+              <apply>
+                <minus/>
+                <ci> Emi1T </ci>
+                <ci> EmiC </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycECki_production" metaid="COPASI145" name="Rate Law for reaction for CycECki production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kascki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycD </ci>
+            </bvar>
+            <bvar>
+              <ci> CkiT </ci>
+            </bvar>
+            <bvar>
+              <ci> CycECki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycDCki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycACki </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kascki </ci>
+              <ci> CycD </ci>
+              <apply>
+                <minus/>
+                <apply>
+                  <minus/>
+                  <apply>
+                    <minus/>
+                    <ci> CkiT </ci>
+                    <ci> CycECki </ci>
+                  </apply>
+                  <ci> CycDCki </ci>
+                </apply>
+                <ci> CycACki </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CkiT_decay" metaid="COPASI146" name="Rate Law for reaction for CkiT decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdcki </ci>
+            </bvar>
+            <bvar>
+              <ci> kdckic </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> Ubl </ci>
+            </bvar>
+            <bvar>
+              <ci> CkiT </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdcki </ci>
+                <apply>
+                  <times/>
+                  <ci> kdckic </ci>
+                  <apply>
+                    <plus/>
+                    <ci> CycE </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                  <ci> Ubl </ci>
+                </apply>
+              </apply>
+              <ci> CkiT </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycDCki_production" metaid="COPASI147" name="Rate Law for reaction for CycDCki production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kascki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycD </ci>
+            </bvar>
+            <bvar>
+              <ci> CkiT </ci>
+            </bvar>
+            <bvar>
+              <ci> CycECki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycDCki </ci>
+            </bvar>
+            <bvar>
+              <ci> CycACki </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <ci> kascki </ci>
+              <ci> CycD </ci>
+              <apply>
+                <minus/>
+                <apply>
+                  <minus/>
+                  <apply>
+                    <minus/>
+                    <ci> CkiT </ci>
+                    <ci> CycECki </ci>
+                  </apply>
+                  <ci> CycDCki </ci>
+                </apply>
+                <ci> CycACki </ci>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Cdh1_production" metaid="COPASI148" name="Rate Law for reaction for Cdh1 production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kacdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1T </ci>
+            </bvar>
+            <bvar>
+              <ci> EmiC </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Jdpcdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1dp </ci>
+            </bvar>
+            <bvar>
+              <ci> kdiscdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> kdemi </ci>
+            </bvar>
+            <bvar>
+              <ci> kdemi1c </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <ci> kacdh1 </ci>
+                <apply>
+                  <divide/>
+                  <apply>
+                    <minus/>
+                    <apply>
+                      <minus/>
+                      <ci> Cdh1T </ci>
+                      <ci> EmiC </ci>
+                    </apply>
+                    <ci> Cdh1 </ci>
+                  </apply>
+                  <apply>
+                    <plus/>
+                    <ci> Jdpcdh1 </ci>
+                    <apply>
+                      <minus/>
+                      <ci> Cdh1T </ci>
+                      <ci> Cdh1dp </ci>
+                    </apply>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <apply>
+                  <plus/>
+                  <ci> kdiscdh1 </ci>
+                  <ci> kdemi </ci>
+                  <apply>
+                    <times/>
+                    <ci> kdemi1c </ci>
+                    <ci> Cdh1 </ci>
+                  </apply>
+                </apply>
+                <apply>
+                  <minus/>
+                  <ci> Cdh1dp </ci>
+                  <ci> Cdh1 </ci>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_UbI_production" metaid="COPASI149" name="Rate Law for reaction for UbI production">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> ksubl </ci>
+            </bvar>
+            <ci> ksubl </ci>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_CycDCki_decay" metaid="COPASI150" name="Rate Law for reaction for CycDCki decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kdiscki </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcycd </ci>
+            </bvar>
+            <bvar>
+              <ci> kdcki </ci>
+            </bvar>
+            <bvar>
+              <ci> kdckic </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> UbI </ci>
+            </bvar>
+            <bvar>
+              <ci> CycDCki </ci>
+            </bvar>
+            <apply>
+              <times/>
+              <apply>
+                <plus/>
+                <ci> kdiscki </ci>
+                <ci> kdcycd </ci>
+                <ci> kdcki </ci>
+                <apply>
+                  <times/>
+                  <ci> kdckic </ci>
+                  <apply>
+                    <plus/>
+                    <ci> CycE </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                  <ci> UbI </ci>
+                </apply>
+              </apply>
+              <ci> CycDCki </ci>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+      <functionDefinition id="Rate_Law_for_reaction_for_Cdh1_decay" metaid="COPASI151" name="Rate Law for reaction for Cdh1 decay">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <lambda>
+            <bvar>
+              <ci> kicdh1e </ci>
+            </bvar>
+            <bvar>
+              <ci> CycE </ci>
+            </bvar>
+            <bvar>
+              <ci> kicdh1a </ci>
+            </bvar>
+            <bvar>
+              <ci> CycA </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Jpcdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Cdh1dp </ci>
+            </bvar>
+            <bvar>
+              <ci> kascdh1 </ci>
+            </bvar>
+            <bvar>
+              <ci> Emi1T </ci>
+            </bvar>
+            <bvar>
+              <ci> EmiC </ci>
+            </bvar>
+            <apply>
+              <plus/>
+              <apply>
+                <times/>
+                <apply>
+                  <plus/>
+                  <apply>
+                    <times/>
+                    <ci> kicdh1e </ci>
+                    <ci> CycE </ci>
+                  </apply>
+                  <apply>
+                    <times/>
+                    <ci> kicdh1a </ci>
+                    <ci> CycA </ci>
+                  </apply>
+                </apply>
+                <apply>
+                  <divide/>
+                  <ci> Cdh1 </ci>
+                  <apply>
+                    <plus/>
+                    <ci> Jpcdh1 </ci>
+                    <ci> Cdh1dp </ci>
+                  </apply>
+                </apply>
+              </apply>
+              <apply>
+                <times/>
+                <ci> kascdh1 </ci>
+                <ci> Cdh1 </ci>
+                <apply>
+                  <minus/>
+                  <ci> Emi1T </ci>
+                  <ci> EmiC </ci>
+                </apply>
+              </apply>
+            </apply>
+          </lambda>
+        </math>
+            </functionDefinition>
+    </listOfFunctionDefinitions>
+    <listOfUnitDefinitions>
+      <unitDefinition id="length" name="length">
+        <listOfUnits>
+          <unit exponent="1" kind="metre" multiplier="1" scale="0"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="area" name="area">
+        <listOfUnits>
+          <unit exponent="2" kind="metre" multiplier="1" scale="0"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="volume" name="volume">
+        <listOfUnits>
+          <unit exponent="1" kind="litre" multiplier="1" scale="-3"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="time" name="time">
+        <listOfUnits>
+          <unit exponent="1" kind="second" multiplier="1" scale="0"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="substance" name="substance">
+        <listOfUnits>
+          <unit exponent="1" kind="mole" multiplier="1" scale="-3"/>
+        </listOfUnits>
+      </unitDefinition>
+    </listOfUnitDefinitions>
+    <listOfCompartments>
+      <compartment constant="true" id="compartment" metaid="COPASI1" name="compartment" size="1" spatialDimensions="3" units="volume">
+            </compartment>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Myc" initialConcentration="0" metaid="COPASI2" name="Myc" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycDT" initialConcentration="0" metaid="COPASI3" name="CycDT" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycET" initialConcentration="0.119" metaid="COPASI4" name="CycET" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycAT" initialConcentration="0" metaid="COPASI5" name="CycAT" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="E2FT" initialConcentration="0.106" metaid="COPASI6" name="E2FT" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Comp1" initialConcentration="0.105" metaid="COPASI7" name="Comp1" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Comp2" initialConcentration="0" metaid="COPASI8" name="Comp2" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Rbp" initialConcentration="0" metaid="COPASI9" name="Rbp" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CkiT" initialConcentration="0.2" metaid="COPASI10" name="CkiT" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycECki" initialConcentration="0.115" metaid="COPASI11" name="CycECki" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycDCki" initialConcentration="0" metaid="COPASI12" name="CycDCki" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycACki" initialConcentration="0" metaid="COPASI13" name="CycACki" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Cdh1dp" initialConcentration="1" metaid="COPASI14" name="Cdh1dp" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Emi1T" initialConcentration="0.002" metaid="COPASI15" name="Emi1T" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="EmiC" initialConcentration="0.002" metaid="COPASI16" name="EmiC" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Cdh1" initialConcentration="0.998" metaid="COPASI17" name="Cdh1" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="UbI" initialConcentration="0.02" metaid="COPASI18" name="UbI" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="true" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="E2F" initialConcentration="0.001" metaid="COPASI19" name="E2F" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="true" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Rb" initialConcentration="0.894" metaid="COPASI20" name="Rb" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Rbpp" initialConcentration="0.001" metaid="COPASI21" name="Rbpp" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="true" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycE" initialConcentration="0.00399999999999999" metaid="COPASI22" name="CycE" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="true" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycD" initialConcentration="0" metaid="COPASI23" name="CycD" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="true" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="CycA" initialConcentration="0" metaid="COPASI24" name="CycA" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="true" compartment="compartment" constant="false" hasOnlySubstanceUnits="false" id="Cdh1p" initialConcentration="1.12757025938492E-16" metaid="COPASI25" name="Cdh1p" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="true" compartment="compartment" constant="true" hasOnlySubstanceUnits="false" id="Cdh1T" initialConcentration="1" metaid="COPASI26" name="Cdh1T" substanceUnits="substance">
+            </species>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter constant="true" id="S" metaid="COPASI27" name="S" value="1">
+            </parameter>
+      <parameter constant="true" id="Ksm" metaid="COPASI28" name="Ksm" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Kdm" metaid="COPASI29" name="Kdm" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Kscycdm" metaid="COPASI30" name="Kscycdm" value="0.004">
+            </parameter>
+      <parameter constant="true" id="Kscycds" metaid="COPASI31" name="Kscycds" value="0.004">
+            </parameter>
+      <parameter constant="true" id="Kdcycd" metaid="COPASI32" name="Kdcycd" value="0.008">
+            </parameter>
+      <parameter constant="true" id="Kscyceb" metaid="COPASI33" name="Kscyceb" value="0.0001">
+            </parameter>
+      <parameter constant="true" id="Kscycem" metaid="COPASI34" name="Kscycem" value="0">
+            </parameter>
+      <parameter constant="true" id="Kscyce" metaid="COPASI35" name="Kscyce" value="0.004">
+            </parameter>
+      <parameter constant="true" id="Kdcyce" metaid="COPASI36" name="Kdcyce" value="0.001">
+            </parameter>
+      <parameter constant="true" id="Kdcycea" metaid="COPASI37" name="Kdcycea" value="0.01">
+            </parameter>
+      <parameter constant="true" id="Khcyce" metaid="COPASI38" name="Khcyce" value="0.25">
+            </parameter>
+      <parameter constant="true" id="Kscyca" metaid="COPASI39" name="Kscyca" value="0.008">
+            </parameter>
+      <parameter constant="true" id="Kdcyca" metaid="COPASI40" name="Kdcyca" value="0.004">
+            </parameter>
+      <parameter constant="true" id="Kdcycac" metaid="COPASI41" name="Kdcycac" value="0.5">
+            </parameter>
+      <parameter constant="true" id="Khcyca" metaid="COPASI42" name="Khcyca" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Kse2fm" metaid="COPASI43" name="Kse2fm" value="0">
+            </parameter>
+      <parameter constant="true" id="Kse2f" metaid="COPASI44" name="Kse2f" value="0.004">
+            </parameter>
+      <parameter constant="true" id="Kde2f" metaid="COPASI45" name="Kde2f" value="0.003">
+            </parameter>
+      <parameter constant="true" id="Kde2fa" metaid="COPASI46" name="Kde2fa" value="0.01">
+            </parameter>
+      <parameter constant="true" id="Khe2f" metaid="COPASI47" name="Khe2f" value="0.25">
+            </parameter>
+      <parameter constant="true" id="RbT" metaid="COPASI48" name="RbT" value="1">
+            </parameter>
+      <parameter constant="true" id="Kase2f" metaid="COPASI49" name="Kase2f" value="100">
+            </parameter>
+      <parameter constant="true" id="Kdise2f" metaid="COPASI50" name="Kdise2f" value="1">
+            </parameter>
+      <parameter constant="true" id="Kprb" metaid="COPASI51" name="Kprb" value="5">
+            </parameter>
+      <parameter constant="true" id="Kdprbp" metaid="COPASI52" name="Kdprbp" value="1">
+            </parameter>
+      <parameter constant="true" id="Kppeb" metaid="COPASI53" name="Kppeb" value="0.5">
+            </parameter>
+      <parameter constant="true" id="Kdprbpp" metaid="COPASI54" name="Kdprbpp" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Kprbp" metaid="COPASI55" name="Kprbp" value="2">
+            </parameter>
+      <parameter constant="true" id="JpRb" metaid="COPASI56" name="JpRb" value="0.01">
+            </parameter>
+      <parameter constant="true" id="JpRbp" metaid="COPASI57" name="JpRbp" value="0.05">
+            </parameter>
+      <parameter constant="true" id="JdpRb" metaid="COPASI58" name="JdpRb" value="0.05">
+            </parameter>
+      <parameter constant="true" id="JppRb" metaid="COPASI59" name="JppRb" value="0.5">
+            </parameter>
+      <parameter constant="true" id="Kscki" metaid="COPASI60" name="Kscki" value="0.04">
+            </parameter>
+      <parameter constant="true" id="Kdcki" metaid="COPASI61" name="Kdcki" value="0.2">
+            </parameter>
+      <parameter constant="true" id="Kascki" metaid="COPASI62" name="Kascki" value="100">
+            </parameter>
+      <parameter constant="true" id="Kdiscki" metaid="COPASI63" name="Kdiscki" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Ksub1" metaid="COPASI64" name="Ksub1" value="0.004">
+            </parameter>
+      <parameter constant="true" id="Kdub1" metaid="COPASI65" name="Kdub1" value="0.002">
+            </parameter>
+      <parameter constant="true" id="Kdub1c" metaid="COPASI66" name="Kdub1c" value="0.2">
+            </parameter>
+      <parameter constant="true" id="Ksemi1" metaid="COPASI67" name="Ksemi1" value="0.45">
+            </parameter>
+      <parameter constant="true" id="Kdemi1" metaid="COPASI68" name="Kdemi1" value="0.2">
+            </parameter>
+      <parameter constant="true" id="Kdemi1c" metaid="COPASI69" name="Kdemi1c" value="2">
+            </parameter>
+      <parameter constant="true" id="Khemi1" metaid="COPASI70" name="Khemi1" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Kascdh1" metaid="COPASI71" name="Kascdh1" value="100">
+            </parameter>
+      <parameter constant="true" id="Kdiscdh1" metaid="COPASI72" name="Kdiscdh1" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Kacdh1" metaid="COPASI73" name="Kacdh1" value="0.1">
+            </parameter>
+      <parameter constant="true" id="Kicdh1e" metaid="COPASI74" name="Kicdh1e" value="0.14">
+            </parameter>
+      <parameter constant="true" id="Kicdh1a" metaid="COPASI75" name="Kicdh1a" value="0.2">
+            </parameter>
+      <parameter constant="true" id="JdpCdh1" metaid="COPASI76" name="JdpCdh1" value="0.02">
+            </parameter>
+      <parameter constant="true" id="JpCdh1" metaid="COPASI77" name="JpCdh1" value="0.25">
+            </parameter>
+      <parameter constant="true" id="Kse2fb" metaid="COPASI78" name="Kse2fb" value="0.0003">
+            </parameter>
+      <parameter constant="true" id="Kdckic" metaid="COPASI79" name="Kdckic" value="1">
+            </parameter>
+    </listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="Rb">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <minus/>
+            <apply>
+              <minus/>
+              <apply>
+                <minus/>
+                <apply>
+                  <minus/>
+                  <ci> RbT </ci>
+                  <ci> Rbp </ci>
+                </apply>
+                <ci> Rbpp </ci>
+              </apply>
+              <ci> Comp1 </ci>
+            </apply>
+            <ci> Comp2 </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule variable="CycA">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <minus/>
+            <ci> CycAT </ci>
+            <ci> CycACki </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule variable="CycE">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <minus/>
+            <ci> CycET </ci>
+            <ci> CycECki </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule variable="CycD">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <minus/>
+            <ci> CycDT </ci>
+            <ci> CycDCki </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule variable="Cdh1p">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <minus/>
+            <apply>
+              <minus/>
+              <ci> Cdh1T </ci>
+              <ci> Cdh1 </ci>
+            </apply>
+            <ci> EmiC </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule variable="E2F">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <minus/>
+            <apply>
+              <minus/>
+              <ci> E2FT </ci>
+              <ci> Comp1 </ci>
+            </apply>
+            <ci> Comp2 </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+    </listOfRules>
+    <listOfReactions>
+      <reaction fast="false" id="reaction_for_Cdh1dp_production" metaid="COPASI104" name="reaction for Cdh1dp production" reversible="false">
+              <listOfProducts>
+          <speciesReference constant="true" species="Cdh1dp" stoichiometry="1"/>
+        </listOfProducts>
+        <listOfModifiers>
+          <modifierSpeciesReference species="Cdh1T"/>
+        </listOfModifiers>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <times/>
+              <ci> compartment </ci>
+              <apply>
+                <ci> Rate_Law_for_reaction_for_Cdh1dp_production </ci>
+                <ci> Kacdh1 </ci>
+                <ci> Cdh1T </ci>
+                <ci> Cdh1dp </ci>
+                <ci> JdpCdh1 </ci>
+              </apply>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>

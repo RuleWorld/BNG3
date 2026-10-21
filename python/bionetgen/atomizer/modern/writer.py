@@ -219,8 +219,15 @@ def _sanitize_function_identifier(value: str) -> str:
     return standardized
 
 
+# A reaction whose SBML source carries no kinetic law has no rate defined by
+# the source model.  SBML Level 3 Version 2 Core Sec. 4.11.1 names three
+# simulator behaviours for that situation -- refuse to simulate, use an
+# effective rate of zero, or use NaN -- and states that the choice is not
+# standardized.  Zero is the only reading that keeps the rest of the
+# mathematical model intact, so it is the rate used for the emitted reaction
+# while the import reports the reaction as not supported by the source model.
 _MISSING_KINETIC_RATE_FALLBACK = (
-    os.environ.get("BNGL_MISSING_KINETIC_RATE", "1").strip() or "1"
+    os.environ.get("BNGL_MISSING_KINETIC_RATE", "0").strip() or "0"
 )
 try:
     _MISSING_KINETIC_LOG_LIMIT = int(
@@ -816,6 +823,33 @@ def _piecewise_expression(args: List[str]) -> str:
     return result
 
 
+def _substitute_formal_arguments(
+    body: str, formals: Sequence[str], actuals: Sequence[str]
+) -> str:
+    """Bind a function definition's formal arguments in a single pass.
+
+    SBML function definitions are lambdas: the caller's argument expressions
+    are evaluated in the caller's scope and only then bound to the callee's
+    ``bvar`` names (SBML Level 3 Version 2 Core, Sec. 4.3.5).  Substituting
+    the formals one at a time would re-scan text that a previous
+    substitution had just inserted, so a caller argument that happens to
+    spell a formal of the callee (or of a function called by the callee)
+    would be captured by the wrong binding.  A single regex pass leaves the
+    inserted argument text untouched.
+    """
+
+    mapping = {
+        str(formal): str(actual)
+        for formal, actual in zip(formals, actuals)
+        if str(formal)
+    }
+    if not mapping:
+        return body
+    names = tuple(sorted(mapping, key=len, reverse=True))
+    pattern = _formal_pattern(names)
+    return pattern.sub(lambda match: f"({mapping[match.group(0)]})", body)
+
+
 def extend_function(
     function_string: str,
     parameter_dict: Mapping[str, object],
@@ -846,11 +880,7 @@ def extend_function(
                     return f"{call_name}()"
                 if len(args) != len(arguments):
                     return f"{call_name}({', '.join(args)})"
-                expanded = body
-                for formal, actual in zip(arguments, args):
-                    expanded = re.sub(
-                        rf"\b{re.escape(formal)}\b", f"({actual})", expanded
-                    )
+                expanded = _substitute_formal_arguments(body, arguments, args)
                 return f"({expanded})"
 
             function_names = [name]
@@ -2067,6 +2097,40 @@ def _law_references_compartment(expression: str, model: SBMLModel) -> bool:
     return False
 
 
+def _compartment_factor_shape(expression: str, compartment_id: str) -> str:
+    """Classify how a rate law uses a compartment's size.
+
+    Returns ``"multiplicative"`` when the law multiplies by the
+    compartment's size, ``"divisive"`` when it divides by it, and
+    ``"none"`` when the law does not name the compartment at all.  A law
+    that names the compartment in both positions is reported as
+    ``"none"``: the two factors cancel and the law carries no net volume
+    dependence.
+    """
+
+    if not compartment_id:
+        return "none"
+    name = standardize_name(str(compartment_id))
+    identifiers = {
+        str(compartment_id),
+        name,
+        f"__compartment_{name}__",
+    }
+    multiplicative = False
+    divisive = False
+    for identifier in identifiers:
+        escaped = re.escape(identifier)
+        if re.search(rf"\*\s*{escaped}\b", expression) or re.search(
+            rf"^\s*{escaped}\b\s*\*", expression
+        ):
+            multiplicative = True
+        if re.search(rf"/\s*{escaped}\b", expression):
+            divisive = True
+    if multiplicative == divisive:
+        return "none"
+    return "multiplicative" if multiplicative else "divisive"
+
+
 def _amount_based_mass_action_constant(
     mass_action_constant: float,
     reaction: SBMLReaction,
@@ -2074,6 +2138,7 @@ def _amount_based_mass_action_constant(
     reactants: Sequence[str],
     complete_flux: bool = False,
     law_references_compartment: bool = False,
+    compartment_factor_shape: str = "none",
 ) -> str:
     """Correct a recovered mass-action constant for an amount-based law.
 
@@ -2090,6 +2155,16 @@ def _amount_based_mass_action_constant(
     except the one that the concentration form already carries.  A
     zero-order law (``m = 0``) is correspondingly divided by the volume.
 
+    A law that names the compartment states its own volume dependence, and
+    the shape of that dependence decides the exponent.  A law that divides
+    by the compartment (``k * A * A / cell``) already carries the ``1/V``
+    that the amount-based reading needs, so it keeps the constant it was
+    recovered with.  A law that multiplies by the compartment
+    (``cell * k * A * A``) states the opposite dependence and needs one more
+    volume factor than a law that does not name the compartment at all, so
+    its constant becomes ``k * V**m``.  Reporting the multiplicative form
+    without that factor would leave the constant off by ``V**m``.
+
     A concentration-based law already carries the compartment factor that
     SBML's convention requires, and needs no correction.  A rate that is
     emitted as a complete flux (``complete_flux``) is the extent rate
@@ -2097,23 +2172,31 @@ def _amount_based_mass_action_constant(
     """
 
     constant = _number(mass_action_constant)
-    if complete_flux or law_references_compartment:
-        # A complete flux already is the extent rate, and a law that names the
-        # compartment states its own volume dependence.
+    multiplicative = compartment_factor_shape == "multiplicative"
+    if complete_flux:
+        # A complete flux already is the extent rate.
+        return constant
+    if law_references_compartment and not multiplicative:
+        # A law that names the compartment states its own volume dependence.
         return constant
     if not _amount_based_extent_rate(reaction, model, reactants):
         return constant
     order = len(reactants)
-    if order < 2:
-        # A unimolecular law needs no volume factor, and a zero-order law is
-        # emitted as a complete flux, which already is the extent rate.
+    if order == 0:
+        # A zero-order law is emitted as a complete flux, which already is the
+        # extent rate.
+        return constant
+    if order == 1 and not multiplicative:
+        # A unimolecular law that does not name the compartment needs no
+        # volume factor.
         return constant
     volume = _reaction_volume_expression(reaction, model)
-    return f"({constant}) * ({volume})**{order - 1}"
+    exponent = order if multiplicative else order - 1
+    return f"({constant}) * ({volume})**{exponent}"
 
 
-def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str:
-    """Return the BNGL size expression of a reaction's compartment.
+def _reaction_compartment_id(reaction: SBMLReaction, model: SBMLModel) -> str:
+    """Return the identifier of a reaction's compartment.
 
     The compartment is the reaction's own ``compartment`` attribute when it
     has one, otherwise the compartment of the first participant that declares
@@ -2130,6 +2213,15 @@ def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str
                 compartment_id = str(species.compartment)
                 break
     if not compartment_id or compartment_id not in model.compartments:
+        return ""
+    return compartment_id
+
+
+def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str:
+    """Return the BNGL size expression of a reaction's compartment."""
+
+    compartment_id = _reaction_compartment_id(reaction, model)
+    if not compartment_id:
         return "1"
     return f"__compartment_{standardize_name(compartment_id)}__"
 
@@ -2329,6 +2421,12 @@ def _rate_for_reaction(
         for species_id in reactants
     )
     law_references_compartment = _law_references_compartment(math, model)
+    # A law that names its compartment states its own volume dependence, and
+    # the shape of that dependence decides how the amount-based correction
+    # has to account for it.
+    compartment_factor_shape = _compartment_factor_shape(
+        math, _reaction_compartment_id(reaction, model)
+    )
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
     functional = _is_functional_rate_expression(math)
     if reactant_structures:
@@ -2379,6 +2477,15 @@ def _rate_for_reaction(
         and standardize_name(species_id) not in reactant_names
         for species_id in model.species
     )
+    # A law that names a species the reaction does not consume is a complete
+    # flux: its value depends on that species' state, so it is not an
+    # elementary mass-action law and cannot be replaced by a coefficient.
+    # The numeric mass-action probe below may still accept such a law (the
+    # probe replaces the species by a fixed state and fits the result), and
+    # the fitted coefficient is then a snapshot of the law at the probe
+    # points rather than the law itself: it changes with the probe, and the
+    # model it produces is not the model the source states.  The probe is
+    # therefore not allowed to claim a law that names a non-reactant species.
     nonlinear = (
         has_saturation
         or "/" in classification_math
@@ -2418,6 +2525,7 @@ def _rate_for_reaction(
         _ENABLE_MASS_ACTION_CHECK
         and not functional
         and not has_saturation
+        and not has_nonreactant_species
         and not (preserved_compartment_flux and nonlinear)
         and not requires_explicit_compartment_flux
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
@@ -2479,6 +2587,7 @@ def _rate_for_reaction(
                     reactants,
                     complete_flux=complete_flux,
                     law_references_compartment=law_references_compartment,
+                    compartment_factor_shape=compartment_factor_shape,
                 )
             )
 
@@ -2580,6 +2689,7 @@ def _rate_for_reaction(
                     reactants,
                     complete_flux=complete_flux,
                     law_references_compartment=law_references_compartment,
+                    compartment_factor_shape=compartment_factor_shape,
                 )
             )
 
@@ -3071,7 +3181,7 @@ def _unrepresentable_math_function_message(function_name: str) -> str:
 
     return (
         f'SBML math function "{function_name}" is not losslessly representable '
-        "in the C++ SBML writer/libRoadRunner path: "
+        "in the BNG3 engine/libRoadRunner path: "
         f"{_unrepresentable_math_function_reason(function_name)}."
     )
 
@@ -3356,6 +3466,16 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             slope = initial_expression(derivative, require_immutable_symbols=True)
             return (initial, slope) if slope is not None else None
 
+        if any(rule.type == "algebraic" for rule in target_rules):
+            return None
+        parameter = model.parameters.get(target)
+        if parameter is not None:
+            # A parameter that no rule and no event assignment touches keeps
+            # the value its initial assignment gave it at ``t = 0`` for the
+            # whole run (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of
+            # time"), so its trajectory is constant.
+            return (initial, 0.0)
+
         species = model.species.get(target)
         if species is None:
             return None
@@ -3491,6 +3611,11 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         The assignment may only depend on time and on symbols that keep the
         same value before the simulation starts; anything else would need the
         history of a symbol this lowering cannot evaluate.
+
+        The history is reconstructed by evaluating the assignment at
+        ``time - duration``.  That is exact for the start time SBML assumes,
+        ``t0 = 0``: the Atomizer has no ``t_start`` parameter, and SBML
+        itself fixes the start time of a simulation at zero.
         """
 
         if target not in initial_assignment_targets:
@@ -3541,6 +3666,10 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
             return None
         if history is None:
             history = repr(initial)
+        if slope == 0:
+            # A state with a constant trajectory holds the same value at every
+            # time, so the delayed read is that value.
+            return f"if(time < {duration!r}, {history}, {initial!r})"
         return f"if(time < {duration!r}, {history}, ({target} - {displacement!r}))"
 
     def fold_bounded_delays(
@@ -3711,6 +3840,33 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 reference.stoichiometry_set = True
                 reference.variable_stoichiometry = False
                 lowered += count
+
+    # An initial assignment is evaluated once, at the start of the simulation
+    # (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of time"): a symbol
+    # that no rule and no event assignment touches keeps the value it had at
+    # ``t = 0`` for the whole run.  The pre-simulation history has already
+    # been folded into the delayed reads above, so an assignment that reads
+    # the simulation time may now be reduced to that value instead of being
+    # re-evaluated at every time.
+    for assignment in model.initial_assignments:
+        symbol = str(getattr(assignment, "symbol", "") or "")
+        expression = str(getattr(assignment, "math", "") or "")
+        if not symbol or symbol in model.species:
+            continue
+        if not re.search(r"\btime\b", expression):
+            continue
+        if any(rule.variable == symbol for rule in model.rules):
+            continue
+        if any(
+            getattr(event_assignment, "variable", None) == symbol
+            for event in model.events
+            for event_assignment in event.assignments
+        ):
+            continue
+        value = initial_value(symbol)
+        if value is None or not math.isfinite(value):
+            continue
+        assignment.math = repr(value)
 
     if not lowered:
         return 0
@@ -4401,7 +4557,9 @@ def _seed_symbol_values(
 ) -> Dict[str, float]:
     """Resolve numeric SBML values needed by expression-valued seed species.
 
-    Initial values are established in SBML specification order:
+    Initial values are established in SBML specification order (Sec. 3.4.8,
+    "Initial conditions and special considerations", lists the steps that
+    establish the values at t <= 0):
 
       1. explicit initial values from attributes (parameter ``value``,
          compartment ``size``, species amount/concentration) form the base;
@@ -4513,6 +4671,43 @@ def _seed_symbol_values(
         merged.update(ia_values)
         return merged
 
+    def _has_known_initial_quantity(species: object, model: SBMLModel) -> bool:
+        """Whether the source model defines a species' initial quantity."""
+
+        if getattr(species, "initial_amount_set", False) or getattr(
+            species, "initial_concentration_set", False
+        ):
+            return True
+        identifier = str(getattr(species, "id", "") or "")
+        return any(
+            str(getattr(assignment, "symbol", "") or "") == identifier
+            for assignment in model.initial_assignments
+        )
+
+    compartment_names = {
+        str(compartment_id): standardize_name(str(compartment_id))
+        for compartment_id in model.compartments
+    }
+
+    def set_compartment_size(
+        values: Dict[str, float], identifier: object, value: Optional[float]
+    ) -> bool:
+        """Carry a resolved compartment size into its volume symbol.
+
+        An assignment rule (or an initial assignment) on a compartment replaces
+        its ``size`` attribute for every simulation time, including t=0 (SBML
+        Level 3 Version 2 Core, Sec. 4.8.5).  The seed expressions of the
+        species in that compartment use the volume parameter, so it has to
+        carry the resolved size rather than the ignored attribute value.
+        """
+
+        if value is None:
+            return False
+        name = compartment_names.get(str(identifier))
+        if name is None:
+            return False
+        return _set_seed_symbol_if_changed(values, f"__compartment_{name}__", value)
+
     for _ in range(12):
         changed = False
         # Function definitions that resolve to constants are available to the
@@ -4555,6 +4750,7 @@ def _seed_symbol_values(
             changed = (
                 _set_seed_symbol_if_changed(rule_values, variable, value) or changed
             )
+            changed = set_compartment_size(rule_values, variable, value) or changed
 
         # The initial assignments replace the declared value of their target,
         # and one of them may reference a variable that another initial
@@ -4567,11 +4763,23 @@ def _seed_symbol_values(
             if value is None:
                 continue
             changed = _set_seed_symbol_if_changed(ia_values, symbol, value) or changed
+            changed = set_compartment_size(ia_values, symbol, value) or changed
 
         for seed in seed_species:
             identifier = seed.sbml_id
             values = resolved_values()
             if identifier in values or standardize_name(identifier) in values:
+                continue
+            species = model.species.get(identifier)
+            if species is not None and not _has_known_initial_quantity(species, model):
+                # SBML Level 3 Version 2 Core Sec. 4.8: "Missing
+                # initialAmount and initialConcentration values implies that
+                # their values either are unknown, or to be obtained from an
+                # external source, or determined by an initial assignment or
+                # other SBML construct elsewhere in the model."  An unknown
+                # initial quantity must not resolve an expression: the
+                # Atomizer's zero seed for such a species is a placeholder,
+                # not a value the source model defines.
                 continue
             value = _substitute_seed_symbols(str(seed.concentration), values)
             if value is None:
@@ -4822,12 +5030,12 @@ def write_observables(
                 # An SBML species identifier in an expression denotes the
                 # species' amount or concentration according to its
                 # ``hasOnlySubstanceUnits`` attribute (SBML Level 3 Version 2
-                # Core, Sec. 4.8).  A concentration-valued operand makes the
-                # rule's value a concentration, which no BNGL observable can
-                # report: a ``Molecules`` observable counts molecules and a
-                # ``Species`` observable of a pattern reports the same count.
-                # Leave the rule to the function writer, which can express the
-                # concentration exactly.
+                # Core, Sec. 4.6 "Species").  A concentration-valued operand
+                # makes the rule's value a concentration, which no BNGL
+                # observable can report: a ``Molecules`` observable counts
+                # molecules and a ``Species`` observable of a pattern reports
+                # the same count.  Leave the rule to the function writer,
+                # which can express the concentration exactly.
                 concentration_operands = True
         if not pattern_counts:
             continue
@@ -5347,6 +5555,12 @@ def write_functions(
         name = function_name_map.get(
             str(function_id), _sanitize_function_identifier(str(function_id))
         )
+        if not str(function.math or "").strip():
+            # SBML Level 3 Version 2 Core Sec. 4.3.2: a function definition
+            # without a math element has no mathematical meaning.  The parser
+            # keeps such a definition only when the model never calls it, so
+            # there is nothing to emit here.
+            continue
         if function.arguments and not keep_parameterized:
             # BNG2/BNGL function blocks do not consistently support
             # argument-taking SBML definitions.  Inline those definitions at
@@ -5464,9 +5678,9 @@ def write_functions(
         )
         # An SBML species identifier denotes the species' amount or
         # concentration according to its ``hasOnlySubstanceUnits`` attribute
-        # (SBML Level 3 Version 2 Core, Sec. 4.8).  The concentration helper
-        # divides by the compartment's current size, so it is also correct
-        # when the compartment is driven by a rule.
+        # (SBML Level 3 Version 2 Core, Sec. 4.6 "Species").  The
+        # concentration helper divides by the compartment's current size, so
+        # it is also correct when the compartment is driven by a rule.
         body = _rewrite_declared_id_runs(
             body,
             concentration_species,
@@ -5521,14 +5735,26 @@ def write_functions(
             # Zero-dimensional compartments always use amount-valued symbols.
             if compartment.spatial_dimensions != 0:
                 compartment_name = standardize_name(species.compartment)
-                if compartment_name in assignment_rule_compartments or any(
+                if compartment_name in assignment_rule_compartments:
+                    raise ValueError(
+                        "species concentration rate rule requires an explicit compartment derivative; "
+                        "an assignment-rule-driven compartment size is unsupported"
+                    )
+                event_assigned_compartment = any(
                     assignment.variable == species.compartment
                     for event in model.events
                     for assignment in event.assignments
+                )
+                if (
+                    event_assigned_compartment
+                    and compartment_name not in rate_ruled_compartments
                 ):
+                    # A compartment whose size only changes at an event has no
+                    # continuous size derivative, so the concentration rate
+                    # law has no exact BNGL form.
                     raise ValueError(
                         "species concentration rate rule requires an explicit compartment derivative; "
-                        "assignment- or event-driven compartment is unsupported"
+                        "an event-driven compartment size without a rate rule is unsupported"
                     )
                 if compartment_name in rate_ruled_compartments:
                     body = (
@@ -6936,6 +7162,24 @@ def generate_bngl(
     augmented_molecule_types = list(molecule_types)
     augmented_seed_species = list(seed_species)
     seed_symbol_values = _seed_symbol_values(model, seed_species)
+    # A compartment's ``size`` attribute is ignored when an initial assignment
+    # or an assignment rule defines the size (SBML Level 3 Version 2 Core,
+    # Sec. 4.8.5).  The resolved size has to be the one the generated model
+    # emits, both as the compartment's own size and as the volume parameter
+    # the seed amounts and the rate laws use.  Two compartments whose ids
+    # normalize to the same BNGL name share that name, so their sizes cannot
+    # be told apart and are left as they are.
+    compartment_name_counts: Dict[str, int] = {}
+    for compartment_id in model.compartments:
+        name = standardize_name(str(compartment_id))
+        compartment_name_counts[name] = compartment_name_counts.get(name, 0) + 1
+    for compartment_id, compartment in model.compartments.items():
+        name = standardize_name(str(compartment_id))
+        if compartment_name_counts.get(name, 0) != 1:
+            continue
+        resolved = seed_symbol_values.get(f"__compartment_{name}__")
+        if resolved is not None and math.isfinite(resolved):
+            compartment.size = resolved
     synthetic_rate_rule_variables: Set[str] = set()
     default_compartment = next(iter(model.compartments), "")
     existing_seed_ids = {seed.sbml_id for seed in augmented_seed_species}
@@ -7027,6 +7271,21 @@ def generate_bngl(
             "BNW012",
             f"Synthesized {len(synthetic_rate_rule_variables)} rate-rule state species",
         )
+
+    # A compartment whose size is driven by a rate rule keeps that size in a
+    # BNGL state species.  An event assignment to the compartment has to
+    # update that state, because the compartment's declared size is only the
+    # size at time zero.
+    rate_ruled_compartment_ids = {
+        str(rule.variable)
+        for rule in model.rules
+        if (
+            rule.variable
+            and rule.type == "rate"
+            and rule.variable in model.compartments
+            and rule.variable in synthetic_rate_rule_variables
+        )
+    }
 
     sections = [
         "# BNGL model generated by the Playground-derived Python atomizer",
@@ -7170,6 +7429,8 @@ def generate_bngl(
             if getattr(assignment, "variable", None)
         )
 
+        constant_check_stack: set[str] = set()
+
         def is_compile_time_constant(identifier: str) -> bool:
             if identifier in {"__Avogadro__", "exponentiale", "pi"}:
                 return True
@@ -7177,11 +7438,29 @@ def generate_bngl(
             if parameter is not None:
                 rules = [rule for rule in model.rules if rule.variable == identifier]
                 if rules:
-                    return (
-                        len(rules) == 1
-                        and rules[0].type == "assignment"
-                        and resolve_event_parameter(identifier) is not None
-                    )
+                    if (
+                        len(rules) != 1
+                        or rules[0].type != "assignment"
+                        or resolve_event_parameter(identifier) is None
+                    ):
+                        return False
+                    # An assignment rule is only a compile-time constant when
+                    # everything it reads is one.  A rule that copies a
+                    # rate-ruled or event-driven symbol changes over the run,
+                    # so folding its value would silently freeze the symbol.
+                    if identifier in constant_check_stack:
+                        return False
+                    constant_check_stack.add(identifier)
+                    try:
+                        expression = extend_function(
+                            rules[0].math, {}, model.function_definitions
+                        )
+                        return (
+                            fold_numeric(expression, resolve_constant_symbol)
+                            is not None
+                        )
+                    finally:
+                        constant_check_stack.discard(identifier)
                 # SBML permits a parameter with constant="false" to be
                 # changed, but it remains fixed throughout this model unless
                 # a rule or event actually changes it. An initial assignment
@@ -7190,6 +7469,23 @@ def generate_bngl(
                 return identifier not in mutable_event_ids
             compartment = model.compartments.get(identifier)
             return bool(compartment is not None and identifier not in mutable_event_ids)
+
+        def resolve_constant_symbol(identifier: str) -> Optional[float]:
+            """Resolve a symbol, refusing a value that changes during the run.
+
+            ``is_compile_time_constant`` classifies parameters and
+            compartments; every other symbol keeps the historical resolution
+            so that the check only withdraws values that are known to vary.
+            """
+
+            value = resolve_event_parameter(identifier)
+            if value is None:
+                return None
+            if (
+                identifier in model.parameters or identifier in model.compartments
+            ) and not is_compile_time_constant(identifier):
+                return None
+            return value
 
         initial_assignment_values = {
             str(assignment.symbol): str(assignment.math or "")
@@ -10452,6 +10748,83 @@ def generate_bngl(
                 expression = f"({expression}) / ({float(compartment_size)!r})"
             return expression
 
+        def resolve_species_concentration_volume(
+            species_id: str, event_context: SBMLEvent, time: float
+        ) -> Optional[float]:
+            """Return the compartment volume in effect before an event fires.
+
+            SBML Level 3 Version 2 Core Sec. 4.6 relates a species' amount to
+            its concentration through the size of the species' compartment.
+            An event assignment to a species whose symbol denotes a
+            concentration therefore sets the species' amount, and SBML
+            evaluates every assignment of an event against the state before
+            the event's own assignments (SBML Test Suite 01779).  The volume
+            that scales the assigned concentration is the one in effect
+            immediately before the event fires.
+            """
+
+            resolved_id = next(
+                (
+                    identifier
+                    for identifier in model.species
+                    if standardize_name(identifier) == standardize_name(species_id)
+                ),
+                None,
+            )
+            if resolved_id is None:
+                return None
+            species = model.species[resolved_id]
+            if species.has_only_substance_units or not species.compartment:
+                return None
+            compartment_id = species.compartment
+            compartment = model.compartments.get(compartment_id)
+            if compartment is None or compartment.spatial_dimensions == 0:
+                # A zero-dimensional compartment has unit size and its
+                # species' symbol is amount-valued.
+                return None
+            if any(
+                assignment.symbol == compartment_id
+                for assignment in model.initial_assignments
+            ) or any(
+                rule.variable == compartment_id and rule.type == "assignment"
+                for rule in model.rules
+            ):
+                # The declared size is not the size in effect at the event.
+                return None
+            if any(
+                assignment.variable == compartment_id
+                for other_event in model.events
+                if other_event is not event_context
+                for assignment in other_event.assignments
+            ):
+                # Another event may have changed the size before this one.
+                return None
+            rate_rules = [
+                rule
+                for rule in model.rules
+                if rule.variable == compartment_id and rule.type == "rate"
+            ]
+            if rate_rules:
+                if len(rate_rules) != 1:
+                    return None
+                trajectory = resolve_affine_event_rate(compartment_id, event_context)
+                if trajectory is None:
+                    return None
+                initial, slope = trajectory
+                volume = initial + slope * time
+            else:
+                volume = float(compartment.size)
+            if not math.isfinite(volume) or volume == 0:
+                return None
+            return volume
+
+        def resolve_compartment_state_pattern(compartment_id: str) -> Optional[str]:
+            """Return the state pattern carrying a rate-ruled compartment size."""
+
+            if compartment_id not in rate_ruled_compartment_ids:
+                return None
+            return species_to_pattern.get(compartment_id)
+
         event_result = synthesize_event_actions(
             event_translation_events,
             EventTranslationContext(
@@ -10464,7 +10837,14 @@ def generate_bngl(
                     or identifier in event_species_reference_targets
                 ),
                 is_compartment=lambda identifier: identifier in model.compartments,
+                resolve_compartment_state_pattern=resolve_compartment_state_pattern,
+                resolve_species_concentration_volume=(
+                    resolve_species_concentration_volume
+                ),
                 is_compile_time_constant=is_compile_time_constant,
+                unapplied_algebraic_rule=any(
+                    rule.type == "algebraic" for rule in model.rules
+                ),
                 resolve_constant=resolve_constant,
                 expand_functions=lambda expression: extend_function(
                     expression, {}, model.function_definitions

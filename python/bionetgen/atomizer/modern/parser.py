@@ -99,6 +99,20 @@ def _bool(value: Any, default: bool = False) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes"}
 
 
+def _math_element_is_optional(level: Optional[int], version: Optional[int]) -> bool:
+    """Report whether the ``math`` element may be omitted on an SBML construct.
+
+    SBML Level 3 Version 2 Core relaxed the ``math`` element from required to
+    optional on ``InitialAssignment`` (Sec. 4.8.3), ``Rule`` (Sec. 4.9.1),
+    ``FunctionDefinition`` (Sec. 4.3.2) and ``KineticLaw`` (Sec. 4.11.5), and
+    gave each construct a defined meaning when the element is absent.  In
+    SBML Level 2 and Level 3 Version 1 the element is required, so a document
+    that omits it does not conform to the specification.
+    """
+
+    return level == 3 and version is not None and version >= 2
+
+
 # SBML Level 3 Version 2 Core fixes the value of the built-in ``avogadro``
 # csymbol at 6.02214179e+23 and requires every reader to use exactly that
 # number ("all software reading models expressed in this version of SBML
@@ -116,6 +130,17 @@ _SBML_CSYMBOL_URLS = {
     "symbols/delay": "delay",
     "symbols/rateof": "rateOf",
 }
+
+# The SBML ``time`` csymbol denotes the current simulation time, and its
+# spelling is also a legal SBML SId: a model may declare a parameter whose
+# id is ``time`` (SBML Level 3 Version 2 Core, Sec. 3.1.2 defines no reserved
+# SIds, and Sec. 4.3.5 defines the ``time`` csymbol in the MathML namespace
+# only).  The MathML reader therefore spells the csymbol with a token that no
+# model symbol can use, so that a ``<ci>`` reference to a parameter named
+# ``time`` and a ``<csymbol>`` reference to the simulation time stay
+# distinguishable.  ``_normalize_formula_identifiers`` maps the token back to
+# the plain ``time`` spelling once the ``<ci>`` references have been resolved.
+_SBML_CSYMBOL_TIME = "__sbml_csymbol_time__"
 
 # Function names that carry no free symbol, so an expression that mentions one
 # is not dependent on an unknown model quantity.  The MathML built-ins come
@@ -1201,6 +1226,33 @@ _RATE_OF_CALL = re.compile(
     re.IGNORECASE,
 )
 
+# A ``rateOf`` that has been expanded into its derivative still has to be
+# recognised when the expansion is read through a ``delay``: SBML Level 3
+# Version 2 Core Sec. 3.4.8 ("Initial conditions and special considerations")
+# fixes the ``rateOf`` of any valid target at zero for ``t < 0``, so a delayed
+# read of a rate observes zero while the delayed time is still before the
+# start of the simulation.  The marker keeps the expansion recognisable for
+# that step and is removed once the delayed reads have been lowered.
+_RATE_OF_MARKER = "__sbml_rate_of__"
+
+
+def _mark_rate_of(body: str) -> str:
+    """Mark an expanded ``rateOf`` so a delayed read can recognise it."""
+
+    return f"{_RATE_OF_MARKER}{body}"
+
+
+def _marked_rate_of_body(expression: str) -> Optional[str]:
+    """Return the body of a marked ``rateOf`` expression, or ``None``."""
+
+    text = str(expression or "").strip()
+    if not text.startswith(_RATE_OF_MARKER):
+        return None
+    body = text[len(_RATE_OF_MARKER) :].strip()
+    if not (body.startswith("(") and body.endswith(")")):
+        return None
+    return body[1:-1]
+
 
 def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
     """Replace ``rateOf`` of a reaction-local parameter by zero.
@@ -1240,6 +1292,43 @@ def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
     return masked
 
 
+def _fast_reaction_rule(level: Optional[int], version: Optional[int]) -> str:
+    """State the fast-reaction rule that a document's SBML level defines.
+
+    SBML Level 3 Version 2 Core Sec. 4.11 removed the ``fast`` attribute:
+    "every Reaction in a L3V2 model is equivalent to an SBML Level 3
+    Version 1 Reaction with a fast value of false".  The pseudo
+    steady-state approximation therefore belongs to Level 3 Version 1 and
+    Level 2, whose Sec. 4.11 asks that "software tools should use a pseudo
+    steady-state approximation for the set of fast reactions when
+    constructing the system of equations for the model".
+
+    The Reactions section is Sec. 4.11 in Level 3 and in Level 2 Version 3
+    and earlier; Level 2 Version 4 added Compartment types and Species
+    types and moved it to Sec. 4.13.
+    """
+
+    if level == 3 and version is not None and version >= 2:
+        return (
+            "SBML Level 3 Version 2 Core Sec. 4.11 removed the fast attribute; "
+            "a document that still sets it states the Level 3 Version 1 / "
+            "Level 2 intent, whose rule asks for a pseudo steady-state "
+            "approximation of such a reaction"
+        )
+    if level == 3:
+        return (
+            "SBML Level 3 Version 1 Core Sec. 4.11 asks for a pseudo "
+            "steady-state approximation of such a reaction"
+        )
+    if level == 2:
+        section = "4.13" if version is not None and version >= 4 else "4.11"
+        return (
+            f"SBML Level 2 Sec. {section} asks for a pseudo steady-state "
+            "approximation of such a reaction"
+        )
+    return "SBML asks for a pseudo steady-state approximation of such a reaction"
+
+
 def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
     """Inline ``rateOf`` calls whose targets have explicit SBML rate rules.
 
@@ -1277,7 +1366,7 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
             replacement = rate_rules.get(key)
             if replacement is None or key in stack:
                 return match.group(0)
-            return f"({expand(replacement, (*stack, key))})"
+            return _mark_rate_of(f"({expand(replacement, (*stack, key))})")
 
         return _RATE_OF_CALL.sub(replace, source)
 
@@ -1644,7 +1733,9 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             replacement = rate_of_expressions.get(
                 identifier, rate_of_expressions.get(standardize_name(identifier))
             )
-            return f"({replacement})" if replacement is not None else match.group(0)
+            if replacement is None:
+                return match.group(0)
+            return _mark_rate_of(f"({replacement})")
 
         return _RATE_OF_CALL.sub(substitute, str(expression or ""))
 
@@ -1699,6 +1790,77 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
                 assignment.math = replace(assignment.math)
     for assignment in model.initial_assignments:
         assignment.math = replace(assignment.math)
+
+
+def _delayed_read_symbols(model: SBMLModel) -> Set[str]:
+    """Return the symbols a ``delay`` call reads in the model.
+
+    A delayed read observes the value a symbol had at the delayed time.  For
+    a symbol whose only controller is an initial assignment, that value comes
+    from the assignment itself while the delayed time is still before the
+    start of the simulation (SBML Level 3 Version 2 Core Sec. 4.3, "Meaning of
+    time").  The assignment therefore has to stay in the model for such a
+    symbol; for every other symbol the assignment can be folded into the
+    symbol's value at ``t = 0``.
+    """
+
+    expressions: List[str] = []
+    expressions.extend(str(rule.math or "") for rule in model.rules)
+    expressions.extend(
+        str(getattr(assignment, "math", "") or "")
+        for assignment in model.initial_assignments
+    )
+    expressions.extend(
+        str(getattr(function, "math", "") or "")
+        for function in model.function_definitions.values()
+    )
+    for reaction in model.reactions.values():
+        law = reaction.kinetic_law
+        if law is None:
+            continue
+        expressions.append(
+            str(
+                law.get("math", "")
+                if isinstance(law, Mapping)
+                else getattr(law, "math", "") or ""
+            )
+        )
+    for event in model.events:
+        expressions.extend(
+            str(expression or "")
+            for expression in (event.trigger, event.delay, event.priority)
+        )
+        expressions.extend(
+            str(getattr(assignment, "math", "") or "")
+            for assignment in event.assignments
+        )
+
+    symbols: Set[str] = set()
+    for expression in expressions:
+        for match in re.finditer(r"\bdelay\s*\(", expression, re.IGNORECASE):
+            opening = match.end() - 1
+            depth = 1
+            separator = -1
+            closing = -1
+            for index in range(opening + 1, len(expression)):
+                character = expression[index]
+                if character == "(":
+                    depth += 1
+                elif character == ")":
+                    depth -= 1
+                    if depth == 0:
+                        closing = index
+                        break
+                elif character == "," and depth == 1 and separator < 0:
+                    separator = index
+            if closing < 0:
+                continue
+            if separator < 0:
+                separator = closing
+            first = expression[opening + 1 : separator]
+            for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first):
+                symbols.add(standardize_name(identifier))
+    return symbols
 
 
 def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
@@ -2065,6 +2227,16 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
         for event in model.events
         for assignment in event.assignments
         if getattr(assignment, "variable", None)
+    )
+    # An initial assignment keeps its target in effect for every time before
+    # the simulation starts, and its value may differ at each of those times
+    # (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of time").  A symbol
+    # with such an assignment is therefore not a compile-time constant, and a
+    # delayed read of it must not be replaced by its value at ``t = 0``.
+    controlled.update(
+        standardize_name(str(assignment.symbol))
+        for assignment in model.initial_assignments
+        if getattr(assignment, "symbol", None)
     )
     algebraic_symbols = {
         standardize_name(name)
@@ -2674,9 +2846,15 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 )
                 and (is_static(second, extra_static) or nonnegative_time_delay)
             ):
+                # A delayed read of a rate observes zero while the delayed
+                # time is still before the start of the simulation.
+                rate_of_body = _marked_rate_of_body(first)
+                delayed_expression = rate_of_body if rate_of_body is not None else first
                 delayed_symbols = {
                     standardize_name(identifier)
-                    for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first)
+                    for identifier in re.findall(
+                        r"\b[A-Za-z_][A-Za-z0-9_]*\b", delayed_expression
+                    )
                 }
                 defer_affine_history = not lower_affine_history and bool(
                     delayed_symbols & (set(rate_rules) | set(reaction_rate_rules))
@@ -2684,7 +2862,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 expanded_first = (
                     None
                     if defer_affine_history
-                    else time_expression(first, extra_static=extra_static)
+                    else time_expression(delayed_expression, extra_static=extra_static)
                 )
                 if expanded_first is not None and re.search(
                     r"\btime\b", expanded_first, re.IGNORECASE
@@ -2697,7 +2875,11 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     )
                 if shifted is None:
                     identifiers = list(
-                        dict.fromkeys(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", first))
+                        dict.fromkeys(
+                            re.findall(
+                                r"\b[A-Za-z_][A-Za-z0-9_]*\b", delayed_expression
+                            )
+                        )
                     )
                     dynamic = [
                         identifier
@@ -2705,6 +2887,11 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                         if standardize_name(identifier) in rate_rules
                         or standardize_name(identifier) in reaction_rate_rules
                     ]
+                    # A delayed read is evaluated at ``t - duration``: the
+                    # simulation time inside the delayed expression moves with
+                    # it, and the states it reads are replaced by their own
+                    # history.
+                    delayed_first = delayed_expression
                     safe = bool(dynamic) and lower_affine_history
                     for identifier in identifiers:
                         if identifier in dynamic or is_static(identifier, extra_static):
@@ -2712,7 +2899,7 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                         safe = False
                         break
                     if safe:
-                        shifted_expression = first
+                        shifted_expression = delayed_first
                         for identifier in dynamic:
                             history = delayed_constant_rate(identifier, second)
                             if history is None:
@@ -2729,6 +2916,10 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                         r"[A-Za-z_][A-Za-z0-9_]*", first
                     ):
                         shifted = delayed_constant_rate(first, second)
+                if shifted is not None and rate_of_body is not None:
+                    # A rate is zero before the simulation starts, so a delayed
+                    # read of one is zero while the delayed time is negative.
+                    shifted = f"if(time < ({second}), 0, {shifted})"
             result.append(expression[cursor:start])
             result.append(
                 first
@@ -2775,30 +2966,49 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                     local_values[str(name)] = float(value)
             except (TypeError, ValueError):
                 continue
+        updated = replace(
+            (
+                str(law.get("math", "") or "")
+                if isinstance(law, Mapping)
+                else str(getattr(law, "math", "") or "")
+            ),
+            local_names,
+            local_values,
+        ).replace(_RATE_OF_MARKER, "")
         if isinstance(law, Mapping):
-            law["math"] = replace(
-                str(law.get("math", "") or ""), local_names, local_values
-            )
-        elif hasattr(law, "math"):
-            law.math = replace(
-                str(getattr(law, "math", "") or ""), local_names, local_values
-            )
+            law["math"] = updated
+        if hasattr(law, "math"):
+            # A mapping-compatible kinetic law keeps the expression both as a
+            # mapping item and as an attribute; both have to agree.
+            law.math = updated
 
     for reaction in model.reactions.values():
         update_law(reaction.kinetic_law)
     for rule in model.rules:
-        rule.math = replace(rule.math)
+        rule.math = replace(rule.math).replace(_RATE_OF_MARKER, "")
     for function in model.function_definitions.values():
-        function.math = replace(function.math)
+        function.math = replace(function.math).replace(_RATE_OF_MARKER, "")
     for event in model.events:
-        event.trigger = replace(event.trigger, lower_affine_history=False)
-        event.delay = replace(event.delay) if event.delay else event.delay
-        event.priority = replace(event.priority) if event.priority else event.priority
+        event.trigger = replace(event.trigger, lower_affine_history=False).replace(
+            _RATE_OF_MARKER, ""
+        )
+        event.delay = (
+            replace(event.delay).replace(_RATE_OF_MARKER, "")
+            if event.delay
+            else event.delay
+        )
+        event.priority = (
+            replace(event.priority).replace(_RATE_OF_MARKER, "")
+            if event.priority
+            else event.priority
+        )
         for assignment in event.assignments:
             if hasattr(assignment, "math"):
-                assignment.math = replace(assignment.math, lower_affine_history=False)
+                assignment.math = replace(
+                    assignment.math, lower_affine_history=False
+                ).replace(_RATE_OF_MARKER, "")
     for assignment in model.initial_assignments:
-        assignment.math = replace(assignment.math)
+        assignment.math = replace(assignment.math).replace(_RATE_OF_MARKER, "")
 
     expressions = [rule.math for rule in model.rules]
     expressions.extend(
@@ -2903,10 +3113,14 @@ class SBMLParser:
     def _mathml_import_warnings(root: Any) -> List[Dict[str, Any]]:
         """Collect the source parser's diagnostics for lossy MathML constructs."""
 
-        messages: "OrderedDict[str, int]" = OrderedDict()
+        messages: "OrderedDict[str, List[Any]]" = OrderedDict()
 
-        def add(message: str) -> None:
-            messages[message] = messages.get(message, 0) + 1
+        def add(message: str, category: str = "mathml") -> None:
+            entry = messages.get(message)
+            if entry is None:
+                entry = [0, category]
+                messages[message] = entry
+            entry[0] += 1
 
         # A MathML ``<apply>`` names its operator with its first child.  When
         # that child is a ``<ci>``, the operator is a function call, and SBML
@@ -2948,11 +3162,19 @@ class SBMLParser:
                         )
                 elif tag == "infinity":
                     add(
-                        "<infinity> constant encountered in math; emitted as a large finite value."
+                        "<infinity> constant encountered in math; the source is "
+                        "valid SBML (validation rule 10202 permits <infinity>), "
+                        "but an infinite value cannot be represented in BNG3's "
+                        "finite-double model, so it is emitted as a large finite "
+                        "value and the model is not claimed to be supported."
                     )
                 elif tag == "notanumber":
                     add(
-                        "<notanumber> constant encountered in math; cannot be represented."
+                        "<notanumber> constant encountered in math; the source is "
+                        "valid SBML (validation rule 10202 permits "
+                        "<notanumber>), but a not-a-number value cannot be "
+                        "represented in BNG3's finite-double model, so the model "
+                        "is not claimed to be supported."
                     )
                 elif tag == "logbase":
                     if _mathml_to_formula(element).strip() not in _DECIMAL_LOG_BASES:
@@ -2972,20 +3194,27 @@ class SBMLParser:
                     # e-notation form (mantissa <sep/> exponent).  That form
                     # is already lowered exactly above; only a missing or
                     # otherwise unknown type needs the conservative
-                    # rational-interpretation diagnostic.
+                    # rational-interpretation diagnostic.  SBML Level 3
+                    # Version 2 Core validation rule 10207 permits only
+                    # "e-notation", "real", "integer" and "rational" here, so
+                    # any other type is a malformed source document.
                     if number_type not in {"rational", "e-notation", "enotation"}:
                         add(
-                            "<cn> with <sep/> and unspecified type treated as rational."
+                            "<cn> with <sep/> and a type outside the "
+                            "SBML-permitted set (e-notation, real, integer, "
+                            "rational) is not valid SBML; it is read as a "
+                            "rational number.",
+                            category="invalidSource",
                         )
 
         return [
             {
-                "category": "mathml",
+                "category": category,
                 "message": message,
                 "count": count,
                 "severity": "approximated",
             }
-            for message, count in messages.items()
+            for message, (count, category) in messages.items()
         ]
 
     @staticmethod
@@ -3109,13 +3338,6 @@ class SBMLParser:
                 if alias not in parameter_ids:
                     parameter_aliases.pop(alias, None)
         math_warnings: List[Dict[str, Any]] = []
-        reactions = SBMLParser._parse_xml_reactions(
-            model, parameter_aliases, math_warnings
-        )
-        rules = SBMLParser._parse_xml_rules(model, parameter_aliases, math_warnings)
-        functions = SBMLParser._parse_xml_functions(
-            model, parameter_aliases, math_warnings
-        )
         level = _attribute(root, "level")
         try:
             level_value = int(level) if level is not None else None
@@ -3126,6 +3348,23 @@ class SBMLParser:
             version_value = int(version) if version is not None else None
         except (TypeError, ValueError):
             version_value = None
+        reactions = SBMLParser._parse_xml_reactions(
+            model, parameter_aliases, math_warnings
+        )
+        rules = SBMLParser._parse_xml_rules(
+            model,
+            parameter_aliases,
+            math_warnings,
+            level=level_value,
+            version=version_value,
+        )
+        functions = SBMLParser._parse_xml_functions(
+            model,
+            parameter_aliases,
+            math_warnings,
+            level=level_value,
+            version=version_value,
+        )
         events = SBMLParser._parse_xml_events(
             model,
             parameter_aliases,
@@ -3133,7 +3372,11 @@ class SBMLParser:
             version=version_value,
         )
         initial_assignments = SBMLParser._parse_xml_initial_assignments(
-            model, parameter_aliases, math_warnings
+            model,
+            parameter_aliases,
+            math_warnings,
+            level=level_value,
+            version=version_value,
         )
         species_by_compartment: Dict[str, List[str]] = OrderedDict()
         for species_id, item in species.items():
@@ -3251,7 +3494,9 @@ class SBMLParser:
         _expand_rate_of_from_simple_reactions(result)
         _lower_delays_of_static_expressions(result)
         SBMLParser._fold_static_species_assignments(result)
-        SBMLParser._fold_static_parameter_initial_assignments(result)
+        SBMLParser._fold_static_parameter_initial_assignments(
+            result, _delayed_read_symbols(result)
+        )
         SBMLParser._fold_static_compartment_initial_assignments(result)
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
@@ -3349,11 +3594,11 @@ class SBMLParser:
                         "category": "fastReaction",
                         "message": (
                             f'Reaction "{reaction_id}" is marked fast '
-                            '(fast="true"); SBML Level 3 Core Sec. 4.11 asks '
-                            "for a pseudo steady-state approximation of such a "
-                            "reaction, so treating it as an ordinary reaction "
-                            "changes the trajectory. BNG3 has no fast-equilibrium "
-                            "solve, so it is treated as an ordinary reaction."
+                            '(fast="true"); '
+                            + _fast_reaction_rule(result.level, result.version)
+                            + ", so treating it as an ordinary reaction changes "
+                            "the trajectory. BNG3 has no fast-equilibrium solve, "
+                            "so it is treated as an ordinary reaction."
                         ),
                         "count": 1,
                         "severity": "approximated",
@@ -4114,7 +4359,9 @@ class SBMLParser:
         model.rules = [rule for rule in model.rules if id(rule) not in fold]
 
     @staticmethod
-    def _fold_static_parameter_initial_assignments(model: SBMLModel) -> None:
+    def _fold_static_parameter_initial_assignments(
+        model: SBMLModel, delayed_history_symbols: Optional[Set[str]] = None
+    ) -> None:
         """Lower static initial assignments for parameters to their values.
 
         SBML Level 3 Version 2 Core (Sec. 4.8) evaluates every
@@ -4133,6 +4380,7 @@ class SBMLParser:
 
         if not model.initial_assignments:
             return
+        delayed_history_symbols = set(delayed_history_symbols or ())
 
         species_ids = set(model.species)
         rule_targets = {str(rule.variable) for rule in model.rules if rule.variable}
@@ -4198,10 +4446,11 @@ class SBMLParser:
             return
 
         folded: List[Any] = []
+        retained: List[Any] = []
         for _ in range(len(pending) + 1):
             progressed = False
             for assignment in pending:
-                if assignment in folded:
+                if assignment in folded or assignment in retained:
                     continue
                 expression = str(getattr(assignment, "math", "") or "")
                 if not expression:
@@ -4219,7 +4468,19 @@ class SBMLParser:
                 parameter.value_set = True
                 symbols[symbol] = value
                 symbols[standardize_name(symbol)] = value
-                folded.append(assignment)
+                if (
+                    re.search(r"\btime\b", expression)
+                    and standardize_name(symbol) in delayed_history_symbols
+                ):
+                    # The assignment reads the simulation time and a delayed
+                    # read observes the symbol's pre-simulation history, where
+                    # the assignment is evaluated at the delayed time (SBML
+                    # Level 3 Version 2 Core Sec. 4.3, "Meaning of time").
+                    # The symbol's own value is the one the assignment had at
+                    # t = 0, so the assignment stays in the model.
+                    retained.append(assignment)
+                else:
+                    folded.append(assignment)
                 progressed = True
             if not progressed:
                 break
@@ -4239,6 +4500,21 @@ class SBMLParser:
                         f'Initial assignment for parameter "{assignment.symbol}" '
                         "was evaluated at the start of the simulation and "
                         "lowered to a fixed value."
+                    ),
+                    "count": 1,
+                    "severity": "info",
+                }
+            )
+        for assignment in retained:
+            model.import_warnings.append(
+                {
+                    "category": "initialAssignment",
+                    "message": (
+                        f'Initial assignment for parameter "{assignment.symbol}" '
+                        "reads the simulation time, so it keeps the "
+                        "parameter's pre-simulation history; the parameter "
+                        "itself holds the value the assignment had at the "
+                        "start of the simulation."
                     ),
                     "count": 1,
                     "severity": "info",
@@ -4608,8 +4884,12 @@ class SBMLParser:
                     "category": "missingMath",
                     "message": (
                         f"{len(missing_kinetic_law)} reaction(s) have no MathML "
-                        f"kinetic law ({listed}); each is emitted with a fallback "
-                        "rate that is not derived from the source model."
+                        f"kinetic law ({listed}); the source document is valid "
+                        "SBML, but SBML Level 3 Version 2 Core Sec. 4.11.1 leaves "
+                        "the rate of such a reaction undefined and states that a "
+                        "simulator's choice is not standardized, so each is "
+                        "emitted with rate 0 (the 'effective rate is zero' "
+                        "reading) and the model is not claimed to be supported."
                     ),
                     "count": len(missing_kinetic_law),
                     "severity": "dropped",
@@ -4622,6 +4902,9 @@ class SBMLParser:
         model: Any,
         parameter_aliases: Optional[Dict[str, str]] = None,
         warnings: Optional[List[Dict[str, Any]]] = None,
+        *,
+        level: Optional[int] = None,
+        version: Optional[int] = None,
     ) -> List[SBMLRule]:
         result: List[SBMLRule] = []
         parent = _first_child(model, "listOfRules")
@@ -4647,23 +4930,45 @@ class SBMLParser:
             )
             if not math.strip():
                 if warnings is not None:
-                    warnings.append(
-                        {
-                            "category": "missingMath",
-                            "message": (
-                                f"{kind} rule"
-                                + (
-                                    f' for "{_attribute(item, "variable")}"'
-                                    if _attribute(item, "variable")
-                                    else ""
-                                )
-                                + " has no MathML expression; rule was omitted "
-                                "from the executable BNGL."
-                            ),
-                            "count": 1,
-                            "severity": "dropped",
-                        }
-                    )
+                    variable = _attribute(item, "variable")
+                    target = f' for "{variable}"' if variable else ""
+                    if _math_element_is_optional(level, version):
+                        # SBML Level 3 Version 2 Core Sec. 4.9.1: a Rule with
+                        # no math element leaves the model unchanged, so the
+                        # rule carries no dynamics and omitting it preserves
+                        # the source model exactly.
+                        warnings.append(
+                            {
+                                "category": "missingMath",
+                                "message": (
+                                    f"{kind} rule{target} has no MathML "
+                                    "expression; SBML Level 3 Version 2 Core "
+                                    "Sec. 4.9.1 defines a rule without a math "
+                                    "element as leaving the model unchanged, so "
+                                    "the rule is not emitted and the source "
+                                    "dynamics are preserved."
+                                ),
+                                "count": 1,
+                                "severity": "info",
+                            }
+                        )
+                    else:
+                        # Level 2 and Level 3 Version 1 require the math
+                        # element, so the source document itself is invalid.
+                        warnings.append(
+                            {
+                                "category": "invalidSource",
+                                "message": (
+                                    f"{kind} rule{target} has no MathML "
+                                    "expression; the math element is required in "
+                                    "SBML Level 2 and Level 3 Version 1, so this "
+                                    "source document does not conform to the SBML "
+                                    "specification and the rule was not emitted."
+                                ),
+                                "count": 1,
+                                "severity": "dropped",
+                            }
+                        )
                 continue
             result.append(
                 SBMLRule(
@@ -4681,15 +4986,57 @@ class SBMLParser:
         return result
 
     @staticmethod
+    def _function_is_called(
+        model: Any,
+        function_id: str,
+        definition: Any,
+        parents: Mapping[Any, Any],
+        referenced_ids: Mapping[str, int],
+    ) -> bool:
+        """Report whether the model calls a user-defined function.
+
+        A MathML ``ci`` element naming the function is the only way an SBML
+        model can call it (SBML Level 3 Version 2 Core Sec. 4.3.4).
+        """
+
+        if function_id not in referenced_ids:
+            return False
+        for element in model.iter():
+            if _local_name(element.tag) != "ci":
+                continue
+            if (element.text or "").strip() != function_id:
+                continue
+            ancestor = parents.get(element)
+            while ancestor is not None:
+                if ancestor is definition:
+                    break
+                ancestor = parents.get(ancestor)
+            else:
+                return True
+        return False
+
+    @staticmethod
     def _parse_xml_functions(
         model: Any,
         parameter_aliases: Optional[Dict[str, str]] = None,
         warnings: Optional[List[Dict[str, Any]]] = None,
+        *,
+        level: Optional[int] = None,
+        version: Optional[int] = None,
     ) -> Dict[str, SBMLFunctionDefinition]:
         result: Dict[str, SBMLFunctionDefinition] = OrderedDict()
-        for item in SBMLParser._xml_items(
+        items = SBMLParser._xml_items(
             model, "listOfFunctionDefinitions", "functionDefinition"
-        ):
+        )
+        if not items:
+            return result
+        parents = {child: parent for parent in model.iter() for child in parent}
+        referenced_ids = {
+            (element.text or "").strip()
+            for element in model.iter()
+            if _local_name(element.tag) == "ci" and (element.text or "").strip()
+        }
+        for item in items:
             item_id = str(_attribute(item, "id", "") or "")
             if not item_id:
                 continue
@@ -4717,19 +5064,74 @@ class SBMLParser:
                 _mathml_to_formula(body), parameter_aliases
             )
             if not math.strip():
+                called = SBMLParser._function_is_called(
+                    model, item_id, item, parents, referenced_ids
+                )
                 if warnings is not None:
-                    warnings.append(
-                        {
-                            "category": "missingMath",
-                            "message": (
-                                f'Function definition "{item_id}" has no MathML '
-                                "expression; emitted as the constant zero function."
-                            ),
-                            "count": 1,
-                            "severity": "approximated",
-                        }
-                    )
-                math = "0"
+                    if _math_element_is_optional(level, version):
+                        if called:
+                            # SBML Level 3 Version 2 Core Sec. 4.3.4: a call to
+                            # a function that has no math content is
+                            # mathematically meaningless, so the source model
+                            # does not define the call's value.
+                            warnings.append(
+                                {
+                                    "category": "missingMath",
+                                    "message": (
+                                        f'Function definition "{item_id}" has no '
+                                        "MathML expression; SBML Level 3 Version 2 "
+                                        "Core Sec. 4.3.4 states that a call to a "
+                                        "function with no math content is "
+                                        "mathematically meaningless, so the call "
+                                        "site is emitted as the constant zero "
+                                        "function."
+                                    ),
+                                    "count": 1,
+                                    "severity": "approximated",
+                                }
+                            )
+                        else:
+                            # Sec. 4.3.2: the definition carries no
+                            # mathematical meaning, and the model never calls
+                            # it, so the model is unchanged without it.
+                            warnings.append(
+                                {
+                                    "category": "missingMath",
+                                    "message": (
+                                        f'Function definition "{item_id}" has no '
+                                        "MathML expression; SBML Level 3 Version 2 "
+                                        "Core Sec. 4.3.2 gives it no mathematical "
+                                        "meaning and the model never calls it, so "
+                                        "the definition is not emitted and the "
+                                        "source dynamics are preserved."
+                                    ),
+                                    "count": 1,
+                                    "severity": "info",
+                                }
+                            )
+                    else:
+                        # Level 2 and Level 3 Version 1 require the math
+                        # element, so the source document itself is invalid.
+                        warnings.append(
+                            {
+                                "category": "invalidSource",
+                                "message": (
+                                    f'Function definition "{item_id}" has no MathML '
+                                    "expression; the math element is required in "
+                                    "SBML Level 2 and Level 3 Version 1, so this "
+                                    "source document does not conform to the SBML "
+                                    "specification and the definition was emitted "
+                                    "as the constant zero function."
+                                ),
+                                "count": 1,
+                                "severity": "dropped",
+                            }
+                        )
+                math = (
+                    ""
+                    if not called and _math_element_is_optional(level, version)
+                    else "0"
+                )
             result[item_id] = SBMLFunctionDefinition(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
@@ -4824,6 +5226,9 @@ class SBMLParser:
         model: Any,
         parameter_aliases: Optional[Dict[str, str]] = None,
         warnings: Optional[List[Dict[str, Any]]] = None,
+        *,
+        level: Optional[int] = None,
+        version: Optional[int] = None,
     ) -> List[SBMLInitialAssignment]:
         result: List[SBMLInitialAssignment] = []
         for item in SBMLParser._xml_items(
@@ -4836,17 +5241,45 @@ class SBMLParser:
                 )
                 if not math.strip():
                     if warnings is not None:
-                        warnings.append(
-                            {
-                                "category": "missingMath",
-                                "message": (
-                                    f'Initial assignment "{symbol}" has no MathML '
-                                    "expression; assignment was omitted."
-                                ),
-                                "count": 1,
-                                "severity": "dropped",
-                            }
-                        )
+                        if _math_element_is_optional(level, version):
+                            # SBML Level 3 Version 2 Core Sec. 4.8.3: an
+                            # initial assignment with no math element makes no
+                            # assignment, so the model keeps the value its
+                            # definition gave the symbol.
+                            warnings.append(
+                                {
+                                    "category": "missingMath",
+                                    "message": (
+                                        f'Initial assignment "{symbol}" has no MathML '
+                                        "expression; SBML Level 3 Version 2 Core "
+                                        "Sec. 4.8.3 defines an initial assignment "
+                                        "without a math element as leaving the "
+                                        "model unchanged, so the assignment is not "
+                                        "emitted and the source dynamics are "
+                                        "preserved."
+                                    ),
+                                    "count": 1,
+                                    "severity": "info",
+                                }
+                            )
+                        else:
+                            # Level 2 and Level 3 Version 1 require the math
+                            # element, so the source document itself is invalid.
+                            warnings.append(
+                                {
+                                    "category": "invalidSource",
+                                    "message": (
+                                        f'Initial assignment "{symbol}" has no MathML '
+                                        "expression; the math element is required in "
+                                        "SBML Level 2 and Level 3 Version 1, so this "
+                                        "source document does not conform to the "
+                                        "SBML specification and the assignment was "
+                                        "not emitted."
+                                    ),
+                                    "count": 1,
+                                    "severity": "dropped",
+                                }
+                            )
                     continue
                 result.append(
                     SBMLInitialAssignment(

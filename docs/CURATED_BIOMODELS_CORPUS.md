@@ -77,6 +77,59 @@ order. With the seed fixed, a forty-record sample of the corpus produces
 byte-identical BNGL on `main` and on the branch that carries the two Atomizer
 fixes, and only the four records those fixes target differ.
 
+## Two corpus regressions, and what they were
+
+The independent campaign audit found two records that used to convert and no
+longer do. Both are defects of the translation, and both are fixed here.
+
+### `BIOMD0000000638` — a scaled compartment size rounded twice
+
+The record declares a compartment of 3.92 picolitre. A unit conversion
+factor is a decimal number (a unit definition is a product of
+`(multiplier * 10**scale)**exponent` terms), so scaling the size by the
+*double* approximation of that factor rounds the product twice: once when the
+factor is approximated and once when the product is rounded. The result was
+`3.9200000000000006e-15`, one unit in the last place away from the
+`3.92e-15` the source states.
+
+The record's rate laws divide by that size, so its rate coefficients are of
+order 1e19 and the model is stiff. One unit in the last place was enough to
+stop libRoadRunner's CVODE from taking its first step: the oracle failed
+with `CV_CONV_FAILURE` at `t = 0` and `h = 2.4e-43`, and the record was
+reported as failed.
+
+The scaling now multiplies in decimal and rounds the product once, so the
+scaled size is the correctly rounded double of the value the source states.
+The *emission* is unchanged — it is the shortest decimal that round-trips —
+so the precision that the numeric-fidelity change added for a model that
+compares a quantity with `pi` is preserved.
+
+The regression test carries the record reduced to the eight reactions the
+failure needs and judges the translation with libRoadRunner as the oracle.
+
+### `BIOMD0000000954` — a state-dependent rate law replaced by a fitted constant
+
+SBML Level 3 Version 2 Core Sec. 4.11 gives a kinetic law the meaning of the
+reaction's extent rate, `d n_i/dt = Σ stoich_ij · v_Rj`. A law that names a
+species the reaction does not consume is therefore a *complete flux*: its
+value depends on that species' state, and no constant coefficient can replace
+it.
+
+The record's Cdh1dp production has the rate law
+`k · (Cdh1T − Cdh1dp)/(JdpCdh1 + Cdh1T − Cdh1dp)`, and the writer's numeric
+mass-action probe accepted it: the probe replaces the species by a fixed state
+and fits the result, and the fitted coefficient is a snapshot of the law at
+the probe points rather than the law itself. The same source produced
+`0.000100001222240371`, `0.00010000122224037069`,
+`0.00010000040740942388`, `0.00010000020370420783` and
+`0.00010000061111564819` in five runs that differed only in the process's
+hash seed, so the record's status was not reproducible at a fixed commit.
+
+The probe is no longer allowed to claim a law that names a non-reactant
+species. Such a law keeps its state dependence, so the exported model is the
+model the source states. A law over the reaction's own reactants is still
+classified as an elementary coefficient.
+
 ## Residual failures
 
 Thirteen records failed and twelve timed out. Each one is classified by the
@@ -123,6 +176,8 @@ Core specification:
 | `BIOMD0000000245` | atomizer | reaction id used as a rate in a rule | The rule names seven reaction ids. The flux inlining replaced one reaction per pass and stopped after four passes, so the remaining ids reached the emitted rule as unresolved expression symbols. **Fixed.** |
 | `BIOMD0000000570` | atomizer | reaction id used as a rate in a rate rule | The same four-pass limit left three of seven reaction ids unresolved. **Fixed.** |
 | `BIOMD0000000353` | atomizer | compartment size set by an `initialAssignment` | A species assignment rule names a compartment whose size an initial assignment sets. The compartment was rewritten to the constant volume parameter, producing `__compartment_X__()`: a call to an undeclared function. **Fixed.** |
+| `BIOMD0000000638` | atomizer | compartment size in a scaled unit | The unit conversion rounded the scaled size twice, so the emitted size was one unit in the last place away from the value the source states; the record's rate laws divide by it, and the independent oracle failed to converge. **Fixed.** |
+| `BIOMD0000000954` | atomizer | rate law that names a species the reaction does not consume | The numeric mass-action probe replaced the state-dependent rate law with a fitted constant, so the exported model was a snapshot of the law rather than the law, and the record's status was not reproducible at a fixed commit. **Fixed.** |
 | `BIOMD0000001098` | atomizer | MathML `<apply>` without an operator | Every reaction's kinetic law is an `<apply>` whose operator is a `<ci>` naming a parameter. MathML reads that as a call to an undeclared function, the Atomizer translated it faithfully, and the emitted rule does not parse. **Now reported as unsupported.** |
 | `BIOMD0000000674` | writer | reversible rule with a `TotalRate` modifier | The Atomizer's translation matches the source (see below), but the C++ SBML writer writes the reverse direction of a reversible `TotalRate` rule with an extra factor for the product species and without the `bng:totalRate` annotation, so the written SBML does not reproduce the source's mathematics. **Not fixed here: the defect is in `cpp/io/SbmlWriter.cpp`, not in the Atomizer.** |
 | `BIOMD0000000338`, `BIOMD0000000339` | harness | event-driven compartment size with a species rate rule | The Atomizer refuses explicitly: a species rate rule in a compartment whose size an event changes has no exact BNGL lowering. The harness does not recognise the refusal string and records the record as failed rather than unsupported. |
@@ -294,6 +349,152 @@ combinatorial in the number of inferred binding sites. For example
 to 413 species and 417 reactions in atomized mode, and the network generation
 alone takes 10.9 s. On the larger records the same expansion does not finish
 inside the per-model budget.
+
+## The expectation manifest
+
+The inventory above records one measurement. The
+**expectation manifest**,
+[`provenance/curated-biomodels-corpus-expectations.json`](../provenance/curated-biomodels-corpus-expectations.json),
+records the *expected* verdict of every curated record at every stage of the
+corpus gate, so a corpus regression fails a comparison instead of needing a
+human to read two large reports side by side.
+
+It is the corpus counterpart of the official SBML Test Suite's
+[expectation manifest](../provenance/sbml-campaign/README.md), and it uses
+the same vocabulary, so the campaign has one set of words for a gap.
+
+The manifest is a record of *one* measurement — the flat-mode pass of commit
+`48315b958685279838b4960e24b12498e0dc1363` with `PYTHONHASHSEED=0`, a 180 s
+per-model budget and four workers, taken while holding one of the campaign's
+shared verification slots on a machine shared with the rest of the campaign.
+Its `provenance` block records the report's SHA-256, the environment, the run
+budget and the load of that pass, because the timeout bucket depends on all
+three. The tables above describe an earlier pass of the same corpus, so the
+counts differ; the differences are the Atomizer fixes that have since
+landed, the two records that regressed, and the load-induced timeouts that
+the comparison reports as timeouts rather than as verdicts.
+
+### Schema
+
+```json
+{
+  "schema_version": 1,
+  "kind": "curated-biomodels-corpus-expectations",
+  "generator": "scripts/ci/curated_biomodels_corpus_inventory.py",
+  "stages": ["conversion", "roundtrip_structure", "independent_comparison"],
+  "statuses": ["passed", "unsupported", "failed", "not_tested", "unsupported_format", "timeout"],
+  "sides": ["harness", "atomizer", "not-applicable"],
+  "corpus": {
+    "inventory_query": "curationstatus:Manually curated",
+    "snapshot_date": "2026-09-15",
+    "expected_total_records": 1096,
+    "expected_sbml_records": 1075,
+    "expected_non_sbml_records": 21,
+    "record_count": 1096,
+    "sbml_path_record_count": 1083
+  },
+  "source_report": {
+    "sha256": "<sha256 of the harness report the manifest was generated from>",
+    "bng3_commit": "<the commit the manifest describes>",
+    "measurement_date": "<date of the measurement>"
+  },
+  "provenance": {"tool_versions": {…}, "run_budget": {…}, "load": {…}},
+  "stage_counts": {…},
+  "gap_counts": {"by_construct": {…}, "by_side": {…}},
+  "cases": {
+    "BIOMD0000000174": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
+    "BIOMD0000001066": {"conversion": "unsupported_format", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"construct": "format:not-an-sbml-artifact", "causes": ["format"], "side": "not-applicable"}}}
+  }
+}
+```
+
+* `cases` is keyed by the BioModels id and holds one status per stage. The
+  status vocabulary is closed: `passed`, `unsupported`, `failed`,
+  `not_tested`, `unsupported_format`, `timeout`.
+* The stages are the corpus counterparts of the official suite's first three:
+  `conversion` is the corpus gate's record status, `roundtrip_structure` is
+  its check that the written SBML is valid and that the native reader reads
+  back the generated network's species and reaction counts, and
+  `independent_comparison` is BNG3's CVODE against libRoadRunner's CVODE. A
+  published BioModel has no official reference trajectory, so the corpus has
+  no fourth stage.
+* `passed` is a result. `failed` is a result too: the stage ran and
+  disagreed with the independent comparison, which is a finding to
+  investigate, not a construct that is missing. A `failed` verdict carries
+  no gap.
+* `unsupported` and `unsupported_format` are the only gaps. Every refusal
+  carries a `gap` entry that names the **construct** that is not
+  representable today, the harness's **cause** labels for it, and the
+  **side** of the gap:
+  * `atomizer` — a construct is not representable today;
+  * `harness` — the gate could not evaluate the record, so the record is a
+    measurement limitation rather than a claim about the Atomizer;
+  * `not-applicable` — the record does not present a convertible SBML
+    document: it is not an SBML artifact, its archive carries no SBML, or
+    its source document is not SBML-valid.
+* `not_tested` means the stage produced no verdict: it was not reached, or
+  the report carries no verdict for it.
+* `timeout` is **not a verdict**. The per-model budget is sized for an
+  unloaded machine, so on a shared machine a timeout records that the
+  machine was busy. A difference in which a timeout takes part is
+  classified `timeout` and is never counted as a regression in either
+  direction.
+* `corpus` identifies the collection, `source_report` identifies the
+  measurement: the report's SHA-256, the commit the manifest describes and
+  the measurement date. `provenance` records the environment, the run budget
+  and the load of the run, because the timeout bucket depends on all three.
+
+### Regenerating and comparing
+
+```bash
+# regenerate the committed manifest (an explicit, reviewable act)
+python scripts/ci/curated_biomodels_corpus_inventory.py \
+  --flat-report <flat report>.json \
+  --expectations-out provenance/curated-biomodels-corpus-expectations.json \
+  --measurement-date <date> --measured-commit <sha> \
+  --expectations-provenance provenance/curated-biomodels-corpus-provenance.json
+
+# the committed manifest regenerates byte-identically from the report it names
+python scripts/ci/curated_biomodels_corpus_inventory.py \
+  --flat-report <flat report>.json \
+  --expectations provenance/curated-biomodels-corpus-expectations.json \
+  --verify-regeneration
+
+# compare a fresh run against the committed manifest
+python scripts/ci/curated_biomodels_corpus_inventory.py \
+  --flat-report <flat report>.json \
+  --expectations provenance/curated-biomodels-corpus-expectations.json \
+  --report-revision <the commit the run executed>
+```
+
+Every difference is reported:
+
+* a record that was `passed` and no longer is is a **regression**;
+* a record that moves to `passed` is an **improvement**, and is only
+  accepted once the manifest is explicitly updated;
+* any other verdict change is a **change**;
+* a record that disappeared is reported (`missing-record`), never ignored;
+  only a partial run may say that it did not execute a record;
+* a record the run measured but the manifest does not name is reported
+  (`unrecorded-record`);
+* a difference in which a timeout takes part is reported as a timeout
+  difference and is not a verdict difference.
+
+A run against a different corpus snapshot or a different tool revision is
+rejected before any comparison, so a stale expectation is never compared
+against a different corpus.
+
+### Comparing two corpus reports with each other
+
+[`scripts/ci/compare_biomodels_suite_reports.py`](../scripts/ci/compare_biomodels_suite_reports.py)
+compares two corpus reports with each other, for the same purpose as
+[`compare_sbml_suite_reports.py`](../scripts/ci/compare_sbml_suite_reports.py)
+does for the official suite. It reports verdicts rather than provenance (the
+imported package's path, the native extension's digest, the command line and
+the working directory are reported as notes), it compares the aggregate id
+lists as multisets so a reordered run is not a difference, it names the
+stage of every per-record difference, and it keeps a timeout-only difference
+distinct from a real change.
 
 ## Reading the inventory
 

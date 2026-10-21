@@ -24,7 +24,7 @@ from scripts.ci import sbml_campaign_inventory as inventory
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
-INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-20.json"
+INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-main-2026-10-20b.json"
 LOCK = REPO / "provenance" / "upstreams.lock.yml"
 TOOL = REPO / "scripts" / "ci" / "sbml_campaign_inventory.py"
 GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"

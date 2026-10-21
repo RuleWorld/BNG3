@@ -114,6 +114,8 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ("trigger is not a simple time threshold", "events:state-trigger-not-schedulable"),
     ("sbml event(s) parsed", "events:untranslated"),
     ("is marked fast", "fast-reaction:no-fast-equilibrium-solve"),
+    ("has an infinite value", "parameters:non-finite-value"),
+    ("has nan value", "parameters:non-finite-value"),
     ("in math; bngl has no built-in function", "mathml:no-bngl-builtin"),
     ("no mathml expression", "sbml:empty-math"),
     ("have no mathml kinetic law", "sbml:reaction-without-kinetic-law"),

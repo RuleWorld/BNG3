@@ -64,6 +64,13 @@ for the transfers, the CPU pool otherwise.  The backend that produced each
 case's numbers is recorded on the case, and the GPU/CPU sampler agreement is
 measured separately on a sample of cases.
 
+The CPU pool runs on its single worker by default.  The multi-worker pool
+shares one ``OdeIntegrator`` across its threads, and the SSA path writes that
+integrator's observable scratch when a model has a state-dependent rate law,
+so the multi-worker result is not bit-reproducible under a fixed seed; the
+single-worker pool is, so the recorded seed policy determines the numbers this
+script reports.
+
 References
 ----------
 
@@ -1898,7 +1905,21 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_GPU_BACKEND,
         help="auto/metal/cuda/none; 'none' forces the CPU pool",
     )
-    parser.add_argument("--cpu-threads", type=int, default=0)
+    parser.add_argument(
+        "--cpu-threads",
+        type=int,
+        default=1,
+        help=(
+            "worker threads of the CPU batch pool.  The default is the "
+            "single-worker pool: the multi-worker pool shares one OdeIntegrator "
+            "across its threads, and the SSA path writes that integrator's "
+            "group scratch when a model has a state-dependent rate law, so the "
+            "multi-worker result is not bit-reproducible under a fixed seed "
+            "(three identical runs of semantic/00990 gave 86, 89 and 87 "
+            "violating points).  The single-worker pool is reproducible, so the "
+            "recorded seed policy determines the numbers this script reports."
+        ),
+    )
     parser.add_argument(
         "--gpu-reaction-threshold",
         type=int,
@@ -2076,6 +2097,12 @@ def main(argv: list[str] | None = None) -> int:
                 "recorded on the case"
             ),
             "cpu_threads": options.cpu_threads,
+            "cpu_pool_note": (
+                "the CPU batch pool runs on its single worker so that the "
+                "recorded seed policy determines the numbers; the multi-worker "
+                "pool is not bit-reproducible for a model with a "
+                "state-dependent rate law"
+            ),
             "cpu_fallback": not options.no_cpu_fallback,
             "suite_categories": options.categories,
         },

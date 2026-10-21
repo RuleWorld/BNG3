@@ -184,6 +184,27 @@ def test_a_runtime_pep604_union_is_reported():
     assert all(finding.minimum >= (3, 10) for finding in findings)
 
 
+def test_a_bitwise_or_of_module_constants_is_not_a_type_union():
+    """``os.O_WRONLY | os.O_CREAT`` is a bitwise OR, not a type union.
+
+    A name in capitals is a constant, so the checker must not read it as a
+    class: the expression works on every supported interpreter, and a checker
+    that reports it would make the whole repository look incompatible with
+    its own floor.
+    """
+
+    findings = _findings(
+        "import os\n\n\ndef f():\n    return os.O_WRONLY | os.O_CREAT | os.O_TRUNC\n"
+    )
+    assert findings == [], [finding.render() for finding in findings]
+
+    findings = _findings(
+        "import fcntl\n\n\ndef f(handle):\n"
+        "    return fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+    )
+    assert findings == [], [finding.render() for finding in findings]
+
+
 def test_a_pep604_annotation_is_reported_when_it_is_evaluated():
     findings = _findings("def f(x: int | None):\n    return x\n")
     assert "PEP 604" in _features(findings)
