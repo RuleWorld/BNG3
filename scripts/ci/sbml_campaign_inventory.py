@@ -157,6 +157,14 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ),
     ("does not define an official time-course reference", "reference:not-applicable"),
     ("trigger is not a simple time threshold", "events:state-trigger-not-schedulable"),
+    (
+        "simultaneous same-priority event group",
+        "events:unorderable-simultaneous-execution",
+    ),
+    (
+        "simultaneous event without a priority",
+        "events:unorderable-simultaneous-execution",
+    ),
     ("sbml event(s) parsed", "events:untranslated"),
     ("is marked fast", "fast-reaction:no-fast-equilibrium-solve"),
     ("in math; bngl has no built-in function", "mathml:no-bngl-builtin"),
