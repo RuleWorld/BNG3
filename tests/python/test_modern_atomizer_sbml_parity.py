@@ -3801,8 +3801,13 @@ def test_delayed_affine_rate_rule_self_reset_respects_value_time():
         )
 
         assert result.success, result.error
+        # ``P`` carries a rate rule, so its value is the rate rule's state
+        # and the assignment has to reach that state (SBML Level 3 Version 2
+        # Core, Sec. 4.9.4 "RateRule" and Sec. 4.12.5 "EventAssignment").
         assert (
-            result.bngl.count(f'setParameter("P", "{expected_value}")')
+            result.bngl.count(
+                f'setConcentration("M___rate_rule_state__P()", "{expected_value}")'
+            )
             == expected_count
         )
         assert "untranslated" not in result.bngl.lower()
@@ -3844,7 +3849,11 @@ def test_affine_rate_rule_self_reset_supports_static_companion_assignment():
     result = Atomizer(quiet_mode=True).atomize(xml)
 
     assert result.success, result.error
-    assert result.bngl.count('setParameter("P", "11.9")') == 3
+    # ``P`` carries a rate rule, so the assignment reaches the state species
+    # that carries its value; ``Q`` carries no rule, so it stays a parameter.
+    assert (
+        result.bngl.count('setConcentration("M___rate_rule_state__P()", "11.9")') == 3
+    )
     assert result.bngl.count('setParameter("Q", "5")') == 3
     assert "untranslated" not in result.bngl.lower()
 
