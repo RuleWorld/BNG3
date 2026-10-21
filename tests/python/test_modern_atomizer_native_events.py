@@ -328,7 +328,14 @@ def test_sbml_export_preserves_the_native_event(tmp_path):
 def test_sbml_export_preserves_the_delayed_event(tmp_path):
     import libsbml
 
-    result = atomize(coupled_event_model(delay="1.5"))
+    result = atomize(
+        coupled_event_model(delay="1.5").replace(
+            '<event id="reset" useValuesFromTriggerTime="true">',
+            '<event id="reset" useValuesFromTriggerTime="true">'
+            '<priority><math xmlns="http://www.w3.org/1998/Math/MathML">'
+            "<cn>7</cn></math></priority>",
+        )
+    )
 
     model = cpp.parse_string(result.bngl)
     network = cpp.generate_network(model, max_iter=100)

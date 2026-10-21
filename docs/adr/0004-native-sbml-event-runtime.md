@@ -107,7 +107,14 @@ ODE solver, event queue, stochastic engine, and conformance tests.
   implemented slice covers the delay and both snapshot choices; persistence
   and priority ordering are refused rather than approximated.
 - A same-priority event set that requires random ordering must not be
-  serialized as one arbitrarily ordered deterministic action sequence.
+  serialized as one arbitrarily ordered deterministic action sequence.  SBML
+  4.12 defines simultaneous execution as several events with the same
+  execution instant: without a `Priority` the order is undefined and any
+  order is allowed, with different `Priority` values the higher one runs
+  first, and with equal `Priority` values the specification requires a
+  random order.  A model that reaches the last case therefore has no
+  deterministic execution and must stay explicitly unsupported rather than
+  take an arbitrary order.
 - BNG2 and PyBioNetGen remain read-only comparators. Reports must distinguish
   standard BNGL parity from BNG3 extension behavior.
 - Overall Atomizer completion still requires the full feature checklist,
