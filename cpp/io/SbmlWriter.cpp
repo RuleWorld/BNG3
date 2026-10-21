@@ -22,7 +22,6 @@
 #include "engine/NetworkGenerator.hpp"
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
-#include "compile/TotalRate.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -68,6 +67,20 @@ bool isInternalFunction(const std::string& name) {
            name.rfind("__rate_rule__", 0) == 0 ||
            name.rfind("__rate_rule_pos__", 0) == 0 ||
            name.rfind("__rate_rule_neg__", 0) == 0;
+}
+
+bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getRuleName() != origin) continue;
+        for (const auto& modifier : rule.getModifiers()) {
+            std::string lowerModifier = modifier;
+            std::transform(lowerModifier.begin(), lowerModifier.end(), lowerModifier.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (lowerModifier == "totalrate") return true;
+        }
+        break;
+    }
+    return false;
 }
 
 const ast::Expression* rateExpressionForOrigin(
@@ -741,7 +754,7 @@ std::string SbmlWriter::writeReactions(
         }
 
         // Kinetic law with MathML
-        if (bng::compile::isTotalRateReaction(model, rxn.getOriginRuleName())) {
+        if (hasTotalRateModifier(model, rxn.getOriginRuleName())) {
             sbml << "        <annotation><bng:totalRate "
                     "xmlns:bng=\"https://bionetgen.org/sbml\"/></annotation>\n";
         }
@@ -1221,8 +1234,7 @@ std::string SbmlWriter::rateLawToMathML(
 
     std::vector<std::string> terms;
     const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
-    const bool totalRate =
-        bng::compile::isTotalRateReaction(model, rxn.getOriginRuleName());
+    const bool totalRate = hasTotalRateModifier(model, rxn.getOriginRuleName());
     // A TotalRate rule already carries the complete SBML flux.  Its reaction
     // center symmetry factor is not part of that flux: multiplying it here
     // would make a BNGL -> SBML round-trip disagree with the BNGL TotalRate

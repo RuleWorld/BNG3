@@ -1,13 +1,7 @@
 {
   "$schema": "provenance/schemas/corpus-selection.schema.json",
-  "schema_version": 2,
+  "schema_version": 1,
   "selection_status": "pending-maintainer-approval",
-  "accepted_selections": {
-    "status": "pending-maintainer-approval",
-    "approved_tiers": [],
-    "approved_models": [],
-    "note": "No tier membership is approved, so the accepted selection set is empty by record and not by omission. The selected models and the separate 71-model workflow are reconciled in the reconciliation record."
-  },
   "source_lock": {
     "path": "provenance/upstreams.lock.yml",
     "sha256": "sha256:01ef836f4d8af178916b0f27b6a5f3963b2f25005e211a5f770ed4d79065bd30"
@@ -155,151 +149,6 @@
     "x": [],
     "b": []
   },
-  "tier_justifications": {
-    "s": {
-      "question": "every-commit smoke coverage of the parser, the network expansion and the observable projection",
-      "owner": "validation and release role",
-      "capability": "network.expansion",
-      "budget": {
-        "models": 10,
-        "stage_timeout_seconds": 60
-      }
-    },
-    "p": {
-      "question": "legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures",
-      "owner": "numerical and stochastic validation",
-      "capability": "network.expansion",
-      "budget": {
-        "models": 106,
-        "stage_timeout_seconds": 180
-      }
-    },
-    "nf": {
-      "question": "network-free trajectory comparison with the independently built native NFsim oracle",
-      "owner": "NFsim semantics and stochastic validation",
-      "capability": "nfsim.direct-ast",
-      "budget": {
-        "models": 4,
-        "stage_timeout_seconds": 300
-      }
-    },
-    "expr": {
-      "question": "expression and rate-law agreement of the right-hand side with the oracle to 1e-9",
-      "owner": "expression and rate-law semantics",
-      "capability": "compiler.rate-laws",
-      "budget": {
-        "models": 5,
-        "stage_timeout_seconds": 300
-      }
-    },
-    "x": {
-      "question": "semantic round trip of the supported interchange formats and the consumption of the written artifacts by their downstream readers",
-      "owner": "pending-maintainer",
-      "capability": "export.sbml",
-      "budget": {
-        "models": 0,
-        "stage_timeout_seconds": 300
-      },
-      "empty_reason": "The format tier is empty because its RuleHub selector and its maintainer-owned budget are not approved yet. The empty selection is recorded here instead of being hidden."
-    },
-    "b": {
-      "question": "runtime and memory budget of the stress tier on the supported hardware",
-      "owner": "pending-maintainer",
-      "capability": "simulation.ode",
-      "budget": {
-        "models": 0,
-        "stage_timeout_seconds": 1800
-      },
-      "empty_reason": "The stress tier is empty because its RuleHub selector and its maintainer-owned budget are not approved yet. The empty selection is recorded here instead of being hidden."
-    }
-  },
-  "reconciliation": {
-    "workflow": "frozen 100-model Tier-P selection",
-    "tested_head": "2d760ccf748fe95f4e5ff8c97d4d0df0e5a03d69",
-    "status": "completed_with_failures; not a full parity pass",
-    "selection_manifest_sha256": "60cbbdad41b926278aae04ed69bb54846f72299d815706ff2d040df4fddc9f4c",
-    "selected_model_count": 100,
-    "result": "71 passed, 29 failed, 0 skipped, 0 incomplete; 3149.74s (52m 29s)",
-    "failure_categories": {
-      "oracle_timeouts": {
-        "count": 10,
-        "models": [
-          "AN",
-          "ANx",
-          "ANx_noActivity",
-          "e8",
-          "e9",
-          "hybrid_test",
-          "hybrid_test_hpp",
-          "test_write_sbml_multi",
-          "tlbr",
-          "tlbr_performance"
-        ]
-      },
-      "BNG2_source_incompatibilities": {
-        "count": 13,
-        "models": [
-          "actin_branch",
-          "actin_branch_forFitToData",
-          "actin_simple",
-          "blbr",
-          "fceri_fyn",
-          "fceri_fyn_lig",
-          "fceri_fyn_trimer",
-          "fceri_gamma2",
-          "fceri_ji",
-          "fceri_ji_red",
-          "fceri_lyn_745",
-          "fceri_trimer",
-          "motor"
-        ]
-      },
-      "missing_inputs_or_dependencies": {
-        "count": 4,
-        "models": [
-          "michment_cont",
-          "test_sat_cont",
-          "test_sbml_flat",
-          "test_sbml_structured"
-        ]
-      },
-      "strict_network_mismatches": {
-        "count": 2,
-        "models": [
-          "oscSystem",
-          "test_tfun"
-        ]
-      }
-    },
-    "evidence": "tests/validation/evidence/parity-report.json",
-    "added_models": [
-      {
-        "id": "antigen_binding",
-        "recorded_outcome": "passed"
-      },
-      {
-        "id": "clonal_expansion",
-        "recorded_outcome": "passed"
-      },
-      {
-        "id": "cytotoxic_killing",
-        "recorded_outcome": "passed"
-      },
-      {
-        "id": "exhaustion_switch",
-        "recorded_outcome": "oracle error: BNG2 aborts: Parameter 'Hill' is referenced but not defined"
-      },
-      {
-        "id": "threshold_observable",
-        "recorded_outcome": "passed"
-      },
-      {
-        "id": "threshold_observable_species",
-        "recorded_outcome": "failed: one observable group present only in BNG3 output"
-      }
-    ],
-    "coverage_claim": "The completed Tier-P reports cover the committed 100-model selection only."
-  },
   "records": [
     {
       "id": "AN",
@@ -308,15 +157,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/chemotaxisAdaptation/AN.bngl documents itself as \"AN.bngl An extended version of the Assistance Neighborhood (AN) model of chemoreceptor adaptation in E. coli originally presented here: Hansen, Endres, & Win...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "ANx",
@@ -325,15 +166,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/ANx.bngl documents itself as \"ANx.bngl - the extended version of the Assistance neighborhood model that includes an updated receptor toplogy.  The original AN model (presented in Hansen,...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "ANx_noActivity",
@@ -342,15 +175,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/performance_test_models/ANx_noActivity.bngl documents itself as \"ANx_noActivity.bngl - this file is a simplified version of the extended assistance neighborhood model of chemoreceptor activity, where the functions, coopera...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "CaOscillate_Func",
@@ -361,17 +186,7 @@
         "s",
         "p",
         "expr"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/CaOscillate_Func.bngl publishes G, P, C and 1 more",
-        "tiers": [
-          "s",
-          "p",
-          "expr"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "CaOscillate_Sat",
@@ -380,15 +195,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/CaOscillate_Sat.bngl publishes G, P, C and 1 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "Haugh2b",
@@ -397,15 +204,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/Haugh2b.bngl publishes S2_P_tot, S2_P_mem, R_total and 2 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "Motivating_example",
@@ -415,16 +214,7 @@
       "tiers": [
         "s",
         "p"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/Motivating_example.bngl documents itself as \"Signal Transduction with receptor internalization and transcriptional reg.  # vanilla BNGL code: justin.s.hogg@gmail.com                                  # c...\"",
-        "tiers": [
-          "s",
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "Motivating_example_cBNGL",
@@ -434,16 +224,7 @@
       "tiers": [
         "s",
         "p"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/Motivating_example_cBNGL.bngl documents itself as \"Signal transduction with receptor internalization and transcriptional reg.  # cBNGL code: justin.s.hogg@gmail.com                                         # c...\"",
-        "tiers": [
-          "s",
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "PushPull",
@@ -452,15 +233,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/simple_PushPull/PushPull.bngl documents itself as \"PushPull.bngl A simple toy example model of an enzymatic reaction systems composed of two enzymes named A and B that competitively phosphorylate and dephosph...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "Repressilator",
@@ -470,16 +243,7 @@
       "tiers": [
         "s",
         "p"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/Repressilator.bngl publishes pTetR, pCI, pLacI and 1 more",
-        "tiers": [
-          "s",
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "SHP2_base_model",
@@ -488,15 +252,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/SHP2_base_model.bngl documents itself as \"Base model of Shp2 regulation from Barua, Faeder, and Haugh (2006). Copyright 2006, North Carolina State University and Los Alamos National Laboratory Concen...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "actin_branch",
@@ -505,15 +261,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/actin/actin_branch.bngl documents itself as \"Model of actin assembly and branching at steady state, based on Roland, et al 2008 Biophys J. 94:2082-94 and Beltzner and Polard, 2008 J. of Bio. Chem. 283,1...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "actin_branch_forFitToData",
@@ -522,15 +270,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/actin/actin_branch_forFitToData.bngl documents itself as \"Model of actin assembly and branching at steady state, based on Roland, et al 2008 Biophys J. 94:2082-94 and Beltzner and Polard, 2008 J. of Bio. Chem. 283,1...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "actin_simple",
@@ -539,15 +279,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/actin/actin_simple.bngl documents itself as \"Simple model of steady state Actin assembly and disassembly by ADF/cofilin based on Roland, et al 2008 Biophys J. 94:2082-94\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "antigen_binding",
@@ -556,15 +288,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/immune/antigen_binding.bngl documents itself as \"Finite-antigen reversible binding between a T-cell receptor and its ligand. Domain expectation. This is the trap the development checklist names: a reversibl...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "added-after-the-frozen-selection"
-      }
+      ]
     },
     {
       "id": "blbr",
@@ -574,16 +298,7 @@
       "tiers": [
         "s",
         "p"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/blbr.bngl declares no observable",
-        "tiers": [
-          "s",
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "clonal_expansion",
@@ -592,15 +307,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/immune/clonal_expansion.bngl documents itself as \"Clonal expansion of a CD8+ T-cell clone with a crowding-limited carrying capacity. Domain expectation. Antigen-activated T cells divide; division stops once...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "added-after-the-frozen-selection"
-      }
+      ]
     },
     {
       "id": "continue",
@@ -609,15 +316,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/continue.bngl documents itself as \"Test trajectory continuation\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "cytotoxic_killing",
@@ -626,15 +325,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/immune/cytotoxic_killing.bngl documents itself as \"Cytotoxic T-cell killing of a target pool with a saturating effector function. Domain expectation. A CD8+ effector does not kill in proportion to how many ef...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "added-after-the-frozen-selection"
-      }
+      ]
     },
     {
       "id": "deleteMolecules",
@@ -643,15 +334,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/deleteMolecules.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e1",
@@ -660,15 +343,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e1.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e2",
@@ -677,15 +352,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e2.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e3",
@@ -694,15 +361,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e3.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e4",
@@ -711,15 +370,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e4.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e5",
@@ -728,15 +379,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e5.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e6",
@@ -745,15 +388,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e6.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e7",
@@ -762,15 +397,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e7.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e8",
@@ -779,15 +406,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e8.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "e9",
@@ -796,15 +415,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/multisite_phos/e9.bngl publishes Efree, Ffree, S1P",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "egfr_net",
@@ -814,16 +425,7 @@
       "tiers": [
         "s",
         "p"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/egfr_net.bngl publishes Dimers, Sos_act, RP and 12 more",
-        "tiers": [
-          "s",
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "empty_compartments_block",
@@ -832,15 +434,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/empty_compartments_block.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "exhaustion_switch",
@@ -849,15 +443,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/immune/exhaustion_switch.bngl documents itself as \"Exhaustion/memory split driven by a threshold on cumulative antigen stimulus. Domain expectation. An effector cell keeps proliferating until its cumulative a...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "added-after-the-frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_fyn",
@@ -866,15 +452,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_fyn.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_fyn_lig",
@@ -883,15 +461,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_fyn_lig.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_fyn_trimer",
@@ -900,15 +470,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_fyn_trimer.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_gamma2",
@@ -917,15 +479,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_gamma2.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_ji",
@@ -934,15 +488,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_ji.bngl publishes LynFree, RecMon, RecDim and 7 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_ji_red",
@@ -951,15 +497,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_ji_red.bngl publishes LynFree, RecMon, RecDim and 7 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_lyn_745",
@@ -968,15 +506,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_lyn_745.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "fceri_trimer",
@@ -985,15 +515,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/fceRI_compendium/fceri_trimer.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "gene_expr",
@@ -1003,16 +525,7 @@
       "tiers": [
         "s",
         "p"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/gene_expr.bngl documents itself as \"Three-stage Model of Gene Expression from: V Shahrezaei and PS Swain (2008) PNAS doi: 10.1073/pnas.0803850105 Let n be the number of proteins in the system a...\"",
-        "tiers": [
-          "s",
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "gene_expr_func",
@@ -1021,15 +534,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/gene_expr_func.bngl documents itself as \"Three-stage Model of Gene Expression from: V Shahrezaei and PS Swain (2008) PNAS doi: 10.1073/pnas.0803850105 Let n be the number of proteins in the system a...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "gene_expr_simple",
@@ -1038,15 +543,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/gene_expr_simple.bngl documents itself as \"Simple of Gene Expression Model from: V Shahrezaei and PS Swain (2008) PNAS doi: 10.1073/pnas.0803850105 NOTE: This model tests the fixed species flag in SSA...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "heise",
@@ -1055,15 +552,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/heise.bngl documents itself as \"Validate state inheritance in a symmetric context At equilibrium:  A = sqrt(v/kab) = 1, B = v/(2*kb0) = 1/2\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "hybrid_test",
@@ -1072,15 +561,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/hybrid_test.bngl documents itself as \"Hybrid Generator Test: Trivalent ligand - bivalent receptor model\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "hybrid_test_hpp",
@@ -1089,15 +570,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; tests/validation/Validate/DAT_validate/hybrid_test_hpp.bngl documents itself as \"Created by BioNetGen 2.2.6\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "isingspin_energy",
@@ -1107,16 +580,7 @@
       "tiers": [
         "p",
         "expr"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/isingspin_energy.bngl documents itself as \"Ising Spin Model, energy-based 3x3 lattice w/ toroidal topology\"",
-        "tiers": [
-          "p",
-          "expr"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "isingspin_localfcn",
@@ -1126,16 +590,7 @@
       "tiers": [
         "p",
         "expr"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/isingspin_localfcn.bngl documents itself as \"Ising Spin Model, implemented with local-functions 3x3 lattice w/ toroidal topology\"",
-        "tiers": [
-          "p",
-          "expr"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "isomerization",
@@ -1144,15 +599,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/isomerization.bngl documents itself as \"Simple isomerization model Let A be a protein with two conformations, R and T. If a system contains N molecules of A, then the equilibrium distribution of K...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "issue_198_short",
@@ -1161,15 +608,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/issue_198_short.bngl publishes Afree",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "localfunc",
@@ -1181,18 +620,7 @@
         "p",
         "nf",
         "expr"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/localfunc.bngl documents itself as \"Test local function expansion\"",
-        "tiers": [
-          "s",
-          "p",
-          "nf",
-          "expr"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "michment",
@@ -1203,17 +631,7 @@
         "s",
         "p",
         "expr"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/michment.bngl documents itself as \"\"michment.bngl\" is designed to test the read/write network feature of BNG. This model works in conjunction with \"michment_cont.bngl\". This model file defines...\"",
-        "tiers": [
-          "s",
-          "p",
-          "expr"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "michment_cont",
@@ -1222,15 +640,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/michment_cont.bngl documents itself as \"\"michment_cont.bngl\" is part of a pair of models that tests the read/write features of BNG. See \"michment.bngl\" for more details. --J.Hogg, 19 Apr 2012\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "motor",
@@ -1240,16 +650,7 @@
       "tiers": [
         "p",
         "nf"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/flagellar_motor/motor.bngl documents itself as \"motor.bngl Example of global functions by simulating the flagellar motor and CheYp levels.  The rate of switching rotational states of the flagellar motor de...\"",
-        "tiers": [
-          "p",
-          "nf"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "nfkb_illustrating_protocols",
@@ -1258,15 +659,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/nfkb_illustrating_protocols.bngl documents itself as \"3 state IKK. A20 acts by inhibiting the activation of IKKK, and accelerating the converstion of active to inactive IKK\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "oscSystem",
@@ -1275,15 +668,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/oscillatory_system/oscSystem.bngl documents itself as \"Oscillatory system driven by negative feedback with explicit time delay arrising from protein synthesis and nuclear shuttling.  To switch between different r...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "poly",
@@ -1292,15 +677,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/performance_test_models/poly.bngl documents itself as \"Trivalent ligand - bivalent receptor\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "push_pull",
@@ -1309,15 +686,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/performance_test_models/push_pull.bngl documents itself as \"Abstract model of interactions between multiple tyrosine residuals of a receptor dimmer and an adaptor protein. Each receptor has 3 tyrosines, which can be p...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "simple_system",
@@ -1328,17 +697,7 @@
         "s",
         "p",
         "nf"
-      ],
-      "selection": {
-        "reason": "tier s: every-commit smoke coverage of the parser, the network expansion and the observable projection; models/simple_system.bngl documents itself as \"simple_system.bngl An example model for running NFsim to get you started. Comments in BNGL are always preceded with a pound (#) character, so that any text t...\"",
-        "tiers": [
-          "s",
-          "p",
-          "nf"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "statfactor",
@@ -1347,15 +706,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/statfactor.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_ANG_SSA_synthesis_simple",
@@ -1364,15 +715,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_ANG_SSA_synthesis_simple.bngl documents itself as \"testing automatic network generation for SSA\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_ANG_parscan_synthesis_simple",
@@ -1381,15 +724,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_ANG_parscan_synthesis_simple.bngl documents itself as \"Testing automatic  network generation for parameter scan\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_ANG_synthesis_simple",
@@ -1398,15 +733,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_ANG_synthesis_simple.bngl documents itself as \"Testing automatic  network generation for CVODE\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_MM",
@@ -1415,15 +742,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_MM.bngl publishes St, Pt, Et",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_assignment",
@@ -1432,15 +751,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_assignment.bngl publishes Obs1, Obs2, Obs3",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_compartment_XML",
@@ -1449,15 +760,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_compartment_XML.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_expression_xml_escaping",
@@ -1466,15 +769,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_expression_xml_escaping.bngl documents itself as \"Test case for issue #281: Expression.pm::toXML global substitution bug This model tests that multiple occurrences of <, >, &&, and || operators are properly...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_fixed",
@@ -1483,15 +778,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_fixed.bngl documents itself as \"test fixed species\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_mratio",
@@ -1500,15 +787,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_mratio.bngl publishes C_obs",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_network_gen",
@@ -1517,15 +796,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_network_gen.bngl documents itself as \"Testing automatic network generation given the appropriate method, using the fceri.bngl model\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_paramname",
@@ -1534,15 +805,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_paramname.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_partial_dynamical_scaling",
@@ -1551,15 +814,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_partial_dynamical_scaling.bngl documents itself as \"# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # This is the model for testing the partial scaling algorithm (PSA)  # method...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_sat",
@@ -1568,15 +823,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_sat.bngl publishes St, Pt, Et",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_sat_cont",
@@ -1585,15 +832,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_sat_cont.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_sbml_flat",
@@ -1602,15 +841,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_sbml_flat.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_sbml_flat_SBML",
@@ -1619,15 +850,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; tests/validation/Validate/DAT_validate/test_sbml_flat_SBML.bngl documents itself as \"@notes:'This is a plain translation of an SBML model created on 09/08/2016. The original model has 5 molecules and 6 reactions. The translated model has 5 mo...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_sbml_structured",
@@ -1636,15 +859,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_sbml_structured.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_sbml_structured_SBML",
@@ -1653,15 +868,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; tests/validation/Validate/DAT_validate/test_sbml_structured_SBML.bngl documents itself as \"@notes:'This is an atomized translation of an SBML model created on 09/08/2016. The original model has 5 molecules and 5 reactions. The translated model has...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_setconc",
@@ -1670,15 +877,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_setconc.bngl publishes LR",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_synthesis_cBNGL_simple",
@@ -1687,15 +886,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_synthesis_cBNGL_simple.bngl publishes compartment_suffix, compartment_preffix, constant_source and 1 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_synthesis_complex",
@@ -1704,15 +895,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_synthesis_complex.bngl publishes add_molecule, constant_source, non_constant_source and 1 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_synthesis_complex_0_cBNGL",
@@ -1721,15 +904,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_synthesis_complex_0_cBNGL.bngl publishes vs_suffix, vs_prefix, ss_suffix and 3 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_synthesis_complex_source_cBNGL",
@@ -1738,15 +913,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_synthesis_complex_source_cBNGL.bngl publishes vs_suffix, vs_prefix, ss_suffix and 3 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_synthesis_simple",
@@ -1755,15 +922,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_synthesis_simple.bngl publishes add_molecule, constant_source, non_constant_source",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun",
@@ -1772,15 +931,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun.bngl publishes A, B, C and 2 more",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_expr",
@@ -1789,15 +940,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_expr.bngl documents itself as \"Test tfun in complex expression\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_expr2",
@@ -1806,15 +949,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_expr2.bngl documents itself as \"Test tfun in complex expression - simpler test\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_file",
@@ -1823,15 +958,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_file.bngl documents itself as \"Test file-based tfun Uses external .tfun file with exponentially growing rate\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_net_full",
@@ -1840,15 +967,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_net_full.bngl documents itself as \"Test complete NET file emission for tfun\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_observable",
@@ -1857,15 +976,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_observable.bngl documents itself as \"Test tfun with observable indexing Tfun rate depends on current population of X\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_ode_simple",
@@ -1874,15 +985,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_ode_simple.bngl documents itself as \"Test simple inline tfun with ODE integration Tfun implements f(t) = t, which should produce X(t) = 0.5*t^2\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_ode_step",
@@ -1891,15 +994,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_ode_step.bngl documents itself as \"Test tfun with step interpolation method Tfun implements step function to verify method=>\"step\" works correctly\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_parse",
@@ -1908,15 +1003,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_parse.bngl documents itself as \"Test tfun() syntax parsing This is a minimal test to verify the parser recognizes tfun syntax\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_step_sbml",
@@ -1925,15 +1012,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_step_sbml.bngl documents itself as \"Test tfun SBML export with step interpolation\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_validation",
@@ -1942,15 +1021,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_validation.bngl documents itself as \"Test cases for tfun validation (wshlavacek's requirements from issue #278) This file tests VALID cases\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_tfun_xml",
@@ -1959,15 +1030,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_tfun_xml.bngl documents itself as \"Test tfun() XML generation\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_time",
@@ -1976,15 +1039,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_time.bngl documents itself as \"Test case for issue #222: time() function gives inaccurate results in ODE simulations The builtin time() function should give accurate results when used in r...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "test_write_sbml_multi",
@@ -1993,15 +1048,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/test_write_sbml_multi.bngl documents itself as \"trivalent ligand, bivalent receptor\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "threshold_observable",
@@ -2010,15 +1057,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/immune/threshold_observable.bngl documents itself as \"A count predicate on a Molecules observable, which must be REFUSED. The model itself is trivial and that is the point: it isolates the construct. ``Gt50`` as...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "added-after-the-frozen-selection"
-      }
+      ]
     },
     {
       "id": "threshold_observable_species",
@@ -2027,15 +1066,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/immune/threshold_observable_species.bngl documents itself as \"The supported counterpart: the same count predicate on a Species observable. ``Species`` observables answer \"how many species match\", so the compared quantit...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "added-after-the-frozen-selection"
-      }
+      ]
     },
     {
       "id": "tlbr",
@@ -2045,16 +1076,7 @@
       "tiers": [
         "p",
         "nf"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/tlbr/tlbr.bngl documents itself as \"Trivalent ligand - bivalent receptor model used to verify and test the performance of NFsim.  When running this model, you can turn on aggregate or complex b...\"",
-        "tiers": [
-          "p",
-          "nf"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "tlbr_performance",
@@ -2063,15 +1085,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/performance_test_models/tlbr_performance.bngl documents itself as \"Trivalent ligand - bivalent receptor\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "tlmr",
@@ -2080,15 +1094,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/tlmr.bngl documents itself as \"Test whether reaction multiplicities are handled correctly by running verify.pl on tlmr_spec.cdat and the CDAT file produced by this file.\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "toy-jim",
@@ -2097,15 +1103,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/toy-jim.bngl documents itself as \"The model consists of a monovalent extracellular ligand, a monovalent cell-surface receptor, a bivalent cytosolic adapter protein, and a cytosolic kinase.  T...\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "univ_synth",
@@ -2114,15 +1112,7 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/univ_synth.bngl documents itself as \"example of universal synthesis\"",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     },
     {
       "id": "visualize",
@@ -2131,23 +1121,12 @@
       "origin": "repository-fixture",
       "tiers": [
         "p"
-      ],
-      "selection": {
-        "reason": "tier p: legacy agreement of the generated network with the canonical BNG2 oracle over the frozen repository fixtures; models/visualize.bngl declares no observable",
-        "tiers": [
-          "p"
-        ],
-        "capability": "network.expansion",
-        "provenance": "frozen-selection"
-      }
+      ]
     }
   ],
   "notes": [
     "Generated from tests/validation/corpus.py and the checked-in model tree.",
     "RuleHub revision is recorded but not expanded until selectors are approved.",
-    "Every tier records its justification, its owner and its budget; an empty tier records why it is empty.",
-    "Every selected model records the reason why it is selected, derived from the model file itself.",
-    "The reconciliation record keeps the separate 71-model Tier-P workflow with the selection it ran against.",
     "Run this generator and review the diff whenever a fixture or tier changes."
   ]
 }

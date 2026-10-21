@@ -4,6 +4,7 @@ cpp/engine/BngsimAdapter.cpp
 cpp/engine/HybridModelGenerator.cpp
 cpp/engine/HybridModelGenerator.hpp
 cpp/engine/LegacyNetworkRuleKernel.cpp
+cpp/engine/NetworkRulePlan.cpp
 cpp/engine/NetworkGenerator.hpp
 cpp/engine/OdeIntegrator.cpp
 cpp/engine/OdeIntegrator.hpp

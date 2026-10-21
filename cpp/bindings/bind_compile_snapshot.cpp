@@ -379,19 +379,7 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
     Document document(astModel);
     const auto& model = document.model();
     if (!document.valid()) {
-        // Name the first error so the refusal says what is wrong with the
-        // model instead of only that it is invalid.
-        std::string detail;
-        for (const auto& diagnostic : document.diagnostics()) {
-            if (diagnostic.severity != Severity::Error) continue;
-            detail = diagnostic.entity.has_value() ? *diagnostic.entity : std::string();
-            if (!detail.empty()) detail += ": ";
-            detail += diagnostic.message;
-            break;
-        }
-        throw std::runtime_error(
-            "cannot create structural semantic snapshot from invalid model" +
-            (detail.empty() ? std::string() : ": " + detail));
+        throw std::runtime_error("cannot create structural semantic snapshot from invalid model");
     }
 
     py::dict root;
@@ -553,20 +541,6 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         } else {
             item["value"] = py::none();
         }
-        // The transition's structure. The transition text above is the
-        // barrier's own representation of the same rewrite; these patterns
-        // let a consumer rebuild the transition without reading that text.
-        py::list reactants;
-        for (const auto& pattern : barrier.reactantPatterns) {
-            reactants.append(patternSnapshot(pattern, model));
-        }
-        item["reactants"] = std::move(reactants);
-        py::list products;
-        for (const auto& pattern : barrier.productPatterns) {
-            products.append(patternSnapshot(pattern, model));
-        }
-        item["products"] = std::move(products);
-        item["bidirectional"] = barrier.bidirectional;
         barrierPatterns.append(std::move(item));
     }
     root["barrier_patterns"] = std::move(barrierPatterns);
@@ -631,36 +605,14 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
             componentMappings.append(std::move(mapping));
         }
         item["component_mappings"] = std::move(componentMappings);
-        // The reservoir work is part of the rule's thermodynamics. It is
-        // carried as a resolved expression tree, like every other expression
-        // in the wire object, so a consumer can rebuild it without parsing
-        // source text.
-        if (rule.hasDrivingWork()) {
-            if (!rule.drivingWork().has_value()) {
-                throw std::runtime_error(
-                    "cannot snapshot a rule driving work expression that was "
-                    "not resolved");
-            }
-            item["driving_work"] = expressionSnapshot(*rule.drivingWork());
-        }
         rules.append(std::move(item));
     }
     root["rules"] = std::move(rules);
 
     py::list actions;
-    // Both scopes are part of the wire protocol. Model-level writer and
-    // generation actions keep their scope so the reader can tell them from
-    // simulation-protocol actions.
-    for (const auto& action : document.protocol().modelActions()) {
+    for (const auto& action : document.protocol().actions) {
         py::dict item;
-        item["scope"] = "model";
-        item["name"] = action.name;
-        item["arguments"] = action.arguments;
-        actions.append(std::move(item));
-    }
-    for (const auto& action : document.protocol().simulationActions()) {
-        py::dict item;
-        item["scope"] = "simulation_protocol";
+        item["scope"] = action.scope == ActionScope::Model ? "model" : "simulation_protocol";
         item["name"] = action.name;
         item["arguments"] = action.arguments;
         actions.append(std::move(item));

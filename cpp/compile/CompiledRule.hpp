@@ -177,9 +177,6 @@ public:
     bool hasDrivingWork() const { return hasDrivingWork_; }
     const std::string& drivingWorkExpression() const { return drivingWorkExpression_; }
     const std::optional<double>& drivingWorkValue() const { return drivingWorkValue_; }
-    // The resolved expression tree of the work, when the rule declares one.
-    // It is unset only when the rule was compiled without a symbol table.
-    const std::optional<ResolvedExpression>& drivingWork() const { return drivingWork_; }
 
     const CompiledRuleDirection& forward() const { return forward_; }
     const std::optional<CompiledRuleDirection>& reverse() const { return reverse_; }
@@ -214,7 +211,6 @@ private:
     bool hasDrivingWork_ = false;
     std::string drivingWorkExpression_;
     std::optional<double> drivingWorkValue_;
-    std::optional<ResolvedExpression> drivingWork_;
     std::vector<CompiledRateLaw> rateLaws_;
     std::vector<CompiledModifier> modifiers_;
     CompiledRuleDirection forward_;

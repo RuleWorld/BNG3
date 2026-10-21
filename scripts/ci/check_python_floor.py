@@ -454,9 +454,6 @@ def _is_type_like(
         root = _dotted_path(node.value)
         root_name = root.split(".")[0] if root else None
         if node.attr[:1].isupper():
-            # A shouted constant ('os.O_WRONLY', 'fcntl.LOCK_EX') is a flag,
-            # not a class, and 'a | b' of two of them is a bitwise OR that
-            # every supported interpreter evaluates.
             if node.attr.isupper():
                 # A name in capitals is a constant, not a class.
                 return False

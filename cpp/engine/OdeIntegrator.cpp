@@ -1,6 +1,4 @@
 #include "compile/LegacyAstLowering.hpp"
-#include "compile/SimulationMethod.hpp"
-#include "compile/TotalRate.hpp"
 #include "ast/EventSupport.hpp"
 #include "OdeIntegrator.hpp"
 
@@ -353,10 +351,14 @@ void OdeIntegrator::compile() {
                 rule.getRuleName(),
                 bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind);
         }
-        // The compile layer owns the total-rate decision, including the
-        // modifier's spelling.
-        if (bng::compile::isTotalRateRule(rule)) {
-            totalRateRules.insert(rule.getRuleName());
+        for (const auto& modifier : rule.getModifiers()) {
+            std::string lowerModifier = modifier;
+            std::transform(lowerModifier.begin(), lowerModifier.end(), lowerModifier.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (lowerModifier == "totalrate") {
+                totalRateRules.insert(rule.getRuleName());
+                break;
+            }
         }
     }
     const auto typedRateKindForOrigin = [&](std::string origin)
@@ -379,10 +381,18 @@ void OdeIntegrator::compile() {
         }
         return find(origin);
     };
-    const auto totalRateForOrigin = [&](const std::string& origin) {
-        // The compile layer owns the decision; the local set is only a cache
-        // of the rules that carry the modifier.
-        return bng::compile::isTotalRateReaction(model_, origin);
+    const auto totalRateForOrigin = [&](std::string origin) {
+        if (totalRateRules.find(origin) != totalRateRules.end()) return true;
+        if (origin.rfind("_reverse__", 0) == 0) {
+            origin = origin.substr(std::string("_reverse__").size());
+        } else if (!origin.empty() && origin.front() == '_') {
+            origin.erase(origin.begin());
+        }
+        if (origin.size() > std::string("_reverse").size() &&
+            origin.rfind("_reverse") == origin.size() - std::string("_reverse").size()) {
+            origin.erase(origin.size() - std::string("_reverse").size());
+        }
+        return totalRateRules.find(origin) != totalRateRules.end();
     };
 
     std::string lowerRawRL;
@@ -869,17 +879,7 @@ void OdeIntegrator::compile() {
                     const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
                     if (uf.has_value()) combinedFactor *= *uf;
                 }
-                // A special rate law is a complete flux, so it takes no
-                // compartment-volume scaling, but it does take the symmetry
-                // factor.  The statistical factor is a property of the rule's
-                // reactants, not of the rate law's shape: BNG2 writes it as a
-                // prefix on the rate law for every rate law type
-                // (RateLaw::toString), and this engine's own network writer
-                // emits the same prefix, so a Saturation/Hill/Michaelis-Menten
-                // law of a rule with identical reactants is scaled by 1/n! in
-                // the engine exactly as it is in the exported network.  Without
-                // this the engine disagreed with the network it exported.
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     baseExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(baseExpr));
@@ -939,10 +939,7 @@ void OdeIntegrator::compile() {
                     const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
                     if (uf.has_value()) combinedFactor *= *uf;
                 }
-                // The symmetry factor of identical reactants belongs to the
-                // rule, so it applies to a total rate as well: BNG2 writes it
-                // as a prefix on the rate law whatever the rate law's type.
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     funcExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(funcExpr));
@@ -1448,19 +1445,6 @@ std::vector<double> OdeIntegrator::evaluateRateCoefficients(
         evaluateFunctionalRateCoefficients(t, y, rates.data(), groupValues);
     }
     return rates;
-}
-
-std::vector<double> OdeIntegrator::evaluatePropensities(double t,
-                                                         const double* y) const {
-    const auto coefficients = evaluateRateCoefficients(t, y);
-    const std::vector<double> state(y, y + nSpecies_);
-    std::vector<double> propensities;
-    propensities.reserve(compiledRxns_.size());
-    for (std::size_t index = 0; index < compiledRxns_.size(); ++index) {
-        propensities.push_back(
-            computePropensity(compiledRxns_[index], state, coefficients[index]));
-    }
-    return propensities;
 }
 
 void OdeIntegrator::evaluateFunctionalRateCoefficients(
@@ -2037,19 +2021,10 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
     if (!nativeEvents_.empty() && options.method != "cvode") {
         throw std::runtime_error("bng3_events require CVODE continuous root detection");
     }
-    // The options a method can honour are decided by the shared semantic
-    // layer, so the integrator, the action dispatcher and the public API
-    // accept the same option combinations.
-    const auto support = bng::compile::optionSupportFor(
-        bng::compile::simulationMethodForEngineName(options.method).value_or(
-            bng::compile::SimulationMethod::Cvode));
-    if (!support.maxSimSteps && options.maxSimSteps > 0) {
+    if (options.method != "ssa" &&
+        (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
         throw std::runtime_error(
-            "max_sim_steps requires an SSA or PSA simulation method");
-    }
-    if (!support.outputStepInterval && options.outputStepInterval > 0) {
-        throw std::runtime_error(
-            "output_step_interval requires an SSA simulation method");
+            "max_sim_steps and output_step_interval are supported only for SSA");
     }
     if (options.method == "ssa" && options.batchSize > 0 &&
         !options.stopIf.empty()) {

@@ -35,9 +35,4 @@ std::size_t countPatternMatchesForScopedMolecule(
     const BNGcore::PatternGraph& speciesGraph,
     const BNGcore::Node* scopedMolecule);
 
-std::size_t countPatternMatchesForScopedMolecule(
-    const BNGcore::PatternGraph& pattern,
-    const BNGcore::PatternGraph& speciesGraph,
-    const BNGcore::Node* scopedMolecule);
-
 } // namespace bng::core

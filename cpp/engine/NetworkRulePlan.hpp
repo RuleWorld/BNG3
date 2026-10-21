@@ -9,18 +9,13 @@
 #include "compile/CompiledModel.hpp"
 #include "compile/PatternLowering.hpp"
 
-namespace bng::ast { class SpeciesList; class RxnList; }
+namespace bng::ast { class SpeciesGraph; class SpeciesList; class RxnList; }
 
 namespace bng::engine {
 
 // Backend-specific lowering of one resolved BioNetGen rule direction into the
 // mature native network-expansion engine. The semantic input is CompiledRule;
 // ast::ReactionRule is retained only as a private execution implementation.
-//
-// The plan owns the compile-owned execution contract: filters, local scopes
-// and the zero-rate decision are computed from the compiled model and handed
-// to the executor in compile-owned types, so this file does not depend on the
-// legacy AST.
 class NetworkRulePlan {
 public:
     NetworkRulePlan(const compile::CompiledRule& rule,
@@ -42,7 +37,7 @@ public:
         ast::SpeciesList& species,
         ast::RxnList& reactions,
         std::size_t currentIteration,
-        const std::function<bool(const BNGcore::PatternGraph&)>& productFilter,
+        const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
         std::size_t speciesBoundary);
 
 private:

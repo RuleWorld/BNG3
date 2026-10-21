@@ -6,16 +6,12 @@
 #include <vector>
 
 #include "Species.hpp"
-#include "core/IdentityContract.hpp"
 
 namespace bng::ast {
 
 class SpeciesList {
 public:
     std::pair<std::size_t, bool> add(Species species);
-    // The layer of the shared identity contract (core/IdentityContract.hpp)
-    // that this list's species identity decides: the species layer.
-    static const char* identityLayer();
     // Insert using an exact key already computed by findExact().
     std::pair<std::size_t, bool> addWithExactKey(Species species, std::string exact);
     // Check the exact compartment-aware key without canonicalizing the graph.

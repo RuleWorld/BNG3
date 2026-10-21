@@ -6,12 +6,12 @@
 #include <string>
 #include <vector>
 
-#include "compile/CompiledRuleExecution.hpp"
-
 namespace BNGcore { class Node; class PatternGraph; }
 namespace bng::ast {
+class SpeciesGraph;
 class SpeciesList;
 class RxnList;
+struct RateCandidateContext;
 }
 namespace bng::compile {
 class CompiledModel;
@@ -25,10 +25,20 @@ namespace bng::engine {
 // Deliberately isolated compatibility boundary around the mature
 // ast::ReactionRule expansion kernel. NetworkRulePlan and other compiled-facing
 // engine code should not include ast/ReactionRule.hpp directly.
-//
-// The execution decisions themselves are compile-owned: they arrive as
-// compile::CompiledRuleExecutionHooks, so the kernel never has to recover
-// them from a reconstructed AST rule.
+struct LegacyNetworkRuleHooks {
+    std::function<bool(std::size_t, const ast::SpeciesGraph&)> reactantFilter;
+    std::function<bool(const std::vector<ast::SpeciesGraph>&)> productFilter;
+    std::function<std::string(std::size_t, std::size_t, const BNGcore::Node*,
+                              const BNGcore::PatternGraph&)> localRateFingerprint;
+  std::function<std::string(std::size_t, std::size_t, const BNGcore::Node *,
+                            const BNGcore::PatternGraph &)>
+      productScopeMatchSignature;
+  std::function<std::string(const std::vector<ast::SpeciesGraph> &,
+                            const std::vector<std::size_t> &)>
+      productLocalRateFingerprint;
+  std::function<bool(const ast::RateCandidateContext &)> rejectZeroRate;
+};
+
 class LegacyNetworkRuleKernel {
 public:
     LegacyNetworkRuleKernel(const compile::CompiledRule& rule,
@@ -43,12 +53,12 @@ public:
     LegacyNetworkRuleKernel& operator=(const LegacyNetworkRuleKernel&) = delete;
 
     const std::string& name() const noexcept;
-    void setHooks(compile::CompiledRuleExecutionHooks hooks);
+    void setHooks(LegacyNetworkRuleHooks hooks);
     void clearPatternMatchCache();
     std::size_t expand(ast::SpeciesList& species,
                        ast::RxnList& reactions,
                        std::size_t currentIteration,
-                       const std::function<bool(const BNGcore::PatternGraph&)>& productFilter,
+                       const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
                        std::size_t speciesBoundary);
 
 private:

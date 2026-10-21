@@ -23,10 +23,6 @@ const std::string& BarrierPattern::getLabel() const {
     return label_;
 }
 
-void BarrierPattern::setSourceText(std::string text) {
-    sourceText_ = std::move(text);
-}
-
 const Expression& BarrierPattern::expression() const {
     return expression_;
 }
@@ -44,10 +40,6 @@ ReactionRule& BarrierPattern::transition() {
 }
 
 std::string BarrierPattern::toString() const {
-    // A barrier that was read from a structured document keeps the text it
-    // was read from: that text is the wire form's own representation, and
-    // re-deriving it here would change the document on a round trip.
-    if (!sourceText_.empty()) return sourceText_;
     std::string result;
     if (!label_.empty()) result += label_ + ": ";
     const auto& reactants = transition_->getReactants();

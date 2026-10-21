@@ -27,13 +27,6 @@ class SimResult:
     backend : str or None
         Finite-network backend that produced the result: ``"native"``,
         ``"bngsim"``, or ``"nfsim"`` (diagnostic, ADR 0003).
-    backend_route : str or None
-        Named routing decision that selected the backend, for example
-        ``"native-explicit"`` or ``"native-fallback:unsupported-semantics"``.
-        A native route always carries a route, so a fallback is never implicit.
-    backend_reason : str or None
-        Why the named route was taken.  For a native fallback this names the
-        blocking semantic class, the missing adapter, or the unclaimed method.
     direct_unavailable_reason : str or None
         For NFsim, the precise reason the direct AST path declined, when it did.
         Empty or ``None`` on the ``"direct"`` path. Names the failing
@@ -58,10 +51,6 @@ class SimResult:
         self.construction_path: Optional[str] = raw.get("construction_path", None)
         # Finite-network backend diagnostic (ADR 0003): "native", "bngsim", or "nfsim".
         self.backend: Optional[str] = raw.get("backend", None)
-        # Named routing decision and its reason: a native route is recorded,
-        # never implicit.
-        self.backend_route: Optional[str] = raw.get("backend_route", None)
-        self.backend_reason: Optional[str] = raw.get("backend_reason", None)
         self.direct_unavailable_reason: Optional[str] = raw.get(
             "direct_unavailable_reason", None
         )

@@ -274,88 +274,6 @@ class SBMLInitialAssignment:
     annotation_xml: str = ""
 
 
-# --------------------------------------------------------------------------- #
-# Unsupported-construct classes.
-#
-# BNG3 issue #160 asks for the unsupported SBML cases to be grouped by feature
-# class instead of being refused with an unnamed reason.  Every import
-# diagnostic therefore records the class it belongs to, so a refusal always
-# names its construct and a newly unsupported construct becomes visible rather
-# than hiding inside a generic message.
-# --------------------------------------------------------------------------- #
-
-SUPPORT_GROUP_DYNAMIC_RULES = "dynamic-rules"
-SUPPORT_GROUP_EVENTS = "events"
-SUPPORT_GROUP_HISTORY = "history"
-SUPPORT_GROUP_ALGEBRAIC_CONSTRAINTS = "algebraic-constraints"
-SUPPORT_GROUP_STOICHIOMETRY = "stoichiometry"
-SUPPORT_GROUP_FAST_REACTIONS = "fast-reactions"
-SUPPORT_GROUP_PACKAGES = "packages"
-
-# The classes issue #160 names, in catalog order.
-SUPPORT_GROUPS = (
-    SUPPORT_GROUP_DYNAMIC_RULES,
-    SUPPORT_GROUP_EVENTS,
-    SUPPORT_GROUP_HISTORY,
-    SUPPORT_GROUP_ALGEBRAIC_CONSTRAINTS,
-    SUPPORT_GROUP_STOICHIOMETRY,
-    SUPPORT_GROUP_FAST_REACTIONS,
-    SUPPORT_GROUP_PACKAGES,
-)
-
-# Constructs that are refused outside the seven classes issue #160 names are
-# still classified, so every refused construct carries a group.
-SUPPORT_GROUP_CONVERSION_FACTORS = "conversion-factors"
-SUPPORT_GROUP_SYMBOL_SCOPE = "symbol-scope"
-SUPPORT_GROUP_IDENTIFIER_COLLISIONS = "identifier-collisions"
-SUPPORT_GROUP_REACTION_KINETICS = "reaction-kinetics"
-SUPPORT_GROUP_COMPARTMENTS = "compartments"
-SUPPORT_GROUP_PARAMETERS = "parameters"
-SUPPORT_GROUP_UNITS = "units"
-SUPPORT_GROUP_MATHML = "mathml"
-SUPPORT_GROUP_OTHER = "other"
-
-# Diagnostic category -> unsupported-construct class.  A category that is not
-# listed here is classified as ``other`` rather than left unclassified.
-_SUPPORT_GROUP_BY_CATEGORY = {
-    "algebraicRule": SUPPORT_GROUP_ALGEBRAIC_CONSTRAINTS,
-    "assignmentRule": SUPPORT_GROUP_DYNAMIC_RULES,
-    "compFlattened": SUPPORT_GROUP_PACKAGES,
-    "compFlattening": SUPPORT_GROUP_PACKAGES,
-    "compartment": SUPPORT_GROUP_COMPARTMENTS,
-    "constraint": SUPPORT_GROUP_ALGEBRAIC_CONSTRAINTS,
-    "conversionFactor": SUPPORT_GROUP_CONVERSION_FACTORS,
-    "delay": SUPPORT_GROUP_HISTORY,
-    "duplicateParameter": SUPPORT_GROUP_PARAMETERS,
-    "event": SUPPORT_GROUP_EVENTS,
-    "fastReaction": SUPPORT_GROUP_FAST_REACTIONS,
-    "identifier": SUPPORT_GROUP_IDENTIFIER_COLLISIONS,
-    "initialAssignment": SUPPORT_GROUP_DYNAMIC_RULES,
-    "mathml": SUPPORT_GROUP_MATHML,
-    "missingMath": SUPPORT_GROUP_REACTION_KINETICS,
-    "parameter": SUPPORT_GROUP_PARAMETERS,
-    "rate": SUPPORT_GROUP_REACTION_KINETICS,
-    "rateRule": SUPPORT_GROUP_DYNAMIC_RULES,
-    "scope": SUPPORT_GROUP_SYMBOL_SCOPE,
-    "speciesAssignmentRule": SUPPORT_GROUP_DYNAMIC_RULES,
-    "stoichiometry": SUPPORT_GROUP_STOICHIOMETRY,
-    "units": SUPPORT_GROUP_UNITS,
-}
-
-
-def diagnostic_group(category: str) -> str:
-    """Return the unsupported-construct class of an import diagnostic.
-
-    The class is a property of the diagnostic's own identity, not of the
-    message text, so a reworded message cannot silently change the grouping.
-    """
-
-    text = str(category or "")
-    if text.startswith("package:"):
-        return SUPPORT_GROUP_PACKAGES
-    return _SUPPORT_GROUP_BY_CATEGORY.get(text, SUPPORT_GROUP_OTHER)
-
-
 @dataclass
 class SBMLImportWarning(MappingABC[str, Any]):
     """Structured import diagnostic matching the Playground record contract.
@@ -368,16 +286,8 @@ class SBMLImportWarning(MappingABC[str, Any]):
     message: str
     count: int
     severity: str
-    # The unsupported-construct class this diagnostic belongs to.  An empty
-    # value is resolved from the category, so no diagnostic can be created
-    # without a class.
-    group: str = ""
 
-    _FIELDS = ("category", "message", "count", "severity", "group")
-
-    def __post_init__(self) -> None:
-        if not self.group:
-            self.group = diagnostic_group(self.category)
+    _FIELDS = ("category", "message", "count", "severity")
 
     def __getitem__(self, key: str) -> Any:
         if key not in self._FIELDS:
@@ -409,7 +319,6 @@ def coerce_import_warning(warning: Any) -> SBMLImportWarning:
             message=str(warning.get("message", "")),
             count=count,
             severity=str(warning.get("severity", "info")),
-            group=str(warning.get("group", "")),
         )
     return SBMLImportWarning(
         category="import", message=str(warning), count=1, severity="info"
@@ -1085,24 +994,6 @@ __all__ = [
     "StructuralInference",
     "DEFAULT_NAMING_CONVENTIONS",
     "DEFAULT_NAMING_PATTERNS",
-    "SUPPORT_GROUPS",
-    "SUPPORT_GROUP_ALGEBRAIC_CONSTRAINTS",
-    "SUPPORT_GROUP_COMPARTMENTS",
-    "SUPPORT_GROUP_CONVERSION_FACTORS",
-    "SUPPORT_GROUP_DYNAMIC_RULES",
-    "SUPPORT_GROUP_EVENTS",
-    "SUPPORT_GROUP_FAST_REACTIONS",
-    "SUPPORT_GROUP_HISTORY",
-    "SUPPORT_GROUP_IDENTIFIER_COLLISIONS",
-    "SUPPORT_GROUP_MATHML",
-    "SUPPORT_GROUP_OTHER",
-    "SUPPORT_GROUP_PACKAGES",
-    "SUPPORT_GROUP_PARAMETERS",
-    "SUPPORT_GROUP_REACTION_KINETICS",
-    "SUPPORT_GROUP_STOICHIOMETRY",
-    "SUPPORT_GROUP_SYMBOL_SCOPE",
-    "SUPPORT_GROUP_UNITS",
-    "diagnostic_group",
     "get_kinetic_math",
     "standardize_name",
 ]

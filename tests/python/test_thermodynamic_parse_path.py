@@ -177,38 +177,6 @@ def test_python_parse_round_trips_a_driven_by_model_through_the_bngl_writer():
     assert reparsed.reaction_rules[0].driving_work == "muATP"
 
 
-def test_the_network_compiler_refuses_a_barrier_when_the_gate_is_unset(tmp_path):
-    """A barrier pattern must never be applied without the experimental gate.
-
-    The capability report refuses barrier patterns for the network compiler
-    unless `BNG_NFSIM_GENERAL_ENERGY` is set. If the network writer applied
-    them anyway, a model would run with experimental transition-state
-    semantics the user never opted into, and the refusal the capability
-    report promises would be a lie.
-    """
-    model = _cpp.parse_string(_BARRIER_FIRST)
-    network = _cpp.generate_network(model)
-    with mock.patch.dict(os.environ, {}, clear=False):
-        os.environ.pop("BNG_NFSIM_GENERAL_ENERGY", None)
-        with pytest.raises(RuntimeError) as refusal:
-            _cpp.io.write_net(model, network, str(tmp_path / "refused.net"))
-    assert "BNG_NFSIM_GENERAL_ENERGY" in str(refusal.value)
-
-    with mock.patch.dict(os.environ, {"BNG_NFSIM_GENERAL_ENERGY": "1"}):
-        _cpp.io.write_net(model, network, str(tmp_path / "accepted.net"))
-    assert (tmp_path / "accepted.net").is_file()
-
-
-def test_the_network_compiler_refuses_a_barrier_with_the_gate_pinned_off(tmp_path):
-    """An explicit zero keeps the gate off, so a CI job can pin it."""
-    model = _cpp.parse_string(_BARRIER_FIRST)
-    network = _cpp.generate_network(model)
-    with mock.patch.dict(os.environ, {"BNG_NFSIM_GENERAL_ENERGY": "0"}):
-        with pytest.raises(RuntimeError) as refusal:
-            _cpp.io.write_net(model, network, str(tmp_path / "refused.net"))
-    assert "BNG_NFSIM_GENERAL_ENERGY" in str(refusal.value)
-
-
 def _bng_cpp() -> str:
     candidate = os.environ.get("BNG_CPP") or str(
         _REPO_ROOT / "build" / "cpp" / "bng_cpp"

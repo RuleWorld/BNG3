@@ -56,8 +56,6 @@ from .types import (
     SBMLReaction,
     SBMLRule,
     SCTEntry,
-    SUPPORT_GROUP_DYNAMIC_RULES,
-    SUPPORT_GROUP_HISTORY,
     SeedSpeciesEntry,
     SpeciesCompositionTable,
     coerce_import_warning,
@@ -73,15 +71,6 @@ _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
 _SBML_AVOGADRO = 6.02214179e23
 _MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
 _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
-
-# The unsupported-construct class of a MathML function the Atomizer cannot
-# represent losslessly.  ``delay`` is SBML history, ``rateOf`` is a dynamic
-# rule derivative, and the remaining functions are plain MathML gaps that
-# belong to no issue #160 class.
-_MATHML_FUNCTION_GROUP = {
-    "delay": SUPPORT_GROUP_HISTORY,
-    "rateOf": SUPPORT_GROUP_DYNAMIC_RULES,
-}
 
 # ``standardize_name`` runs on a raw SBML id only at emission, so a species,
 # reaction, rule-variable or function id such as ``A-B`` reaches the writer in
@@ -459,21 +448,6 @@ def _pattern(species: Species, compartment: str = "") -> str:
 
 def _factorial(value: float) -> int:
     return math.factorial(int(value))
-
-
-def _requested_simulation_seed(actions: Optional[str]) -> Optional[int]:
-    """Return the seed the requested action block asks the simulator to use.
-
-    A generated event schedule replaces the requested action block, so the
-    seed has to be carried into the generated ``simulate`` phases.  Dropping
-    it would silently return a run the caller did not ask for.
-    """
-    if not actions:
-        return None
-    match = re.search(r"seed\s*=>\s*(\d+)", actions)
-    if match is None:
-        return None
-    return int(match.group(1))
 
 
 def _evaluate_arithmetic(expression: str) -> Optional[float]:
@@ -2953,7 +2927,6 @@ def _record_import_warning(
     message: str,
     category: str = "conversionFactor",
     severity: str = "approximated",
-    group: str = "",
 ) -> None:
     warnings = getattr(model, "import_warnings", None)
     if warnings is None:
@@ -2970,7 +2943,6 @@ def _record_import_warning(
             "message": message,
             "count": 1,
             "severity": severity,
-            "group": group,
         }
     )
 
@@ -6049,112 +6021,6 @@ def _compartments_are_adjacent(
     )
 
 
-def _reaction_local_scopes(model: SBMLModel) -> Dict[str, Set[str]]:
-    """Return the reaction-local SBML symbols each reaction owns.
-
-    A reaction's kinetic law may reference the local parameters and the
-    ``speciesReference`` ids of *that* reaction.  BNGL has no reaction-local
-    scope, so a symbol referenced outside its owner has no representable
-    meaning and the reaction that references it cannot be emitted.
-    """
-
-    reaction_scopes: Dict[str, Set[str]] = {}
-    for reaction_id, reaction in model.reactions.items():
-        scope: Set[str] = set()
-        kinetic_law = reaction.kinetic_law
-        local_parameters = (
-            kinetic_law.get("localParameters", [])
-            if isinstance(kinetic_law, Mapping)
-            else getattr(kinetic_law, "local_parameters", [])
-        )
-        for parameter in local_parameters or []:
-            parameter_id = getattr(parameter, "id", None)
-            if parameter_id is None and isinstance(parameter, Mapping):
-                parameter_id = parameter.get("id")
-            if parameter_id:
-                scope.add(str(parameter_id))
-        for reference in [*reaction.reactants, *reaction.products]:
-            reference_id = getattr(reference, "id", None)
-            if reference_id is None and isinstance(reference, Mapping):
-                reference_id = reference.get("id")
-            if reference_id:
-                scope.add(str(reference_id))
-        reaction_scopes[str(reaction_id)] = scope
-    return reaction_scopes
-
-
-def _globally_visible_symbols(model: SBMLModel) -> Set[str]:
-    """Return the SBML symbols that resolve without a reaction-local scope."""
-
-    species_reference_symbols = {
-        str(reference.id)
-        for reaction in model.reactions.values()
-        for reference in [*reaction.reactants, *reaction.products]
-        if getattr(reference, "id", None)
-    }
-    return {
-        *map(str, model.parameters),
-        *map(str, model.species),
-        *map(str, model.compartments),
-        *map(str, model.function_definitions),
-        *species_reference_symbols,
-        *(str(rule.variable) for rule in model.rules if rule.variable),
-        *(
-            str(getattr(assignment, "symbol", ""))
-            for assignment in model.initial_assignments
-        ),
-        "time",
-    }
-
-
-def _out_of_scope_reaction_symbols(
-    model: SBMLModel,
-    reaction_scopes: Mapping[str, Set[str]],
-    globally_visible: Set[str],
-) -> Dict[str, Set[str]]:
-    """Return the reaction-local symbols each reaction references out of scope."""
-
-    reaction_local_symbols: Set[str] = set()
-    for scope in reaction_scopes.values():
-        reaction_local_symbols.update(scope)
-    out_of_scope: Dict[str, Set[str]] = {}
-    for reaction_id, reaction in model.reactions.items():
-        current_scope = reaction_scopes.get(str(reaction_id), set())
-        expression = get_kinetic_math(reaction.kinetic_law)
-        symbols = {
-            symbol
-            for symbol in reaction_local_symbols - globally_visible - current_scope
-            if re.search(rf"\b{re.escape(symbol)}\b", expression)
-        }
-        if symbols:
-            out_of_scope[str(reaction_id)] = symbols
-    return out_of_scope
-
-
-def _scope_owner(
-    reaction_scopes: Mapping[str, Set[str]], reaction_id: str, symbol: str
-) -> str:
-    """Return the reaction that owns a reaction-local symbol."""
-
-    return next(
-        (
-            owner_id
-            for owner_id, scope in reaction_scopes.items()
-            if owner_id != str(reaction_id) and symbol in scope
-        ),
-        "another reaction",
-    )
-
-
-def _out_of_scope_message(reaction_id: str, symbol: str, owner: str) -> str:
-    """Return the diagnostic text for a reaction-local symbol used out of scope."""
-
-    return (
-        f'Reaction "{reaction_id}" references reaction-local SBML symbol '
-        f'"{symbol}" scoped to "{owner}"; it has no BNGL-wide scope.'
-    )
-
-
 def write_reaction_rules(
     model: SBMLModel,
     sct: SpeciesCompositionTable,
@@ -6190,30 +6056,7 @@ def write_reaction_rules(
     }
     algebraic_assignment_species = set(_lowerable_species_assignment_rules(model))
     non_reaction_state_species = rate_rule_species | algebraic_assignment_species
-    reaction_scopes = _reaction_local_scopes(model)
-    out_of_scope_symbols = _out_of_scope_reaction_symbols(
-        model, reaction_scopes, _globally_visible_symbols(model)
-    )
     for reaction_id, reaction in model.reactions.items():
-        # A reaction whose kinetic law references another reaction's local
-        # symbol cannot be represented: BNGL has no reaction-local scope, so
-        # emitting the rule would leave an undeclared symbol in the rate law
-        # and the generated model could not be executed.  Refuse the reaction
-        # explicitly instead of emitting a broken rule.
-        blocked_symbols = out_of_scope_symbols.get(str(reaction_id))
-        if blocked_symbols:
-            for symbol in sorted(blocked_symbols, key=len, reverse=True):
-                _record_import_warning(
-                    model,
-                    _out_of_scope_message(
-                        str(reaction_id),
-                        symbol,
-                        _scope_owner(reaction_scopes, str(reaction_id), symbol),
-                    ),
-                    category="scope",
-                    severity="dropped",
-                )
-            continue
         # SBML permits a reaction with no species references.  Preserve its
         # kinetic-law identity as a zero-effect BNGL rule; BNG3's parser and
         # SBML writer both retain ``0 -> 0`` reactions.  This is distinct from
@@ -7071,11 +6914,46 @@ def generate_bngl(
         )
 
     unsupported_functions = ("gcd", "lcm", "rint", "delay")
-    reaction_scopes = _reaction_local_scopes(model)
-    reaction_local_symbols: Set[str] = set()
-    for scope in reaction_scopes.values():
-        reaction_local_symbols.update(scope)
-    globally_visible = _globally_visible_symbols(model)
+    reaction_local_symbols = set()
+    species_reference_symbols = set()
+    reaction_scopes: Dict[str, Set[str]] = {}
+    for reaction_id, reaction in model.reactions.items():
+        reaction_scope: Set[str] = set()
+        kinetic_law = reaction.kinetic_law
+        local_parameters = (
+            kinetic_law.get("localParameters", [])
+            if isinstance(kinetic_law, Mapping)
+            else getattr(kinetic_law, "local_parameters", [])
+        )
+        for parameter in local_parameters or []:
+            parameter_id = getattr(parameter, "id", None)
+            if parameter_id is None and isinstance(parameter, Mapping):
+                parameter_id = parameter.get("id")
+            if parameter_id:
+                reaction_scope.add(str(parameter_id))
+        for reference in [*reaction.reactants, *reaction.products]:
+            reference_id = getattr(reference, "id", None)
+            if reference_id is None and isinstance(reference, Mapping):
+                reference_id = reference.get("id")
+            if reference_id:
+                reference_id = str(reference_id)
+                reaction_scope.add(reference_id)
+                species_reference_symbols.add(reference_id)
+        reaction_scopes[str(reaction_id)] = reaction_scope
+        reaction_local_symbols.update(reaction_scope)
+    globally_visible = {
+        *map(str, model.parameters),
+        *map(str, model.species),
+        *map(str, model.compartments),
+        *map(str, model.function_definitions),
+        *species_reference_symbols,
+        *(str(rule.variable) for rule in model.rules if rule.variable),
+        *(
+            str(getattr(assignment, "symbol", ""))
+            for assignment in model.initial_assignments
+        ),
+        "time",
+    }
     global_math_sources = [
         *(str(rule.math or "") for rule in model.rules),
         *(
@@ -7107,17 +6985,29 @@ def generate_bngl(
                 category="scope",
                 severity="dropped",
             )
-    for reaction_id, symbols in _out_of_scope_reaction_symbols(
-        model, reaction_scopes, globally_visible
-    ).items():
-        for symbol in sorted(symbols, key=len, reverse=True):
+    for reaction_id, reaction in model.reactions.items():
+        current_scope = reaction_scopes.get(str(reaction_id), set())
+        expression = get_kinetic_math(reaction.kinetic_law)
+        for symbol in sorted(
+            reaction_local_symbols - globally_visible - current_scope,
+            key=len,
+            reverse=True,
+        ):
+            if not re.search(rf"\b{re.escape(symbol)}\b", expression):
+                continue
+            owner = next(
+                (
+                    owner_id
+                    for owner_id, scope in reaction_scopes.items()
+                    if owner_id != str(reaction_id) and symbol in scope
+                ),
+                "another reaction",
+            )
             _record_import_warning(
                 model,
-                _out_of_scope_message(
-                    reaction_id,
-                    symbol,
-                    _scope_owner(reaction_scopes, reaction_id, symbol),
-                ),
+                f'Reaction "{reaction_id}" references reaction-local SBML '
+                f'symbol "{symbol}" scoped to "{owner}"; it has no BNGL-wide '
+                "scope.",
                 category="scope",
                 severity="dropped",
             )
@@ -7139,7 +7029,6 @@ def generate_bngl(
                 _unrepresentable_math_function_message(function_name),
                 category="mathml",
                 severity="dropped",
-                group=_MATHML_FUNCTION_GROUP.get(function_name, ""),
             )
 
     _report_identifier_collisions(model)
@@ -10947,7 +10836,6 @@ def generate_bngl(
                 species_id
             ),
             resolve_param=resolve_event_parameter,
-            seed=_requested_simulation_seed(actions),
             is_param=lambda identifier: (
                 identifier in model.parameters
                 or identifier in event_species_reference_targets
@@ -11164,7 +11052,6 @@ def generate_bngl(
             f"path: {_unrepresentable_math_function_reason(function_name)}.",
             category="mathml",
             severity="dropped",
-            group=_MATHML_FUNCTION_GROUP.get(function_name, ""),
         )
 
     has_multi = bool(

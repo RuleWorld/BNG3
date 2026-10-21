@@ -68,13 +68,6 @@ public:
     // before ordinary mass-action species factors are applied. This supports
     // independent parity checks of the runtime expression evaluator.
     std::vector<double> evaluateRateCoefficients(double t, const double* y) const;
-    // Return the SSA propensities of the compiled reactions in
-    // generated-network order, at the given time and state. The discrete
-    // convention (identical reactants use n*(n-1)*..., and a total-rate law
-    // is not multiplied by the reactant population) is the engine's own, so
-    // an independent parity check can compare it against a closed-form law
-    // instead of inferring it from a sampled trajectory.
-    std::vector<double> evaluatePropensities(double t, const double* y) const;
     // CVODE integrates a scaled state to keep very small SBML amounts and
     // very large converted rate constants numerically well-conditioned.
     void cvodeDerivs(double t, const double* y, double* dydt) const;

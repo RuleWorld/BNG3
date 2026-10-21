@@ -173,12 +173,9 @@ python/bionetgen/
 ├── atomizer/           # SBML→BNGL converter (pure Python)
 ├── core/               # Legacy PyBioNetGen core (retained)
 ├── modelapi/           # Legacy model API (retained)
-└── simulator/          # Legacy simulator wrappers (retained)
+├── simulator/          # Legacy simulator wrappers (retained)
+└── network/            # Network representation (retained)
 ```
-
-The legacy pure-Python network reader (`bionetgen.network`) was retired: the
-native `bng::io::NetReader` supersedes it, and `tools/check_legacy_dependency_inventory.py`
-records the remaining callers of the retained legacy paths.
 
 ## NFSim Integration Strategy
 
