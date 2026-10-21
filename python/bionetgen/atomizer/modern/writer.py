@@ -2353,6 +2353,15 @@ def _rate_for_reaction(
         and standardize_name(species_id) not in reactant_names
         for species_id in model.species
     )
+    # A law that names a species the reaction does not consume is a complete
+    # flux: its value depends on that species' state, so it is not an
+    # elementary mass-action law and cannot be replaced by a coefficient.
+    # The numeric mass-action probe below may still accept such a law (the
+    # probe replaces the species by a fixed state and fits the result), and
+    # the fitted coefficient is then a snapshot of the law at the probe
+    # points rather than the law itself: it changes with the probe, and the
+    # model it produces is not the model the source states.  The probe is
+    # therefore not allowed to claim a law that names a non-reactant species.
     nonlinear = (
         has_saturation
         or "/" in classification_math
@@ -2392,6 +2401,7 @@ def _rate_for_reaction(
         _ENABLE_MASS_ACTION_CHECK
         and not functional
         and not has_saturation
+        and not has_nonreactant_species
         and not (preserved_compartment_flux and nonlinear)
         and not requires_explicit_compartment_flux
         and len(model.reactions) < _MASS_ACTION_SKIP_MIN_REACTIONS
