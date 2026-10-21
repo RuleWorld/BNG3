@@ -5,10 +5,10 @@ robust SBML-to-BNGL converter, with **demonstrable** mathematical equivalence
 rather than merely successful conversion.
 
 This document records the campaign's measurement baseline, the failure
-clusters derived from it, and the state of each workstream. The scope record
-of what the Atomizer refuses, and why, is
-[`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md); it is generated from the
-same expectation manifest this document's tables are generated from.
+clusters derived from it, the result the campaign reached, and the boundaries
+that are still open. The scope record of what the Atomizer refuses, and why,
+is [`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md); it is generated from
+the same expectation manifest this document's tables are generated from.
 
 Every result table in this document is **generated** from the harness report it
 names, by `scripts/ci/sbml_campaign_tables.py`; the exact command is in
@@ -26,21 +26,35 @@ The machine-readable forms of the same data are:
   and [`provenance/sbml-campaign/integrated-2026-10-20.json`](../provenance/sbml-campaign/integrated-2026-10-20.json)
   — the measured inventories, regenerated with
   `scripts/ci/sbml_campaign_inventory.py`.
+* [`provenance/sbml-campaign/audit-2026-10-21.json`](../provenance/sbml-campaign/audit-2026-10-21.json)
+  — the independent audit of the campaign's claims, with the transition and the
+  mechanism of every verdict change it measured (see
+  [The campaign's invariant, audited](#the-campaigns-invariant-audited)).
+* [`provenance/sbml-campaign/atomizer-limitations.json`](../provenance/sbml-campaign/atomizer-limitations.json)
+  — the narrative behind `ATOMIZER_LIMITATIONS.md`: what each construct is,
+  what the specification requires, what BNG3 does instead, and whether the
+  boundary is reducible.
 
 ## How to reproduce the baseline
+
+The commands in this document write their reports and their artifacts to a
+working directory of your choosing; `$REPORTS` stands for it below. The
+report the committed tables were generated from is named — together with its
+SHA-256 — in the generated region itself, so the committed measurement is
+identifiable even when the report file is not at hand.
 
 ```bash
 # Official SBML Test Suite, pinned revision cf38585fac5de8e0e90112febb62851ee2181816
 PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   --suite-dir /path/to/sbml-test-suite \
   --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 6 \
-  --artifacts-dir /tmp/bng3-campaign/artifacts-baseline \
-  --json /tmp/bng3-campaign/baseline-ssts.json
+  --artifacts-dir "$REPORTS/artifacts-baseline" \
+  --json "$REPORTS/baseline-ssts.json"
 
 # Curated BioModels, flat and atomized modes
 python scripts/ci/validate_published_biomodels.py \
   --cache-dir /path/to/biomodels-cache \
-  --json /tmp/bng3-campaign/biomodels-baseline.json \
+  --json "$REPORTS/biomodels-baseline.json" \
   --mode flat --isolate-models --model-timeout 120 --jobs 4
 ```
 
@@ -124,8 +138,8 @@ campaign's coverage:
 
 | Side | n | What it is |
 | --- | --- | --- |
-| harness | 558 | a **measurement** limitation: the model converts and runs, but the gate cannot evaluate it (439 scheduled actions, 100 stochastic ensembles, 19 result mappings) |
-| Atomizer | 286 | a **representational** limitation: the model uses a construct BNGL cannot say (95 at the official-reference stage — 35 fast reactions, 28 untranslated events, 16 empty MathML, 9 delay, … — and 191 at the conversion stage) |
+| harness | 12 | a **measurement** limitation: the model converts and runs, but the gate cannot evaluate it (12 cases whose official reference is one draw of a random event-execution order) |
+| Atomizer | 218 | a **representational** limitation: the model uses a construct BNGL cannot say (93 at the official-reference stage and 125 at the conversion stage) |
 | not applicable | 34 | the case defines no official time-course reference |
 
 A harness-side gap is a statement about the *measurement*, not about the
@@ -135,9 +149,23 @@ about the *representation*: the model uses something BNGL cannot say. The
 first kind is the campaign's remaining instrumentation work, the second is
 its remaining coverage work, and they need different fixes.
 
-_Source: the measurement of `main` in the generated current tables above
-(878 gaps in all: 191 at the conversion stage and 687 at the
-official-reference stage)._
+_Source: the expectation manifest's gap taxonomy
+(`provenance/sbml-campaign/expectations.json`), as of the measurement the
+generated current tables below record: 264 gaps in all — 125 at the
+conversion stage and 139 at the official-reference stage._
+
+The Atomizer-side gaps are the constructs the scope record describes one by
+one, each with the cases it covers and whether the boundary is reducible:
+untranslated events, the `fbc` package, the `delay`/`rateOf` operators, a
+fast reaction whose pseudo steady state cannot be written as a BNGL rule, a
+state trigger the runtime cannot schedule, an infinite or not-a-number
+constant, a compartment with more than three spatial dimensions, and a small
+bucket of refusals the taxonomy does not yet name. The harness-side gap is
+narrower than it was: the two large harness limits of the baseline — a
+reference runner that could not execute a model with scheduled actions, and an
+official stochastic reference that needed an ensemble the harness did not
+run — were closed by PR #337, and the reference that names a reaction's
+extent rate was closed by PR #378.
 
 The baseline official-reference failures are also grouped by each case's own
 official `componentTags` metadata, read from the pinned suite's own
@@ -217,7 +245,7 @@ so a cluster table can no longer omit the cases it forgot.
    byte-identical between the base and the branch and which was fixed by
    the sibling PR #323.
 
-5. **MathML built-ins folded in the static evaluator, and a signed
+6. **MathML built-ins folded in the static evaluator, and a signed
    stoichiometry carried** (PR #335). The static evaluator now folds the
    built-in MathML functions and their arguments instead of emitting them
    verbatim, and a rate-ruled species reference whose stoichiometry is
@@ -226,8 +254,8 @@ so a cluster table can no longer omit the cases it forgot.
    rather than `unsupported`: eight official cases move forward, and the
    official-reference residual falls from 18 to 17.
 
-6. **The SBML `fast` attribute is part of the model's definition, not a solver
-   hint** (PR #354). SBML Level 3 Version 1 Sec. 4.11 and SBML Level 2
+7. **The SBML `fast` attribute is part of the model's definition, not a solver
+   hint** (PRs #354 and #370). SBML Level 3 Version 1 Sec. 4.11 and SBML Level 2
    Sec. 4.13 (Sec. 4.9 in Level 2 Version 1) do not
    describe a `fast="true"` reaction as merely faster: "Fast reactions are
    considered to be instantaneous relative to the slow reactions", and
@@ -275,48 +303,134 @@ so a cluster table can no longer omit the cases it forgot.
    official cases move `unsupported → passed` (00870 00871
    00872 00873 00874 00875 00986 01051 01052 01053 01396 01397 01399 01544
    01545 01546 01547 01548 01549 01550 01551 01558 01559 01560 01565 01567
-   01569 01571 01572) and 5 stay `unsupported` with a construct-naming
-   reason: a rate constant an event or a rule sets (00987 00988 01568
-   01570), a stoichiometry an event changes (01398), and a `delay` of the
-   converted species (01539).
+   01569 01571 01572) — 14 of them by PR #354, which reduced the shape whose
+   rate vanishes with a converted species, and the other 15 by PR #370,
+   which added the algebraic balance — and 6 stay `unsupported` with a
+   construct-naming reason: a rate constant an event or a rule sets (00987
+   00988 01568 01570), a stoichiometry an event changes (01398), and a
+   `delay` of the converted species (01539).
 
-The combined effect of all nine changes is recorded in the integrated
+8. **A rate law on a concentration-valued species, and a scheduled action's
+   concentration** (PRs #361 and #363). SBML L3V2 Core §4.11 makes a kinetic
+   law's value the reaction's *extent* rate, and §4.6 makes a species' value
+   in an expression its amount when it has `hasOnlySubstanceUnits="true"`
+   and its concentration otherwise, so a law with `m` reactant factors of
+   which `a` are amount-valued has the value `k * n**m / V**(m - a)`. BNGL's
+   rate laws are always *concentration* rates, so the equivalent BNGL
+   constant is `k * V**(a - 1)`. PR #363 scales the law by that factor; PR
+   #361 makes an event's assignment to a concentration-valued species reach
+   the species' *amount*, as canonical BNG2 does, by scaling the assigned
+   concentration with the compartment volume.  Between them they move 39
+   official-reference cases `failed → passed` (PR #361) and 11 more
+   `failed → passed` or `unsupported → passed` (PR #363).
+
+9. **A reference that names a reaction** (PR #378). The official suite asks
+   for a reaction's rate by naming the reaction id as a result variable.
+   SBML L3V2 Core §4.11.8 says such a symbol "represents the rate of the
+   given reaction as given by the reaction's KineticLaw object", and §4.2.5
+   says that rate is the rate of change of the reaction's extent. A
+   reaction's rate is not an observable — the engine's observables count
+   pattern matches — but a zero-argument BNGL *function* already is what the
+   engine treats as an algebraic model output, so the Atomizer states each
+   reaction's rate that way and the gate maps the reference's variable onto
+   it. 22 official cases move `unsupported → passed`.
+
+The combined effect of all of these changes is recorded in the merged
 result below.
 
-## Workstreams
+## What the campaign set out to do, and what it reached
 
-| ID | Cluster | Owner | State |
-| --- | --- | --- | --- |
-| A | Initial-value resolution order | agent A | PR #316 (review pending) |
-| — | `csymbol` semantics + static parameter initial assignments | coordinator | PR #318 (review pending) |
-| H | Amount-based rate laws / extent-rate volume factor | coordinator | PR #319 (review pending) |
-| — | n-ary MathML relations | coordinator | PR #320 (review pending) |
-| — | Baseline inventory and campaign record | coordinator | PR #317 (review pending) |
-| B | Over-conservative diagnostics (MathML reciprocals, `fast`) | agent B | partial work in `/tmp/bng3-campaign/wt-atomizer-diagnostics` |
-| C | Empty MathML / reactions without a kinetic law | agent C | partial work in `/tmp/bng3-campaign/wt-atomizer-empty-math` |
-| D | Harness: scheduled actions + stochastic ensembles + reaction extents | agent D | **not started — highest remaining leverage** |
-| E | `delay` / `rateOf` in the C++ SBML writer | agent E | PR #324 (merged) |
-| F | State-dependent SBML event triggers | agent F | not started |
-| G | Structural atomization (molecular identity, sites, uncertainty) | agent G | partial work in `/tmp/bng3-campaign/wt-atomizer-structure` |
-| I | Assignment rules whose target is a parameter | agent I | not started |
-| J | Time-dependent stoichiometry (rate-ruled `speciesReference`) | agent J | PR #323 (merged) |
-| — | Independent review of each implementation PR | separate reviewer | required before merge |
-| — | The SBML `fast` reaction's pseudo steady state | agent AA | PR #354 (review pending) |
+The campaign set out to make the modern Atomizer the most correct, most
+comprehensive and most robust SBML-to-BNGL converter it can be, with
+**demonstrable** mathematical equivalence rather than merely successful
+conversion. It set itself one rule above all others: *a conversion success
+is not a conformance claim*. A model that BNG3 cannot represent exactly is
+refused, with the refusal naming the construct that blocks it; it is never
+approximated and counted as supported.
 
-## Merged result (2026-10-20)
+The method was a measurement, not an opinion:
+
+* a **baseline** of the official SBML Test Suite and of a curated
+  BioModels corpus, measured on a pinned suite revision and a pinned corpus
+  inventory, so that every later claim is a comparison against a recorded
+  measurement rather than a recollection;
+* a **per-case gate** with four stages — conversion, round-trip structure,
+  an independent libRoadRunner comparison, and a comparison against the
+  suite's own published reference — so that "it converted" and "it is
+  correct" are separate results;
+* an **expectation manifest** that records the expected verdict of every
+  case at every stage, so that a coverage regression fails a comparison
+  instead of waiting to be noticed;
+* **independent oracles** wherever one exists: libRoadRunner 2.10.0 on the
+  source SBML, the suite's own `-results.csv` at the suite's own per-case
+  tolerance, and canonical Perl BNG2 2.9.3 for the rate-law semantics;
+* a **scope record** ([`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md))
+  that names every construct the Atomizer still refuses, whether the
+  boundary is reducible, and when it was recorded.
+
+What it reached is in the generated tables below: on the measured tree the
+official-reference comparison has **no failure at all** and the conversion
+stage has **no failure at all**. What is left is not a set of wrong
+answers; it is a set of **declared boundaries**, each of which is either an
+explicit refusal that names its construct or a case the gate cannot compare
+point-wise and says so.
+
+**How to read the numbers.** The figures in this document come from three
+kinds of statement, and they are not interchangeable:
+
+| Where | What it states | How fresh it is |
+| --- | --- | --- |
+| the generated regions | the measured state of the tree, with the report, that report's SHA-256 and the commit it measured | the current measurement, and the only place the current figures appear |
+| the baseline section | the tree at the campaign's base commit, measured on 2026-10-19 | a historical fact; it is not rewritten |
+| the merged-pull-request table | what each merged pull request changed and which cases it moved, measured on that pull request's own branch | a historical per-branch record; the numbers overlap where one change enables another |
+
+**What remains.** The campaign is not finished, and this document does not
+present it as finished. The open work is:
+
+* **The Atomizer-side boundaries**, each described with its cases and its
+  reducibility in `ATOMIZER_LIMITATIONS.md`: an event the Atomizer cannot
+  lower or cannot order (the largest open cluster), the `fbc` package, the
+  `delay`/`rateOf` operators, a fast reaction whose pseudo steady state
+  cannot be written as a BNGL rule, a state trigger the runtime cannot
+  schedule, an infinite or not-a-number constant, a compartment with more
+  than three spatial dimensions, and a small bucket of refusals the
+  taxonomy does not yet name.
+* **The harness-side measurement limits**, which are fewer than they were
+  and are not the Atomizer's: the official reference for a model with
+  simultaneous events of equal priority is *one draw* of a random
+  execution order, so it cannot be compared point-wise at all. The
+  comparison for those cases has to be distributional, or the reference has
+  to pin the order.
+* **The cases the campaign could not make comparable**: the official suite
+  itself records that 34 of its cases define no time-course reference, so
+  there is nothing to compare against and nobody should go looking for a
+  fix; two stochastic cases sit on the boundary of the generated
+  scheduled actions, which the native dispatcher reports before the
+  phase's assignment is applied.
+* **The curated-BioModels corpus**, whose figures in the generated table
+  are the campaign's **flat-mode** measurement. The corpus has not been
+  re-measured since, so those figures are a dated record of a flat-mode
+  run rather than a current statement about the corpus, and they must not
+  be read as one. The corpus's own expectation manifest and its per-record
+  inventory exist, and the last corpus failures are being triaged
+  separately (PR #381).
+* **The two pull requests that were still open** when this document was
+  written: one that carries a reversible `TotalRate` rule into both
+  directions of the SBML writer (PR #381), and the corrected repair of the
+  statistical factor of identical reactants (PR #382) — see
+  [The ODE regression and the revert that closed it](#the-ode-regression-and-the-revert-that-closed-it).
+
+## Merged result
 
 The campaign's pull requests merge into `main` one at a time and the tree
 advances with each merge, so **every number in this section is a moving
 target**. The tables below are regenerated from a harness report by
 `scripts/ci/sbml_campaign_tables.py`; they are never maintained by hand, and
 each one names the report it came from, that report's SHA-256, and the BNG3
-commit it measured. The figures they currently carry are **conversion
-1732 passed / 191
-unsupported / 0 failed / 0
-timeout** and **official reference 1225 passed /
-687 unsupported / 11 failed
-/ 0 timeout**, from the report
-`/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`), which measured the BNG3 commit `c7550723b7ccc3a2cc3c2992e791fa922b118504`.
+commit it measured. **The current figures live in those tables, and this
+section states none of them**: a figure quoted here could outlive the
+measurement it came from, and a path under a temporary directory is not a
+durable record in any case.
 
 | PR | What it changed | Official cases moved | Merge commit |
 | --- | --- | --- | --- |
@@ -332,22 +446,67 @@ timeout** and **official reference 1225 passed /
 | #325 | Black formatting compliance on `main` | — (no behaviour change) | `03a577dd` |
 | #326 | A static Python-floor compatibility check | — (CI only) | `d647aede` |
 | #327 | The merge-gate exception record for #323 and #324 | — (record) | `c672c61f` |
+| #328 | A state-dependent SBML event trigger lowered into the native event runtime | 24 `unsupported → passed` | `6c52c737` |
+| #329 | SBML initial values resolved from the model's assignment statements as a whole | — (no verdict change on its own measurement) | `cf9afe42` |
 | #330 | A batched SSA sweep that checks the stochastic consistency of converted models | — (verification) | `48315b95` |
 | #331 | The pooled SBML conformance gate: one worker pool instead of a process per case | — (measurement speed) | `5c9ec354` |
 | #332 | The SBML conformance expectation manifest and the table generator | — (measurement) | `6c61d59f` |
+| #333 | A compartment's initial assignment applied; a non-finite parameter value reported | 4 `failed → passed` (00785 00786 01514 01820); 1 `passed → unsupported` (00951) | `2eb52050` |
+| #334 | SBML L3V2 semantics for the elements that carry no MathML | 16 `unsupported → passed` | `a8499fbb` |
 | #335 | The static evaluator's MathML built-ins and a signed stoichiometry | 1 `failed → passed` (`semantic/00879`) | `cee96c9a` |
+| #336 | The assigned-stoichiometry diagnostic's reason, and always-on regression tests | — (diagnostic) | `d06cfc69` |
+| #337 | The official references of action-bearing and stochastic cases validated | 424 `unsupported → passed`; 56 `unsupported → failed` (newly measured) | `d7b18d05` |
 | #338 | Classify an unparsable changed file as needing a newer interpreter | — (CI only) | `c0190fb2` |
 | #339 | Structural inference on the `atomize=True` path | — (the flat measurement path is byte identical) | `d1d0c1c7` |
 | #340 | The curated BioModels inventory and the two Atomizer defects it exposed | — (corpus) | `5c9d8e1e` |
+| #342 | The SBML specification citations, and a multiplicative compartment factor lowered exactly | — (no verdict change: the model text changes) | `71f84307` |
 | #345 | The expectation-manifest gate and the manifest re-measured on current main | — (measurement) | `f2cb2acc` |
 | #346 | The public helper's MathML built-ins from the shared table | — (no behaviour change) | `57736a19` |
 | #347 | The parser's `package:fbc` diagnostic in the flux guards | — (diagnostic) | `eafd6deb` |
 | #348 | A reaction's rate guarded on the sign of its derivative | — (diagnostic) | `89f19428` |
+| #349 | The independent audit of the campaign's claims | — (record) | `a08215a5` |
+| #350 | The stochastic-consistency sweep on the reproducible single-worker pool | — (measurement) | `8c617bf9` |
+| #351 | CVODE, the state vector and the SUNContext released when an exception unwinds | — (no verdict change) | `0a3e7749` |
+| #352 | The two curated-BioModels corpus regressions the audit found | — (corpus) | `ba5d2f63` |
 | #353 | A species concentration rate rule in an event-driven compartment | 2 `failed → passed` (`semantic/01505`, `semantic/01506`) | `c7550723` |
+| #354 | A fast reaction reduced to its pseudo steady state | 14 `unsupported → passed` | `48040e34` |
+| #355 | The assignment-rule, algebraic-rule and `csymbol` conformance cases | 3 `failed → passed` (01121 01492 01493); 1 `failed → unsupported` (01575) | `55d66bbc` |
+| #356 | An expectation manifest and a report comparison for the curated corpus | — (record) | `2d38c9a7` |
+| #357 | A campaign status command and a single harness contract suite | — (measurement) | `a432e252` |
+| #358 | The assignment-rule branch of the assigned-stoichiometry diagnostic, and its built-in guard | — (diagnostic) | `b202cd5e` |
+| #359 | A random-event case and an unmodelled boundary species reported as not comparable | 3 `failed → unsupported` (`stochastic/00006`, `00024`, `00026`) | `387fe6d8` |
+| #360 | The gate refuses to measure when the imported package is not this checkout | — (measurement) | `a195c901` |
+| #361 | A scheduled action's concentration set as BNG2 does, and a boundary species as an action target | 39 `failed → passed` | `bef88c1c` |
+| #362 | Each batch-SSA worker its own observable scratch, so a fixed seed is reproducible | — (no verdict change) | `b4171576` |
+| #363 | A rate law on a concentration-valued species scaled by its compartment volume | 11 `failed → passed` or `unsupported → passed`; 2 `failed → unsupported` (00963 00967) | `1f4a2fa6` |
+| #364 | The expectation manifest refreshed on the merged tree | — (record) | `8f095cd6` |
+| #365 | The structural inference kept mathematically exact | — (the flat measurement path is byte identical) | `5d8e78b0` |
+| #366 | A rate-ruled parameter assigned through its state; the phase budget widened | 4 `failed → passed` (01701 01702 01715 01716) | `248405ed` |
+| #367 | The artifacts two gate runs produced, diffed and not only their verdicts | — (measurement) | `2d08ea70` |
+| #368 | The official cases the action phase budget used to exclude | — (measurement) | `0b87c475` |
+| #369 | The expectation manifest refreshed: the official-reference failure count is zero | — (record) | `7f8bebe1` |
+| #370 | A fast reaction reduced to its algebraic balance | 15 `unsupported → passed` | `161017ee` |
+| #371 | Several native SBML events executed in the order the specification defines | — (no verdict change) | `2053f3b0` |
+| #372 | The expectation manifest refreshed after the fast reduction and the multi-event runtime | — (record) | `a1496fb1` |
+| #373 | A dated, generated record of the Atomizer's limitations | — (record) | `1873ad5a` |
+| #374 | The campaign's three records brought onto one measurement | — (record) | `ba892814` |
+| #375 | The folded mass-action constant independent of the interpreter's hash seed | — (no verdict change) | `c673935b` |
+| #376 | A state-triggered event group ordered by the priority it has at that instant | — (no verdict change) | `51fe8e00` |
+| #377 | The SBML section references in the Atomizer's diagnostics | — (diagnostic) | `bf24830c` |
+| #378 | A reference that names a reaction mapped to the reaction's extent rate | 22 `unsupported → passed` | `2cb9f2c3` |
+| #379 | **Revert of #315**, which made the ODE engine apply a statistical factor to a total-rate reaction | — (revert: it restored the 63 official cases #315 broke) | `9213008f` |
+| #380 | A boundary species honoured by the direct SSA path | 3 `unsupported → passed` (`stochastic/00006`, `00024`, `00026`) | `baa37832` |
+| #383 | The three records onto the current measurement, and the two closed limitations | — (record) | `faf09c03` |
 
 The "Official cases moved" column is measured per branch, so the numbers
 overlap where one change enables another; it is a historical per-branch record
 and not part of the generated region.
+
+One row is not an improvement, and it is marked as such: **#379 is a
+revert**. It removes what #315 did, and the reason is in
+[The ODE regression and the revert that closed it](#the-ode-regression-and-the-revert-that-closed-it).
+The table lists the campaign's *merged* pull requests, so the two that were
+still open when this document was written — #381 and #382 — are not in it.
 
 The generated tables below give the measured before/after state of every
 stage, the exact cases that changed verdict, and the cases that regressed.
@@ -355,22 +514,56 @@ They also cover the changes whose effect is not broken out per branch above.
 
 ### The campaign's invariant, audited
 
-The independent audit of the merged set confirms the campaign's central
-invariant: **no case became `passed` because a diagnostic was removed, a
-tolerance was widened, a reference file was edited, or a comparison was
-skipped.** Of the 98 cases whose verdict moved, 88 changed nothing but the
-trajectory and 9 more became genuinely representable, each verified against an
-independent libRoadRunner reproduction of the official reference. No
-tolerance, reference file, mapping or comparison changed anywhere.
+The campaign's central invariant is that **no case becomes `passed` because
+a diagnostic was removed, a tolerance was widened, a reference file was
+edited, or a comparison was skipped**. It is not an assertion; it is an
+audited result.
 
-The audit's detail is the specific evidence that no case passed because the
-comparison had become lenient: of the 88 `failed → passed` changes, **87 were
-qualitative** — beyond 100× the official tolerance before the change — and
-**one was numeric**, and **no moved case was already within tolerance before
-the change**.
+The independent audit is recorded in
+[`provenance/sbml-campaign/audit-2026-10-21.json`](../provenance/sbml-campaign/audit-2026-10-21.json)
+(PR #349). It measured the tree at `d7b18d05` against the campaign's base
+commit `219c76da`, on 2026-10-21, in an isolated worktree with a private
+clone of the pinned suite revision, and it recorded for every case whose
+verdict moved both the transition at each stage and the **mechanism** of the
+change. Its conclusion, for the set it audited: the input, settings and
+results digests are byte-identical to the baseline for all 1923 cases, so no
+reference file was edited, no tolerance was widened and no comparison was
+skipped; every case the gate reports as `passed` has a non-empty official
+comparison with zero failed points, a passing independent libRoadRunner
+round trip, and a passing round-trip structure.
 
-_Source: the independent campaign audit, recorded in
-`provenance/sbml-campaign/audit-2026-10-20.json` (PR #349)._
+The audit also recorded the one place where a removed diagnostic could have
+hidden an approximation, and showed that it did not. Its record attributes
+a removed `dropped`/`approximated` warning to 51 of the cases it measured,
+and the audit checked each of them: where the case moved to a passing
+verdict, the construct became exactly representable — the MathML
+trigonometric reciprocals are lowered to exact algebraic identities, a
+negative stoichiometry is represented rather than omitted — and the published
+reference agrees. The other five are the audit's findings rather than wins:
+four cases became `failed` because a comparison that had never been made was
+made and disagreed, and one stayed `unsupported`. The audit then
+re-simulated every case that moved to a passing official-reference verdict
+from its own SBML with libRoadRunner 2.10.0 and compared it with the
+published `-results.csv` at the official per-case tolerance: 500 of the 551
+reproduce the published reference within that tolerance, and the other 51 are
+models libRoadRunner itself refuses to load (`delay`, an algebraic rule, a
+`fast` reaction), for which the published reference is the only witness.
+
+**The invariant has been checked again since.** The audit measured a tree
+that has since moved a long way; the current measurement is in the
+generated tables below, and it has no official-reference failure and no
+conversion failure at all. Every verdict-changing merge since has been
+gated by the expectation manifest's ratchet, which fails a change that
+drops a case from `passed` unless the manifest is updated explicitly, and
+the manifest was refreshed on the merged tree as the campaign's work landed
+(PRs #364, #369, #372, #374 and #383). The one regression the campaign
+introduced was caught by the official-suite conformance measurement and
+reverted — see
+[The ODE regression and the revert that closed it](#the-ode-regression-and-the-revert-that-closed-it).
+
+**The audited record describes the tree the audit measured.** Its counts are
+a historical fact about that tree, not a description of the current one, and
+this document does not use them as one.
 
 <!-- BEGIN GENERATED: sbml-campaign-current -->
 
@@ -459,7 +652,13 @@ The generated comparison above lists every case whose verdict changed, the
 stage it changed at, and every case that regressed. A stage that stops being
 `passed` is a regression: the run then delivers less than the expectation
 manifest records, and the manifest must be updated before the change is
-accepted.
+accepted. The four cases the comparison lists as regressions are the
+campaign's own *corrections*, not a loss of coverage: each is a case that
+was reported as supported while the model it produced was wrong or the
+construct it used was untranslated, and each is now an explicit refusal that
+names the construct. `semantic/00951` is a parameter with an infinite value,
+`semantic/01466` and `semantic/01575` and `semantic/01576` are events the
+lowering could not carry out.
 
 The curated-BioModels row in the generated table is an **aggregate**, and an
 aggregate hid two reproducible regressions: `BIOMD0000000638` and
@@ -468,6 +667,16 @@ the same. The two were found by the corpus inventory (PR #340) and are fixed
 there. The claim and the correction belong together: the aggregate number
 was never evidence that nothing changed, and the corpus is now inventoried
 per record so that it cannot be again.
+
+That row is also the campaign's **flat-mode** measurement, and the report it
+came from names the date it was taken. The corpus has not been re-measured
+since, so the row is a dated record of a flat-mode run and not a current
+statement about the corpus; the generated table names its report and that
+report's SHA-256, and this document does not restate its numbers. The
+corpus's own expectation manifest and per-record inventory exist (PR #356),
+so a corpus regression is now a comparison rather than a human reading two
+large reports side by side, and the corpus's remaining failures are being
+triaged separately (PR #381).
 
 ## Python test suite
 
@@ -483,8 +692,25 @@ Source: `/tmp/bng3-campaign/pytest-main2.xml` (SHA-256 `2716fefda0dcfeb5ea13df2d
 
 <!-- END GENERATED: sbml-campaign-python -->
 
-The one failure (`test_generated_notebooks_execute_in_qualified_kernel`) also
-fails on the unmodified base commit.
+The row above is the Python suite as it ran on the measured tree, and it
+carries **47 failures**, not one. They are two different things:
+
+* **1 failure** — `test_generated_notebooks_execute_in_qualified_kernel` —
+  needs a Jupyter kernel and fails identically on the campaign's base
+  commit.
+* **46 failures** — all of `tests/python/test_sbml_reaction_rate_outputs.py`
+  (PR #378) — fail with `FileNotFoundError` on the fixture the test reads,
+  `tests/fixtures/sbml_test_suite_reaction_rate/NNNNN-sbml-l3v2.xml`. The
+  fixture directory is committed with each case's `-results.csv` and
+  `-settings.txt` but **not** with the case's SBML source model, so the test
+  cannot read the model it is supposed to atomize. These failures are
+  present on the merged tree and are a defect in the test's own fixtures,
+  not a failure of the Atomizer; the reaction-rate behaviour they cover is
+  measured against the official reference by the generated tables above.
+
+This is a prose change, so the defect is recorded here and not repaired
+here; it needs a commit that adds the missing fixture files, or a test that
+resolves the source model from the pinned suite checkout.
 
 ### A regression the campaign's own validation caught
 
@@ -509,6 +735,59 @@ SBML extent-rate reading gives `0.024969`, a factor of `V**2`. The
 exemption now distinguishes the two shapes, and the multiplicative form is
 lowered exactly.
 
+### The ODE regression and the revert that closed it
+
+PR #315 ("Reconcile issue obligations and detect native BNGIR rule reference
+corruption", merged as `25f13c5b`) was merged into `main` and **reverted**
+by PR #379 (`9213008f`). It is the one regression the campaign introduced,
+and it is recorded here because a reader of the merged-pull-request table
+must not read the revert as an improvement.
+
+#315 made the native ODE engine apply a reaction's **statistical (symmetry)
+factor** to a **total-rate** reaction's flux. In `cpp/engine/OdeIntegrator.cpp`
+the guard
+
+```cpp
+if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+```
+
+lost its `!crxn.isTotalRate` half at **two** sites: the special-rate-law
+branch and the functional (total-rate) branch. The special-rate-law site was
+the intended one — #315's own reconciliation record says the statistical
+factor "is a property of the rule's reactants, not of the rate law's shape" —
+and the total-rate site was a collateral removal. A total-rate rule's value
+**is** the reaction's extent rate (SBML L3V2 Core §4.11), and the Atomizer
+encodes the stoichiometry in the rule's pattern, so multiplying such a rule's
+flux by `1/2` changes the model. **Every one of the 63 affected cases has a
+converted rule of the shape `A + A -> ... <rate> TotalRate`.**
+
+The failure was numeric, not tolerance noise: for `semantic/00069` the
+comparison failed 148 of 153 output points, with a maximum scaled error of
+62.4, 56.8 and 435.6 on the three species. The measurement of `main` while
+#315 was in it reported 63 failures at the official-reference stage and 63
+at the conversion stage, where the tree before it reported none.
+
+**The Atomizer is not implicated, and the revert shows it on the model text
+rather than asserting it.** The generated BNGL for the failing cases is
+byte-identical between the reverted tree and the tree carrying #315. The
+only thing that differs is the native binary, and the verdict follows the
+binary: the same model text, a different trajectory.
+
+PR #379 reverts `25f13c5b` in full and restores the state in which the
+official suite measures zero failures. It changes no verdict, no tolerance,
+no reference file and no excluded case. **#315's content is not lost**: it
+remains in the repository's history, and its fixes are being re-applied
+selectively, each on its own, each gated on the official-suite conformance
+measurement — which is what the revert makes possible again. #315's intended
+repair of the statistical factor is *not* being discarded on its merits: the
+guard it removed was doing real work for total-rate reactions. The correct
+repair applies the factor to a **special** rate law, where canonical Perl
+BNG2 2.9.3 writes it as a prefix on the rate law for every rate-law type
+(`my $sf = ($rxn->RxnRule && $rxn->RxnRule->TotalRate) ? 1 : $rxn->StatFactor;`),
+and leaves a **total-rate** law alone. That repair is separate work, with
+its own evidence, and it was still open when this document was written
+(PR #382).
+
 ### Merge-gate exception: PRs #323 and #324
 
 The campaign's stated merge gate is that all required CI checks pass. Two
@@ -529,9 +808,9 @@ repository owner.
 
 * `Lint & Format` and `Check formatting and suggest patch` (the
   `autofix` workflow's `black --check --target-version py312 .` gate). This
-  was a formatting-only defect: the agents' Python was not formatted with the
-  repository's pinned `black==26.10.0`. The same formatting-only change was
-  landed on `main` afterwards, in PR #325 (commit `b3de638e`, merged as
+  was a formatting-only defect: the campaign's Python was not formatted with
+  the repository's pinned `black==26.10.0`. The same formatting-only change
+  was landed on `main` afterwards, in PR #325 (commit `b3de638e`, merged as
   `03a577dd`); `black --check --diff --target-version py312 .` and
   `ruff check python/ tests/ scripts/ formal/` are clean on the merged tree,
   and no semantics changed (the three reformatted files parse to an
@@ -568,22 +847,28 @@ repository owner.
   normal CVODE cleanup. This is a real defect, not a timing or environment
   artefact.
 
-A repair of the CVODE cleanup leak is in flight: a scope-guarded lifetime for
-`cvode_mem`, `y` and `sunctx`, with the expectation that the `C++ ASan
-(Ubuntu)` job turns green on every pull request afterwards. It has not
-landed in this tree, so no outcome is claimed here; the repair has to show
-the LeakSanitizer summary before and after, the full C++ suite count, and an
-**empty** SBML per-case diff, because the ODE engine is involved.
+The repair of the CVODE cleanup leak has since landed, in PR #351
+(`0a3e7749`): `cvode_mem`, `y` and `sunctx` now have an unwinding-safe
+lifetime, and the `C++ ASan (Ubuntu)` job's qualification step reports an
+**empty** LeakSanitizer report and `100% tests passed, 0 tests failed out of
+682`, where the same step on `main` reported `SUMMARY: AddressSanitizer:
+12592 byte(s) leaked in 137 allocation(s)` and failed (CI run `39525857115`,
+job `118980209432`, against run `39451902614`, job `118728607326` on
+`main`). The repair's own per-case diff against the campaign's measurement
+is empty, because the ODE engine is involved and the SBML verdicts must not
+move. The issue-141 acceptance record itself
+(`docs/PACKET4_141_ACCEPTANCE.md`, `docs/packet4-141-acceptance.json`) is a
+separate, live qualification effort and was not modified by the repair.
 
 The discriminating checks were green at the merged heads. The `Official SBML
 references (128 PR cases; full scheduled suite)` job passed on both pull
-requests, and the agents' own pinned-suite runs with per-case diffs against
+requests, and the campaign's own pinned-suite runs with per-case diffs against
 the merged baseline were the primary evidence: #323 ran all 1923 pinned
 cases (1823 semantic plus 100 stochastic) and moved 14 cases `failed →
 passed` with 0 regressions; #324 ran the 1823 semantic cases and moved 7
-cases `failed → passed` with 0 regressions. The independent subagent reviews
-of #323 and #324 were still outstanding at merge time and are being completed
-after the fact.
+cases `failed → passed` with 0 regressions. The independent reviews of #323
+and #324 were still outstanding at merge time and were completed after the
+fact.
 
 ## Expectation manifest
 
@@ -613,7 +898,7 @@ instead of a human reading two large reports side by side.
     "bng3_commit": "<BNG3 commit the manifest describes>",
     "measured_at_commit": "<BNG3 commit the run actually executed>",
     "python_version": "3.14.6",
-    "measurement_date": "2026-10-20"
+    "measurement_date": "2026-10-21"
   },
   "provenance": {
     "measured_commit": "<the commit the manifest describes>",
@@ -628,10 +913,10 @@ instead of a human reading two large reports side by side.
     "notes": ["<why the two commits are equivalent for the gate>"]
   },
   "stage_counts": {
-    "conversion": {"passed": 1731, "unsupported": 192},
-    "roundtrip_structure": {"not_tested": 192, "passed": 1731},
-    "independent_comparison": {"not_tested": 192, "passed": 1731},
-    "official_reference": {"failed": 17, "passed": 1220, "unsupported": 686}
+    "conversion": {"passed": 1798, "unsupported": 125},
+    "roundtrip_structure": {"not_tested": 125, "passed": 1798},
+    "independent_comparison": {"not_tested": 125, "passed": 1798},
+    "official_reference": {"passed": 1784, "unsupported": 139}
   },
   "cases": {
     "semantic/00001": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -674,11 +959,11 @@ committed file, and the diff is the review.
 PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   --suite-dir /path/to/sbml-test-suite \
   --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 3 \
-  --json /tmp/bng3-campaign/report.json
+  --json "$REPORTS/report.json"
 
 # 2. Regenerate the manifest from that report.
 python scripts/ci/sbml_campaign_inventory.py \
-  --suite-report /tmp/bng3-campaign/report.json \
+  --suite-report "$REPORTS/report.json" \
   --expectations-out provenance/sbml-campaign/expectations.json \
   --measurement-date "$(date -u +%Y-%m-%d)" \
   --measured-commit "$(git rev-parse HEAD)" \
@@ -710,7 +995,7 @@ regenerated. After each such merge the manifest is regenerated from the new
 
 ```bash
 python scripts/ci/sbml_campaign_inventory.py \
-  --suite-report /tmp/bng3-campaign/report.json \
+  --suite-report "$REPORTS/report.json" \
   --expectations provenance/sbml-campaign/expectations.json
 ```
 
@@ -740,23 +1025,41 @@ Every table in this document is produced by
 `scripts/ci/sbml_campaign_tables.py`, which reads the harness reports and the
 pinned suite's own case notes and writes the marked regions above.
 
+The `--measured-commit` argument is the commit the committed expectation
+manifest *describes*, and the report is the one that manifest names, so the
+command below reproduces the committed regions exactly when `$REPORTS` holds
+that report as `current-suite.json` with the baseline reports beside it. The
+report's own name and SHA-256 are in the generated region, so the file to
+point at is identifiable from the document alone:
+
 ```bash
+# The commit the committed manifest describes, and the report it names.
+MEASURED_COMMIT="$(python -c 'import json; print(json.load(open("provenance/sbml-campaign/expectations.json"))["provenance"]["measured_commit"])')"
+
 python scripts/ci/sbml_campaign_tables.py \
-  --baseline-suite-report /tmp/bng3-campaign/baseline-ssts.json \
-  --suite-report /tmp/bng3-campaign/current-main-2026-10-20b.json \
-  --baseline-biomodels-report /tmp/bng3-campaign/biomodels-baseline.json \
-  --biomodels-report /tmp/bng3-campaign/biomodels-main-flat.json \
+  --baseline-suite-report "$REPORTS/baseline-ssts.json" \
+  --suite-report "$REPORTS/current-suite.json" \
+  --baseline-biomodels-report "$REPORTS/biomodels-baseline.json" \
+  --biomodels-report "$REPORTS/biomodels-main-flat.json" \
   --suite-dir /path/to/sbml-test-suite \
-  --pytest-junit /tmp/bng3-campaign/pytest-cee96c9a.xml \
-  --measured-commit "$(git rev-parse main)" \
+  --pytest-junit "$REPORTS/pytest-current.xml" \
+  --measured-commit "$MEASURED_COMMIT" \
   --doc docs/SBML_ATOMIZER_COVERAGE_CAMPAIGN.md
 ```
+
+Each generated region names the report it came from and that report's
+SHA-256, so a reader who does not have the report on this machine can still
+tell which measurement the numbers describe. The `--measured-commit`
+argument is the **full** commit hash: the generator compares it with the
+commit the report says it executed, and it adds a note that the two differ
+when the two strings are not equal, so an abbreviated hash would change the
+region's text.
 
 The Python-suite row is read from a pytest JUnit report:
 
 ```bash
 PYTHONPATH=python:build/cpp python -m pytest -q tests/python \
-  --junitxml=/tmp/bng3-campaign/pytest-cee96c9a.xml
+  --junitxml="$REPORTS/pytest-current.xml"
 ```
 
 The generator never runs the harness, never changes a verdict and never
@@ -779,13 +1082,13 @@ regions wherever the surrounding prose needs them.
 
 ```bash
 python scripts/ci/sbml_campaign_tables.py \
-  --baseline-suite-report /tmp/bng3-campaign/baseline-ssts.json \
-  --suite-report /tmp/bng3-campaign/current-main-2026-10-20b.json \
-  --baseline-biomodels-report /tmp/bng3-campaign/biomodels-baseline.json \
-  --biomodels-report /tmp/bng3-campaign/biomodels-main-flat.json \
+  --baseline-suite-report "$REPORTS/baseline-ssts.json" \
+  --suite-report "$REPORTS/current-suite.json" \
+  --baseline-biomodels-report "$REPORTS/biomodels-baseline.json" \
+  --biomodels-report "$REPORTS/biomodels-main-flat.json" \
   --suite-dir /path/to/sbml-test-suite \
-  --pytest-junit /tmp/bng3-campaign/pytest-cee96c9a.xml \
-  --measured-commit "$(git rev-parse main)" \
+  --pytest-junit "$REPORTS/pytest-current.xml" \
+  --measured-commit "$MEASURED_COMMIT" \
   --check --doc docs/SBML_ATOMIZER_COVERAGE_CAMPAIGN.md
 ```
 
@@ -802,9 +1105,9 @@ committed expectation manifest still describes reality.
 
 ```bash
 python scripts/ci/sbml_campaign_status.py \
-  --suite-report /tmp/bng3-campaign/report.json \
-  --previous-suite-report /tmp/bng3-campaign/previous.json \
-  --biomodels-report /tmp/bng3-campaign/biomodels.json \
+  --suite-report "$REPORTS/report.json" \
+  --previous-suite-report "$REPORTS/previous.json" \
+  --biomodels-report "$REPORTS/biomodels.json" \
   --corpus-inventory provenance/curated-biomodels-corpus-inventory.json \
   --suite-dir /path/to/sbml-test-suite \
   --checkout-root .
@@ -842,7 +1145,7 @@ it cannot tie to the checkout as a clean result.
 
 ```bash
 python scripts/ci/sbml_campaign_status.py \
-  --suite-report /tmp/bng3-campaign/report.json --json /tmp/bng3-campaign/status.json
+  --suite-report "$REPORTS/report.json" --json "$REPORTS/status.json"
 ```
 
 ## The harness's own contract suite
