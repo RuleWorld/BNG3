@@ -317,10 +317,10 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 * **Cases:** `semantic/00963`, `semantic/00967`.  The Atomizer defect is
   fixed; the corrected lowering needs 1001 simulation phases, one more than
-  the harness's documented budget of 1000, so the harness now reports the two
-  cases as *not comparable* instead of as a numeric mismatch.  With the
-  budget raised the fixed model reproduces the official reference exactly
-  (4 s per case).
+  the harness's documented budget of 1000, so the harness reported the two
+  cases as *not comparable* instead of as a numeric mismatch.  The budget is
+  now 2000, so both cases are compared and both reproduce the official
+  reference (about 2 s per case).
 * **Mechanism:** the event expander detects a trigger's crossing with a
   tolerance, then re-evaluated the trigger's own expression to decide
   whether a scheduled firing was still valid.  For
@@ -333,6 +333,82 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   recurrence needs.
 * **Fix:** every place that asks whether a trigger holds asks it the same
   way, through one helper that keeps the crossing tolerance.
+* **Phase count.** The 1001 phases are the count the source itself implies:
+  both models' events fire every 0.01 s over the official horizon, so the
+  recurrence has 1000 firings and the action block one phase per firing.
+  The harness sees the source's own count, not an artifact of the lowering.
+* **The phase budget was too tight, and it is a cost limit.**  The budget
+  guards the conformance gate's per-case time budget, not correctness: every
+  phase is a separate integration and every phase adds a row to the
+  dispatcher's trajectory file.  Measured on the pinned suite, the 1,001
+  phases of `semantic/00963` cost about 2 s and the 10,000 phases of
+  `semantic/01588` about 46 s, so about 4 ms per phase, against the CI's
+  60 s per-case timeout.  The budget is now 2000: above every phase count
+  the suite's models legitimately imply, below the one whose action
+  execution alone does not fit the per-case budget.  It stays a phase count
+  rather than a wall-clock limit because the per-phase cost depends on the
+  model and the runner's load, so a time limit would make a case's verdict
+  depend on where it ran.
+* **The budget no longer hides a comparison that would succeed.**  The
+  harness used to refuse *any* case whose official grid contained a phase
+  boundary, before comparing it, because the dispatcher reports the
+  phase-boundary sample before the phase's assignment is applied while the
+  official reference reports the state after it.  The comparison now runs
+  first and the convention only matters when it changes the verdict: a
+  disagreement confined to those points is *not comparable*, and a
+  comparison the official tolerance accepts is a pass.  `semantic/00967`'s
+  only disagreement is 0.01 at its last grid point, inside the official
+  tolerance of 0.06, so it passes on its merits.  `stochastic/00028` and
+  `stochastic/00032` disagree by much more at their boundary and stay *not
+  comparable*, with the reason naming the boundary rather than reporting a
+  failure that is not a statement about the model.
+
+### 8b-2. A phase-boundary sample is taken before the assignment - KNOWN
+
+* **Cases:** `semantic/00967` (inside the official tolerance, so it passes),
+  `stochastic/00028`, `stochastic/00032` (outside it, so they are *not
+  comparable*).
+* **Mechanism:** the native action dispatcher writes the sample at a phase's
+  end time from the state before the phase's assignment is applied; the
+  assignment takes effect for the following phase.  A probe on the native
+  dispatcher confirms it: a block that integrates to `t = 1`, assigns a
+  species and continues reports `1.0` at `t = 1` and `5.0` at the next
+  sample.  The official reference reports the post-assignment state at the
+  same instant, so the two conventions differ at a boundary by exactly the
+  assignment's effect.  The harness cannot recover the post-assignment value
+  at that instant from the trajectory, because the dispatcher never writes
+  it.
+* **Consequence:** a case whose official grid contains a phase boundary and
+  whose assignment moves a requested output is not comparable point-wise.
+  The harness says so with a reason that names the boundary.
+
+### 8b-3. A random-order event model was refused for the wrong reason - FIXED
+
+* **Cases:** `semantic/01588`.
+* **Mechanism:** `semantic/01588` is a random-order event model like
+  `semantic/01592`: its two competing events share one trigger and one
+  priority, both are non-persistent, and both reset the trigger, so exactly
+  one of them fires and which one is a random draw.  The harness detected
+  that shape by grouping the events on the *text* of their priority, so it
+  recognised `semantic/01592` (whose priorities are both written `1`) but
+  not `semantic/01588` (whose priorities are `k1` and `0.01`, numerically
+  equal because `k1` has the initial value `1 * 0.01`).  `semantic/01588`
+  therefore fell through to the action path and was refused by the phase
+  budget, with a cost reason, although the reason it cannot be compared
+  point-wise is the random order.  This is the harness's own grouping, not
+  the Atomizer's lowering: the Atomizer lowers both models the same way.
+* **Why it matters:** the refusal was accurate about the cost but it named
+  the wrong cause, and it hid that the case is not comparable for a reason
+  no budget can fix.  Comparing it once the budget is raised shows the
+  expected disagreement: the reference's `S` grows by 0.01 per firing and
+  the run's `S` grows twice as fast, because the run picks the same event
+  every time where the source requires a random choice.
+* **Fix:** the grouping compares the folded *value* of the priority when
+  the expression can be folded and falls back to its text when it cannot.
+  Only constant parameters are resolved, so a priority that varies over
+  time still falls back to the text and no pair is merged that the
+  specification does not merge.  `semantic/01588` is now refused with the
+  random-order reason, the same reason `semantic/01592` gets.
 
 ### 8c. A state-triggered event ignored the reaction's local parameters - FIXED
 

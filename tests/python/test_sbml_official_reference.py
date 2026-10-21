@@ -130,24 +130,24 @@ def test_phase_boundary_on_the_official_grid_is_unsupported():
     actions = _load_actions()
     block = actions.parse_action_block(ACTION_MODEL)
 
-    reason = validator._phase_boundary_ambiguity(
+    boundaries = validator._phase_boundary_indices(
         block,
         [0.0, 1.0, 2.5, 5.0],
         requested_ids=["S1"],
         target_symbols={"S1_amt"},
     )
-    assert reason is not None
-    assert "2.5" in reason
+    assert boundaries
+    assert 2.5 in boundaries.values()
 
     # A boundary that does not move a requested quantity is not ambiguous.
     assert (
-        validator._phase_boundary_ambiguity(
+        validator._phase_boundary_indices(
             block,
             [0.0, 1.0, 3.0, 5.0],
             requested_ids=["S1"],
             target_symbols={"S1_amt"},
         )
-        is None
+        == {}
     )
 
 
@@ -480,20 +480,76 @@ def test_harness_side_gaps_name_the_harness_limitation():
     actions = _load_actions()
     block = actions.parse_action_block(ACTION_MODEL)
 
-    boundary = validator._phase_boundary_ambiguity(
+    boundaries = validator._phase_boundary_indices(
         block,
         [0.0, 1.0, 2.5, 5.0],
         requested_ids=["S1"],
         target_symbols={"S1_amt"},
     )
-    assert boundary is not None
-    assert "scheduled actions" in boundary
+    # The action block resets S1 at t=2.5, which is an official grid point.
+    assert boundaries == {2: 2.5}
+
+    # A disagreement confined to that point is a convention difference, not a
+    # statement about the model.
+    reason = validator._boundary_only_disagreement([2], boundaries)
+    assert reason is not None
+    assert "scheduled actions" in reason
+    assert "not comparable" in reason
+
+    # A disagreement anywhere else is a genuine failure.
+    assert validator._boundary_only_disagreement([0, 1], boundaries) is None
+    assert validator._boundary_only_disagreement([], boundaries) is None
 
     # The manifest's harness-side needles.
     assert "repeated-run mean" in (
         "the official stochastic reference requests the repeated-run mean of X "
         "without its standard deviation"
     )
+
+
+def test_the_action_phase_budget_admits_the_legitimate_official_cases():
+    """The phase budget must not exclude a case the source itself implies."""
+
+    validator = _load_validator("validate_sbml_test_suite")
+    # semantic/00963 and semantic/00967 have source events that fire every
+    # 0.01 s over the official horizon, so their action blocks carry 1001
+    # phases.  semantic/01588 carries 10,000 and is refused for the cost.
+    assert validator.ACTION_MAX_PHASES > 1001
+    assert validator.ACTION_MAX_PHASES < 10_000
+
+
+def test_a_case_over_the_phase_budget_is_refused_with_the_cost():
+    """A case over the budget must be refused, and name what the budget costs."""
+
+    validator = _load_validator("validate_sbml_test_suite")
+    actions = _load_actions()
+    block = actions.parse_action_block(ACTION_MODEL)
+
+    class _Phase:
+        def __init__(self, index):
+            self.index = index
+            self.t_start = 0.0
+            self.t_end = 1.0 + index
+            self.method = "ode"
+            self.continued = False
+
+    over_budget = SimpleNamespace(
+        phases=tuple(_Phase(index) for index in range(validator.ACTION_MAX_PHASES + 1)),
+        assignments=tuple(() for _ in range(validator.ACTION_MAX_PHASES + 1)),
+    )
+
+    reason = validator._action_phase_budget_reason(over_budget)
+    assert reason is not None
+    assert str(validator.ACTION_MAX_PHASES + 1) in reason
+    assert "integration" in reason
+    assert str(validator.ACTION_MAX_PHASES) in reason
+
+    within_budget = SimpleNamespace(
+        phases=tuple(_Phase(index) for index in range(1001)),
+        assignments=tuple(() for _ in range(1001)),
+    )
+    assert validator._action_phase_budget_reason(within_budget) is None
+    assert block.phases
 
 
 def test_a_degenerate_generated_network_is_never_reported_as_agreement():
@@ -949,6 +1005,66 @@ def test_a_random_event_execution_case_is_not_comparable():
     assert verdict["status"] == "unsupported"
     assert "Qinc" in verdict["reason"]
     assert "Rinc" in verdict["reason"]
+
+
+def test_equal_priorities_written_differently_are_still_competing():
+    """``semantic/01588`` writes one priority as a parameter and one as a literal.
+
+    The two priorities have the same value, so SBML Level 3 Version 2 Core,
+    Release 2, section 4.12.3 requires the events to be executed in a random
+    order, exactly as in ``semantic/01592``.  The grouping compares the
+    priority's value, not the text of the expression, so the case is refused
+    for that reason rather than reaching the phase budget.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    # The second event's priority becomes the parameter k1, whose value is 1;
+    # the first event's priority stays the literal 1.  The two priorities
+    # therefore differ in text but not in value.
+    second_event_start = RANDOM_EVENT_MODEL.index('<event id="Rinc"')
+    second_event = RANDOM_EVENT_MODEL[second_event_start:]
+    rewritten_second_event = second_event.replace(
+        """        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn type="integer"> 1 </cn>
+          </math>
+        </priority>""",
+        """        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <ci> k1 </ci>
+          </math>
+        </priority>""",
+        1,
+    )
+    model = (RANDOM_EVENT_MODEL[:second_event_start] + rewritten_second_event).replace(
+        '<parameter id="reset" value="0" constant="false"/>',
+        '<parameter id="reset" value="0" constant="false"/>'
+        '<parameter id="k1" value="1" constant="true"/>',
+    )
+    parsed = _parse_sbml(model)
+    events = list(parsed.events)
+    assert len(events) >= 2
+    priorities = [str(event.priority or "").strip() for event in events[:2]]
+    assert priorities[0] != priorities[1], "the two priorities must differ in text"
+
+    verdict = validator._random_event_execution_verdict(parsed)
+    assert verdict is not None
+    assert "Qinc" in verdict["reason"]
+    assert "Rinc" in verdict["reason"]
+
+
+def test_a_persistent_competing_event_is_not_a_random_order_case():
+    """A group of persistent triggers always executes all of its events.
+
+    Its outcome does not depend on the order the specification leaves
+    undefined, so the random-order verdict must not apply to it.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    model = RANDOM_EVENT_MODEL.replace('persistent="false"', 'persistent="true"')
+    parsed = _parse_sbml(model)
+
+    assert validator._random_event_execution_verdict(parsed) is None
 
 
 def test_a_boundary_species_the_reference_does_not_track_is_not_comparable(
