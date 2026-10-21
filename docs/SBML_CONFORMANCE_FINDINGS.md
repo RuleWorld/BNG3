@@ -221,7 +221,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 * **Classification:** scope boundary (reference data), now reported as *not
   comparable*.  **CLOSED** on `campaign/ssa-boundary-and-rate-rules`: the
-  boundary was a *symptom* of the engine defect in section 12, and with that
+  boundary was a *symptom* of the engine defect in section 13, and with that
   defect fixed the three cases reproduce the published reference exactly.
 * **Cases:** `stochastic/00006`, `stochastic/00024`, `stochastic/00026`.
 * **Mechanism:** the models add a boundary species `Sink` that accumulates
@@ -237,13 +237,13 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   derived from the reaction definitions for it.  The official reference
   describes the reaction system, so it reports such a species as identically
   zero and does not describe it at all.
-* **Observed behaviour (before the fix of section 12):** the harness detects
+* **Observed behaviour (before the fix of section 13):** the harness detects
   that the reference reports the variable as identically zero at every output
   time while the model accumulates it.
 * **Minimal reproducer:** `stochastic/00006`; the reference's `Sink-mean`
   and `Sink-sd` columns are zero for all 51 output points while the model
   accumulates the sink.
-* **Handling in the harness (before the fix of section 12):** the case is
+* **Handling in the harness (before the fix of section 13):** the case is
   reported as `unsupported` - the gate's *not comparable* verdict - with the
   reason that names the quantity: "the official reference does not track the
   boundary species Sink: the reference reports Sink as identically zero at
@@ -256,7 +256,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 * **What closed it.**  That guard is a *guard*, not a verdict: it fires when
   the model **accumulates** a boundary species, and the model accumulated it
   because the direct SSA did not honour the model's constant-species marker
-  (section 12).  With the marker honoured the model keeps `Sink` at 0, the
+  (section 13).  With the marker honoured the model keeps `Sink` at 0, the
   reference's identically-zero column is exactly what the model produces, the
   mismatch the guard was written for does not occur, the guard no longer
   fires, and the three cases pass the published reference.  The reference was
@@ -642,7 +642,7 @@ test.
 
 ---
 
-## 9. The remaining official-suite event gap is not a scheduling gap - KNOWN
+## 10. The remaining official-suite event gap is not a scheduling gap - KNOWN
 
 * **Cases:** `semantic/00965`, `00966`, `01000`, `01466`, `01590`
   (`events:untranslated`), `semantic/00988`, `01466` (`events:state-trigger-not-schedulable`),
@@ -693,13 +693,13 @@ test.
   stays *not comparable*, and a model the runtime cannot execute stays an
   explicit refusal that names the construct.
 
-## 10. A conjunction's root function is not monotone - KNOWN
+## 11. A conjunction's root function is not monotone - KNOWN
 
 * **Cases:** none of the pinned suite's cases is *failing* because of it; the
   cases that use a conjunction trigger (`semantic/00932`, `00933`, `01511`,
   `01675`-`01680`, `01703`, `01704`, `01710`, `01711`, `01717`, `01718`, ...)
   all pass.  `semantic/01575` and `semantic/01576` cannot be lowered at all
-  today (see section 9 and section 11), so the defect is latent.
+  today (see section 10 and section 12), so the defect is latent.
 * **Mechanism:** the native runtime locates a trigger's rising edge with
   continuous root finding, and the root function of a *conjunction* is the
   **smallest** of the conjunct differences, because a conjunction holds only
@@ -709,7 +709,7 @@ test.
   brackets it, and the solver's steps follow the output grid, so a step that
   contains the kink can return a crossing that is not the trigger's rising
   edge.  The event's execution time then depends on the output grid.
-* **Evidence:** with the alias of section 11 in place, `semantic/01575`'s
+* **Evidence:** with the alias of section 12 in place, `semantic/01575`'s
   event (the trigger `k2 > 3.5 && k2 < 4` on a state that grows by one per
   second, so the rising edge is at `t = 2.5`) fires at `t = 2.5`, `t = 2.8` and
   `t = 3.37` with 20, 11 and 101 output steps respectively.
@@ -718,7 +718,7 @@ test.
   decide the conjunction's rising edge from the conjuncts' truth at the
   crossing, which is also what removes the dependence on the output grid.
 
-## 11. An algebraic rule the Atomizer cannot solve is a different construct - KNOWN
+## 12. An algebraic rule the Atomizer cannot solve is a different construct - KNOWN
 
 * **Cases:** `semantic/00761` (an algebraic rule the Atomizer does not
   apply), `semantic/01575` and `semantic/01576` (a rule it does apply).
@@ -747,10 +747,10 @@ test.
   solver.  Until it has one, such a model stays an explicit refusal that
   names the algebraic rule, and the event it carries stays untranslated.
 * **Consequence:** `semantic/01575` and `semantic/01576` are blocked by
-  section 10, not by the algebraic rule: their rule is applied today, and
+  section 11, not by the algebraic rule: their rule is applied today, and
   their trigger is a conjunction that the native runtime cannot yet locate
   reliably.
-## 12. A boundary species is not honoured by the direct SSA - FIXED
+## 13. A boundary species is not honoured by the direct SSA - FIXED
 
 * **Classification:** engine defect (the native engine executed the generated
   model differently from the specification).  **CLOSED** on
@@ -897,7 +897,7 @@ test.
     a stoichiometry that changes between events, so this is a scope boundary
     of the lowering rather than an engine defect.
 
-## 13. The recorded rate-rule disagreement was the multi-worker pool's data race - NOT A RATE-RULE DEFECT
+## 14. The recorded rate-rule disagreement was the multi-worker pool's data race - NOT A RATE-RULE DEFECT
 
 * **Classification:** not an engine defect on `main`; the recorded verdict was
   a misattribution, and the underlying defect is already fixed.
@@ -947,6 +947,102 @@ test.
   rate-ruled variable and for the species whose rate reads it - and
   `tests/validation/test_stochastic_consistency.py` keeps the sweep's own
   comparison under test.
+
+## 15. An official reference that names a reaction is not comparable - FIXED
+
+* **Classification:** harness-side gap over an Atomizer-side feature gap.
+  **CLOSED** on `campaign/reaction-rate-outputs`.
+* **Cases:** the twenty-two official cases whose reference names a reaction id
+  as a result variable: `semantic/01344 01345 01346 01347 01348 01349 01350
+  01351 01352 01360 01369 01378 01380 01381 01382 01383 01384 01385 01386
+  01387 01388 01389`.  Every one of them was recorded as
+  `reference:no-result-mapping`, the only *harness* construct in the manifest
+  that was not a measurement limitation.
+* **Mechanism:** the official reference asks for a reaction's rate by naming
+  the reaction id in its `variables:` list (`variables: S1, J1, C, A__x`).
+  The harness maps every reference variable onto an exact BNGL output symbol
+  (`scripts/ci/validate_sbml_test_suite.py`, `_reference_output_target`),
+  and a reaction id had no such symbol: the Atomizer emitted nothing that
+  carried a reaction's rate, so the case was recorded as *no result mapping*
+  instead of compared.  The comparison itself was never wrong; it could not
+  be made.
+* **What the reference asks for, and what the specification says it is.**
+  The reference's column is the reaction's **extent rate**.  SBML Level 3
+  Version 2 Core, Sec. 4.11.8: "The value of the `id` attribute of a
+  Reaction can be used as the content of a `ci` element in MathML formulas
+  elsewhere in the model.  Such a `ci` element or symbol represents the rate
+  of the given reaction as given by the reaction's KineticLaw object."  Sec.
+  4.2.5: "The extent of a reaction is a measure of how many times the
+  reaction has occurred, while the time derivative of the extent gives the
+  instantaneous rate at which the reaction is occurring.  Thus, what is
+  colloquially referred to as the 'rate of the reaction' is in fact equal to
+  the rate of change of reaction extent."  Sec. 4.11.7 gives the resulting
+  equation, `dnSi/dt = sum_j stoichSi,Rj * vRj`, with `vRj` the kinetic
+  law's value.  The quantity is therefore the kinetic law's value, and it is
+  a function of the state - a species' value is its amount when it has
+  `hasOnlySubstanceUnits="true"` and its concentration otherwise (Sec. 4.6).
+* **What BNGL and the engine can express.**  The BNGL grammar's
+  `observable_type` accepts `Molecules`, `Species`, `Counter` and a custom
+  name (`cpp/parser/BNGParser.g4`), but the engine's observable machinery
+  evaluates an observable by *counting pattern matches*: the type only
+  selects between the `Molecules` and the `Species` reading
+  (`cpp/engine/OdeIntegrator.cpp`), and the projection that the exporters use
+  refuses every other type outright - `unsupported observable type 'Counter'
+  for observable 'Cnt'` (`cpp/engine/ObservableProjection.cpp`).  A reaction's
+  rate is therefore **not** expressible as an observable, custom types
+  included.  A BNGL **function**, on the other hand, already is what the
+  engine treats as an algebraic model output: zero-argument functions are
+  evaluated along the trajectory and reported as results
+  (`cpp/engine/OdeIntegrator.cpp`, `updateFunctions` and `isResultFunction`),
+  and the C++ SBML writer emits them as native assignment rules.  No engine
+  feature was needed; the construct the model needed already existed.
+* **What changed.**  The Atomizer now states each reaction's rate as a
+  zero-argument function in the generated model (`<reaction id>_rate`), built
+  from the source kinetic law with the source species' values
+  (`python/bionetgen/atomizer/modern/writer.py`,
+  `_reaction_rate_expression`), and it reports the mapping from the source
+  reaction id to that function (`AtomizerResult.reaction_rate_functions`).
+  The harness maps a reference variable that names a reaction onto that
+  function.  The function is a function of the state and is evaluated along
+  the trajectory; it is never frozen at `t = 0`.  A reaction whose rate
+  cannot be stated in the generated model's own symbols states no rate at
+  all, and its case stays *no result mapping* - the refusal is unchanged
+  rather than approximated.
+* **The numbers.**  Each case reproduces the official reference on the
+  official grid, at the suite's own per-case tolerance from its
+  `-settings.txt` (`absolute: 0.0001`, `relative: 0.0001`): the rate
+  columns are `5` for `01344`-`01352`, `01360`, `01369`, `01378` and `1` for
+  `01380`-`01389`, and `01351`/`01387` carry a second reaction column
+  (`A__J2`) that is `5` in both.  Every rate column matches the official
+  reference *exactly* - a maximum absolute difference of `0` on all
+  twenty-two cases - and the worst scaled error over all of the cases'
+  variables is `1.4e-11`.  `tests/python/test_sbml_reaction_rate_outputs.py`
+  reproduces each case from the pinned suite revision
+  `cf38585fac5de8e0e90112febb62851ee2181816` and asserts the official
+  reference's own numbers.
+* **The per-case diff over the whole pinned suite.**  One full run per tree
+  against the pinned suite `cf38585fac5de8e0e90112febb62851ee2181816`, with
+  `PYTHONHASHSEED=0` and `PYTHONPATH=python:build/cpp`, both trees clean,
+  both runs against the *same* native extension - built once in this
+  branch's own worktree from the branch's C++ sources, which are
+  byte-identical to the base's - and each report naming its own worktree in
+  `runtime_provenance.bionetgen_package_path`:
+
+  | stage | `origin/main` (`ba892814`) | this branch |
+  | --- | --- | --- |
+  | conversion | 1797 passed / 126 unsupported / 0 failed / 0 timeout | 1797 passed / 126 unsupported / 0 failed / 0 timeout |
+  | round-trip structure | 1797 passed / 126 not tested | 1797 passed / 126 not tested |
+  | independent libRoadRunner comparison | 1797 passed / 126 not tested | 1797 passed / 126 not tested |
+  | official reference | 1758 passed / 165 unsupported / 0 failed / 0 timeout | **1780 passed / 143 unsupported / 0 failed / 0 timeout** |
+
+  * **22 verdicts moved**, all of them this cluster's cases, all from
+    `unsupported` to `passed`.
+  * **0 regressions**, and **no other record of the 1923 moved at all** - the
+    conversion, round-trip and independent-comparison stages are unchanged,
+    which is the check that the new function does not disturb the generated
+    model or its libRoadRunner parity.
+
+---
 
 ## Measurements that are *not* findings
 

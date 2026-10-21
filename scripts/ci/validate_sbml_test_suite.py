@@ -1311,6 +1311,7 @@ def _reference_output_target(
     parsed: Any,
     observable_map: dict[str, str],
     standardize_name: Any,
+    reaction_rate_functions: dict[str, str] | None = None,
 ) -> str | None:
     """Map an SBML result id to its exact generated BNGL output symbol."""
 
@@ -1372,6 +1373,14 @@ def _reference_output_target(
         return f"{observable}_amt / {volume}" if volume else None
     if any(rule.type == "rate" and rule.variable == variable for rule in parsed.rules):
         return f"{standardize_name(variable)}_amt"
+    rate_function = (reaction_rate_functions or {}).get(variable)
+    if rate_function is not None and variable in parsed.reactions:
+        # SBML Level 3 Version 2 Core, Sec. 4.11.8: the value of a
+        # Reaction's id denotes that reaction's rate, which Sec. 4.2.5 makes
+        # the rate of change of the reaction's extent.  The generated model
+        # states that rate as a function of the state, so it is compared
+        # along the trajectory.
+        return rate_function
     if variable in parsed.compartments:
         return compartment_volume(variable)
     # The parser keys its parameter table by the BNGL-safe identifier, so a
@@ -1632,6 +1641,7 @@ def _compare_case_to_reference(
             parsed,
             dict(atomized.observable_map),
             standardize_name,
+            dict(getattr(atomized, "reaction_rate_functions", {}) or {}),
         )
         if target is None:
             unresolved.append(variable)
@@ -2549,6 +2559,7 @@ def _compare_stochastic_case_to_reference(
             parsed,
             dict(atomized.observable_map),
             standardize_name,
+            dict(getattr(atomized, "reaction_rate_functions", {}) or {}),
         )
         if target is None:
             unresolved.append(variable)

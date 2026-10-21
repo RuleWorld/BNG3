@@ -4098,6 +4098,180 @@ def _curated_parameter_value(model: SBMLModel, parameter_id: str, value: object)
     return _number(number)
 
 
+def _reaction_flux_math(
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    reaction_id: str,
+    replace_loc_params: bool,
+) -> str:
+    """Return the reaction's own kinetic law with its local parameters resolved.
+
+    A law that names another reaction is *not* resolved here: the caller
+    that inlines a reaction's rate into a rule resolves it, and resolving it
+    here as well would make two reactions that name each other recurse.
+    """
+
+    math_expression = get_kinetic_math(reaction.kinetic_law)
+    kinetic_law = reaction.kinetic_law
+    local_parameters = (
+        kinetic_law.get("localParameters", [])
+        if isinstance(kinetic_law, Mapping)
+        else getattr(kinetic_law, "local_parameters", [])
+    )
+    for parameter in local_parameters or []:
+        parameter_id = getattr(parameter, "id", None)
+        if parameter_id is None and isinstance(parameter, Mapping):
+            parameter_id = parameter.get("id")
+        parameter_value = getattr(parameter, "value", None)
+        if parameter_value is None and isinstance(parameter, Mapping):
+            parameter_value = parameter.get("value")
+        if parameter_id:
+            replacement = (
+                _curated_parameter_value(model, str(parameter_id), parameter_value)
+                if replace_loc_params
+                else standardize_name(f"{reaction_id}_{parameter_id}")
+            )
+            math_expression = re.sub(
+                rf"\b{re.escape(str(parameter_id))}\b",
+                replacement,
+                math_expression,
+            )
+    return extend_function(math_expression, {}, model.function_definitions)
+
+
+def _reaction_rate_expression(
+    reaction_id: str,
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    assignment_rule_variables: Set[str],
+    observable_converted_rules: Set[str],
+    species_with_conc_functions: Set[str],
+    sbml_to_bngl_id: Mapping[str, str],
+    rate_rule_variables: Optional[Set[str]] = None,
+    replace_loc_params: bool = True,
+    prepared_math: Optional[str] = None,
+) -> Optional[str]:
+    """Return the BNGL expression of a reaction's SBML rate.
+
+    SBML Level 3 Version 2 Core, Sec. 4.11.8: "The value of the ``id``
+    attribute of a Reaction can be used as the content of a ``ci`` element in
+    MathML formulas elsewhere in the model.  Such a ``ci`` element or symbol
+    represents the rate of the given reaction as given by the reaction's
+    KineticLaw object."  Sec. 4.2.5 makes that rate the rate of change of
+    the reaction's *extent*, and Sec. 4.6 makes a species' value its amount
+    when it has ``hasOnlySubstanceUnits="true"`` and its concentration
+    otherwise.  The expression is therefore the source kinetic law with the
+    source species' values, and it is a function of the state: it has to be
+    evaluated along the trajectory, not frozen at the initial state.
+
+    ``prepared_math`` supplies an already-prepared kinetic law.  The reaction
+    rule's own preparation is used for the rate the model states, because
+    that preparation resolves a law that names another reaction into that
+    reaction's rate.
+    """
+
+    if prepared_math is None:
+        prepared_math = _reaction_flux_math(
+            reaction, model, reaction_id, replace_loc_params
+        )
+        if not prepared_math.strip():
+            return _MISSING_KINETIC_RATE_FALLBACK
+    try:
+        flux = bngl_function(
+            prepared_math,
+            reaction_id,
+            [],
+            list(model.compartments),
+            assignment_rule_variables=assignment_rule_variables,
+            observable_converted_rules=observable_converted_rules,
+            species_with_conc_functions=species_with_conc_functions,
+            sbml_to_bngl_id=sbml_to_bngl_id,
+            rate_rule_variables=rate_rule_variables or set(),
+        )
+    except (TypeError, ValueError, re.error):
+        return None
+    return flux
+
+
+# The BNGL built-in functions a lowered SBML expression may name.  A rate
+# expression that names anything else would be an unresolved symbol in the
+# generated model, so the reaction keeps no rate output at all rather than
+# an output that the model cannot evaluate.
+_BNGL_BUILTIN_FUNCTIONS = frozenset(
+    {
+        "Abs",
+        "Arrhenius",
+        "Hill",
+        "If",
+        "MM",
+        "MM2",
+        "Sat",
+        "abs",
+        "acos",
+        "acosh",
+        "asin",
+        "asinh",
+        "atan",
+        "atanh",
+        "avg",
+        "cos",
+        "cosh",
+        "eulerian",
+        "exp",
+        "hill",
+        "if",
+        "ln",
+        "log",
+        "log10",
+        "log2",
+        "max",
+        "min",
+        "mm",
+        "mratio",
+        "piecewise",
+        "pow",
+        "power",
+        "rint",
+        "sat",
+        "sin",
+        "sinh",
+        "sqrt",
+        "sum",
+        "tan",
+        "tanh",
+        "t_end",
+        "t_start",
+        "tfun",
+        "time",
+    }
+)
+
+
+def _expression_identifiers(expression: str) -> Set[str]:
+    """Return the identifier runs of a lowered BNGL expression.
+
+    Numeric literals are removed first so that a value such as ``1e-5`` is
+    not read as the identifier ``e-5``.
+    """
+
+    text = re.sub(
+        r"(?<![A-Za-z_0-9.])\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", " ", str(expression or "")
+    )
+    return {span.group(0) for span in _SBML_ID_RUN.finditer(text)}
+
+
+def _reaction_rate_function_name(reaction_id: str, taken: Set[str]) -> str:
+    """Return a BNGL-safe, collision-free name for a reaction's rate."""
+
+    base = f"{standardize_name(reaction_id)}_rate"
+    name = base
+    suffix = 1
+    while name in taken:
+        name = f"{base}_{suffix}"
+        suffix += 1
+    return name
+
+
 def _inline_reaction_fluxes(
     expression: str,
     model: SBMLModel,
@@ -4138,50 +4312,16 @@ def _inline_reaction_fluxes(
     def reaction_flux(reaction_id: str, reaction: SBMLReaction) -> Optional[str]:
         if reaction_id in cache:
             return cache[reaction_id]
-        math_expression = get_kinetic_math(reaction.kinetic_law)
-        if not math_expression.strip():
-            cache[reaction_id] = _MISSING_KINETIC_RATE_FALLBACK
-            return _MISSING_KINETIC_RATE_FALLBACK
-        kinetic_law = reaction.kinetic_law
-        local_parameters = (
-            kinetic_law.get("localParameters", [])
-            if isinstance(kinetic_law, Mapping)
-            else getattr(kinetic_law, "local_parameters", [])
+        flux = _reaction_rate_expression(
+            reaction_id,
+            reaction,
+            model,
+            assignment_rule_variables,
+            observable_converted_rules,
+            species_with_conc_functions,
+            sbml_to_bngl_id,
+            replace_loc_params=replace_loc_params,
         )
-        for parameter in local_parameters or []:
-            parameter_id = getattr(parameter, "id", None)
-            if parameter_id is None and isinstance(parameter, Mapping):
-                parameter_id = parameter.get("id")
-            parameter_value = getattr(parameter, "value", None)
-            if parameter_value is None and isinstance(parameter, Mapping):
-                parameter_value = parameter.get("value")
-            if parameter_id:
-                replacement = (
-                    _curated_parameter_value(model, str(parameter_id), parameter_value)
-                    if replace_loc_params
-                    else standardize_name(f"{reaction_id}_{parameter_id}")
-                )
-                math_expression = re.sub(
-                    rf"\b{re.escape(str(parameter_id))}\b",
-                    replacement,
-                    math_expression,
-                )
-        try:
-            math_expression = extend_function(
-                math_expression, {}, model.function_definitions
-            )
-            flux = bngl_function(
-                math_expression,
-                reaction_id,
-                [],
-                list(model.compartments),
-                assignment_rule_variables=assignment_rule_variables,
-                observable_converted_rules=observable_converted_rules,
-                species_with_conc_functions=species_with_conc_functions,
-                sbml_to_bngl_id=sbml_to_bngl_id,
-            )
-        except (TypeError, ValueError, re.error):
-            flux = None
         cache[reaction_id] = flux
         return flux
 
@@ -5773,6 +5913,77 @@ def write_functions(
             f"{RATE_RULE_NEG_PREFIX}{name}() = if({RATE_RULE_META_PREFIX}{name}() < 0, "
             f"-({RATE_RULE_META_PREFIX}{name}()), 0)"
         )
+
+    # SBML Level 3 Version 2 Core, Sec. 4.11.8: the value of a Reaction's
+    # ``id`` denotes that reaction's rate, and Sec. 4.2.5 makes a reaction's
+    # rate the rate of change of its extent.  The generated model states that
+    # rate as a zero-argument function, so the source's reaction rate
+    # survives the translation as an algebraic output of the model.  The
+    # function is a function of the state and is evaluated along the
+    # trajectory; it is never frozen at the initial state.
+    reaction_rate_functions: Dict[str, str] = {}
+    if model.reactions:
+        observable_species = {
+            standardize_name(species_id)
+            for species_id in model.species
+            if species_id not in lowerable_species_assignment_rules
+        }
+        declared = set(emitted_names)
+        declared.update(
+            standardize_name(parameter_id) for parameter_id in model.parameters
+        )
+        declared.update(
+            f"__compartment_{standardize_name(compartment_id)}__"
+            for compartment_id in model.compartments
+        )
+        declared.update(observable_species)
+        declared.update(f"{name}_amt" for name in observable_species)
+        declared.update(
+            f"{standardize_name(variable)}_amt"
+            for variable in synthetic_rate_rule_variables
+        )
+        declared.add("__Avogadro__")
+        resolvable = declared | _BNGL_BUILTIN_FUNCTIONS
+        taken = set(declared)
+        for reaction_id, reaction in model.reactions.items():
+            if not get_kinetic_math(reaction.kinetic_law).strip():
+                # A reaction without a kinetic law has an undefined rate
+                # (SBML Level 3 Version 2 Core, Sec. 4.11.2), so the model
+                # states no rate for it.
+                continue
+            try:
+                prepared_math = _prepared_kinetic_math(
+                    reaction,
+                    model,
+                    replace_loc_params=True,
+                    reaction_id=str(reaction_id),
+                )
+            except (TypeError, ValueError, re.error):
+                continue
+            flux = _reaction_rate_expression(
+                str(reaction_id),
+                reaction,
+                model,
+                assignment_rule_variables,
+                skip_assignment_rules,
+                concentration_names,
+                species_map,
+                rate_rule_variables=rate_rule_variables,
+                prepared_math=prepared_math,
+            )
+            if flux is None:
+                continue
+            if not _expression_identifiers(flux) <= resolvable:
+                # The rate cannot be stated in the generated model's own
+                # symbols, so the reaction keeps no rate output rather than
+                # an output the model cannot evaluate.
+                continue
+            name = _reaction_rate_function_name(str(reaction_id), taken)
+            lines.append(f"{name}() = {flux}")
+            emitted_names.add(name)
+            taken.add(name)
+            reaction_rate_functions[str(reaction_id)] = name
+    model.reaction_rate_functions = reaction_rate_functions
     return _inline_constant_function_calls(lines, model.parameters)
 
 

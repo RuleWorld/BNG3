@@ -1,0 +1,183 @@
+{
+  "source": "official SBML Test Suite, cases/semantic",
+  "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+  "purpose": "Official-reference inputs for the closed reaction-rate output cluster.",
+  "cases": [
+    {
+      "case": "01344",
+      "files": {
+        "01344-sbml-l3v2.xml": "sha256:342c3579300293e6aa26e7f92d0e21a058c6224731b12b63d9555f6f42cafec1",
+        "01344-results.csv": "sha256:864c1e008e5f4f4fd3650f9d978cb1ae8ecd9db1dbe37043f9f592ee928fc458",
+        "01344-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01345",
+      "files": {
+        "01345-sbml-l3v2.xml": "sha256:927b3ec6c26b1c5b176207f48aff0ab30f7e19308f9268a5a3302dd1c4995427",
+        "01345-results.csv": "sha256:546e0fe0d087a88b7af15e31486f707b9011d2a986bb2c89db4c524fd5fb44e4",
+        "01345-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01346",
+      "files": {
+        "01346-sbml-l3v2.xml": "sha256:9c85989b3c9fe23135b0c676b54f711d07e2c4c76d5c4201360e5513bf14d983",
+        "01346-results.csv": "sha256:c2dc8639432f78bea8e8613d33a72a0a26d0f5ac9588c7d8851aee5e98338615",
+        "01346-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01347",
+      "files": {
+        "01347-sbml-l3v2.xml": "sha256:52847f22b0172f4db3e689feb727e3c7856950160aa13695cd87b39c073b8406",
+        "01347-results.csv": "sha256:4c1aaed35c6b87627d71be51a3ace837f8b6f39ac83436d621a42afe77fc05dd",
+        "01347-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01348",
+      "files": {
+        "01348-sbml-l3v2.xml": "sha256:034772c29ed1b6f4c7eb973173924eafe6aff67b2d13103dfa3ce8d13bd89fd5",
+        "01348-results.csv": "sha256:13f6888c93c6afd469c5a516ba3c3f97da69603168aa2af4db39f3fae7cac235",
+        "01348-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01349",
+      "files": {
+        "01349-sbml-l3v2.xml": "sha256:1509358106e1f86f53b0e0aef9a9696f784fafbc1a6db1109bf2b3faac79a900",
+        "01349-results.csv": "sha256:a0060a0dc3bd59313647301ebb07fdccb385f06860b007ee8fb809ff7777b1f9",
+        "01349-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01350",
+      "files": {
+        "01350-sbml-l3v2.xml": "sha256:7d726906f8c9ad1bfcb5b954fd4e3a065e82de1b8947e77fbddce33934a8dfef",
+        "01350-results.csv": "sha256:864c1e008e5f4f4fd3650f9d978cb1ae8ecd9db1dbe37043f9f592ee928fc458",
+        "01350-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01351",
+      "files": {
+        "01351-sbml-l3v2.xml": "sha256:10857e6316fdf31b19e51b1b302c3beeef354a9972b9758f2de885567eac7468",
+        "01351-results.csv": "sha256:49da078842dda90e458a4b455347026f195e75c89e1942f735efd133647e83c4",
+        "01351-settings.txt": "sha256:6b1e03726872ffdff68435f9fb865bfe10125f53d1306a7c42a9ef3dcd1f7790"
+      }
+    },
+    {
+      "case": "01352",
+      "files": {
+        "01352-sbml-l3v2.xml": "sha256:b6cd70b919080b014cdfffc43a44a03a855fb978474ae9edd8aff9c555fed6cb",
+        "01352-results.csv": "sha256:0935a633bcf4903da7c5a58684beda4a1e3c52acd5b36ccb2d65accfe369f386",
+        "01352-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01360",
+      "files": {
+        "01360-sbml-l3v2.xml": "sha256:d1176c26b436087a74e2e2b10caf6ad3c1f7391e7b03d92a0fcc326db96b0ebb",
+        "01360-results.csv": "sha256:54965ca7fb027599d544e53a1a705d62f2deef70c1f6e7f3e0164c3c1860d67f",
+        "01360-settings.txt": "sha256:6b1e03726872ffdff68435f9fb865bfe10125f53d1306a7c42a9ef3dcd1f7790"
+      }
+    },
+    {
+      "case": "01369",
+      "files": {
+        "01369-sbml-l3v2.xml": "sha256:83e3b058fb0dfe7b9a12688fab880283017506d76d843336df62969a40ae36b6",
+        "01369-results.csv": "sha256:54965ca7fb027599d544e53a1a705d62f2deef70c1f6e7f3e0164c3c1860d67f",
+        "01369-settings.txt": "sha256:6b1e03726872ffdff68435f9fb865bfe10125f53d1306a7c42a9ef3dcd1f7790"
+      }
+    },
+    {
+      "case": "01378",
+      "files": {
+        "01378-sbml-l3v2.xml": "sha256:268beeaacb5d4c6578da5ec6dc1b75c0dbbb480910158d007d309ec9eca99c9c",
+        "01378-results.csv": "sha256:54965ca7fb027599d544e53a1a705d62f2deef70c1f6e7f3e0164c3c1860d67f",
+        "01378-settings.txt": "sha256:6b884e28bceb7891df1328b6ff589b8c881eb8b98d844e4d588234aaaf6ee966"
+      }
+    },
+    {
+      "case": "01380",
+      "files": {
+        "01380-sbml-l3v2.xml": "sha256:02f83df049ac31462519d3f9bcb6f96b532973754a12efab6c92c444afdfa75c",
+        "01380-results.csv": "sha256:b15ebdd50a117fd49296f2f56391f1ac021b6ea9399726b01321ed06e47b4947",
+        "01380-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01381",
+      "files": {
+        "01381-sbml-l3v2.xml": "sha256:9434b4fa530bf177f7e1319805b520dea1703e5cb10011078527f7a10906d9fc",
+        "01381-results.csv": "sha256:da7d1899dbd669933f569743bdbb3c3f7c7f613910f208800d9e0a6c908c34c0",
+        "01381-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01382",
+      "files": {
+        "01382-sbml-l3v2.xml": "sha256:0578c5e626651d63286a044fb9d701d4fb045cbb5b08fb2e85f5ffa0d8b0aeac",
+        "01382-results.csv": "sha256:bc73e9bda83076ebcaddefb97fdb38eca6f6e55dc7edf1d24ef17e34d9f6234e",
+        "01382-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01383",
+      "files": {
+        "01383-sbml-l3v2.xml": "sha256:f3386140602032a28c5e28de44d551c82de38d11662bfa2da1d7d3d77e4f1edf",
+        "01383-results.csv": "sha256:8c8027f028954c00c9e245b52d643f32a8ba5e0455f690f6b7236a8510a36736",
+        "01383-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01384",
+      "files": {
+        "01384-sbml-l3v2.xml": "sha256:141d784ee4c2bf1e9751f1f0c98c3ae158bbecf95f239b2a3b55e2479cf8df07",
+        "01384-results.csv": "sha256:a9d9e12e487d66f8648a39a8ad8fa87b232a764aada70e300307f1586c837768",
+        "01384-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01385",
+      "files": {
+        "01385-sbml-l3v2.xml": "sha256:fe1342f14ab2adbdbf871c5560e9a175d32ff0f24c36d57716205aa508ad930b",
+        "01385-results.csv": "sha256:b47c4db1ada240f4369f45556f5b95d305f775743d4ac8da4656b0ccd97141dd",
+        "01385-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01386",
+      "files": {
+        "01386-sbml-l3v2.xml": "sha256:2809418ae938ffab9622206e5330ce4725f7c64e39a719c9d92b19e2d88c0903",
+        "01386-results.csv": "sha256:b15ebdd50a117fd49296f2f56391f1ac021b6ea9399726b01321ed06e47b4947",
+        "01386-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01387",
+      "files": {
+        "01387-sbml-l3v2.xml": "sha256:ce8ef01369e90746d18e198a0120108a01a30fba2a86fcd5d68dd9203d67b9c2",
+        "01387-results.csv": "sha256:bcb89ce526916fae568a3be0f0b266b2db4fb8d5b37ae87fe5302bca45cd8545",
+        "01387-settings.txt": "sha256:6b1e03726872ffdff68435f9fb865bfe10125f53d1306a7c42a9ef3dcd1f7790"
+      }
+    },
+    {
+      "case": "01388",
+      "files": {
+        "01388-sbml-l3v2.xml": "sha256:8756f2fc827ea5f490d8cbaf364d3be0990fb0a53634eff60b4617f60b6b3201",
+        "01388-results.csv": "sha256:24c61c016203e61f26af26df1291bd0532332ba5c6623b7ae70b2567ca99dce8",
+        "01388-settings.txt": "sha256:daa359fbe1dc68ef8c7db142ce8cb4e809891cb56cac3a0e395aba25e6510872"
+      }
+    },
+    {
+      "case": "01389",
+      "files": {
+        "01389-sbml-l3v2.xml": "sha256:06699dfd53c9beedd14e1e056313a05713b01600a743bfbc3856bb3296d61515",
+        "01389-results.csv": "sha256:9a9e517c0a7d8b47fdbc07b8f21e4c050c6c69ab8858c9506c71a8fd69b7e0fc",
+        "01389-settings.txt": "sha256:e495b377f7ecf42aafe81aa0611b0b90e0ebd03579fbfc277677e6dd73d95b2f"
+      }
+    }
+  ]
+}
