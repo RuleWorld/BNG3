@@ -49,7 +49,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   size differs from 1 the post-event state is therefore off by the volume
   factor.
 * **Expected behaviour:** the SBML specification, Level 3 Version 2 Core,
-  section 4.11 ("Events") and section 3.1.5 ("Species"): the quantity a
+  section 4.12 ("Events") and section 4.6 ("Species"): the quantity a
   species carries is its amount, and its *value* in expressions is the
   concentration unless `hasOnlySubstanceUnits="true"`.  An event assignment
   sets that value.  BNG2 agrees: `legacy/perl/Perl2/BNGModel.pm`
@@ -79,7 +79,8 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   species lookup matches the network label (`@C::$M_S2()`) and refuses the
   action: `setConcentration target species not found: @C:M_S2()`.
 * **Expected behaviour:** the SBML specification, Level 3 Version 2 Core,
-  section 3.1.3 (`boundaryCondition`): a boundary species may not be changed
+  section 4.6.6 ("The constant and boundaryCondition attributes"): a boundary
+  species may not be changed
   by a *reaction*, but an **event assignment may change it**.  The generated
   model therefore has to keep the species assignable, or the Atomizer has to
   refuse the case explicitly.
@@ -111,7 +112,8 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   (`Birth: @Cell:M_X() -> @Cell:M_X() + @Cell:M_X() 0.1`), so the propensity
   is `Lambda * amount` instead of `Lambda * amount / V`.
 * **Expected behaviour:** the SBML specification, Level 3 Version 2 Core,
-  section 3.1.5 and the kinetic-law rules of section 4.3: a rate law is
+  section 4.6 ("Species") and the kinetic-law rules of section 4.11.7: a rate
+  law is
   evaluated with the species' *values*, and the value of a species with
   `hasOnlySubstanceUnits="false"` is `amount / compartmentSize`.  The
   equivalent BNGL rate constant is therefore `Lambda / V`.
@@ -414,7 +416,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 ### 8c. A state-triggered event ignored the reaction's local parameters - FIXED
 
 * **Cases:** `semantic/00707`, `semantic/00736`; both now pass.
-* **Mechanism:** section 4.9.2 ("Local parameters") of the SBML Level 3
+* **Mechanism:** section 4.11.6 ("LocalParameter") of the SBML Level 3
   Version 2 Core makes a reaction's local parameters shadow the model's
   parameters of the same name, but the species trajectory that a crossing
   time is computed from resolved the rate law's symbols against the model's
@@ -428,7 +430,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 ### 8d. An event with an initially true trigger fired - FIXED
 
 * **Case:** `semantic/00929`; it now passes.
-* **Mechanism:** section 4.11.4 ("Event triggers") of the SBML Level 3
+* **Mechanism:** section 4.12.2 ("Trigger") of the SBML Level 3
   Version 2 Core initializes a trigger's value from `triggerInitialValue`
   and fires the event only when that value *transitions* from false to true.
   A trigger that is already true when the simulation starts never rises, so
@@ -490,8 +492,9 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 ### The specification's requirement
 
-SBML Level 2 Version 4/5 and Level 3 Version 1 Core, section 4.11
-("Reactions"), do not describe a `fast="true"` reaction as merely faster.
+SBML Level 3 Version 1 Core, section 4.11 ("Reactions"), and SBML Level 2
+Core, section 4.13 ("Reactions"), which is section 4.9 in Level 2 Version 1,
+do not describe a `fast="true"` reaction as merely faster.
 The text reads:
 
 > "The set of reactions having `fast`=`true` (known as *fast reactions*)
@@ -639,7 +642,7 @@ test.
   are executed simultaneously by their priority (SBML L3V2 Core Sec. 4.12.3),
   does not execute a non-persistent event whose trigger has become false
   again (Sec. 4.12.2), and re-tests every trigger after an execution
-  (Sec. 4.12.8).  The cases above still do not reach that runtime, and each
+  (Sec. 4.12.7).  The cases above still do not reach that runtime, and each
   of them is blocked by a construct the runtime does not have:
   * `00965`, `00966`, `01466` and `01590` assign **parameters** (`Q`, `R`,
     `reset`, ...), and the native runtime writes observable state.  Their two

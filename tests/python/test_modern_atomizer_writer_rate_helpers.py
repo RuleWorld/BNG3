@@ -201,8 +201,8 @@ def test_write_functions_preserves_assignment_rule_that_shadows_parameter():
     lines = write_functions(model)
 
     # ``A`` has no ``hasOnlySubstanceUnits``, so the SBML symbol denotes its
-    # concentration (SBML Level 3 Version 2 Core, Sec. 4.8) and the rule
-    # body names the concentration helper.
+    # concentration (SBML Level 3 Version 2 Core, Sec. 4.6 "Species") and the
+    # rule body names the concentration helper.
     assert "T() = _c_A()" in lines
     assert "flux() = T() * _c_A()" in lines
     assert "flux() = 0 * _c_A()" not in lines

@@ -1,7 +1,8 @@
 """Regression tests for SBML delayed reads of a rate and of an initial value.
 
-SBML Level 3 Version 2 Core Sec. 3.4.8 ("Initial conditions and special
-considerations") fixes two boundary rules that the Atomizer has to honour:
+SBML Level 3 Version 2 Core Sec. 3.4.6 ("Use of csymbol elements in MathML
+expressions in SBML") and Sec. 3.4.8 ("Initial conditions and special
+considerations") fix the two boundary rules that the Atomizer has to honour:
 
 * "The rateOf value for any valid target in SBML for time *t* < 0 will always
   be zero."  A delayed read of a rate therefore observes zero while the

@@ -147,20 +147,22 @@ SBML construct that causes it and by the layer that owns the outcome:
 Both fixes are semantic, and both are anchored in the SBML Level 3 Version 2
 Core specification:
 
-* **A reaction id in a rule is that reaction's rate.** Sec. 4.2.8 ("Use of
+* **A reaction id in a rule is that reaction's rate.** Sec. 4.11.8 ("Use of
   reaction identifiers in mathematical expressions"): "The value of the `id`
   attribute of a `Reaction` can be used as the content of a `ci` element in
   MathML formulas elsewhere in the model. Such a `ci` element or symbol
   represents the rate of the given reaction as given by the reaction's
   `KineticLaw` object." The rate of a reaction is the rate of change of its
-  extent (Sec. 4.3.5, `extentUnits`): "what is colloquially referred to as the
-  'rate of the reaction' is in fact equal to the rate of change of reaction
-  extent", and the product of that rate with a species' stoichiometry is the
-  species' contribution to its rate of change (Sec. 4.11, "Semantics of rate
-  law and stoichiometry"). A rule that names a reaction therefore has to
+  extent (Sec. 4.2.5, "The extentUnits attribute"): "what is colloquially
+  referred to as the 'rate of the reaction' is in fact equal to the rate of
+  change of reaction extent", and the product of that rate with a species'
+  stoichiometry is the species' contribution to its rate of change (Sec.
+  4.11.7, "Mathematical interpretation of SBML reactions and kinetic laws",
+  whose "Semantics of rate law and stoichiometry" paragraph gives the rule).
+  A rule that names a reaction therefore has to
   carry the reaction's own kinetic law, and every reference has to be
   replaced.
-* **An initial assignment overrides the symbol's declared value.** Sec. 4.8.4
+* **An initial assignment overrides the symbol's declared value.** Sec. 4.8.5
   ("Semantics of initial assignments"): "The value calculated by an
   `InitialAssignment` object overrides the value assigned to the given symbol
   by the object defining that symbol. For example, if a `Compartment`'s

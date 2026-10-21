@@ -1,9 +1,10 @@
 """Regression tests for the SBML ``time`` csymbol next to a symbol named ``time``.
 
 SBML Level 3 Version 2 Core defines the ``time`` csymbol in the MathML
-namespace (Sec. 4.3.5, *CSymbol*): it denotes "the current simulation time".  A
-model may still declare a parameter whose ``id`` is ``time`` -- Sec. 3.1.2
-(*SId*) reserves no identifiers, and the csymbol's name lives in the MathML
+namespace (Sec. 3.4.6, *Use of csymbol elements in MathML expressions in
+SBML*): it denotes "the current simulation time".  A
+model may still declare a parameter whose ``id`` is ``time`` -- Sec. 3.1.7
+(*Type SId*) reserves no identifiers, and the csymbol's name lives in the MathML
 namespace, not in the model's symbol namespace.
 
 The two must stay distinguishable.  The official SBML Test Suite cases
@@ -11,7 +12,8 @@ The two must stay distinguishable.  The official SBML Test Suite cases
 initial assignment ``a = time`` reads the *parameter* named ``time`` (value
 10), while their initial assignment ``d = <csymbol .../symbols/time>`` reads
 the *simulation time*, which is 0 when the initial values are established
-(Sec. 4.8, *Rules*, and Sec. 4.3, *Meaning of time*).
+(Sec. 3.4.8, *Initial conditions and special considerations*, and Sec. 3.4.7,
+*Simulation time*).
 """
 
 from __future__ import annotations

@@ -3,9 +3,13 @@
 SBML Level 3 Version 2 Core Sec. 4.11 removed the ``fast`` attribute: "every
 Reaction in a L3V2 model is equivalent to an SBML Level 3 Version 1 Reaction
 with a fast value of false".  The pseudo steady-state approximation belongs to
-Level 3 Version 1 and Level 2, whose Sec. 4.11 asks that "software tools
-should use a pseudo steady-state approximation for the set of fast reactions
-when constructing the system of equations for the model".
+Level 3 Version 1 and Level 2, whose Reactions section asks that "software
+tools should use a pseudo steady-state approximation for the set of fast
+reactions when constructing the system of equations for the model".
+
+The Reactions section is Sec. 4.11 in Level 3 Version 1, Sec. 4.9 in Level 2
+Version 1, and Sec. 4.13 in Level 2 Version 2 and later, because Level 2
+Version 2 added Compartment types and Species types and moved the section.
 
 The diagnostic therefore has to name the rule that applies to the document's
 own level and version, and it has to keep its severity: BNG3 has no
@@ -69,7 +73,10 @@ def _fast_warning(level: int, version: int) -> dict:
     [
         (3, 1, "SBML Level 3 Version 1 Core Sec. 4.11"),
         (2, 5, "SBML Level 2 Sec. 4.13"),
-        (2, 3, "SBML Level 2 Sec. 4.11"),
+        (2, 4, "SBML Level 2 Sec. 4.13"),
+        (2, 3, "SBML Level 2 Sec. 4.13"),
+        (2, 2, "SBML Level 2 Sec. 4.13"),
+        (2, 1, "SBML Level 2 Sec. 4.9"),
     ],
 )
 def test_fast_diagnostic_cites_the_rule_of_the_document_level(level, version, citation):

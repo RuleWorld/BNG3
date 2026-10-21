@@ -234,7 +234,7 @@ def test_state_triggered_event_uses_the_reactions_local_parameter():
     """The crossing time follows the rate the reaction states.
 
     A reaction's local parameters shadow the model's parameters of the same
-    name (SBML Level 3 Version 2 Core, Sec. 4.9.2 "Local parameters"), so the
+    name (SBML Level 3 Version 2 Core, Sec. 4.11.6 "LocalParameter"), so the
     species' trajectory is the one the reaction states: ``S1`` decays at the
     local rate ``5`` and crosses ``0.25`` at ``ln(4) / 5``.
     """
@@ -308,7 +308,7 @@ def test_event_with_an_initially_true_trigger_does_not_fire():
 
     The trigger's value is initialized from ``triggerInitialValue`` and the
     event fires only when that value transitions from false to true (SBML
-    Level 3 Version 2 Core, Sec. 4.11.4 "Event triggers").  A trigger that is
+    Level 3 Version 2 Core, Sec. 4.12.2 "Trigger").  A trigger that is
     already true when the simulation starts never rises, so the event does
     not fire at all.
     """

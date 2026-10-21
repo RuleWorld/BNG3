@@ -242,9 +242,10 @@ std::string mathExpression(const TiXmlElement* element) {
         return "(" + value + ")";
     };
     if (op == "csymbol") {
-        // SBML Level 3 Version 2 Core Sec. 4.3.4 and Sec. 4.3.5 define the
-        // delay and rateOf csymbols.  They are operators, not identifiers, so
-        // they arrive as the first child of <apply>.
+        // SBML Level 3 Version 2 Core Sec. 3.4.6 ("Use of csymbol elements
+        // in MathML expressions in SBML") defines the delay and rateOf
+        // csymbols.  They are operators, not identifiers, so they arrive as
+        // the first child of <apply>.
         const std::string definitionUrl =
             attribute(children.front(), "definitionURL");
         const std::string name = elementText(children.front());

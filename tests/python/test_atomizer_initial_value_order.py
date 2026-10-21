@@ -1,7 +1,7 @@
 """Regression tests for SBML initial-value resolution in seed species.
 
 SBML determines a model's initial values from the model's assignment
-statements considered as a whole (Sec. 4.8.4, "Semantics of initial
+statements considered as a whole (Sec. 4.8.5, "Semantics of initial
 assignments"; Sec. 4.9.5, "Additional restrictions on rules"; Sec. 3.4.8,
  "Initial conditions and special considerations", for the order in which
 the values at t <= 0 are established).  Two consequences matter here:
@@ -14,7 +14,7 @@ the values at t <= 0 are established).  Two consequences matter here:
   no declared value;
 * an initial assignment that reads a variable another initial assignment
   defines observes that initial assignment's value, not the value given in
-  the symbol's definition (Sec. 4.8.4).
+  the symbol's definition (Sec. 4.8.5).
 
 A model that names the same variable in an assignment rule and an initial
 assignment is **not valid SBML** -- it would be indeterminate (Sec. 4.9.3) --

@@ -807,8 +807,9 @@ def _substitute_formal_arguments(
 
     SBML function definitions are lambdas: the caller's argument expressions
     are evaluated in the caller's scope and only then bound to the callee's
-    ``bvar`` names (SBML Level 3 Version 2 Core, Sec. 4.3.5).  Substituting
-    the formals one at a time would re-scan text that a previous
+    ``bvar`` names (SBML Level 3 Version 2 Core, Sec. 4.3.4, "Calling
+    user-defined functions").  Substituting the formals one at a time would
+    re-scan text that a previous
     substitution had just inserted, so a caller argument that happens to
     spell a formal of the callee (or of a function called by the callee)
     would be captured by the wrong binding.  A single regex pass leaves the
@@ -3153,10 +3154,10 @@ def _unrepresentable_math_function_message(function_name: str) -> str:
     """Describe why an SBML math function has no executable BNG3 equivalent.
 
     The C++ SBML writer can serialize the SBML Level 3 Version 2 spelling of
-    ``delay`` and ``rateOf`` (Core Sec. 4.3.4 and Sec. 4.3.5), so the
-    remaining boundary is the execution path: the BNG3 engine has no
-    delayed-history or derivative semantics for these calls, and libRoadRunner
-    rejects a model that uses ``delay`` at all.
+    ``delay`` and ``rateOf`` (Core Sec. 3.4.6, "Use of csymbol elements in
+    MathML expressions in SBML"), so the remaining boundary is the execution
+    path: the BNG3 engine has no delayed-history or derivative semantics for
+    these calls, and libRoadRunner rejects a model that uses ``delay`` at all.
     """
 
     return (
@@ -3452,8 +3453,9 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         if parameter is not None:
             # A parameter that no rule and no event assignment touches keeps
             # the value its initial assignment gave it at ``t = 0`` for the
-            # whole run (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of
-            # time"), so its trajectory is constant.
+            # whole run (SBML Level 3 Version 2 Core, Sec. 3.4.8, "Initial
+            # conditions and special considerations"), so its trajectory is
+            # constant.
             return (initial, 0.0)
 
         species = model.species.get(target)
@@ -3580,13 +3582,13 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
     def pre_simulation_history(target: str, duration: float) -> Optional[str]:
         """Return the exact history of a delayed symbol before ``t = 0``.
 
-        SBML Level 3 Version 2 Core Sec. 4.3 ("Meaning of time") keeps an
-        ``initialAssignment`` in effect for times before the simulation
-        starts: "Any InitialAssignment definition continues to take effect.
-        Since these contain mathematical formulas, different values may be
-        computed at each time step".  A delayed read of such a symbol
-        therefore returns the assignment evaluated at the delayed time, not
-        the symbol's value at ``t = 0``.
+        SBML Level 3 Version 2 Core Sec. 3.4.8 ("Initial conditions and
+        special considerations") keeps an ``initialAssignment`` in effect for
+        times before the simulation starts: "Any InitialAssignment definition
+        continues to take effect. Since these contain mathematical formulas,
+        different values may be computed at each time step".  A delayed read
+        of such a symbol therefore returns the assignment evaluated at the
+        delayed time, not the symbol's value at ``t = 0``.
 
         The assignment may only depend on time and on symbols that keep the
         same value before the simulation starts; anything else would need the
@@ -3822,12 +3824,12 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 lowered += count
 
     # An initial assignment is evaluated once, at the start of the simulation
-    # (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of time"): a symbol
-    # that no rule and no event assignment touches keeps the value it had at
-    # ``t = 0`` for the whole run.  The pre-simulation history has already
-    # been folded into the delayed reads above, so an assignment that reads
-    # the simulation time may now be reduced to that value instead of being
-    # re-evaluated at every time.
+    # (SBML Level 3 Version 2 Core, Sec. 3.4.8, "Initial conditions and
+    # special considerations"): a symbol that no rule and no event assignment
+    # touches keeps the value it had at ``t = 0`` for the whole run.  The
+    # pre-simulation history has already been folded into the delayed reads
+    # above, so an assignment that reads the simulation time may now be
+    # reduced to that value instead of being re-evaluated at every time.
     for assignment in model.initial_assignments:
         symbol = str(getattr(assignment, "symbol", "") or "")
         expression = str(getattr(assignment, "math", "") or "")
@@ -4185,8 +4187,9 @@ def _inline_reaction_fluxes(
 
     result = expression
     # A reaction id in the math of a rule denotes that reaction's rate
-    # (SBML Level 3 Version 2 Core, Sec. 4.2.8: the reaction ``id`` may be
-    # used in mathematical formulas to represent the rate of that reaction).
+    # (SBML Level 3 Version 2 Core, Sec. 4.11.8, "Use of reaction identifiers
+    # in mathematical expressions": the reaction ``id`` may be used in
+    # mathematical formulas to represent the rate of that reaction).
     # Every such reference has to be replaced, not only the first few: a rule
     # that names five reactions must not keep the fifth id in the emitted
     # expression, where it would be an unresolved symbol.
@@ -4567,10 +4570,10 @@ def _seed_symbol_values(
          rule-defined variable observes the rule's value -- the official
          SBML Test Suite requires this (e.g. semantic/00617).  An initial
          assignment that reads another initial assignment's target observes
-         that initial assignment's value (Sec. 4.8.4);
+         that initial assignment's value (Sec. 4.8.5);
       3. a model must not contain both an assignment rule and an initial
          assignment for the same variable: that would be indeterminate
-         (Sec. 4.9.3, Sec. 4.8.4).  BNG3 resolves that invalid combination
+         (Sec. 4.9.3, Sec. 4.8.5).  BNG3 resolves that invalid combination
          deterministically: the initial assignment's value is what the other
          initial assignments observe, and the assignment rule still governs
          the variable's own value in the emitted model.
@@ -4768,7 +4771,9 @@ def _seed_symbol_values(
                 continue
             species = model.species.get(identifier)
             if species is not None and not _has_known_initial_quantity(species, model):
-                # SBML Level 3 Version 2 Core Sec. 4.8: "Missing
+                # SBML Level 3 Version 2 Core Sec. 4.6.4 ("The initialAmount,
+                # initialConcentration, and substanceUnits attributes"):
+                # "Missing
                 # initialAmount and initialConcentration values implies that
                 # their values either are unknown, or to be obtained from an
                 # external source, or determined by an initial assignment or
@@ -8394,8 +8399,8 @@ def generate_bngl(
                     return None
                 expression = extend_function(expression, {}, model.function_definitions)
                 # A reaction's local parameters shadow the model's parameters
-                # of the same name (SBML Level 3 Version 2 Core, Sec. 4.9.2
-                # "Local parameters").  The trajectory of a species this
+                # of the same name (SBML Level 3 Version 2 Core, Sec. 4.11.6
+                # "LocalParameter").  The trajectory of a species this
                 # reaction consumes is the trajectory the *reaction* states,
                 # so the local values have to be substituted before the rate
                 # law is read.  An event that overrides a local parameter

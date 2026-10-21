@@ -80,7 +80,8 @@ def _declared_value(value: Any) -> float:
     """Return a declared attribute value, keeping a non-finite declaration.
 
     SBML's ``double`` type admits ``INF``, ``-INF`` and ``NaN`` (SBML Level 3
-    Version 2 Core, Sec. 4.7.3).  BNGL has no spelling for those, so the
+    Version 2 Core, Sec. 3.1.5 "Type double").  BNGL has no spelling for
+    those, so the
     writer reports the approximation it makes.  Replacing a non-finite
     declaration with a finite number here would instead make the model
     silently disagree with its source.
@@ -134,8 +135,9 @@ _SBML_CSYMBOL_URLS = {
 
 # The SBML ``time`` csymbol denotes the current simulation time, and its
 # spelling is also a legal SBML SId: a model may declare a parameter whose
-# id is ``time`` (SBML Level 3 Version 2 Core, Sec. 3.1.2 defines no reserved
-# SIds, and Sec. 4.3.5 defines the ``time`` csymbol in the MathML namespace
+# id is ``time`` (SBML Level 3 Version 2 Core, Sec. 3.1.7 "Type SId" defines
+# no reserved SIds, and Sec. 3.4.6 "Use of csymbol elements in MathML
+# expressions in SBML" defines the ``time`` csymbol in the MathML namespace
 # only).  The MathML reader therefore spells the csymbol with a token that no
 # model symbol can use, so that a ``<ci>`` reference to a parameter named
 # ``time`` and a ``<csymbol>`` reference to the simulation time stay
@@ -1229,11 +1231,13 @@ _RATE_OF_CALL = re.compile(
 
 # A ``rateOf`` that has been expanded into its derivative still has to be
 # recognised when the expansion is read through a ``delay``: SBML Level 3
-# Version 2 Core Sec. 3.4.8 ("Initial conditions and special considerations")
-# fixes the ``rateOf`` of any valid target at zero for ``t < 0``, so a delayed
-# read of a rate observes zero while the delayed time is still before the
-# start of the simulation.  The marker keeps the expansion recognisable for
-# that step and is removed once the delayed reads have been lowered.
+# Version 2 Core Sec. 3.4.6 ("Use of csymbol elements in MathML expressions
+# in SBML") fixes the ``rateOf`` of any valid target at zero for ``t < 0``,
+# and Sec. 3.4.8 ("Initial conditions and special considerations") orders the
+# values established at ``t <= 0``, so a delayed read of a rate observes zero
+# while the delayed time is still before the start of the simulation.  The
+# marker keeps the expansion recognisable for that step and is removed once
+# the delayed reads have been lowered.
 _RATE_OF_MARKER = "__sbml_rate_of__"
 
 
@@ -1258,7 +1262,7 @@ def _marked_rate_of_body(expression: str) -> Optional[str]:
 def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
     """Replace ``rateOf`` of a reaction-local parameter by zero.
 
-    SBML Level 3 Version 2 Core Sec. 4.3.5: "The ``rateOf`` for any symbol
+    SBML Level 3 Version 2 Core Sec. 3.4.6: "The ``rateOf`` for any symbol
     declared constant is zero.  Note that in SBML Level 3 Version 2,
     ``LocalParameter`` objects must always be constant; therefore, their
     ``rateOf`` value is always zero."  A reaction-local parameter shadows the
@@ -1300,13 +1304,14 @@ def _fast_reaction_rule(level: Optional[int], version: Optional[int]) -> str:
     "every Reaction in a L3V2 model is equivalent to an SBML Level 3
     Version 1 Reaction with a fast value of false".  The pseudo
     steady-state approximation therefore belongs to Level 3 Version 1 and
-    Level 2, whose Sec. 4.11 asks that "software tools should use a pseudo
-    steady-state approximation for the set of fast reactions when
+    Level 2, whose Reactions section asks that "software tools should use a
+    pseudo steady-state approximation for the set of fast reactions when
     constructing the system of equations for the model".
 
-    The Reactions section is Sec. 4.11 in Level 3 and in Level 2 Version 3
-    and earlier; Level 2 Version 4 added Compartment types and Species
-    types and moved it to Sec. 4.13.
+    The Reactions section is Sec. 4.11 in Level 3, Sec. 4.9 in Level 2
+    Version 1, and Sec. 4.13 in Level 2 Version 2 and later: Level 2
+    Version 2 added Compartment types and Species types, which moved the
+    section.
     """
 
     if level == 3 and version is not None and version >= 2:
@@ -1322,10 +1327,18 @@ def _fast_reaction_rule(level: Optional[int], version: Optional[int]) -> str:
             "steady-state approximation of such a reaction"
         )
     if level == 2:
-        section = "4.13" if version is not None and version >= 4 else "4.11"
+        if version is not None and version >= 2:
+            return (
+                "SBML Level 2 Sec. 4.13 asks for a pseudo steady-state "
+                "approximation of such a reaction"
+            )
+        # Level 2 Version 1 states the rule as a permission rather than an
+        # instruction: a fast reaction "may be relevant when computing
+        # equilibrium concentrations of rapidly equilibrating reactions".
         return (
-            f"SBML Level 2 Sec. {section} asks for a pseudo steady-state "
-            "approximation of such a reaction"
+            "SBML Level 2 Sec. 4.9 says that a fast reaction may be used to "
+            "reduce the number of equations the model needs (a pseudo "
+            "steady-state approximation of such a reaction)"
         )
     return "SBML asks for a pseudo steady-state approximation of such a reaction"
 
@@ -1799,10 +1812,10 @@ def _delayed_read_symbols(model: SBMLModel) -> Set[str]:
     A delayed read observes the value a symbol had at the delayed time.  For
     a symbol whose only controller is an initial assignment, that value comes
     from the assignment itself while the delayed time is still before the
-    start of the simulation (SBML Level 3 Version 2 Core Sec. 4.3, "Meaning of
-    time").  The assignment therefore has to stay in the model for such a
-    symbol; for every other symbol the assignment can be folded into the
-    symbol's value at ``t = 0``.
+    start of the simulation (SBML Level 3 Version 2 Core Sec. 3.4.8, "Initial
+    conditions and special considerations").  The assignment therefore has to
+    stay in the model for such a symbol; for every other symbol the
+    assignment can be folded into the symbol's value at ``t = 0``.
     """
 
     expressions: List[str] = []
@@ -2231,9 +2244,10 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
     )
     # An initial assignment keeps its target in effect for every time before
     # the simulation starts, and its value may differ at each of those times
-    # (SBML Level 3 Version 2 Core, Sec. 4.3, "Meaning of time").  A symbol
-    # with such an assignment is therefore not a compile-time constant, and a
-    # delayed read of it must not be replaced by its value at ``t = 0``.
+    # (SBML Level 3 Version 2 Core, Sec. 3.4.8, "Initial conditions and
+    # special considerations").  A symbol with such an assignment is
+    # therefore not a compile-time constant, and a delayed read of it must not
+    # be replaced by its value at ``t = 0``.
     controlled.update(
         standardize_name(str(assignment.symbol))
         for assignment in model.initial_assignments
@@ -4495,7 +4509,8 @@ class SBMLParser:
                     # The assignment reads the simulation time and a delayed
                     # read observes the symbol's pre-simulation history, where
                     # the assignment is evaluated at the delayed time (SBML
-                    # Level 3 Version 2 Core Sec. 4.3, "Meaning of time").
+                    # Level 3 Version 2 Core Sec. 3.4.8, "Initial conditions
+                    # and special considerations").
                     # The symbol's own value is the one the assignment had at
                     # t = 0, so the assignment stays in the model.
                     retained.append(assignment)

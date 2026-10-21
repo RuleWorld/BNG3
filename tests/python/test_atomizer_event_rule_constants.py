@@ -1,6 +1,6 @@
 """Regression tests for a state-dependent event that the Atomizer must not deny.
 
-SBML Level 3 Version 2 Core (Sec. 4.14, *Event*) requires an event to fire
+SBML Level 3 Version 2 Core (Sec. 4.12, *Events*) requires an event to fire
 whenever its trigger makes the transition from false to true.  The Atomizer
 proves some trigger systems analytically and lowers them to scheduled actions;
 a trigger it cannot prove must be reported as untranslated, never as "proven

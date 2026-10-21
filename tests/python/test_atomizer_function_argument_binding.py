@@ -1,6 +1,7 @@
 """Regression tests for the argument binding of SBML function definitions.
 
-SBML Level 3 Version 2 Core (Sec. 4.3.5, *FunctionDefinition*) defines a
+SBML Level 3 Version 2 Core (Sec. 4.3.2, *The math element*, and Sec. 4.3.4,
+*Calling user-defined functions*) defines a
 function definition as a MathML ``<lambda>``: the ``<bvar>`` elements declare
 the function's arguments and the lambda's body is evaluated with those
 arguments bound.  A call site's argument expressions are evaluated in the
