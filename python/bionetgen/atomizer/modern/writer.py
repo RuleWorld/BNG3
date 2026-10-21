@@ -4255,7 +4255,7 @@ def _substitute_seed_symbols(
 def _species_reference_stoichiometry_symbols(
     model: SBMLModel,
 ) -> "OrderedDict[str, Optional[float]]":
-    """Return each species-reference id and its ``stoichiometry`` attribute.
+    """Return each species-reference id and its effective ``stoichiometry``.
 
     SBML Level 3 Version 2 Core Sec. 4.11.3 gives a ``speciesReference`` id
     the meaning of a model-level symbol whose value is that reference's
@@ -4264,21 +4264,93 @@ def _species_reference_stoichiometry_symbols(
     A reference without the attribute has no attribute value (``None``): its
     time-zero stoichiometry has to come from an initial assignment or from
     another SBML construct, and the default of 1 would be an approximation.
+
+    The number reported is the reference's *effective* stoichiometry: the
+    parser folds an initial assignment or a rule that targets the reference
+    id into ``reference.stoichiometry`` in place, so it is not necessarily the
+    literal attribute value any more.
     """
 
     values: "OrderedDict[str, Optional[float]]" = OrderedDict()
     for reaction in model.reactions.values():
         for reference in [*reaction.reactants, *reaction.products]:
-            reference_id = str(getattr(reference, "id", "") or "").strip()
+            reference_id = _species_reference_id(reference)
             if not reference_id or reference_id in values:
                 continue
-            value: Optional[float] = None
-            if getattr(reference, "stoichiometry_set", False):
-                numeric = _numeric_value(getattr(reference, "stoichiometry", None))
-                if numeric is not None and math.isfinite(numeric):
-                    value = numeric
-            values[reference_id] = value
+            values[reference_id] = _species_reference_stoichiometry(reference)
     return values
+
+
+def _species_reference_id(reference: object) -> str:
+    """Return a species reference's ``id``.
+
+    The writer accepts either an IR ``SBMLSpeciesReference`` or a mapping
+    with the same keys, so this helper reads both shapes.
+    """
+
+    reference_id = getattr(reference, "id", None)
+    if reference_id is None and isinstance(reference, Mapping):
+        reference_id = reference.get("id")
+    return str(reference_id or "").strip()
+
+
+def _species_reference_stoichiometry(reference: object) -> Optional[float]:
+    """Return a species reference's effective ``stoichiometry`` value.
+
+    A reference without a ``stoichiometry`` attribute has no attribute value
+    (``None``): its time-zero stoichiometry has to come from an initial
+    assignment or from another SBML construct, and the default of 1 would be
+    an approximation.
+    """
+
+    if isinstance(reference, Mapping):
+        stoichiometry_set = "stoichiometry" in reference
+        raw = reference.get("stoichiometry")
+    else:
+        stoichiometry_set = bool(getattr(reference, "stoichiometry_set", False))
+        raw = getattr(reference, "stoichiometry", None)
+    if not stoichiometry_set:
+        return None
+    # ``_numeric_value`` already rejects values that are not finite numbers.
+    return _numeric_value(raw)
+
+
+def _species_reference_stoichiometry_undefined_reason(
+    model: SBMLModel, symbol_id: str
+) -> str:
+    """State why a species-reference stoichiometry symbol has no t=0 value.
+
+    SBML Level 3 Version 2 Core Sec. 4.11.3 makes a ``speciesReference`` id a
+    model-level symbol whose time-zero value is the reference's
+    ``stoichiometry`` attribute unless an initial assignment defines the same
+    symbol, in which case the attribute is ignored; a rule may also target
+    the symbol.  Saying that the source model "supplies neither" is only
+    true when it really does supply neither, so the reason names the
+    construct that was supposed to supply the value instead.
+    """
+
+    preamble = (
+        "SBML Level 3 Version 2 Core Sec. 4.11.3 takes it from the species "
+        "reference's stoichiometry attribute or from an initial assignment, "
+    )
+    if any(
+        str(getattr(assignment, "symbol", "") or "") == symbol_id
+        for assignment in model.initial_assignments
+    ):
+        return (
+            preamble + "and the source model's initial assignment for it could not be "
+            "resolved to a number at t=0."
+        )
+    if any(
+        str(getattr(rule, "variable", "") or "") == symbol_id
+        and getattr(rule, "type", "") == "assignment"
+        for rule in model.rules
+    ):
+        return (
+            preamble + "and the source model's assignment rule for it could not be "
+            "resolved to a number at t=0."
+        )
+    return preamble + "and the source model supplies neither."
 
 
 def _seed_symbol_values(
@@ -6736,13 +6808,14 @@ def generate_bngl(
             # reference's ``stoichiometry`` attribute or from an initial
             # assignment that defines the same symbol.  With neither, the
             # symbol has no defined value at t=0 and seeding it with a
-            # default would silently change the model.
+            # default would silently change the model.  The reason names the
+            # construct that was supposed to supply the value, because the
+            # source model may well supply one whose value does not resolve.
             _record_import_warning(
                 model,
                 f'The stoichiometry symbol "{variable}" has no defined value at '
-                "t=0: SBML Level 3 Version 2 Core Sec. 4.11.3 takes it from the "
-                "species reference's stoichiometry attribute or from an initial "
-                "assignment, and the source model supplies neither.",
+                "t=0: "
+                + _species_reference_stoichiometry_undefined_reason(model, variable),
                 category="stoichiometry",
                 severity="dropped",
             )
