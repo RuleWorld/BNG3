@@ -53,6 +53,16 @@ public:
     std::set<std::string> getDependencies() const;
     std::string toString() const;
 
+    /// Render the expression as BNGL source.
+    ///
+    /// Identical to ``toString()`` except that a function call is written
+    /// with the spelling the BNGL grammar accepts.  The parser lower-cases
+    /// every function name it reads, and the grammar's rate-law keywords are
+    /// spelled 'Sat', 'MM', 'Hill', 'Arrhenius' and 'FunctionProduct', so a
+    /// lower-cased spelling is read back as an ordinary identifier and the
+    /// model cannot be executed again.
+    std::string toBnglString() const;
+
     ExpressionKind kind() const { return kind_; }
     const std::string& name() const { return text_; }
     const std::vector<Expression>& args() const { return children_; }
@@ -64,6 +74,8 @@ public:
     std::string tableFileKey() const;
 
 private:
+    std::string renderExpression(bool canonicalFunctionNames) const;
+
     ExpressionKind kind_;
     double numberValue_;
     std::string text_;
