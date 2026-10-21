@@ -3074,6 +3074,14 @@ _EVENT_REFUSAL_SUBCAUSES: tuple[tuple[str, str], ...] = (
         "simultaneous_dynamic_priority_unordered",
         "simultaneous dynamic-priority event group could not be ordered soundly",
     ),
+    (
+        "simultaneous_random_order",
+        "simultaneous same-priority event group requires a random execution order",
+    ),
+    (
+        "simultaneous_unordered_event",
+        "simultaneous event without a priority has an undefined execution order",
+    ),
     ("time_window_empty", "time-window bounds do not form a nonempty interval"),
     (
         "time_window_starts_at_or_before_zero",

@@ -41,15 +41,15 @@ process delayed events in the same event queue, and use the run seed for
 required random event ordering.
 
 The contract above is the acceptance target, not a description of the current
-slice. The implemented ODE slice covers a single event whose trigger is a
-strict inequality (or a conjunction of strict inequalities) over observable
-state, whose assignments write observable state, and whose delay is a
-constant. It does not yet re-test a trigger after an execution, so a cascade
-in which an assignment makes another event trigger true at the assignment
-instant is not detected; it does not implement persistence, priority
-ordering, or more than one event; and it does not run under the stochastic
-backend. The Atomizer refuses those constructs explicitly instead of
-lowering them approximately.
+slice. The implemented ODE slice covers a model whose events have a trigger
+that is a strict inequality (or a conjunction of strict inequalities) over
+observable state, whose assignments write observable state, and whose delay is
+a constant. Several events may share the block: the runtime registers one root
+function per trigger, orders the events that are executed simultaneously by
+their priority, re-tests every trigger after an execution, and does not
+execute a non-persistent event whose trigger has become false again. It does
+not run under the stochastic backend, and the Atomizer refuses the remaining
+constructs explicitly instead of lowering them approximately.
 
 Implementation proceeds in slices, while this complete semantic contract
 remains the acceptance target. A supported ODE slice does not imply support
@@ -104,8 +104,10 @@ ODE solver, event queue, stochastic engine, and conformance tests.
   against the new runtime path where both apply.
 - Root finding locates continuous crossings; event queue logic, not CVODE,
   implements SBML delays, persistence, snapshots, and priority ordering. The
-  implemented slice covers the delay and both snapshot choices; persistence
-  and priority ordering are refused rather than approximated.
+  implemented slice covers the delay, both snapshot choices, persistence, the
+  re-test of every trigger after an execution, and the priority ordering of
+  the events that are executed simultaneously; a model whose events cannot be
+  ordered is refused rather than approximated.
 - A same-priority event set that requires random ordering must not be
   serialized as one arbitrarily ordered deterministic action sequence.  SBML
   4.12 defines simultaneous execution as several events with the same
@@ -114,7 +116,10 @@ ODE solver, event queue, stochastic engine, and conformance tests.
   first, and with equal `Priority` values the specification requires a
   random order.  A model that reaches the last case therefore has no
   deterministic execution and must stay explicitly unsupported rather than
-  take an arbitrary order.
+  take an arbitrary order.  Two events with different triggers can still be
+  triggered at the same instant and nothing in the model proves that they
+  cannot, so the native lowering requires every event of a model with more
+  than one event to carry a static priority of its own.
 - BNG2 and PyBioNetGen remain read-only comparators. Reports must distinguish
   standard BNGL parity from BNG3 extension behavior.
 - Overall Atomizer completion still requires the full feature checklist,
@@ -129,9 +134,10 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    at the crossing, and queues a delayed event until its delay elapses.
 3. [ ] Add trigger transition, delayed execution, persistence, snapshot, and
    priority tests grounded in official SBML cases. The trigger transition,
-   the delayed execution, both snapshot choices, and the single-event
-   priority are covered; a non-persistent trigger, multiple events, and the
-   priority ordering between simultaneous events are not.
+   the delayed execution, both snapshot choices, the single-event priority,
+   the persistence rule, the priority ordering between simultaneous events
+   and the re-test of every trigger after an execution are covered; the
+   stochastic backend is not.
 4. [ ] Add stochastic event-queue semantics and seeded random ordering.
 5. [x] Round-trip the event block through the BNGL parser/writer. The public
    Python CVODE path executes one immediate event with simultaneous species
@@ -151,10 +157,11 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    `tests/python/test_event_backend_boundaries.py` checks these boundaries.
    The legacy unsupported CLI fixture retains explicit rejection.
 6. [x] Widen the ODE slice to the event class the modern Atomizer can
-   express exactly: one event, a persistent trigger, a continuous inequality
-   over observable state (or a conjunction of such inequalities), assignments
-   to observable state, an optional constant delay, and an optional priority.
-   A strict inequality is true exactly on one side of its root, so a sign
+   express exactly: several events, each with a persistent trigger, a
+   continuous inequality over observable state (or a conjunction of such
+   inequalities), assignments to observable state, an optional constant delay,
+   and a static priority. A strict inequality is true exactly on one side of
+   its root, so a sign
    change of the root function is the rising trigger edge. A non-strict
    inequality is also true at a tangential contact, which leaves no sign
    change, so the Atomizer lowers it only when the trigger's state has a
@@ -164,7 +171,13 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    the event, and `useValuesFromTriggerTime` selects the trigger-time values.
    A delayed execution re-tests the trigger, as SBML 4.12.8 requires, so an
    assignment that makes the trigger true again triggers the event once more.
-   A trigger whose two sides are equal at the start of the simulation is a
+   The events that are executed simultaneously are ordered by their priority,
+   as SBML 4.12.3 requires, and a trigger that is not persistent is
+   re-evaluated before its execution, as SBML 4.12.2 requires: an event whose
+   trigger has become false again is not executed. A model whose events
+   cannot be ordered -- two events with the same priority, or an event
+   without one -- is refused with that reason instead of taking an arbitrary
+   order. A trigger whose two sides are equal at the start of the simulation is a
    falling edge, so the event waits for the next rising edge; only an
    immediate rising edge stays explicitly unsupported, and that refusal
    reads as an unsupported construct. The SBML export writes the event back

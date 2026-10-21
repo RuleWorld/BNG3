@@ -7,19 +7,22 @@
 
 namespace bng::ast {
 
-// The first native slice has no queue: one immediate event, with a continuous
-// scalar threshold and simultaneous assignments to species observables.
+// The native event runtime executes the events of a model: each event has a
+// continuous scalar trigger, an optional constant delay, a priority that
+// orders the events executed at the same instant, and assignments to species
+// observables.
 inline void validateNativeEventSubset(const Model& model) {
     if (!model.getEventFormatVersion()) return;
     const auto fail = [](const std::string& reason) {
         throw std::runtime_error(std::string(kUnsupportedEventExecutionMessage) + ": " + reason);
     };
-    if (model.getEvents().size() != 1) fail("exactly one immediate event is supported");
-    const auto& event = model.getEvents().front();
+    if (model.getEvents().empty()) fail("at least one event is required");
+    for (const auto& event : model.getEvents()) {
     if (event.priority) {
         // The priority orders the assignments of events that are executed
-        // simultaneously.  A single event has nothing to order, so the value
-        // is accepted and does not change the execution.
+        // simultaneously.  It has to be a static value, because the order
+        // of two simultaneous events has to be decided before either of them
+        // runs.
         for (const auto& name : event.priority->getDependencies()) {
             if (name == "time") fail("event priority must be static");
             for (const auto& observable : model.getObservables()) {
@@ -29,12 +32,6 @@ inline void validateNativeEventSubset(const Model& model) {
                 if (model.getParameters().isTimeDependent(name)) fail("event priority must be static");
             } catch (const std::exception&) { fail("event priority requires static parameters"); }
         }
-    }
-    if (!event.persistent) {
-        // A non-persistent trigger re-arms itself as soon as the assignment
-        // leaves the trigger true, which needs an event queue rather than a
-        // single continuous root crossing.
-        fail("non-persistent triggers are unsupported");
     }
     const auto& trigger = event.trigger;
     // A trigger is a strict inequality or a conjunction of them.  A
@@ -157,6 +154,7 @@ inline void validateNativeEventSubset(const Model& model) {
         continuous(assignment.value);
     }
     if (targets.empty()) fail("event requires an assignment");
+    }
 }
 
 } // namespace bng::ast

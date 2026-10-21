@@ -153,12 +153,17 @@ def test_non_strict_state_trigger_stays_refused_without_a_monotone_state():
     assert "trigger is not a simple time threshold" in result.bngl
 
 
-def test_non_persistent_trigger_stays_explicitly_untranslated():
+def test_non_persistent_trigger_is_lowered_to_the_native_event_block():
+    # SBML L3V2 Core Sec. 4.12.2: a trigger that is not persistent is
+    # re-evaluated before the execution, and the event is not executed when
+    # the trigger has become false again.  The native runtime owns that
+    # re-evaluation, so the event reaches the runtime.
     result = atomize(coupled_event_model(persistent="false"))
 
     assert result.success, result.error
-    assert "begin bng3_events version 1" not in result.bngl
-    assert "# Events NOT simulated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert "persistent: false" in result.bngl
+    assert "# Events NOT simulated" not in result.bngl
 
 
 def test_stochastic_run_keeps_the_explicit_refusal():
@@ -577,3 +582,164 @@ def test_native_event_can_read_the_execution_time_values(tmp_path):
     # Without the trigger-time snapshot the assignment reads S1 where it is
     # when the delay elapses.
     assert s2[after] == pytest.approx(s1[after], rel=2e-3)
+
+
+def two_event_model(
+    *,
+    first_priority: str = "",
+    second_priority: str = "",
+    second_trigger: str = "<ci>S1</ci><cn>0.75</cn>",
+    second_delay: str = "",
+) -> str:
+    """A model with two state-triggered events that share one trigger.
+
+    The two events are triggered at the same instant, so their priorities
+    decide the order in which they are executed.
+    """
+
+    def priority(value: str) -> str:
+        if not value:
+            return ""
+        return (
+            '<priority><math xmlns="http://www.w3.org/1998/Math/MathML">'
+            f"<cn>{value}</cn></math></priority>"
+        )
+
+    def delay(value: str) -> str:
+        if not value:
+            return ""
+        return (
+            '<delay><math xmlns="http://www.w3.org/1998/Math/MathML">'
+            f"<cn>{value}</cn></math></delay>"
+        )
+
+    return f"""<sbml xmlns="http://www.w3.org/1998/sbml/level3/version2/core">
+  <model id="two_events">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+      <species id="S2" compartment="C" initialAmount="2" hasOnlySubstanceUnits="true"/>
+      <species id="S3" compartment="C" initialAmount="1" hasOnlySubstanceUnits="true"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k1" value="0.75" constant="true"/>
+      <parameter id="k2" value="0.25" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="consume" reversible="false">
+        <listOfReactants>
+          <speciesReference species="S1"/>
+          <speciesReference species="S2" stoichiometry="2"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="S3"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k1</ci><ci>S1</ci><ci>S2</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="release" reversible="false">
+        <listOfReactants><speciesReference species="S3"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference species="S1"/>
+          <speciesReference species="S2"/>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k2</ci><ci>S3</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="first" useValuesFromTriggerTime="true">
+        {priority(first_priority)}
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><lt/><ci>S1</ci><cn>0.75</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S2">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="second" useValuesFromTriggerTime="true">
+        {priority(second_priority)}
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><lt/>{second_trigger}</apply>
+          </math>
+        </trigger>
+        {delay(second_delay)}
+        <listOfEventAssignments>
+          <eventAssignment variable="S3">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>3</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+
+def test_two_events_are_lowered_into_one_native_event_block():
+    result = atomize(two_event_model(first_priority="7", second_priority="3"))
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert result.bngl.count('  event "') == 2
+    assert "priority: 7" in result.bngl
+    assert "priority: 3" in result.bngl
+    assert "# Events NOT simulated" not in result.bngl
+
+
+def test_simultaneous_events_without_a_priority_are_refused():
+    # The specification leaves the order of two simultaneous events without a
+    # priority undefined, so the model is refused instead of executed with an
+    # arbitrary order.
+    result = atomize(two_event_model())
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" not in result.bngl
+    assert "# Events NOT simulated" in result.bngl
+    assert (
+        "simultaneous event without a priority has an undefined execution order"
+        in result.bngl
+    )
+
+
+def test_simultaneous_events_with_the_same_priority_are_refused():
+    result = atomize(two_event_model(first_priority="5", second_priority="5"))
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" not in result.bngl
+    assert (
+        "simultaneous same-priority event group requires a random execution order"
+        in result.bngl
+    )
+
+
+def test_events_with_different_triggers_are_ordered_by_their_priorities():
+    # Two events with different triggers can still be triggered at the same
+    # instant, so they need a priority of their own as well.
+    result = atomize(
+        two_event_model(
+            first_priority="7",
+            second_priority="3",
+            second_trigger="<ci>S3</ci><cn>0.5</cn>",
+        )
+    )
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert result.bngl.count('  event "') == 2
+
+
+def test_events_with_the_same_trigger_and_different_delays_are_ordered():
+    result = atomize(
+        two_event_model(first_priority="7", second_priority="3", second_delay="0.5")
+    )
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert result.bngl.count('  event "') == 2
