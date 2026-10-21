@@ -1,10 +1,10 @@
 {
   "label": "current-2026-10-20",
   "provenance": {
-    "base_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
+    "base_commit": "2cb9f2c3bc013307414379a22e655e3e3a0b6b18",
     "measurement_date": "2026-10-21",
     "measurement_host": "darwin, CPython 3.14.6, libsbml 5.21.1, roadrunner 2.10.0",
-    "note": "The current measurement of the merged tree, and the measurement the committed expectation manifest was generated from. The curated-BioModels figures are not part of this record; the corpus has not been re-measured since the campaign's flat-mode run.",
+    "note": "The current measurement of the merged tree, and the measurement the committed expectation manifest was generated from. The run executed the tree at commit 2cb9f2c3 (the squash merge of the reaction-rate outputs) with the native extension built from it; the only commit merged after that measurement, the mass-action hash-seed determinism fix, changes no verdict, so the measurement still describes the tree. The curated-BioModels figures are not part of this record; the corpus has not been re-measured since the campaign's flat-mode run.",
     "sbml_test_suite": {
       "case_timeout_seconds": 300,
       "categories": [
@@ -14063,16 +14063,14 @@
       },
       {
         "category": "semantic",
-        "causes": [
-          "events"
-        ],
-        "conversion": "unsupported",
+        "causes": [],
+        "conversion": "passed",
         "id": "01169",
-        "independent_comparison": "not-tested",
-        "official_reference": "unsupported",
-        "reason_signature": "events:untranslated",
+        "independent_comparison": "passed",
+        "official_reference": "passed",
+        "reason_signature": "",
         "ref": "semantic/01169",
-        "roundtrip_structure": "not-tested",
+        "roundtrip_structure": "passed",
         "version": "l3v2"
       },
       {
@@ -16237,7 +16235,7 @@
         "conversion": "passed",
         "id": "01344",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01344",
         "roundtrip_structure": "passed",
@@ -16249,7 +16247,7 @@
         "conversion": "passed",
         "id": "01345",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01345",
         "roundtrip_structure": "passed",
@@ -16261,7 +16259,7 @@
         "conversion": "passed",
         "id": "01346",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01346",
         "roundtrip_structure": "passed",
@@ -16273,7 +16271,7 @@
         "conversion": "passed",
         "id": "01347",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01347",
         "roundtrip_structure": "passed",
@@ -16285,7 +16283,7 @@
         "conversion": "passed",
         "id": "01348",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01348",
         "roundtrip_structure": "passed",
@@ -16297,7 +16295,7 @@
         "conversion": "passed",
         "id": "01349",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01349",
         "roundtrip_structure": "passed",
@@ -16309,7 +16307,7 @@
         "conversion": "passed",
         "id": "01350",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01350",
         "roundtrip_structure": "passed",
@@ -16321,7 +16319,7 @@
         "conversion": "passed",
         "id": "01351",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01351",
         "roundtrip_structure": "passed",
@@ -16333,7 +16331,7 @@
         "conversion": "passed",
         "id": "01352",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01352",
         "roundtrip_structure": "passed",
@@ -16429,7 +16427,7 @@
         "conversion": "passed",
         "id": "01360",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01360",
         "roundtrip_structure": "passed",
@@ -16537,7 +16535,7 @@
         "conversion": "passed",
         "id": "01369",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01369",
         "roundtrip_structure": "passed",
@@ -16645,7 +16643,7 @@
         "conversion": "passed",
         "id": "01378",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01378",
         "roundtrip_structure": "passed",
@@ -16669,7 +16667,7 @@
         "conversion": "passed",
         "id": "01380",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01380",
         "roundtrip_structure": "passed",
@@ -16681,7 +16679,7 @@
         "conversion": "passed",
         "id": "01381",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01381",
         "roundtrip_structure": "passed",
@@ -16693,7 +16691,7 @@
         "conversion": "passed",
         "id": "01382",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01382",
         "roundtrip_structure": "passed",
@@ -16705,7 +16703,7 @@
         "conversion": "passed",
         "id": "01383",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01383",
         "roundtrip_structure": "passed",
@@ -16717,7 +16715,7 @@
         "conversion": "passed",
         "id": "01384",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01384",
         "roundtrip_structure": "passed",
@@ -16729,7 +16727,7 @@
         "conversion": "passed",
         "id": "01385",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01385",
         "roundtrip_structure": "passed",
@@ -16741,7 +16739,7 @@
         "conversion": "passed",
         "id": "01386",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01386",
         "roundtrip_structure": "passed",
@@ -16753,7 +16751,7 @@
         "conversion": "passed",
         "id": "01387",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01387",
         "roundtrip_structure": "passed",
@@ -16765,7 +16763,7 @@
         "conversion": "passed",
         "id": "01388",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01388",
         "roundtrip_structure": "passed",
@@ -16777,7 +16775,7 @@
         "conversion": "passed",
         "id": "01389",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "semantic/01389",
         "roundtrip_structure": "passed",
@@ -22235,7 +22233,7 @@
         "conversion": "passed",
         "id": "00006",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "stochastic/00006",
         "roundtrip_structure": "passed",
@@ -22451,7 +22449,7 @@
         "conversion": "passed",
         "id": "00024",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "stochastic/00024",
         "roundtrip_structure": "passed",
@@ -22475,7 +22473,7 @@
         "conversion": "passed",
         "id": "00026",
         "independent_comparison": "passed",
-        "official_reference": "unsupported",
+        "official_reference": "passed",
         "reason_signature": "",
         "ref": "stochastic/00026",
         "roundtrip_structure": "passed",
@@ -23558,7 +23556,7 @@
     "cause_counts": {
       "algebraic_rules": 1,
       "constraints": 35,
-      "events": 107,
+      "events": 106,
       "fast_reactions": 6,
       "mathml": 49,
       "other": 6,
@@ -23600,7 +23598,7 @@
         "causes": [
           "events"
         ],
-        "count": 5
+        "count": 4
       },
       {
         "causes": [
@@ -23648,22 +23646,22 @@
       }
     ],
     "official_reference_counts": {
-      "passed": 1758,
-      "unsupported": 165
+      "passed": 1784,
+      "unsupported": 139
     },
-    "source_report_sha256": "e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576",
+    "source_report_sha256": "a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4",
     "stage_counts": {
       "conversion": {
-        "passed": 1797,
-        "unsupported": 126
+        "passed": 1798,
+        "unsupported": 125
       },
       "independent_comparison": {
-        "not-tested": 126,
-        "passed": 1797
+        "not-tested": 125,
+        "passed": 1798
       },
       "roundtrip_structure": {
-        "not-tested": 126,
-        "passed": 1797
+        "not-tested": 125,
+        "passed": 1798
       }
     }
   },
