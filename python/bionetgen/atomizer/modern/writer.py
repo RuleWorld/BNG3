@@ -10710,84 +10710,84 @@ def generate_bngl(
                 expression = f"({expression}) / ({float(compartment_size)!r})"
             return expression
 
-    def resolve_species_concentration_volume(
-        species_id: str, event_context: SBMLEvent, time: float
-    ) -> Optional[float]:
-        """Return the compartment volume in effect before an event fires.
+        def resolve_species_concentration_volume(
+            species_id: str, event_context: SBMLEvent, time: float
+        ) -> Optional[float]:
+            """Return the compartment volume in effect before an event fires.
 
-        SBML Level 3 Version 2 Core Sec. 4.6 relates a species' amount to
-        its concentration through the size of the species' compartment.
-        An event assignment to a species whose symbol denotes a
-        concentration therefore sets the species' amount, and SBML
-        evaluates every assignment of an event against the state before
-        the event's own assignments (SBML Test Suite 01779).  The volume
-        that scales the assigned concentration is the one in effect
-        immediately before the event fires.
-        """
+            SBML Level 3 Version 2 Core Sec. 4.6 relates a species' amount to
+            its concentration through the size of the species' compartment.
+            An event assignment to a species whose symbol denotes a
+            concentration therefore sets the species' amount, and SBML
+            evaluates every assignment of an event against the state before
+            the event's own assignments (SBML Test Suite 01779).  The volume
+            that scales the assigned concentration is the one in effect
+            immediately before the event fires.
+            """
 
-        resolved_id = next(
-            (
-                identifier
-                for identifier in model.species
-                if standardize_name(identifier) == standardize_name(species_id)
-            ),
-            None,
-        )
-        if resolved_id is None:
-            return None
-        species = model.species[resolved_id]
-        if species.has_only_substance_units or not species.compartment:
-            return None
-        compartment_id = species.compartment
-        compartment = model.compartments.get(compartment_id)
-        if compartment is None or compartment.spatial_dimensions == 0:
-            # A zero-dimensional compartment has unit size and its
-            # species' symbol is amount-valued.
-            return None
-        if any(
-            assignment.symbol == compartment_id
-            for assignment in model.initial_assignments
-        ) or any(
-            rule.variable == compartment_id and rule.type == "assignment"
-            for rule in model.rules
-        ):
-            # The declared size is not the size in effect at the event.
-            return None
-        if any(
-            assignment.variable == compartment_id
-            for other_event in model.events
-            if other_event is not event_context
-            for assignment in other_event.assignments
-        ):
-            # Another event may have changed the size before this one.
-            return None
-        rate_rules = [
-            rule
-            for rule in model.rules
-            if rule.variable == compartment_id and rule.type == "rate"
-        ]
-        if rate_rules:
-            if len(rate_rules) != 1:
+            resolved_id = next(
+                (
+                    identifier
+                    for identifier in model.species
+                    if standardize_name(identifier) == standardize_name(species_id)
+                ),
+                None,
+            )
+            if resolved_id is None:
                 return None
-            trajectory = resolve_affine_event_rate(compartment_id, event_context)
-            if trajectory is None:
+            species = model.species[resolved_id]
+            if species.has_only_substance_units or not species.compartment:
                 return None
-            initial, slope = trajectory
-            volume = initial + slope * time
-        else:
-            volume = float(compartment.size)
-        if not math.isfinite(volume) or volume == 0:
-            return None
-        return volume
+            compartment_id = species.compartment
+            compartment = model.compartments.get(compartment_id)
+            if compartment is None or compartment.spatial_dimensions == 0:
+                # A zero-dimensional compartment has unit size and its
+                # species' symbol is amount-valued.
+                return None
+            if any(
+                assignment.symbol == compartment_id
+                for assignment in model.initial_assignments
+            ) or any(
+                rule.variable == compartment_id and rule.type == "assignment"
+                for rule in model.rules
+            ):
+                # The declared size is not the size in effect at the event.
+                return None
+            if any(
+                assignment.variable == compartment_id
+                for other_event in model.events
+                if other_event is not event_context
+                for assignment in other_event.assignments
+            ):
+                # Another event may have changed the size before this one.
+                return None
+            rate_rules = [
+                rule
+                for rule in model.rules
+                if rule.variable == compartment_id and rule.type == "rate"
+            ]
+            if rate_rules:
+                if len(rate_rules) != 1:
+                    return None
+                trajectory = resolve_affine_event_rate(compartment_id, event_context)
+                if trajectory is None:
+                    return None
+                initial, slope = trajectory
+                volume = initial + slope * time
+            else:
+                volume = float(compartment.size)
+            if not math.isfinite(volume) or volume == 0:
+                return None
+            return volume
 
-    def resolve_compartment_state_pattern(compartment_id: str) -> Optional[str]:
-        """Return the state pattern carrying a rate-ruled compartment size."""
+        def resolve_compartment_state_pattern(compartment_id: str) -> Optional[str]:
+            """Return the state pattern carrying a rate-ruled compartment size."""
 
-        if compartment_id not in rate_ruled_compartment_ids:
-            return None
-        return species_to_pattern.get(compartment_id)
+            if compartment_id not in rate_ruled_compartment_ids:
+                return None
+            return species_to_pattern.get(compartment_id)
 
-    event_context = EventTranslationContext(
+        event_context = EventTranslationContext(
             resolve_species_pattern=lambda species_id: species_to_pattern.get(
                 species_id
             ),
@@ -10798,9 +10798,7 @@ def generate_bngl(
             ),
             is_compartment=lambda identifier: identifier in model.compartments,
             resolve_compartment_state_pattern=resolve_compartment_state_pattern,
-            resolve_species_concentration_volume=(
-                resolve_species_concentration_volume
-            ),
+            resolve_species_concentration_volume=(resolve_species_concentration_volume),
             is_compile_time_constant=is_compile_time_constant,
             unapplied_algebraic_rule=any(
                 rule.type == "algebraic" for rule in model.rules

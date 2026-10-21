@@ -3250,6 +3250,11 @@ def synthesize_native_event_block(
     if len(events) != 1:
         return None
     event = events[0]
+    if context.unapplied_algebraic_rule:
+        # The source model has an algebraic rule the Atomizer did not apply,
+        # so the generated model does not reproduce the source dynamics and
+        # the trigger cannot be evaluated on it.
+        return None
     if str(context.method or "ode").lower() not in {"ode", "cvode"}:
         # The native runtime finds a trigger crossing with the continuous ODE
         # solver; a stochastic run needs jump scheduling instead.

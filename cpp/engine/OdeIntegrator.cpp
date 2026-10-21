@@ -3040,11 +3040,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                         NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
                     }
                     if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
-                        SUNLinSolFree(LS);
-                        if (A) SUNMatDestroy(A);
-                        CVodeFree(&cvode_mem);
-                        N_VDestroy(y);
-                        SUNContext_Free(&sunctx);
+                        // The session releases the SUNDIALS handles.
                         throw std::runtime_error("bng3_events CVodeReInit failed");
                     }
                     continue;
@@ -3081,8 +3077,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                             for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
                             if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
                                 throw std::runtime_error("bng3_events CVodeReInit failed");
-                            }
-                        }
                             }
                         }
                     }
