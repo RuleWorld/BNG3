@@ -35,6 +35,43 @@ Usage:
     python scripts/ci/sbml_campaign_inventory.py \
         --suite-report /path/to/report.json \
         --expectations provenance/sbml-campaign/expectations.json
+
+    # Record an auditable measurement: where it came from, and why every
+    # verdict moved relative to a baseline.
+    python scripts/ci/sbml_campaign_inventory.py \
+        --suite-report /path/to/suite.json \
+        --baseline-suite-report /path/to/baseline-suite.json \
+        --biomodels-report /path/to/biomodels-flat.json \
+        --biomodels-atomized-report /path/to/biomodels-atomized.json \
+        --base-commit 219c76dac38655c0f15a12ee294e4a4ac10d02ef \
+        --measurement-date 2026-10-20 \
+        --out provenance/sbml-campaign/audit-2026-10-20.json
+
+Schema
+------
+The inventory has ``schema_version``, ``label`` and, when the corresponding
+report is supplied, ``sbml_test_suite`` and ``biomodels``.  Each corpus
+section carries the corpus denominator (``case_count`` / ``record_count``),
+the per-status counts, the cause histogram and one row per case with that
+case's verdicts.
+
+``provenance`` records where a measurement came from.  It is either the
+document supplied with ``--provenance`` (merged verbatim) or, for an audit
+record, a block *derived* from the reports in the same shape:
+``base_commit``, ``measurement_date``, ``measurement_host``, ``note`` and
+``sbml_test_suite`` with ``case_timeout_seconds``, ``categories``,
+``repository`` and ``revision``.
+
+``audit`` is the audit record's own section.  It adds the digests of the
+source reports, the commit the run executed, the tool versions the harness
+observed, the per-case comparison with a baseline (stating, for every case
+that moved, whether a reference file, a tolerance, the result mapping, the
+number of compared points or a diagnostic changed), both curated-BioModels
+modes with the records one mode supports and the other does not, and any
+additional evidence document supplied with ``--extra-evidence``.
+
+Neither section contains reference data or trajectories, and neither changes a
+verdict.
 """
 
 from __future__ import annotations
@@ -346,6 +383,427 @@ def biomodels_inventory(report: dict[str, Any]) -> dict[str, Any]:
         "cause_sets": intersections,
         "cases": rows,
     }
+
+
+# --- Audit record -------------------------------------------------------
+#
+# Everything below supports one job: state where a measurement came from and
+# why every verdict moved relative to a baseline.  It never changes a verdict,
+# a tolerance or a reference file.
+
+
+AUDIT_SCHEMA_VERSION = 1
+
+
+def _tool_versions(report: dict[str, Any]) -> dict[str, Any]:
+    """Read the tool versions the harness recorded for the run."""
+
+    runtime = report.get("runtime_provenance") or {}
+    versions = {
+        key: runtime.get(key)
+        for key in (
+            "python_version",
+            "platform",
+            "bionetgen_version",
+            "numpy_version",
+            "libsbml_version",
+            "roadrunner_version",
+        )
+        if runtime.get(key)
+    }
+    versions["native_extension_sha256"] = runtime.get("native_extension_sha256")
+    versions["python_package_source_sha256"] = runtime.get(
+        "python_package_source_sha256"
+    )
+    return versions
+
+
+def _measurement_host(report: dict[str, Any]) -> str:
+    """Describe the machine and the tool versions a run executed on."""
+
+    versions = _tool_versions(report)
+    platform = str(versions.get("platform") or "")
+    python_version = str(versions.get("python_version") or "")
+    libsbml_version = str(versions.get("libsbml_version") or "")
+    roadrunner_version = str(versions.get("roadrunner_version") or "")
+    return (
+        f"{platform}, CPython {python_version}, libsbml {libsbml_version}, "
+        f"roadrunner {roadrunner_version}"
+    )
+
+
+def _case_fingerprint(record: dict[str, Any]) -> dict[str, Any]:
+    """Reduce one harness record to the facts a verdict change can rest on."""
+
+    official = record.get("official_conformance") or {}
+    comparison = official.get("comparison") or {}
+    digests = record.get("input_sha256") or {}
+    model = record.get("source_model") or {}
+    dropped = sorted(
+        f"[{warning.get('category')}/{warning.get('severity')}] {warning.get('message')}"
+        for warning in (model.get("warnings") or [])
+        if str(warning.get("severity")) in {"dropped", "approximated"}
+        and str(warning.get("category")) != "units"
+    )
+    return {
+        "conversion": record.get("status"),
+        "unsupported_reason": record.get("unsupported_reason") or "",
+        "official_reference": official.get("status", "missing"),
+        "official_reason": official.get("reason") or "",
+        "sbml_sha256": digests.get("sbml"),
+        "settings_sha256": digests.get("settings"),
+        "results_sha256": digests.get("results"),
+        "reference_settings_sha256": official.get("settings_sha256"),
+        "reference_results_sha256": official.get("results_sha256"),
+        "tolerance_absolute": comparison.get("absolute"),
+        "tolerance_relative": comparison.get("relative"),
+        "tolerance_formula": comparison.get("tolerance_formula"),
+        "sample_count": comparison.get("sample_count"),
+        "passed_points": comparison.get("passed_points"),
+        "output_targets": official.get("output_targets"),
+        "dropped_or_approximated_warnings": dropped,
+    }
+
+
+def suite_baseline_comparison(
+    baseline_report: dict[str, Any], report: dict[str, Any]
+) -> dict[str, Any]:
+    """Compare a measurement with a baseline and say why each verdict moved.
+
+    A verdict that moves because the reference file, the tolerance, the result
+    mapping or the compared sample count changed is a changed *measurement*.
+    A verdict that moves because a ``dropped``/``approximated`` diagnostic
+    disappeared is a removed *refusal*.  Both are reported per case, so that a
+    reviewer can decide which of them the change actually was.
+    """
+
+    baseline = {
+        f"{record.get('category')}/{record.get('id')}": record
+        for record in baseline_report.get("records") or []
+    }
+    rows: list[dict[str, Any]] = []
+    transitions: Counter = Counter()
+    for record in report.get("records") or []:
+        key = f"{record.get('category')}/{record.get('id')}"
+        before_record = baseline.get(key)
+        if before_record is None:
+            continue
+        before = _case_fingerprint(before_record)
+        after = _case_fingerprint(record)
+        if (
+            before["conversion"] == after["conversion"]
+            and before["official_reference"] == after["official_reference"]
+        ):
+            continue
+        mechanisms: list[str] = []
+
+        def changed(field: str, label: str) -> None:
+            old = before[field]
+            new = after[field]
+            if old is not None and new is not None and old != new:
+                mechanisms.append(label)
+
+        changed("sbml_sha256", "source-sbml-changed")
+        changed("settings_sha256", "settings-file-changed")
+        changed("results_sha256", "results-file-changed")
+        changed("reference_settings_sha256", "official-settings-digest-changed")
+        changed("reference_results_sha256", "official-results-digest-changed")
+        changed("tolerance_absolute", "absolute-tolerance-changed")
+        changed("tolerance_relative", "relative-tolerance-changed")
+        changed("tolerance_formula", "tolerance-formula-changed")
+        changed("sample_count", "compared-sample-count-changed")
+        changed("output_targets", "official-result-mapping-changed")
+        removed = sorted(
+            set(before["dropped_or_approximated_warnings"])
+            - set(after["dropped_or_approximated_warnings"])
+        )
+        added = sorted(
+            set(after["dropped_or_approximated_warnings"])
+            - set(before["dropped_or_approximated_warnings"])
+        )
+        if removed:
+            mechanisms.append("dropped-or-approximated-warning-removed")
+        if added:
+            mechanisms.append("dropped-or-approximated-warning-added")
+        transition = f"{before['official_reference']}->{after['official_reference']}"
+        transitions[transition] += 1
+        rows.append(
+            {
+                "ref": key,
+                "conversion": f"{before['conversion']}->{after['conversion']}",
+                "official_reference": transition,
+                "mechanisms": mechanisms,
+                "removed_warnings": removed,
+                "added_warnings": added,
+            }
+        )
+    return {
+        "baseline_case_count": len(baseline),
+        "transition_counts": dict(sorted(transitions.items())),
+        "cases": rows,
+    }
+
+
+def biomodels_baseline_comparison(
+    baseline_report: dict[str, Any],
+    report: dict[str, Any],
+    recheck: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compare a curated-corpus measurement with a baseline, record by record.
+
+    The aggregate counts of a corpus can stay the same while individual
+    records change class, so the aggregate alone is not a claim about the
+    corpus.  This states, per record, what changed.
+    """
+
+    baseline = {
+        str(record.get("id")): record for record in baseline_report.get("records") or []
+    }
+    observed = {str(record.get("id")): record for record in report.get("records") or []}
+    verdicts = (recheck or {}).get("verdicts") or {}
+    rows: list[dict[str, Any]] = []
+    for record_id in sorted(set(baseline) & set(observed)):
+        before = str(baseline[record_id].get("status"))
+        after = verdicts.get(record_id) or str(observed[record_id].get("status"))
+        if before == after:
+            continue
+        rows.append(
+            {
+                "id": record_id,
+                "baseline_status": before,
+                "measured_status": after,
+                "parallel_status": str(observed[record_id].get("status")),
+                "error": str(
+                    ((observed[record_id].get("modes") or [{}])[0]).get("error") or ""
+                )[:300],
+            }
+        )
+    counts: Counter = Counter()
+    for record_id in observed:
+        counts[verdicts.get(record_id) or str(observed[record_id].get("status"))] += 1
+    return {
+        "record_count": len(observed),
+        "status_counts": dict(sorted(counts.items())),
+        "changed_record_count": len(rows),
+        "changed_records": rows,
+    }
+
+
+def _apply_recheck(
+    modes: dict[str, Any], recheck: dict[str, Any] | None, mode: str
+) -> None:
+    """Replace a mode's parallel verdicts with its serial re-measurement.
+
+    A corpus run that shares a busy machine reports a timeout for a model
+    that only ran long because the machine was busy.  Re-measuring the records
+    whose verdict differs from the baseline, one worker at a time, decides
+    those records without depending on the load.
+    """
+
+    if not recheck:
+        return
+    verdicts = recheck.get("verdicts") or {}
+    section = modes.get(mode)
+    if not section:
+        return
+    corrected: dict[str, str] = {}
+    for row in section["records"]:
+        serial = verdicts.get(str(row["id"]))
+        if serial is None:
+            continue
+        row["parallel_status"] = row["status"]
+        row["status"] = serial
+        corrected[str(row["id"])] = serial
+    section["recheck"] = {
+        "rechecked_records": sorted(corrected),
+        "changed_records": sorted(
+            record_id
+            for record_id, status in corrected.items()
+            if next(
+                row["parallel_status"]
+                for row in section["records"]
+                if str(row["id"]) == record_id
+            )
+            != status
+        ),
+    }
+    section["status_counts_after_recheck"] = dict(
+        sorted(Counter(row["status"] for row in section["records"]).items())
+    )
+
+
+def _mode_comparison(modes: dict[str, Any]) -> None:
+    """State which records one BioModels mode supports and the other does not."""
+
+    flat = modes.get("flat")
+    atomized = modes.get("atomized")
+    if not flat or not atomized:
+        return
+    flat_status = {str(row["id"]): row["status"] for row in flat["records"]}
+    atomized_status = {str(row["id"]): row["status"] for row in atomized["records"]}
+    shared = sorted(set(flat_status) & set(atomized_status))
+    flat_only = sorted(
+        record_id
+        for record_id in shared
+        if flat_status[record_id] == "passed" and atomized_status[record_id] != "passed"
+    )
+    modes["flat_only_passed"] = flat_only
+    modes["flat_only_passed_statuses"] = dict(
+        sorted(Counter(atomized_status[record_id] for record_id in flat_only).items())
+    )
+    modes["atomized_only_passed"] = sorted(
+        record_id
+        for record_id in shared
+        if atomized_status[record_id] == "passed" and flat_status[record_id] != "passed"
+    )
+
+
+def _biomodels_mode_section(
+    report: dict[str, Any], report_path: Path | None, mode: str
+) -> dict[str, Any]:
+    """Summarise one curated-BioModels mode and list every record's verdict."""
+
+    records = report.get("records") or []
+    rows = []
+    for record in records:
+        rows.append(
+            {
+                "id": record.get("id"),
+                "status": record.get("status"),
+                "format": record.get("format"),
+                "causes": sorted(
+                    set(
+                        str(cause) for cause in (record.get("unsupported_causes") or [])
+                    )
+                ),
+            }
+        )
+    statuses = Counter(str(row["status"]) for row in rows)
+    return {
+        "mode": mode,
+        "record_count": len(rows),
+        "status_counts": dict(sorted(statuses.items())),
+        "summary": report.get("summary"),
+        "completeness": report.get("completeness"),
+        "source_report_sha256": _digest(report_path) if report_path else None,
+        "records": sorted(rows, key=lambda row: str(row["id"])),
+    }
+
+
+def audit_section(
+    suite_report: dict[str, Any] | None,
+    suite_report_path: Path | None,
+    baseline_suite_report: dict[str, Any] | None,
+    baseline_suite_report_path: Path | None,
+    biomodels_report: dict[str, Any] | None,
+    biomodels_report_path: Path | None,
+    biomodels_atomized_report: dict[str, Any] | None,
+    biomodels_atomized_report_path: Path | None,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Collect the corpus denominators, digests, commits and tool versions."""
+
+    audit: dict[str, Any] = {
+        "audit_schema_version": AUDIT_SCHEMA_VERSION,
+        "base_commit": args.base_commit,
+    }
+
+    if suite_report is not None:
+        source = suite_report.get("source_provenance") or {}
+        lock = suite_report.get("suite_source_lock") or {}
+        command = suite_report.get("command") or {}
+        arguments = command.get("arguments") or []
+        case_timeout = 0
+        for index, argument in enumerate(arguments):
+            if argument == "--case-timeout" and index + 1 < len(arguments):
+                try:
+                    case_timeout = int(arguments[index + 1])
+                except ValueError:
+                    case_timeout = 0
+        audit["head_commit"] = source.get("bng3_commit")
+        audit["measurement_host"] = _measurement_host(suite_report)
+        audit["sbml_test_suite"] = {
+            "case_count": len(suite_report.get("records") or []),
+            "case_timeout_seconds": case_timeout,
+            "categories": suite_report.get("categories"),
+            "repository": lock.get("repository"),
+            "revision": suite_report.get("suite_commit") or lock.get("revision"),
+            "command": command,
+            "source_report_sha256": (
+                _digest(suite_report_path) if suite_report_path else None
+            ),
+            "tool_versions": _tool_versions(suite_report),
+        }
+        if baseline_suite_report is not None:
+            audit["sbml_test_suite"]["baseline_comparison"] = suite_baseline_comparison(
+                baseline_suite_report, suite_report
+            )
+            audit["sbml_test_suite"]["baseline_source_report_sha256"] = (
+                _digest(baseline_suite_report_path)
+                if baseline_suite_report_path
+                else None
+            )
+
+    if biomodels_report is not None:
+        inventory = biomodels_report.get("inventory") or {}
+        modes: dict[str, Any] = {
+            "inventory": {
+                "source": inventory.get("source"),
+                "query": inventory.get("query"),
+                "matches": inventory.get("matches"),
+            },
+            "flat": _biomodels_mode_section(
+                biomodels_report, biomodels_report_path, "flat"
+            ),
+        }
+        if biomodels_atomized_report is not None:
+            modes["atomized"] = _biomodels_mode_section(
+                biomodels_atomized_report,
+                biomodels_atomized_report_path,
+                "atomized",
+            )
+        audit["biomodels"] = modes
+
+    return audit
+
+
+def derived_provenance(
+    suite_report: dict[str, Any] | None,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Build a provenance block in the shape the committed inventories use.
+
+    The committed inventories carry a hand-maintained ``provenance`` document.
+    Deriving the same shape from the report makes the block a fact about the
+    run rather than a fact about a person, and keeps the two inventories
+    comparable.
+    """
+
+    if suite_report is None:
+        return {}
+    lock = suite_report.get("suite_source_lock") or {}
+    command = suite_report.get("command") or {}
+    arguments = command.get("arguments") or []
+    case_timeout = 0
+    for index, argument in enumerate(arguments):
+        if argument == "--case-timeout" and index + 1 < len(arguments):
+            try:
+                case_timeout = int(arguments[index + 1])
+            except ValueError:
+                case_timeout = 0
+    provenance = {
+        "base_commit": args.base_commit,
+        "measurement_date": args.measurement_date,
+        "measurement_host": _measurement_host(suite_report),
+        "note": args.audit_note,
+        "sbml_test_suite": {
+            "case_timeout_seconds": case_timeout,
+            "categories": suite_report.get("categories"),
+            "repository": lock.get("repository"),
+            "revision": suite_report.get("suite_commit") or lock.get("revision"),
+        },
+    }
+    return provenance
 
 
 def _conversion_status(record: dict[str, Any]) -> str:
@@ -765,6 +1223,62 @@ def main() -> int:
             "'provenance' block"
         ),
     )
+    # --- Audit record options -------------------------------------------
+    parser.add_argument(
+        "--base-commit",
+        default="",
+        help="the commit a measurement is compared against",
+    )
+    parser.add_argument(
+        "--audit-note",
+        default="",
+        help="note recorded in the derived provenance block",
+    )
+    parser.add_argument(
+        "--baseline-suite-report",
+        type=Path,
+        help=(
+            "baseline SBML Test Suite harness report; the record then states, "
+            "per case, why a verdict moved"
+        ),
+    )
+    parser.add_argument(
+        "--biomodels-atomized-report",
+        type=Path,
+        help="second BioModels harness report, measured in atomized mode",
+    )
+    parser.add_argument(
+        "--biomodels-recheck",
+        type=Path,
+        help=(
+            "serial re-measurement of the BioModels records whose verdict "
+            "differed from the baseline; the record then states the counts "
+            "after the re-measurement"
+        ),
+    )
+    parser.add_argument(
+        "--biomodels-atomized-recheck",
+        type=Path,
+        help="serial re-measurement for the atomized mode",
+    )
+    parser.add_argument(
+        "--baseline-biomodels-report",
+        type=Path,
+        help=(
+            "baseline curated-BioModels harness report; the record then states, "
+            "per record, what changed relative to the baseline"
+        ),
+    )
+    parser.add_argument(
+        "--extra-evidence",
+        type=Path,
+        action="append",
+        default=[],
+        help=(
+            "additional JSON evidence document to embed under "
+            "audit.extra_evidence, keyed by its file stem"
+        ),
+    )
     args = parser.parse_args()
 
     if args.out is None and args.expectations_out is None and args.expectations is None:
@@ -829,18 +1343,74 @@ def main() -> int:
         "schema_version": SCHEMA_VERSION,
         "label": args.label,
     }
-    if args.provenance is not None:
-        inventory["provenance"] = _load_json(args.provenance)
+    suite_report: dict[str, Any] | None = None
+    baseline_suite_report: dict[str, Any] | None = None
+    biomodels_report: dict[str, Any] | None = None
+    biomodels_atomized_report: dict[str, Any] | None = None
     if args.suite_report:
-        report = _load_json(args.suite_report)
-        inventory["sbml_test_suite"] = suite_inventory(report)
+        suite_report = _load_json(args.suite_report)
+        inventory["sbml_test_suite"] = suite_inventory(suite_report)
         inventory["sbml_test_suite"]["source_report_sha256"] = _digest(
             args.suite_report
         )
+    if args.baseline_suite_report:
+        baseline_suite_report = _load_json(args.baseline_suite_report)
     if args.biomodels_report:
-        report = _load_json(args.biomodels_report)
-        inventory["biomodels"] = biomodels_inventory(report)
+        biomodels_report = _load_json(args.biomodels_report)
+        inventory["biomodels"] = biomodels_inventory(biomodels_report)
         inventory["biomodels"]["source_report_sha256"] = _digest(args.biomodels_report)
+    if args.biomodels_atomized_report:
+        biomodels_atomized_report = _load_json(args.biomodels_atomized_report)
+
+    audit_requested = (
+        args.baseline_suite_report is not None
+        or args.biomodels_atomized_report is not None
+        or args.biomodels_recheck is not None
+        or args.biomodels_atomized_recheck is not None
+        or bool(args.extra_evidence)
+    )
+    if audit_requested:
+        if args.provenance is not None:
+            # A supplied provenance document is merged verbatim, exactly as
+            # it is without the audit options.
+            inventory["provenance"] = _load_json(args.provenance)
+        else:
+            # Derive the provenance block in the shape the committed
+            # inventories use, so the two do not produce different shapes.
+            inventory["provenance"] = derived_provenance(suite_report, args)
+        inventory["audit"] = audit_section(
+            suite_report,
+            args.suite_report,
+            baseline_suite_report,
+            args.baseline_suite_report,
+            biomodels_report,
+            args.biomodels_report,
+            biomodels_atomized_report,
+            args.biomodels_atomized_report,
+            args,
+        )
+        modes = inventory["audit"].get("biomodels") or {}
+        if args.biomodels_recheck:
+            _apply_recheck(modes, _load_json(args.biomodels_recheck), "flat")
+        if args.biomodels_atomized_recheck:
+            _apply_recheck(
+                modes, _load_json(args.biomodels_atomized_recheck), "atomized"
+            )
+        _mode_comparison(modes)
+        if args.baseline_biomodels_report and biomodels_report is not None:
+            recheck = (
+                _load_json(args.biomodels_recheck) if args.biomodels_recheck else None
+            )
+            modes["baseline_comparison"] = biomodels_baseline_comparison(
+                _load_json(args.baseline_biomodels_report), biomodels_report, recheck
+            )
+        if args.extra_evidence:
+            evidence: dict[str, Any] = {}
+            for path in args.extra_evidence:
+                evidence[path.stem] = _load_json(path)
+            inventory["audit"]["extra_evidence"] = evidence
+    elif args.provenance is not None:
+        inventory["provenance"] = _load_json(args.provenance)
 
     _write_json(args.out, inventory)
     print(f"wrote {args.out}")
