@@ -102,6 +102,76 @@ end model
     CHECK_THROWS_AS(io::SbmlWriter::write(*model, &network), std::invalid_argument);
 }
 
+TEST_CASE("SBML writer refuses a model function that collides with a history operator",
+          "[SbmlWriter][delay]") {
+    // "delay" and "rateOf" are SBML history operators, not identifiers.  A
+    // model that declares its own function with one of those names cannot be
+    // written: the csymbol form would silently change the model's meaning and
+    // the identifier form would refer to a function this writer does not
+    // emit.
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  k 1
+  j 2
+end parameters
+begin functions
+  delay(x,y) = x
+  f() = delay(k,j)
+end functions
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::GeneratedNetwork network;
+    CHECK_THROWS_WITH(
+        io::SbmlWriter::write(*model, &network),
+        Catch::Matchers::ContainsSubstring("collides with the SBML Level 3 Version 2 delay csymbol"));
+}
+
+TEST_CASE("SBML writer refuses a model function that collides with rateOf",
+          "[SbmlWriter][rateOf]") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  k 1
+end parameters
+begin functions
+  rateOf(x) = x
+  f() = rateOf(k)
+end functions
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::GeneratedNetwork network;
+    CHECK_THROWS_WITH(
+        io::SbmlWriter::write(*model, &network),
+        Catch::Matchers::ContainsSubstring("collides with the SBML Level 3 Version 2 rateOf csymbol"));
+}
+
+TEST_CASE("SBML writer still emits the history operator without a colliding function",
+          "[SbmlWriter][delay]") {
+    // A function with the same name but without arguments cannot be the
+    // target of a two-argument call, so the csymbol stays the right lowering.
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  k 1
+  j 2
+end parameters
+begin functions
+  delay() = 1
+  f() = delay(k,j)
+end functions
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::GeneratedNetwork network;
+    const auto xml = io::SbmlWriter::write(*model, &network);
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<csymbol encoding=\"text\" "
+        "definitionURL=\"http://www.sbml.org/sbml/symbols/delay\"> delay </csymbol>"));
+}
+
 TEST_CASE("Native SBML reader accepts the delay and rateOf csymbols", "[SbmlReader][delay]") {
     const auto path = std::filesystem::temp_directory_path() /
         "bng3_sbml_delay_reader_test.xml";

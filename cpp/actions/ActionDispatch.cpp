@@ -1340,6 +1340,30 @@ std::optional<std::size_t> findSpeciesIndex(const engine::GeneratedNetwork& netw
             return i;
         }
     }
+    // Pass 1b: the "$" marker is a property of the seed declaration, not of
+    // the species' identity.  BNG2's setConcentration looks the species up by
+    // its SpeciesGraph (legacy/perl/Perl2/BNGModel.pm), and the engine's own
+    // observable matching already ignores the marker, so a target that names
+    // the species without the marker resolves to the constant species.  An
+    // explicit "$" target still wins, because pass 1 has already run.
+    for (std::size_t i = 0; i < network.species.size(); ++i) {
+        const auto& species = network.species.get(i);
+        if (!species.isConstant()) {
+            continue;
+        }
+        const auto canonical = species.getSpeciesGraph().toString();
+        std::string fullDouble, fullSingle;
+        if (!species.getCompartment().empty()) {
+            fullDouble += "@" + species.getCompartment() + "::";
+            fullSingle += "@" + species.getCompartment() + ":";
+        }
+        fullDouble += canonical;
+        fullSingle += canonical;
+
+        if (needle == fullDouble || needle == fullSingle) {
+            return i;
+        }
+    }
     // Pass 2: Perl BNG2 compatibility — match by molecule name prefix
     // e.g., "EGF" matches "EGF(R)" or "EGF(R,Y~U)"
     for (std::size_t i = 0; i < network.species.size(); ++i) {
@@ -1371,6 +1395,22 @@ void restoreConcentrations(engine::GeneratedNetwork& network, const std::vector<
     for (std::size_t i = 0; i < count; ++i) {
         network.species.get(i).setAmount(values[i]);
     }
+}
+
+// Regenerate the network after a model change while keeping the amounts the
+// network currently holds.  An inter-phase setConcentration/addConcentration
+// has already changed them, and the state before the last simulation is
+// stale: BNG2 keeps the model's Concentrations array, which those actions
+// update, so a model change must not undo them.
+void regeneratePreservingAmounts(engine::NetworkGenerator& generator,
+                                 const std::filesystem::path& sourcePath,
+                                 std::optional<engine::GeneratedNetwork>& network) {
+    if (!network.has_value()) {
+        return;
+    }
+    const auto savedAmounts = snapshotConcentrations(*network);
+    network = generator.generate(sourcePath);
+    restoreConcentrations(*network, savedAmounts);
 }
 
 using SpeciesAmountBucketKey =
@@ -2884,26 +2924,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             setParameterValue(actionIndex, target, valueText);
 
-            if (network.has_value()) {
-                // Preserve species amounts before regeneration so that
-                // a subsequent continue=>1 simulation starts from the
-                // correct state rather than the initial seed species amounts.
-                std::vector<double> savedAmounts;
-                if (!lastSimulationState.empty()) {
-                    savedAmounts = lastSimulationState;
-                }
-
-                network = generator.generate(sourcePath);
-
-                // Restore species amounts from the previous simulation state.
-                // Parameter changes affect rate constants but should not reset
-                // species concentrations that evolved during prior simulation.
-                if (!savedAmounts.empty()) {
-                    for (std::size_t i = 0; i < network->species.size() && i < savedAmounts.size(); ++i) {
-                        network->species.get(i).setAmount(savedAmounts[i]);
-                    }
-                }
-            }
+            // Parameter changes affect rate constants but must not reset the
+            // species amounts the network currently holds.
+            regeneratePreservingAmounts(generator, sourcePath, network);
             continue;
         }
 
@@ -2977,18 +3000,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("setVolume: compartment not found: " + target);
             }
             // Regenerate network if one exists, since volume affects rate constants
-            if (network.has_value()) {
-                std::vector<double> savedAmounts;
-                if (!lastSimulationState.empty()) {
-                    savedAmounts = lastSimulationState;
-                }
-                network = generator.generate(sourcePath);
-                if (!savedAmounts.empty()) {
-                    for (std::size_t i = 0; i < network->species.size() && i < savedAmounts.size(); ++i) {
-                        network->species.get(i).setAmount(savedAmounts[i]);
-                    }
-                }
-            }
+            // Regenerate network if one exists, since volume affects rate
+            // constants.
+            regeneratePreservingAmounts(generator, sourcePath, network);
             if (verbose) {
                 std::cerr << "[bng_cpp] Set volume of compartment '" << target << "' to " << value << "\n";
             }
@@ -3018,18 +3032,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
             }
             evaluateParametersAndRefresh();
-            if (network.has_value()) {
-                std::vector<double> savedAmounts;
-                if (!lastSimulationState.empty()) {
-                    savedAmounts = lastSimulationState;
-                }
-                network = generator.generate(sourcePath);
-                if (!savedAmounts.empty()) {
-                    for (std::size_t i = 0; i < network->species.size() && i < savedAmounts.size(); ++i) {
-                        network->species.get(i).setAmount(savedAmounts[i]);
-                    }
-                }
-            }
+            regeneratePreservingAmounts(generator, sourcePath, network);
             if (verbose) {
                 std::cerr << "[bng_cpp] Reset parameters from label '" << label << "'\n";
             }
