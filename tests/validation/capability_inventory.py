@@ -29,7 +29,6 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-import yaml
 
 from . import inventory
 
@@ -67,6 +66,11 @@ OBLIGATION_CHECK = "inventory-behavior-from-bionetgen-pybionetgen-canonical-newe
 
 
 def _document(path: Path) -> dict:
+    # The YAML reader is imported where it is used: the campaign registry
+    # imports this module, and a job that only selects a qualification does
+    # not need the YAML reader installed.
+    import yaml
+
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         raise ValueError(f"{path} must contain a mapping")

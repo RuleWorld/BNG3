@@ -77,17 +77,14 @@ jobs:
             tests/validation/test_integrated_protocol.py \
             tests/validation/test_integrated_marginals.py \
             tests/validation/test_stochastic_parity.py \
-            tests/validation/test_semantic_identity.py \
             tests/validation/test_graph_differential.py \
             tests/validation/test_capability_inventory.py \
             tests/validation/test_real_model_fixtures.py \
             tests/validation/test_corpus_selection.py \
             tests/validation/test_biomodels_hold.py \
-            tests/validation/test_boundary_extraction.py \
             tests/validation/test_release_candidate.py \
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_api_surface.py \
-            tests/validation/test_atomizer_reconstruction.py \
             tests/validation/test_event_semantics.py \
             tests/validation/test_graph_identity.py \
             tests/validation/test_nfsim_sweep_gate.py \
@@ -328,6 +325,21 @@ jobs:
             --bng-cpp build/cpp/bng_cpp \
             -q -ra \
             --junitxml="$RUNNER_TEMP/issue182-required-parity.xml"
+
+      - name: Run the qualification family checks
+        id: qualification_families
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The families that judge the compiled model, the Atomizer's
+          # reconstruction and the extracted capability boundary need the
+          # installed package and its native extension, so they run in this
+          # job and not in the engine-free contract job.
+          .venv/bin/python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_semantic_identity.py \
+            tests/validation/test_boundary_extraction.py \
+            tests/validation/test_atomizer_reconstruction.py \
+            -q -ra
 
       - name: Qualify the BNGsim adapter boundary against an independent law
         id: bngsim_boundary_contract

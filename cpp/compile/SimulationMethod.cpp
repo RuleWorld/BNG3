@@ -1,124 +1,8 @@
 #include "compile/SimulationMethod.hpp"
 
-#include <algorithm>
-#include <cctype>
 #include <stdexcept>
 
-#include "ast/Model.hpp"
-
 namespace bng::compile {
-
-namespace {
-
-std::string lowercase(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return value;
-}
-
-bool isQuotedActionValue(const std::string& value) {
-    return value.size() >= 2 &&
-           ((value.front() == '"' && value.back() == '"') ||
-            (value.front() == '\'' && value.back() == '\''));
-}
-
-std::string unquoteActionValue(const std::string& value) {
-    if (isQuotedActionValue(value)) {
-        return value.substr(1, value.size() - 2);
-    }
-    return value;
-}
-
-SimulationMethodDecision decision(SimulationMethod method,
-                                  std::string engineName,
-                                  std::string sourceSpelling) {
-    SimulationMethodDecision result;
-    result.method = method;
-    result.engineName = std::move(engineName);
-    result.sourceSpelling = std::move(sourceSpelling);
-    result.deterministic =
-        method == SimulationMethod::Cvode || method == SimulationMethod::Euler ||
-        method == SimulationMethod::Rk4;
-    result.stochastic = method == SimulationMethod::Ssa;
-    result.expressionStepCount =
-        method == SimulationMethod::Cvode || method == SimulationMethod::Euler ||
-        method == SimulationMethod::Rk4 || method == SimulationMethod::Ssa;
-    return result;
-}
-
-} // namespace
-
-std::optional<SimulationMethodDecision> tryDecideSimulationMethod(
-    const ast::Action& action) {
-    const auto name = lowercase(action.name);
-    // The dedicated simulation actions select their own method; the generic
-    // `simulate` action selects it with its `method` argument.
-    if (name == "simulate_ode") {
-        return decision(SimulationMethod::Cvode, "cvode", action.name);
-    }
-    if (name == "simulate_ssa") {
-        return decision(SimulationMethod::Ssa, "ssa", action.name);
-    }
-    if (name == "simulate_pla") {
-        return decision(SimulationMethod::Pla, "pla", action.name);
-    }
-    if (name == "simulate_psa") {
-        return decision(SimulationMethod::Psa, "psa", action.name);
-    }
-    if (name == "simulate_nf") {
-        return decision(SimulationMethod::Nf, "nf", action.name);
-    }
-    if (name != "simulate") {
-        return std::nullopt;
-    }
-
-    const auto argument = action.arguments.find("method");
-    const std::string spelling =
-        argument == action.arguments.end() ? "ode" : argument->second;
-    const auto normalized = lowercase(unquoteActionValue(spelling));
-    if (normalized == "ode" || normalized == "cvode") {
-        return decision(SimulationMethod::Cvode, "cvode", spelling);
-    }
-    if (normalized == "euler") {
-        return decision(SimulationMethod::Euler, "euler", spelling);
-    }
-    if (normalized == "rk4") {
-        return decision(SimulationMethod::Rk4, "rk4", spelling);
-    }
-    if (normalized == "ssa") {
-        return decision(SimulationMethod::Ssa, "ssa", spelling);
-    }
-    if (normalized == "pla") {
-        return decision(SimulationMethod::Pla, "pla", spelling);
-    }
-    if (normalized == "psa") {
-        return decision(SimulationMethod::Psa, "psa", spelling);
-    }
-    if (normalized == "nf") {
-        return decision(SimulationMethod::Nf, "nf", spelling);
-    }
-    return std::nullopt;
-}
-
-SimulationMethodDecision decideSimulationMethod(const ast::Action& action) {
-    const auto selected = tryDecideSimulationMethod(action);
-    if (!selected.has_value()) {
-        const auto name = lowercase(action.name);
-        if (name != "simulate" && name != "simulate_ode" &&
-            name != "simulate_ssa" && name != "simulate_pla" &&
-            name != "simulate_psa" && name != "simulate_nf") {
-            throw std::runtime_error(
-                "action '" + action.name + "' does not select a simulation method");
-        }
-        const auto argument = action.arguments.find("method");
-        const std::string spelling =
-            argument == action.arguments.end() ? "ode" : argument->second;
-        throw std::runtime_error(
-            "simulate: unsupported simulation method: " + spelling);
-    }
-    return *selected;
-}
 
 SimulationOptionSupport optionSupportFor(SimulationMethod method) {
     SimulationOptionSupport support;
@@ -157,7 +41,7 @@ SimulationOptionSupport optionSupportFor(SimulationMethod method) {
 
 std::optional<SimulationMethod> simulationMethodForEngineName(
     const std::string& engineName) {
-    const auto normalized = lowercase(engineName);
+    const auto normalized = detail::lowercase(engineName);
     if (normalized == "cvode") return SimulationMethod::Cvode;
     if (normalized == "euler") return SimulationMethod::Euler;
     if (normalized == "rk4") return SimulationMethod::Rk4;

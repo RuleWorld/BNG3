@@ -49,7 +49,6 @@
         "tests/validation/test_integrated_marginals.py",
         "tests/validation/test_integrated_extensions.py",
         "tests/validation/test_api_surface.py",
-        "tests/validation/test_atomizer_reconstruction.py",
         "tests/validation/test_event_semantics.py",
         "tests/validation/test_acceptance_queue.py"
       ],
