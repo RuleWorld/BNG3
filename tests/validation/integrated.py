@@ -1180,9 +1180,7 @@ def main(argv=None):
                 "energy-qualification", args, rows, env, run_stage
             )
         if qualification_selection["include_workload_profile"]:
-            integrated_extensions.invoke(
-                "workload-profile", args, rows, env, run_stage
-            )
+            integrated_extensions.invoke("workload-profile", args, rows, env, run_stage)
         if qualification_selection["include_atomizer_reconstruction"]:
             integrated_extensions.invoke(
                 "atomizer-reconstruction", args, rows, env, run_stage
