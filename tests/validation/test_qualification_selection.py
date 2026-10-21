@@ -30,6 +30,8 @@ QUALIFICATIONS = {
     "sbml-support-boundary": "include_sbml_support_boundary",
     "atomizer-symbol-resolution": "include_atomizer_symbol_resolution",
     "atomizer-reconstruction": "include_atomizer_reconstruction",
+    "energy-qualification": "include_energy_qualification",
+    "workload-profile": "include_workload_profile",
 }
 
 

@@ -13,6 +13,8 @@ from . import (
     integrated_boundaries,
     bngir_adversarial,
     api_surface,
+    energy_qualification,
+    workload_profile,
     atomizer_reconstruction,
     sbml_support_boundary,
     atomizer_symbol_resolution,
@@ -53,6 +55,8 @@ OPERATIONS = (
     "sbml-support-boundary",
     "atomizer-symbol-resolution",
     "atomizer-reconstruction",
+    "energy-qualification",
+    "workload-profile",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -71,6 +75,8 @@ FOCUS_FLAGS = {
     "sbml-support-boundary": "--sbml-support-boundary-only",
     "atomizer-symbol-resolution": "--atomizer-symbol-resolution-only",
     "atomizer-reconstruction": "--atomizer-reconstruction-only",
+    "energy-qualification": "--energy-qualification-only",
+    "workload-profile": "--workload-profile-only",
 }
 
 
@@ -93,6 +99,10 @@ def check_ids(operation, case=None, *, full=False):
         return atomizer_symbol_resolution.check_ids()
     if operation == "atomizer-reconstruction":
         return atomizer_reconstruction.check_ids()
+    if operation == "energy-qualification":
+        return energy_qualification.check_ids()
+    if operation == "workload-profile":
+        return workload_profile.check_ids()
     if operation == "stochastic-parity":
         return stochastic_parity.check_ids()
     if operation == "graph-identity-contract":
@@ -114,6 +124,10 @@ def check_ids(operation, case=None, *, full=False):
         return atomizer_symbol_resolution.run_worker(Path.cwd())
     if operation == "atomizer-reconstruction":
         return atomizer_reconstruction.run(Path.cwd())
+    if operation == "energy-qualification":
+        return energy_qualification.run_worker(Path.cwd())
+    if operation == "workload-profile":
+        return workload_profile.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":
@@ -163,6 +177,8 @@ def expected_ids(
     include_sbml_support_boundary=True,
     include_atomizer_symbol_resolution=True,
     include_atomizer_reconstruction=True,
+    include_energy_qualification=True,
+    include_workload_profile=True,
     include_stochastic_parity=True,
     include_graph_identity_contract=True,
     full=False,
@@ -216,6 +232,12 @@ def expected_ids(
                 *check_ids("atomizer-reconstruction"),
             ]
         )
+    if include_energy_qualification:
+        ids.extend(
+            ["campaign:energy-qualification", *check_ids("energy-qualification")]
+        )
+    if include_workload_profile:
+        ids.extend(["campaign:workload-profile", *check_ids("workload-profile")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     if include_graph_identity_contract:
@@ -247,27 +269,6 @@ def run_worker(operation, args):
     if operation == "jax-backend-measurement":
         return jax_backend_measurement.run_worker(Path.cwd())
     if operation == "api-surface":
-        return api_surface.check_ids()
-    if operation == "sbml-support-boundary":
-        return sbml_support_boundary.check_ids()
-    if operation == "atomizer-symbol-resolution":
-        return atomizer_symbol_resolution.check_ids()
-    if operation == "atomizer-reconstruction":
-        return atomizer_reconstruction.check_ids()
-    if operation == "stochastic-parity":
-        return stochastic_parity.check_ids()
-    if operation == "graph-identity-contract":
-        from .graph_identity_contract import (
-            CASES as GRAPH_CASES,
-            CHECKS as GRAPH_CHECKS,
-        )
-
-        return [
-            f"graph-identity-contract:{case['id']}:{check}"
-            for case in GRAPH_CASES
-            for check in GRAPH_CHECKS
-        ]
-    if operation == "api-surface":
         return api_surface.run(Path.cwd())
     if operation == "sbml-support-boundary":
         return sbml_support_boundary.run_worker(Path.cwd())
@@ -275,6 +276,10 @@ def run_worker(operation, args):
         return atomizer_symbol_resolution.run_worker(Path.cwd())
     if operation == "atomizer-reconstruction":
         return atomizer_reconstruction.run(Path.cwd())
+    if operation == "energy-qualification":
+        return energy_qualification.run_worker(Path.cwd())
+    if operation == "workload-profile":
+        return workload_profile.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":

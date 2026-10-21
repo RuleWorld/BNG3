@@ -524,6 +524,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .atomizer_reconstruction import (
         check_ids as atomizer_reconstruction_check_ids,
     )
+    from .energy_qualification import check_ids as energy_check_ids
+    from .workload_profile import check_ids as workload_profile_check_ids
     from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
@@ -791,6 +793,41 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="energy-qualification",
+            case_ids=[],
+            check_ids=energy_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(energy_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The energy extension on a fixed generated corpus of two-state "
+                "energy models and one driven cycle: the rate claims are "
+                "compared against the closed-form law and the extension stays "
+                "experimental and opt-in."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="workload-profile",
+            case_ids=[],
+            check_ids=workload_profile_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(workload_profile_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The reconciliation of the recorded NFsim CPU/ensemble/device "
+                "plan against the implemented surface, plus the measured "
+                "profile of the network-SSA and network-free execution modes."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -840,88 +877,70 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
         family["selection_arguments"] = (
             ["--bngir-adversarial-only"]
             if family["id"] == "native-bngir-adversarial"
-            else (
+                else (
                 ["--quantity-laws-only"]
                 if family["id"] == "quantity-source-laws"
-                else (
+                    else (
                     ["--export-format-tier-only"]
                     if family["id"] == "export-format-tier"
-                    else (
+                        else (
                         ["--netrule-execution-only"]
                         if family["id"] == "network-rule-execution"
-                        else (
+                            else (
                             ["--bngsim-boundary-only"]
                             if family["id"] == "bngsim-boundary"
-                            else (
+                                else (
                                 ["--jax-backend-measurement-only"]
                                 if family["id"] == "jax-backend-measurement"
-                                else (
+                                    else (
                                     ["--stochastic-parity-only"]
                                     if family["id"] == "stochastic-parity"
-                                    else (
+                                        else (
                                         ["--api-surface-only"]
                                         if family["id"] == "public-api-surface"
-                                        else (
+                                            else (
                                             ["--graph-identity-contract-only"]
                                             if family["id"] == "graph-identity-contract"
-                                            else (
+                                                else (
                                                 ["--rate-law-contract-only"]
                                                 if family["id"] == "rate-law-contract"
-                                                else (
+                                                    else (
                                                     ["--nfsim-fixtures-only"]
                                                     if family["id"] == "nfsim-fixtures"
-                                                    else (
-                                                        ["--atomizer-events-only"]
-                                                        if family["id"]
-                                                        == "atomizer-events"
                                                         else (
-                                                            ["--energy-contract-only"]
-                                                            if family["id"]
-                                                            == "energy-contract"
+                                                        ["--atomizer-events-only"]
+                                                        if family["id"] == "atomizer-events"
                                                             else (
-                                                                [
-                                                                    "--semantic-identity-only"
-                                                                ]
-                                                                if family["id"]
-                                                                == "semantic-identity"
+                                                            ["--energy-contract-only"]
+                                                            if family["id"] == "energy-contract"
                                                                 else (
-                                                                    [
-                                                                        "--capability-inventory-only"
-                                                                    ]
-                                                                    if family["id"]
-                                                                    == "capability-inventory"
+                                                                ["--semantic-identity-only"]
+                                                                if family["id"] == "semantic-identity"
                                                                     else (
-                                                                        [
-                                                                            "--sbml-support-boundary-only"
-                                                                        ]
-                                                                        if family["id"]
-                                                                        == "sbml-support-boundary"
+                                                                    ["--capability-inventory-only"]
+                                                                    if family["id"] == "capability-inventory"
                                                                         else (
-                                                                            [
-                                                                                "--atomizer-symbol-resolution-only"
-                                                                            ]
-                                                                            if family[
-                                                                                "id"
-                                                                            ]
-                                                                            == "atomizer-symbol-resolution"
+                                                                        ["--sbml-support-boundary-only"]
+                                                                        if family["id"] == "sbml-support-boundary"
                                                                             else (
-                                                                                [
-                                                                                    "--atomizer-reconstruction-only"
-                                                                                ]
-                                                                                if family[
-                                                                                    "id"
-                                                                                ]
-                                                                                == "atomizer-reconstruction"
-                                                                                else [
-                                                                                    argument
-                                                                                    for case_id in family[
-                                                                                        "case_ids"
-                                                                                    ]
-                                                                                    for argument in (
-                                                                                        "--case",
-                                                                                        case_id,
+                                                                            ["--atomizer-symbol-resolution-only"]
+                                                                            if family["id"] == "atomizer-symbol-resolution"
+                                                                                else (
+                                                                                ["--atomizer-reconstruction-only"]
+                                                                                if family["id"] == "atomizer-reconstruction"
+                                                                                    else (
+                                                                                    ["--energy-qualification-only"]
+                                                                                    if family["id"] == "energy-qualification"
+                                                                                        else (
+                                                                                        ["--workload-profile-only"]
+                                                                                        if family["id"] == "workload-profile"
+                                                                                            else [
+                                                                                                argument for case_id in family["case_ids"]
+                                                                                                for argument in ("--case", case_id)
+                                                                                            ]
+                                                                                        )
                                                                                     )
-                                                                                ]
+                                                                                )
                                                                             )
                                                                         )
                                                                     )
@@ -939,7 +958,6 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     )
                 )
             )
-        )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
         selected.append(family)
     return sorted(

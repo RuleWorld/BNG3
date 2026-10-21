@@ -2114,6 +2114,16 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         // because every Arrhenius rule consults it.
         compile::energy::BarrierTable barrierTable;
         if (!model.getBarrierPatterns().empty()) {
+            // Barrier patterns are an experimental extension. The capability
+            // report refuses them for the network compiler unless the gate is
+            // set, so lowering them anyway would apply experimental
+            // transition-state semantics to a model that never opted in.
+            if (!compile::energy::generalEnergyEnabled()) {
+                throw std::runtime_error(
+                    "barrier patterns require " +
+                    std::string(compile::energy::generalEnergyGateName()) +
+                    " to be set");
+            }
             std::vector<std::string> barrierDiagnostics;
             const bool built = compile::energy::buildBarrierTable(
                 model,

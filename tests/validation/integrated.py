@@ -128,6 +128,8 @@ def expected_contract_ids(
     include_sbml_support_boundary=True,
     include_atomizer_symbol_resolution=True,
     include_atomizer_reconstruction=True,
+    include_energy_qualification=True,
+    include_workload_profile=True,
     full=False,
 ):
     return [
@@ -186,6 +188,8 @@ def expected_contract_ids(
         include_sbml_support_boundary=include_sbml_support_boundary,
         include_atomizer_symbol_resolution=include_atomizer_symbol_resolution,
         include_atomizer_reconstruction=include_atomizer_reconstruction,
+        include_energy_qualification=include_energy_qualification,
+        include_workload_profile=include_workload_profile,
         full=full,
     )
 
@@ -987,6 +991,8 @@ def select_qualifications(focused_flags):
         "include_atomizer_reconstruction": not _other_focused(
             "atomizer-reconstruction"
         ),
+        "include_energy_qualification": not _other_focused("energy-qualification"),
+        "include_workload_profile": not _other_focused("workload-profile"),
     }
 
 
@@ -1021,6 +1027,8 @@ def main(argv=None):
     parser.add_argument("--sbml-support-boundary-only", action="store_true")
     parser.add_argument("--atomizer-symbol-resolution-only", action="store_true")
     parser.add_argument("--atomizer-reconstruction-only", action="store_true")
+    parser.add_argument("--energy-qualification-only", action="store_true")
+    parser.add_argument("--workload-profile-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1114,6 +1122,8 @@ def main(argv=None):
         "sbml-support-boundary": args.sbml_support_boundary_only,
         "atomizer-symbol-resolution": args.atomizer_symbol_resolution_only,
         "atomizer-reconstruction": args.atomizer_reconstruction_only,
+        "energy-qualification": args.energy_qualification_only,
+        "workload-profile": args.workload_profile_only,
     }
     qualification_selection = select_qualifications(focused_flags)
     required_ids = expected_contract_ids(
@@ -1164,6 +1174,14 @@ def main(argv=None):
         if qualification_selection["include_atomizer_symbol_resolution"]:
             integrated_extensions.invoke(
                 "atomizer-symbol-resolution", args, rows, env, run_stage
+            )
+        if qualification_selection["include_energy_qualification"]:
+            integrated_extensions.invoke(
+                "energy-qualification", args, rows, env, run_stage
+            )
+        if qualification_selection["include_workload_profile"]:
+            integrated_extensions.invoke(
+                "workload-profile", args, rows, env, run_stage
             )
         if qualification_selection["include_atomizer_reconstruction"]:
             integrated_extensions.invoke(
@@ -1220,6 +1238,8 @@ def main(argv=None):
         "sbml-support-boundary": ["--sbml-support-boundary-only"],
         "atomizer-symbol-resolution": ["--atomizer-symbol-resolution-only"],
         "atomizer-reconstruction": ["--atomizer-reconstruction-only"],
+        "energy-qualification": ["--energy-qualification-only"],
+        "workload-profile": ["--workload-profile-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1317,6 +1337,8 @@ def main(argv=None):
                 "atomizer-reconstruction": (
                     "tests/validation/atomizer_reconstruction.py"
                 ),
+                "energy-qualification": "tests/validation/energy_qualification.py",
+                "workload-profile": "tests/validation/workload_profile.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1384,6 +1406,10 @@ def main(argv=None):
                 issues = [164]
             elif stage == "atomizer-reconstruction":
                 issues = [161]
+            elif stage == "energy-qualification":
+                issues = [177]
+            elif stage == "workload-profile":
+                issues = [176]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

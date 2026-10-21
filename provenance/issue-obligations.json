@@ -8988,19 +8988,96 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:176:reconcile-the-old-plan-with-implemented-cpu-work-and-current-wor",
+              "id": "workload-profile:family:plan-reconciliation",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The recorded plan document is read and every one of its items is reconciled against a named probe of the implemented surface; an item the build does not implement is recorded as absent rather than as support or as a product failure.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:family:environment-record",
+              "evidence_kind": "supported-execution",
+              "expectation": "The revision, the device, the host environment and the corpus digest are recorded with the profile, so a reader can tell which machine and which corpus produced the numbers.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:conversion:network-ssa-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-SSA arm of the generated case is timed only when its independent closed-form control holds and the A/A control confirms the host; a noisy host produces no timing result.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:conversion:network-free-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-free NFsim arm of the generated case is timed only when its independent closed-form control holds and the A/A control confirms the host; a noisy host produces no timing result.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:conversion:execution-mode-comparison",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-SSA and network-free costs of the same corpus are compared as measured, and a comparison that does not show a winner is recorded as a no-win result.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:dimerization:network-ssa-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-SSA arm of the nonlinear generated case is timed only when its pathwise conservation control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:dimerization:network-free-timing",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-free arm of the nonlinear generated case is timed only when its pathwise conservation control holds and the A/A control confirms the host.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:dimerization:execution-mode-comparison",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-SSA and network-free costs of the nonlinear corpus are compared as measured, and a comparison that does not show a winner is recorded as a no-win result.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:conversion:aa-control",
+              "evidence_kind": "supported-execution",
+              "expectation": "The repeatability control measures the same arm several times per stage and refuses the timings whose spread exceeds the noise limit.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:dimerization:aa-control",
+              "evidence_kind": "supported-execution",
+              "expectation": "The repeatability control measures the same arm several times per stage and refuses the timings whose spread exceeds the noise limit.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/workload_profile.py",
+            "tests/validation/test_workload_profile.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:176:reconcile-the-old-plan-with-implemented-cpu-work-and-current-wor.",
+            "The reconciliation reads the recorded plan document and probes the implemented surface item by item; an item the build does not implement is recorded as absent, and the maintainer decides what that means for the roadmap.",
+            "The measured profile covers two bounded generated model classes on one host; the numbers are machine-specific and are not a portable speed claim, and the plan's own model classes remain unqualified.",
+            "The A/A control refuses a timing when the host's repeatability spread exceeds the limit, so a noisy host produces no timing result instead of an unreliable one.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -9012,19 +9089,40 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:176:qualify-retained-ensemble-isolation-scope-and-pursue-device-kern",
+              "id": "workload-profile:family:execution-mode-distinction",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The network-SSA and network-free execution modes are executed as distinct surfaces: the network-free route runs the event loop directly and declares no batch_size, while the network-SSA route runs a generated network through the batched kernel.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:family:ensemble-qualification",
+              "evidence_kind": "supported-execution",
+              "expectation": "The retained ensemble scope is qualified with a fixed seed, a fixed run budget and a stated statistical error control: the ensemble mean reproduces the closed-form law, the same seed reproduces the batch, and the first members of a smaller batch equal the first members of a larger one, so every trajectory owns its own stream.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "workload-profile:family:device-kernel-qualification",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "A device kernel is exercised only for the class this build ships a kernel for and only with independent parity against the closed-form law; the CPU-pinned contract remains the gated one and the device result is supplementary evidence on the host that produced it.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/workload_profile.py",
+            "tests/validation/test_workload_profile.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:176:qualify-retained-ensemble-isolation-scope-and-pursue-device-kern.",
+            "The reconciliation reads the recorded plan document and probes the implemented surface item by item; an item the build does not implement is recorded as absent, and the maintainer decides what that means for the roadmap.",
+            "The measured profile covers two bounded generated model classes on one host; the numbers are machine-specific and are not a portable speed claim, and the plan's own model classes remain unqualified.",
+            "The A/A control refuses a timing when the host's repeatability spread exceeds the limit, so a noisy host produces no timing result instead of an unreliable one.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -9066,21 +9164,297 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:177:use-analytic-expectations-and-an-independent-reference-for-detai",
+              "id": "energy-qualification:equilibrium-arrhenius:detailed-balance",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The resolved forward and reverse rate constants of the generated case reproduce the analytic Arrhenius pair, so the local detailed balance is the analytic one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-arrhenius:transition-affinity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The effective free-energy difference implied by the rate ratio is the analytic dG-W and the barrier leaves it unchanged.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-arrhenius:reversal",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reverse traversal carries the negated effective free-energy difference and the mirrored rule reproduces the mirrored analytic pair.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-arrhenius:units",
+              "evidence_kind": "supported-execution",
+              "expectation": "The rate constants are homogeneous of degree one in the declared energy, so the declared energies are in RT units and no other conversion applies.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-arrhenius:network-free-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-free NFsim ensemble of the generated case reproduces the same analytic law as the network path, so the two reservoir-work conventions agree.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-arrhenius:exporter-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The capable exporters carry the extension and the exported BNGL round trips into the same rate constants, while the exporters that cannot represent it refuse explicitly and name the construct.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-arrhenius:independent-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The canonical Perl BNG2 oracle expands the same rate law and its own evaluation of that expansion agrees with the product on every shared reaction.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-phi-skew:detailed-balance",
+              "evidence_kind": "supported-execution",
+              "expectation": "The resolved forward and reverse rate constants of the skewed-phi generated case reproduce the analytic Arrhenius pair.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-phi-skew:transition-affinity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The effective free-energy difference implied by the rate ratio is the analytic dG-W and the barrier leaves it unchanged.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-phi-skew:reversal",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reverse traversal carries the negated effective free-energy difference and the mirrored rule reproduces the mirrored analytic pair.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-phi-skew:units",
+              "evidence_kind": "supported-execution",
+              "expectation": "The rate constants are homogeneous of degree one in the declared energy, so the declared energies are in RT units and no other conversion applies.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-phi-skew:network-free-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-free NFsim ensemble of the skewed-phi generated case reproduces the same analytic law as the network path.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-phi-skew:exporter-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The capable exporters carry the extension and the exported BNGL round trips into the same rate constants, while the exporters that cannot represent it refuse explicitly and name the construct.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:equilibrium-phi-skew:independent-reference",
+              "evidence_kind": "supported-execution",
+              "expectation": "The canonical Perl BNG2 oracle expands the same rate law and its own evaluation of that expansion agrees with the product on every shared reaction.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:barrier-only:detailed-balance",
+              "evidence_kind": "supported-execution",
+              "expectation": "A transition-state barrier changes the kinetics of the generated case without changing its local detailed balance.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:barrier-only:transition-affinity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The effective free-energy difference implied by the rate ratio is the analytic dG-W and the barrier leaves it unchanged.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:barrier-only:reversal",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reverse traversal carries the negated effective free-energy difference and the mirrored rule reproduces the mirrored analytic pair.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:barrier-only:units",
+              "evidence_kind": "supported-execution",
+              "expectation": "The rate constants are homogeneous of degree one in the declared energy, so the declared energies are in RT units and no other conversion applies.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:barrier-only:network-free-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-free NFsim ensemble of the barrier case reproduces the same analytic law as the network path.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:barrier-only:exporter-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The capable exporters carry the barrier and the exported BNGL round trips into the same rate constants, while the exporters that cannot represent it refuse explicitly and name the construct.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-only:detailed-balance",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reservoir work shifts the local detailed balance of the generated case exactly as the analytic law states.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-only:transition-affinity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The effective free-energy difference implied by the rate ratio is the analytic dG-W.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-only:reversal",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reverse traversal carries the negated effective free-energy difference and the mirrored rule reproduces the mirrored analytic pair.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-only:units",
+              "evidence_kind": "supported-execution",
+              "expectation": "The rate constants are homogeneous of degree one in the declared energy, so the declared energies are in RT units and no other conversion applies.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-only:network-free-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-free NFsim ensemble of the driven case reproduces the same analytic law as the network path, so the two reservoir-work conventions agree.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-only:exporter-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The capable exporters carry the reservoir work and the exported BNGL round trips into the same rate constants, while the exporters that cannot represent it refuse explicitly and name the construct.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-and-barrier:detailed-balance",
+              "evidence_kind": "supported-execution",
+              "expectation": "A transition with both a barrier and a reservoir work reproduces the analytic Arrhenius pair, so neither extension changes the local detailed balance by itself.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-and-barrier:transition-affinity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The effective free-energy difference implied by the rate ratio is the analytic dG-W and the barrier leaves it unchanged.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-and-barrier:reversal",
+              "evidence_kind": "supported-execution",
+              "expectation": "The reverse traversal carries the negated effective free-energy difference and the mirrored rule reproduces the mirrored analytic pair.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-and-barrier:units",
+              "evidence_kind": "supported-execution",
+              "expectation": "The rate constants are homogeneous of degree one in the declared energy, so the declared energies are in RT units and no other conversion applies.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-and-barrier:network-free-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network-free NFsim ensemble of the combined case reproduces the same analytic law as the network path.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:driven-and-barrier:exporter-semantics",
+              "evidence_kind": "supported-execution",
+              "expectation": "The capable exporters carry both extensions and the exported BNGL round trips into the same rate constants, while the exporters that cannot represent it refuse explicitly and name the construct.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:family:driven-cycle-affinity",
+              "evidence_kind": "supported-execution",
+              "expectation": "A driven cycle carries the analytic affinity in RT units: the logarithm of the rate-ratio product around the cycle is the negated affinity, so the cycle is not equilibrium-compatible.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:family:resolution-determinism",
+              "evidence_kind": "supported-execution",
+              "expectation": "Resolving the same model twice produces byte-identical rate constants, so the energy resolution can be compared against an analytic expectation.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:family:environment-record",
+              "evidence_kind": "supported-execution",
+              "expectation": "The revision, the host environment, the canonical oracle identity and the corpus digest are recorded with the evidence, so a reader can tell which revision and which corpus produced it.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/energy"
+            "tests/energy",
+            "tests/validation/energy_qualification.py",
+            "tests/validation/test_energy_qualification.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:177:use-analytic-expectations-and-an-independent-reference-for-detai.",
+            "The extension subset is qualified against the analytic law and the closed-form trajectory; the canonical oracle implements only the plain eBNGL Arrhenius subset, and that limitation is a named boundary rather than a silent gap.",
+            "The extension stays experimental and opt-in: the gate is off by default and every backend boundary refuses the extension while it is off.",
+            "The comparison covers two-state transitions and one driven cycle on a bounded generated corpus; other model shapes and other exporters remain unqualified.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -9092,19 +9466,33 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:177:keep-experimental-opt-in-until-the-supported-extension-surface-h",
+              "id": "energy-qualification:family:experimental-opt-in",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "With the experimental gate unset, every backend boundary refuses the extension and names the gate, so a model never silently runs as an equilibrium model; an explicit zero keeps the gate off.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "energy-qualification:family:canonical-oracle-boundary",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The canonical oracle cannot process the extension, so the extension subset is judged against the analytic law alone and the canonical oracle is used only for the equilibrium subset it implements.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/energy",
+            "tests/validation/energy_qualification.py",
+            "tests/validation/test_energy_qualification.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:177:keep-experimental-opt-in-until-the-supported-extension-surface-h.",
+            "The extension subset is qualified against the analytic law and the closed-form trajectory; the canonical oracle implements only the plain eBNGL Arrhenius subset, and that limitation is a named boundary rather than a silent gap.",
+            "The extension stays experimental and opt-in: the gate is off by default and every backend boundary refuses the extension while it is off.",
+            "The comparison covers two-state transitions and one driven cycle on a bounded generated corpus; other model shapes and other exporters remain unqualified.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
