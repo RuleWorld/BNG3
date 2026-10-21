@@ -156,10 +156,16 @@ def _reduce_fast_reaction(
             "the fast reaction's kinetic law depends on a species that the "
             "reaction does not convert"
         )
-    coefficient = _proportional_coefficient(expression.body, target, resolver)
-    if coefficient is None or coefficient == 0:
+    proportional, coefficient = _proportional_coefficient(
+        expression.body, target, resolver
+    )
+    if not proportional:
         return refuse(
             "the fast reaction's kinetic law is not proportional to a single species"
+        )
+    if coefficient is None or coefficient == 0:
+        return refuse(
+            "the fast reaction's rate constant is not a time-independent value"
         )
     if target == reactant.species:
         if coefficient < 0:
@@ -548,33 +554,52 @@ def _constant_value(node: ast.AST, resolver: _ConstantResolver) -> Optional[floa
 
 def _proportional_coefficient(
     node: ast.AST, target: str, resolver: _ConstantResolver
-) -> Optional[float]:
-    """Return ``c`` when the expression is exactly ``c * target``."""
+) -> Tuple[bool, Optional[float]]:
+    """Return whether the expression is proportional to ``target`` and its coefficient.
+
+    The first element says whether the expression has the shape ``c *
+    target`` at all; the second is the constant coefficient when the shape
+    holds and the coefficient is a time-independent value.
+    """
 
     key = standardize_name(target)
     if isinstance(node, ast.Name):
-        return 1.0 if standardize_name(node.id) == key else None
+        return (True, 1.0) if standardize_name(node.id) == key else (False, None)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-        inner = _proportional_coefficient(node.operand, target, resolver)
-        if inner is None:
-            return None
-        return inner if isinstance(node.op, ast.UAdd) else -inner
+        proportional, coefficient = _proportional_coefficient(
+            node.operand, target, resolver
+        )
+        if not proportional or coefficient is None:
+            return proportional, coefficient
+        return True, coefficient if isinstance(node.op, ast.UAdd) else -coefficient
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
-        left = _proportional_coefficient(node.left, target, resolver)
-        right = _proportional_coefficient(node.right, target, resolver)
-        if left is not None and right is not None:
-            return None
-        if left is not None:
-            value = _constant_value(node.right, resolver)
-            return None if value is None else left * value
-        if right is not None:
-            value = _constant_value(node.left, resolver)
-            return None if value is None else right * value
-        return None
+        left_proportional, left_coefficient = _proportional_coefficient(
+            node.left, target, resolver
+        )
+        right_proportional, right_coefficient = _proportional_coefficient(
+            node.right, target, resolver
+        )
+        if left_proportional and right_proportional:
+            return False, None
+        if left_proportional:
+            factor = _constant_value(node.right, resolver)
+            if factor is None or left_coefficient is None:
+                return True, None
+            return True, left_coefficient * factor
+        if right_proportional:
+            factor = _constant_value(node.left, resolver)
+            if factor is None or right_coefficient is None:
+                return True, None
+            return True, right_coefficient * factor
+        return False, None
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        left = _proportional_coefficient(node.left, target, resolver)
-        value = _constant_value(node.right, resolver)
-        if left is None or value is None or value == 0:
-            return None
-        return left / value
-    return None
+        proportional, coefficient = _proportional_coefficient(
+            node.left, target, resolver
+        )
+        if not proportional:
+            return False, None
+        factor = _constant_value(node.right, resolver)
+        if factor is None or coefficient is None or factor == 0:
+            return True, None
+        return True, coefficient / factor
+    return False, None
