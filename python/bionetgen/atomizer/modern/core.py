@@ -675,6 +675,10 @@ def _expanded_species(
     complex follows the source stoichiometry instead of the distinct
     reactant count.  ``None`` is returned when a stoichiometry is not a
     positive integer, because such a composition has no exact pattern.
+
+    The structural inference does not use this: an SBML stoichiometry is a
+    mass balance, not a molecular composition, so a species that a reaction
+    produces in several units is not a complex of that many molecules.
     """
 
     result: List[str] = []
@@ -691,10 +695,9 @@ def _expanded_species(
 def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
     """Collect stoichiometry-aware reaction-topology evidence.
 
-    ``complexes`` maps a product species onto the reactant molecules that
-    form it.  A species produced by a reaction with two or more reactant
-    molecules is a complex of those molecules, and the composition follows
-    the source stoichiometry.
+    ``complexes`` maps a product species onto the reactant species that form
+    it.  A species produced by a reaction with two or more distinct
+    reactants is a complex of those reactants, one molecule of each.
 
     ``modifications`` maps a product species onto the single reactant it is
     derived from, together with the SBML SBO term that names the
@@ -703,6 +706,13 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
     ``unbindings`` maps a reactant species onto the distinct products a
     reaction dissociates it into.  A species that dissociates into other
     species is a complex of them.
+
+    ``rejected`` names the species whose association is *not* one to one.
+    A reaction that consumes or produces several units of one species does
+    not describe a complex of several molecules: the stoichiometry is a
+    mass balance, not a molecular composition.  Inferring a complex there
+    would change the reaction stoichiometry, so the species keeps its exact
+    flat representation.
 
     The result deliberately does not feed the species-composition
     dependency graph: the flat translation must keep its existing species
@@ -713,6 +723,7 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
     complexes: Dict[str, List[str]] = OrderedDict()
     modifications: Dict[str, Dict[str, object]] = OrderedDict()
     unbindings: Dict[str, List[str]] = OrderedDict()
+    rejected: Dict[str, str] = OrderedDict()
 
     for reaction_id, reaction in model.reactions.items():
         reactants = _stoichiometric_species(reaction.reactants)
@@ -723,15 +734,34 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
             stoichiometry == 1 for _species, stoichiometry in reactants
         )
         unit_products = all(stoichiometry == 1 for _species, stoichiometry in products)
-        expanded_reactants = _expanded_species(reactants)
-        expanded_products = _expanded_species(products)
         if (
-            expanded_reactants is not None
-            and len(expanded_reactants) >= 2
+            len(distinct_reactants) >= 2
             and len(distinct_products) == 1
             and distinct_products[0] not in distinct_reactants
         ):
-            complexes.setdefault(distinct_products[0], expanded_reactants)
+            if unit_reactants and unit_products:
+                complexes.setdefault(distinct_products[0], distinct_reactants)
+            else:
+                rejected.setdefault(
+                    distinct_products[0],
+                    "the association is not one to one, so the reaction "
+                    "stoichiometry is a mass balance rather than a molecular "
+                    "composition",
+                )
+        if (
+            len(distinct_reactants) == 1
+            and len(distinct_products) >= 2
+            and distinct_reactants[0] not in distinct_products
+        ):
+            if unit_reactants and unit_products:
+                unbindings.setdefault(distinct_reactants[0], distinct_products)
+            else:
+                rejected.setdefault(
+                    distinct_reactants[0],
+                    "the dissociation is not one to one, so the reaction "
+                    "stoichiometry is a mass balance rather than a molecular "
+                    "composition",
+                )
         if (
             len(distinct_reactants) == 1
             and len(distinct_products) == 1
@@ -752,18 +782,12 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
             if sbo and entry.get("sbo") is None:
                 entry["sbo"] = sbo
                 entry["reaction"] = reaction_id
-        if (
-            expanded_products is not None
-            and len(distinct_reactants) == 1
-            and len(expanded_products) >= 2
-            and distinct_reactants[0] not in distinct_products
-        ):
-            unbindings.setdefault(distinct_reactants[0], expanded_products)
 
     return {
         "complexes": complexes,
         "modifications": modifications,
         "unbindings": unbindings,
+        "rejected": rejected,
     }
 
 
@@ -1131,6 +1155,7 @@ class _StructuralContext:
     binding: Mapping[str, List[str]]
     modification_bases: Mapping[str, List[str]]
     naming_dependencies: Mapping[str, List[str]]
+    contested: Set[str]
 
 
 def _structure_inference(
@@ -1249,6 +1274,26 @@ def _modification_inference_fires(
     )
 
 
+def _contested_molecules(
+    candidates: Mapping[str, Sequence[str]],
+) -> Set[str]:
+    """Return the molecules that would take part in several distinct complexes.
+
+    The binding sites of an inferred complex are named by the position of the
+    component inside the complex.  A molecule that takes part in two
+    complexes with different partners would need two different site
+    schemas, so a complex that would contest such a molecule is not
+    inferred; the species keeps its exact flat representation.
+    """
+
+    partners: Dict[str, Set[frozenset]] = {}
+    for components in candidates.values():
+        key = frozenset(components)
+        for component in components:
+            partners.setdefault(component, set()).add(key)
+    return {molecule for molecule, keys in partners.items() if len(keys) > 1}
+
+
 def _components_are_monomers(
     components: Sequence[str], context: _StructuralContext
 ) -> bool:
@@ -1270,6 +1315,14 @@ def _components_are_monomers(
         if len(entry.structure.molecules) > 1:
             return False
     return True
+
+
+def _components_are_uncontested(
+    components: Sequence[str], context: _StructuralContext
+) -> bool:
+    """Report whether a complex would contest a molecule of another complex."""
+
+    return not any(component in context.contested for component in components)
 
 
 def _infer_species_structure(
@@ -1296,12 +1349,23 @@ def _infer_species_structure(
     name = item.name or species_id
     alternatives: List[Dict[str, Any]] = []
     topology = context.topology
+    rejected = topology.get("rejected") or {}
     topology_components = (
         topology["complexes"].get(species_id)
-        or context.binding.get(species_id)
         or topology["unbindings"].get(species_id)
+        or context.binding.get(species_id)
     )
-
+    if species_id in rejected:
+        # The association is not one to one, so a complex would change the
+        # reaction stoichiometry.  The species keeps its exact flat form and
+        # the rejected reading is reported.
+        alternatives.append(
+            _alternative_inference(
+                "reaction-topology",
+                str(rejected[species_id]),
+            )
+        )
+        topology_components = None
     explicit, unparsed = _explicit_pattern_structure(name)
     if explicit is not None:
         for fragment in unparsed:
@@ -1385,7 +1449,31 @@ def _infer_species_structure(
             return structure, [base_id], {"state": modification}, record
 
     name_candidates = _name_complex_candidates(name, context.names_to_ids)
-    complex_components = topology_components
+    binding_components = (
+        None
+        if species_id in rejected
+        else (topology["complexes"].get(species_id) or context.binding.get(species_id))
+    )
+    unbinding_components = (
+        None if species_id in rejected else topology["unbindings"].get(species_id)
+    )
+    complex_components = list(binding_components) if binding_components else None
+    if complex_components is None and unbinding_components:
+        if _components_are_monomers(unbinding_components, context) and (
+            _components_are_uncontested(unbinding_components, context)
+        ):
+            complex_components = list(unbinding_components)
+        else:
+            alternatives.append(
+                _alternative_inference(
+                    "reaction-topology",
+                    "reaction topology makes the species a complex of "
+                    + ", ".join(str(item) for item in unbinding_components)
+                    + ", but one of them takes part in another complex, which "
+                    "has no exact binding-site representation",
+                    molecules=list(unbinding_components),
+                )
+            )
     if complex_components and _components_are_monomers(complex_components, context):
         components = list(complex_components)
         structure = _complex_species(components, context.entries, context.use_id)
@@ -1517,7 +1605,9 @@ def _infer_species_structure(
     if name_candidates:
         separator, parts = name_candidates[0]
         resolved_parts = [context.names_to_ids.get(part, part) for part in parts]
-        if _components_are_monomers(resolved_parts, context):
+        if _components_are_monomers(resolved_parts, context) and (
+            _components_are_uncontested(resolved_parts, context)
+        ):
             structure = _complex_species(
                 resolved_parts, context.entries, context.use_id
             )
@@ -1666,6 +1756,24 @@ def build_species_composition_table(
             dependencies.setdefault(complex_id, set()).update(components)
         sorted_species = topological_sort(species_ids, dependencies)
         weights = compute_weights(species_ids, dependencies)
+        # A molecule that would take part in two complexes with different
+        # partners has no consistent binding-site schema.  The complexes that
+        # the source itself states keep their structure; the ones the
+        # inference would add are not applied.
+        complex_candidates: Dict[str, List[str]] = OrderedDict()
+        for product_id, components in topology["complexes"].items():
+            complex_candidates[product_id] = list(components)
+        for product_id, components in binding.items():
+            complex_candidates.setdefault(product_id, list(components))
+        for complex_id, components in topology["unbindings"].items():
+            complex_candidates[complex_id] = list(components)
+        for species_id in species_ids:
+            item = model.species[species_id]
+            item_name = item.name or species_id
+            for _separator, parts in _name_complex_candidates(item_name, names_to_ids):
+                resolved = [names_to_ids.get(part, part) for part in parts]
+                complex_candidates.setdefault(species_id, resolved)
+        contested = _contested_molecules(complex_candidates)
         context = _StructuralContext(
             model=model,
             entries=entries,
@@ -1676,6 +1784,7 @@ def build_species_composition_table(
             binding=binding,
             modification_bases=modification_bases,
             naming_dependencies=naming_dependencies,
+            contested=contested,
         )
 
     for species_id in sorted_species:
