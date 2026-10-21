@@ -414,10 +414,10 @@ present it as finished. The open work is:
   be read as one. The corpus's own expectation manifest and its per-record
   inventory exist, and the last corpus failures are being triaged
   separately (PR #381).
-* **The two pull requests that were still open** when this document was
-  written: one that carries a reversible `TotalRate` rule into both
-  directions of the SBML writer (PR #381), and the corrected repair of the
-  statistical factor of identical reactants (PR #382) — see
+* **The one pull request that is still open**: one that carries a reversible
+  `TotalRate` rule into both directions of the SBML writer (PR #381). The
+  corrected repair of the statistical factor of identical reactants
+  (PR #382) has been merged; see
   [The ODE regression and the revert that closed it](#the-ode-regression-and-the-revert-that-closed-it).
 
 ## Merged result
@@ -496,6 +496,7 @@ durable record in any case.
 | #378 | A reference that names a reaction mapped to the reaction's extent rate | 22 `unsupported → passed` | `2cb9f2c3` |
 | #379 | **Revert of #315**, which made the ODE engine apply a statistical factor to a total-rate reaction | — (revert: it restored the 63 official cases #315 broke) | `9213008f` |
 | #380 | A boundary species honoured by the direct SSA path | 3 `unsupported → passed` (`stochastic/00006`, `00024`, `00026`) | `baa37832` |
+| #382 | The statistical factor of identical reactants applied to a special rate law, and the compartment-volume conversion the engine was dropping from the same rate law | — (no official case carries a special rate law; the defect was an engine/network disagreement) | `52882969` |
 | #383 | The three records onto the current measurement, and the two closed limitations | — (record) | `faf09c03` |
 
 The "Official cases moved" column is measured per branch, so the numbers
@@ -505,8 +506,8 @@ and not part of the generated region.
 One row is not an improvement, and it is marked as such: **#379 is a
 revert**. It removes what #315 did, and the reason is in
 [The ODE regression and the revert that closed it](#the-ode-regression-and-the-revert-that-closed-it).
-The table lists the campaign's *merged* pull requests, so the two that were
-still open when this document was written — #381 and #382 — are not in it.
+The table lists the campaign's *merged* pull requests, so the one that is
+still open — #381 — is not in it.
 
 The generated tables below give the measured before/after state of every
 stage, the exact cases that changed verdict, and the cases that regressed.
@@ -784,9 +785,10 @@ guard it removed was doing real work for total-rate reactions. The correct
 repair applies the factor to a **special** rate law, where canonical Perl
 BNG2 2.9.3 writes it as a prefix on the rate law for every rate-law type
 (`my $sf = ($rxn->RxnRule && $rxn->RxnRule->TotalRate) ? 1 : $rxn->StatFactor;`),
-and leaves a **total-rate** law alone. That repair is separate work, with
-its own evidence, and it was still open when this document was written
-(PR #382).
+and leaves a **total-rate** law alone. That repair was separate work, with
+its own evidence, and it has been merged (PR #382): the engine now applies
+both the conversion and the statistical factor to a special rate law, so it
+agrees with the network it exports.
 
 ### Merge-gate exception: PRs #323 and #324
 
