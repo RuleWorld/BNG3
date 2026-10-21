@@ -62,6 +62,143 @@ TIER_EXPR = [
     "michment",
 ]
 
+# The recorded justification of every tier: what the tier qualifies, who
+# owns it, what it costs and which capability it exercises.  A tier that is
+# empty records why it is empty, so an empty selection is reported rather
+# than hidden.  The selection itself stays pending maintainer approval.
+TIER_JUSTIFICATIONS = {
+    "s": {
+        "question": (
+            "every-commit smoke coverage of the parser, the network expansion "
+            "and the observable projection"
+        ),
+        "owner": "validation and release role",
+        "capability": "network.expansion",
+        "budget": {"models": 10, "stage_timeout_seconds": 60},
+    },
+    "p": {
+        "question": (
+            "legacy agreement of the generated network with the canonical BNG2 "
+            "oracle over the frozen repository fixtures"
+        ),
+        "owner": "numerical and stochastic validation",
+        "capability": "network.expansion",
+        "budget": {"models": 106, "stage_timeout_seconds": 180},
+    },
+    "nf": {
+        "question": (
+            "network-free trajectory comparison with the independently built "
+            "native NFsim oracle"
+        ),
+        "owner": "NFsim semantics and stochastic validation",
+        "capability": "nfsim.direct-ast",
+        "budget": {"models": 4, "stage_timeout_seconds": 300},
+    },
+    "expr": {
+        "question": (
+            "expression and rate-law agreement of the right-hand side with the "
+            "oracle to 1e-9"
+        ),
+        "owner": "expression and rate-law semantics",
+        "capability": "compiler.rate-laws",
+        "budget": {"models": 5, "stage_timeout_seconds": 300},
+    },
+    "x": {
+        "question": (
+            "semantic round trip of the supported interchange formats and the "
+            "consumption of the written artifacts by their downstream readers"
+        ),
+        "owner": "pending-maintainer",
+        "capability": "export.sbml",
+        "budget": {"models": 0, "stage_timeout_seconds": 300},
+        "empty_reason": (
+            "The format tier is empty because its RuleHub selector and its "
+            "maintainer-owned budget are not approved yet. The empty "
+            "selection is recorded here instead of being hidden."
+        ),
+    },
+    "b": {
+        "question": (
+            "runtime and memory budget of the stress tier on the supported " "hardware"
+        ),
+        "owner": "pending-maintainer",
+        "capability": "simulation.ode",
+        "budget": {"models": 0, "stage_timeout_seconds": 1800},
+        "empty_reason": (
+            "The stress tier is empty because its RuleHub selector and its "
+            "maintainer-owned budget are not approved yet. The empty "
+            "selection is recorded here instead of being hidden."
+        ),
+    },
+}
+
+# The accepted selections are empty by record: no tier membership has been
+# approved by a maintainer, so the pending selection is not an approval.
+ACCEPTED_SELECTION_NOTE = (
+    "No tier membership is approved, so the accepted selection set is empty "
+    "by record and not by omission. The selected models and the separate "
+    "71-model workflow are reconciled in the reconciliation record."
+)
+
+_OBSERVABLE = re.compile(r"^[ \t]*(?:Molecules|Species)[ \t]+(.+?)[ \t]*$", re.M)
+
+
+def observable_names(text: str) -> list[str]:
+    """The observable names a model declares, in declaration order."""
+    names = []
+    for match in _OBSERVABLE.finditer(text):
+        fields = match.group(1).split()
+        if fields:
+            names.append(fields[0])
+    return names
+
+
+def header_description(text: str) -> str:
+    """The first descriptive comment of a model, without its comment marks."""
+    head = re.split(
+        r"^[ \t]*begin[ \t]+(parameters|model|species|molecule|functions)",
+        text,
+        maxsplit=1,
+        flags=re.M,
+    )[0]
+    lines = []
+    for line in head.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#"):
+            continue
+        content = stripped.lstrip("#").strip()
+        if not content or set(content) <= {"=", "-"}:
+            continue
+        lines.append(content)
+    if not lines:
+        return ""
+    description = " ".join(lines)
+    if len(description) > 160:
+        description = description[:157].rstrip() + "..."
+    return description
+
+
+def selection_reason(text: str, tier: str, relative_path: str) -> str:
+    """The recorded reason why a model is selected into a tier.
+
+    The reason names the tier's recorded question and the model's own
+    declared content, so it is specific to that model and can be re-derived
+    from the model file.
+    """
+    question = TIER_JUSTIFICATIONS[tier]["question"]
+    description = header_description(text)
+    names = observable_names(text)
+    if description:
+        evidence = f'{relative_path} documents itself as "{description}"'
+    elif names:
+        listed = ", ".join(names[:3])
+        if len(names) > 3:
+            listed += f" and {len(names) - 3} more"
+        evidence = f"{relative_path} publishes {listed}"
+    else:
+        evidence = f"{relative_path} declares no observable"
+    return f"tier {tier}: {question}; {evidence}"
+
 
 @lru_cache(maxsize=1)
 def _index() -> dict[str, Path]:

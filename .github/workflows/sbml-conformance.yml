@@ -126,7 +126,6 @@ jobs:
             --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
             2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
 
-<<<<<<< HEAD
       - name: Compare the run against the committed expectation manifest
         shell: bash
         run: |
@@ -138,7 +137,6 @@ jobs:
           python scripts/ci/sbml_campaign_inventory.py \
             --suite-report "$RUNNER_TEMP/ssts-artifacts/report.json" \
             --expectations provenance/sbml-campaign/expectations.json
-=======
       - name: Report the locked-suite outcomes separately
         # The qualification family runs the same locked-suite runner on the
         # identified build and reports the conversion, round trip,
@@ -158,7 +156,6 @@ jobs:
             --report-dir "$RUNNER_TEMP/ssts-artifacts/conformance-family" \
             --suite-dir "$RUNNER_TEMP/official-ssts" \
             "${selection[@]}"
->>>>>>> codex/bngir-sbmlqual
 
       - name: Triage retained stages with the common conformance tools
         if: always()

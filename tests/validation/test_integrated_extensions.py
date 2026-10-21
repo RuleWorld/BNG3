@@ -259,6 +259,51 @@ def test_quantity_source_laws_are_declared_before_execution():
     assert set(names) <= set(extensions.expected_ids([]))
 
 
+def test_every_focused_qualification_has_a_command_line_flag():
+    """A focus flag without a parser argument crashes the campaign.
+
+    The focused flags select one qualification on their own, so every one of
+    them has to exist as a command line argument: a missing argument made
+    the whole campaign raise before it ran anything.
+    """
+    import ast
+
+    from tests.validation import integrated
+
+    source = Path(integrated.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    flags = {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add_argument"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    for name, flag in extensions.FOCUS_FLAGS.items():
+        assert flag in flags, name
+        assert name in integrated.FOCUS_FLAGS
+        assert integrated.FOCUS_FLAGS[name] == flag.lstrip("-").replace("-", "_")
+    assert set(integrated.FOCUS_FLAGS) == set(extensions.FOCUS_FLAGS)
+
+
+def test_a_focused_campaign_excludes_every_other_qualification():
+    from tests.validation import integrated
+
+    focused = ["boundaries"]
+    selection = {
+        "include_" + name.replace("-", "_"): (not focused or focused[0] == name)
+        for name in integrated.FOCUS_FLAGS
+    }
+    assert selection["include_boundaries"] is True
+    assert selection["include_capability_inventory"] is False
+    assert selection["include_real_model_fixtures"] is False
+    assert selection["include_corpus_selection"] is False
+    assert selection["include_biomodels_hold"] is False
+
+
 def test_scientific_lane_runs_independent_checks_after_case_failure():
     import yaml
 

@@ -10,28 +10,32 @@
           "criterion": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
           "scope": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The inventory records availability and the plan to qualify a capability; it does not approve a support policy, and the per-row approval stays the maintainer decision of issue #137.",
+            "The acceptance gate of a capability names the checks that would qualify it; a gate that names a check which does not exist in this repository is refused.",
+            "The six supported surfaces are BioNetGen, PyBioNetGen, the canonical NFsim, the newer NFsim fork, the Atomizer and the optional tools; the BNG3-native surfaces are inventoried beside them."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:137:inventory-behavior-from-bionetgen-pybionetgen-canonical-newer-nf",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The generated inventory carries every capability the six supported surfaces expose, and every one of them records its support status, its review owner, the acceptance gate that would qualify it and its explicit exclusions; an exclusion is never left implicit.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/cpp/test_correctness_regressions.cpp",
-            "tests/cpp/test_symbol_table.cpp",
-            "tests/python/test_bng_parsing.py"
+            "provenance/capability-union.yml",
+            "tests/validation/capability_inventory.py",
+            "tests/validation/test_capability_inventory.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:137:inventory-behavior-from-bionetgen-pybionetgen-canonical-newer-nf.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          ],
+          "expectation": "The generated inventory carries every capability the six supported surfaces expose, and every one of them records its support status, its review owner, the acceptance gate that would qualify it and its explicit exclusions; an exclusion is never left implicit."
         },
         {
           "id": "issue:137:assign-each-capability-a-support-status-owner-and-acceptance-gat",
@@ -82,6 +86,121 @@
             "Missing required qualification ID: qualification:issue:137:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:137:executed-slice:surface-coverage",
+          "criterion": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "scope": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "dependencies": [],
+          "boundaries": [
+            "A surface without a capability and an uncrosswalked matrix row are both refused."
+          ],
+          "required_checks": [
+            {
+              "id": "capability-inventory:surface-coverage",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every supported surface carries at least one inventoried capability and every implementation-status row of the capability matrix is crosswalked.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:137:executed-slice:support-status",
+          "criterion": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "scope": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "dependencies": [],
+          "boundaries": [
+            "A capability without a recorded support status is refused."
+          ],
+          "required_checks": [
+            {
+              "id": "capability-inventory:support-status",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every inventoried capability carries a support status from the declared vocabulary.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:137:executed-slice:owner",
+          "criterion": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "scope": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "dependencies": [],
+          "boundaries": [
+            "A capability without an owner is refused; a pending assignment is a recorded fact and not an absence."
+          ],
+          "required_checks": [
+            {
+              "id": "capability-inventory:owner",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every inventoried capability records its review owner and whether that owner is assigned yet.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:137:executed-slice:acceptance-gate",
+          "criterion": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "scope": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "dependencies": [],
+          "boundaries": [
+            "A gate that names a check which does not exist is refused."
+          ],
+          "required_checks": [
+            {
+              "id": "capability-inventory:acceptance-gate",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every inventoried capability names the checks that would qualify it, and every named check exists in this repository.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:137:executed-slice:explicit-exclusions",
+          "criterion": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "scope": "Inventory behavior from BioNetGen, PyBioNetGen, canonical/newer NFsim, Atomizer and optional tools.",
+          "dependencies": [],
+          "boundaries": [
+            "The explicit exclusion of a partially implemented capability is the recorded boundary of its support claim."
+          ],
+          "required_checks": [
+            {
+              "id": "capability-inventory:explicit-exclusions",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every inventoried capability records its exclusions explicitly, and a capability that is not fully implemented cannot leave them implicit.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -4513,24 +4632,32 @@
           "criterion": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
           "scope": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The fixtures are the real RNA synthesis, flagellar motor, Goldbeter-Koshland, fceRI and IL-2 models of the canonical NFsim source at its locked revision; the vendored copy is byte-identical to that source and the source link is re-checked.",
+            "The independent expectation is a conservation or exclusivity law of the model's own source semantics and, where the model admits one, an analytic law computed in the harness; the product's own output is never the reference.",
+            "The comparison covers the declared sample grid of the recorded budget; it does not claim a canonical BioNetGen parity of these models."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:152:add-relevant-real-rna-uorf-motor-tqssa-fceri-and-multisite-proto",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Every named real-model fixture is present with its recorded source link and a recorded result against an independent expectation, and a fixture the engine cannot represent is refused with its reason instead of being skipped.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/fixtures/nfsim/SOURCES.json",
+            "tests/validation/real_model_fixtures.py",
+            "tests/validation/test_real_model_fixtures.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:152:add-relevant-real-rna-uorf-motor-tqssa-fceri-and-multisite-proto.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          ],
+          "expectation": "Every named real-model fixture is present with its recorded source link and a recorded result against an independent expectation, and a fixture the engine cannot represent is refused with its reason instead of being skipped."
         },
         {
           "id": "issue:152:closure-record",
@@ -4555,6 +4682,121 @@
             "Missing required qualification ID: qualification:issue:152:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:152:executed-slice:rna-uorf",
+          "criterion": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "scope": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "dependencies": [],
+          "boundaries": [
+            "The conserved quantity is the number of mRNA molecules over the free and the polymerised forms; the seed fixes it at 24."
+          ],
+          "required_checks": [
+            {
+              "id": "real-model-fixtures:rna-uorf-rna-synthesis3:invariant",
+              "evidence_kind": "supported-execution",
+              "expectation": "The RNA synthesis fixture conserves the number of mRNA nucleotides at every sampled timepoint of the network-free route.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:152:executed-slice:motor",
+          "criterion": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "scope": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "dependencies": [],
+          "boundaries": [
+            "The motor subsystem is a slave of the phosphorylation chain, so the law is exact and does not depend on the switching feedback."
+          ],
+          "required_checks": [
+            {
+              "id": "real-model-fixtures:motor-motor:closed-form-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The flagellar motor fixture follows the exact two-state chain law of its phosphorylation subsystem.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:152:executed-slice:tqssa",
+          "criterion": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "scope": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "dependencies": [],
+          "boundaries": [
+            "The steady state includes the fixture's own use of k2d for the E-catalysed step and the observable's free-plus-bound counting."
+          ],
+          "required_checks": [
+            {
+              "id": "real-model-fixtures:tqssa-gk-simple:closed-form-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The Goldbeter-Koshland fixture converges to the independent steady state of its declared mass-action system.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:152:executed-slice:fceri",
+          "criterion": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "scope": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "dependencies": [],
+          "boundaries": [
+            "The conservation laws are the totals the model itself declares; they do not qualify the phosphorylation kinetics."
+          ],
+          "required_checks": [
+            {
+              "id": "real-model-fixtures:fceri-ji:invariant",
+              "evidence_kind": "supported-execution",
+              "expectation": "The fceRI fixture conserves its receptor, its Syk and its Lyn populations at every sampled timepoint.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:152:executed-slice:multisite-protocol",
+          "criterion": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "scope": "Add relevant real RNA/uORF, motor, TQSSA, fceRI and multisite protocol fixtures with source-linked results.",
+          "dependencies": [],
+          "boundaries": [
+            "The synthesis and the degradation of the IL-2 model are not conservation laws and are not claimed as such."
+          ],
+          "required_checks": [
+            {
+              "id": "real-model-fixtures:multisite-protocol-il2:invariant",
+              "evidence_kind": "supported-execution",
+              "expectation": "The IL-2 multisite fixture keeps its chromatin locus exclusive and stays within the declared Stat5 capacity.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -6992,24 +7234,34 @@
           "criterion": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
           "scope": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The full curated BioModels corpus stays on hold: the check performs no corpus run, contacts no BioModels endpoint and claims no category count.",
+            "The retention contract is exercised on a generated report with one record per category, so it is proved before the corpus is resumed and not only afterwards.",
+            "An invalid source document is a source defect; it is retained in its own category and is neither an unsupported feature nor a parity failure."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:162:after-resumption-retain-current-flat-atomized-and-cross-engine-r",
               "evidence_kind": "diagnostic-only",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The retention machinery keeps the pass, unsupported, failed, timed-out and invalid-source categories separate and binds the retained results to the corpus they came from and to the hashes of their source records.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "provenance/published-biomodels.json",
+            "scripts/ci/validate_published_biomodels.py",
+            "scripts/ci/sbml_campaign_inventory.py",
+            "tests/validation/biomodels_hold.py",
+            "tests/validation/test_biomodels_hold.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:162:after-resumption-retain-current-flat-atomized-and-cross-engine-r.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          ],
+          "expectation": "The retention machinery keeps the pass, unsupported, failed, timed-out and invalid-source categories separate and binds the retained results to the corpus they came from and to the hashes of their source records."
         },
         {
           "id": "issue:162:closure-record",
@@ -7034,6 +7286,75 @@
             "Missing required qualification ID: qualification:issue:162:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:162:executed-slice:stop-in-effect",
+          "criterion": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
+          "scope": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
+          "dependencies": [],
+          "boundaries": [
+            "The stop is a diagnostic: it is never a supported execution and it claims no result."
+          ],
+          "required_checks": [
+            {
+              "id": "biomodels-hold:stop-in-effect",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The recorded full BioModels stop is in effect and the plan does not claim that the issue is closable.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:162:executed-slice:corpus-pin",
+          "criterion": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
+          "scope": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
+          "dependencies": [],
+          "boundaries": [
+            "The pin is the plan for the resumed run; it is not evidence that the corpus was run."
+          ],
+          "required_checks": [
+            {
+              "id": "biomodels-hold:corpus-pin",
+              "evidence_kind": "supported-execution",
+              "expectation": "The pinned corpus plan is retained with its query, its snapshot date and its expected record counts, and the recorded plan names it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:162:executed-slice:result-retention",
+          "criterion": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
+          "scope": "After resumption, retain current flat/atomized and cross-engine results with separate pass, unsupported, failed, timed-out and invalid-source categories.",
+          "dependencies": [],
+          "boundaries": [
+            "The retention contract is proved on a generated report; the categories of a real corpus run are only claimed once that run happens."
+          ],
+          "required_checks": [
+            {
+              "id": "biomodels-hold:result-retention",
+              "evidence_kind": "supported-execution",
+              "expectation": "The retained results keep the five categories separate and stay bound to the corpus and to the hashes they came from.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
@@ -10465,46 +10786,67 @@
           "criterion": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
           "scope": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The accepted selection set is empty by record: no tier membership has been approved by a maintainer, so the pending selection is not read as an approval.",
+            "The 71-model workflow is the retained Tier-P result of the frozen 100-model selection; the difference between that count and the current selection is explained by the recorded additions and their recorded outcomes.",
+            "Populating the format and stress tiers with models stays a maintainer decision: their RuleHub selectors and their budgets are not approved, so the empty tiers are reported rather than filled."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:181:reconcile-106-selected-models-and-the-separate-71-model-workflow",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The selected models, the separate 71-model Tier-P workflow and the accepted selections agree with each other, and every selection is justified with a recorded reason.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "provenance/corpus/selection.json",
+            "scripts/generate_corpus_manifest.py",
+            "scripts/validate_corpus_manifest.py",
+            "tests/validation/corpus.py",
+            "tests/validation/corpus_selection.py",
+            "tests/validation/test_corpus_selection.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:181:reconcile-106-selected-models-and-the-separate-71-model-workflow.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          ],
+          "expectation": "The selected models, the separate 71-model Tier-P workflow and the accepted selections agree with each other, and every selection is justified with a recorded reason."
         },
         {
           "id": "issue:181:expand-justified-nf-format-and-stress-selections-populate-curren",
           "criterion": "Expand justified NF, format and stress selections; populate currently empty X/B tiers with budgets and owners.",
           "scope": "Expand justified NF, format and stress selections; populate currently empty X/B tiers with budgets and owners.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The accepted selection set is empty by record: no tier membership has been approved by a maintainer, so the pending selection is not read as an approval.",
+            "The 71-model workflow is the retained Tier-P result of the frozen 100-model selection; the difference between that count and the current selection is explained by the recorded additions and their recorded outcomes.",
+            "Populating the format and stress tiers with models stays a maintainer decision: their RuleHub selectors and their budgets are not approved, so the empty tiers are reported rather than filled."
+          ],
           "required_checks": [
             {
               "id": "qualification:issue:181:expand-justified-nf-format-and-stress-selections-populate-curren",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The NF, format and stress selections are justified, and the empty format and stress tiers carry their budget, their owner and the reason they are empty.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "provenance/corpus/selection.json",
+            "scripts/generate_corpus_manifest.py",
+            "scripts/validate_corpus_manifest.py",
+            "tests/validation/corpus.py",
+            "tests/validation/corpus_selection.py",
+            "tests/validation/test_corpus_selection.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:181:expand-justified-nf-format-and-stress-selections-populate-curren.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -10531,6 +10873,75 @@
             "Missing required qualification ID: qualification:issue:181:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:181:executed-slice:selection-agreement",
+          "criterion": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
+          "scope": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
+          "dependencies": [],
+          "boundaries": [
+            "A failed model that quietly leaves the selection, or a manifest that claims an approval no maintainer decision supports, is refused."
+          ],
+          "required_checks": [
+            {
+              "id": "corpus-selection:selection-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The selected models, the retained 71-model workflow and the accepted selections agree with each other.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:181:executed-slice:tier-justification",
+          "criterion": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
+          "scope": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
+          "dependencies": [],
+          "boundaries": [
+            "The recorded reason is re-derived from the model file, so a stale or hand-written reason fails and no two models share one reason."
+          ],
+          "required_checks": [
+            {
+              "id": "corpus-selection:tier-justification",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every tier records its justification, its owner and its budget, and every selected model records the reason why it is selected.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:181:executed-slice:empty-tier-reporting",
+          "criterion": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
+          "scope": "Reconcile 106 selected models and the separate 71-model workflow with the accepted capability inventory.",
+          "dependencies": [],
+          "boundaries": [
+            "An empty tier without a recorded reason is refused; a populated tier may not carry one."
+          ],
+          "required_checks": [
+            {
+              "id": "corpus-selection:empty-tier-reporting",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every empty tier is reported with the reason why it is empty, its owner and its budget, and the manifest and the harness select the same models.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },

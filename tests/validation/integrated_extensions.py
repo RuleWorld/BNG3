@@ -13,6 +13,10 @@ from . import (
     integrated_boundaries,
     bngir_adversarial,
     api_surface,
+    capability_inventory,
+    real_model_fixtures,
+    corpus_selection,
+    biomodels_hold,
     semantic_identity,
     graph_differential,
     energy_qualification,
@@ -61,28 +65,38 @@ OPERATIONS = (
     "workload-profile",
     "semantic-identity",
     "graph-differential",
+    "capability-inventory",
+    "real-model-fixtures",
+    "corpus-selection",
+    "biomodels-hold",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
 FOCUS_FLAGS = {
-    "quantity-laws": "--quantity-laws-only",
+    "quantity_laws": "--quantity-laws-only",
     "boundaries": "--boundaries-only",
-    "bngir-adversarial": "--bngir-adversarial-only",
-    "graph-identity": "--graph-identity-only",
-    "export-format-tier": "--export-format-tier-only",
-    "jax-backend-measurement": "--jax-backend-measurement-only",
-    "rate-law-contract": "--rate-law-contract-only",
-    "nfnext-slices": "--nfnext-slices-only",
-    "api-surface": "--api-surface-only",
-    "stochastic-parity": "--stochastic-parity-only",
-    "graph-identity-contract": "--graph-identity-contract-only",
-    "sbml-support-boundary": "--sbml-support-boundary-only",
-    "atomizer-symbol-resolution": "--atomizer-symbol-resolution-only",
-    "atomizer-reconstruction": "--atomizer-reconstruction-only",
-    "energy-qualification": "--energy-qualification-only",
-    "workload-profile": "--workload-profile-only",
-    "semantic-identity": "--semantic-identity-only",
-    "graph-differential": "--graph-differential-only",
+    "bngsim_boundary": "--bngsim-boundary-only",
+    "netrule_execution": "--netrule-execution-only",
+    "bngir_adversarial": "--bngir-adversarial-only",
+    "graph_identity": "--graph-identity-only",
+    "export_format_tier": "--export-format-tier-only",
+    "jax_backend_measurement": "--jax-backend-measurement-only",
+    "rate_law_contract": "--rate-law-contract-only",
+    "nfnext_slices": "--nfnext-slices-only",
+    "api_surface": "--api-surface-only",
+    "stochastic_parity": "--stochastic-parity-only",
+    "graph_identity_contract": "--graph-identity-contract-only",
+    "sbml_support_boundary": "--sbml-support-boundary-only",
+    "atomizer_symbol_resolution": "--atomizer-symbol-resolution-only",
+    "atomizer_reconstruction": "--atomizer-reconstruction-only",
+    "energy_qualification": "--energy-qualification-only",
+    "workload_profile": "--workload-profile-only",
+    "semantic_identity": "--semantic-identity-only",
+    "graph_differential": "--graph-differential-only",
+    "capability_inventory": "--capability-inventory-only",
+    "real_model_fixtures": "--real-model-fixtures-only",
+    "corpus_selection": "--corpus-selection-only",
+    "biomodels_hold": "--biomodels-hold-only",
 }
 
 
@@ -109,6 +123,14 @@ def check_ids(operation, case=None, *, full=False):
         return semantic_identity.check_ids()
     if operation == "graph-differential":
         return graph_differential.check_ids()
+    if operation == "capability-inventory":
+        return capability_inventory.check_ids()
+    if operation == "real-model-fixtures":
+        return real_model_fixtures.check_ids()
+    if operation == "corpus-selection":
+        return corpus_selection.check_ids()
+    if operation == "biomodels-hold":
+        return biomodels_hold.check_ids()
     if operation == "energy-qualification":
         return energy_qualification.check_ids()
     if operation == "workload-profile":
@@ -142,6 +164,14 @@ def check_ids(operation, case=None, *, full=False):
         return semantic_identity.run_worker(Path.cwd())
     if operation == "graph-differential":
         return graph_differential.run_worker(Path.cwd())
+    if operation == "capability-inventory":
+        return capability_inventory.run_worker(Path.cwd())
+    if operation == "real-model-fixtures":
+        return real_model_fixtures.run_worker(Path.cwd())
+    if operation == "corpus-selection":
+        return corpus_selection.run_worker(Path.cwd())
+    if operation == "biomodels-hold":
+        return biomodels_hold.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":
@@ -195,6 +225,10 @@ def expected_ids(
     include_workload_profile=True,
     include_semantic_identity=True,
     include_graph_differential=True,
+    include_capability_inventory=True,
+    include_real_model_fixtures=True,
+    include_corpus_selection=True,
+    include_biomodels_hold=True,
     include_stochastic_parity=True,
     include_graph_identity_contract=True,
     full=False,
@@ -258,6 +292,16 @@ def expected_ids(
         ids.extend(["campaign:semantic-identity", *check_ids("semantic-identity")])
     if include_graph_differential:
         ids.extend(["campaign:graph-differential", *check_ids("graph-differential")])
+    if include_capability_inventory:
+        ids.extend(
+            ["campaign:capability-inventory", *check_ids("capability-inventory")]
+        )
+    if include_real_model_fixtures:
+        ids.extend(["campaign:real-model-fixtures", *check_ids("real-model-fixtures")])
+    if include_corpus_selection:
+        ids.extend(["campaign:corpus-selection", *check_ids("corpus-selection")])
+    if include_biomodels_hold:
+        ids.extend(["campaign:biomodels-hold", *check_ids("biomodels-hold")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     if include_graph_identity_contract:
@@ -304,6 +348,14 @@ def run_worker(operation, args):
         return semantic_identity.run_worker(Path.cwd())
     if operation == "graph-differential":
         return graph_differential.run_worker(Path.cwd())
+    if operation == "capability-inventory":
+        return capability_inventory.run_worker(Path.cwd())
+    if operation == "real-model-fixtures":
+        return real_model_fixtures.run_worker(Path.cwd())
+    if operation == "corpus-selection":
+        return corpus_selection.run_worker(Path.cwd())
+    if operation == "biomodels-hold":
+        return biomodels_hold.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":

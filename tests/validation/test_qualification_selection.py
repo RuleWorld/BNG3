@@ -34,6 +34,10 @@ QUALIFICATIONS = {
     "workload_profile": "include_workload_profile",
     "semantic_identity": "include_semantic_identity",
     "graph_differential": "include_graph_differential",
+    "capability_inventory": "include_capability_inventory",
+    "real_model_fixtures": "include_real_model_fixtures",
+    "corpus_selection": "include_corpus_selection",
+    "biomodels_hold": "include_biomodels_hold",
 }
 
 

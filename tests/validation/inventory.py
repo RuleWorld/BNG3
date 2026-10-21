@@ -28,6 +28,20 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def load_union(root: Path) -> list[dict]:
+    """Load the capability-union inventory rows of the supported surfaces."""
+    import yaml
+
+    document = yaml.safe_load(
+        (root / "provenance" / "capability-union.yml").read_text(encoding="utf-8")
+    )
+    if not isinstance(document, dict) or not isinstance(
+        document.get("capabilities"), list
+    ):
+        raise ValueError("the capability union inventory has no capabilities")
+    return document["capabilities"]
+
+
 def validate_plan(root: Path, plan: dict) -> list[str]:
     errors = []
     ids = set()
@@ -51,7 +65,9 @@ def validate_plan(root: Path, plan: dict) -> list[str]:
     return errors
 
 
-def discover_capabilities(root: Path, claims: list[dict]) -> list[dict]:
+def discover_capabilities(
+    root: Path, claims: list[dict], union: list[dict] | None = None
+) -> list[dict]:
     rows = []
     digests = {}
 
@@ -251,7 +267,45 @@ def discover_capabilities(root: Path, claims: list[dict]) -> list[dict]:
             rows[-1]["implementation_paths"] = [
                 p.relative_to(root).as_posix() for p in paths
             ]
+    rows.extend(_union_rows(root, union or []))
     return sorted(rows, key=lambda row: row["id"])
+
+
+def _union_rows(root: Path, union: list[dict]) -> list[dict]:
+    """Carry the capability-union inventory into the generated inventory.
+
+    The union rows are the machine-readable form of the capability-union
+    worksheet: one row per behaviour the supported surfaces expose, carrying
+    its support status, its review owner, its acceptance gate and its
+    explicit exclusions.  They are inventory rows, not discovery units, so
+    they are emitted with their own kind.
+    """
+    rows = []
+    for entry in union:
+        rows.append(
+            {
+                "id": entry["id"],
+                "kind": "capability-union",
+                "symbol": entry["id"],
+                "surface": entry["surface"],
+                "behaviour": entry["behaviour"],
+                "support": entry["support"],
+                "policy": entry["policy"],
+                "owner": entry["owner"],
+                "owner_assignment": entry["owner_assignment"],
+                "acceptance_gate": list(entry["acceptance_gate"]),
+                "exclusions": list(entry["exclusions"]),
+                "matrix_row": entry.get("matrix_row"),
+                "coverage": "NOT_TESTED",
+                "upstream_reference": entry["surface"],
+                "existing_tests": list(entry["acceptance_gate"]),
+                "candidate_claims": [entry["id"]],
+                "missing_tests": ["Independent semantic evidence required"],
+                "issues": [137],
+                "notes": entry.get("notes", ""),
+            }
+        )
+    return rows
 
 
 def discover_models(root: Path, roots=MODEL_ROOTS) -> list[dict]:

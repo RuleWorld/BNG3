@@ -528,6 +528,10 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .workload_profile import check_ids as workload_profile_check_ids
     from .semantic_identity import check_ids as semantic_identity_check_ids
     from .graph_differential import check_ids as graph_differential_check_ids
+    from .capability_inventory import check_ids as capability_inventory_check_ids
+    from .real_model_fixtures import check_ids as real_model_fixtures_check_ids
+    from .corpus_selection import check_ids as corpus_selection_check_ids
+    from .biomodels_hold import check_ids as biomodels_hold_check_ids
     from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
@@ -866,6 +870,75 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="capability-union-inventory",
+            case_ids=[],
+            check_ids=capability_inventory_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(capability_inventory_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated capability-union inventory only: every capability "
+                "the supported surfaces expose carries a support status, an "
+                "owner and an acceptance gate, and every exclusion is recorded "
+                "rather than left implicit."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="real-model-fixtures",
+            case_ids=[],
+            check_ids=real_model_fixtures_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(real_model_fixtures_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The named real-model fixture families only, each compared "
+                "against an independent expectation; a fixture the engine "
+                "cannot represent is refused rather than skipped."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="corpus-selection",
+            case_ids=[],
+            check_ids=corpus_selection_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(corpus_selection_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The recorded corpus selection only: the selected models, the "
+                "separate workflow and the accepted selections agree, every "
+                "selection carries a reason, and an empty tier is reported."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="biomodels-retention",
+            case_ids=[],
+            check_ids=biomodels_hold_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(biomodels_hold_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The recorded BioModels stop only: the stop stays in effect as "
+                "a diagnostic and the retained results carry the corpus and the "
+                "source hashes they came from. No category count is claimed."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -1019,16 +1092,52 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                                                                                     "id"
                                                                                                 ]
                                                                                                 == "graph-differential"
-                                                                                                else [
-                                                                                                    argument
-                                                                                                    for case_id in family[
-                                                                                                        "case_ids"
+                                                                                                else (
+                                                                                                    [
+                                                                                                        "--capability-inventory-only"
                                                                                                     ]
-                                                                                                    for argument in (
-                                                                                                        "--case",
-                                                                                                        case_id,
+                                                                                                    if family[
+                                                                                                        "id"
+                                                                                                    ]
+                                                                                                    == "capability-union-inventory"
+                                                                                                    else (
+                                                                                                        [
+                                                                                                            "--real-model-fixtures-only"
+                                                                                                        ]
+                                                                                                        if family[
+                                                                                                            "id"
+                                                                                                        ]
+                                                                                                        == "real-model-fixtures"
+                                                                                                        else (
+                                                                                                            [
+                                                                                                                "--corpus-selection-only"
+                                                                                                            ]
+                                                                                                            if family[
+                                                                                                                "id"
+                                                                                                            ]
+                                                                                                            == "corpus-selection"
+                                                                                                            else (
+                                                                                                                [
+                                                                                                                    "--biomodels-hold-only"
+                                                                                                                ]
+                                                                                                                if family[
+                                                                                                                    "id"
+                                                                                                                ]
+                                                                                                                == "biomodels-retention"
+                                                                                                                else [
+                                                                                                                    argument
+                                                                                                                    for case_id in family[
+                                                                                                                        "case_ids"
+                                                                                                                    ]
+                                                                                                                    for argument in (
+                                                                                                                        "--case",
+                                                                                                                        case_id,
+                                                                                                                    )
+                                                                                                                ]
+                                                                                                            )
+                                                                                                        )
                                                                                                     )
-                                                                                                ]
+                                                                                                )
                                                                                             )
                                                                                         )
                                                                                     )

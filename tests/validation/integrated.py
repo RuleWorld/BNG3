@@ -132,6 +132,10 @@ def expected_contract_ids(
     include_workload_profile=True,
     include_semantic_identity=True,
     include_graph_differential=True,
+    include_capability_inventory=True,
+    include_real_model_fixtures=True,
+    include_corpus_selection=True,
+    include_biomodels_hold=True,
     full=False,
 ):
     return [
@@ -194,6 +198,10 @@ def expected_contract_ids(
         include_workload_profile=include_workload_profile,
         include_semantic_identity=include_semantic_identity,
         include_graph_differential=include_graph_differential,
+        include_capability_inventory=include_capability_inventory,
+        include_real_model_fixtures=include_real_model_fixtures,
+        include_corpus_selection=include_corpus_selection,
+        include_biomodels_hold=include_biomodels_hold,
         full=full,
     )
 
@@ -982,6 +990,10 @@ FOCUS_FLAGS = {
     "workload_profile": "workload_profile_only",
     "semantic_identity": "semantic_identity_only",
     "graph_differential": "graph_differential_only",
+    "capability_inventory": "capability_inventory_only",
+    "real_model_fixtures": "real_model_fixtures_only",
+    "corpus_selection": "corpus_selection_only",
+    "biomodels_hold": "biomodels_hold_only",
 }
 
 
@@ -1047,6 +1059,10 @@ def main(argv=None):
     parser.add_argument("--workload-profile-only", action="store_true")
     parser.add_argument("--semantic-identity-only", action="store_true")
     parser.add_argument("--graph-differential-only", action="store_true")
+    parser.add_argument("--capability-inventory-only", action="store_true")
+    parser.add_argument("--real-model-fixtures-only", action="store_true")
+    parser.add_argument("--corpus-selection-only", action="store_true")
+    parser.add_argument("--biomodels-hold-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1181,6 +1197,18 @@ def main(argv=None):
             integrated_extensions.invoke(
                 "semantic-identity", args, rows, env, run_stage
             )
+        if qualification_selection["include_capability_inventory"]:
+            integrated_extensions.invoke(
+                "capability-inventory", args, rows, env, run_stage
+            )
+        if qualification_selection["include_real_model_fixtures"]:
+            integrated_extensions.invoke(
+                "real-model-fixtures", args, rows, env, run_stage
+            )
+        if qualification_selection["include_corpus_selection"]:
+            integrated_extensions.invoke("corpus-selection", args, rows, env, run_stage)
+        if qualification_selection["include_biomodels_hold"]:
+            integrated_extensions.invoke("biomodels-hold", args, rows, env, run_stage)
         if qualification_selection["include_graph_differential"]:
             integrated_extensions.invoke(
                 "graph-differential", args, rows, env, run_stage
@@ -1246,6 +1274,10 @@ def main(argv=None):
         "workload-profile": ["--workload-profile-only"],
         "semantic-identity": ["--semantic-identity-only"],
         "graph-differential": ["--graph-differential-only"],
+        "capability-inventory": ["--capability-inventory-only"],
+        "real-model-fixtures": ["--real-model-fixtures-only"],
+        "corpus-selection": ["--corpus-selection-only"],
+        "biomodels-hold": ["--biomodels-hold-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1347,6 +1379,10 @@ def main(argv=None):
                 "workload-profile": "tests/validation/workload_profile.py",
                 "semantic-identity": "tests/validation/semantic_identity.py",
                 "graph-differential": "tests/validation/graph_differential.py",
+                "capability-inventory": "tests/validation/capability_inventory.py",
+                "real-model-fixtures": "tests/validation/real_model_fixtures.py",
+                "corpus-selection": "tests/validation/corpus_selection.py",
+                "biomodels-hold": "tests/validation/biomodels_hold.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1422,6 +1458,14 @@ def main(argv=None):
                 issues = [166]
             elif stage == "graph-differential":
                 issues = [168]
+            elif stage == "capability-inventory":
+                issues = [137]
+            elif stage == "real-model-fixtures":
+                issues = [152]
+            elif stage == "corpus-selection":
+                issues = [181]
+            elif stage == "biomodels-hold":
+                issues = [162]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

@@ -79,6 +79,10 @@ jobs:
             tests/validation/test_stochastic_parity.py \
             tests/validation/test_semantic_identity.py \
             tests/validation/test_graph_differential.py \
+            tests/validation/test_capability_inventory.py \
+            tests/validation/test_real_model_fixtures.py \
+            tests/validation/test_corpus_selection.py \
+            tests/validation/test_biomodels_hold.py \
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_api_surface.py \
             tests/validation/test_atomizer_reconstruction.py \
