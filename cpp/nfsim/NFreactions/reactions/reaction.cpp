@@ -356,6 +356,12 @@ double MMRxnClass::update_a()
 	// concentration-based law, so the count propensity needs the same
 	// 1/product(remaining sizes) factor as Basic/Sat/Hill.
 	a *= volumeConversionFactor;
+	// The statistical factor of identical reactants is a property of the
+	// rule's reactants, not of the rate law's shape.  The reaction-center
+	// constructor folds it into the base rate for every rate law type, and
+	// canonical BNG2 writes it as a prefix on the rate law for every rate
+	// law type as well, so the saturating builtins have to carry it too.
+	a *= baseRate;
 	return a;
 }
 
@@ -441,7 +447,12 @@ double SatRxnClass::update_a()
             rate *= count;
         }
     }
-    a = rate * volumeConversionFactor;
+    // The statistical factor of identical reactants is a property of the
+    // rule's reactants, not of the rate law's shape.  The reaction-center
+    // constructor folds it into the base rate for every rate law type, and
+    // canonical BNG2 writes it as a prefix on the rate law for every rate
+    // law type as well, so the saturating builtins have to carry it too.
+    a = rate * volumeConversionFactor * baseRate;
     if (!std::isfinite(a) || a < 0.0) a = 0.0;
     return a;
 }
@@ -522,7 +533,12 @@ double HillRxnClass::update_a()
     for (unsigned int i = 1; i < n_reactants; ++i) {
         a *= static_cast<double>(getCorrectedReactantCount(i));
     }
-    a *= volumeConversionFactor;
+    // The statistical factor of identical reactants is a property of the
+    // rule's reactants, not of the rate law's shape.  The reaction-center
+    // constructor folds it into the base rate for every rate law type, and
+    // canonical BNG2 writes it as a prefix on the rate law for every rate
+    // law type as well, so the saturating builtins have to carry it too.
+    a *= volumeConversionFactor * baseRate;
     if (!std::isfinite(a) || a < 0.0) a = 0.0;
     return a;
 }

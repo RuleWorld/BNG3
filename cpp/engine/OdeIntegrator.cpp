@@ -477,7 +477,13 @@ void OdeIntegrator::compile() {
         crxn.reactantIndices = rxn.getReactants();
         crxn.productIndices = rxn.getProducts();
         crxn.statFactor = rxn.getFactor();
-        crxn.isTotalRate = totalRateForOrigin(rxn.getOriginRuleName());
+        // The rule-level TotalRate decision is kept apart from the
+        // per-reaction flag.  A special rate law reuses that flag to mean
+        // "this rate is already a complete flux", and that reuse must not
+        // hide the rule's TotalRate modifier from the statistical-factor
+        // decision made further down.
+        const bool ruleIsTotalRate = totalRateForOrigin(rxn.getOriginRuleName());
+        crxn.isTotalRate = ruleIsTotalRate;
 
         // A TotalRate expression is already a complete flux.  Do not apply
         // either the reaction-pattern concentration factors or the network
@@ -873,13 +879,26 @@ void OdeIntegrator::compile() {
                     }
                 }
 
-                // Apply unit and stat factors
+                // A special rate law is a complete flux: the engine does not
+                // multiply it by the reactant concentrations and does not
+                // apply the compartment-volume conversion to it.  It does
+                // carry the rule's statistical factor, because that factor is
+                // a property of the rule's reactants and not of the rate
+                // law's shape.  Canonical Perl BNG2 2.9.3 writes it as a
+                // prefix on the rate law for every rate law type
+                // (RateLaw::toString in RateLaw.pm), so its own network for
+                // ``A() + A() -> D() Sat(kcat,K)`` reads ``0.5*Sat kcat K``,
+                // and this engine's own network writer emits the same
+                // prefix.  Without the factor the engine disagreed with the
+                // network it exported and with BNG2's trajectory.
+                //
+                // A TotalRate rule states its complete flux, so it takes no
+                // statistical factor: canonical BNG2 forces the factor to one
+                // for a TotalRate rule (Rxn.pm).
                 double combinedFactor = 1.0;
-                if (!crxn.isTotalRate) {
-                    const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-                    if (uf.has_value()) combinedFactor *= *uf;
+                if (!ruleIsTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+                    combinedFactor *= rxn.getFactor();
                 }
-                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     baseExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(baseExpr));
