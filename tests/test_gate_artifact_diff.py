@@ -201,6 +201,7 @@ def test_an_artifact_that_is_not_reproducible_is_not_reported_as_a_difference(
             "status": "ok",
             "reason": "",
             "reproducible": {"translated.bngl": False},
+            "seed_sensitive": {"translated.bngl": False},
         }
 
     case = _compare(tmp_path, MODEL_FILES, changed, probe_runner=probe_runner)
@@ -225,12 +226,36 @@ def test_a_reproducible_artifact_that_differs_is_a_real_difference(tmp_path):
             "status": "ok",
             "reason": "",
             "reproducible": {"translated.bngl": True},
+            "seed_sensitive": {"translated.bngl": False},
         }
 
     case = _compare(tmp_path, MODEL_FILES, changed, probe_runner=probe_runner)
 
     assert case["artifacts"]["translated.bngl"]["status"] == "differs"
     assert case["outcome"] == diff.OUTCOME_CHANGED_UNCHANGED
+
+
+def test_an_artifact_that_changes_with_the_hash_seed_is_not_a_difference(tmp_path):
+    """A seed effect is not a model change and must not be reported as one."""
+
+    changed = dict(MODEL_FILES)
+    changed["translated.bngl"] = "begin\n  k1 0.5\nend\n"
+
+    def probe_runner(case_key: str) -> dict[str, Any]:
+        return {
+            "status": "ok",
+            "reason": "",
+            "reproducible": {"translated.bngl": True},
+            "seed_sensitive": {"translated.bngl": True},
+        }
+
+    case = _compare(tmp_path, MODEL_FILES, changed, probe_runner=probe_runner)
+
+    entry = case["artifacts"]["translated.bngl"]
+    assert entry["status"] == "seed-sensitive"
+    assert "hash seed" in entry["reason"]
+    assert case["model_changed"] is False
+    assert case["outcome"] == diff.OUTCOME_UNRESOLVED
 
 
 def test_run_local_provenance_is_not_a_difference(tmp_path):
@@ -620,4 +645,39 @@ def test_the_command_line_reports_a_non_reproducible_artifact_as_such(tmp_path):
     assert "not reproducible under a pinned seed" in result.stdout
     assert "model unresolved: 1" in result.stdout
     # The difference must not also be reported as a plain difference.
+    assert "differs at line" not in result.stdout
+
+
+def test_the_command_line_reports_a_seed_sensitive_artifact_as_such(tmp_path):
+    """An artifact that changes with the hash seed is not a model change."""
+
+    gate = tmp_path / "gate.py"
+    gate.write_text(
+        "import os, pathlib, sys\n"
+        "root = pathlib.Path(sys.argv[sys.argv.index('--artifacts-dir') + 1])\n"
+        "case = root / sys.argv[sys.argv.index('--case') + 1]\n"
+        "case.mkdir(parents=True, exist_ok=True)\n"
+        "(case / 'translated.bngl').write_text(\n"
+        "    'k1 %s\\n' % os.environ.get('PYTHONHASHSEED', 'random')\n"
+        ")\n",
+        encoding="utf-8",
+    )
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=True)
+
+    result = _run_cli(
+        "--first-artifacts",
+        str(first),
+        "--second-artifacts",
+        str(second),
+        "--probe-reproducibility",
+        "--probe-command",
+        "{python} {gate} --artifacts-dir {artifacts_dir} --case {case}",
+        "--probe-gate",
+        str(gate),
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "changes with the interpreter's hash seed" in result.stdout
+    assert "model unresolved: 1" in result.stdout
     assert "differs at line" not in result.stdout

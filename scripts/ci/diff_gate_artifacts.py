@@ -67,15 +67,29 @@ seed rather than quietly implying that it verified one.
 
 The tool can also *establish* reproducibility instead of assuming it.  With
 ``--probe-reproducibility`` it regenerates the artifacts of the interesting
-cases twice, under one pinned seed, and compares the two regenerations.  An
-artifact whose two regenerations differ is reported as
+cases three times: twice under one pinned seed and once under a contrasting
+seed.  Two questions are then answered from measurements rather than
+assumptions.
+
+*An artifact whose two pinned-seed regenerations differ* is reported as
 
     not reproducible under a pinned seed
 
 and is not reported as a difference: the difference cannot be attributed to
-the change under test.  When the probe cannot be run, or does not settle the
-question, the artifact is reported as *unresolved* rather than silently
-counted as unchanged.
+the change under test.
+
+*An artifact that differs between the pinned seed and the contrasting seed*
+is reported as
+
+    changes with the interpreter's hash seed
+
+and its difference is not reported as a difference either.  The Atomizer's
+output is not reproducible across processes while the hash seed is random, so
+two runs that used different seeds produce different text for the same model.
+Reporting that as a model change would be a false difference.
+
+When the probe cannot be run, or does not settle the question, the artifact is
+reported as *unresolved* rather than silently counted as unchanged.
 
 Usage
 -----
@@ -513,20 +527,24 @@ def probe_case(
     gate: Path,
     python: str,
     seed: int,
+    contrast_seed: int,
     timeout: float,
 ) -> dict[str, Any]:
-    """Regenerate a case's artifacts twice under one pinned seed.
+    """Regenerate a case's artifacts to find out how trustworthy they are.
 
-    Returns a mapping from artifact name to whether the artifact is
-    reproducible: ``True`` when the two regenerations agree, ``False`` when
-    they do not, and absent when the question could not be settled.
+    Three regenerations are made: two under the pinned seed and one under a
+    contrasting seed.  The first two say whether the artifact is reproducible
+    at all -- whether it is *not reproducible under a pinned seed*.  The third
+    says whether the artifact is sensitive to the interpreter's hash seed,
+    which is the documented reason a pair of runs can produce different text
+    for the same model.
     """
 
     with tempfile.TemporaryDirectory(prefix="bng3-artifact-probe-") as temp:
         temp_root = Path(temp)
         regenerated: list[dict[str, Path]] = []
         notes: list[str] = []
-        for index in (1, 2):
+        for index, run_seed in ((1, seed), (2, seed), (3, contrast_seed)):
             artifacts_dir = temp_root / f"probe{index}"
             json_path = temp_root / f"probe{index}.json"
             context = _probe_context(
@@ -534,13 +552,13 @@ def probe_case(
                 payload,
                 gate=gate,
                 python=python,
-                seed=seed,
+                seed=run_seed,
                 artifacts_dir=artifacts_dir,
                 json_path=json_path,
             )
             argv = shlex.split(_substitute(template, context))
             environment = dict(os.environ)
-            environment["PYTHONHASHSEED"] = str(seed)
+            environment["PYTHONHASHSEED"] = str(run_seed)
             try:
                 completed = subprocess.run(
                     argv,
@@ -555,6 +573,7 @@ def probe_case(
                     "status": "failed",
                     "reason": f"probe could not be run: {type(exc).__name__}: {exc}",
                     "reproducible": {},
+                    "seed_sensitive": {},
                 }
             if completed.returncode != 0:
                 # The gate's exit status reports its own verdict, which says
@@ -576,22 +595,33 @@ def probe_case(
                     "reason": (f"{note}; " if note else "")
                     + f"probe produced no artifacts for {case_key}",
                     "reproducible": {},
+                    "seed_sensitive": {},
                 }
             regenerated.append(
                 {child.name: child for child in case_dir.iterdir() if child.is_file()}
             )
-        first, second = regenerated
+        first, second, contrast = regenerated
         reproducible: dict[str, bool] = {}
-        for name in sorted(set(first) & set(second)):
+        seed_sensitive: dict[str, bool] = {}
+        for name in sorted(set(first) & set(second) & set(contrast)):
             if artifact_role(name) == ROLE_REPORT:
                 continue
-            left = _read_text(first[name])
-            right = _read_text(second[name])
-            reproducible[name] = compare_text(left, right)["status"] == "identical"
+            pinned = _read_text(first[name])
+            pinned_again = _read_text(second[name])
+            other_seed = _read_text(contrast[name])
+            reproducible[name] = (
+                compare_text(pinned, pinned_again)["status"] == "identical"
+            )
+            seed_sensitive[name] = (
+                compare_text(pinned, other_seed)["status"] != "identical"
+            )
     return {
         "status": "ok",
         "reason": "; ".join(notes),
+        "seed": seed,
+        "contrast_seed": contrast_seed,
         "reproducible": reproducible,
+        "seed_sensitive": seed_sensitive,
     }
 
 
@@ -648,12 +678,21 @@ def compare_case(
                     continue
                 if entry.get("status") != "differs":
                     continue
-                if probe.get("reproducible", {}).get(name) is False:
+                reproducible = probe.get("reproducible", {})
+                seed_sensitive = probe.get("seed_sensitive", {})
+                if reproducible.get(name) is False:
                     entry["status"] = "not-reproducible"
                     entry["reason"] = (
                         "this artifact is not reproducible under a pinned seed"
                     )
-                elif name not in probe.get("reproducible", {}):
+                elif seed_sensitive.get(name) is True:
+                    entry["status"] = "seed-sensitive"
+                    entry["reason"] = (
+                        "this artifact changes with the interpreter's hash seed; "
+                        "the difference may be a seed effect rather than a "
+                        "change under test"
+                    )
+                elif name not in reproducible:
                     entry["reproducibility"] = (
                         "the probe did not establish whether this artifact is "
                         "reproducible under a pinned seed"
@@ -690,7 +729,7 @@ def compare_case(
         status = entry.get("status")
         if status == "differs":
             model_changed = True
-        elif status == "not-reproducible":
+        elif status in {"not-reproducible", "seed-sensitive"}:
             model_unresolved = True
         elif status in {"missing-in-first", "missing-in-second"}:
             model_changed = True
@@ -745,8 +784,8 @@ def _print_case(case: dict[str, Any], *, max_numeric: int) -> None:
                 print(f"      + {difference['second']}")
             else:
                 print(f"    {name}: differs")
-        elif status == "not-reproducible":
-            print(f"    {name}: {entry.get('reason', 'not reproducible')}")
+        elif status in {"not-reproducible", "seed-sensitive"}:
+            print(f"    {name}: {entry.get('reason', status)}")
         else:
             print(f"    {name}: {status}")
         if entry.get("reproducibility"):
@@ -769,9 +808,17 @@ def _print_case(case: dict[str, Any], *, max_numeric: int) -> None:
                 name for name, ok in probe.get("reproducible", {}).items() if ok is True
             )
             print(
-                "    probe: regenerated twice under one pinned seed; "
+                "    probe: regenerated under seed "
+                f"{probe.get('seed')} and seed {probe.get('contrast_seed')}; "
                 f"reproducible: {', '.join(reproducible) or 'none'}"
             )
+            sensitive = sorted(
+                name
+                for name, is_sensitive in probe.get("seed_sensitive", {}).items()
+                if is_sensitive is True
+            )
+            if sensitive:
+                print(f"    probe: changes with the hash seed: {', '.join(sensitive)}")
         else:
             print(f"    probe: {probe.get('reason', 'could not be run')}")
 
@@ -894,6 +941,15 @@ def main() -> int:
         help="the pinned hash seed the probe uses",
     )
     parser.add_argument(
+        "--probe-contrast-seed",
+        type=int,
+        default=1,
+        help=(
+            "the contrasting hash seed the probe uses to find out whether an "
+            "artifact changes with the seed"
+        ),
+    )
+    parser.add_argument(
         "--probe-timeout",
         type=float,
         default=300.0,
@@ -979,6 +1035,7 @@ def main() -> int:
                 gate=probe_gate,
                 python=sys.executable,
                 seed=args.probe_seed,
+                contrast_seed=args.probe_contrast_seed,
                 timeout=args.probe_timeout,
             )
 
