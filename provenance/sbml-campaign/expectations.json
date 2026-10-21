@@ -3,41 +3,41 @@
   "kind": "sbml-test-suite-expectations",
   "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that case. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the reference, which is a finding to investigate. 'unsupported' is the only gap: the case's 'gap' entry names the construct that is not representable today together with the harness's cause labels for it. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
   "provenance": {
-    "measured_at_commit": "248405ede6a23ed6452b25562ddc2008e7126842",
-    "measured_commit": "248405ede6a23ed6452b25562ddc2008e7126842",
+    "measured_at_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
+    "measured_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
     "measurement_environment": {
       "libsbml_version": "5.21.1",
       "native_extension_sha256": "6f82e81131d2a33cb48049ffab080d5f04b0003cfffdc3d56ca758f0812ec5c1",
       "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
-      "python_package_source_sha256": "6af1b58aeb06f9a5bb17f2394f96cea98cea13936aa4fe3a7818055d35243cd2",
+      "python_package_source_sha256": "7250a2eabf01f67dd99c574ac93bbe55b6f4f30f951472339e8a7071ce096f9d",
       "python_version": "3.14.6",
       "roadrunner_version": "2.10.0",
-      "source_tree": "/private/tmp/bng3-campaign/wt-final/python/bionetgen/__init__.py"
+      "source_tree": "/private/tmp/bng3-campaign/wt-f2/python/bionetgen/__init__.py"
     }
   },
   "schema_version": 1,
   "source_report": {
-    "bng3_commit": "248405ede6a23ed6452b25562ddc2008e7126842",
-    "measured_at_commit": "248405ede6a23ed6452b25562ddc2008e7126842",
+    "bng3_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
+    "measured_at_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
     "python_version": "3.14.6",
-    "sha256": "7906aa4500c74b0f1365091dd4ed2c721afe1b9cc53a99087fee7ea01090c4ac"
+    "sha256": "e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576"
   },
   "stage_counts": {
     "conversion": {
-      "passed": 1782,
-      "unsupported": 141
+      "passed": 1797,
+      "unsupported": 126
     },
     "independent_comparison": {
-      "not_tested": 141,
-      "passed": 1782
+      "not_tested": 126,
+      "passed": 1797
     },
     "official_reference": {
-      "passed": 1743,
-      "unsupported": 180
+      "passed": 1758,
+      "unsupported": 165
     },
     "roundtrip_structure": {
-      "not_tested": 141,
-      "passed": 1782
+      "not_tested": 126,
+      "passed": 1797
     }
   },
   "stages": [
@@ -937,10 +937,10 @@
     "semantic/00867": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00868": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00869": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/00870": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/00870": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00871": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/00872": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/00873": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/00872": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/00873": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00874": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00875": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/00876": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1118,9 +1118,9 @@
     "semantic/01048": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01049": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01050": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01051": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01052": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01053": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/01051": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01052": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01053": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01054": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01055": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01056": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1466,7 +1466,7 @@
     "semantic/01396": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01397": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01398": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "fast_reactions", "stoichiometry"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01399": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/01399": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01400": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01401": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01402": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1611,9 +1611,9 @@
     "semantic/01541": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01542": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01543": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01544": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["conversion_factors", "fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01545": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["conversion_factors", "fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01546": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["conversion_factors", "fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/01544": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01545": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01546": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01547": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01548": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01549": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1632,14 +1632,14 @@
     "semantic/01562": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01563": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01564": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01565": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/01565": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01566": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01567": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/01567": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01568": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01569": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/01569": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01570": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01571": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
-    "semantic/01572": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["fast_reactions"], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "fast-reaction:no-fast-equilibrium-solve", "side": "atomizer"}}},
+    "semantic/01571": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01572": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01573": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01574": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01575": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml"], "construct": "events:state-trigger-not-schedulable", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "events:state-trigger-not-schedulable", "side": "atomizer"}}},
