@@ -3756,12 +3756,24 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
 
         // Fire the selected reaction
+        //
+        // A constant species carries the model's "this amount does not change"
+        // marker (BNGL's ``$`` seed species; SBML's ``boundaryCondition``).
+        // The deterministic reading honours it by zeroing the species'
+        // derivative, and the partitioned simulators honour it by skipping the
+        // species in their state update, so the direct method has to skip it
+        // too: otherwise the same converted model means two different things
+        // depending on which engine simulates it.  The propensity is
+        // untouched - a constant species still contributes its amount to the
+        // rate law it appears in - only the state update skips it.
         const auto& rxn = compiledRxns_[selectedRxn];
         for (const auto idx : rxn.reactantIndices) {
+            if (fixedSpecies_[idx]) continue;
             y[idx] -= 1.0;
             if (y[idx] < 0.0) y[idx] = 0.0;  // Safety clamp
         }
         for (const auto idx : rxn.productIndices) {
+            if (fixedSpecies_[idx]) continue;
             y[idx] += 1.0;
         }
 

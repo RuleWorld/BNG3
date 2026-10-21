@@ -104,6 +104,18 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
         flat.initialSpecies[i] = static_cast<int32_t>(std::max(0.0, std::round(amt)));
     }
 
+    // A constant species carries the model's "this amount does not change"
+    // marker (BNGL's ``$`` seed species; SBML's ``boundaryCondition``).  The
+    // deterministic reading honours it, the partitioned simulators honour it
+    // and the direct method honours it, so the flattened state-change lists
+    // have to omit it as well: a reaction may name a constant species, but it
+    // may not change it.  The reactant list is untouched, so a constant
+    // species still contributes its amount to the propensity.
+    std::vector<bool> constantSpecies(flat.numSpecies, false);
+    for (std::size_t i = 0; i < flat.numSpecies; ++i) {
+        constantSpecies[i] = network.species.get(i).isConstant();
+    }
+
     // Reaction arrays
     flat.rateConstants.resize(flat.numReactions);
     flat.reactantOffsets.reserve(flat.numReactions + 1);
@@ -158,7 +170,9 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
             }
             flat.reactantSpecies.push_back(static_cast<uint32_t>(sIdx));
             flat.reactantStoichOffsets.push_back(currentOffset);
-            flat.reactChangeSpecies.push_back(static_cast<uint32_t>(sIdx));
+            if (!constantSpecies[sIdx]) {
+                flat.reactChangeSpecies.push_back(static_cast<uint32_t>(sIdx));
+            }
         }
         flat.reactantOffsets.push_back(static_cast<uint32_t>(flat.reactantSpecies.size()));
         flat.reactChangeOffsets.push_back(static_cast<uint32_t>(flat.reactChangeSpecies.size()));
@@ -168,7 +182,9 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
             if (pIdx >= flat.numSpecies) {
                 throw std::runtime_error("Batch SSA: product index out of range");
             }
-            flat.prodChangeSpecies.push_back(static_cast<uint32_t>(pIdx));
+            if (!constantSpecies[pIdx]) {
+                flat.prodChangeSpecies.push_back(static_cast<uint32_t>(pIdx));
+            }
         }
         flat.prodChangeOffsets.push_back(static_cast<uint32_t>(flat.prodChangeSpecies.size()));
     }

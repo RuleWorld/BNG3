@@ -737,6 +737,173 @@ test.
   section 10, not by the algebraic rule: their rule is applied today, and
   their trigger is a conjunction that the native runtime cannot yet locate
   reliably.
+## 12. A boundary species is not honoured by the direct SSA - FIXED
+
+* **Classification:** engine defect (the native engine executed the generated
+  model differently from the specification).  **CLOSED** on
+  `campaign/ssa-boundary-and-rate-rules`.
+* **Cases:** 15 converted models whose deterministic and stochastic readings
+  disagreed: `semantic/01537 01541 01555 01556 01557 01638 01639 01640
+  01730 01731 01752 01795` and `stochastic/00006 00024 00026`.
+* **Mechanism:** a species with `boundaryCondition="true"` is lowered to a
+  **constant seed species** (`@C:$M_S1()`), and the generated network carries
+  that marker per species (`ast::Species::isConstant()`).  Three of BNG3's four
+  engines honoured it: the deterministic path zeroes the species' derivative
+  (`OdeIntegrator::derivs`), and the partitioned simulators skip the species
+  in their state update (`PsaSimulator::updateConcentrationsPsa`,
+  `PlaSimulator`).  The **direct method** did not:
+  `OdeIntegrator::integrateSSA` decremented a constant reactant and
+  incremented a constant product like any other species, and the batched GPU
+  flattening put a constant species into the state-change lists it hands to
+  the kernels.  The same converted model therefore meant two different things
+  depending on which engine simulated it.
+* **The specification's requirement.**  SBML Level 3 Version 2 Core, section
+  4.6.6 ("The constant and boundaryCondition attributes on Species"):
+
+  > "In practice, a boundaryCondition value of 'true' means a differential
+  > equation derived from the reaction definitions should not be generated for
+  > the species."
+
+  and, on what the attribute means when the species *does* occur in a
+  reaction:
+
+  > "When a species is a product or reactant of one or more reactions, its
+  > amount is determined by those reactions.  In SBML, it is possible to
+  > indicate that a given species' amount is not determined by the set of
+  > reactions even when that species occurs as a product or reactant; i.e.,
+  > the species is on the boundary of the reaction system, and its amount is
+  > not determined by the reactions."
+
+  So the restriction belongs to the **model**: the species' amount is constant
+  whether or not a reaction names it.  Section 4.11 ("Reactions") makes the
+  kinetic law's value the reaction's *extent* rate, and section 4.6.6 says no
+  equation is derived for a boundary species - which is why the reaction that
+  names it still runs at the kinetic law's own rate.
+* **Which side owns the fix, and why.**  The **engine's state update**, not the
+  propensity and not the Atomizer.
+  * *Not the propensity.*  A constant species still contributes its amount to
+    the rate law it appears in: the deterministic reading integrates
+    `dB/dt = k*A` with `A` held at its initial value, so the discrete reading
+    has to fire the reaction at that same constant rate.  Zeroing the
+    propensity would have stopped the reaction that produces the *other*
+    species - in `semantic/01537` `S2` has to grow at the reaction's rate.
+  * *Not the Atomizer.*  The lowering is already exact for the deterministic
+    reading: the converted model's own CVODE trace reproduces the published
+    reference to 3.3e-9 on `semantic/01638`.  Dropping the boundary species
+    from the reaction's pattern would make the reaction effect-less in
+    `semantic/01638` (whose only reaction produces the boundary species), and
+    the network generator drops an effect-less rule - so the case would stop
+    being measured at all instead of being measured correctly.
+  * *The engine.*  The constant-species marker is a property of the generated
+    network, and the direct method was the only engine that did not read it.
+* **Observed behaviour.**  `semantic/01638` (one reaction `J0: -> S1` whose
+  product is a boundary species): the published reference keeps `S1` at 2 and
+  the model's own CVODE trace reproduces it to 3.3e-9, while the batched
+  direct SSA drives `S1` to 5.31 at `t = 10` (max |z| = 183 against the
+  ensemble standard error).  `stochastic/00006` (a `Sink` boundary species):
+  the published mean is 0 and the ensemble accumulates 432 molecules
+  (max |z| = 1294).
+* **The independent oracle agrees with the fix.**  libRoadRunner 2.10.0 on the
+  **source** SBML: `semantic/01638` reports `S1 = 2` at `t = 0` and at
+  `t = 10`; `semantic/01639` reports `S1 = 2` and `S2 = 3.333333333` at
+  `t = 10` (the reaction's extent rate is the kinetic law's `1/3`, not
+  `1/3 * S1`); `semantic/01752` reports `S1 = 2` and `S2 = 4` at `t = 10`
+  (`3 + 10 * 0.1`); `stochastic/00006` reports `Sink = 0` and
+  `X = 90.48374187` at `t = 10`.  BNG2 reaches the same *amount* semantics a
+  different way: `legacy/perl/Perl2/RxnRule.pm` adds a `Fixed` reactant to the
+  product list "to insure concentration does not change" and does not add a
+  `Fixed` product at all "to avoid silent model changes".  BNG2 has no SBML
+  extent-rate (`TotalRate`) concept, so it is not an oracle for the *rate
+  law* of these models; libRoadRunner and the published references are.
+* **The fix.**  `OdeIntegrator::integrateSSA` skips a constant species in the
+  state update, and `FlattenedReactionNetwork::fromModelAndNetwork` omits a
+  constant species from the flattened state-change lists the GPU kernels
+  apply.  The CPU batch pool calls the direct method, so it inherits the fix;
+  the GPU kernels consume the flattened lists, so they inherit it too.  The
+  propensity is untouched.
+* **Numbers.**  The campaign's stochastic-consistency sweep over the pinned
+  suite (1923 cases; batch 10 000; `base_seed = 20261020 + int(case_id)`;
+  single-worker CPU pool; the Metal backend for networks with at least 100
+  reactions or 50 species and the CPU pool otherwise; `k_sigma = 5`):
+
+  | outcome | `origin/main` (`a1496fb1`) | this branch |
+  | --- | --- | --- |
+  | consistent | 195 | **210** |
+  | inconsistent | 25 | **10** |
+  | not comparable | 1574 | 1574 |
+  | unsupported | 128 | 128 |
+  | no valid propensity | 1 | 1 |
+
+  **15 verdicts moved**, all of them `inconsistent -> consistent`, and they
+  are exactly the 15 cases above.  **No other record of the 1923 moved**, and
+  the GPU/CPU sampler-agreement check is unchanged (the same six cases, the
+  same maximum |z| to every digit).
+* **The remaining ten, with their mechanism.**  Both mechanisms are the
+  sweep's, and neither is an engine defect:
+  * `conversion-differs-from-the-published-reference` - `semantic/01130
+    01131 01132 01307 01308`.  The *deterministic* reading departs from the
+    published reference here (`cvode_versus_official_reference` is
+    non-zero), so the disagreement is a conversion difference on the Atomizer
+    side, not a stochastic-versus-deterministic one.
+  * `stoichiometry-lowered-to-a-deterministic-flux-loses-the-reaction-event-coupling`
+    - `semantic/01432 01516 01517 01561 01562`.  The source model's
+    reaction carries a **time-varying stoichiometry**, which the Atomizer
+    lowers to a deterministic ODE flux and explicitly declines to claim for
+    the stochastic reading ("Stochastic shared-event trajectories are not
+    claimed").  The discrete reading of a shared reaction event cannot carry
+    a stoichiometry that changes between events, so this is a scope boundary
+    of the lowering rather than an engine defect.
+
+## 13. The recorded rate-rule disagreement was the multi-worker pool's data race - NOT A RATE-RULE DEFECT
+
+* **Classification:** not an engine defect on `main`; the recorded verdict was
+  a misattribution, and the underlying defect is already fixed.
+* **The recorded finding.**  The stochastic-consistency sweep reported
+  `semantic/00990` as inconsistent with the mechanism
+  `ssa-does-not-apply-rate-rules`: "a variable that carries a rate rule is
+  driven by the rule in the ODE path, and the SSA path does not apply it".
+* **What the SSA path actually does.**  The Atomizer lowers a rate rule into a
+  **state species** whose amount *is* the rule variable's value, plus a
+  `TotalRate` source rule that applies the rule's own rate:
+
+      __rate_rule_p1: 0 -> M___rate_rule_state__p1() __rate_rule__p1() TotalRate
+
+  The deterministic reading integrates that rule; the direct method fires the
+  rule's rate as a propensity.  **Both readings apply the rule**, so the
+  restriction is not a refusal and not a different number: the two readings
+  agree in the mean, which is what the sweep measures.  The generated model is
+  byte-identical at `d7b18d05` (the tree the recorded measurement was taken
+  on) and at `a1496fb1`, so nothing in the lowering changed.
+* **What the recorded disagreement actually was.**  A **data race in the
+  multi-worker CPU batch pool**.  `OdeIntegrator::evaluateFunctionalRateCoefficients()`
+  filled a *member* scratch (`groupValues_`) from the current state and
+  `integrateSSA()` calls it on every propensity recomputation, so two workers
+  sharing one integrator resolved a rate expression that reads an observable
+  - `semantic/00990`'s reaction reads the rate-ruled variable - against
+  *another* trajectory's state.  Pull request #362 (`b4171576`, "Give each
+  batch-SSA worker its own observable scratch so a fixed seed is
+  reproducible") moved the scratch to per-worker storage, and that commit is
+  on `main`.
+* **The evidence.**  On `origin/main` (`a1496fb1`) the sweep reports
+  `semantic/00990` as **consistent**, with a maximum |z| of **2.1253** - the
+  number #362 recorded after its fix - and the single-worker and multi-worker
+  ensembles are now bit-identical.  The recorded measurement that produced
+  the finding was taken with the **multi-worker** pool (`cpu_threads: 0`); the
+  sweep's `--cpu-threads` default stays at 1 precisely so that the recorded
+  measurement stays comparable.
+* **What the sweep's mechanism label is.**  The attribution in
+  `scripts/ci/check_stochastic_consistency.py` labels *any* disagreement in a
+  model that has a rate rule as `ssa-does-not-apply-rate-rules`.  That is a
+  guess about the mechanism, not a diagnosis of it, and it fired on a case
+  whose disagreement had nothing to do with rate rules.  The label is a
+  reporting field: it does not change a verdict, and the verdict on
+  `semantic/00990` on `main` is `consistent`.
+* **The regression test.**  `tests/python/test_ssa_rate_rule.py` pins the
+  property in the campaign's form - the **stochastic** reading of a converted
+  rate rule must agree with the **deterministic** reading, for the
+  rate-ruled variable and for the species whose rate reads it - and
+  `tests/validation/test_stochastic_consistency.py` keeps the sweep's own
+  comparison under test.
 
 ## Measurements that are *not* findings
 
