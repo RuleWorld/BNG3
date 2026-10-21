@@ -28,7 +28,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Optional, Callable
 
 import numpy as np
 
@@ -473,7 +473,7 @@ def _compare_reference_series(
     *,
     absolute: float,
     relative: float,
-    sample_times: Any | None = None,
+    sample_times: Optional[Any] = None,
 ) -> dict[str, Any]:
     """Apply the official pointwise absolute-plus-relative error formula."""
 
@@ -818,7 +818,7 @@ def _simulate_and_compare(
     n_steps: int,
     rtol: float,
     atol: float,
-    function_names: set[str] | None = None,
+    function_names: Optional[set[str]] = None,
 ) -> dict[str, Any]:
     """Compare BNG3/CVODE observables with libRoadRunner on one time grid."""
 
@@ -1009,7 +1009,7 @@ def _case_files(suite_dir: Path, categories: list[str]) -> list[dict[str, Any]]:
 
 
 def _is_partial_run(
-    categories: list[str], max_cases: int, only_case: str | None
+    categories: list[str], max_cases: int, only_case: Optional[str]
 ) -> bool:
     """Report a run as partial unless it covers both full suite categories."""
 
@@ -1090,13 +1090,13 @@ def _reference_output_target(
     parsed: Any,
     observable_map: dict[str, str],
     standardize_name: Any,
-) -> str | None:
+) -> Optional[str]:
     """Map an SBML result id to its exact generated BNGL output symbol."""
 
     if variable == "time":
         return "time"
 
-    def compartment_volume(compartment_id: str) -> str | None:
+    def compartment_volume(compartment_id: str) -> Optional[str]:
         if not compartment_id:
             return None
         compartment_name = standardize_name(compartment_id)
@@ -1711,7 +1711,7 @@ def _atomizer_actions_for_category(
 
 def _atomizer_horizon(
     category: str,
-    reference: dict[str, Any] | None,
+    reference: Optional[dict[str, Any]],
     *,
     simulation_t_end: float,
     simulation_n_steps: int,
@@ -1731,7 +1731,7 @@ def _validate_case(
     simulation_n_steps: int,
     simulation_rtol: float,
     simulation_atol: float,
-    artifacts_dir: Path | None = None,
+    artifacts_dir: Optional[Path] = None,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
