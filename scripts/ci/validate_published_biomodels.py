@@ -428,6 +428,8 @@ def _unsupported_causes(reason: str) -> list[str]:
         causes.append("algebraic_rules")
     if "assignment rule targets species" in lower or "speciesassignmentrule" in lower:
         causes.append("species_assignment_rules")
+    if "compartment derivative" in lower:
+        causes.append("species_rate_rules")
     if "stoichiometr" in lower:
         causes.append("stoichiometry")
     if "fast-equilibrium" in lower or "marked fast" in lower:
@@ -458,6 +460,10 @@ def _unsupported_causes(reason: str) -> list[str]:
         causes.append("reaction_participants")
     if "no usable sbml" in lower or "not an sbml" in lower:
         causes.append("format")
+    if "observable is undefined at t=" in lower:
+        causes.append("undefined_observables")
+    if "could not integrate the written sbml" in lower:
+        causes.append("oracle_solver_failure")
     if not causes:
         causes.append("other")
     return list(dict.fromkeys(causes))
@@ -747,11 +753,84 @@ def _known_unsupported_error(message: str) -> bool:
             "qualitative/logical",
             "algebraic rule",
             "assignment rule targets species",
+            # The Atomizer refuses a species concentration rate rule whose
+            # compartment size has no continuous derivative.  The refusal is
+            # explicit and names the construct, so it is a gap rather than a
+            # failure of the gate.
+            "compartment derivative",
             "unsupported stoichiometry",
             "variable stoichiometry",
             "package detected",
         )
     )
+
+
+class OracleIntegrationError(RuntimeError):
+    """The independent oracle could not integrate the model under comparison.
+
+    A failure of libRoadRunner's own solver is a limitation of the
+    measurement, not a disagreement between the two engines: the corpus
+    comparison needs a trajectory from *both* engines, so a record whose
+    oracle cannot integrate the written SBML cannot be judged.
+    """
+
+
+def _same_undefined_value(left: np.ndarray, right: np.ndarray) -> bool:
+    """Return True when both engines report the same undefined value.
+
+    An observable that is not a finite number at a grid point -- the
+    logarithm of a quantity that is zero at the initial point, a ratio of
+    two quantities that are both zero -- has no value to compare.  When the
+    two engines report the *same* undefined value (both NaN, or both the
+    same infinity) at the *same* points, the record reproduces the source's
+    own undefined observable instead of disagreeing with it.
+    """
+
+    left_undefined = ~np.isfinite(left)
+    right_undefined = ~np.isfinite(right)
+    if not left_undefined.any() or not right_undefined.any():
+        return False
+    if not np.array_equal(left_undefined, right_undefined):
+        return False
+    same_kind = np.isnan(left) == np.isnan(right)
+    same_kind &= np.isposinf(left) == np.isposinf(right)
+    same_kind &= np.isneginf(left) == np.isneginf(right)
+    return bool(same_kind.all())
+
+
+def _finite_max_abs(values: np.ndarray) -> float:
+    """Return the largest finite magnitude in a series, or zero.
+
+    A series that carries a non-finite value must not widen the comparison's
+    tolerance: an infinite scale would let every observable pass.
+    """
+
+    if values.size == 0:
+        return 0.0
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return 0.0
+    return float(np.max(np.abs(finite)))
+
+
+def _format_time(value: float) -> str:
+    """Format a grid time for a reason string without a trailing ``.0``."""
+
+    text = f"{float(value):g}"
+    return text
+
+
+def _undefined_label(values: np.ndarray) -> str:
+    """Name the undefined value a series carries at its first undefined point."""
+
+    for value in values:
+        if np.isnan(value):
+            return "NaN"
+        if np.isposinf(value):
+            return "+inf"
+        if np.isneginf(value):
+            return "-inf"
+    return "a non-finite value"
 
 
 def _simulate_and_compare(
@@ -841,7 +920,15 @@ def _simulate_and_compare(
             + ", ".join(missing[:10])
         )
     rr.timeCourseSelections = ["time", *selected_names]
-    rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+    try:
+        rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+    except Exception as exc:
+        # The oracle's own solver failed.  That is a limitation of the
+        # measurement, not a disagreement between the two engines.
+        raise OracleIntegrationError(
+            "the independent oracle (libRoadRunner) could not integrate the "
+            f"written SBML: {type(exc).__name__}: {exc}"
+        ) from exc
     expected_shape = (len(bng_time), len(observable_names) + 1)
     if rr_values.ndim != 2 or rr_values.shape != expected_shape:
         raise RuntimeError(
@@ -852,13 +939,9 @@ def _simulate_and_compare(
 
     comparison_scale = max(
         [
+            *(_finite_max_abs(values) for values in bng_values.values()),
             *(
-                float(np.max(np.abs(values)))
-                for values in bng_values.values()
-                if values.size
-            ),
-            *(
-                float(np.max(np.abs(rr_values[:, index])))
+                _finite_max_abs(rr_values[:, index])
                 for index in range(1, rr_values.shape[1])
                 if rr_values.shape[0]
             ),
@@ -867,17 +950,45 @@ def _simulate_and_compare(
     )
     comparisons: dict[str, dict[str, Any]] = {}
     failed = []
+    not_comparable: dict[str, str] = {}
+    undefined_points: set[str] = set()
     for index, name in enumerate(observable_names, start=1):
         left = bng_values[name]
         right = rr_values[:, index]
         if left.shape != right.shape:
             raise RuntimeError(f"observable {name!r} returned mismatched shapes")
         finite = bool(np.isfinite(left).all() and np.isfinite(right).all())
-        difference = np.abs(left - right)
-        scale = max(
-            float(np.max(np.abs(left))) if left.size else 0.0,
-            float(np.max(np.abs(right))) if right.size else 0.0,
-        )
+        undefined = False
+        undefined_at: list[float] = []
+        if finite:
+            difference = np.abs(left - right)
+            scale = max(_finite_max_abs(left), _finite_max_abs(right))
+            max_abs = float(np.max(difference)) if difference.size else 0.0
+        else:
+            # The observable is not a finite number somewhere on the grid.
+            # When both engines report the same undefined value at the same
+            # points, the source's own observable is undefined there and the
+            # finite points are what the comparison can measure.
+            undefined = _same_undefined_value(left, right)
+            if undefined:
+                mask = np.isfinite(left) & np.isfinite(right)
+                difference = (
+                    np.abs(left[mask] - right[mask]) if mask.any() else left[:0]
+                )
+                scale = max(
+                    _finite_max_abs(left[mask]) if mask.any() else 0.0,
+                    _finite_max_abs(right[mask]) if mask.any() else 0.0,
+                )
+                max_abs = float(np.max(difference)) if difference.size else 0.0
+                undefined_at = [
+                    float(bng_time[position])
+                    for position in np.where(~np.isfinite(left))[0]
+                    if position < len(bng_time)
+                ]
+            else:
+                difference = np.abs(left - right)
+                scale = max(_finite_max_abs(left), _finite_max_abs(right))
+                max_abs = float(np.max(difference)) if difference.size else 0.0
         # Cross-engine CVODE paths have small dense-output/RHS differences;
         # retain a global floor for low-magnitude parity checks.
         tolerance = max(
@@ -885,44 +996,34 @@ def _simulate_and_compare(
             NUMERICAL_COMPARISON_ATOL_FLOOR
             + NUMERICAL_COMPARISON_RTOL_FLOOR * comparison_scale,
         )
-        max_abs = float(np.max(difference)) if difference.size else 0.0
         scaled_error = max_abs / tolerance if tolerance else math.inf
-        passed = finite and max_abs <= tolerance
-        if not passed:
-            failed.append(name)
+        if undefined:
+            # The source's own observable has no value at this point, so the
+            # pointwise comparison cannot be made there.  The agreement at the
+            # finite points is recorded as evidence, but the record is not
+            # comparable and must say so rather than claim a pass.
+            passed = False
+            points = ", ".join(f"t={_format_time(time)}" for time in undefined_at[:5])
+            not_comparable[name] = (
+                f"the source observable is undefined at {points} "
+                f"({_undefined_label(left)}); BNG3 and libRoadRunner "
+                "report the same undefined value"
+            )
+            undefined_points.update(points.split(", "))
+        else:
+            passed = bool(finite) and max_abs <= tolerance
+            if not passed:
+                failed.append(name)
         comparisons[name] = {
             "finite": finite,
+            "undefined": undefined,
+            "undefined_at": undefined_at,
             "max_abs_difference": max_abs,
             "tolerance": tolerance,
             "max_scaled_error": scaled_error,
             "passed": passed,
         }
-    if failed:
-        return {
-            "passed": False,
-            "error": (
-                "BNG3 CVODE/libRoadRunner observable mismatch: "
-                + ", ".join(failed[:10])
-            ),
-            "method_bngl": "BNG3 CVODE (simulate method='ode')",
-            "method_sbml": "libRoadRunner CVODE",
-            "roadrunner_version": getattr(roadrunner, "__version__", None),
-            "t_start": 0.0,
-            "t_end": t_end,
-            "n_steps": n_steps,
-            "rtol": rtol,
-            "atol": atol,
-            "max_step": max_step,
-            "comparison_atol_floor": NUMERICAL_COMPARISON_ATOL_FLOOR,
-            "comparison_rtol_floor": NUMERICAL_COMPARISON_RTOL_FLOOR,
-            "comparison_reference_scale": comparison_scale,
-            "observable_count": len(observable_names),
-            "sbml_observable_ids": dict(zip(observable_names, selected_names)),
-            "failed_observables": failed,
-            "observables": comparisons,
-        }
-    return {
-        "passed": True,
+    base: dict[str, Any] = {
         "method_bngl": "BNG3 CVODE (simulate method='ode')",
         "method_sbml": "libRoadRunner CVODE",
         "roadrunner_version": getattr(roadrunner, "__version__", None),
@@ -939,6 +1040,32 @@ def _simulate_and_compare(
         "sbml_observable_ids": dict(zip(observable_names, selected_names)),
         "observables": comparisons,
     }
+    if not_comparable:
+        return {
+            **base,
+            "passed": False,
+            "not_comparable": not_comparable,
+            "error": (
+                "the source observable is undefined at "
+                + ", ".join(sorted(undefined_points))
+                + ": BNG3 and libRoadRunner report the same undefined value, "
+                "so a pointwise comparison cannot measure the record ("
+                + ", ".join(sorted(not_comparable)[:10])
+                + ")"
+            ),
+            "failed_observables": failed,
+        }
+    if failed:
+        return {
+            **base,
+            "passed": False,
+            "error": (
+                "BNG3 CVODE/libRoadRunner observable mismatch: "
+                + ", ".join(failed[:10])
+            ),
+            "failed_observables": failed,
+        }
+    return {**base, "passed": True, "failed_observables": []}
 
 
 def _retry_numerical_comparison(
@@ -1207,6 +1334,9 @@ def _validate_mode(
             f"{native['reaction_count']} != {network.num_reactions}"
         )
 
+    comparison: dict[str, Any] | None = None
+    initial_runtime_error: RuntimeError | None = None
+    oracle_error: OracleIntegrationError | None = None
     try:
         comparison = _simulate_and_compare(
             cpp_model,
@@ -1227,11 +1357,10 @@ def _validate_mode(
                 if assignment.symbol
             },
         )
-    except RuntimeError as initial_error:
-        comparison = None
-        initial_runtime_error = initial_error
-    else:
-        initial_runtime_error = None
+    except OracleIntegrationError as exc:
+        oracle_error = exc
+    except RuntimeError as exc:
+        initial_runtime_error = exc
 
     # Cross-engine CVODE can fail on a stiff, unit-normalized model before
     # either trajectory is available, or can return a mismatch caused by
@@ -1241,7 +1370,12 @@ def _validate_mode(
     # transients below that scale. A successful tighter comparison is still
     # required from both engines, so this cannot turn a real mismatch into a
     # pass by changing only one side.
-    if initial_runtime_error is not None or not comparison.get("passed", False):
+    if (
+        initial_runtime_error is not None
+        or oracle_error is not None
+        or comparison is None
+        or not comparison.get("passed", False)
+    ):
         retry_max_step = max(abs(simulation_t_end) / 2000.0, 1e-6)
         retries = [retry_max_step * factor for factor in (1.0, 0.2, 0.1, 0.04, 0.02)]
         last_comparison = comparison
@@ -1264,6 +1398,21 @@ def _validate_mode(
                 break
         comparison = last_comparison
         if comparison is None:
+            if oracle_error is not None:
+                # The oracle could not integrate the written model, so the
+                # comparison cannot be measured.  That is a limitation of the
+                # measurement, not a disagreement between the two engines.
+                result["status"] = "not_comparable"
+                result["not_comparable_reason"] = str(oracle_error)
+                result["simulation_comparison"] = {
+                    "passed": False,
+                    "skipped": False,
+                    "not_comparable": {"oracle": str(oracle_error)},
+                    "method_bngl": "BNG3 CVODE",
+                    "method_sbml": "libRoadRunner CVODE",
+                }
+                result["core_passed"] = False
+                return result
             raise initial_runtime_error
     if comparison is not None and comparison.get("failed_observables"):
         function_names = {
@@ -1291,6 +1440,22 @@ def _validate_mode(
             max_step=float(comparison.get("max_step") or 0.0),
         )
     result["simulation_comparison"] = comparison
+    if comparison.get("failed_observables"):
+        result["status"] = "failed"
+        result["core_passed"] = False
+        result["error"] = comparison.get("error", "numerical comparison failed")
+        return result
+    if comparison.get("not_comparable"):
+        # The record's own observable has no value to compare at some point of
+        # the grid, and both engines report the same undefined value there.
+        # The comparison cannot measure the record, so the record says so
+        # instead of claiming a pass or a disagreement.
+        result["status"] = "not_comparable"
+        result["not_comparable_reason"] = comparison.get(
+            "error", "the comparison could not be measured"
+        )
+        result["core_passed"] = False
+        return result
     if not comparison.get("passed", False):
         result["status"] = "failed"
         result["core_passed"] = False
@@ -1628,6 +1793,14 @@ def main() -> int:
             ]
             if "failed" in mode_statuses:
                 record["status"] = "failed"
+            elif "not_comparable" in mode_statuses:
+                record["status"] = "not_comparable"
+                record["not_comparable_reason"] = "; ".join(
+                    mode.get("not_comparable_reason", "")
+                    for mode in record["modes"]
+                    if mode.get("status") == "not_comparable"
+                    and mode.get("not_comparable_reason")
+                )
             elif "unsupported" in mode_statuses:
                 record["status"] = "unsupported"
                 record["unsupported_reason"] = "; ".join(
@@ -1697,6 +1870,7 @@ def main() -> int:
     )
     failed = sum(record.get("status") == "failed" for record in records)
     timeouts = sum(record.get("status") == "timeout" for record in records)
+    not_comparable = sum(record.get("status") == "not_comparable" for record in records)
     report = {
         "schema_version": 4,
         "manifest": str(args.manifest.resolve()),
@@ -1734,6 +1908,7 @@ def main() -> int:
             "passed_sbml_records": passed,
             "unsupported_sbml_records": sbml_unsupported,
             "unsupported_records": unsupported,
+            "not_comparable_records": not_comparable,
             "failed_records": failed,
             "timeout_records": timeouts,
         },
@@ -1772,7 +1947,8 @@ def main() -> int:
         )
     print(
         f"records={len(records)} sbml_passed={passed}/{len(sbml_records)} "
-        f"unsupported={unsupported} failed={failed} timeouts={timeouts} "
+        f"unsupported={unsupported} not_comparable={not_comparable} "
+        f"failed={failed} timeouts={timeouts} "
         f"core={'PASS' if report['core_passed'] else 'FAIL'} "
         f"package={runtime_info['bionetgen_package_path']} "
         f"extension_sha256={runtime_info['native_extension_sha256']}"

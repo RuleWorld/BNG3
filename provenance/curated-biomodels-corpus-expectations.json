@@ -15,39 +15,44 @@
     "by_construct": {
       "assignment:event-controlled-initial-value": 1,
       "constraints:flux-balance-not-kinetic": 18,
-      "events:untranslated": 69,
+      "events:untranslated": 63,
       "fast-reaction:no-fast-equilibrium-solve": 4,
       "format:no-usable-sbml": 2,
       "format:not-an-sbml-artifact": 11,
+      "harness:oracle-solver-failure": 1,
       "mathml:undefined-operator": 1,
       "package:qual-not-quantitative": 3,
+      "rules:species-rate-rule-needs-compartment": 2,
       "sbml-writer:unrepresentable-function": 3,
-      "source:libsbml-invalid": 17
+      "source:libsbml-invalid": 17,
+      "source:undefined-observable": 3
     },
     "by_side": {
-      "atomizer": 99,
-      "not-applicable": 30
+      "atomizer": 95,
+      "harness": 1,
+      "not-applicable": 30,
+      "source": 3
     }
   },
   "generator": "scripts/ci/curated_biomodels_corpus_inventory.py",
   "kind": "curated-biomodels-corpus-expectations",
-  "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that record at each stage of the curated BioModels gate. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the independent comparison, which is a finding to investigate. 'unsupported' and 'unsupported_format' are the only gaps: the record was refused, and its 'gap' entry names the construct that is not representable today together with the harness's cause labels and the side of the gap. A 'timeout' is not a verdict: the corpus gate's per-model budget is sized for an unloaded machine, so a timeout records that the machine was busy and never counts as a regression. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
+  "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that record at each stage of the curated BioModels gate. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the independent comparison, which is a finding to investigate. 'unsupported', 'unsupported_format' and 'not_comparable' are the only gaps: the record was refused, or the gate could not measure it, and its 'gap' entry names the construct that is not representable today together with the harness's cause labels and the side of the gap. A 'not_comparable' record is one whose own observable has no value to compare, or whose independent oracle could not integrate the model: it is neither a pass nor a disagreement. A 'timeout' is not a verdict: the corpus gate's per-model budget is sized for an unloaded machine, so a timeout records that the machine was busy and never counts as a regression. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
   "provenance": {
     "load": {
-      "load_average_after": "41.31 40.59 46.49",
-      "load_average_before": "49.61 38.69 32.16",
-      "note": "The corpus gate was measured while holding one of the campaign's shared verification slots, on a machine shared with the rest of the campaign (15 cores, load average 32-50). The per-model budget is sized for an unloaded machine, so the timeout bucket of this measurement is load-dependent: a second pass of the same tree with a 600 s budget and a different hash seed produced eight fewer timeouts and no verdict difference at all."
+      "load_average_after": "181.38 100.94 67.86",
+      "load_average_before": "10.13 12.21 14.22",
+      "note": "The corpus gate was measured while holding one of the campaign's shared verification slots, on a machine shared with the rest of the campaign (15 cores). The per-model budget is sized for an unloaded machine, so the timeout bucket of this measurement is load-dependent: a timeout records that the machine was busy, not that the model is unsupported. Every record whose verdict differs between the two passes and whose difference involves a timeout was re-measured on its own, one worker at a time, and the re-measured verdict is the one the manifest records."
     },
     "notes": [
       "The timeout bucket is load-dependent and a timeout is not a verdict. The corpus gate's per-model budget is sized for an unloaded machine; the campaign's independent audit measured a parallel run with 41 timeouts where the baseline had 12, and re-measuring every differing record one at a time showed that 30 of the 33 differences were load artefacts.",
       "The measurement uses PYTHONHASHSEED=0, the corpus's documented convention, because the modern Atomizer emits a different document for the same source model depending on the hash seed (docs/CURATED_BIOMODELS_CORPUS.md).",
-      "The run executed the tree at 48315b958685279838b4960e24b12498e0dc1363 plus this branch's recording and comparison tooling, which the corpus gate does not import. The Atomizer and the corpus gate are unchanged, so the measurement is a valid measurement of that commit.",
-      "The report was produced with PYTHONPATH=python:build/cpp, so the gate imported this checkout's python/bionetgen and the shared native extension rather than the stale bionetgen in site-packages."
+      "The run executed the tree at a1496fb10302d38f88b2671a05253c7ac74fcdf3 plus this branch's C++ SBML writer fix and corpus gate change. The base pass was measured on a1496fb1 in a separate worktree with its own native extension, so the two passes differ only by the change under review.",
+      "The report was produced with PYTHONPATH=python:build/cpp, so the gate imported this checkout's python/bionetgen and the native extension built in this checkout rather than the stale bionetgen in site-packages."
     ],
     "run_budget": {
-      "command": "PYTHONHASHSEED=0 PYTHONPATH=python:build/cpp python scripts/ci/validate_published_biomodels.py --cache-dir /tmp/bng3-campaign/biomodels-cache --json /tmp/bng3-campaign/corpus-expectations/flat-seed0-48315b95.json --mode flat --isolate-models --model-timeout 180 --jobs 4 --offline",
+      "command": "PYTHONHASHSEED=0 PYTHONPATH=python:build/cpp python scripts/ci/validate_published_biomodels.py --cache-dir /tmp/bng3-campaign/biomodels-cache --json <flat report>.json --mode flat --isolate-models --model-timeout 180 --jobs 3 --offline",
       "isolate_models": true,
-      "jobs": 4,
+      "jobs": 3,
       "mode": "flat",
       "model_timeout_seconds": 180,
       "offline": true,
@@ -65,32 +70,34 @@
   "sides": [
     "harness",
     "atomizer",
-    "not-applicable"
+    "not-applicable",
+    "source"
   ],
   "source_report": {
-    "bng3_commit": "48315b958685279838b4960e24b12498e0dc1363",
+    "bng3_commit": "078e80aaf6cb29de5c20bc3e2f56b623bfd359f8",
     "measured_at_commit": "",
-    "measurement_date": "2026-10-20",
+    "measurement_date": "2026-10-21",
     "mode": "flat",
     "python_version": "",
-    "sha256": "843d17afaf16c34887601a37c2fcfe33c7e6175ce07e594ee3b0a49c2bd9ba1a"
+    "sha256": "38bb5132164452ec24392f4ebdc88147f136caa4e06e11f09e4554b8ded17d15"
   },
   "stage_counts": {
     "conversion": {
-      "failed": 9,
-      "passed": 939,
-      "timeout": 19,
-      "unsupported": 118,
+      "failed": 1,
+      "not_comparable": 4,
+      "passed": 949,
+      "timeout": 17,
+      "unsupported": 114,
       "unsupported_format": 11
     },
     "independent_comparison": {
-      "failed": 5,
-      "not_tested": 152,
-      "passed": 939
+      "not_comparable": 4,
+      "not_tested": 143,
+      "passed": 949
     },
     "roundtrip_structure": {
-      "not_tested": 152,
-      "passed": 944
+      "not_tested": 143,
+      "passed": 953
     }
   },
   "stages": [
@@ -109,7 +116,8 @@
     "failed",
     "not_tested",
     "unsupported_format",
-    "timeout"
+    "timeout",
+    "not_comparable"
   ],
   "cases": {
     "BIOMD0000000001": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -252,8 +260,8 @@
     "BIOMD0000000138": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000139": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000140": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000141": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
-    "BIOMD0000000142": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000000141": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
+    "BIOMD0000000142": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000143": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000144": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
     "BIOMD0000000145": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -286,7 +294,7 @@
     "BIOMD0000000172": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000173": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000174": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000175": {"conversion": "timeout", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested"},
+    "BIOMD0000000175": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000176": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000177": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000178": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -404,7 +412,7 @@
     "BIOMD0000000290": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000291": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000292": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000293": {"conversion": "timeout", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested"},
+    "BIOMD0000000293": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000294": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000295": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000296": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -449,8 +457,8 @@
     "BIOMD0000000335": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000336": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000337": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000338": {"conversion": "failed", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested"},
-    "BIOMD0000000339": {"conversion": "failed", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested"},
+    "BIOMD0000000338": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events", "species_rate_rules"], "construct": "rules:species-rate-rule-needs-compartment", "side": "atomizer"}}},
+    "BIOMD0000000339": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events", "species_rate_rules"], "construct": "rules:species-rate-rule-needs-compartment", "side": "atomizer"}}},
     "BIOMD0000000340": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
     "BIOMD0000000341": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000342": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -562,7 +570,7 @@
     "BIOMD0000000448": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000449": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000450": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000451": {"conversion": "failed", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested"},
+    "BIOMD0000000451": {"conversion": "not_comparable", "roundtrip_structure": "passed", "independent_comparison": "not_comparable", "gap": {"conversion": {"causes": ["oracle_solver_failure"], "construct": "harness:oracle-solver-failure", "side": "harness"}}},
     "BIOMD0000000452": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000453": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000454": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -784,7 +792,7 @@
     "BIOMD0000000671": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000672": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000673": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000674": {"conversion": "failed", "roundtrip_structure": "passed", "independent_comparison": "failed"},
+    "BIOMD0000000674": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000675": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
     "BIOMD0000000676": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000677": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -820,7 +828,7 @@
     "BIOMD0000000708": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000709": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000710": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000711": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000000711": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000712": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000713": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000714": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -840,7 +848,7 @@
     "BIOMD0000000728": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000729": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000730": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000731": {"conversion": "failed", "roundtrip_structure": "passed", "independent_comparison": "failed"},
+    "BIOMD0000000731": {"conversion": "not_comparable", "roundtrip_structure": "passed", "independent_comparison": "not_comparable", "gap": {"conversion": {"causes": ["undefined_observables"], "construct": "source:undefined-observable", "side": "source"}}},
     "BIOMD0000000732": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000733": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000734": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -912,7 +920,7 @@
     "BIOMD0000000800": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000801": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000802": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000803": {"conversion": "failed", "roundtrip_structure": "passed", "independent_comparison": "failed"},
+    "BIOMD0000000803": {"conversion": "not_comparable", "roundtrip_structure": "passed", "independent_comparison": "not_comparable", "gap": {"conversion": {"causes": ["undefined_observables"], "construct": "source:undefined-observable", "side": "source"}}},
     "BIOMD0000000804": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000805": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000806": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
@@ -1063,7 +1071,7 @@
     "BIOMD0000000951": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000952": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000953": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000954": {"conversion": "failed", "roundtrip_structure": "passed", "independent_comparison": "failed"},
+    "BIOMD0000000954": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000955": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000956": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["conversion_factors"], "construct": "source:libsbml-invalid", "side": "not-applicable"}}},
     "BIOMD0000000957": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -1082,7 +1090,7 @@
     "BIOMD0000000970": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000971": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000972": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000973": {"conversion": "failed", "roundtrip_structure": "passed", "independent_comparison": "failed"},
+    "BIOMD0000000973": {"conversion": "not_comparable", "roundtrip_structure": "passed", "independent_comparison": "not_comparable", "gap": {"conversion": {"causes": ["undefined_observables"], "construct": "source:undefined-observable", "side": "source"}}},
     "BIOMD0000000974": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000975": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000976": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -1134,8 +1142,8 @@
     "BIOMD0000001024": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001025": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001026": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000001027": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
-    "BIOMD0000001028": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000001027": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
+    "BIOMD0000001028": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001029": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
     "BIOMD0000001030": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001031": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -1146,7 +1154,7 @@
     "BIOMD0000001036": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001037": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001038": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000001039": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000001039": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001040": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001041": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000001042": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},

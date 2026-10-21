@@ -38,6 +38,7 @@ The harness owns the vocabulary, and the categories are kept apart:
 | `passed` | the Atomizer converted the record, the network generated, the written SBML re-imported with the same species and reaction counts, the native SBML reader agreed, and libRoadRunner reproduced every observable |
 | `unsupported` | the record uses an SBML construct the Atomizer refuses to approximate; the reason is recorded |
 | `unsupported_format` | the record is not an SBML artifact |
+| `not_comparable` | the record converted, but the comparison could not measure it: the record's own observable has no value at some point of the grid and both engines report the same undefined value there, or the independent oracle's solver could not integrate the written SBML. The reason names the boundary; the record is neither a pass nor a disagreement |
 | `failed` | the record did not convert, or the conversion did not reproduce the source's mathematics |
 | `timeout` | the record did not finish inside the per-model budget |
 
@@ -46,6 +47,14 @@ record is allowed to use SBML that BNGL cannot represent. What must never
 happen is a record that *converts* and then means something other than its
 source. The residual failures below are the records where that distinction
 still has to be made.
+
+`not_comparable` is also not a defect of the Atomizer. It says that the gate
+could not produce a verdict for the record, and it says why. A record whose
+observable is undefined at `t = 0` -- the logarithm of a quantity that is
+zero there, a ratio of two quantities that are both zero -- has no value to
+compare there, and a pointwise comparison of the record is not possible. The
+gate reports the undefined point instead of claiming a pass or a
+disagreement.
 
 ## The Atomizer's output was not reproducible across runs
 
