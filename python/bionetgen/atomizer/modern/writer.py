@@ -4103,6 +4103,21 @@ def _conversion_factor_for_reaction(
     return None
 
 
+def _has_package_warning(model: SBMLModel, package: str) -> bool:
+    """Return whether the model carries a diagnostic for an SBML package.
+
+    The parser names a package diagnostic ``package:<name>``; comparing
+    against the bare package name never matches, so a guard written against
+    the bare name would never fire.
+    """
+
+    category = f"package:{package}"
+    return any(
+        str(warning.get("category") or "") == category
+        for warning in model.import_warnings
+    )
+
+
 def write_parameters(
     model: SBMLModel,
     assignment_variables: Optional[Set[str]] = None,
@@ -5750,9 +5765,7 @@ def write_reaction_rules(
                 ),
                 None,
             )
-            has_fbc = any(
-                warning.get("category") == "fbc" for warning in model.import_warnings
-            )
+            has_fbc = _has_package_warning(model, "fbc")
             if (
                 not_lowerable is not None
                 or reaction.fast
@@ -5923,9 +5936,7 @@ def write_reaction_rules(
             reaction.fast
             or model.multi_executable
             or reaction.multi_intra_species
-            or any(
-                warning.get("category") == "fbc" for warning in model.import_warnings
-            )
+            or _has_package_warning(model, "fbc")
         ):
             _record_import_warning(
                 model,
@@ -10065,10 +10076,7 @@ def generate_bngl(
                 or species.constant
                 or species.boundary_condition
                 or any(rule.type == "algebraic" for rule in model.rules)
-                or any(
-                    warning.get("category") == "fbc"
-                    for warning in model.import_warnings
-                )
+                or _has_package_warning(model, "fbc")
                 or any(
                     standardize_name(str(assignment.symbol))
                     == standardize_name(species_id)
