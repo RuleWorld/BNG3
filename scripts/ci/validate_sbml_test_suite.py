@@ -44,10 +44,16 @@ import numpy as np
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.ci.deterministic_environment import (
+    STARTUP_HASH_SEED,
+    ensure_fixed_hash_seed,
+    fixed_hash_seed_environment,
+)
 from scripts.ci.imported_package_guard import (
     ForeignPackageError,
     package_source_digest,
     verify_imported_package,
+    verify_native_extension,
 )
 from scripts.ci.sbml_reference_actions import (
     ActionGridError,
@@ -3281,6 +3287,10 @@ def _run_isolated_case(
             capture_output=True,
             check=False,
             timeout=args.case_timeout,
+            # A fresh interpreter randomises its hash seed, and the Atomizer
+            # emits part of its output in set-iteration order.  Pinning the
+            # seed makes the generated text the same on every run.
+            env=fixed_hash_seed_environment(),
         )
         stdout, stderr = completed.stdout, completed.stderr
         if not worker_json.exists():
@@ -4043,8 +4053,19 @@ def main() -> int:
         raise SystemExit(
             "BNG3 C++ extension is unavailable; set PYTHONPATH=python:build/cpp"
         ) from exc
+    try:
+        extension_trace = verify_native_extension(
+            Path(__file__).resolve().parents[2],
+            extension_file=cpp.__file__,
+            package_trace=package_trace,
+        )
+    except ForeignPackageError as exc:
+        print(f"native extension preflight failed: {exc}", file=sys.stderr)
+        return 1
     runtime_info = _runtime_provenance(cpp)
     runtime_info["imported_package_trace"] = package_trace
+    runtime_info["imported_extension_trace"] = extension_trace
+    runtime_info["python_hash_seed"] = STARTUP_HASH_SEED
 
     isolation_mode = "none"
     if args.isolate_cases and not args.worker:
@@ -4266,11 +4287,18 @@ def main() -> int:
         f"official_unsupported={official_counts['unsupported']} "
         f"official_failed={official_counts['failed']} "
         f"official_timeouts={official_counts['timed-out']} "
-        f"core={'PASS' if report['core_passed'] else 'FAIL'}"
+        f"core={'PASS' if report['core_passed'] else 'FAIL'} "
+        f"package={runtime_info['bionetgen_package_path']} "
+        f"extension_sha256={runtime_info['native_extension_sha256']}"
     )
     gate = "selected_surface_passed" if args.gate_selected_cases else "core_passed"
     return 0 if report[gate] else 1
 
 
 if __name__ == "__main__":
+    # The interpreter reads its hash seed at start-up, and a forked worker
+    # inherits the parent's seed, so the seed has to be fixed before the
+    # harness does any work.  This re-executes the harness once when the
+    # interpreter it was started in did not have the fixed seed.
+    ensure_fixed_hash_seed()
     raise SystemExit(main())

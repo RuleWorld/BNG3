@@ -32,10 +32,16 @@ import numpy as np
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.ci.deterministic_environment import (
+    STARTUP_HASH_SEED,
+    ensure_fixed_hash_seed,
+    fixed_hash_seed_environment,
+)
 from scripts.ci.imported_package_guard import (
     ForeignPackageError,
     package_source_digest,
     verify_imported_package,
+    verify_native_extension,
 )
 
 USER_AGENT = "BNG3-curated-BioModels-roundtrip-validator/2"
@@ -67,16 +73,24 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _runtime_provenance(package_trace: dict[str, Any]) -> dict[str, Any]:
-    """Record which Python package the corpus gate measured."""
+def _runtime_provenance(
+    package_trace: dict[str, Any], extension_trace: dict[str, Any]
+) -> dict[str, Any]:
+    """Record which Python package and native extension the gate measured."""
 
     import bionetgen
+    import bionetgen._bionetgen_cpp as native
 
     package_file = Path(bionetgen.__file__).resolve()
+    extension_file = Path(native.__file__).resolve()
     return {
         "bionetgen_package_path": str(package_file),
         "python_package_source_sha256": package_source_digest(package_file.parent),
         "imported_package_trace": package_trace,
+        "native_extension_path": str(extension_file),
+        "native_extension_sha256": _sha256(extension_file),
+        "imported_extension_trace": extension_trace,
+        "python_hash_seed": STARTUP_HASH_SEED,
     }
 
 
@@ -1334,6 +1348,10 @@ def _run_isolated_model(
             capture_output=True,
             check=False,
             timeout=args.model_timeout,
+            # A fresh interpreter randomises its hash seed, and the Atomizer
+            # emits part of its output in set-iteration order.  Pinning the
+            # seed makes the generated text the same on every run.
+            env=fixed_hash_seed_environment(),
         )
         if not worker_json.exists():
             raise RuntimeError(
@@ -1462,6 +1480,16 @@ def main() -> int:
         raise SystemExit(
             "BNG3 C++ extension is unavailable; set PYTHONPATH=python:build/cpp"
         ) from exc
+    try:
+        extension_trace = verify_native_extension(
+            Path(__file__).resolve().parents[2],
+            extension_file=cpp.__file__,
+            package_trace=package_trace,
+        )
+    except ForeignPackageError as exc:
+        print(f"native extension preflight failed: {exc}", file=sys.stderr)
+        return 1
+    runtime_info = _runtime_provenance(package_trace, extension_trace)
 
     records: list[dict[str, Any]] = []
     modes = (False, True) if args.mode == "both" else (args.mode == "atomized",)
@@ -1641,7 +1669,7 @@ def main() -> int:
         "schema_version": 4,
         "manifest": str(args.manifest.resolve()),
         "cache_dir": str(args.cache_dir.resolve()),
-        "runtime_provenance": _runtime_provenance(package_trace),
+        "runtime_provenance": runtime_info,
         "writer_sbml_version": "L3V2",
         "inventory": inventory,
         "completeness": completeness,
@@ -1713,10 +1741,16 @@ def main() -> int:
     print(
         f"records={len(records)} sbml_passed={passed}/{len(sbml_records)} "
         f"unsupported={unsupported} failed={failed} timeouts={timeouts} "
-        f"core={'PASS' if report['core_passed'] else 'FAIL'}"
+        f"core={'PASS' if report['core_passed'] else 'FAIL'} "
+        f"package={runtime_info['bionetgen_package_path']} "
+        f"extension_sha256={runtime_info['native_extension_sha256']}"
     )
     return 0 if report["core_passed"] else 1
 
 
 if __name__ == "__main__":
+    # The interpreter reads its hash seed at start-up, so the seed has to be
+    # fixed before the harness does any work.  This re-executes the harness
+    # once when the interpreter it was started in did not have the fixed seed.
+    ensure_fixed_hash_seed()
     raise SystemExit(main())

@@ -40,6 +40,9 @@ TRACE_SAME_CHECKOUT = "same-checkout"
 TRACE_SAME_SOURCE = "same-source"
 TRACE_SIBLING_CHECKOUT = "sibling-checkout"
 TRACE_NOT_IMPORTABLE = "not-importable"
+TRACE_SAME_CHECKOUT_BUILD = "same-checkout-build"
+TRACE_INSTALLED_DISTRIBUTION = "installed-distribution"
+TRACE_SIBLING_CHECKOUT_BUILD = "sibling-checkout-build"
 
 
 class ForeignPackageError(RuntimeError):
@@ -141,6 +144,14 @@ def _sibling_checkout_root(package_dir: Path) -> Path | None:
     return package_dir.parent.parent
 
 
+def _build_tree_root(directory: Path, leaf: str) -> Path | None:
+    """Return the checkout root of a ``<root>/<leaf>`` build tree."""
+
+    if directory.name != leaf:
+        return None
+    return directory.parent.parent
+
+
 def _refusal_message(
     imported_file: Path,
     imported_digest: str | None,
@@ -218,6 +229,80 @@ def verify_imported_package(
 
     raise ForeignPackageError(
         _refusal_message(imported_file, imported_digest, expected_dir, expected_digest)
+    )
+
+
+def _extension_refusal_message(
+    extension: Path, extension_dir: Path, build_tree: Path
+) -> str:
+    return (
+        "the imported native extension is not this checkout's build\n"
+        f"  imported: {extension}\n"
+        f"  expected: {build_tree}/_bionetgen_cpp* (this checkout's build tree), "
+        "or the extension installed beside the imported package, or a sibling "
+        "checkout's build tree\n"
+        "Measuring now would report a verdict about a native build this checkout "
+        "did not produce. Build this checkout's extension "
+        "(cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && "
+        "cmake --build build) and run the harness with "
+        "PYTHONPATH=python:build/cpp."
+    )
+
+
+def verify_native_extension(
+    repository_root: Path | str,
+    *,
+    extension_file: Path | str,
+    package_trace: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the trace of the imported native extension, or refuse to measure.
+
+    The extension is a build artefact rather than source, so it is identified
+    by the tree that built it:
+
+    ``same-checkout-build``
+        the extension is this checkout's own ``build/cpp`` tree;
+    ``installed-distribution``
+        the extension sits beside the imported Python package, in the
+        distribution that package was installed from;
+    ``sibling-checkout-build``
+        the extension is another working tree's ``build/cpp`` tree, which is
+        how the campaign shares one native extension across worktrees.
+    """
+
+    root = Path(repository_root).resolve()
+    extension = Path(extension_file).resolve()
+    extension_dir = extension.parent
+    build_tree = (root / "build" / "cpp").resolve()
+    trace = {
+        "extension_file": str(extension),
+        "extension_dir": str(extension_dir),
+        "expected_extension_dir": str(build_tree),
+    }
+
+    if extension_dir == build_tree:
+        return {**trace, "rule": TRACE_SAME_CHECKOUT_BUILD}
+
+    package_file = package_trace.get("package_file")
+    package_rule = package_trace.get("rule")
+    if package_file and package_rule in {TRACE_SAME_CHECKOUT, TRACE_SAME_SOURCE}:
+        if extension_dir == Path(package_file).resolve().parent:
+            return {**trace, "rule": TRACE_INSTALLED_DISTRIBUTION}
+
+    sibling_root = _build_tree_root(extension_dir, "cpp")
+    if (
+        sibling_root is not None
+        and sibling_root != root
+        and _same_repository(sibling_root, root)
+    ):
+        return {
+            **trace,
+            "rule": TRACE_SIBLING_CHECKOUT_BUILD,
+            "sibling_checkout_root": str(sibling_root),
+        }
+
+    raise ForeignPackageError(
+        _extension_refusal_message(extension, extension_dir, build_tree)
     )
 
 
