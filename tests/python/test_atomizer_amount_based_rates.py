@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from bionetgen.atomizer.modern import Atomizer
 
 
@@ -425,3 +427,104 @@ def test_multiplicative_compartment_factor_reproduces_the_extent_rate_reading():
     for time, amount in zip(simulation.time, amounts):
         expected = initial / (1 + 2 * volume * constant * initial * float(time))
         assert math.isclose(amount, expected, rel_tol=1e-5), (time, amount, expected)
+
+
+def _multiplicative_model(order: int) -> str:
+    """A reaction with ``order`` copies of A and a law that multiplies by V."""
+
+    factors = "".join("<ci>A</ci>" for _ in range(order))
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="multiplicative_compartment_{order}">
+        <listOfCompartments>
+          <compartment id="cell" spatialDimensions="3" size="10" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cell" initialAmount="2"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="D" compartment="cell" initialAmount="0"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" value="0.4" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="dimerize" reversible="false">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="{order}" constant="true"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="D" stoichiometry="1" constant="true"/>
+            </listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/>
+                  <ci>cell</ci>
+                  <apply><times/><ci>k</ci>{factors}</apply>
+                </apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+
+
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_multiplicative_compartment_factor_scales_with_the_reactant_multiplicity(
+    order,
+):
+    """The multiplicative form's volume factor is ``V**m`` for ``m`` reactants.
+
+    A law that multiplies by the compartment states the opposite volume
+    dependence of one that divides by it, so its extent rate scales with the
+    compartment size: the BNGL constant needs ``V**m`` for a law with ``m``
+    reactant factors, where a law that does not name the compartment needs
+    ``V**(m-1)``.  The exponent is therefore the reactant multiplicity
+    itself, and the emitted rate law has to carry it.
+    """
+
+    import numpy as np
+
+    from bionetgen import BioNetGenModel
+    import bionetgen._bionetgen_cpp as cpp
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _multiplicative_model(order)
+    )
+    assert result.success, result.error
+    rule = next(
+        line.strip()
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("dimerize:")
+    )
+    assert f"(__compartment_cell__)**{order}" in rule, rule
+
+    simulation = BioNetGenModel(cpp.parse_string(result.bngl)).simulate(
+        method="ode",
+        t_start=0,
+        t_end=1,
+        n_steps=0,
+        sample_times=[0.0, 0.5, 1.0],
+        rtol=1e-10,
+        atol=1e-14,
+    )
+    amounts = [float(value) for value in simulation.observables["A_amt"]]
+
+    # SBML's extent-rate reading: the law's value is the extent rate
+    # ``v = V * k * n**m`` and the amount changes by ``-m * v``, so
+    # ``dA/dt = -m * V * k * A**m``.
+    volume, constant, initial = 10.0, 0.4, 2.0
+    rate = order * volume * constant
+    for time, amount in zip(simulation.time, amounts):
+        if order == 1:
+            expected = initial * math.exp(-rate * float(time))
+        else:
+            expected = initial * (
+                1 + (order - 1) * rate * initial ** (order - 1) * float(time)
+            ) ** (-1.0 / (order - 1))
+        assert math.isclose(amount, expected, rel_tol=1e-5), (
+            order,
+            time,
+            amount,
+            expected,
+        )

@@ -1274,9 +1274,7 @@ def _fast_reaction_rule(level: Optional[int], version: Optional[int]) -> str:
             f"SBML Level 2 Sec. {section} asks for a pseudo steady-state "
             "approximation of such a reaction"
         )
-    return (
-        "SBML asks for a pseudo steady-state approximation of such a reaction"
-    )
+    return "SBML asks for a pseudo steady-state approximation of such a reaction"
 
 
 def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:

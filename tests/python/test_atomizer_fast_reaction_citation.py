@@ -56,7 +56,8 @@ def _document(level: int, version: int) -> str:
 def _fast_warning(level: int, version: int) -> dict:
     model = SBMLParser().parse(_document(level, version))
     warnings = [
-        warning for warning in model.import_warnings
+        warning
+        for warning in model.import_warnings
         if warning["category"] == "fastReaction"
     ]
     assert len(warnings) == 1, model.import_warnings
@@ -100,3 +101,24 @@ def test_fast_diagnostic_keeps_the_reported_reason_markers():
 
     assert "is marked fast" in warning["message"]
     assert "fast-equilibrium" in warning["message"]
+
+
+@pytest.mark.parametrize(
+    ("level", "version"),
+    [(3, 2), (3, 1), (2, 5), (2, 3), (1, 2)],
+)
+def test_the_level_dependent_text_does_not_change_the_classification(level, version):
+    """The level-aware message must not move a case between verdicts.
+
+    The harness classifies a case as ``unsupported`` when any import warning
+    has severity ``dropped`` or ``approximated`` (except ``category ==
+    "units"``).  The diagnostic's severity and category are therefore the
+    verdict, and only the message text may depend on the document's level.
+    """
+
+    warning = _fast_warning(level, version)
+
+    assert warning["category"] == "fastReaction"
+    assert warning["severity"] == "approximated"
+    assert warning["severity"] in {"dropped", "approximated"}
+    assert warning["count"] == 1
