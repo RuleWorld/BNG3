@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 SBML_NS = "{http://www.sbml.org/sbml/level3/version2/core}"
+MATHML_NS = "{http://www.w3.org/1998/Math/MathML}"
 
 REVERSIBLE_TOTAL_RATE = """begin parameters
     kf 1
@@ -111,8 +112,10 @@ def test_the_reverse_direction_of_a_total_rate_rule_carries_no_reactant_factor(
     assert reverse is not None, "the reverse reaction was not written"
     kinetic_law = reverse.find(SBML_NS + "kineticLaw")
     assert kinetic_law is not None
-    text = ET.tostring(kinetic_law, encoding="unicode")
-    assert f"<ci> {reactant_id} </ci>" not in text, (
+    referenced = {
+        (element.text or "").strip() for element in kinetic_law.iter(MATHML_NS + "ci")
+    }
+    assert reactant_id not in referenced, (
         "the reverse kinetic law carries an extra factor of the species the "
         "forward rule produced"
     )

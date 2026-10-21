@@ -628,6 +628,13 @@ def _harness_causes(module_name: str, reason: str) -> list[str]:
     unimportable harness yields no labels rather than an invented one.
     """
 
+    # The script runs as ``python scripts/ci/curated_biomodels_corpus_inventory.py``,
+    # which puts ``scripts/ci`` on the path rather than the repository root the
+    # harness is imported by.  The harness's taxonomy is the harness's to own,
+    # so the root goes on the path before the import is attempted.
+    root = str(Path(__file__).resolve().parents[2])
+    if root not in sys.path:
+        sys.path.insert(0, root)
     try:
         module = importlib.import_module(module_name)
     except Exception:
