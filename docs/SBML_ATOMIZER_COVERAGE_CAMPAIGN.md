@@ -5,7 +5,10 @@ robust SBML-to-BNGL converter, with **demonstrable** mathematical equivalence
 rather than merely successful conversion.
 
 This document records the campaign's measurement baseline, the failure
-clusters derived from it, and the state of each workstream.
+clusters derived from it, and the state of each workstream. The scope record
+of what the Atomizer refuses, and why, is
+[`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md); it is generated from the
+same expectation manifest this document's tables are generated from.
 
 Every result table in this document is **generated** from the harness report it
 names, by `scripts/ci/sbml_campaign_tables.py`; the exact command is in
