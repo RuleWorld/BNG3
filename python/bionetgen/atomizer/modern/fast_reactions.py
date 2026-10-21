@@ -31,7 +31,7 @@ import math
 import re
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .types import SBMLModel, SBMLReaction, SBMLSpecies, standardize_name
 
