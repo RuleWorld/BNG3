@@ -1053,9 +1053,16 @@ def test_playground_parser_reports_lossy_mathml_constants_and_operators():
         warning for warning in model.import_warnings if warning.category == "mathml"
     ]
 
+    # The source document is valid SBML: validation rule 10202 permits the
+    # MathML <infinity> constant.  The limitation is BNG3's, so the diagnostic
+    # says so rather than reading like a malformed input.
     assert {(warning.message, warning.severity) for warning in warnings} == {
         (
-            "<infinity> constant encountered in math; emitted as a large finite value.",
+            "<infinity> constant encountered in math; the source is valid SBML "
+            "(validation rule 10202 permits <infinity>), but an infinite value "
+            "cannot be represented in BNG3's finite-double model, so it is "
+            "emitted as a large finite value and the model is not claimed to be "
+            "supported.",
             "approximated",
         ),
     }

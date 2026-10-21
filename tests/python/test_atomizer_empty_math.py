@@ -389,3 +389,148 @@ def test_mathml_constants_remain_an_approximation(constant):
     assert len(warnings) == 1
     assert warnings[0]["severity"] == "approximated"
     assert _limitations(atomizer)
+
+
+# ---------------------------------------------------------------------------
+# The reason text has to keep the two sides of the boundary apart
+# ---------------------------------------------------------------------------
+
+
+def test_valid_source_limitation_says_so_for_the_mathml_constants():
+    """A reader must be able to tell "the source is malformed" from
+    "the source is fine and we cannot represent it"."""
+
+    for constant in ("infinity", "notanumber"):
+        sbml = _sbml(f"""
+            <listOfParameters>
+              <parameter id="p" value="0" constant="true"/>
+            </listOfParameters>
+            <listOfInitialAssignments>
+              <initialAssignment symbol="p">
+                <math xmlns="{SBML_NS}"><{constant}/></math>
+              </initialAssignment>
+            </listOfInitialAssignments>
+            """)
+        atomizer, _ = _atomize(sbml)
+        message = next(
+            warning["message"]
+            for warning in atomizer.model.import_warnings
+            if warning["category"] == "mathml"
+        )
+        assert "the source is valid SBML" in message, message
+        assert "validation rule 10202" in message, message
+        # The source is valid, so this is a converter limitation, not a
+        # source defect: the diagnostic must not read like a malformed input.
+        assert "does not conform" not in message, message
+        assert "not valid SBML" not in message, message
+
+
+def test_valid_source_limitation_says_so_for_a_rate_less_reaction():
+    """The same distinction for a reaction whose rate the source never gives."""
+
+    sbml = _sbml("""
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="1" constant="false"/>
+          <species id="S2" compartment="C" initialAmount="0" constant="false"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="J0" reversible="false">
+            <listOfReactants>
+              <speciesReference species="S1" stoichiometry="1"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="S2" stoichiometry="1"/>
+            </listOfProducts>
+          </reaction>
+        </listOfReactions>
+        """)
+    atomizer, _ = _atomize(sbml)
+
+    message = next(
+        warning["message"]
+        for warning in atomizer.model.import_warnings
+        if warning["category"] == "missingMath"
+    )
+    assert "the source document is valid SBML" in message, message
+    assert "does not conform" not in message, message
+    assert "not valid SBML" not in message, message
+
+
+# ---------------------------------------------------------------------------
+# The campaign's coverage inventory classifies a gap by matching its reason
+# text against these needles.  A reworded diagnostic that stops matching would
+# silently change the campaign's construct taxonomy.
+# ---------------------------------------------------------------------------
+
+
+def _reason_for_needle(needle: str) -> str:
+    if needle == "no mathml expression":
+        sbml = _sbml("""
+            <listOfParameters>
+              <parameter id="p" value="3" constant="true"/>
+            </listOfParameters>
+            <listOfInitialAssignments>
+              <initialAssignment symbol="p"/>
+            </listOfInitialAssignments>
+            """)
+        category = "missingMath"
+    elif needle == "have no mathml kinetic law":
+        sbml = _sbml("""
+            <listOfCompartments>
+              <compartment id="C" size="1" constant="true"/>
+            </listOfCompartments>
+            <listOfSpecies>
+              <species id="S1" compartment="C" initialAmount="1" constant="false"/>
+              <species id="S2" compartment="C" initialAmount="0" constant="false"/>
+            </listOfSpecies>
+            <listOfReactions>
+              <reaction id="J0" reversible="false">
+                <listOfReactants>
+                  <speciesReference species="S1" stoichiometry="1"/>
+                </listOfReactants>
+                <listOfProducts>
+                  <speciesReference species="S2" stoichiometry="1"/>
+                </listOfProducts>
+              </reaction>
+            </listOfReactions>
+            """)
+        category = "missingMath"
+    else:
+        sbml = _sbml(f"""
+            <listOfParameters>
+              <parameter id="p" value="0" constant="true"/>
+            </listOfParameters>
+            <listOfInitialAssignments>
+              <initialAssignment symbol="p">
+                <math xmlns="{SBML_NS}"><{needle}/></math>
+              </initialAssignment>
+            </listOfInitialAssignments>
+            """)
+        category = "mathml"
+
+    atomizer, _ = _atomize(sbml)
+    return next(
+        warning["message"]
+        for warning in atomizer.model.import_warnings
+        if warning["category"] == category
+    )
+
+
+@pytest.mark.parametrize(
+    "needle",
+    [
+        "no mathml expression",
+        "have no mathml kinetic law",
+        "infinity",
+        "notanumber",
+    ],
+)
+def test_reason_text_keeps_the_inventory_needles(needle):
+    """``scripts/ci/sbml_campaign_inventory.py`` maps a reason to a construct
+    by matching these needles, so a reworded diagnostic must keep them."""
+
+    message = _reason_for_needle(needle)
+    assert needle in message.lower(), message

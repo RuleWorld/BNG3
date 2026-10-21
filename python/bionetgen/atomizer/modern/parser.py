@@ -2940,11 +2940,19 @@ class SBMLParser:
                         )
                 elif tag == "infinity":
                     add(
-                        "<infinity> constant encountered in math; emitted as a large finite value."
+                        "<infinity> constant encountered in math; the source is "
+                        "valid SBML (validation rule 10202 permits <infinity>), "
+                        "but an infinite value cannot be represented in BNG3's "
+                        "finite-double model, so it is emitted as a large finite "
+                        "value and the model is not claimed to be supported."
                     )
                 elif tag == "notanumber":
                     add(
-                        "<notanumber> constant encountered in math; cannot be represented."
+                        "<notanumber> constant encountered in math; the source is "
+                        "valid SBML (validation rule 10202 permits "
+                        "<notanumber>), but a not-a-number value cannot be "
+                        "represented in BNG3's finite-double model, so the model "
+                        "is not claimed to be supported."
                     )
                 elif tag == "logbase":
                     if _mathml_to_formula(element).strip() not in _DECIMAL_LOG_BASES:
@@ -4507,12 +4515,12 @@ class SBMLParser:
                     "category": "missingMath",
                     "message": (
                         f"{len(missing_kinetic_law)} reaction(s) have no MathML "
-                        f"kinetic law ({listed}); SBML Level 3 Version 2 Core "
-                        "Sec. 4.11.1 leaves the rate of such a reaction "
-                        "undefined and states that a simulator's choice is not "
-                        "standardized, so each is emitted with rate 0 (the "
-                        "'effective rate is zero' reading) and the model is not "
-                        "claimed to be supported."
+                        f"kinetic law ({listed}); the source document is valid "
+                        "SBML, but SBML Level 3 Version 2 Core Sec. 4.11.1 leaves "
+                        "the rate of such a reaction undefined and states that a "
+                        "simulator's choice is not standardized, so each is "
+                        "emitted with rate 0 (the 'effective rate is zero' "
+                        "reading) and the model is not claimed to be supported."
                     ),
                     "count": len(missing_kinetic_law),
                     "severity": "dropped",
