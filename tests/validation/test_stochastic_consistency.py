@@ -264,8 +264,9 @@ def mini_suite(tmp_path_factory) -> Path:
         results=_csv(_decay_reference(0.5, 0.5, times)),
     )
 
-    # 10004: a boundary species.  The deterministic reading keeps it fixed;
-    # the direct SSA does not, so the two readings disagree.
+    # 10004: a boundary species.  The deterministic reading keeps it fixed, so
+    # the stochastic reading has to keep it fixed too; the two readings must
+    # agree.
     _write_case(
         cases / "10004",
         "10004",
@@ -400,18 +401,32 @@ def test_fractional_population_is_not_comparable(sweep_report):
     assert "fractional" in record["reason"]
 
 
-def test_boundary_species_disagreement_is_reported(sweep_report):
-    """The direct SSA does not honour a constant (boundary) seed species.
+def test_boundary_species_is_honoured_by_both_readings(sweep_report):
+    """The direct SSA honours a constant (boundary) seed species.
 
-    The deterministic reading keeps the boundary species fixed and the
-    stochastic reading consumes it, so the case must be reported as an
-    inconsistency with the corresponding mechanism -- never as agreement.
+    A boundary species' amount is constant *by the model* (SBML L3V2 Core
+    Sec. 4.6.6: "a differential equation derived from the reaction
+    definitions should not be generated for the species"), so the
+    deterministic reading keeps it fixed and the stochastic reading has to keep
+    it fixed too: the ensemble mean must agree with the published reference
+    and with the converted model's own deterministic reading.
+
+    Before the fix the stochastic reading consumed the boundary species, so
+    this case was reported as an inconsistency with the
+    ``constant-species-not-honoured-by-the-ssa`` mechanism.  That mechanism is
+    gone and the case is consistent; the assertion is the campaign's form, so
+    it fails on the unfixed engine.
     """
 
     record = _case(sweep_report, "10004")
-    assert record["status"] == "inconsistent", record.get("reason")
-    assert "constant-species-not-honoured-by-the-ssa" in record["mechanisms"]
-    assert record["comparison"]["decisive_violations"] > 0
+    assert record["status"] == "consistent", record.get("reason")
+    assert record["comparison"]["decisive_violations"] == 0
+    assert record["comparison"]["deterministic_decisive_violations"] == 0
+    # The boundary species never moved, so its ensemble has no spread at all
+    # and its mean is the published value to the last bit.
+    boundary = record["comparison"]["variables"]["S1"]
+    assert boundary["max_abs_deviation"] == 0.0
+    assert boundary["max_abs_z"] == 0.0
 
 
 def test_no_case_is_reported_as_a_failure_outside_the_taxonomy(sweep_report):
