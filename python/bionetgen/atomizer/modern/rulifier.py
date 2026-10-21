@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass
-from functools import lru_cache
 from typing import Dict, List, Optional, Set, Tuple
 
 from .structures import Action, Rule, Species
@@ -287,19 +286,13 @@ def extract_parameters(rules: List[Rule]) -> Set[str]:
     return parameters
 
 
-# ⚡ Bolt: Cache dynamically generated regexes to avoid inline re.compile overhead
-@lru_cache(maxsize=1024)
-def _get_species_pattern(species: str) -> re.Pattern:
-    return re.compile(rf"\b{species}\b")
-
-
 def analyze_rate_law(rate: str, reactant_species: List[str]) -> Dict[str, object]:
     """Estimate reaction order and mass-action status from a rate expression."""
 
     remaining_rate = rate
     order = 0
     for species in reactant_species:
-        pattern = _get_species_pattern(species)
+        pattern = re.compile(rf"\b{species}\b")
         matches = pattern.findall(remaining_rate)
         if matches:
             order += len(matches)
