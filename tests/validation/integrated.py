@@ -118,6 +118,9 @@ def expected_contract_ids(
     include_jax_backend_measurement=True,
     include_api_surface=True,
     include_stochastic_parity=True,
+    include_nfsim_fixtures=True,
+    include_nfnext_boundary=True,
+    include_engine_routes=True,
     full=False,
 ):
     return [
@@ -957,6 +960,8 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--stochastic-parity-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -1014,6 +1019,14 @@ def main(argv=None):
         # Preserve the venv executable path: resolving its symlink selects the
         # base interpreter and loses isolation.
         setattr(args, name, Path(os.path.abspath(getattr(args, name))))
+    # The component-owned qualification binaries are derived from the build
+    # that produced the subject binary.  A missing binary is not a pass: the
+    # qualification that needs it reports an explicit untested route.
+    build_root = args.bng_cpp.resolve().parent.parent
+    args.nfnext_boundary_binary = (
+        build_root / "tests/architecture_contracts/bng3_nfnext_execution_boundary"
+    )
+    args.nfcore2_parity_binary = build_root / "tests/cpp/test_nfcore2_parity"
     if args.report_dir.exists() and any(args.report_dir.iterdir()):
         parser.error("report directory must be empty")
     args.report_dir.mkdir(parents=True, exist_ok=True)
@@ -1098,6 +1111,9 @@ def main(argv=None):
     qualification_selection["include_netrule_execution"] = not focused
     qualification_selection["include_jax_backend_measurement"] = not focused
     qualification_selection["include_stochastic_parity"] = not focused
+    qualification_selection["include_nfsim_fixtures"] = not focused
+    qualification_selection["include_nfnext_boundary"] = not focused
+    qualification_selection["include_engine_routes"] = not focused
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1135,6 +1151,12 @@ def main(argv=None):
             )
         if qualification_selection["include_api_surface"]:
             integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
+        if qualification_selection["include_nfsim_fixtures"]:
+            integrated_extensions.invoke("nfsim-fixtures", args, rows, env, run_stage)
+        if qualification_selection["include_nfnext_boundary"]:
+            integrated_extensions.invoke("nfnext-boundary", args, rows, env, run_stage)
+        if qualification_selection["include_engine_routes"]:
+            integrated_extensions.invoke("engine-routes", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1180,6 +1202,7 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "stochastic-parity": ["--stochastic-parity-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")
@@ -1273,6 +1296,16 @@ def main(argv=None):
                 ],
                 "api-surface": "tests/validation/api_surface.py",
                 "stochastic-parity": "tests/validation/stochastic_parity.py",
+                "nfsim-fixtures": "tests/validation/integrated_nfsim_fixtures.py",
+                "nfnext-boundary": [
+                    "tests/validation/integrated_nfnext_boundary.py",
+                    "tests/architecture_contracts/nfnext/test_execution_boundary.cpp",
+                ],
+                "engine-routes": [
+                    "tests/validation/integrated_engine_routes.py",
+                    "cpp/actions/ActionDispatch.cpp",
+                    "cpp/engine/HybridModelGenerator.cpp",
+                ],
             }[row["stage"]]
             row["source_locations"] = (
                 source_locations
@@ -1320,6 +1353,12 @@ def main(argv=None):
                 issues = [167]
             elif stage == "api-surface":
                 issues = [171]
+            elif stage == "nfsim-fixtures":
+                issues = [146]
+            elif stage == "nfnext-boundary":
+                issues = [148]
+            elif stage == "engine-routes":
+                issues = [149, 150]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -1399,6 +1438,9 @@ def main(argv=None):
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
+                ROOT / "tests/validation/integrated_nfsim_fixtures.py",
+                ROOT / "tests/validation/integrated_nfnext_boundary.py",
+                ROOT / "tests/validation/integrated_engine_routes.py",
                 ROOT / "tests/validation/export_format_tier.py",
                 ROOT / "tests/validation/netrule_execution.py",
                 ROOT / "tests/validation/bngsim_boundary.py",

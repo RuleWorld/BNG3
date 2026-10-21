@@ -743,7 +743,9 @@ def main():
             "jax-backend-measurement",
             "api-surface",
             "stochastic-parity",
-            "stochastic-parity",
+            "nfsim-fixtures",
+            "nfnext-boundary",
+            "engine-routes",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -758,6 +760,8 @@ def main():
     parser.add_argument("--ensemble-cases", type=int, default=48)
     parser.add_argument("--xml-out", type=Path)
     parser.add_argument("--bng-cpp", type=Path)
+    parser.add_argument("--nfnext-boundary-binary", type=Path)
+    parser.add_argument("--nfcore2-parity-binary", type=Path)
     args = parser.parse_args()
     consumer_operations = (
         "bngir-v01",
@@ -843,6 +847,9 @@ def main():
         "jax-backend-measurement",
         "api-surface",
         "stochastic-parity",
+        "nfsim-fixtures",
+        "nfnext-boundary",
+        "engine-routes",
     ):
         from tests.validation.integrated_extensions import run_worker
 

@@ -18,7 +18,10 @@ from . import (
     stochastic_parity,
     bngsim_boundary,
     integrated_consumers,
+    integrated_engine_routes,
     integrated_marginals,
+    integrated_nfnext_boundary,
+    integrated_nfsim_fixtures,
     integrated_protocol,
     export_format_tier,
     jax_backend_measurement,
@@ -41,6 +44,9 @@ OPERATIONS = (
     "jax-backend-measurement",
     "api-surface",
     "stochastic-parity",
+    "nfsim-fixtures",
+    "nfnext-boundary",
+    "engine-routes",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -51,12 +57,19 @@ FOCUS_FLAGS = {
     "graph-identity": "--graph-identity-only",
     "export-format-tier": "--export-format-tier-only",
     "jax-backend-measurement": "--jax-backend-measurement-only",
+    "stochastic-parity": "--stochastic-parity-only",
 }
 
 
 def check_ids(operation, case=None, *, full=False):
     if operation == "quantity-laws":
         return integrated_marginals.source_law_check_ids(full=full)
+    if operation == "nfsim-fixtures":
+        return integrated_nfsim_fixtures.check_ids()
+    if operation == "nfnext-boundary":
+        return integrated_nfnext_boundary.check_ids()
+    if operation == "engine-routes":
+        return integrated_engine_routes.check_ids()
     if operation == "bngsim-boundary":
         return bngsim_boundary.check_ids()
     if operation == "boundaries":
@@ -106,11 +119,20 @@ def expected_ids(
     include_jax_backend_measurement=True,
     include_api_surface=True,
     include_stochastic_parity=True,
+    include_nfsim_fixtures=True,
+    include_nfnext_boundary=True,
+    include_engine_routes=True,
     full=False,
 ):
     ids = []
     if include_quantity_laws:
         ids.extend(["campaign:quantity-laws", *check_ids("quantity-laws", full=full)])
+    if include_nfsim_fixtures:
+        ids.extend(["campaign:nfsim-fixtures", *check_ids("nfsim-fixtures")])
+    if include_nfnext_boundary:
+        ids.extend(["campaign:nfnext-boundary", *check_ids("nfnext-boundary")])
+    if include_engine_routes:
+        ids.extend(["campaign:engine-routes", *check_ids("engine-routes")])
     if include_bngsim_boundary:
         ids.extend(["campaign:bngsim-boundary", *check_ids("bngsim-boundary")])
     if include_boundaries:
@@ -146,6 +168,24 @@ def run_worker(operation, args):
     if operation == "quantity-laws":
         return integrated_marginals.run_source_laws(
             Path.cwd(), args.native_nfsim, full=args.full, runs=args.ensemble_runs
+        )
+    if operation == "nfsim-fixtures":
+        return integrated_nfsim_fixtures.run(
+            Path.cwd(),
+            native_binary=args.native_nfsim,
+            runs=min(args.ensemble_runs, integrated_nfsim_fixtures.ENSEMBLE_RUNS),
+        )
+    if operation == "nfnext-boundary":
+        return integrated_nfnext_boundary.run(
+            Path.cwd(),
+            native_binary=args.native_nfsim,
+            prototype_binary=args.nfnext_boundary_binary,
+        )
+    if operation == "engine-routes":
+        return integrated_engine_routes.run(
+            Path.cwd(),
+            bng_cpp=args.bng_cpp,
+            nfcore2_parity=args.nfcore2_parity_binary,
         )
     if operation == "bngsim-boundary":
         return bngsim_boundary.run(Path.cwd(), runs=args.ensemble_runs)
@@ -224,6 +264,20 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
             "--ensemble-cases",
             str(len(generated_cases(full=True))),
         ]
+    if operation in {"nfsim-fixtures", "nfnext-boundary"}:
+        command += ["--native-nfsim", str(args.nfsim_binary)]
+    if operation == "nfnext-boundary":
+        command += [
+            "--nfnext-boundary-binary",
+            str(args.nfnext_boundary_binary),
+        ]
+    if operation == "engine-routes":
+        command += [
+            "--bng-cpp",
+            str(args.bng_cpp),
+            "--nfcore2-parity-binary",
+            str(args.nfcore2_parity_binary),
+        ]
     if operation == "quantity-laws" and getattr(args, "full", False):
         command += ["--full"]
     if operation == "export-format-tier":
@@ -239,14 +293,18 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
         env=env,
         timeout=(
             900
-            if operation == "quantity-laws"
+            if operation in ("quantity-laws", "nfsim-fixtures", "nfnext-boundary")
             else (
                 240
                 if operation == "nf-marginals"
                 else (
                     300
                     if operation == "export-format-tier"
-                    else (600 if operation == "jax-backend-measurement" else 120)
+                    else (
+                        600
+                        if operation in ("jax-backend-measurement", "engine-routes")
+                        else 120
+                    )
                 )
             )
         ),

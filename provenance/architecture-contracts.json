@@ -731,6 +731,13 @@
       "empty_bodies": 0
     },
     {
+      "path": "tests/architecture_contracts/nfnext/test_execution_boundary.cpp",
+      "status": "reference",
+      "target": "bng3_nfnext_execution_boundary",
+      "declared_cases": 0,
+      "empty_bodies": 0
+    },
+    {
       "path": "tests/architecture_contracts/nfnext/test_nfnext.cpp",
       "status": "reference",
       "target": "bng3_nfnext_reference_tests",

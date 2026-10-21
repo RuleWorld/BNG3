@@ -540,8 +540,16 @@ CapabilityReport capabilitiesFor(const ast::Model& model, BackendKind backend,
 
     if (backend == BackendKind::NFsim &&
         features.contains(Feature::PopulationMaps)) {
+        // NFsim cannot execute a population map.  The hybrid model generator
+        // lowers a population map into a hybrid BNGL model, but no backend
+        // executes the population/particle refinement, so the diagnostic must
+        // not send the user to a backend that does not exist.
         addUnsupported(report, Feature::PopulationMaps, "NFsim",
-                       "population maps; use the hybrid population backend");
+                       "population maps; NFsim executes particle models only. "
+                       "A population map is stored and can be lowered into a "
+                       "hybrid model by generate_hybrid_model, but the "
+                       "population/particle execution refinement is not "
+                       "implemented");
     }
     return report;
 }
