@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Generic, Iterable, List, Optional
 from typing import Set, Tuple, TypeVar
 
 from .core import levenshtein, similarity
+from .math_builtins import MATH_BUILTINS
 from .types import standardize_name
 
 T = TypeVar("T")
@@ -255,58 +256,19 @@ def _replace_calls(
 
 
 def convertMathFunction(math_string: str) -> str:
-    """Convert common MathML/libSBML function spellings from the reference."""
+    """Convert common MathML/libSBML function spellings from the reference.
+
+    The MathML built-ins are lowered from the one shared table, so this helper
+    cannot drift from the lowering the writer emits or from the evaluation the
+    parser's static evaluator performs.
+    """
 
     result = str(math_string)
-    result = _replace_calls(
-        result,
-        "pow",
-        lambda args: (
-            f"(({args[0]})^({args[1]}))"
-            if len(args) >= 2
-            else "pow(" + ", ".join(args) + ")"
-        ),
-    )
-    result = _replace_calls(
-        result,
-        "sqrt",
-        lambda args: f"(({args[0]})^(1/2))" if args else "sqrt()",
-    )
-    result = _replace_calls(
-        result,
-        "sqr",
-        lambda args: f"(({args[0]})^2)" if args else "sqr()",
-    )
-    result = _replace_calls(
-        result,
-        "root",
-        lambda args: (
-            f"(({args[1]})^(1/({args[0]})))"
-            if len(args) >= 2
-            else "root(" + ", ".join(args) + ")"
-        ),
-    )
-    result = _replace_calls(
-        result,
-        "exp",
-        lambda args: (f"(2.71828182845905^({args[0]}))" if args else "exp()"),
-    )
-
-    # Resolve log's two-argument base form before the one-argument natural log.
-    result = _replace_calls(
-        result,
-        "log",
-        lambda args: (
-            f"(ln({args[1]})/ln({args[0]}))"
-            if len(args) >= 2
-            else f"ln({args[0]})" if args else "log()"
-        ),
-    )
-    result = _replace_calls(
-        result,
-        "log10",
-        lambda args: f"(ln({args[0]})/2.302585093)" if args else "log10()",
-    )
+    for builtin in MATH_BUILTINS:
+        if builtin.lower is None:
+            continue
+        for name in builtin.lowering_names:
+            result = _replace_calls(result, name, builtin.lower)
 
     for name, operator in {
         "gt": ">",
@@ -332,20 +294,6 @@ def convertMathFunction(math_string: str) -> str:
         "not",
         lambda args: (
             f"(!{args[0]})" if len(args) == 1 else "not(" + ", ".join(args) + ")"
-        ),
-    )
-    result = _replace_calls(
-        result,
-        "ceil",
-        lambda args: (
-            f"min(rint(({args[0]})+0.5),rint(({args[0]})+1))" if args else "ceil()"
-        ),
-    )
-    result = _replace_calls(
-        result,
-        "floor",
-        lambda args: (
-            f"min(rint(({args[0]})-0.5),rint(({args[0]})+0.5))" if args else "floor()"
         ),
     )
 
