@@ -400,6 +400,28 @@ def _official_status(record: dict[str, Any]) -> str:
     return OFFICIAL_STATUS_MAP.get(status, "not_tested")
 
 
+GAP_SIDES: tuple[str, ...] = ("harness", "atomizer", "not-applicable")
+
+
+def gap_side(construct: str) -> str:
+    """Classify a gap by the side of the boundary it sits on.
+
+    A *harness-side* gap is a measurement limitation: the gate could not
+    evaluate the case, so the case is not a claim about the Atomizer.  An
+    *Atomizer-side* gap is a representational one: a construct is not
+    representable today.  A case that defines no official reference is
+    neither.
+    """
+
+    if construct.startswith("harness:"):
+        return "harness"
+    if construct == "reference:not-applicable":
+        return "not-applicable"
+    if construct == "reference:no-result-mapping":
+        return "harness"
+    return "atomizer"
+
+
 def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
     """Name the construct that keeps a stage from producing a verdict.
 
@@ -422,7 +444,12 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
             causes = sorted(
                 set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
             )
-        return {"construct": reason_signature(reason), "causes": causes}
+        construct = reason_signature(reason)
+        return {
+            "construct": construct,
+            "causes": causes,
+            "side": gap_side(construct),
+        }
 
     if stage == "official_reference":
         official = record.get("official_conformance") or {}
@@ -432,7 +459,12 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
         causes = sorted(
             set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
         )
-        return {"construct": reason_signature(reason), "causes": causes}
+        construct = reason_signature(reason)
+        return {
+            "construct": construct,
+            "causes": causes,
+            "side": gap_side(construct),
+        }
 
     return None
 
@@ -473,14 +505,24 @@ def expectations_from_report(
     *,
     source_report_sha256: str,
     measurement_date: str | None = None,
+    measured_commit: str | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build an expectation manifest from one SBML Test Suite report."""
+    """Build an expectation manifest from one SBML Test Suite report.
+
+    ``measured_commit`` is the commit the manifest *describes*.  The report
+    itself records the commit the run actually executed, which may be a
+    branch head with the same Atomizer behaviour; both are kept, together
+    with the native build and the source tree the numbers came from, so a
+    reader can tell which measurement produced the record.
+    """
 
     cases = expectation_cases(report)
     gaps = expectation_gaps(report)
     source_lock = report.get("suite_source_lock") or {}
     source_provenance = report.get("source_provenance") or {}
     runtime = report.get("runtime_provenance") or {}
+    measured_at = str(source_provenance.get("bng3_commit") or "")
     manifest: dict[str, Any] = {
         "schema_version": EXPECTATIONS_SCHEMA_VERSION,
         "kind": "sbml-test-suite-expectations",
@@ -520,8 +562,26 @@ def expectations_from_report(
         },
         "source_report": {
             "sha256": source_report_sha256,
-            "bng3_commit": str(source_provenance.get("bng3_commit") or ""),
+            "bng3_commit": str(measured_commit or measured_at),
+            "measured_at_commit": measured_at,
             "python_version": str(runtime.get("python_version") or ""),
+        },
+        "provenance": {
+            "measured_commit": str(measured_commit or measured_at),
+            "measured_at_commit": measured_at,
+            "measurement_environment": {
+                "source_tree": str(runtime.get("bionetgen_package_path") or ""),
+                "native_extension_sha256": str(
+                    runtime.get("native_extension_sha256") or ""
+                ),
+                "python_package_source_sha256": str(
+                    runtime.get("python_package_source_sha256") or ""
+                ),
+                "python_version": str(runtime.get("python_version") or ""),
+                "platform": str(runtime.get("platform") or ""),
+                "libsbml_version": str(runtime.get("libsbml_version") or ""),
+                "roadrunner_version": str(runtime.get("roadrunner_version") or ""),
+            },
         },
         "cases": {
             identity: {
@@ -530,6 +590,16 @@ def expectations_from_report(
             }
             for identity in sorted(cases)
         },
+    }
+    if provenance:
+        manifest["provenance"].update(provenance)
+    # The recorded summary and the recorded per-case detail must agree, so
+    # the summary is derived from the detail rather than typed in.
+    manifest["stage_counts"] = {
+        stage: dict(
+            sorted(Counter(statuses[stage] for statuses in cases.values()).items())
+        )
+        for stage in EXPECTATION_STAGES
     }
     if measurement_date:
         manifest["source_report"]["measurement_date"] = measurement_date
@@ -719,6 +789,21 @@ def main() -> int:
         "--measurement-date",
         help="measurement date recorded in a generated expectation manifest",
     )
+    parser.add_argument(
+        "--measured-commit",
+        help=(
+            "the commit the expectation manifest describes; defaults to the "
+            "commit the report was produced at"
+        ),
+    )
+    parser.add_argument(
+        "--expectations-provenance",
+        type=Path,
+        help=(
+            "JSON document merged into the generated expectation manifest's "
+            "'provenance' block"
+        ),
+    )
     args = parser.parse_args()
 
     if args.out is None and args.expectations_out is None and args.expectations is None:
@@ -733,6 +818,12 @@ def main() -> int:
             report,
             source_report_sha256=_digest(args.suite_report),
             measurement_date=args.measurement_date,
+            measured_commit=args.measured_commit,
+            provenance=(
+                _load_json(args.expectations_provenance)
+                if args.expectations_provenance is not None
+                else None
+            ),
         )
         _write_expectations(args.expectations_out, manifest)
         print(

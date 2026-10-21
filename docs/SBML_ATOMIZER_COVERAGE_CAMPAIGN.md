@@ -56,7 +56,7 @@ stochastic). The curated BioModels corpus has 1096 records.
 | Round-trip structure | 1712 | 0 | 0 | 211 |
 | Independent libRoadRunner comparison | 1712 | 0 | 0 | 211 |
 | Official reference comparison | 1115 | 701 | 107 | 0 |
-_Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit `219c76dac38655c0f15a12ee294e4a4ac10d02ef`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
+_Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `219c76dac38655c0f15a12ee294e4a4ac10d02ef`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
 
 #### Official-reference unsupported verdicts at the baseline, by owner
 
@@ -78,7 +78,7 @@ _Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4
 | 1 | Atomizer | algebraic rule(s) present |
 
 Total official-reference unsupported verdicts: 701.
-_Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit `219c76dac38655c0f15a12ee294e4a4ac10d02ef`._
+_Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `219c76dac38655c0f15a12ee294e4a4ac10d02ef`._
 
 #### Baseline official-reference failures, by official feature
 
@@ -94,7 +94,7 @@ _Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4
 | AlgebraicRule | 1 | 01575 |
 
 Total official-reference failures: 107.
-_Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit `219c76dac38655c0f15a12ee294e4a4ac10d02ef`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
+_Source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `219c76dac38655c0f15a12ee294e4a4ac10d02ef`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
 
 #### Curated BioModels — baseline
 
@@ -168,7 +168,16 @@ so a cluster table can no longer omit the cases it forgot.
    reproduce stays explicitly unsupported, and the diagnostic now names that
    boundary instead of blaming the SBML writer.
 
-The combined effect of all eight changes is recorded in the integrated
+5. **MathML built-ins folded in the static evaluator, and a signed
+   stoichiometry carried** (PR #335). The static evaluator now folds the
+   built-in MathML functions and their arguments instead of emitting them
+   verbatim, and a rate-ruled species reference whose stoichiometry is
+   signed carries that sign. The 95 `dropped` diagnostics it removed were
+   each a *false* refusal, so the cases they blocked are now `passed`
+   rather than `unsupported`: eight official cases move forward, and the
+   official-reference residual falls from 18 to 17.
+
+The combined effect of all nine changes is recorded in the integrated
 result below.
 
 ## Workstreams
@@ -192,7 +201,7 @@ result below.
 
 ## Merged result (2026-10-20)
 
-All nine campaign pull requests are merged into `main`:
+All ten campaign pull requests are merged into `main`:
 
 | PR | Title | Merge commit |
 | --- | --- | --- |
@@ -205,6 +214,7 @@ All nine campaign pull requests are merged into `main`:
 | #322 | Support MathML trigonometric reciprocals and report an unresolvable assigned stoichiometry | `fa53a8e8` |
 | #323 | Carry a rate-ruled species-reference stoichiometry's initial value | `6654d175` |
 | #324 | Preserve SBML delay/rateOf semantics in the Atomizer and C++ writer | `58ae449e` |
+| #335 | Fold the MathML built-ins in the static evaluator and carry a signed stoichiometry | `cee96c9a` |
 
 Per-change contribution, measured per branch, so the numbers overlap where one
 change enables another. This table is a historical per-branch record; it is
@@ -223,7 +233,14 @@ generator.
 
 The generated tables below give the measured before/after state of every
 stage, the exact cases that changed verdict, and the cases that regressed.
-They also cover PR #324, whose effect is not broken out per branch above.
+They also cover PRs #324 and #335, whose effect is not broken out per
+branch above.
+
+The curated-BioModels row is the campaign's flat-mode measurement, taken on
+the merged tree before PRs #323–#335; the corpus has not been re-measured
+since. A later run on a saturated machine timed out on models that had
+passed, and a timeout under contention is a false verdict rather than a
+result, so that run was not used.
 
 <!-- BEGIN GENERATED: sbml-campaign-current -->
 
@@ -231,11 +248,11 @@ They also cover PR #324, whose effect is not broken out per branch above.
 
 | Stage | Passed | Unsupported | Failed | Not tested |
 | --- | --- | --- | --- | --- |
-| Conversion (SBML → BNGL) | 1724 | 199 | 0 | 0 |
-| Round-trip structure | 1724 | 0 | 0 | 199 |
-| Independent libRoadRunner comparison | 1724 | 0 | 0 | 199 |
-| Official reference comparison | 1212 | 693 | 18 | 0 |
-_Source: `/tmp/bng3-campaign/main-current-report.json` (SHA-256 `6cc128cde0aa3e3794fa87382dc0fdbfc8b0c21250b2616f4a0ecebf08999ff3`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit `a4453c7dc147624aaffe7fe170c973bd56434557`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
+| Conversion (SBML → BNGL) | 1731 | 192 | 0 | 0 |
+| Round-trip structure | 1731 | 0 | 0 | 192 |
+| Independent libRoadRunner comparison | 1731 | 0 | 0 | 192 |
+| Official reference comparison | 1220 | 686 | 17 | 0 |
+_Source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `82f837f63d7e986e7184e603819b5bb814a86c52`; the recorded manifest describes `cee96c9aeb91dd9800c840ac6066b89fd06a43d7`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
 
 #### Official-reference unsupported verdicts, by owner
 
@@ -249,29 +266,27 @@ _Source: `/tmp/bng3-campaign/main-current-report.json` (SHA-256 `6cc128cde0aa3e3
 | 19 | harness mapping | no exact BNG3 result mapping for: <reaction id> |
 | 16 | Atomizer | … has no MathML expression (empty math) |
 | 9 | C++ writer | SBML math function "…" is not losslessly representable in the C++ SBML writer |
-| 5 | Atomizer | … has unsupported stoichiometry; the reaction is omitted |
 | 3 | Atomizer | <infinity>/<notanumber> constant encountered in math |
 | 2 | Atomizer | a compartment declares unsupported spatialDimensions |
 | 2 | Atomizer | a species concentration rate rule requires an explicit compartment derivative |
-| 2 | Atomizer | an assigned stoichiometry could not be resolved at initialization |
 | 1 | Atomizer | algebraic rule(s) present |
 
-Total official-reference unsupported verdicts: 693.
-_Source: `/tmp/bng3-campaign/main-current-report.json` (SHA-256 `6cc128cde0aa3e3794fa87382dc0fdbfc8b0c21250b2616f4a0ecebf08999ff3`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit `a4453c7dc147624aaffe7fe170c973bd56434557`._
+Total official-reference unsupported verdicts: 686.
+_Source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `82f837f63d7e986e7184e603819b5bb814a86c52`; the recorded manifest describes `cee96c9aeb91dd9800c840ac6066b89fd06a43d7`._
 
 #### Remaining official-reference failures, by official feature
 
 | Cluster | n | Cases |
 | --- | --- | --- |
 | CSymbolDelay | 7 | 00941 00943 01400 01401 01403 01406 01409 |
-| InitialAssignment | 5 | 00785 00786 00879 01514 01821 |
+| InitialAssignment | 4 | 00785 00786 01514 01821 |
 | AssignmentRule | 2 | 01492 01493 |
 | other | 2 | 00951 01820 |
 | AlgebraicRule | 1 | 01575 |
 | CSymbolAvogadro | 1 | 01121 |
 
-Total official-reference failures: 18.
-_Source: `/tmp/bng3-campaign/main-current-report.json` (SHA-256 `6cc128cde0aa3e3794fa87382dc0fdbfc8b0c21250b2616f4a0ecebf08999ff3`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit `a4453c7dc147624aaffe7fe170c973bd56434557`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
+Total official-reference failures: 17.
+_Source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `82f837f63d7e986e7184e603819b5bb814a86c52`; the recorded manifest describes `cee96c9aeb91dd9800c840ac6066b89fd06a43d7`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
 
 #### Curated BioModels — current
 
@@ -286,27 +301,19 @@ _Source: `/tmp/bng3-campaign/biomodels-main-flat.json` (SHA-256 `0e0583d1f568892
 
 | Stage | Before | After | Cases |
 | --- | --- | --- | --- |
-| conversion | passed | unsupported | 1 |
-| conversion | unsupported | passed | 13 |
-| independent_comparison | not_tested | passed | 13 |
-| independent_comparison | passed | not_tested | 1 |
-| official_reference | failed | passed | 88 |
-| official_reference | failed | unsupported | 1 |
-| official_reference | unsupported | passed | 9 |
-| roundtrip_structure | not_tested | passed | 13 |
-| roundtrip_structure | passed | not_tested | 1 |
+| conversion | unsupported | passed | 19 |
+| independent_comparison | not_tested | passed | 19 |
+| official_reference | failed | passed | 90 |
+| official_reference | unsupported | passed | 15 |
+| roundtrip_structure | not_tested | passed | 19 |
 
-Cases with at least one stage change: 102.
+Cases with at least one stage change: 109.
 
-Regressions (a stage that was `passed` and no longer is):
-
-- `semantic/01516` [conversion]: passed → unsupported
-- `semantic/01516` [roundtrip_structure]: passed → not_tested
-- `semantic/01516` [independent_comparison]: passed → not_tested
+Regressions (a stage that was `passed` and no longer is): none.
 
 A stage that becomes `passed` is accepted only when the expectation manifest is explicitly updated.
 
-Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/main-current-report.json` (SHA-256 `6cc128cde0aa3e3794fa87382dc0fdbfc8b0c21250b2616f4a0ecebf08999ff3`).
+Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`).
 
 <!-- END GENERATED: sbml-campaign-current -->
 
@@ -324,9 +331,9 @@ accepted.
 
 | Suite | Passed | Skipped | Xfailed | Failed |
 | --- | --- | --- | --- | --- |
-| tests/python | 1572 | 28 | 2 | 1 |
+| tests/python | 1645 | 28 | 2 | 1 |
 
-Source: `/tmp/bng3-campaign/pytest-current.xml` (SHA-256 `3da9b66de4abf957a25843ad0ddcd9344ef12cfa2cabfac726509c1adcd5be8e`).
+Source: `/tmp/bng3-campaign/pytest-cee96c9a.xml` (SHA-256 `f2a905f32a57d89e7d73af0512f53f81421fda8e7456159b3e4135f1110f80cd`).
 
 <!-- END GENERATED: sbml-campaign-python -->
 
@@ -418,12 +425,32 @@ instead of a human reading two large reports side by side.
   },
   "source_report": {
     "sha256": "<sha256 of the harness report the manifest was generated from>",
-    "bng3_commit": "<BNG3 commit the report was measured at>",
+    "bng3_commit": "<BNG3 commit the manifest describes>",
+    "measured_at_commit": "<BNG3 commit the run actually executed>",
     "python_version": "3.14.6",
     "measurement_date": "2026-10-20"
   },
+  "provenance": {
+    "measured_commit": "<the commit the manifest describes>",
+    "measured_at_commit": "<the commit the run executed>",
+    "measurement_environment": {
+      "source_tree": "<the Python package the run imported>",
+      "native_extension_sha256": "<sha256 of the native extension>",
+      "platform": "<platform>",
+      "libsbml_version": "<version>",
+      "roadrunner_version": "<version>"
+    },
+    "notes": ["<why the two commits are equivalent for the gate>"]
+  },
+  "stage_counts": {
+    "conversion": {"passed": 1731, "unsupported": 192},
+    "roundtrip_structure": {"not_tested": 192, "passed": 1731},
+    "independent_comparison": {"not_tested": 192, "passed": 1731},
+    "official_reference": {"failed": 17, "passed": 1220, "unsupported": 686}
+  },
   "cases": {
-    "semantic/00001": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"}
+    "semantic/00001": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["constraints"], "side": "atomizer"}}}
   }
 }
 ```
@@ -443,6 +470,14 @@ instead of a human reading two large reports side by side.
   stops being refused is a finding to be reported, not a pass.
 * `status_mapping` states how each harness field becomes a verdict, so the
   mapping is auditable rather than implicit.
+* `stage_counts` is the recorded summary of the four stages. It is derived
+  from the per-case verdicts, so the summary and the detail cannot drift
+  apart.
+* `provenance` records the measurement environment: the commit the manifest
+  describes, the commit the run actually executed, the source tree and the
+  native extension's SHA-256. A run may execute a branch head whose Atomizer
+  behaviour is identical to the described commit; that difference is stated
+  rather than left implicit.
 
 ### Regenerating the manifest
 
@@ -453,15 +488,38 @@ committed file, and the diff is the review.
 # 1. Run the gate against the pinned suite.
 PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   --suite-dir /path/to/sbml-test-suite \
-  --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 6 \
+  --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 3 \
   --json /tmp/bng3-campaign/report.json
 
 # 2. Regenerate the manifest from that report.
 python scripts/ci/sbml_campaign_inventory.py \
   --suite-report /tmp/bng3-campaign/report.json \
   --expectations-out provenance/sbml-campaign/expectations.json \
-  --measurement-date "$(date -u +%Y-%m-%d)"
+  --measurement-date "$(date -u +%Y-%m-%d)" \
+  --measured-commit "$(git rev-parse HEAD)" \
+  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-20.json
 ```
+
+`--measured-commit` is the commit the manifest *describes*; the commit the run
+actually executed is kept as `measured_at_commit`, together with the native
+extension's SHA-256 and the source tree, so a reader can tell which build
+produced the numbers.
+
+### What the pull-request gate covers, and the merge-flow convention
+
+The official conformance workflow compares a run against the manifest, but a
+pull-request run executes only the **128-case feature-cover selection** of
+the official suite. The comparison covers the cases that run executed; the
+rest are reported as *not executed* rather than as differences. Only the
+**scheduled** workflow run executes the full 1923 cases and compares every
+one of them. **A green pull-request gate is therefore not evidence that the
+manifest is current.**
+
+The manifest is a ratchet: a merge that changes a verdict leaves `main`'s
+manifest stale, and the gate then fails on `main` until the manifest is
+regenerated. After each such merge the manifest is regenerated from the new
+`main` and landed as a small follow-up commit; the exact command is in
+[`provenance/sbml-campaign/README.md`](../provenance/sbml-campaign/README.md).
 
 ### Comparing a run against the manifest
 
@@ -478,10 +536,12 @@ The comparison is strict about every difference:
   only accepted once the manifest is explicitly updated;
 * any other verdict change is reported as a **change**.
 
-The command exits non-zero and prints one line per differing case and stage:
+The command exits non-zero and prints one line per differing case and stage.
+An example — a manifest that expected a pass where the run still refuses the
+case:
 
 ```
-semantic/01516 [conversion]: expected passed, observed unsupported (regression)
+semantic/01133 [conversion]: expected passed, observed unsupported (regression)
 ```
 
 `tests/validation/test_sbml_expectations.py` exercises the same generator and
@@ -498,11 +558,12 @@ pinned suite's own case notes and writes the marked regions above.
 ```bash
 python scripts/ci/sbml_campaign_tables.py \
   --baseline-suite-report /tmp/bng3-campaign/baseline-ssts.json \
-  --suite-report /tmp/bng3-campaign/main-current-report.json \
+  --suite-report /tmp/bng3-campaign/current-main-2026-10-20.json \
   --baseline-biomodels-report /tmp/bng3-campaign/biomodels-baseline.json \
   --biomodels-report /tmp/bng3-campaign/biomodels-main-flat.json \
   --suite-dir /path/to/sbml-test-suite \
-  --pytest-junit /tmp/bng3-campaign/pytest-current.xml \
+  --pytest-junit /tmp/bng3-campaign/pytest-cee96c9a.xml \
+  --measured-commit "$(git rev-parse main)" \
   --doc docs/SBML_ATOMIZER_COVERAGE_CAMPAIGN.md
 ```
 
@@ -510,7 +571,7 @@ The Python-suite row is read from a pytest JUnit report:
 
 ```bash
 PYTHONPATH=python:build/cpp python -m pytest -q tests/python \
-  --junitxml=/tmp/bng3-campaign/pytest-current.xml
+  --junitxml=/tmp/bng3-campaign/pytest-cee96c9a.xml
 ```
 
 The generator never runs the harness, never changes a verdict and never
@@ -534,11 +595,12 @@ regions wherever the surrounding prose needs them.
 ```bash
 python scripts/ci/sbml_campaign_tables.py \
   --baseline-suite-report /tmp/bng3-campaign/baseline-ssts.json \
-  --suite-report /tmp/bng3-campaign/main-current-report.json \
+  --suite-report /tmp/bng3-campaign/current-main-2026-10-20.json \
   --baseline-biomodels-report /tmp/bng3-campaign/biomodels-baseline.json \
   --biomodels-report /tmp/bng3-campaign/biomodels-main-flat.json \
   --suite-dir /path/to/sbml-test-suite \
-  --pytest-junit /tmp/bng3-campaign/pytest-current.xml \
+  --pytest-junit /tmp/bng3-campaign/pytest-cee96c9a.xml \
+  --measured-commit "$(git rev-parse main)" \
   --check --doc docs/SBML_ATOMIZER_COVERAGE_CAMPAIGN.md
 ```
 

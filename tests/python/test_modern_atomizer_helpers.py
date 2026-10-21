@@ -45,8 +45,25 @@ def test_playground_helpers_string_and_math_contract():
     assert convertMathFunction("gt(a, b)") == "(a > b)"
     assert convertMathFunction("and(a, b)") == "(a && b)"
     assert convertMathFunction("not(c)") == "(!c)"
-    assert convertMathFunction("ceil(x)") == ("min(rint((x)+0.5),rint((x)+1))")
     assert cleanParameterValue("Infinity NaN 1E-3 Vmax_2E1") == ("1e20 0 1e-3 Vmax_2E1")
+
+
+def test_playground_helpers_lower_the_mathml_builtins_from_the_shared_table():
+    """The helper must not carry a second, divergent built-in table.
+
+    The writer lowers a MathML built-in onto one BNGL expression and the
+    parser's static evaluator computes the value of exactly that expression.
+    A second table in the helper drifts from both, so the helper lowers the
+    built-ins from the shared one.
+    """
+
+    from bionetgen.atomizer.modern import convertMathFunction
+
+    assert convertMathFunction("ceil(x)") == "ceil(x)"
+    assert convertMathFunction("floor(x)") == "floor(x)"
+    assert convertMathFunction("abs(x)") == "if(x>=0,x,-(x))"
+    assert convertMathFunction("sec(x)") == "(1/cos(x))"
+    assert convertMathFunction("exp(x)") == "(2.71828182845905^(x))"
 
 
 def test_playground_pmemoize_shares_explicit_cache_keys():
