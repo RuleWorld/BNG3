@@ -1326,7 +1326,9 @@ _COMPARISON_ALIASES = {
     "lessorequal": "leq",
     "lessthanorequal": "leq",
 }
-_COMPARISON_ALIAS_PATTERN = "|".join(sorted(_COMPARISON_ALIASES, key=len, reverse=True))
+_COMPARISON_ALIAS_PATTERN = "|".join(
+    sorted(_COMPARISON_ALIASES, key=lambda alias: (-len(alias), alias))
+)
 _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
 
 # The native ``bng3_events`` runtime locates the trigger's rising edge with

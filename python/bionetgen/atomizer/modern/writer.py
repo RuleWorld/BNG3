@@ -1708,7 +1708,7 @@ def _rewrite_mass_action_symbols(
         for species_id, compartment_id in species_to_compartment.items()
     }
     for name, compartment_id in sorted(
-        species_names.items(), key=lambda item: len(item[0]), reverse=True
+        species_names.items(), key=lambda item: (-len(item[0]), item[0])
     ):
         escaped = re.escape(name)
         if compartment_id:
@@ -1723,8 +1723,7 @@ def _rewrite_mass_action_symbols(
         result = re.sub(rf"\b{escaped}_amt\b", name, result, flags=re.IGNORECASE)
     for variable in sorted(
         {standardize_name(str(value)) for value in assignment_rule_variables},
-        key=len,
-        reverse=True,
+        key=lambda name: (-len(name), name),
     ):
         result = re.sub(rf"\b{re.escape(variable)}\s*\(\s*\)", variable, result)
     return result
@@ -1748,6 +1747,12 @@ def check_mass_action(
     accept only a finite low-variance result.  ``reaction_order`` is the number
     of concentration-valued reactant operands to normalize; it defaults to one
     for compatibility with the public helper's historical first-order contract.
+
+    The probe gives every species and every assignment-rule variable a distinct
+    value, so that a law which is not mass-action does not look constant.  The
+    symbols are probed in the canonical order of their own spelling, and the
+    constant this function reports is therefore a function of the source model
+    alone: it does not depend on the interpreter's hash seed.
     """
 
     assignment_rule_variables = assignment_rule_variables or set()
@@ -1777,13 +1782,21 @@ def check_mass_action(
         base[f"__compartment_{name}__"] = size
         base[name] = size
 
+    # The probe's sample points are a device: what matters is that every
+    # probed symbol gets a distinct value, so that a law which is not
+    # mass-action does not look constant.  Which symbol gets which sample
+    # point is a *choice*, and it has to be a choice the source model makes
+    # for itself: the symbols are therefore probed in the canonical order of
+    # their own spelling.  The previous order sorted the symbols by name
+    # length only, so equally long names were left in the iteration order of a
+    # set -- and a set's iteration order depends on the interpreter's hash
+    # seed.  The folded constant, and with it the emitted BNGL, changed from
+    # one run to the next.
     species_names = sorted(
-        {standardize_name(str(species_id)) for species_id in species_to_compartment},
-        key=len,
+        {standardize_name(str(species_id)) for species_id in species_to_compartment}
     )
     assignment_names = sorted(
-        {standardize_name(str(value)) for value in assignment_rule_variables},
-        key=len,
+        {standardize_name(str(value)) for value in assignment_rule_variables}
     )
     # BNGL's deterministic mass-action rule uses molecule amounts as state
     # variables, while SBML concentration laws use C = amount / V.  For an
@@ -5498,7 +5511,7 @@ def _rewrite_assignment_rule_references(
         for variable in rate_rule_variables
         for alias in (str(variable), standardize_name(str(variable)))
     }
-    rate_names = sorted(rate_aliases, key=len, reverse=True)
+    rate_names = sorted(rate_aliases, key=lambda name: (-len(name), name))
     for name in rate_names:
         result = re.sub(
             rf"\b{re.escape(name)}\b(?:\s*\(\s*\))?",
@@ -5517,8 +5530,7 @@ def _rewrite_assignment_rule_references(
             and standardize_name(str(name)) not in rate_aliases
             and str(name) not in rate_aliases
         },
-        key=len,
-        reverse=True,
+        key=lambda name: (-len(name), name),
     )
     return _rewrite_declared_id_runs(
         result, names, lambda name: f"{standardize_name(name)}()"
@@ -7188,7 +7200,7 @@ def generate_bngl(
         ),
     ]
     for symbol in sorted(
-        reaction_local_symbols - globally_visible, key=len, reverse=True
+        reaction_local_symbols - globally_visible, key=lambda name: (-len(name), name)
     ):
         if any(
             re.search(rf"\b{re.escape(symbol)}\b", expression)
@@ -7206,8 +7218,7 @@ def generate_bngl(
         expression = get_kinetic_math(reaction.kinetic_law)
         for symbol in sorted(
             reaction_local_symbols - globally_visible - current_scope,
-            key=len,
-            reverse=True,
+            key=lambda name: (-len(name), name),
         ):
             if not re.search(rf"\b{re.escape(symbol)}\b", expression):
                 continue

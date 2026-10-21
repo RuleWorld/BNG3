@@ -2146,7 +2146,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
 
     namespace_violation = _validate_multi_markup(root, namespace, warnings)
     for parent in root.iter():
-        for container_name in _MULTI_CONTAINER_NAMES:
+        for container_name in sorted(_MULTI_CONTAINER_NAMES):
             containers = _children(parent, container_name, namespace)
             if len(containers) > 1:
                 warnings.append(
@@ -3381,7 +3381,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
     # A bindingSiteSpeciesType may also be used as a top-level SpeciesType.
     # It is atomic in Multi, but still needs a BNGL molecule declaration when
     # it is instantiated directly as a core species.
-    for type_id in set(species_type_by_species.values()):
+    for type_id in sorted(set(species_type_by_species.values())):
         species_type = types.get(type_id)
         if species_type is None or not species_type.is_binding_site:
             continue

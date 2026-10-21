@@ -47,14 +47,14 @@ happen is a record that *converts* and then means something other than its
 source. The residual failures below are the records where that distinction
 still has to be made.
 
-## The Atomizer's output is not reproducible across runs
+## The Atomizer's output was not reproducible across runs
 
 This is a measurement caveat that applies to every number in this document,
-and it is a defect in the Atomizer rather than in the corpus.
+and it was a defect in the Atomizer rather than in the corpus.
 
-The modern Atomizer emits a different document for the same source model
-depending on the process's `PYTHONHASHSEED`. A set iteration order leaks into
-the emitted text, and the text's numeric constants change with it. One
+The modern Atomizer emitted a different document for the same source model
+depending on the process's `PYTHONHASHSEED`. A set iteration order leaked into
+the emitted text, and the text's numeric constants changed with it. One
 curated record, `BIOMD0000001058`, is enough to show it:
 
 ```
@@ -63,12 +63,20 @@ PYTHONHASHSEED=1   Autocatalytic_synthesis_of_ClbMt: 0 -> @compartment:M_ClbMt()
 PYTHONHASHSEED=2   Autocatalytic_synthesis_of_ClbMt: 0 -> @compartment:M_ClbMt() 0.019999159775260743
 ```
 
-The same source, the same tree and the same native extension produce three
-different constants. A corpus run therefore measures a slightly different
+The same source, the same tree and the same native extension produced three
+different constants. A corpus run therefore measured a slightly different
 model on every pass, and a record whose observable sits at the edge of the
-comparison's tolerance can pass on one pass and fail on the next. That is
-the likely explanation for the records in this corpus whose status does not
+comparison's tolerance could pass on one pass and fail on the next. That was
+the likely explanation for the records in this corpus whose status did not
 reproduce.
+
+The leak was in the writer's numeric mass-action probe: it gave every probed
+symbol a distinct sample point and ordered the symbols by name *length* only,
+so equally long names were left in the iteration order of a set. The probe
+now orders the symbols canonically, and the emitted document is a function of
+the source model alone. The three constants above are what the record
+produced *before* that fix; the measurement in this document was taken before
+it as well.
 
 The measurement in this document is taken with `PYTHONHASHSEED=0`, and the
 per-record comparison between the branch and `main` is taken with the same
