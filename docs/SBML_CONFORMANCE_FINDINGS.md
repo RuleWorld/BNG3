@@ -215,10 +215,12 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   records the gap's `side` as `harness`, because nothing is wrong with the
   model.
 
-## 6. The official reference does not track the boundary "Sink" species
+## 6. The official reference does not track the boundary "Sink" species - FIXED
 
 * **Classification:** scope boundary (reference data), now reported as *not
-  comparable*.
+  comparable*.  **CLOSED** on `campaign/ssa-boundary-and-rate-rules`: the
+  boundary was a *symptom* of the engine defect in section 12, and with that
+  defect fixed the three cases reproduce the published reference exactly.
 * **Cases:** `stochastic/00006`, `stochastic/00024`, `stochastic/00026`.
 * **Mechanism:** the models add a boundary species `Sink` that accumulates
   the deaths, but the analytic reference the suite inherited from the DSMTS
@@ -233,22 +235,30 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   derived from the reaction definitions for it.  The official reference
   describes the reaction system, so it reports such a species as identically
   zero and does not describe it at all.
-* **Observed behaviour:** the harness detects that the reference reports the
-  variable as identically zero at every output time while the model
-  accumulates it.
+* **Observed behaviour (before the fix of section 12):** the harness detects
+  that the reference reports the variable as identically zero at every output
+  time while the model accumulates it.
 * **Minimal reproducer:** `stochastic/00006`; the reference's `Sink-mean`
   and `Sink-sd` columns are zero for all 51 output points while the model
   accumulates the sink.
-* **Handling in the harness:** the case is reported as `unsupported` - the
-  gate's *not comparable* verdict - with the reason that names the
-  quantity: "the official reference does not track the boundary species
-  Sink: the reference reports Sink as identically zero at every output time
-  because a boundary species is not determined by the reactions, while the
-  BNG3 model accumulates it, so the comparison on that quantity does not
-  apply".  The comparison on every other quantity of the case - `X` in these
-  cases - is unchanged, and a mismatch there is still a failure.  The
-  manifest records the gap's `side` as `harness`, because nothing is wrong
-  with the model.
+* **Handling in the harness (before the fix of section 12):** the case is
+  reported as `unsupported` - the gate's *not comparable* verdict - with the
+  reason that names the quantity: "the official reference does not track the
+  boundary species Sink: the reference reports Sink as identically zero at
+  every output time because a boundary species is not determined by the
+  reactions, while the BNG3 model accumulates it, so the comparison on that
+  quantity does not apply".  The comparison on every other quantity of the
+  case - `X` in these cases - is unchanged, and a mismatch there is still a
+  failure.  The manifest records the gap's `side` as `harness`, because
+  nothing is wrong with the model.
+* **What closed it.**  That guard is a *guard*, not a verdict: it fires when
+  the model **accumulates** a boundary species, and the model accumulated it
+  because the direct SSA did not honour the model's constant-species marker
+  (section 12).  With the marker honoured the model keeps `Sink` at 0, the
+  reference's identically-zero column is exactly what the model produces, the
+  mismatch the guard was written for does not occur, the guard no longer
+  fires, and the three cases pass the published reference.  The reference was
+  never the problem.
 
 ## 7. A generated network with no reaction is not comparable
 
@@ -824,20 +834,50 @@ test.
 * **Numbers.**  The campaign's stochastic-consistency sweep over the pinned
   suite (1923 cases; batch 10 000; `base_seed = 20261020 + int(case_id)`;
   single-worker CPU pool; the Metal backend for networks with at least 100
-  reactions or 50 species and the CPU pool otherwise; `k_sigma = 5`):
+  reactions or 50 species and the CPU pool otherwise; `k_sigma = 5`), run on
+  the branch's base (`origin/main`, `51fe8e00`):
 
-  | outcome | `origin/main` (`a1496fb1`) | this branch |
+  | outcome | base | this branch |
   | --- | --- | --- |
   | consistent | 195 | **210** |
   | inconsistent | 25 | **10** |
-  | not comparable | 1574 | 1574 |
-  | unsupported | 128 | 128 |
+  | not comparable | 1575 | 1575 |
+  | unsupported | 127 | 127 |
   | no valid propensity | 1 | 1 |
 
   **15 verdicts moved**, all of them `inconsistent -> consistent`, and they
   are exactly the 15 cases above.  **No other record of the 1923 moved**, and
   the GPU/CPU sampler-agreement check is unchanged (the same six cases, the
   same maximum |z| to every digit).
+* **The per-case diff over the whole pinned suite.**  The official SBML Test
+  Suite gate, the pinned suite at revision `cf38585f`, `PYTHONHASHSEED=0`,
+  `PYTHONPATH=python:build/cpp`, `--isolate-cases --case-timeout 300 --jobs 3`,
+  with the report's `runtime_provenance.bionetgen_package_path` naming this
+  worktree on both sides:
+
+  | stage | base | this branch |
+  | --- | --- | --- |
+  | conversion | 1735 passed / 125 unsupported / 63 failed / 0 timeout | 1735 / 125 / 63 / 0 (identical) |
+  | official reference | 1697 passed / 163 unsupported / 63 failed / 0 timeout | **1700 passed / 160 unsupported / 63 failed / 0 timeout** |
+
+  The conversion stage is **identical on all 1923 records** - the same status,
+  the same unsupported reason, the same round-trip and independent-comparison
+  verdicts.  The official-reference stage moved **3 records**, all of them
+  `unsupported -> passed`: `stochastic/00006`, `stochastic/00024` and
+  `stochastic/00026`, the three boundary-species cases of section 6.  Their
+  reason field changes from the "the official reference does not track the
+  boundary species Sink" verdict to a pass, because the model now keeps the
+  boundary species at the value the reference reports.  **No case moved the
+  other way.**
+* **The 63 failures are not this branch's.**  They are an upstream regression
+  in the *deterministic* path, present on the base commit and unchanged by
+  this branch: `origin/main` applies a rule's symmetry factor to a
+  `TotalRate` rule, so a converted reaction whose source carries a
+  stoichiometry of 2 (`semantic/00069`'s `reaction2: S3 + S3 -> S1 + S2
+  k2*S3 TotalRate`) runs at half its extent rate.  The published reference and
+  libRoadRunner 2.10.0 both report the *unhalved* rate, and the same BNGL
+  text produces the reference's trajectory on the pre-`#315` engine and a
+  different one on `origin/main`.  See the note below.
 * **The remaining ten, with their mechanism.**  Both mechanisms are the
   sweep's, and neither is an engine defect:
   * `conversion-differs-from-the-published-reference` - `semantic/01130
@@ -906,6 +946,37 @@ test.
   comparison under test.
 
 ## Measurements that are *not* findings
+
+* **The base commit fails 63 of the 1923 pinned cases, and this branch does
+  not change that.**  `origin/main` (`51fe8e00`) reports
+  `1735 passed / 125 unsupported / 63 failed / 0 timeout` where the committed
+  expectation manifest (`provenance/sbml-campaign/current-2026-10-20.json`,
+  measured at `5d8e78b0`) reports no failure.  The regression is in the
+  *deterministic* path, and it is the symmetry factor of a `TotalRate` rule:
+  pull request #315 removed the `!crxn.isTotalRate` guard in
+  `OdeIntegrator::compile()`'s functional-rate branch, so a rule with
+  identical reactants now carries its `1/2` factor into the rate law.  A
+  `TotalRate` rule's value *is* the reaction's extent rate (SBML Level 3
+  Version 2 Core, section 4.11), and the Atomizer encodes a species
+  reference's stoichiometry in the rule's pattern, so the factor must not be
+  applied to it.  Every one of the 63 failing cases has a converted rule of
+  the shape `A + A -> ... <rate> TotalRate`.
+  The A/B evidence, on the *same* BNGL text for `semantic/00069`
+  (`reaction1: S1 + S2 -> S3 17` and
+  `reaction2: S3 + S3 -> S1 + S2 k2*S3 TotalRate`):
+
+  | engine | `S1(t=0.1)` | `S3(t=0.1)` |
+  | --- | --- | --- |
+  | the published reference (`00069-results.csv`) | 0.06026999450447567 | 0.1325638225527571 |
+  | the engine before `#315` | 0.060269994 | 0.132563823 |
+  | `origin/main` (`51fe8e00`) | 0.057837268 | 0.138490236 |
+
+  and the system `origin/main` integrates is the one with `r2 = k2*S3/2`
+  instead of `r2 = k2*S3`.  This branch does not touch that code path, and
+  the per-case diff above shows the 63 records are identical on both sides.
+  It is recorded here because the campaign's gate is red on the base commit
+  and the owner has to decide whether the symmetry factor belongs to a
+  `TotalRate` rule at all.
 
 * `semantic/01592` timed out in one hosted run.  Re-run uncontended it
   completes in 11 s of wall time; the timeout was contention plus the
