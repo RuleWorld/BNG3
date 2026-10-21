@@ -382,30 +382,33 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   whose assignment moves a requested output is not comparable point-wise.
   The harness says so with a reason that names the boundary.
 
-### 8b-3. A random-order event model was refused for the wrong reason - OPEN
+### 8b-3. A random-order event model was refused for the wrong reason - FIXED
 
 * **Cases:** `semantic/01588`.
 * **Mechanism:** `semantic/01588` is a random-order event model like
   `semantic/01592`: its two competing events share one trigger and one
   priority, both are non-persistent, and both reset the trigger, so exactly
-  one of them fires and which one is a random draw.  The harness detects
+  one of them fires and which one is a random draw.  The harness detected
   that shape by grouping the events on the *text* of their priority, so it
-  recognises `semantic/01592` (whose priorities are both written `1`) but
+  recognised `semantic/01592` (whose priorities are both written `1`) but
   not `semantic/01588` (whose priorities are `k1` and `0.01`, numerically
   equal because `k1` has the initial value `1 * 0.01`).  `semantic/01588`
-  therefore falls through to the action path and is refused by the phase
+  therefore fell through to the action path and was refused by the phase
   budget, with a cost reason, although the reason it cannot be compared
   point-wise is the random order.  This is the harness's own grouping, not
   the Atomizer's lowering: the Atomizer lowers both models the same way.
-* **Why it matters:** the refusal is accurate about the cost but it names
-  the wrong cause, and it hides that the case is not comparable for a
-  reason no budget can fix.  Comparing it once the budget is raised shows
-  the expected disagreement: the reference's `S` grows by 0.01 per firing
-  and the run's `S` grows twice as fast, because the run picks the same
-  event every time where the source requires a random choice.
-* **Next:** group the competing events on the *value* of their priority
-  rather than its text, so the random-order verdict reaches every model of
-  this shape.
+* **Why it matters:** the refusal was accurate about the cost but it named
+  the wrong cause, and it hid that the case is not comparable for a reason
+  no budget can fix.  Comparing it once the budget is raised shows the
+  expected disagreement: the reference's `S` grows by 0.01 per firing and
+  the run's `S` grows twice as fast, because the run picks the same event
+  every time where the source requires a random choice.
+* **Fix:** the grouping compares the folded *value* of the priority when
+  the expression can be folded and falls back to its text when it cannot.
+  Only constant parameters are resolved, so a priority that varies over
+  time still falls back to the text and no pair is merged that the
+  specification does not merge.  `semantic/01588` is now refused with the
+  random-order reason, the same reason `semantic/01592` gets.
 
 ### 8c. A state-triggered event ignored the reaction's local parameters - FIXED
 
