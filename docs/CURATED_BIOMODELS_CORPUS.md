@@ -77,6 +77,59 @@ order. With the seed fixed, a forty-record sample of the corpus produces
 byte-identical BNGL on `main` and on the branch that carries the two Atomizer
 fixes, and only the four records those fixes target differ.
 
+## Two corpus regressions, and what they were
+
+The independent campaign audit found two records that used to convert and no
+longer do. Both are defects of the translation, and both are fixed here.
+
+### `BIOMD0000000638` — a scaled compartment size rounded twice
+
+The record declares a compartment of 3.92 picolitre. A unit conversion
+factor is a decimal number (a unit definition is a product of
+`(multiplier * 10**scale)**exponent` terms), so scaling the size by the
+*double* approximation of that factor rounds the product twice: once when the
+factor is approximated and once when the product is rounded. The result was
+`3.9200000000000006e-15`, one unit in the last place away from the
+`3.92e-15` the source states.
+
+The record's rate laws divide by that size, so its rate coefficients are of
+order 1e19 and the model is stiff. One unit in the last place was enough to
+stop libRoadRunner's CVODE from taking its first step: the oracle failed
+with `CV_CONV_FAILURE` at `t = 0` and `h = 2.4e-43`, and the record was
+reported as failed.
+
+The scaling now multiplies in decimal and rounds the product once, so the
+scaled size is the correctly rounded double of the value the source states.
+The *emission* is unchanged — it is the shortest decimal that round-trips —
+so the precision that the numeric-fidelity change added for a model that
+compares a quantity with `pi` is preserved.
+
+The regression test carries the record reduced to the eight reactions the
+failure needs and judges the translation with libRoadRunner as the oracle.
+
+### `BIOMD0000000954` — a state-dependent rate law replaced by a fitted constant
+
+SBML Level 3 Version 2 Core Sec. 4.11 gives a kinetic law the meaning of the
+reaction's extent rate, `d n_i/dt = Σ stoich_ij · v_Rj`. A law that names a
+species the reaction does not consume is therefore a *complete flux*: its
+value depends on that species' state, and no constant coefficient can replace
+it.
+
+The record's Cdh1dp production has the rate law
+`k · (Cdh1T − Cdh1dp)/(JdpCdh1 + Cdh1T − Cdh1dp)`, and the writer's numeric
+mass-action probe accepted it: the probe replaces the species by a fixed state
+and fits the result, and the fitted coefficient is a snapshot of the law at
+the probe points rather than the law itself. The same source produced
+`0.000100001222240371`, `0.00010000122224037069`,
+`0.00010000040740942388`, `0.00010000020370420783` and
+`0.00010000061111564819` in five runs that differed only in the process's
+hash seed, so the record's status was not reproducible at a fixed commit.
+
+The probe is no longer allowed to claim a law that names a non-reactant
+species. Such a law keeps its state dependence, so the exported model is the
+model the source states. A law over the reaction's own reactants is still
+classified as an elementary coefficient.
+
 ## Residual failures
 
 Thirteen records failed and twelve timed out. Each one is classified by the
@@ -123,6 +176,8 @@ Core specification:
 | `BIOMD0000000245` | atomizer | reaction id used as a rate in a rule | The rule names seven reaction ids. The flux inlining replaced one reaction per pass and stopped after four passes, so the remaining ids reached the emitted rule as unresolved expression symbols. **Fixed.** |
 | `BIOMD0000000570` | atomizer | reaction id used as a rate in a rate rule | The same four-pass limit left three of seven reaction ids unresolved. **Fixed.** |
 | `BIOMD0000000353` | atomizer | compartment size set by an `initialAssignment` | A species assignment rule names a compartment whose size an initial assignment sets. The compartment was rewritten to the constant volume parameter, producing `__compartment_X__()`: a call to an undeclared function. **Fixed.** |
+| `BIOMD0000000638` | atomizer | compartment size in a scaled unit | The unit conversion rounded the scaled size twice, so the emitted size was one unit in the last place away from the value the source states; the record's rate laws divide by it, and the independent oracle failed to converge. **Fixed.** |
+| `BIOMD0000000954` | atomizer | rate law that names a species the reaction does not consume | The numeric mass-action probe replaced the state-dependent rate law with a fitted constant, so the exported model was a snapshot of the law rather than the law, and the record's status was not reproducible at a fixed commit. **Fixed.** |
 | `BIOMD0000001098` | atomizer | MathML `<apply>` without an operator | Every reaction's kinetic law is an `<apply>` whose operator is a `<ci>` naming a parameter. MathML reads that as a call to an undeclared function, the Atomizer translated it faithfully, and the emitted rule does not parse. **Now reported as unsupported.** |
 | `BIOMD0000000674` | writer | reversible rule with a `TotalRate` modifier | The Atomizer's translation matches the source (see below), but the C++ SBML writer writes the reverse direction of a reversible `TotalRate` rule with an extra factor for the product species and without the `bng:totalRate` annotation, so the written SBML does not reproduce the source's mathematics. **Not fixed here: the defect is in `cpp/io/SbmlWriter.cpp`, not in the Atomizer.** |
 | `BIOMD0000000338`, `BIOMD0000000339` | harness | event-driven compartment size with a species rate rule | The Atomizer refuses explicitly: a species rate rule in a compartment whose size an event changes has no exact BNGL lowering. The harness does not recognise the refusal string and records the record as failed rather than unsupported. |

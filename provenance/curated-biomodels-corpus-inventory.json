@@ -19009,7 +19009,7 @@
   "description": "Inventory of the curated BioModels corpus: the corpus identity, the per-record outcome of the modern Atomizer in the flat and the atomized mode, and the classification of every residual failure and timeout.  The harness owns every status; this file only reduces its reports and adds the corpus identity.",
   "label": "curated-biomodels-corpus",
   "measurement": {
-    "base_commit": "03a577dd",
+    "base_commit": "d1d0c1c7",
     "measurement_date": "2026-10-20",
     "note": "The per-record status is the status the reduced harness report records.  The effect of the change under review is stated separately, in residuals.branch_effect, with the records it touches and where they were measured.",
     "reports": {
@@ -19461,6 +19461,20 @@
           "construct": "reaction id used as a rate inside a rate rule",
           "main": "failed",
           "measured_in_report": "failed"
+        },
+        "BIOMD0000000638": {
+          "branch": "passed",
+          "cause": "The scaled compartment size was one unit in the last place away from the value the source states, and the independent oracle failed to converge on it.",
+          "construct": "compartment size in a scaled unit",
+          "main": "failed",
+          "measured_in_report": "passed"
+        },
+        "BIOMD0000000954": {
+          "branch": "passed",
+          "cause": "A state-dependent rate law was replaced by a numerically fitted constant, so the exported model was not the model the source states.",
+          "construct": "rate law that names a species the reaction does not consume",
+          "main": "failed",
+          "measured_in_report": "passed"
         },
         "BIOMD0000001098": {
           "branch": "unsupported",
