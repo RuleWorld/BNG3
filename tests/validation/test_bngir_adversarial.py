@@ -256,6 +256,8 @@ def test_positive_structure_does_not_hide_unexpected_native_refusal():
 def test_worker_cli_accepts_registered_adversarial_execution():
     import ast
 
+    from tests.validation import integrated_worker
+
     tree = ast.parse((Path(__file__).parent / "integrated_worker.py").read_text())
     choices = next(
         keyword.value
@@ -264,7 +266,15 @@ def test_worker_cli_accepts_registered_adversarial_execution():
         for keyword in node.keywords
         if keyword.arg == "choices"
     )
-    assert "bngir-adversarial" in ast.literal_eval(choices)
+    listed = set()
+    for element in choices.elts:
+        if isinstance(element, ast.Starred):
+            # The qualification operations are spread into the choices from
+            # the worker's own list.
+            listed.update(integrated_worker.QUALIFICATION_OPERATIONS)
+        else:
+            listed.add(ast.literal_eval(element))
+    assert "bngir-adversarial" in listed
 
 
 def test_numeric_seed_rhs_and_trajectory_corruption_are_detected():
