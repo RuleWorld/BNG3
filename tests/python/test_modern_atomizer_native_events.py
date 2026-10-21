@@ -140,7 +140,11 @@ def test_native_event_delay_is_carried_into_the_event_block():
     assert "delay: 1.5" in result.bngl
 
 
-def test_non_strict_state_trigger_stays_explicitly_untranslated():
+def test_non_strict_state_trigger_stays_refused_without_a_monotone_state():
+    # A non-strict comparison is also true at a tangential contact, which
+    # leaves no sign change.  The crossing is therefore only a rising edge
+    # when the trigger's state cannot reverse at the threshold, and the
+    # coupled model below has no such proof.
     result = atomize(coupled_event_model(operator="leq"))
 
     assert result.success, result.error
@@ -233,6 +237,68 @@ def test_species_values_are_converted_into_the_observed_amount_units():
     assert "trigger: S1_amt < (0.25 * (0.75))" in result.bngl
     # The assignment sets a concentration too, so the amount is 1 * 0.25.
     assert "assignment: S2_amt = (1 * (0.25))" in result.bngl
+
+
+def test_non_strict_conjunctive_trigger_is_lowered_to_the_native_event_block():
+    # A conjunction of non-strict comparisons holds on an interval of the
+    # state, and its rising edge is the crossing of the smallest conjunct
+    # difference.  The rate-ruled parameter below grows monotonically, so the
+    # crossing into the interval is transversal.
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="interval_trigger">
+    <listOfParameters>
+      <parameter id="k1" value="0" constant="false"/>
+    </listOfParameters>
+    <listOfRules>
+      <rateRule variable="k1"><math xmlns="http://www.w3.org/1998/Math/MathML">
+        <cn>1</cn>
+      </math></rateRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="interval" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/>
+              <apply><geq/><ci>k1</ci><cn>0.25</cn></apply>
+              <apply><leq/><ci>k1</ci><cn>0.75</cn></apply>
+            </apply>
+          </math>
+        </trigger>
+        <delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></delay>
+        <listOfEventAssignments>
+          <eventAssignment variable="k1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+
+    result = atomize(xml)
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "trigger: (k1_amt >= 0.25) && (k1_amt <= 0.75)" in result.bngl
+    assert "# Events NOT simulated" not in result.bngl
+
+
+def test_event_priority_is_carried_into_the_native_event_block():
+    # The priority orders the assignments of events that are executed
+    # simultaneously.  With one event there is nothing to order, so the value
+    # is carried without changing the execution.
+    xml = coupled_event_model().replace(
+        '<event id="reset" useValuesFromTriggerTime="true">',
+        '<event id="reset" useValuesFromTriggerTime="true">'
+        '<priority><math xmlns="http://www.w3.org/1998/Math/MathML">'
+        "<cn>7</cn></math></priority>",
+    )
+
+    result = atomize(xml)
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "priority: 7" in result.bngl
 
 
 def test_sbml_export_preserves_the_native_event(tmp_path):

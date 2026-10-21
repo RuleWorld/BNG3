@@ -122,8 +122,9 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    at the crossing, and queues a delayed event until its delay elapses.
 3. [ ] Add trigger transition, delayed execution, persistence, snapshot, and
    priority tests grounded in official SBML cases. The trigger transition,
-   the delayed execution, and both snapshot choices are covered by official
-   cases; persistence, multiple events, and priority ordering are not.
+   the delayed execution, both snapshot choices, and the single-event
+   priority are covered; a non-persistent trigger, multiple events, and the
+   priority ordering between simultaneous events are not.
 4. [ ] Add stochastic event-queue semantics and seeded random ordering.
 5. [x] Round-trip the event block through the BNGL parser/writer. The public
    Python CVODE path executes one immediate event with simultaneous species
@@ -143,16 +144,19 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    `tests/python/test_event_backend_boundaries.py` checks these boundaries.
    The legacy unsupported CLI fixture retains explicit rejection.
 6. [x] Widen the ODE slice to the event class the modern Atomizer can
-   express exactly: one event, no priority, a persistent trigger, a strict
-   continuous inequality over observable state (or a conjunction of such
-   inequalities), assignments to observable state, and an optional constant
-   delay. A strict inequality is true exactly on one side of its root, so a
-   sign change of the root function is the rising trigger edge and no
-   monotonicity proof on the state is needed; a non-strict inequality keeps
-   the monotone proof because it is also true at a tangential contact. A
+   express exactly: one event, a persistent trigger, a continuous inequality
+   over observable state (or a conjunction of such inequalities), assignments
+   to observable state, an optional constant delay, and an optional priority.
+   A strict inequality is true exactly on one side of its root, so a sign
+   change of the root function is the rising trigger edge. A non-strict
+   inequality is also true at a tangential contact, which leaves no sign
+   change, so the Atomizer lowers it only when the trigger's state has a
+   provably monotone trajectory and the crossing is therefore transversal. A
    conjunction holds only where every conjunct holds, so its root function
    is the smallest of the conjunct root functions. A constant delay queues
    the event, and `useValuesFromTriggerTime` selects the trigger-time values.
+   A delayed execution re-tests the trigger, as SBML 4.12.8 requires, so an
+   assignment that makes the trigger true again triggers the event once more.
    A trigger whose two sides are equal at the start of the simulation is a
    falling edge, so the event waits for the next rising edge; only an
    immediate rising edge stays explicitly unsupported, and that refusal

@@ -149,6 +149,9 @@ private:
 
     void validateEventTargets();
     double eventValue(const ast::Expression& expression, double time, const double* state) const;
+    // Execute the queued events whose execution instant has arrived.  Returns
+    // true when the state changed.
+    bool applyDueEvents(double time, std::vector<double>& state);
     double eventSideDerivative(const ast::Expression& expression, double time,
                                const std::vector<double>& derivatives) const;
     double eventRootDerivative(const ast::Expression& trigger, double time,

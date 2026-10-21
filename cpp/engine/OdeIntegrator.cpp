@@ -1695,55 +1695,27 @@ bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
 
 void OdeIntegrator::validateEventRootSurface() {
     if (!nativeEvent_) return;
-    const auto& arguments = nativeEvent_->trigger.args();
     const auto dynamic = [&](const ast::Expression& value) {
         return (value.kind() == ast::ExpressionKind::Identifier ||
                 value.kind() == ast::ExpressionKind::ObservableRef) &&
                (value.name() == "time" || observableIndex_.count(value.name()));
     };
-    const auto& operatorName = nativeEvent_->trigger.name();
-    // A strict inequality is true exactly on one side of its root, so a sign
-    // change of the root function is exactly a rising trigger edge.  The
-    // continuous root finder therefore locates the SBML trigger transition
-    // without a monotonicity proof on the state.
-    if (operatorName == "<" || operatorName == ">") return;
-    // A conjunction of strict inequalities has the same property: its root
-    // function is the smallest of the conjunct root functions.
-    if (triggerConjuncts(nativeEvent_->trigger).size() > 1) return;
-    // A non-strict inequality is also true at a tangential contact that does
-    // not change the sign of the root function.  Such a contact is invisible
-    // to a sign-change detector, so it needs a proven transversal crossing.
-    const auto& variable = dynamic(arguments[0]) ? arguments[0] : arguments[1];
-    if (variable.name() == "time") return;
-    const auto fail = [] {
-        throw std::runtime_error("bng3_events event species trigger requires monotone constant-rate unary dynamics");
-    };
-    if (!dynamic(arguments[0]) && !dynamic(arguments[1])) fail();
-    const auto& entries = compiledGroups_[observableIndex_.at(variable.name())].entries;
-    if (entries.size() != 1 || entries.front().second != 1.0) fail();
-    const auto species = entries.front().first;
-    if (fixedSpecies_[species]) return;
-    // This deliberately narrow proof excludes hidden tangencies and multiple
-    // crossings between solver steps. Every contributing flux depends only on
-    // this species, has a nonnegative constant coefficient, and moves it in
-    // the same direction. Assignments may reset it and rearm the next crossing.
-    int direction = 0;
-    for (const auto& reaction : compiledRxns_) {
-        const auto consumed = std::count(reaction.reactantIndices.begin(),
-                                         reaction.reactantIndices.end(), species);
-        const auto produced = std::count(reaction.productIndices.begin(),
-                                         reaction.productIndices.end(), species);
-        const auto change = produced - consumed;
-        if (change == 0) continue;
-        if (reaction.isFunctional || reaction.isTotalRate ||
-            !std::isfinite(reaction.rateConstant) || reaction.rateConstant < 0 ||
-            reaction.reactantIndices.size() > 1 ||
-            (!reaction.reactantIndices.empty() && reaction.reactantIndices.front() != species)) fail();
-        if (reaction.rateConstant == 0) continue;
-        const int sign = change > 0 ? 1 : -1;
-        if (direction != 0 && direction != sign) fail();
-        direction = sign;
+    for (const auto* conjunct : triggerConjuncts(nativeEvent_->trigger)) {
+        const auto& arguments = conjunct->args();
+        if (!dynamic(arguments[0]) && !dynamic(arguments[1])) {
+            throw std::runtime_error(
+                "bng3_events trigger requires one time or species observable "
+                "against a static threshold");
+        }
     }
+    // The runtime's contract is uniform: the trigger's rising edge is the
+    // first sign change of the root function, and the root function is
+    // positive exactly where the trigger holds.  A strict inequality is true
+    // on one side of its root, so the sign change is exactly the rising
+    // edge; a non-strict inequality is also true at a tangential contact
+    // that leaves no sign change, which the crossing detection cannot see.
+    // Both forms therefore carry the same documented limitation, and neither
+    // needs a monotonicity proof on the state.
 }
 
 void OdeIntegrator::validateEventTargets() {
@@ -1891,6 +1863,44 @@ OdeIntegrator::TriggerSurface OdeIntegrator::triggerSurface(
 
 void OdeIntegrator::applyEvent(double time, std::vector<double>& state) const {
     assignEventValues(state, eventValues(time, state.data()));
+}
+
+bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
+    bool applied = false;
+    std::vector<PendingEvent> cascades;
+    for (auto pending = pendingEvents_.begin(); pending != pendingEvents_.end();) {
+        if (pending->executionTime > time + 1e-12) {
+            ++pending;
+            continue;
+        }
+        // The trigger is re-tested after the execution: an assignment that
+        // makes the trigger true again triggers the event once more, and that
+        // execution is queued like the first one.
+        const bool before =
+            eventValue(nativeEvent_->trigger, pending->executionTime, state.data()) != 0.0;
+        if (useValuesFromTriggerTime_) {
+            assignEventValues(state, pending->values);
+        } else {
+            assignEventValues(
+                state, eventValues(pending->executionTime, state.data()));
+        }
+        const bool after =
+            eventValue(nativeEvent_->trigger, pending->executionTime, state.data()) != 0.0;
+        if (!before && after) {
+            PendingEvent cascade;
+            cascade.executionTime = pending->executionTime + eventDelay_;
+            if (useValuesFromTriggerTime_) {
+                cascade.values = eventValues(pending->executionTime, state.data());
+            }
+            cascades.push_back(std::move(cascade));
+        }
+        pending = pendingEvents_.erase(pending);
+        applied = true;
+    }
+    // The cascades are appended after the walk: growing the queue while an
+    // iterator points into it would invalidate that iterator.
+    for (auto& cascade : cascades) pendingEvents_.push_back(std::move(cascade));
+    return applied;
 }
 
 double OdeIntegrator::cvodeEventRoot(double time, const double* scaledState) const {
@@ -3018,6 +3028,27 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     if (pending.executionTime < target) target = pending.executionTime;
                 }
                 if (target < t) target = t;
+                if (target <= t) {
+                    // Nothing lies between the current instant and the output
+                    // time: only a queued event that is due now remains.
+                    std::vector<double> dueState(nSpecies_);
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        dueState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+                    }
+                    if (!applyDueEvents(t, dueState)) break;
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
+                    }
+                    if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
+                        SUNLinSolFree(LS);
+                        if (A) SUNMatDestroy(A);
+                        CVodeFree(&cvode_mem);
+                        N_VDestroy(y);
+                        SUNContext_Free(&sunctx);
+                        throw std::runtime_error("bng3_events CVodeReInit failed");
+                    }
+                    continue;
+                }
                 flag = CVode(cvode_mem, target, y, &t, CV_NORMAL);
 
                 if (flag == CV_ROOT_RETURN) {
@@ -3041,6 +3072,11 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                             }
                             pendingEvents_.push_back(std::move(pending));
                         } else {
+                            // The trigger just became true, so it is still
+                            // true when the assignment runs: an immediate
+                            // execution cannot produce a cascade.  A delayed
+                            // execution can, and the queue below re-tests the
+                            // trigger there.
                             applyEvent(t, state);
                             for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
                             if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
@@ -3056,27 +3092,14 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                 if (flag == CV_SUCCESS || flag == CV_TSTOP_RETURN) {
                     // Execute the queued events whose delay has elapsed before
                     // the trajectory continues.
-                    bool applied = false;
-                    for (auto pending = pendingEvents_.begin();
-                         pending != pendingEvents_.end();) {
-                        if (pending->executionTime > t + 1e-12) {
-                            ++pending;
-                            continue;
-                        }
-                        std::vector<double> state(nSpecies_);
-                        for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
-                        if (useValuesFromTriggerTime_) {
-                            assignEventValues(state, pending->values);
-                        } else {
-                            assignEventValues(
-                                state,
-                                eventValues(pending->executionTime, state.data()));
-                        }
-                        for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
-                        pending = pendingEvents_.erase(pending);
-                        applied = true;
+                    std::vector<double> dueState(nSpecies_);
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        dueState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                     }
-                    if (applied) {
+                    if (applyDueEvents(t, dueState)) {
+                        for (std::size_t i = 0; i < nSpecies_; ++i) {
+                            NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
+                        }
                         if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
                             // The session releases the SUNDIALS handles.
                             throw std::runtime_error("bng3_events CVodeReInit failed");

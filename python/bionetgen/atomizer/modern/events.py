@@ -1291,10 +1291,12 @@ _COMPARISON_ALIAS_PATTERN = "|".join(sorted(_COMPARISON_ALIASES, key=len, revers
 _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
 
 # The native ``bng3_events`` runtime locates the trigger's rising edge with
-# continuous root finding, which attributes exactly one crossing to a strict
-# inequality.  A non-strict inequality is also true at a tangential contact
-# that leaves no sign change, so only the strict relations are lowered there.
-_NATIVE_COMPARISON_OPERATORS = {"lt": "<", "gt": ">"}
+# continuous root finding.  A strict inequality is true exactly on one side of
+# its root, so a sign change is the rising trigger edge; a non-strict
+# inequality is also true at a tangential contact that leaves no sign change.
+# Both therefore carry the same documented limitation: a truth interval that
+# opens and closes between two solver steps is not observed.
+_NATIVE_COMPARISON_OPERATORS = {"lt": "<", "gt": ">", "leq": "<=", "geq": ">="}
 
 
 # Names a trigger expression uses for built-in functions rather than model
@@ -2915,16 +2917,77 @@ def _native_scaled_static(
     return f"({_format_number(factor)} * ({static}))"
 
 
+def _native_state_is_monotone(
+    identifier: str, event: SBMLEvent, context: EventTranslationContext
+) -> bool:
+    """True when the state has a provably monotone trajectory.
+
+    A non-strict comparison is also true at a tangential contact that leaves
+    no sign change, so its rising edge is only a crossing when the state
+    cannot reverse at the threshold.  A state whose trajectory is affine,
+    exponential, or square-linear with a fixed sign has no such contact.
+    """
+    affine = context.resolve_affine_rate_for_event(identifier, event)
+    if affine is not None:
+        try:
+            initial, slope = affine
+        except (TypeError, ValueError):
+            initial = slope = None
+        if (
+            initial is not None
+            and slope is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(slope))
+        ):
+            return True
+    exponential = context.resolve_exponential_rate_for_event(identifier, event)
+    if exponential is not None:
+        try:
+            initial, exponent = exponential
+        except (TypeError, ValueError):
+            initial = exponent = None
+        if (
+            initial is not None
+            and exponent is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(exponent))
+        ):
+            return float(initial) * float(exponent) >= 0.0
+    square_linear = context.resolve_square_linear_rate_for_event(identifier, event)
+    if square_linear is not None:
+        try:
+            initial, squared_slope = square_linear
+        except (TypeError, ValueError):
+            initial = squared_slope = None
+        if (
+            initial is not None
+            and squared_slope is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(squared_slope))
+        ):
+            return float(squared_slope) >= 0.0
+    return False
+
+
 def _native_comparison_expression(
     left_text: str,
     right_text: str,
     operator: str,
+    event: SBMLEvent,
     context: EventTranslationContext,
 ) -> Optional[str]:
     """Render one comparison of state and static quantities in BNGL terms."""
     symbol = _NATIVE_COMPARISON_OPERATORS[operator]
     left_state = _native_state_target(left_text, context)
     right_state = _native_state_target(right_text, context)
+    if symbol in {"<=", ">="}:
+        # A non-strict comparison holds at a tangential contact, so the
+        # crossing has to be provably transversal.
+        for state, text in ((left_state, left_text), (right_state, right_text)):
+            if state is None:
+                continue
+            if not _native_state_is_monotone(text, event, context):
+                return None
     if left_state is not None and right_state is not None:
         # Two states compare directly only when they share their units; a
         # difference of two species in different compartments would need a
@@ -2946,7 +3009,7 @@ def _native_comparison_expression(
 
 
 def _native_conjunction_expression(
-    trigger: str, context: EventTranslationContext
+    trigger: str, event: SBMLEvent, context: EventTranslationContext
 ) -> Optional[str]:
     """Lower a conjunction of state comparisons to a native BNGL expression.
 
@@ -2971,7 +3034,7 @@ def _native_conjunction_expression(
             return None
         left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
         expression = _native_comparison_expression(
-            left_text, right_text, operator, context
+            left_text, right_text, operator, event, context
         )
         if expression is None:
             return None
@@ -2983,7 +3046,7 @@ def _native_trigger_expression(
     event: SBMLEvent, context: EventTranslationContext
 ) -> Optional[str]:
     """Lower a state-dependent SBML trigger to a native BNGL inequality."""
-    conjunction = _native_conjunction_expression(event.trigger, context)
+    conjunction = _native_conjunction_expression(event.trigger, event, context)
     if conjunction is not None:
         return conjunction
     comparison = _match_comparison_call(event.trigger)
@@ -3000,7 +3063,9 @@ def _native_trigger_expression(
     if arguments is None or len(arguments) != 2:
         return None
     left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
-    return _native_comparison_expression(left_text, right_text, operator, context)
+    return _native_comparison_expression(
+        left_text, right_text, operator, event, context
+    )
 
 
 def _native_fold_term(
@@ -3189,8 +3254,14 @@ def synthesize_native_event_block(
         # The native runtime finds a trigger crossing with the continuous ODE
         # solver; a stochastic run needs jump scheduling instead.
         return None
+    priority = 0.0
     if event.priority:
-        return None
+        # The priority orders the assignments of events that are executed
+        # simultaneously.  With one event there is nothing to order, so the
+        # value is carried but does not change the execution.
+        priority = _native_fold_term_text(event.priority, context)
+        if priority is None or not math.isfinite(priority):
+            return None
     if event.trigger_persistent is False:
         return None
     delay = 0.0
@@ -3228,6 +3299,8 @@ def synthesize_native_event_block(
     ]
     if delay:
         lines.append(f"    delay: {_format_number(delay)}")
+    if event.priority:
+        lines.append(f"    priority: {_format_number(priority)}")
     for observable, value in assignments:
         lines.append(f"    assignment: {observable} = {value}")
     lines.append("  end event")

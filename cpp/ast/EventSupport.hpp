@@ -16,7 +16,20 @@ inline void validateNativeEventSubset(const Model& model) {
     };
     if (model.getEvents().size() != 1) fail("exactly one immediate event is supported");
     const auto& event = model.getEvents().front();
-    if (event.priority) fail("priority is unsupported");
+    if (event.priority) {
+        // The priority orders the assignments of events that are executed
+        // simultaneously.  A single event has nothing to order, so the value
+        // is accepted and does not change the execution.
+        for (const auto& name : event.priority->getDependencies()) {
+            if (name == "time") fail("event priority must be static");
+            for (const auto& observable : model.getObservables()) {
+                if (observable.getName() == name) fail("event priority must be static");
+            }
+            try {
+                if (model.getParameters().isTimeDependent(name)) fail("event priority must be static");
+            } catch (const std::exception&) { fail("event priority requires static parameters"); }
+        }
+    }
     if (!event.persistent) {
         // A non-persistent trigger re-arms itself as soon as the assignment
         // leaves the trigger true, which needs an event queue rather than a
