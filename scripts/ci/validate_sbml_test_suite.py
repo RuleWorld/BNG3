@@ -5,8 +5,11 @@ This checks the canonical semantic and stochastic SBML cases from a pinned
 suite checkout.  It validates source and generated XML, imports each case
 through the modern Atomizer and C++ network generator, writes SBML, reimports
 that output, and checks the native C++ SBML reader's species/reaction counts.
-It is an import/round-trip gate, not a claim of numerical SBML Test Suite
-simulation conformance.
+Each case is additionally compared against the official suite reference data:
+deterministic cases against the official time course (executing the model's
+scheduled actions with the native action dispatcher when it has any), and
+stochastic cases against the official mean/standard-deviation series using
+the DSMTS ensemble statistics.
 """
 
 from __future__ import annotations
@@ -35,12 +38,19 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable, Sequence
 
 import numpy as np
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.ci.sbml_reference_actions import (
+    ActionGridError,
+    assignment_affects_outputs,
+    execute_action_block,
+    parse_action_block,
+    rewrite_action_output_grid,
+)
 from scripts.ci.ssts_selection import (
     SuiteSelectionError,
     select_feature_cover as _select_feature_cover,
@@ -476,6 +486,188 @@ def _read_reference_case(case: dict[str, Any]) -> dict[str, Any]:
         "relative": relative,
         "expected": {
             variable: matrix[:, index + 1] for index, variable in enumerate(variables)
+        },
+    }
+
+
+def _parse_reference_range(text: str, label: str) -> tuple[float, float]:
+    """Parse one ``(lower, upper)`` acceptance range from the settings file."""
+
+    stripped = text.strip()
+    if not (stripped.startswith("(") and stripped.endswith(")")):
+        raise ValueError(f"settings {label} is not a (lower, upper) range")
+    parts = [part.strip() for part in stripped[1:-1].split(",")]
+    if len(parts) != 2:
+        raise ValueError(f"settings {label} is not a (lower, upper) range")
+    try:
+        lower, upper = (float(part) for part in parts)
+    except ValueError as exc:
+        raise ValueError(f"settings {label} has a non-numeric bound: {exc}") from exc
+    if not (math.isfinite(lower) and math.isfinite(upper)):
+        raise ValueError(f"settings {label} bounds must be finite")
+    if lower > upper:
+        raise ValueError(f"settings {label} lower bound exceeds its upper bound")
+    return lower, upper
+
+
+def _read_stochastic_reference_case(case: dict[str, Any]) -> dict[str, Any]:
+    """Read one official stochastic reference (mean and standard deviation).
+
+    The stochastic settings file names the requested statistics in ``output``
+    (for example ``X-mean, X-sd``) and the acceptance ranges in ``meanRange``
+    and ``sdRange``.  The results file carries one column per requested
+    statistic.  The suite does not record a repetition count, so the harness
+    uses its own documented run budget.
+    """
+
+    if case.get("category") != "stochastic":
+        raise ValueError(
+            "official stochastic reference reader requires a stochastic case"
+        )
+    case_dir = Path(case["path"]).resolve().parent
+    case_id = str(case["id"])
+    settings_path = case_dir / f"{case_id}-settings.txt"
+    results_path = case_dir / f"{case_id}-results.csv"
+    try:
+        settings_text = settings_path.read_text(encoding="utf-8-sig")
+        results_text = results_path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError) as exc:
+        raise ValueError(f"cannot read official reference data: {exc}") from exc
+
+    settings: dict[str, str] = {}
+    for line_number, line in enumerate(settings_text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        if ":" not in line:
+            raise ValueError(f"settings line {line_number} has no ':' delimiter")
+        key, value = (part.strip() for part in line.split(":", 1))
+        if not key or key in settings:
+            raise ValueError(
+                f"settings line {line_number} has an empty or duplicate key"
+            )
+        settings[key] = value
+    required = {
+        "start",
+        "duration",
+        "steps",
+        "variables",
+        "output",
+        "meanRange",
+        "sdRange",
+    }
+    missing = sorted(required - settings.keys())
+    if missing:
+        raise ValueError("settings are missing required keys: " + ", ".join(missing))
+
+    def parse_ids(key: str) -> list[str]:
+        return [
+            value.strip() for value in settings.get(key, "").split(",") if value.strip()
+        ]
+
+    try:
+        start = float(settings["start"])
+        duration = float(settings["duration"])
+        steps = int(settings["steps"])
+    except ValueError as exc:
+        raise ValueError(f"settings contain an invalid numeric value: {exc}") from exc
+    if not all(math.isfinite(value) for value in (start, duration)):
+        raise ValueError("settings numeric values must be finite")
+    if duration < 0 or steps <= 0:
+        raise ValueError("settings duration must be non-negative and steps positive")
+
+    variables = parse_ids("variables")
+    if not variables:
+        raise ValueError("settings variables must contain unique identifiers")
+    outputs: list[tuple[str, str]] = []
+    for entry in parse_ids("output"):
+        if entry.endswith("-mean"):
+            outputs.append((entry[: -len("-mean")], "mean"))
+        elif entry.endswith("-sd"):
+            outputs.append((entry[: -len("-sd")], "sd"))
+        else:
+            raise ValueError(
+                f"settings output {entry!r} is neither a -mean nor a -sd statistic"
+            )
+    if not outputs:
+        raise ValueError("settings output does not request any statistic")
+    mean_range = _parse_reference_range(settings["meanRange"], "meanRange")
+    sd_range = _parse_reference_range(settings["sdRange"], "sdRange")
+
+    rows = list(csv.reader(results_text.splitlines()))
+    # The stochastic result files end with a blank line; only interior blank
+    # rows are malformed.
+    while rows and not rows[-1]:
+        rows.pop()
+    if not rows or any(not row for row in rows):
+        raise ValueError("official results CSV is empty or contains a blank row")
+    expected_header = ["time", *[f"{name}-{statistic}" for name, statistic in outputs]]
+    first = [cell.strip() for cell in rows[0]]
+    if not first or first[0].lower() != "time":
+        raise ValueError("official stochastic results CSV has no time column")
+    # The suite orders the statistic columns by species, not by the order of
+    # the ``output`` setting, so the columns are matched by name.
+    if sorted(first[1:]) != sorted(expected_header[1:]):
+        raise ValueError(
+            "official stochastic results header does not match the requested "
+            f"statistics: expected {sorted(expected_header[1:])}, found {sorted(first[1:])}"
+        )
+    column_index = {name: index for index, name in enumerate(first)}
+    data_rows = rows[1:]
+    if len(data_rows) != steps + 1:
+        raise ValueError(
+            f"official results row count {len(data_rows)} does not equal steps + 1 ({steps + 1})"
+        )
+    expected_grid = np.linspace(start, start + duration, steps + 1, dtype=float)
+    values: list[list[float]] = []
+    for row_number, row in enumerate(data_rows, start=2):
+        if len(row) != len(expected_header):
+            raise ValueError(
+                f"official results row {row_number} has {len(row)} columns; "
+                f"expected {len(expected_header)}"
+            )
+        try:
+            values.append([float(cell.strip()) for cell in row])
+        except ValueError as exc:
+            raise ValueError(
+                f"official results row {row_number} is not numeric"
+            ) from exc
+    matrix = np.asarray(values, dtype=float)
+    times = matrix[:, 0]
+    grid_tolerances = np.maximum(1e-12, np.abs(expected_grid) * 1e-14)
+    if not np.all(np.isfinite(times)) or not np.all(
+        np.abs(times - expected_grid) <= grid_tolerances
+    ):
+        raise ValueError(
+            "official results time grid does not match settings start/duration/steps"
+        )
+    resolutions: dict[str, float] = {}
+    for index, (name, statistic) in enumerate(outputs):
+        finest = 0.0
+        for row in data_rows:
+            token = row[column_index[f"{name}-{statistic}"]].strip()
+            if "." in token:
+                decimals = len(token.split(".", 1)[1].rstrip("eE+-0123456789"))
+                finest = max(finest, 10.0 ** (-decimals))
+        resolutions[f"{name}-{statistic}"] = finest
+    return {
+        "settings_path": str(settings_path),
+        "results_path": str(results_path),
+        "settings_sha256": _sha256_file(settings_path),
+        "results_sha256": _sha256_file(results_path),
+        "start": start,
+        "duration": duration,
+        "steps": steps,
+        "times": times,
+        "variables": variables,
+        "amount": parse_ids("amount"),
+        "concentration": parse_ids("concentration"),
+        "outputs": outputs,
+        "mean_range": mean_range,
+        "sd_range": sd_range,
+        "resolutions": resolutions,
+        "expected": {
+            f"{name}-{statistic}": matrix[:, column_index[f"{name}-{statistic}"]]
+            for name, statistic in outputs
         },
     }
 
@@ -1177,7 +1369,10 @@ def _reference_output_target(
         return f"{standardize_name(variable)}_amt"
     if variable in parsed.compartments:
         return compartment_volume(variable)
-    if variable in parsed.parameters:
+    # The parser keys its parameter table by the BNGL-safe identifier, so a
+    # source parameter whose id is a BNGL keyword is stored under its
+    # standardized name.
+    if variable in parsed.parameters or standardize_name(variable) in parsed.parameters:
         return standardize_name(variable)
     if any(rule.variable == variable for rule in parsed.rules):
         return standardize_name(variable)
@@ -1225,6 +1420,25 @@ def _with_reference_output_functions(
     return bngl, expressions
 
 
+def _degenerate_network_reason(network: Any, parsed: Any) -> str | None:
+    """Describe a generated network that contains no reaction at all.
+
+    A rule that names observable names instead of molecule types parses but
+    produces an empty network, and a rule that degenerates to a self-loop does
+    the same.  A flat trajectory must never be reported as agreement with the
+    official reference.
+    """
+
+    if network is None or network.num_reactions != 0 or not parsed.reactions:
+        return None
+    return (
+        "the generated network contains no reaction although the source model "
+        f"defines {len(parsed.reactions)} reaction(s); the generated model is "
+        "degenerate, so its flat trajectory is not comparable with the official "
+        "reference"
+    )
+
+
 def _compare_case_to_reference(
     case: dict[str, Any],
     cpp_model: Any,
@@ -1233,18 +1447,25 @@ def _compare_case_to_reference(
     atomized: Any,
     reference: dict[str, Any],
     cpp: Any,
+    work_dir: Path | None = None,
+    network: Any = None,
 ) -> dict[str, Any]:
     """Run BNG3 on the official grid and compare to the suite reference."""
 
-    if cpp_model.actions:
-        return {
-            "status": "unsupported",
-            "reason": (
-                "generated BNGL contains scheduled actions; the in-memory CVODE "
-                "reference runner cannot execute actions on the official output grid"
-            ),
-        }
     from bionetgen.atomizer.modern.types import standardize_name
+
+    if network is not None and network.num_reactions == 0 and parsed.reactions:
+        # A rule that names observable names instead of molecule types parses
+        # but produces an empty network, and a rule that degenerates to a
+        # self-loop does the same.  A flat trajectory must never be reported
+        # as agreement with the official reference; the comparison still runs
+        # so that a *mismatch* over the degenerate model stays a failure.
+        degenerate = {
+            "reason": _degenerate_network_reason(network, parsed),
+            "source_reactions": len(parsed.reactions),
+        }
+    else:
+        degenerate = None
 
     targets = {}
     unresolved = []
@@ -1290,6 +1511,22 @@ def _compare_case_to_reference(
                 "reason": "generated model does not expose exact result symbols: "
                 + ", ".join(missing_targets),
             }
+        if output_model.actions:
+            # The model carries scheduled actions.  The in-memory CVODE runner
+            # cannot execute them, so the official reference is compared
+            # against the native action dispatcher instead.
+            return _compare_action_case_to_reference(
+                case,
+                output_model,
+                reference_bngl,
+                reference,
+                output_aliases,
+                targets,
+                cpp,
+                work_dir,
+                network,
+                parsed,
+            )
         from bionetgen import BioNetGenModel
 
         result = BioNetGenModel(output_model).simulate(
@@ -1324,6 +1561,12 @@ def _compare_case_to_reference(
         )
         return {"status": status, "reason": message}
 
+    if degenerate is not None and comparison["passed"]:
+        # The degenerate model happens to agree with the official reference
+        # because the reference is flat as well.  That agreement carries no
+        # information about the dynamics, so it is reported as not comparable.
+        return {"status": "unsupported", "reason": degenerate["reason"]}
+
     return {
         "status": "passed" if comparison["passed"] else "failed",
         "reason": (
@@ -1342,6 +1585,931 @@ def _compare_case_to_reference(
         "output_targets": targets,
         "output_aliases": output_aliases,
         "comparison": comparison,
+    }
+
+
+def _phase_boundary_ambiguity(
+    block: Any,
+    times: Sequence[float],
+    *,
+    requested_ids: Iterable[str],
+    target_symbols: Iterable[str],
+) -> str | None:
+    """Describe a scheduled-action boundary that sits on the official grid.
+
+    The native action dispatcher reports the phase-boundary sample before the
+    phase's assignment is applied, while the official reference reports the
+    state after the assignment.  When the assignment moves a requested
+    quantity the two conventions disagree and the comparison cannot be
+    decided, so the case is reported as unsupported with this reason.
+    """
+
+    assignments_by_phase = dict(block.assignments)
+    for phase in block.phases:
+        assignments = assignments_by_phase.get(phase.index, ())
+        if not assignments:
+            continue
+        for point in times:
+            if abs(point - phase.t_end) > 1e-9 * max(1.0, abs(point)):
+                continue
+            if assignment_affects_outputs(
+                assignments,
+                requested_ids=requested_ids,
+                target_symbols=target_symbols,
+            ):
+                return (
+                    "the official output grid contains the boundary of the "
+                    f"generated scheduled actions at t={point!r}, where the "
+                    "reference convention (assignment already applied) and the "
+                    "phase-boundary value produced by the native action "
+                    "dispatcher (assignment not yet applied) differ"
+                )
+    return None
+
+
+def _compare_action_case_to_reference(
+    case: dict[str, Any],
+    output_model: Any,
+    reference_bngl: str,
+    reference: dict[str, Any],
+    output_aliases: dict[str, str],
+    targets: dict[str, str],
+    cpp: Any,
+    work_dir: Path | None,
+    network: Any = None,
+    parsed: Any = None,
+) -> dict[str, Any]:
+    """Compare the official reference against the native action execution.
+
+    The generated action block keeps its event triggers, assignments and phase
+    boundaries; only the output grid of each ``simulate`` phase is re-expressed
+    on the official grid so the trajectory can be compared sample by sample.
+    """
+
+    times = reference["times"].tolist()
+    try:
+        rewritten, block = rewrite_action_output_grid(reference_bngl, times)
+    except ActionGridError as exc:
+        return {
+            "status": "unsupported",
+            "reason": (
+                "generated scheduled actions cannot be replayed on the official "
+                f"output grid: {exc}"
+            ),
+        }
+    if len(block.phases) > ACTION_MAX_PHASES:
+        return {
+            "status": "unsupported",
+            "reason": (
+                f"the generated scheduled actions have {len(block.phases)} "
+                "simulation phases; the native dispatcher integrates every phase "
+                "separately, so the official reference comparison does not fit "
+                f"the documented budget of {ACTION_MAX_PHASES} phases"
+            ),
+        }
+
+    symbols: set[str] = set()
+    for target in targets.values():
+        symbols.update(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", target))
+    ambiguity = _phase_boundary_ambiguity(
+        block,
+        times,
+        requested_ids=reference["variables"],
+        target_symbols=symbols,
+    )
+    if ambiguity is not None:
+        return {"status": "unsupported", "reason": ambiguity}
+
+    if work_dir is None:
+        return {
+            "status": "unsupported",
+            "reason": "no working directory is available to execute the action block",
+        }
+    try:
+        run = execute_action_block(
+            cpp,
+            rewritten,
+            work_dir,
+            times=times,
+            aliases=output_aliases,
+        )
+    except ActionGridError as exc:
+        return {"status": "unsupported", "reason": str(exc)}
+    except Exception as exc:
+        message = f"{type(exc).__name__}: {exc}"
+        status = (
+            "unsupported" if _classify_error(message) == "unsupported" else "failed"
+        )
+        return {"status": status, "reason": message}
+
+    comparison = _compare_reference_series(
+        reference["expected"],
+        run.values,
+        absolute=reference["absolute"],
+        relative=reference["relative"],
+        sample_times=reference["times"],
+    )
+    degenerate_reason = _degenerate_network_reason(network, parsed)
+    if degenerate_reason is not None and comparison["passed"]:
+        # The degenerate model happens to agree with the official reference
+        # because the reference is flat as well.  That agreement carries no
+        # information about the dynamics, so it is reported as not comparable.
+        return {"status": "unsupported", "reason": degenerate_reason}
+    return {
+        "status": "passed" if comparison["passed"] else "failed",
+        "reason": (
+            ""
+            if comparison["passed"]
+            else _official_comparison_failure_reason(comparison)
+        ),
+        "method": "BNG3 native action dispatcher (scheduled actions executed)",
+        "solver_rtol": 1e-9,
+        "solver_atol": 1e-14,
+        "start": reference["start"],
+        "duration": reference["duration"],
+        "steps": reference["steps"],
+        "settings_sha256": reference["settings_sha256"],
+        "results_sha256": reference["results_sha256"],
+        "output_targets": targets,
+        "output_aliases": output_aliases,
+        "action_phases": [
+            {
+                "t_start": phase.t_start,
+                "t_end": phase.t_end,
+                "method": phase.method,
+                "continued": phase.continued,
+            }
+            for phase in block.phases
+        ],
+        "comparison": comparison,
+    }
+
+
+#: Documented budget for the number of simulation phases the native action
+#: dispatcher may be asked to execute for one official reference comparison.
+#: Every phase is a separate integration, so a generated action block with
+#: thousands of phases (for example a periodic event synthesised over a long
+#: horizon) does not fit the conformance gate's per-case budget.  Such a case
+#: is reported as unsupported with that reason, never as a pass.
+ACTION_MAX_PHASES = 1000
+
+#: Documented ensemble budget (number of trajectories) for the official
+#: stochastic conformance comparison.  The SBML discrete stochastic model test
+#: suite (DSMTS) user guide requires at least 1,000 independent repetitions
+#: and recommends 10,000 for power; the suite's stochastic settings files do
+#: not record a repetition count, so the harness uses this documented default.
+#: The budget is large enough that the standardised variance statistic of a
+#: correct simulator stays inside the official acceptance range: the measured
+#: spread of the ensemble standard deviation between independent ensembles of
+#: 10,000 trajectories is about 1.5 % of the estimate, so the ensemble standard
+#: deviation test would otherwise produce occasional false violations.
+STOCHASTIC_DEFAULT_RUNS = 40_000
+#: Documented budget for the action-dispatcher ensemble.  That path rebuilds
+#: and regenerates the network for every repetition, so it uses the DSMTS
+#: minimum instead of the larger batched budget.
+STOCHASTIC_ACTION_RUNS = 1_000
+#: Base seed for the documented stochastic ensemble.  The batched samplers
+#: derive one engine seed per trajectory from this base seed, so the whole
+#: ensemble is reproducible.
+STOCHASTIC_SEED_BASE = 1_000_000
+#: Per-case false-positive budget for the stochastic violation count.  Under
+#: the null hypothesis a correct simulator violates the official acceptance
+#: ranges with the probability implied by those ranges; a case is only failed
+#: when the observed violation count is unlikely under that null.
+STOCHASTIC_CASE_ERROR_RATE = 1e-3
+#: Relative numerical tolerance for a reference point whose official standard
+#: deviation is zero.  The batched samplers report their statistics in single
+#: precision, so the tolerance is relative to the reference magnitude.
+STOCHASTIC_DEGENERATE_RELATIVE = 1e-6
+#: The GPU batched sampler pays a per-call model preparation and a
+#: host/device transfer, so it only pays off when the batch does enough
+#: reaction work to amortise them (see
+#: ``docs/GPU_BATCH_SSA_EVALUATION.md`` for the measured crossover).  The
+#: harness measures the reaction work of a small CPU probe batch and selects
+#: the GPU when the projected work of the full batch is at least this large.
+#: The threshold is the measured crossover: at roughly 1 million reaction
+#: events the CPU sampler is still ahead, at roughly 8 million the GPU
+#: sampler is ahead by an order of magnitude.
+STOCHASTIC_GPU_MIN_EVENTS = 6_000_000
+#: Smallest trajectory count for which the GPU batched sampler is considered.
+STOCHASTIC_GPU_MIN_RUNS = 1_000
+#: Size of the CPU probe batch used to project the cost of the full ensemble.
+STOCHASTIC_GPU_PROBE_TRAJECTORIES = 64
+#: Number of CPU threads the batched CPU sampler may use.  The harness uses a
+#: single worker: the multi-worker CPU batch path does not reproduce the same
+#: trajectories for the same seed, so a conformance verdict has to stay
+#: reproducible.
+STOCHASTIC_CPU_THREADS = 1
+#: Per-case wall-clock budget for one CPU batched ensemble.  When the
+#: measured projection exceeds it, the trajectory count is reduced to the
+#: largest affordable value (never below the DSMTS minimum) and the report
+#: records the budget that was actually used.  The budget keeps a stochastic
+#: case comfortably inside the conformance gate's per-case timeout.
+STOCHASTIC_CPU_TIME_BUDGET_SECONDS = 30.0
+#: Smallest trajectory count the harness will use for a stochastic ensemble.
+STOCHASTIC_MIN_RUNS = 1_000
+
+
+def _standard_normal_outside(bounds: tuple[float, float]) -> float:
+    """Probability that a standard normal falls outside an acceptance range."""
+
+    lower, upper = bounds
+    upper_tail = 0.5 * math.erfc(upper / math.sqrt(2.0))
+    lower_tail = 0.5 * math.erfc(-lower / math.sqrt(2.0))
+    return min(1.0, max(0.0, upper_tail + lower_tail))
+
+
+def _binomial_upper_tail(trials: int, probability: float, count: int) -> float:
+    """P(X >= count) for X ~ Binomial(trials, probability)."""
+
+    if count <= 0:
+        return 1.0
+    if count > trials:
+        return 0.0
+    if probability <= 0.0:
+        return 0.0
+    if probability >= 1.0:
+        return 1.0
+    log_p = math.log(probability)
+    log_q = math.log1p(-probability)
+    total = 0.0
+    for value in range(count, trials + 1):
+        term = (
+            math.lgamma(trials + 1)
+            - math.lgamma(value + 1)
+            - math.lgamma(trials - value + 1)
+            + value * log_p
+            + (trials - value) * log_q
+        )
+        total += math.exp(term)
+    return min(1.0, max(0.0, total))
+
+
+def _stochastic_statistics(
+    mean_values: np.ndarray,
+    sd_values: np.ndarray,
+    expected_mean: np.ndarray | None,
+    expected_sd: np.ndarray | None,
+    *,
+    runs: int,
+    statistic: str,
+    mean_range: tuple[float, float],
+    sd_range: tuple[float, float],
+    mean_resolution: float,
+) -> dict[str, Any]:
+    """Apply the DSMTS mean or standard-deviation test to one variable.
+
+    The DSMTS user guide defines the standardised mean statistic
+    ``Z = sqrt(n) * (mean - mu) / sigma`` and the standardised variance
+    statistic ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)``; both are approximately
+    standard normal under a correct simulator.  A value outside the official
+    acceptance range is a violation.  Only the requested statistic is tested:
+    the suite may ask for the mean, the standard deviation, or both.
+
+    ``mean_values`` and ``sd_values`` are the *sample* mean and standard
+    deviation of the ensemble at each output time; ``runs`` is the number of
+    independent repetitions the ensemble was drawn from.  The standard
+    deviation uses the ``1/n`` sum of squared deviations, which is the
+    estimator the DSMTS statistic is defined on and the estimator the batched
+    samplers report.
+    """
+
+    mean_statistics: list[float] = []
+    sd_statistics: list[float] = []
+    mean_violations: list[dict[str, Any]] = []
+    sd_violations: list[dict[str, Any]] = []
+    deterministic_failures: list[dict[str, Any]] = []
+    for index in range(int(mean_values.size)):
+        mean_value = float(mean_values[index])
+        deviation = float(sd_values[index])
+        reference_sd = (
+            float(expected_sd[index]) if expected_sd is not None else float("nan")
+        )
+        reference_mean = (
+            float(expected_mean[index]) if expected_mean is not None else float("nan")
+        )
+        if reference_sd > 0.0:
+            if statistic == "mean":
+                z_value = math.sqrt(runs) * (mean_value - reference_mean) / reference_sd
+                mean_statistics.append(z_value)
+                if not (mean_range[0] <= z_value <= mean_range[1]):
+                    mean_violations.append(
+                        {
+                            "index": index,
+                            "statistic": z_value,
+                            "sample_mean": mean_value,
+                            "reference_mean": reference_mean,
+                            "reference_sd": reference_sd,
+                        }
+                    )
+            if statistic == "sd":
+                y_value = math.sqrt(runs / 2.0) * (
+                    deviation * deviation / (reference_sd * reference_sd) - 1.0
+                )
+                sd_statistics.append(y_value)
+                if not (sd_range[0] <= y_value <= sd_range[1]):
+                    sd_violations.append(
+                        {
+                            "index": index,
+                            "statistic": y_value,
+                            "sample_sd": deviation,
+                            "reference_sd": reference_sd,
+                        }
+                    )
+            continue
+        # A zero reference standard deviation means the quantity is
+        # deterministic at that time: the ensemble has to be degenerate and,
+        # when the mean is part of the reference, has to reproduce the
+        # reference mean.
+        tolerance = 0.5 * mean_resolution + STOCHASTIC_DEGENERATE_RELATIVE * max(
+            1.0, abs(reference_mean)
+        )
+        mean_matches = (
+            True
+            if expected_mean is None
+            else abs(mean_value - reference_mean) <= tolerance
+        )
+        if deviation > tolerance or not mean_matches:
+            deterministic_failures.append(
+                {
+                    "index": index,
+                    "sample_mean": mean_value,
+                    "sample_sd": deviation,
+                    "reference_mean": reference_mean,
+                    "reference_sd": reference_sd,
+                    "tolerance": tolerance,
+                }
+            )
+    return {
+        "runs": runs,
+        "mean_statistics": mean_statistics,
+        "sd_statistics": sd_statistics,
+        "mean_violations": mean_violations,
+        "sd_violations": sd_violations,
+        "deterministic_failures": deterministic_failures,
+    }
+
+
+def _gpu_backend_names(cpp: Any) -> list[str]:
+    """Return the GPU backends this build can actually run."""
+
+    try:
+        backends = cpp.gpu_backends()
+    except Exception:
+        return []
+    return [
+        str(entry.get("name"))
+        for entry in backends
+        if entry.get("compiled") and entry.get("available") and entry.get("name")
+    ]
+
+
+def _stochastic_batch_applicable(
+    block: Any | None, targets: dict[str, str], observables: set[str]
+) -> bool:
+    """Report whether the batched sampler can stand in for the action block.
+
+    The batched sampler integrates the compiled network and cannot execute
+    scheduled actions, so it is only used when the generated action block is a
+    single simulation phase without assignments and every requested output is
+    a plain network observable.
+    """
+
+    if block is not None:
+        if len(block.phases) > 1:
+            return False
+        if any(assignments for _, assignments in block.assignments):
+            return False
+    return all(target in observables for target in targets.values())
+
+
+def _stochastic_batch_ensemble(
+    cpp: Any,
+    model: Any,
+    network: Any,
+    reference: dict[str, Any],
+    targets: dict[str, str],
+    *,
+    runs: int,
+    seed: int,
+    backend: str | None,
+) -> dict[str, Any]:
+    """Run one batched SSA ensemble and return its per-variable statistics.
+
+    The batched sampler returns the ensemble mean and standard deviation of
+    every observable directly, which is exactly what the official stochastic
+    reference provides.  The reported standard deviation uses the ``1/n`` sum
+    of squared deviations, i.e. the estimator the DSMTS statistic is defined
+    on.  ``backend`` selects the GPU backend explicitly; ``None`` selects the
+    CPU batched sampler.
+    """
+
+    start = reference["start"]
+    duration = reference["duration"]
+    steps = reference["steps"]
+    if backend is not None:
+        metrics = cpp.simulate_batch_ssa_gpu(
+            model,
+            network,
+            batch_size=int(runs),
+            t_end=start + duration,
+            n_steps=int(steps),
+            t_start=start,
+            base_seed=int(seed),
+            max_sim_steps=0,
+            backend=backend,
+        )
+        engine = f"gpu:{backend}"
+    else:
+        metrics = cpp.simulate_batch_ssa_cpu(
+            model,
+            network,
+            batch_size=int(runs),
+            t_end=start + duration,
+            n_steps=int(steps),
+            t_start=start,
+            base_seed=int(seed),
+            threads=STOCHASTIC_CPU_THREADS,
+            max_sim_steps=0,
+        )
+        engine = "cpu:batch"
+    times = np.asarray(metrics["time"], dtype=float)
+    expected_times = np.asarray(reference["times"], dtype=float)
+    if times.shape != expected_times.shape or not np.allclose(
+        times, expected_times, rtol=0.0, atol=1e-9 * max(1.0, abs(start + duration))
+    ):
+        raise ActionGridError(
+            "the batched sampler did not report the official output grid"
+        )
+    means = metrics["observable_means"]
+    stds = metrics["observable_stds"]
+    values: dict[str, dict[str, np.ndarray]] = {}
+    for variable, target in targets.items():
+        if target not in means or target not in stds:
+            raise ActionGridError(
+                f"the batched sampler did not report the observable {target!r}"
+            )
+        values[variable] = {
+            "mean": np.asarray(means[target], dtype=float),
+            "sd": np.asarray(stds[target], dtype=float),
+        }
+    return {
+        "values": values,
+        "engine": engine,
+        "metrics": {
+            "batch_size": metrics.get("batch_size"),
+            "trajectories_per_sec_sim": metrics.get("trajectories_per_sec_sim"),
+            "trajectories_per_sec_total": metrics.get("trajectories_per_sec_total"),
+            "events_per_sec_sim": metrics.get("events_per_sec_sim"),
+            "sim_time_ms": metrics.get("sim_time_ms"),
+            "model_prep_time_ms": metrics.get("model_prep_time_ms"),
+            "h2d_transfer_ms": metrics.get("h2d_transfer_ms"),
+            "d2h_transfer_ms": metrics.get("d2h_transfer_ms"),
+            "total_wall_time_ms": metrics.get("total_wall_time_ms"),
+            "memory_usage_bytes": metrics.get("memory_usage_bytes"),
+        },
+    }
+
+
+def _stochastic_action_ensemble(
+    cpp: Any,
+    reference_bngl: str,
+    times: Sequence[float],
+    aliases: dict[str, str],
+    *,
+    runs: int,
+    seed: int,
+    phase_count: int,
+    work_dir: Path,
+) -> dict[str, Any]:
+    """Run the action block repeatedly and summarise the ensemble.
+
+    This path is used when the generated action block carries scheduled
+    actions the batched sampler cannot execute.  Every repetition runs the
+    same action block through the native dispatcher with its own seed.
+    """
+
+    samples: dict[str, list[list[float]]] = {name: [] for name in aliases}
+    for run_index in range(runs):
+        seeds = [
+            seed + run_index * 1000 + phase_index for phase_index in range(phase_count)
+        ]
+        rewritten, _ = rewrite_action_output_grid(reference_bngl, times, seeds=seeds)
+        result = execute_action_block(
+            cpp,
+            rewritten,
+            work_dir,
+            times=times,
+            aliases=aliases,
+            source_name="stochastic_reference",
+        )
+        for variable, values in result.values.items():
+            samples[variable].append(values)
+    values = {}
+    for variable, columns in samples.items():
+        array = np.asarray(columns, dtype=float)
+        mean = array.mean(axis=0)
+        # The DSMTS estimator: the 1/n sum of squared deviations.
+        deviation = np.sqrt(np.mean((array - mean) ** 2, axis=0))
+        values[variable] = {"mean": mean, "sd": deviation}
+    return {"values": values, "engine": "cpu:action-ensemble", "metrics": {}}
+
+
+def _stochastic_ensemble_plan(
+    cpp: Any,
+    model: Any,
+    network: Any,
+    reference: dict[str, Any],
+    runs: int,
+) -> dict[str, Any]:
+    """Choose the ensemble engine and an affordable trajectory budget.
+
+    The GPU batched sampler pays a per-call model preparation and a
+    host/device transfer, so it only pays off when the batch does enough
+    reaction work to amortise them (``docs/GPU_BATCH_SSA_EVALUATION.md``
+    measures the crossover).  The harness therefore probes the CPU sampler
+    with a small batch, measures the reaction work of that batch, and selects
+    the GPU when the projected work of the full batch is large enough.  When
+    the CPU batched sampler is used and the projected CPU cost would exceed
+    the per-case ensemble time budget, the trajectory count is reduced to the
+    largest affordable value; the report records the budget that was used.
+    """
+
+    plan: dict[str, Any] = {
+        "backend": None,
+        "runs": int(runs),
+        "projected_cpu_seconds": None,
+        "projected_events": None,
+        "probe_trajectories": None,
+        "cpu_budget_reduced": False,
+    }
+    backends = _gpu_backend_names(cpp)
+    probe = min(int(runs), STOCHASTIC_GPU_PROBE_TRAJECTORIES)
+    start = time.monotonic()
+    probe_metrics: dict[str, Any] = {}
+    try:
+        probe_metrics = cpp.simulate_batch_ssa_cpu(
+            model,
+            network,
+            batch_size=probe,
+            t_end=reference["start"] + reference["duration"],
+            n_steps=reference["steps"],
+            t_start=reference["start"],
+            base_seed=STOCHASTIC_SEED_BASE,
+            threads=STOCHASTIC_CPU_THREADS,
+            max_sim_steps=0,
+        )
+    except Exception:
+        # The CPU sampler cannot run this model either; the caller reports the
+        # failure with the engine that was tried.
+        plan["probe_trajectories"] = probe
+        return plan
+    probe_seconds = max(time.monotonic() - start, 1e-6)
+    per_trajectory = probe_seconds / float(probe)
+    projected = per_trajectory * float(runs)
+    plan["projected_cpu_seconds"] = projected
+    plan["probe_trajectories"] = probe
+    probe_events = float(probe_metrics.get("total_events") or 0.0)
+    plan["projected_events"] = probe_events * float(runs) / float(probe)
+    if (
+        backends
+        and int(runs) >= STOCHASTIC_GPU_MIN_RUNS
+        and plan["projected_events"] >= STOCHASTIC_GPU_MIN_EVENTS
+    ):
+        plan["backend"] = backends[0]
+        return plan
+    if projected > STOCHASTIC_CPU_TIME_BUDGET_SECONDS:
+        affordable = int(
+            float(runs) * STOCHASTIC_CPU_TIME_BUDGET_SECONDS / max(projected, 1e-9)
+        )
+        plan["runs"] = max(STOCHASTIC_MIN_RUNS, min(int(runs), affordable))
+        plan["cpu_budget_reduced"] = plan["runs"] < int(runs)
+    return plan
+
+
+def _compare_stochastic_case_to_reference(
+    case: dict[str, Any],
+    bngl: str,
+    parsed: Any,
+    atomized: Any,
+    reference: dict[str, Any],
+    cpp: Any,
+    work_dir: Path | None,
+    runs: int,
+    cpp_model: Any,
+    network: Any,
+) -> dict[str, Any]:
+    """Compare an official stochastic reference against a BNG3 ensemble.
+
+    The comparison is distributional: the model is executed as an ensemble and
+    the sample mean and sample standard deviation are tested against the
+    official mean/sd series with the DSMTS statistics.  The ensemble is drawn
+    either with the batched SSA samplers (GPU or CPU) or, when the model
+    carries scheduled actions the batched samplers cannot execute, with
+    repeated runs of the native action dispatcher.
+    """
+
+    from bionetgen.atomizer.modern.types import standardize_name
+
+    requested = [name for name, _ in reference["outputs"]]
+    variables = sorted(set(requested))
+    unsupported_outputs = [
+        name for name in variables if name not in reference["variables"]
+    ]
+    if unsupported_outputs:
+        return {
+            "status": "unsupported",
+            "reason": (
+                "no exact BNG3 result mapping for the transformed stochastic "
+                "output the harness does not map: " + ", ".join(unsupported_outputs)
+            ),
+        }
+
+    targets: dict[str, str] = {}
+    unresolved: list[str] = []
+    for variable in variables:
+        target = _reference_output_target(
+            variable,
+            reference,
+            parsed,
+            dict(atomized.observable_map),
+            standardize_name,
+        )
+        if target is None:
+            unresolved.append(variable)
+        else:
+            targets[variable] = target
+    if unresolved:
+        return {
+            "status": "unsupported",
+            "reason": "no exact BNG3 result mapping for: " + ", ".join(unresolved),
+        }
+
+    degenerate_reason = _degenerate_network_reason(network, parsed)
+
+    try:
+        reference_bngl, output_aliases = _with_reference_output_functions(
+            bngl, targets, str(case["id"])
+        )
+        output_model = cpp.parse_string(reference_bngl)
+        available = (
+            {item.name for item in output_model.observables}
+            | {item.name for item in output_model.functions}
+            | {item.name for item in output_model.parameters}
+        )
+        target_symbols = {
+            symbol
+            for target in targets.values()
+            if target != "time"
+            for symbol in re.findall(r"[A-Za-z_][A-Za-z_0-9]*", target)
+            if symbol != "time"
+        }
+        missing_targets = sorted(target_symbols - available)
+        if missing_targets:
+            return {
+                "status": "unsupported",
+                "reason": "generated model does not expose exact result symbols: "
+                + ", ".join(missing_targets),
+            }
+        if work_dir is None:
+            return {
+                "status": "unsupported",
+                "reason": "no working directory is available to execute the ensemble",
+            }
+        times = reference["times"].tolist()
+        block = parse_action_block(reference_bngl)
+        symbols: set[str] = set()
+        for target in targets.values():
+            symbols.update(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", target))
+        ambiguity = _phase_boundary_ambiguity(
+            block,
+            times,
+            requested_ids=variables,
+            target_symbols=symbols,
+        )
+        if ambiguity is not None:
+            return {"status": "unsupported", "reason": ambiguity}
+
+        observables = {item.name for item in output_model.observables}
+        engine_used = "cpu:batch"
+        metrics: dict[str, Any] = {}
+        plan: dict[str, Any] = {}
+        if _stochastic_batch_applicable(block, targets, observables):
+            plan = _stochastic_ensemble_plan(cpp, cpp_model, network, reference, runs)
+            budget = int(plan["runs"])
+            engine = plan["backend"]
+            try:
+                ensemble = _stochastic_batch_ensemble(
+                    cpp,
+                    cpp_model,
+                    network,
+                    reference,
+                    targets,
+                    runs=budget,
+                    seed=STOCHASTIC_SEED_BASE,
+                    backend=engine,
+                )
+            except Exception as exc:
+                if engine is None:
+                    raise
+                # The GPU path fails closed on rate laws it cannot flatten;
+                # the CPU batched sampler is the documented fallback.  The
+                # fallback keeps the trajectory budget affordable.
+                projected = plan.get("projected_cpu_seconds")
+                if (
+                    projected is not None
+                    and projected > STOCHASTIC_CPU_TIME_BUDGET_SECONDS
+                ):
+                    budget = max(
+                        STOCHASTIC_MIN_RUNS,
+                        min(
+                            budget,
+                            int(
+                                float(budget)
+                                * STOCHASTIC_CPU_TIME_BUDGET_SECONDS
+                                / max(float(projected), 1e-9)
+                            ),
+                        ),
+                    )
+                    plan["cpu_budget_reduced"] = True
+                fallback = _stochastic_batch_ensemble(
+                    cpp,
+                    cpp_model,
+                    network,
+                    reference,
+                    targets,
+                    runs=budget,
+                    seed=STOCHASTIC_SEED_BASE,
+                    backend=None,
+                )
+                fallback["metrics"] = {
+                    **fallback["metrics"],
+                    "gpu_fallback_reason": f"{type(exc).__name__}: {exc}",
+                }
+                ensemble = fallback
+            engine_used = ensemble["engine"]
+            metrics = {**ensemble["metrics"], **plan}
+            values = ensemble["values"]
+        else:
+            engine_used = "cpu:action-ensemble"
+            budget = min(int(runs), STOCHASTIC_ACTION_RUNS)
+            values = _stochastic_action_ensemble(
+                cpp,
+                reference_bngl,
+                times,
+                output_aliases,
+                runs=budget,
+                seed=STOCHASTIC_SEED_BASE,
+                phase_count=len(block.phases),
+                work_dir=work_dir,
+            )["values"]
+    except ActionGridError as exc:
+        return {"status": "unsupported", "reason": str(exc)}
+    except Exception as exc:
+        message = f"{type(exc).__name__}: {exc}"
+        status = (
+            "unsupported" if _classify_error(message) == "unsupported" else "failed"
+        )
+        return {"status": status, "reason": message}
+
+    statistics: dict[str, Any] = {}
+    deterministic_failures: list[dict[str, Any]] = []
+    mean_tests = 0
+    sd_tests = 0
+    violations = 0
+    for variable, statistic in reference["outputs"]:
+        key = f"{variable}-{statistic}"
+        mean_key = f"{variable}-mean"
+        sd_key = f"{variable}-sd"
+        if statistic == "mean" and sd_key not in reference["expected"]:
+            return {
+                "status": "unsupported",
+                "reason": (
+                    "the official stochastic reference requests the repeated-run "
+                    f"mean of {variable} without its standard deviation, so the "
+                    "DSMTS standardised mean statistic cannot be evaluated"
+                ),
+            }
+        sample = values[variable]
+        result = _stochastic_statistics(
+            sample["mean"],
+            sample["sd"],
+            reference["expected"].get(mean_key),
+            reference["expected"].get(sd_key),
+            runs=int(budget),
+            statistic=statistic,
+            mean_range=reference["mean_range"],
+            sd_range=reference["sd_range"],
+            mean_resolution=reference["resolutions"].get(key, 0.0),
+        )
+        mean_tests += len(result["mean_statistics"])
+        sd_tests += len(result["sd_statistics"])
+        violations += len(result["mean_violations"]) + len(result["sd_violations"])
+        deterministic_failures.extend(
+            {"variable": variable, **failure}
+            for failure in result["deterministic_failures"]
+        )
+        statistics[key] = {
+            "mean_violations": result["mean_violations"],
+            "sd_violations": result["sd_violations"],
+            "max_abs_mean_statistic": (
+                max((abs(value) for value in result["mean_statistics"]), default=0.0)
+            ),
+            "max_abs_sd_statistic": (
+                max((abs(value) for value in result["sd_statistics"]), default=0.0)
+            ),
+            "sample_mean": sample["mean"].tolist(),
+            "sample_sd": sample["sd"].tolist(),
+        }
+
+    total_tests = mean_tests + sd_tests
+    mean_null = _standard_normal_outside(reference["mean_range"])
+    sd_null = _standard_normal_outside(reference["sd_range"])
+    null_probability = (
+        (mean_tests * mean_null + sd_tests * sd_null) / total_tests
+        if total_tests
+        else 0.0
+    )
+    tail = (
+        _binomial_upper_tail(total_tests, null_probability, violations)
+        if total_tests
+        else 1.0
+    )
+    passed = not deterministic_failures and tail >= STOCHASTIC_CASE_ERROR_RATE
+    if degenerate_reason is not None and passed:
+        return {"status": "unsupported", "reason": degenerate_reason}
+    reason = ""
+    if deterministic_failures:
+        first = deterministic_failures[0]
+        variable = first["variable"]
+        untracked = False
+        for statistic in ("mean", "sd"):
+            key = f"{variable}-{statistic}"
+            if key in reference["expected"] and not np.any(
+                np.asarray(reference["expected"][key], dtype=float)
+            ):
+                untracked = True
+        detail = (
+            "the official reference reports "
+            f"{variable} as identically zero (mean and standard deviation) at "
+            "every output time, so the reference does not track that variable; "
+            "the BNG3 ensemble produces a non-degenerate distribution for it"
+            if untracked
+            else f"the BNG3 ensemble mean is {first['sample_mean']!r} with a "
+            f"sample standard deviation of {first['sample_sd']!r}"
+        )
+        reason = (
+            "stochastic ensemble mismatch at a deterministic reference point: "
+            f"{variable} sample index {first['index']} has mean "
+            f"{first['sample_mean']!r} (sample sd {first['sample_sd']!r}) but the "
+            f"official reference is {first['reference_mean']!r}; {detail}"
+        )
+    elif not passed:
+        reason = (
+            f"stochastic distribution mismatch: {violations} of {total_tests} "
+            "official mean/standard-deviation acceptance tests were violated; "
+            f"a correct simulator violates them with probability "
+            f"{null_probability:.6g} per test, so {violations} violations have "
+            f"probability {tail:.3g} under that null (budget "
+            f"{STOCHASTIC_CASE_ERROR_RATE:g})"
+        )
+    return {
+        "status": "passed" if passed else "failed",
+        "reason": reason,
+        "method": "BNG3 batched SSA ensemble",
+        "statistic": "DSMTS standardised mean and variance statistics",
+        "engine": engine_used,
+        "runs": budget,
+        "seeds": {
+            "base": STOCHASTIC_SEED_BASE,
+            "rule": (
+                "the batched samplers derive one engine seed per trajectory "
+                "from base; the action-Dispatcher ensemble uses "
+                "base + run_index * 1000 + phase_index"
+            ),
+        },
+        "phase_count": len(block.phases),
+        "start": reference["start"],
+        "duration": reference["duration"],
+        "steps": reference["steps"],
+        "settings_sha256": reference["settings_sha256"],
+        "results_sha256": reference["results_sha256"],
+        "mean_range": list(reference["mean_range"]),
+        "sd_range": list(reference["sd_range"]),
+        "tests": {
+            "mean": mean_tests,
+            "sd": sd_tests,
+            "total": total_tests,
+        },
+        "violations": violations,
+        "null_violation_probability": null_probability,
+        "violation_tail_probability": tail,
+        "case_error_rate": STOCHASTIC_CASE_ERROR_RATE,
+        "deterministic_failures": deterministic_failures,
+        "output_targets": targets,
+        "output_aliases": output_aliases,
+        "statistics": statistics,
+        "engine_metrics": metrics,
     }
 
 
@@ -1752,9 +2920,13 @@ def _atomizer_horizon(
     simulation_t_end: float,
     simulation_n_steps: int,
 ) -> tuple[float, int]:
-    """Use the official semantic interval when classifying event behavior."""
+    """Use the official interval when classifying event behavior.
 
-    if category == "semantic" and reference is not None:
+    The official reference grid defines the horizon the model has to be
+    simulated over, for both the deterministic and the stochastic categories.
+    """
+
+    if category in {"semantic", "stochastic"} and reference is not None:
         return reference["start"] + reference["duration"], reference["steps"]
     return simulation_t_end, simulation_n_steps
 
@@ -1768,6 +2940,7 @@ def _validate_case(
     simulation_rtol: float,
     simulation_atol: float,
     artifacts_dir: Path | None = None,
+    stochastic_runs: int = STOCHASTIC_DEFAULT_RUNS,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -1801,13 +2974,19 @@ def _validate_case(
     }
     reference = None
     if case["category"] == "stochastic":
-        record["official_conformance"] = {
-            "status": "unsupported",
-            "reason": (
-                "official stochastic conformance requires repeated-run mean and "
-                "standard-deviation evaluation; one ODE or SSA trajectory is not conformance"
-            ),
-        }
+        try:
+            reference = _read_stochastic_reference_case(case)
+            record["official_conformance"] = {"status": "pending"}
+        except OfficialReferenceUnsupported as exc:
+            record["official_conformance"] = {
+                "status": "unsupported",
+                "reason": str(exc),
+            }
+        except Exception as exc:
+            record["official_conformance"] = {
+                "status": "invalid-source",
+                "reason": f"{type(exc).__name__}: {exc}",
+            }
     else:
         try:
             reference = _read_reference_case(case)
@@ -1896,9 +3075,31 @@ def _validate_case(
             "reactions": network.num_reactions,
         }
         if record["official_conformance"]["status"] == "pending":
-            record["official_conformance"] = _compare_case_to_reference(
-                case, cpp_model, atomized.bngl, parsed, atomized, reference, cpp
-            )
+            if case["category"] == "stochastic":
+                record["official_conformance"] = _compare_stochastic_case_to_reference(
+                    case,
+                    atomized.bngl,
+                    parsed,
+                    atomized,
+                    reference,
+                    cpp,
+                    work_dir,
+                    stochastic_runs,
+                    cpp_model,
+                    network,
+                )
+            else:
+                record["official_conformance"] = _compare_case_to_reference(
+                    case,
+                    cpp_model,
+                    atomized.bngl,
+                    parsed,
+                    atomized,
+                    reference,
+                    cpp,
+                    work_dir,
+                    network,
+                )
 
         output_path = work_dir / f"{case['category']}_{case['id']}.xml"
         cpp.io.write_sbml(
@@ -2068,6 +3269,8 @@ def _run_isolated_case(
         str(args.simulation_rtol),
         "--simulation-atol",
         str(args.simulation_atol),
+        "--stochastic-runs",
+        str(getattr(args, "stochastic_runs", STOCHASTIC_DEFAULT_RUNS)),
     ]
     if artifacts_dir is not None:
         command.extend(["--artifacts-dir", str(artifacts_dir.resolve())])
@@ -2245,6 +3448,7 @@ def _forked_case_child(
             args.simulation_rtol,
             args.simulation_atol,
             args.artifacts_dir,
+            args.stochastic_runs,
         )
     except BaseException as exc:  # pragma: no cover - defensive child guard
         message = f"{type(exc).__name__}: {exc}"
@@ -2734,9 +3938,20 @@ def main() -> int:
     parser.add_argument("--simulation-n-steps", type=int, default=10)
     parser.add_argument("--simulation-rtol", type=float, default=1e-7)
     parser.add_argument("--simulation-atol", type=float, default=1e-12)
+    parser.add_argument(
+        "--stochastic-runs",
+        type=int,
+        default=STOCHASTIC_DEFAULT_RUNS,
+        help=(
+            "independent repetitions used for the official stochastic "
+            "conformance comparison (DSMTS minimum: 1000)"
+        ),
+    )
     args = parser.parse_args()
     if args.jobs < 1:
         raise SystemExit("--jobs must be at least one")
+    if args.stochastic_runs < 1:
+        raise SystemExit("--stochastic-runs must be at least one")
 
     try:
         suite_info = _validate_suite_checkout(args.suite_dir, args.lock)
@@ -2884,6 +4099,7 @@ def main() -> int:
                         args.simulation_rtol,
                         args.simulation_atol,
                         args.artifacts_dir,
+                        args.stochastic_runs,
                     )
                     records.append(record)
                     print(
@@ -2978,8 +4194,18 @@ def main() -> int:
         "records": records,
         "official_conformance": {
             "reference": "official SBML Test Suite results CSV",
-            "method": "BNG3 native CVODE on the official reference time grid",
-            "comparison": "abs(expected-actual) <= absolute + relative*abs(expected)",
+            "method": (
+                "BNG3 native CVODE on the official reference time grid; scheduled "
+                "actions are executed by the native action dispatcher on the same "
+                "grid; stochastic cases are compared with the DSMTS standardised "
+                "mean and variance statistics over a documented ensemble"
+            ),
+            "comparison": (
+                "abs(expected-actual) <= absolute + relative*abs(expected); "
+                "stochastic: DSMTS Z and Y statistics inside the official "
+                "meanRange/sdRange acceptance ranges"
+            ),
+            "stochastic_runs": args.stochastic_runs,
             "counts": official_counts,
             "by_category": official_by_category,
             "summary": official_summary,
@@ -2999,8 +4225,9 @@ def main() -> int:
         },
         "numerical_conformance": (
             "official deterministic time-course reference conformance is reported "
-            "separately from the BNG3/libRoadRunner round-trip comparison; stochastic "
-            "ensemble statistics are unsupported in this runner"
+            "separately from the BNG3/libRoadRunner round-trip comparison; "
+            "scheduled actions are executed by the native action dispatcher and "
+            "stochastic cases are compared with the DSMTS ensemble statistics"
         ),
         "core_passed": (
             not partial
