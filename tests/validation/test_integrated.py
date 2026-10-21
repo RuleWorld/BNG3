@@ -306,3 +306,72 @@ def test_checks_preserve_cross_stage_prerequisite_ids():
         [],
     )
     assert rows[0]["blocked_by"] == ["case:bngir-v02"]
+
+
+def test_every_focused_qualification_flag_is_defined_and_selects_one_family(
+    tmp_path,
+):
+    """A focused flag the parser does not define crashes the whole campaign.
+
+    The campaign consulted ``args.stochastic_parity_only`` and
+    ``args.api_surface_only`` without ever defining them, so every campaign run
+    died with an ``AttributeError`` before a single check was executed.  Each
+    focused flag must now be a real argument, and a focused run must select
+    exactly one family: its own.
+    """
+    from tests.validation import integrated_extensions
+
+    base = [
+        "--bng-cpp",
+        str(tmp_path / "bng_cpp"),
+        "--bng2-root",
+        str(tmp_path / "bng2"),
+        "--nfsim-root",
+        str(tmp_path / "nfsim"),
+        "--nfsim-binary",
+        str(tmp_path / "NFsim"),
+        "--pybionetgen-root",
+        str(tmp_path / "pybng"),
+        "--pybionetgen-python",
+        str(tmp_path / "python"),
+        "--bng2-network-sha256",
+        "0" * 64,
+        "--nfsim-sha256",
+        "0" * 64,
+        "--report-dir",
+        str(tmp_path / "report"),
+    ]
+    # One campaign run reads every focused flag, so an undefined flag fails
+    # here instead of silently disabling a family.
+    assert integrated.main(base) == 1
+    report = json.loads(
+        (tmp_path / "report" / "report.json").read_text(encoding="utf-8")
+    )
+    preflight = [
+        row for row in report["results"] if row.get("stage") == "integration-preflight"
+    ]
+    assert preflight
+    assert preflight[0]["status"] == "HARNESS_ERROR"
+    assert "AttributeError" not in preflight[0]["detail"]
+
+    for name, dest in integrated.FOCUS_FLAGS.items():
+        args = SimpleNamespace(
+            **{other: other == dest for other in integrated.FOCUS_FLAGS.values()}
+        )
+        selection = integrated.focus_selection(args)
+        included = [key for key, value in selection.items() if value]
+        assert included == [f"include_{name}"], name
+    unselected = SimpleNamespace(
+        **{dest: False for dest in integrated.FOCUS_FLAGS.values()}
+    )
+    selection = integrated.focus_selection(unselected)
+    assert all(selection.values())
+    assert set(selection) == {f"include_{name}" for name in integrated.FOCUS_FLAGS}
+    # Every operation is either a qualification with its own focus flag, or
+    # one of the two operations that are not qualifications.  The set is
+    # derived, so a new qualification cannot arrive without its flag.
+    qualified = {name.replace("_", "-") for name in integrated.FOCUS_FLAGS}
+    assert set(integrated_extensions.OPERATIONS) - qualified == {
+        "protocol",
+        "nf-marginals",
+    }

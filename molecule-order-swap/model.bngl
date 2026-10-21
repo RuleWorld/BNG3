@@ -1,0 +1,17 @@
+begin model
+begin molecule types
+  A(b)
+  B(b)
+end molecule types
+begin seed species
+  A(b) 10
+  B(b) 10
+end seed species
+begin reaction rules
+  bind1: A(b) + B(b) -> A(b!1).B(b!1) 0.01
+  bind2: B(b) + A(b) -> B(b!1).A(b!1) 0.02
+end reaction rules
+begin actions
+  generate_network({overwrite=>1})
+end actions
+end model

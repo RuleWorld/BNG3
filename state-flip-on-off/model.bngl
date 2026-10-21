@@ -1,0 +1,14 @@
+begin model
+begin molecule types
+  A(x~on~off)
+end molecule types
+begin seed species
+  A(x~on) 10
+end seed species
+begin reaction rules
+  flip: A(x~on) -> A(x~off) 0.01
+end reaction rules
+begin actions
+  generate_network({overwrite=>1})
+end actions
+end model

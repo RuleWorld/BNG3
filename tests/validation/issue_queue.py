@@ -526,6 +526,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     from .energy_qualification import check_ids as energy_check_ids
     from .workload_profile import check_ids as workload_profile_check_ids
+    from .semantic_identity import check_ids as semantic_identity_check_ids
+    from .graph_differential import check_ids as graph_differential_check_ids
     from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
@@ -828,6 +830,42 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="semantic-identity",
+            case_ids=[],
+            check_ids=semantic_identity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(semantic_identity_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated identity families only: the compiled identifiers, "
+                "the serialized references and the refinement between them are "
+                "compared against an expectation written before the compiler "
+                "runs."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="graph-differential",
+            case_ids=[],
+            check_ids=graph_differential_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(graph_differential_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated differential graph families only: the production "
+                "network's species are compared with the canonical reference "
+                "under the harness's own graph matcher, and a case outside the "
+                "declared domain is refused by name."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -965,16 +1003,34 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                                                                             "id"
                                                                                         ]
                                                                                         == "workload-profile"
-                                                                                        else [
-                                                                                            argument
-                                                                                            for case_id in family[
-                                                                                                "case_ids"
+                                                                                        else (
+                                                                                            [
+                                                                                                "--semantic-identity-only"
                                                                                             ]
-                                                                                            for argument in (
-                                                                                                "--case",
-                                                                                                case_id,
+                                                                                            if family[
+                                                                                                "id"
+                                                                                            ]
+                                                                                            == "semantic-identity"
+                                                                                            else (
+                                                                                                [
+                                                                                                    "--graph-differential-only"
+                                                                                                ]
+                                                                                                if family[
+                                                                                                    "id"
+                                                                                                ]
+                                                                                                == "graph-differential"
+                                                                                                else [
+                                                                                                    argument
+                                                                                                    for case_id in family[
+                                                                                                        "case_ids"
+                                                                                                    ]
+                                                                                                    for argument in (
+                                                                                                        "--case",
+                                                                                                        case_id,
+                                                                                                    )
+                                                                                                ]
                                                                                             )
-                                                                                        ]
+                                                                                        )
                                                                                     )
                                                                                 )
                                                                             )

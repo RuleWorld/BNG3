@@ -15,23 +15,25 @@ from tests.validation import integrated_extensions as extensions
 
 QUALIFICATIONS = {
     "boundaries": "include_boundaries",
-    "graph-identity": "include_graph_identity",
-    "bngir-adversarial": "include_bngir_adversarial",
-    "quantity-laws": "include_quantity_laws",
-    "export-format-tier": "include_export_format_tier",
-    "netrule-execution": "include_netrule_execution",
-    "bngsim-boundary": "include_bngsim_boundary",
-    "jax-backend-measurement": "include_jax_backend_measurement",
-    "rate-law-contract": "include_rate_law_contract",
-    "nfnext-slices": "include_nfnext_slices",
-    "api-surface": "include_api_surface",
-    "stochastic-parity": "include_stochastic_parity",
-    "graph-identity-contract": "include_graph_identity_contract",
-    "sbml-support-boundary": "include_sbml_support_boundary",
-    "atomizer-symbol-resolution": "include_atomizer_symbol_resolution",
-    "atomizer-reconstruction": "include_atomizer_reconstruction",
-    "energy-qualification": "include_energy_qualification",
-    "workload-profile": "include_workload_profile",
+    "graph_identity": "include_graph_identity",
+    "bngir_adversarial": "include_bngir_adversarial",
+    "quantity_laws": "include_quantity_laws",
+    "export_format_tier": "include_export_format_tier",
+    "netrule_execution": "include_netrule_execution",
+    "bngsim_boundary": "include_bngsim_boundary",
+    "jax_backend_measurement": "include_jax_backend_measurement",
+    "rate_law_contract": "include_rate_law_contract",
+    "nfnext_slices": "include_nfnext_slices",
+    "api_surface": "include_api_surface",
+    "stochastic_parity": "include_stochastic_parity",
+    "graph_identity_contract": "include_graph_identity_contract",
+    "sbml_support_boundary": "include_sbml_support_boundary",
+    "atomizer_symbol_resolution": "include_atomizer_symbol_resolution",
+    "atomizer_reconstruction": "include_atomizer_reconstruction",
+    "energy_qualification": "include_energy_qualification",
+    "workload_profile": "include_workload_profile",
+    "semantic_identity": "include_semantic_identity",
+    "graph_differential": "include_graph_differential",
 }
 
 
@@ -40,7 +42,10 @@ def _flags(**selected):
 
 
 def test_the_flag_table_covers_every_qualification():
-    assert set(QUALIFICATIONS) == set(extensions.OPERATIONS) - {
+    # Every operation is either a qualification with its own focus flag, or one
+    # of the two operations that are not qualifications.
+    qualified = {name.replace("_", "-") for name in QUALIFICATIONS}
+    assert set(extensions.OPERATIONS) - qualified == {
         "protocol",
         "nf-marginals",
     }

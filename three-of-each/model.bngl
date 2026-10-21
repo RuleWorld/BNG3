@@ -1,0 +1,36 @@
+begin model
+begin parameters
+  k1 0.1
+  k2 0.2
+  k3 k1 * k2
+end parameters
+begin compartments
+  PM 2 1.0
+  CP 3 1.0 PM
+  ER 3 0.5 CP
+end compartments
+begin molecule types
+  A(x~u~p,y)
+  B(x~u~p)
+  C(z)
+end molecule types
+begin functions
+  f(v) = k1 + 1.0
+  g(v) = k2 * 2.0
+end functions
+begin observables
+  Molecules O1 A(x)
+  Molecules O2 B(x)
+  Species O3 C(z)
+end observables
+begin seed species
+  A(x~u) 10
+  B(x~u) 20
+  C(z) 30
+end seed species
+begin reaction rules
+  r1: A(x~u) -> A(x~p) k1
+  r2: B(x~u) -> C(z) k2
+  r3: A(x~p) -> B(x~p) f(k3)
+end reaction rules
+end model

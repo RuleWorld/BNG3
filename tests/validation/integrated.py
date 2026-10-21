@@ -130,6 +130,8 @@ def expected_contract_ids(
     include_atomizer_reconstruction=True,
     include_energy_qualification=True,
     include_workload_profile=True,
+    include_semantic_identity=True,
+    include_graph_differential=True,
     full=False,
 ):
     return [
@@ -190,6 +192,8 @@ def expected_contract_ids(
         include_atomizer_reconstruction=include_atomizer_reconstruction,
         include_energy_qualification=include_energy_qualification,
         include_workload_profile=include_workload_profile,
+        include_semantic_identity=include_semantic_identity,
+        include_graph_differential=include_graph_differential,
         full=full,
     )
 
@@ -953,6 +957,34 @@ def _preflight(args):
     return references
 
 
+# The focused-campaign flag of every qualification: the qualification's name
+# and the argument that selects it.  A focused flag selects exactly its own
+# qualification and excludes the others, and the selection is derived from
+# this table, so a new qualification cannot silently exclude itself.
+FOCUS_FLAGS = {
+    "boundaries": "boundaries_only",
+    "graph_identity": "graph_identity_only",
+    "bngir_adversarial": "bngir_adversarial_only",
+    "quantity_laws": "quantity_laws_only",
+    "export_format_tier": "export_format_tier_only",
+    "netrule_execution": "netrule_execution_only",
+    "bngsim_boundary": "bngsim_boundary_only",
+    "jax_backend_measurement": "jax_backend_measurement_only",
+    "rate_law_contract": "rate_law_contract_only",
+    "nfnext_slices": "nfnext_slices_only",
+    "api_surface": "api_surface_only",
+    "stochastic_parity": "stochastic_parity_only",
+    "graph_identity_contract": "graph_identity_contract_only",
+    "sbml_support_boundary": "sbml_support_boundary_only",
+    "atomizer_symbol_resolution": "atomizer_symbol_resolution_only",
+    "atomizer_reconstruction": "atomizer_reconstruction_only",
+    "energy_qualification": "energy_qualification_only",
+    "workload_profile": "workload_profile_only",
+    "semantic_identity": "semantic_identity_only",
+    "graph_differential": "graph_differential_only",
+}
+
+
 def select_qualifications(focused_flags):
     """Return the qualification selection for the focused campaign flags.
 
@@ -966,34 +998,18 @@ def select_qualifications(focused_flags):
     def _other_focused(name):
         return any(value for key, value in focused_flags.items() if key != name)
 
-    return {
-        "include_boundaries": not _other_focused("boundaries"),
-        "include_graph_identity": not _other_focused("graph-identity"),
-        "include_bngir_adversarial": not _other_focused("bngir-adversarial"),
-        "include_export_format_tier": not _other_focused("export-format-tier"),
-        "include_quantity_laws": not _other_focused("quantity-laws"),
-        "include_bngsim_boundary": not _other_focused("bngsim-boundary"),
-        "include_netrule_execution": not _other_focused("netrule-execution"),
-        "include_jax_backend_measurement": not _other_focused(
-            "jax-backend-measurement"
-        ),
-        "include_rate_law_contract": not _other_focused("rate-law-contract"),
-        "include_nfnext_slices": not _other_focused("nfnext-slices"),
-        "include_api_surface": not _other_focused("api-surface"),
-        "include_stochastic_parity": not _other_focused("stochastic-parity"),
-        "include_graph_identity_contract": not _other_focused(
-            "graph-identity-contract"
-        ),
-        "include_sbml_support_boundary": not _other_focused("sbml-support-boundary"),
-        "include_atomizer_symbol_resolution": not _other_focused(
-            "atomizer-symbol-resolution"
-        ),
-        "include_atomizer_reconstruction": not _other_focused(
-            "atomizer-reconstruction"
-        ),
-        "include_energy_qualification": not _other_focused("energy-qualification"),
-        "include_workload_profile": not _other_focused("workload-profile"),
-    }
+    return {f"include_{name}": not _other_focused(name) for name in FOCUS_FLAGS}
+
+
+def focus_selection(args):
+    """Return the family selection of one campaign run.
+
+    Without a focused flag every qualification runs.  With one, that
+    qualification runs and the others do not.
+    """
+    return select_qualifications(
+        {name: bool(getattr(args, dest, False)) for name, dest in FOCUS_FLAGS.items()}
+    )
 
 
 def main(argv=None):
@@ -1029,6 +1045,8 @@ def main(argv=None):
     parser.add_argument("--atomizer-reconstruction-only", action="store_true")
     parser.add_argument("--energy-qualification-only", action="store_true")
     parser.add_argument("--workload-profile-only", action="store_true")
+    parser.add_argument("--semantic-identity-only", action="store_true")
+    parser.add_argument("--graph-differential-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1105,27 +1123,7 @@ def main(argv=None):
     # Every focused campaign flag selects exactly its own qualification and
     # excludes the others. The selection is derived from the flag table so a
     # new qualification cannot silently exclude itself.
-    focused_flags = {
-        "boundaries": args.boundaries_only,
-        "graph-identity": args.graph_identity_only,
-        "bngir-adversarial": args.bngir_adversarial_only,
-        "quantity-laws": args.quantity_laws_only,
-        "export-format-tier": args.export_format_tier_only,
-        "netrule-execution": args.netrule_execution_only,
-        "bngsim-boundary": args.bngsim_boundary_only,
-        "jax-backend-measurement": args.jax_backend_measurement_only,
-        "rate-law-contract": args.rate_law_contract_only,
-        "nfnext-slices": args.nfnext_slices_only,
-        "api-surface": args.api_surface_only,
-        "stochastic-parity": args.stochastic_parity_only,
-        "graph-identity-contract": args.graph_identity_contract_only,
-        "sbml-support-boundary": args.sbml_support_boundary_only,
-        "atomizer-symbol-resolution": args.atomizer_symbol_resolution_only,
-        "atomizer-reconstruction": args.atomizer_reconstruction_only,
-        "energy-qualification": args.energy_qualification_only,
-        "workload-profile": args.workload_profile_only,
-    }
-    qualification_selection = select_qualifications(focused_flags)
+    qualification_selection = focus_selection(args)
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1178,6 +1176,14 @@ def main(argv=None):
         if qualification_selection["include_energy_qualification"]:
             integrated_extensions.invoke(
                 "energy-qualification", args, rows, env, run_stage
+            )
+        if qualification_selection["include_semantic_identity"]:
+            integrated_extensions.invoke(
+                "semantic-identity", args, rows, env, run_stage
+            )
+        if qualification_selection["include_graph_differential"]:
+            integrated_extensions.invoke(
+                "graph-differential", args, rows, env, run_stage
             )
         if qualification_selection["include_workload_profile"]:
             integrated_extensions.invoke("workload-profile", args, rows, env, run_stage)
@@ -1238,6 +1244,8 @@ def main(argv=None):
         "atomizer-reconstruction": ["--atomizer-reconstruction-only"],
         "energy-qualification": ["--energy-qualification-only"],
         "workload-profile": ["--workload-profile-only"],
+        "semantic-identity": ["--semantic-identity-only"],
+        "graph-differential": ["--graph-differential-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1337,6 +1345,8 @@ def main(argv=None):
                 ),
                 "energy-qualification": "tests/validation/energy_qualification.py",
                 "workload-profile": "tests/validation/workload_profile.py",
+                "semantic-identity": "tests/validation/semantic_identity.py",
+                "graph-differential": "tests/validation/graph_differential.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1408,6 +1418,10 @@ def main(argv=None):
                 issues = [177]
             elif stage == "workload-profile":
                 issues = [176]
+            elif stage == "semantic-identity":
+                issues = [166]
+            elif stage == "graph-differential":
+                issues = [168]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

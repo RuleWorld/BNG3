@@ -13,6 +13,8 @@ from . import (
     integrated_boundaries,
     bngir_adversarial,
     api_surface,
+    semantic_identity,
+    graph_differential,
     energy_qualification,
     workload_profile,
     atomizer_reconstruction,
@@ -57,6 +59,8 @@ OPERATIONS = (
     "atomizer-reconstruction",
     "energy-qualification",
     "workload-profile",
+    "semantic-identity",
+    "graph-differential",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -77,6 +81,8 @@ FOCUS_FLAGS = {
     "atomizer-reconstruction": "--atomizer-reconstruction-only",
     "energy-qualification": "--energy-qualification-only",
     "workload-profile": "--workload-profile-only",
+    "semantic-identity": "--semantic-identity-only",
+    "graph-differential": "--graph-differential-only",
 }
 
 
@@ -99,6 +105,10 @@ def check_ids(operation, case=None, *, full=False):
         return atomizer_symbol_resolution.check_ids()
     if operation == "atomizer-reconstruction":
         return atomizer_reconstruction.check_ids()
+    if operation == "semantic-identity":
+        return semantic_identity.check_ids()
+    if operation == "graph-differential":
+        return graph_differential.check_ids()
     if operation == "energy-qualification":
         return energy_qualification.check_ids()
     if operation == "workload-profile":
@@ -128,6 +138,10 @@ def check_ids(operation, case=None, *, full=False):
         return energy_qualification.run_worker(Path.cwd())
     if operation == "workload-profile":
         return workload_profile.run_worker(Path.cwd())
+    if operation == "semantic-identity":
+        return semantic_identity.run_worker(Path.cwd())
+    if operation == "graph-differential":
+        return graph_differential.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":
@@ -179,6 +193,8 @@ def expected_ids(
     include_atomizer_reconstruction=True,
     include_energy_qualification=True,
     include_workload_profile=True,
+    include_semantic_identity=True,
+    include_graph_differential=True,
     include_stochastic_parity=True,
     include_graph_identity_contract=True,
     full=False,
@@ -238,6 +254,10 @@ def expected_ids(
         )
     if include_workload_profile:
         ids.extend(["campaign:workload-profile", *check_ids("workload-profile")])
+    if include_semantic_identity:
+        ids.extend(["campaign:semantic-identity", *check_ids("semantic-identity")])
+    if include_graph_differential:
+        ids.extend(["campaign:graph-differential", *check_ids("graph-differential")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     if include_graph_identity_contract:
@@ -280,6 +300,10 @@ def run_worker(operation, args):
         return energy_qualification.run_worker(Path.cwd())
     if operation == "workload-profile":
         return workload_profile.run_worker(Path.cwd())
+    if operation == "semantic-identity":
+        return semantic_identity.run_worker(Path.cwd())
+    if operation == "graph-differential":
+        return graph_differential.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":
