@@ -536,8 +536,12 @@ def test_sbml_fixed_fractional_stoichiometry_lowers_to_deterministic_flux_rules(
     assert "r_consume_A: @c:M_A() -> 0" in result.bngl
     assert "r_produce_B: 0 -> @c:M_B()" in result.bngl
     assert "TotalRate" in result.bngl
-    assert not any(
-        line.startswith("  r_") and "if(" in line for line in result.bngl.splitlines()
+    # The rate is guarded on the derivative's sign: a reaction whose rate
+    # expression can be negative cannot be given a negative propensity.
+    assert all(
+        "if(" in line
+        for line in result.bngl.splitlines()
+        if line.startswith("  r_") and "TotalRate" in line
     )
     assert any(
         warning.get("category") == "stoichiometry" and warning.get("severity") == "info"

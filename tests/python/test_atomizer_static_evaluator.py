@@ -333,7 +333,10 @@ def test_a_fractional_stoichiometry_keeps_every_digit_in_the_flux_coefficient():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
 
     assert result.success, result.error
-    assert f"({stoichiometry!r})" in result.bngl
+    # The coefficient keeps every digit of the source value; only its sign
+    # differs from the source, because the lowering now carries the signed
+    # derivative and guards the rate on that sign.
+    assert f"{stoichiometry!r}" in result.bngl
     assert "5.56228)" not in result.bngl
 
 
@@ -378,8 +381,10 @@ def test_a_negative_stoichiometry_is_carried_by_the_flux_lowering():
         for warning in atomizer.model.import_warnings
         if warning["category"] == "stoichiometry" and warning["severity"] == "dropped"
     ], atomizer.model.import_warnings
-    # The species is consumed, so the derivative is negative.
-    assert "J0_consume_A: @C:M_A() -> 0 (2.5) * (1) TotalRate" in result.bngl
+    # The species is consumed, so the derivative is negative.  The rule's
+    # rate is guarded on the derivative's sign, because the stochastic
+    # engine cannot give a reaction a negative propensity.
+    assert "J0_consume_A: @C:M_A() -> 0 if(((-2.5) * (1)) < 0," in result.bngl
 
 
 def test_a_negative_assigned_stoichiometry_is_carried_by_the_flux_lowering():
@@ -423,7 +428,7 @@ def test_a_negative_assigned_stoichiometry_is_carried_by_the_flux_lowering():
         for warning in atomizer.model.import_warnings
         if warning["category"] == "stoichiometry" and warning["severity"] == "dropped"
     ], atomizer.model.import_warnings
-    assert "@C:M_A() -> 0 (0.5235987755982988) * (1) TotalRate" in result.bngl
+    assert "@C:M_A() -> 0 if(((-0.5235987755982988) * (1)) < 0," in result.bngl
 
 
 def test_an_unknown_builtin_is_not_folded():

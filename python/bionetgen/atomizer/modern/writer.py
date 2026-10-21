@@ -6122,16 +6122,16 @@ def write_reaction_rules(
                     getattr(species, "compartment", ""),
                     species_compartment_prefix=species_compartment_prefix,
                 )
-                if reaction.reversible:
-                    positive = f"if(({derivative}) > 0, ({derivative}), 0)"
-                    negative = f"if(({derivative}) < 0, -({derivative}), 0)"
-                    rule_specs = (("produce", positive), ("consume", negative))
-                else:
-                    side = "produce" if coefficient > 0 else "consume"
-                    rate_expression = f"({_number(abs(coefficient))}) * ({source_flux})"
-                    if factor is not None:
-                        rate_expression = f"({factor}) * ({rate_expression})"
-                    rule_specs = ((side, rate_expression),)
+                # The reaction's extent rate is the kinetic law's value, and a
+                # negative one runs the reaction backwards (SBML Level 3
+                # Version 2 Core Sec. 4.11.7), so the side follows the sign
+                # of the derivative and not the sign of the coefficient.  A
+                # single rule with a signed rate is correct for the ODE, but
+                # the stochastic engine cannot give a reaction a negative
+                # propensity, so the rate is guarded on the derivative's sign.
+                positive = f"if(({derivative}) > 0, ({derivative}), 0)"
+                negative = f"if(({derivative}) < 0, -({derivative}), 0)"
+                rule_specs = (("produce", positive), ("consume", negative))
                 for side, rate_expression in rule_specs:
                     produces = side == "produce"
                     rule_label = f"{candidate}_{side}_{standardize_name(species_id)}"
