@@ -13,17 +13,24 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import contextlib
 import csv
+import errno
 import hashlib
+import importlib
 import importlib.metadata
 import itertools
 import json
 import math
+import os
 import platform
 import re
+import select
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 from collections import Counter
 from decimal import Decimal, InvalidOperation
@@ -64,6 +71,12 @@ DEFAULT_SUITE_LOCK = (
 )
 SUITE_LOCK_NAME = "sbml-test-suite"
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+ISOLATION_MODES = ("fork", "process")
+INVALID_SOURCE_CATEGORY = "invalidSource"
+RECORD_STATUSES = ("passed", "unsupported", "failed", "timeout", "invalid-source")
+DEFAULT_VERIFICATION_LOCK = (
+    Path(tempfile.gettempdir()) / "bng3-sbml-suite-verification.lock"
+)
 
 
 class SuiteLockError(ValueError):
@@ -1016,7 +1029,18 @@ def _is_partial_run(
     return bool(max_cases or only_case or set(categories) != {"semantic", "stochastic"})
 
 
-def _classify_error(message: str) -> str:
+def _classify_error(message: str, warnings: list[dict[str, Any]] | None = None) -> str:
+    """Classify a failure as invalid-source, unsupported, or failed.
+
+    An invalid SBML source is a property of the source, not of the
+    converter, so it is reported separately from an unsupported construct.
+    A warning whose category is ``invalidSource`` carries that meaning even
+    when libSBML itself accepted the document.
+    """
+
+    for warning in warnings or []:
+        if str(warning.get("category", "")) == INVALID_SOURCE_CATEGORY:
+            return "invalid-source"
     lower = message.lower()
     return (
         "unsupported"
@@ -1966,24 +1990,22 @@ def _validate_case(
         record["core_passed"] = record["status"] == "passed"
     except Exception as exc:
         message = f"{type(exc).__name__}: {exc}"
-        warning_limitations = _warning_limitations(
-            record.get("source_model", {}).get("warnings", [])
+        source_warnings = record.get("source_model", {}).get("warnings", [])
+        warning_limitations = _warning_limitations(source_warnings)
+        classification = _classify_error(
+            message + " " + " ".join(warning_limitations), source_warnings
         )
-        record["status"] = _classify_error(
-            message + " " + " ".join(warning_limitations)
-        )
+        # An invalid SBML source is a property of the source, not of the
+        # converter, so it is reported as its own verdict rather than as a
+        # converter failure.
+        record["status"] = "invalid-source" if not source_xml_valid else classification
         record["core_passed"] = False
         record["error"] = message
         if record["official_conformance"]["status"] == "pending":
             if not source_xml_valid:
                 official_status = "invalid-source"
             else:
-                official_status = (
-                    "unsupported"
-                    if _classify_error(message + " " + " ".join(warning_limitations))
-                    == "unsupported"
-                    else "failed"
-                )
+                official_status = classification
             record["official_conformance"] = {
                 "status": official_status,
                 "reason": message,
@@ -2115,6 +2137,449 @@ def _run_isolated_case(
             worker_json.unlink(missing_ok=True)
 
 
+def _warm_case_imports() -> None:
+    """Import the per-case modules once so forked children inherit them.
+
+    A forked child starts from the parent's already-imported modules instead
+    of paying an interpreter start and a fresh import per case.  The imports
+    are the same ones ``_validate_case`` performs lazily, so a child observes
+    the same module state a fresh interpreter would reach.
+    """
+
+    for module, attributes in (
+        (
+            "bionetgen.atomizer.modern",
+            (
+                "Atomizer",
+                "SBMLParser",
+                "source_metadata_payload",
+                "source_metadata_summary",
+            ),
+        ),
+        ("bionetgen.atomizer.modern.types", ("standardize_name",)),
+        ("bionetgen", ("BioNetGenModel",)),
+        ("libsbml", ()),
+        ("roadrunner", ()),
+    ):
+        try:
+            imported = importlib.import_module(module)
+            for attribute in attributes:
+                getattr(imported, attribute)
+        except (ImportError, AttributeError):
+            # A missing optional dependency is reported per case by the
+            # validation body; it must not abort the whole run here.
+            continue
+
+
+def _forked_case_paths(
+    args: argparse.Namespace, case: dict[str, Any], scratch: Path
+) -> tuple[Path, Path | None, Path | None]:
+    """Return the record, stdout, and stderr paths used by a forked child.
+
+    The retained artifacts match the process isolation mode: a per-case
+    ``worker-report.json`` next to the captured ``stdout.log`` and
+    ``stderr.log``.
+    """
+
+    artifacts_dir = getattr(args, "artifacts_dir", None)
+    if artifacts_dir is None:
+        return scratch / f"{case['category']}-{case['id']}.json", None, None
+    case_artifacts = artifacts_dir.resolve() / case["category"] / case["id"]
+    return (
+        case_artifacts / "worker-report.json",
+        case_artifacts / "stdout.log",
+        case_artifacts / "stderr.log",
+    )
+
+
+def _forked_case_child(
+    case: dict[str, Any],
+    args: argparse.Namespace,
+    cpp: Any,
+    record_path: Path,
+    stdout_path: Path | None,
+    stderr_path: Path | None,
+    runtime_info: dict[str, Any],
+    notify_fd: int,
+) -> None:
+    """Validate one suite case inside a forked child and publish its record.
+
+    This function only ever runs in the forked child.  It writes the record
+    to ``record_path`` and then signals the parent through ``notify_fd``.
+    """
+
+    for target, stream in ((stdout_path, 1), (stderr_path, 2)):
+        try:
+            handle = os.open(
+                target if target is not None else os.devnull,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                0o644,
+            )
+        except OSError:  # pragma: no cover - defensive child guard
+            continue
+        os.dup2(handle, stream)
+        os.close(handle)
+    try:
+        work_dir = record_path.parent
+        if getattr(args, "artifacts_dir", None) is None:
+            work_dir = work_dir / case["category"] / case["id"]
+        work_dir.mkdir(parents=True, exist_ok=True)
+        record = _validate_case(
+            case,
+            cpp,
+            work_dir,
+            args.simulation_t_end,
+            args.simulation_n_steps,
+            args.simulation_rtol,
+            args.simulation_atol,
+            args.artifacts_dir,
+        )
+    except BaseException as exc:  # pragma: no cover - defensive child guard
+        message = f"{type(exc).__name__}: {exc}"
+        record = {
+            "category": case["category"],
+            "id": case["id"],
+            "version": case["version"],
+            "source": str(case["path"]),
+            "status": "failed",
+            "core_passed": False,
+            "error": message,
+            "official_conformance": {"status": "failed", "reason": message},
+        }
+    try:
+        published = record_path.with_name(record_path.name + ".partial")
+        published.write_text(
+            json.dumps(
+                {
+                    "records": [record],
+                    "runtime_provenance": runtime_info,
+                    "isolation_mode": "fork",
+                }
+            ),
+            encoding="utf-8",
+        )
+        # Publish the record atomically so a killed child never leaves a
+        # half-written record behind.
+        os.replace(published, record_path)
+    except BaseException:  # pragma: no cover - defensive child guard
+        pass
+    try:
+        print(
+            f"{case['category']}/{case['id']}: {record['status'].upper()}",
+            flush=True,
+        )
+    except BaseException:  # pragma: no cover - defensive child guard
+        pass
+    try:
+        os.write(notify_fd, b"1")
+    except BaseException:  # pragma: no cover - defensive child guard
+        pass
+    finally:
+        os._exit(0)
+
+
+def _forked_timeout_record(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
+    """Return the timeout verdict used by every isolation mode."""
+
+    reason = f"per-case timeout after {case_timeout}s"
+    return {
+        "category": case["category"],
+        "id": case["id"],
+        "version": case["version"],
+        "source": str(case["path"]),
+        "status": "timeout",
+        "core_passed": False,
+        "error": reason,
+        "official_conformance": {"status": "timed-out", "reason": reason},
+    }
+
+
+def _forked_failure_record(case: dict[str, Any], message: str) -> dict[str, Any]:
+    """Return the failure verdict used when a forked child produces no record."""
+
+    return {
+        "category": case["category"],
+        "id": case["id"],
+        "version": case["version"],
+        "source": str(case["path"]),
+        "status": "failed",
+        "core_passed": False,
+        "error": message,
+        "official_conformance": {"status": "failed", "reason": message},
+    }
+
+
+def _load_forked_record(state: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the record a forked child published, if it published one."""
+
+    try:
+        published = json.loads(state["record_path"].read_text(encoding="utf-8"))
+        return published["records"][0]
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
+def _record_forked_result(
+    results: dict[tuple[str, str], dict[str, Any]],
+    state: dict[str, Any],
+    record: dict[str, Any] | None,
+    message: str,
+) -> None:
+    """Store one forked case verdict and report it as it completes."""
+
+    case = state["case"]
+    key = (case["category"], case["id"])
+    if record is None:
+        results[key] = _forked_failure_record(case, message)
+    else:
+        results[key] = record
+    print(
+        f"{case['category']}/{case['id']}: {results[key]['status'].upper()}",
+        flush=True,
+    )
+
+
+def _run_forked_cases(
+    cases: list[dict[str, Any]],
+    args: argparse.Namespace,
+    cpp: Any,
+    runtime_info: dict[str, Any],
+    jobs: int,
+) -> list[dict[str, Any]]:
+    """Validate every case in a child process forked from a pristine parent.
+
+    The parent never executes a case body, so every child starts from the
+    same pristine post-import state and cannot observe another case's
+    module-level state, native static state, or leaked handles.  Forking
+    inherits the parent's already-imported modules, so the run does not pay
+    an interpreter start and a fresh import per case.
+    """
+
+    _warm_case_imports()
+    results: dict[tuple[str, str], dict[str, Any]] = {}
+    pending = list(cases)
+    active: dict[int, dict[str, Any]] = {}
+    readers: dict[int, int] = {}
+    with tempfile.TemporaryDirectory(prefix="bng3-sbml-fork-") as scratch_name:
+        scratch = Path(scratch_name)
+        while pending or active:
+            while pending and len(active) < jobs:
+                case = pending.pop(0)
+                record_path, stdout_path, stderr_path = _forked_case_paths(
+                    args, case, scratch
+                )
+                record_path.parent.mkdir(parents=True, exist_ok=True)
+                read_fd, write_fd = os.pipe()
+                sys.stdout.flush()
+                sys.stderr.flush()
+                try:
+                    pid = os.fork()
+                except OSError as exc:
+                    os.close(read_fd)
+                    os.close(write_fd)
+                    for running in list(active):
+                        try:
+                            os.kill(running, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    raise SystemExit(
+                        f"cannot fork an isolated case worker: {exc}"
+                    ) from exc
+                if pid == 0:
+                    os.close(read_fd)
+                    try:
+                        _forked_case_child(
+                            case,
+                            args,
+                            cpp,
+                            record_path,
+                            stdout_path,
+                            stderr_path,
+                            runtime_info,
+                            write_fd,
+                        )
+                    finally:
+                        os._exit(0)
+                os.close(write_fd)
+                active[pid] = {
+                    "case": case,
+                    "record_path": record_path,
+                    "read_fd": read_fd,
+                    "deadline": time.monotonic() + args.case_timeout,
+                }
+                readers[read_fd] = pid
+            if not active:
+                break
+            wait = min(state["deadline"] for state in active.values())
+            wait = max(0.0, min(wait - time.monotonic(), 0.2))
+            ready, _, _ = select.select(list(readers), [], [], wait)
+            for read_fd in ready:
+                pid = readers.pop(read_fd)
+                state = active.pop(pid)
+                os.read(read_fd, 1)
+                os.close(read_fd)
+                _record_forked_result(
+                    results,
+                    state,
+                    _load_forked_record(state),
+                    "isolated child exited without a record",
+                )
+            while True:
+                try:
+                    pid, _status = os.waitpid(-1, os.WNOHANG)
+                except ChildProcessError:
+                    break
+                if pid == 0:
+                    break
+                state = active.pop(pid, None)
+                if state is None:
+                    continue
+                read_fd = state["read_fd"]
+                readers.pop(read_fd, None)
+                os.close(read_fd)
+                _record_forked_result(
+                    results,
+                    state,
+                    _load_forked_record(state),
+                    "isolated child exited without a record",
+                )
+            now = time.monotonic()
+            for pid in [
+                pid for pid, state in active.items() if state["deadline"] <= now
+            ]:
+                state = active.pop(pid)
+                read_fd = state["read_fd"]
+                readers.pop(read_fd, None)
+                os.close(read_fd)
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    os.waitpid(pid, 0)
+                except ChildProcessError:
+                    pass
+                case = state["case"]
+                results[(case["category"], case["id"])] = _forked_timeout_record(
+                    case, args.case_timeout
+                )
+                print(
+                    f"{case['category']}/{case['id']}: TIMEOUT",
+                    flush=True,
+                )
+    records = []
+    for case in cases:
+        record = results[(case["category"], case["id"])]
+        record["worker_runtime_provenance"] = runtime_info
+        records.append(record)
+    return records
+
+
+def _jobs_advisory(jobs: int, cpu_count: int) -> str | None:
+    """Return a warning when the worker count oversubscribes the machine."""
+
+    if jobs > cpu_count:
+        return (
+            f"--jobs {jobs} exceeds the {cpu_count} CPUs available; the gate will "
+            "oversubscribe the machine and slow down every other job, so it is "
+            f"using {cpu_count} workers"
+        )
+    if jobs > max(1, cpu_count // 2):
+        return (
+            f"--jobs {jobs} uses more than half of the {cpu_count} CPUs available; "
+            "lower it when other jobs share the machine"
+        )
+    return None
+
+
+@contextlib.contextmanager
+def _verification_slot(lock_path: Path, wait_seconds: float):
+    """Coordinate full-suite runs through a shared verification slot.
+
+    The slot is advisory.  It serialises the runs that are willing to wait
+    for it, and it never blocks, fails, or changes the verdict of a run that
+    cannot take it: an unusable lock file, an unsupported platform, or a slot
+    that stays busy past the bounded wait all fall through to the run
+    proceeding without the slot.
+    """
+
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - POSIX only
+        yield None
+        return
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = lock_path.open("a+", encoding="utf-8")
+    except OSError as exc:
+        print(
+            f"warning: the shared verification slot {lock_path} is unusable "
+            f"({exc}); continuing without the slot",
+            file=sys.stderr,
+        )
+        yield None
+        return
+    deadline = time.monotonic() + max(0.0, wait_seconds)
+    announced = False
+    while True:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError as exc:
+            if exc.errno not in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK):
+                print(
+                    f"warning: the shared verification slot {lock_path} cannot be "
+                    f"locked ({exc}); continuing without the slot",
+                    file=sys.stderr,
+                )
+                handle.close()
+                yield None
+                return
+            if not announced:
+                print(
+                    f"the shared SBML verification slot {lock_path} is busy; "
+                    f"waiting up to {wait_seconds:g}s",
+                    file=sys.stderr,
+                )
+                announced = True
+            if time.monotonic() >= deadline:
+                print(
+                    f"the shared SBML verification slot {lock_path} is still busy; "
+                    "continuing without the slot",
+                    file=sys.stderr,
+                )
+                handle.close()
+                yield None
+                return
+            time.sleep(2.0)
+    try:
+        handle.seek(0)
+        handle.truncate()
+        handle.write(
+            json.dumps({"pid": os.getpid(), "acquired_at": time.time()}) + "\n"
+        )
+        handle.flush()
+        yield handle
+    finally:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+
+def _record_counts(records: list[dict[str, Any]]) -> dict[str, int]:
+    """Count every record by status so that no case is dropped from the report.
+
+    Every recorded verdict has a bucket here, including an invalid source,
+    so the counts always add up to the number of cases that were run.
+    """
+
+    return {
+        status: sum(record["status"] == status for record in records)
+        for status in RECORD_STATUSES
+    }
+
+
 def _stage_summary(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
     """Count observed stages; structural round-trip is not numerical equivalence.
 
@@ -2211,10 +2676,46 @@ def main() -> int:
         help="run each case in a bounded child process",
     )
     parser.add_argument(
+        "--isolation-mode",
+        choices=ISOLATION_MODES,
+        default="fork",
+        help=(
+            "fork: one child process per case forked from a pristine parent; "
+            "process: one fresh interpreter per case"
+        ),
+    )
+    parser.add_argument(
         "--case-timeout", type=int, default=60, help="per-case timeout in seconds"
     )
     parser.add_argument(
         "--jobs", type=int, default=8, help="parallel isolated case workers"
+    )
+    parser.add_argument(
+        "--lock-file",
+        type=Path,
+        default=DEFAULT_VERIFICATION_LOCK,
+        help=(
+            "shared full-suite verification slot file; the default is "
+            "<tempdir>/bng3-sbml-suite-verification.lock, which is machine-wide "
+            "on Linux and per-user on macOS. Point this at another shared lock "
+            "file to interoperate with another runner: the slot is an exclusive "
+            "fcntl.flock, so two runners that lock the same file exclude each "
+            "other"
+        ),
+    )
+    parser.add_argument(
+        "--no-lock",
+        action="store_true",
+        help="do not take the shared full-suite verification slot",
+    )
+    parser.add_argument(
+        "--lock-wait",
+        type=float,
+        default=0.0,
+        help=(
+            "seconds to wait for the shared full-suite verification slot; the "
+            "run proceeds without the slot when the wait expires"
+        ),
     )
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--simulation-t-end", type=float, default=1.0)
@@ -2222,6 +2723,8 @@ def main() -> int:
     parser.add_argument("--simulation-rtol", type=float, default=1e-7)
     parser.add_argument("--simulation-atol", type=float, default=1e-12)
     args = parser.parse_args()
+    if args.jobs < 1:
+        raise SystemExit("--jobs must be at least one")
 
     try:
         suite_info = _validate_suite_checkout(args.suite_dir, args.lock)
@@ -2262,6 +2765,10 @@ def main() -> int:
             "--selection-strategy feature-cover cannot be combined with --only-case"
         )
 
+    # Resolve the suite checkout once so every case records the same absolute
+    # source path whichever isolation mode produced it.
+    args.suite_dir = args.suite_dir.expanduser().resolve()
+
     cases = _case_files(args.suite_dir, args.categories)
     full_suite_cases = _case_files(args.suite_dir, ["semantic", "stochastic"])
     full_suite_inventory = {
@@ -2301,54 +2808,87 @@ def main() -> int:
         ) from exc
     runtime_info = _runtime_provenance(cpp)
 
+    isolation_mode = "none"
+    if args.isolate_cases and not args.worker:
+        cpu_count = os.cpu_count() or 1
+        advisory = _jobs_advisory(args.jobs, cpu_count)
+        if advisory:
+            print(f"warning: {advisory}", file=sys.stderr)
+        # A run never forks more children than the machine has CPUs: the
+        # workers are CPU bound, so extra workers only add contention.
+        args.jobs = min(args.jobs, cpu_count)
+        isolation_mode = args.isolation_mode
+        if isolation_mode == "fork" and not hasattr(os, "fork"):
+            print(
+                "warning: fork isolation is unavailable on this platform; "
+                "using one fresh interpreter per case",
+                file=sys.stderr,
+            )
+            isolation_mode = "process"
+
     records = []
-    with tempfile.TemporaryDirectory(prefix="bng3-sbml-suite-") as temp:
-        work_dir = Path(temp)
-        if args.isolate_cases and not args.worker:
-            if args.jobs < 1:
-                raise SystemExit("--jobs must be at least one")
-            with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-                records = list(
-                    pool.map(
-                        lambda case: _run_isolated_case(case, args, runtime_info),
-                        selected,
+    take_slot = not args.no_lock and not args.worker and not partial
+    slot = (
+        _verification_slot(args.lock_file, args.lock_wait)
+        if take_slot
+        else contextlib.nullcontext(None)
+    )
+    slot_handle = None
+    with slot as slot_handle:
+        with tempfile.TemporaryDirectory(prefix="bng3-sbml-suite-") as temp:
+            work_dir = Path(temp)
+            if args.isolate_cases and not args.worker:
+                if isolation_mode == "fork":
+                    # The fork mode reports each case as it completes.
+                    records = _run_forked_cases(
+                        selected, args, cpp, runtime_info, args.jobs
                     )
-                )
-            for case, record in zip(selected, records):
-                print(
-                    f"{case['category']}/{case['id']}: {record['status'].upper()}",
-                    flush=True,
-                )
-        else:
-            for case in selected:
-                record = _validate_case(
-                    case,
-                    cpp,
-                    work_dir,
-                    args.simulation_t_end,
-                    args.simulation_n_steps,
-                    args.simulation_rtol,
-                    args.simulation_atol,
-                    args.artifacts_dir,
-                )
-                records.append(record)
-                print(
-                    f"{case['category']}/{case['id']}: {record['status'].upper()}",
-                    flush=True,
-                )
+                else:
+                    with concurrent.futures.ThreadPoolExecutor(
+                        max_workers=args.jobs
+                    ) as pool:
+                        records = list(
+                            pool.map(
+                                lambda case: _run_isolated_case(
+                                    case, args, runtime_info
+                                ),
+                                selected,
+                            )
+                        )
+                    for case, record in zip(selected, records):
+                        print(
+                            f"{case['category']}/{case['id']}: "
+                            f"{record['status'].upper()}",
+                            flush=True,
+                        )
+            else:
+                for case in selected:
+                    record = _validate_case(
+                        case,
+                        cpp,
+                        work_dir,
+                        args.simulation_t_end,
+                        args.simulation_n_steps,
+                        args.simulation_rtol,
+                        args.simulation_atol,
+                        args.artifacts_dir,
+                    )
+                    records.append(record)
+                    print(
+                        f"{case['category']}/{case['id']}: "
+                        f"{record['status'].upper()}",
+                        flush=True,
+                    )
 
     unsupported_summary = _unsupported_summary(records)
-    counts = {
-        status: sum(record["status"] == status for record in records)
-        for status in ("passed", "unsupported", "failed", "timeout")
-    }
+    counts = _record_counts(records)
     by_category = {
         category: {
             status: sum(
                 record["category"] == category and record["status"] == status
                 for record in records
             )
-            for status in ("passed", "unsupported", "failed", "timeout")
+            for status in RECORD_STATUSES
         }
         for category in args.categories
     }
@@ -2397,6 +2937,14 @@ def main() -> int:
         "writer_sbml_version": "L3V2",
         "categories": args.categories,
         "canonical_version_priority": list(VERSION_PRIORITY),
+        "case_isolation": {
+            "mode": isolation_mode,
+            "jobs": args.jobs if args.isolate_cases and not args.worker else None,
+            "case_timeout": args.case_timeout,
+            "verification_slot": (
+                str(args.lock_file) if slot_handle is not None else None
+            ),
+        },
         "case_inventory": len(cases),
         "full_suite_inventory": full_suite_inventory,
         "selected_cases": len(selected),
@@ -2447,9 +2995,14 @@ def main() -> int:
             and counts["failed"] == 0
             and counts["unsupported"] == 0
             and counts["timeout"] == 0
+            and counts["invalid-source"] == 0
         ),
         "supported_surface_passed": (
-            not partial and counts["failed"] == 0 and counts["timeout"] == 0
+            # An invalid source is not part of the supported surface: the
+            # converter is not what it failed on.
+            not partial
+            and counts["failed"] == 0
+            and counts["timeout"] == 0
         ),
     }
     args.json.parent.mkdir(parents=True, exist_ok=True)
@@ -2458,6 +3011,7 @@ def main() -> int:
         f"cases={len(records)} passed={counts['passed']} "
         f"unsupported={counts['unsupported']} failed={counts['failed']} "
         f"timeouts={counts['timeout']} "
+        f"invalid_sources={counts['invalid-source']} "
         f"official_passed={official_counts['passed']} "
         f"official_unsupported={official_counts['unsupported']} "
         f"official_failed={official_counts['failed']} "
