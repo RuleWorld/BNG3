@@ -2859,10 +2859,10 @@ def synthesize_event_actions(
         # be certified inactive either: the trigger may well become true in
         # the source model.  Only an event whose trigger is the simulation
         # time alone is independent of the model's dynamics.
-        algebraic_blocked_events: List[SBMLEvent] = []
         remaining_events: List[SBMLEvent] = []
         for event in events:
-            if parse_time_threshold(event.trigger) is None:
+            trigger = str(event.trigger or "").strip()
+            if trigger and parse_time_threshold(trigger) is None:
                 untranslated.append(
                     (
                         event,
@@ -2870,7 +2870,6 @@ def synthesize_event_actions(
                         "event's trigger cannot be evaluated",
                     )
                 )
-                algebraic_blocked_events.append(event)
             else:
                 remaining_events.append(event)
         events = remaining_events
