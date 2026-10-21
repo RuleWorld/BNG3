@@ -39,6 +39,7 @@ from .types import (
 from .multi import parse_multi_package
 from .units import apply_unit_scaling
 from .helpers import logger
+from .fast_reactions import lower_fast_reactions
 from .math_builtins import (
     MATH_BUILTIN_BY_MATHML,
     MATH_BUILTIN_BY_NAME,
@@ -3492,12 +3493,47 @@ class SBMLParser:
         SBMLParser._fold_static_stoichiometry(result)
         _expand_rate_of_from_rate_rules(result)
         _expand_rate_of_from_simple_reactions(result)
+        fast_reactions = lower_fast_reactions(result)
         _lower_delays_of_static_expressions(result)
         SBMLParser._fold_static_species_assignments(result)
         SBMLParser._fold_static_parameter_initial_assignments(
             result, _delayed_read_symbols(result)
         )
         SBMLParser._fold_static_compartment_initial_assignments(result)
+        for reaction_id, outcome in fast_reactions.items():
+            if outcome.reduced:
+                result.import_warnings.append(
+                    {
+                        "category": "fastReaction",
+                        "message": (
+                            f'Reaction "{reaction_id}" is marked fast '
+                            '(fast="true"); '
+                            + _fast_reaction_rule(result.level, result.version)
+                            + ", and this reaction reduces to one: "
+                            f"{outcome.detail}."
+                        ),
+                        "count": 1,
+                        "severity": "info",
+                    }
+                )
+            else:
+                result.import_warnings.append(
+                    {
+                        "category": "fastReaction",
+                        "message": (
+                            f'Reaction "{reaction_id}" is marked fast '
+                            '(fast="true"); '
+                            + _fast_reaction_rule(result.level, result.version)
+                            + f", and {outcome.reason}. "
+                            "BNG3 has no fast-equilibrium solve, so the reaction "
+                            "is kept as an ordinary reaction, and treating it as "
+                            "one changes the trajectory relative to the source "
+                            "model's."
+                        ),
+                        "count": 1,
+                        "severity": "approximated",
+                    }
+                )
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
             if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
@@ -3588,22 +3624,6 @@ class SBMLParser:
                             "severity": "info",
                         }
                     )
-            if reaction.fast:
-                result.import_warnings.append(
-                    {
-                        "category": "fastReaction",
-                        "message": (
-                            f'Reaction "{reaction_id}" is marked fast '
-                            '(fast="true"); '
-                            + _fast_reaction_rule(result.level, result.version)
-                            + ", so treating it as an ordinary reaction changes "
-                            "the trajectory. BNG3 has no fast-equilibrium solve, "
-                            "so it is treated as an ordinary reaction."
-                        ),
-                        "count": 1,
-                        "severity": "approximated",
-                    }
-                )
         if result.events:
             result.import_warnings.append(
                 {
