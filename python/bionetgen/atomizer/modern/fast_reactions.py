@@ -64,7 +64,9 @@ def lower_fast_reactions(model: SBMLModel) -> Dict[str, FastReactionOutcome]:
                 False,
                 reason=(
                     "the model declares more than one fast reaction, so the "
-                    "fast subsystem is not a single balance"
+                    "fast subsystem is a multi-species balance; reproducing it "
+                    "needs an algebraic solve in the simulation engine, which "
+                    "is a separate feature rather than a missing diagnostic"
                 ),
             )
             for reaction in fast
@@ -145,7 +147,10 @@ def _reduce_fast_reaction(
         ):
             return refuse(
                 "the fast reaction's rate depends on both species it converts, "
-                "so its pseudo steady state is not a single-species balance"
+                "so its pseudo steady state is an algebraic balance between "
+                "them; reproducing it needs an algebraic solve in the "
+                "simulation engine, which is a separate feature rather than a "
+                "missing diagnostic"
             )
         return refuse(
             "the fast reaction's rate depends on a species it does not convert"

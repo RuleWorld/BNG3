@@ -3526,8 +3526,9 @@ class SBMLParser:
                             + _fast_reaction_rule(result.level, result.version)
                             + f", and {outcome.reason}. "
                             "BNG3 has no fast-equilibrium solve, so the reaction "
-                            "is kept as an ordinary reaction and the converted "
-                            "model's trajectory differs from the source model's."
+                            "is kept as an ordinary reaction, and treating it as "
+                            "one changes the trajectory relative to the source "
+                            "model's."
                         ),
                         "count": 1,
                         "severity": "approximated",

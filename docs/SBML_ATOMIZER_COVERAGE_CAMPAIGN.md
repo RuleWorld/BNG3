@@ -223,6 +223,51 @@ so a cluster table can no longer omit the cases it forgot.
    rather than `unsupported`: eight official cases move forward, and the
    official-reference residual falls from 18 to 17.
 
+6. **The SBML `fast` attribute is part of the model's definition, not a solver
+   hint** (PR #354). SBML Level 2 and Level 3 Version 1 Sec. 4.11 do not
+   describe a `fast="true"` reaction as merely faster: "Fast reactions are
+   considered to be instantaneous relative to the slow reactions", and
+   "software tools should use a pseudo steady-state approximation for the set
+   of fast reactions **when constructing the system of equations for the
+   model**". The same section says the attribute "has a significant effect on
+   the mathematical interpretation of a model and cannot be safely ignored if
+   a software tool does not implement support for the corresponding
+   concept". Level 3 Version 2 removes the attribute outright ("every
+   Reaction in a L3V2 model is equivalent to an SBML Level 3 Version 1
+   Reaction with a `fast` value of false"), and the appendix *Mathematical
+   consequences of the `fast` attribute on Reaction* gives the reduction
+   itself: the fast subsystem contributes the algebraic constraint
+   `A1·v_f(x) = 0` while the slow dynamics follow from `B·dx/dt = B·A2·v_s`
+   with `B` the left null space of `A1`.
+
+   The official references agree, and this is the finding that decided the
+   cluster: every published `-results.csv` for these cases is the
+   pseudo-steady-state trajectory, not the trajectory of the raw rate
+   equations. Case 00870 is already at its equilibrium (`Kf1·A4 = Kr1·A2`) at
+   `t = 0`, 00986 is exactly `B(t) = e^{-t}`, and the cases' own notes say
+   "the 'fast' reaction should go to completion instantly". Measured
+   independently with libRoadRunner 2.10.0's exact CVODE on the same models
+   with the attribute cleared, the raw-ODE solution deviates from every
+   reference by 100x-53000x the suite's own tolerance, and libRoadRunner
+   itself refuses to load a `fast="true"` model ("Unable to support 'fast'
+   reactions"). **Lowering a fast reaction as an ordinary reaction would
+   therefore have turned 35 refused cases into 35 failed ones.**
+
+   The Atomizer now lowers the one shape whose pseudo steady state it can
+   express exactly - a reaction converting one species into one species whose
+   kinetic law is a constant multiple of one of them, where that species is
+   held at zero and the other absorbs its initial amount scaled by the
+   stoichiometry ratio - and refuses every other shape with the construct that
+   blocks it: a rate over both converted species, a rate constant that is not
+   time-independent, several fast reactions, a `delay` of the converted
+   species, a conversion factor, a variable stoichiometry. 14 official cases
+   move `unsupported → passed` (00871 00874 00875 00986 01396 01397 01547
+   01548 01549 01550 01551 01558 01559 01560) and 21 stay `unsupported` with
+   a construct-naming reason. The reversible fast reaction of 00870, 00872,
+   00873, 01051, 01052 and 01053 needs an algebraic (DAE) solve in the
+   simulation engine with a non-integer stoichiometry in the slow reaction:
+   **a separate feature, not a missing diagnostic.**
+
 The combined effect of all nine changes is recorded in the integrated
 result below.
 
@@ -244,6 +289,7 @@ result below.
 | I | Assignment rules whose target is a parameter | agent I | not started |
 | J | Time-dependent stoichiometry (rate-ruled `speciesReference`) | agent J | PR #323 (merged) |
 | — | Independent review of each implementation PR | separate reviewer | required before merge |
+| — | The SBML `fast` reaction's pseudo steady state | agent AA | PR #354 (review pending) |
 
 ## Merged result (2026-10-20)
 
