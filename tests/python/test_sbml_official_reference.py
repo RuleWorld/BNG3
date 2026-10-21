@@ -586,3 +586,464 @@ def test_bngl_observable_grammar_has_no_reaction_observable():
     assert "COUNTER" in rule
     assert "REACTION" not in rule
     assert "RATE" not in rule
+
+
+# ---------------------------------------------------------------------------
+# Cases the official reference cannot judge
+# ---------------------------------------------------------------------------
+
+#: The shape of official case ``semantic/01592``: two events with the same
+#: trigger, the same priority and a non-persistent trigger, so that exactly one
+#: of them executes and the specification requires a random order.
+RANDOM_EVENT_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="case01592">
+    <listOfParameters>
+      <parameter id="S" constant="false"/>
+      <parameter id="Q" value="0" constant="false"/>
+      <parameter id="R" value="0" constant="false"/>
+      <parameter id="reset" value="0" constant="false"/>
+    </listOfParameters>
+    <listOfRules>
+      <rateRule variable="reset">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn type="integer"> 1 </cn>
+        </math>
+      </rateRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="Qinc" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="false">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <ci> reset </ci>
+              <cn> 0.01 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn type="integer"> 1 </cn>
+          </math>
+        </priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="reset">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn type="integer"> 0 </cn>
+            </math>
+          </eventAssignment>
+          <eventAssignment variable="Q">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply>
+                <plus/>
+                <ci> Q </ci>
+                <cn> 0.01 </cn>
+              </apply>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="Rinc" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="false">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <ci> reset </ci>
+              <cn> 0.01 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn type="integer"> 1 </cn>
+          </math>
+        </priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="reset">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn type="integer"> 0 </cn>
+            </math>
+          </eventAssignment>
+          <eventAssignment variable="R">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply>
+                <plus/>
+                <ci> R </ci>
+                <cn> 0.01 </cn>
+              </apply>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
+"""
+
+#: The shape of official case ``stochastic/00006``: a boundary species
+#: ``Sink`` that the model accumulates and the official reference does not
+#: describe.
+BOUNDARY_SINK_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="BirthDeath06">
+    <listOfCompartments>
+      <compartment id="Cell" spatialDimensions="3" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="X" compartment="Cell" initialAmount="100"
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false"/>
+      <species id="Sink" compartment="Cell" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="true"
+               constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="Lambda" value="0.1" constant="true"/>
+      <parameter id="Mu" value="0.11" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="Birth" reversible="false">
+        <listOfReactants>
+          <speciesReference species="X" stoichiometry="1" constant="false"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="X" stoichiometry="2" constant="false"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> Lambda </ci>
+              <ci> X </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="Death" reversible="false">
+        <listOfReactants>
+          <speciesReference species="X" stoichiometry="1" constant="false"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Sink" stoichiometry="1" constant="false"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> Mu </ci>
+              <ci> X </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
+"""
+
+#: The shape of official case ``stochastic/00024``: a boundary species
+#: ``Source`` the model leaves alone and a boundary species ``Sink`` the model
+#: accumulates.
+BOUNDARY_SOURCE_AND_SINK_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="ImmigrationDeath05">
+    <listOfCompartments>
+      <compartment id="Cell" spatialDimensions="3" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="X" compartment="Cell" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false"/>
+      <species id="Source" compartment="Cell" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="true"
+               constant="false"/>
+      <species id="Sink" compartment="Cell" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="true"
+               constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="Alpha" value="10" constant="true"/>
+      <parameter id="Mu" value="0.1" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="Immigration" reversible="false">
+        <listOfReactants>
+          <speciesReference species="Source" stoichiometry="1" constant="false"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="X" stoichiometry="1" constant="false"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <ci> Alpha </ci>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="Death" reversible="false">
+        <listOfReactants>
+          <speciesReference species="X" stoichiometry="1" constant="false"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Sink" stoichiometry="1" constant="false"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <times/>
+              <ci> Mu </ci>
+              <ci> X </ci>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
+"""
+
+#: The shape of official case ``stochastic/00026``: the same model with a
+#: constant boundary species ``Sink``.
+CONSTANT_BOUNDARY_SINK_MODEL = BOUNDARY_SOURCE_AND_SINK_MODEL.replace(
+    '<species id="Sink" compartment="Cell" initialAmount="0"\n'
+    '               hasOnlySubstanceUnits="true" boundaryCondition="true"\n'
+    '               constant="false"/>',
+    '<species id="Sink" compartment="Cell" initialAmount="0"\n'
+    '               hasOnlySubstanceUnits="true" boundaryCondition="true"\n'
+    '               constant="true"/>',
+)
+
+
+def _parse_sbml(model: str):
+    from bionetgen.atomizer.modern.parser import SBMLParser
+
+    return SBMLParser().parse(model)
+
+
+def _stochastic_case(
+    tmp_path: Path,
+    *,
+    case_id: str,
+    model: str,
+    variables: str,
+    output: str,
+    results: str,
+) -> dict:
+    """Write the official reference of one stochastic case into a fixture."""
+
+    directory = tmp_path / case_id
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{case_id}-settings.txt").write_text(
+        "start: 0\n"
+        "duration: 2\n"
+        "steps: 2\n"
+        f"variables: {variables}\n"
+        "absolute: \n"
+        "relative: \n"
+        f"amount: {variables}\n"
+        "concentration: \n"
+        f"output: {output}\n"
+        "meanRange: (-3, 3)\n"
+        "sdRange: (-5, 5)\n",
+        encoding="utf-8",
+    )
+    (directory / f"{case_id}-results.csv").write_text(results, encoding="utf-8")
+    source = directory / f"{case_id}-sbml-l3v2.xml"
+    source.write_text(model, encoding="utf-8")
+    return {"category": "stochastic", "id": case_id, "path": str(source)}
+
+
+def _boundary_sink_verdict(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    validator,
+    case: dict,
+    model: str,
+) -> dict:
+    """Run the stochastic gate against a case with an untracked boundary species.
+
+    The ensemble is replaced by a synthetic one: the model reproduces the
+    official reference exactly and accumulates the boundary species, which is
+    exactly the disagreement the official suite cases carry.
+    """
+
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen.atomizer.modern import Atomizer
+
+    parsed = _parse_sbml(model)
+    reference = validator._read_stochastic_reference_case(case)
+    actions = validator._atomizer_actions_for_category("stochastic", 2.0, 2)
+    atomized = Atomizer(
+        atomize=False, quiet_mode=True, actions=actions, t_end=2.0, n_steps=2
+    ).atomize(model)
+    assert atomized.success
+    cpp_model = cpp.parse_string(atomized.bngl)
+    network = cpp.generate_network(cpp_model, max_iter=100)
+
+    def fake_ensemble(
+        cpp, model, network, reference, targets, *, runs, seed, backend
+    ) -> dict:
+        values = {}
+        for variable in targets:
+            mean = np.asarray(
+                reference["expected"].get(f"{variable}-mean", []), dtype=float
+            )
+            deviation = np.asarray(
+                reference["expected"].get(f"{variable}-sd", []), dtype=float
+            )
+            if variable == "Sink":
+                # The BNG3 model accumulates the boundary species, which the
+                # official reference reports as identically zero.
+                mean = np.zeros_like(mean)
+                deviation = np.full_like(deviation, 0.5)
+            values[variable] = {"mean": mean, "sd": deviation}
+        return {"values": values, "engine": "cpu:batch", "metrics": {}}
+
+    monkeypatch.setattr(
+        validator,
+        "_stochastic_ensemble_plan",
+        lambda *args, **kwargs: {"backend": None, "runs": 1000},
+    )
+    monkeypatch.setattr(validator, "_stochastic_batch_ensemble", fake_ensemble)
+
+    return validator._compare_stochastic_case_to_reference(
+        case,
+        atomized.bngl,
+        parsed,
+        atomized,
+        reference,
+        cpp,
+        tmp_path,
+        1000,
+        cpp_model,
+        network,
+    )
+
+
+def test_a_random_event_execution_case_is_not_comparable():
+    """``semantic/01592`` is a random-event-execution test.
+
+    The case notes say that every 0.01 s "one fires and the other does not, at
+    random", and SBML Level 3 Version 2 Core, Release 2, section 4.12.3
+    requires two simultaneously executed events with equal priority to be
+    triggered "in a random order".  The official reference is therefore one
+    draw of a stochastic process, and the case is not comparable point-wise.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    parsed = _parse_sbml(RANDOM_EVENT_MODEL)
+
+    verdict = validator._compare_case_to_reference(
+        {"category": "semantic", "id": "01592"},
+        None,
+        "",
+        parsed,
+        SimpleNamespace(observable_map={}),
+        {"variables": ["S"], "amount": [], "concentration": []},
+        None,
+        None,
+        SimpleNamespace(num_reactions=1),
+    )
+
+    # The verdict is "not comparable", and it names the competing events.
+    assert verdict["status"] == "unsupported"
+    assert "Qinc" in verdict["reason"]
+    assert "Rinc" in verdict["reason"]
+
+
+def test_a_boundary_species_the_reference_does_not_track_is_not_comparable(
+    tmp_path, monkeypatch
+):
+    """``stochastic/00006`` adds a boundary species ``Sink``.
+
+    The official reference reports ``Sink`` as identically zero at every output
+    time, because a boundary species is not determined by the reactions, while
+    the BNG3 model accumulates it.  The comparison on that quantity does not
+    apply, so the case is not comparable rather than a failure.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    case = _stochastic_case(
+        tmp_path,
+        case_id="00006",
+        model=BOUNDARY_SINK_MODEL,
+        variables="X, Sink",
+        output="X-mean, X-sd, Sink-mean, Sink-sd",
+        results=(
+            "time,X-mean,Sink-mean,X-sd,Sink-sd\n"
+            "0,100,0,0,0\n"
+            "1,90,0,4,0\n"
+            "2,80,0,5,0\n"
+        ),
+    )
+
+    verdict = _boundary_sink_verdict(
+        tmp_path, monkeypatch, validator, case, BOUNDARY_SINK_MODEL
+    )
+
+    assert verdict["status"] == "unsupported"
+    assert "Sink" in verdict["reason"]
+
+
+def test_a_boundary_species_next_to_a_boundary_source_is_not_comparable(
+    tmp_path, monkeypatch
+):
+    """``stochastic/00024`` adds a boundary ``Source`` and a boundary ``Sink``.
+
+    The reference reports both boundary species as identically zero; the model
+    leaves ``Source`` alone and accumulates ``Sink``.  Only the quantity the
+    reference does not describe disagrees, so the case is not comparable.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    case = _stochastic_case(
+        tmp_path,
+        case_id="00024",
+        model=BOUNDARY_SOURCE_AND_SINK_MODEL,
+        variables="X, Source, Sink",
+        output=("X-mean, X-sd, Source-mean, Source-sd, Sink-mean, Sink-sd"),
+        results=(
+            "time,X-mean,Source-mean,Sink-mean,X-sd,Source-sd,Sink-sd\n"
+            "0,0,0,0,0,0,0\n"
+            "1,9,0,0,3,0,0\n"
+            "2,18,0,0,4,0,0\n"
+        ),
+    )
+
+    verdict = _boundary_sink_verdict(
+        tmp_path, monkeypatch, validator, case, BOUNDARY_SOURCE_AND_SINK_MODEL
+    )
+
+    assert verdict["status"] == "unsupported"
+    assert "Sink" in verdict["reason"]
+
+
+def test_a_constant_boundary_species_is_not_comparable(tmp_path, monkeypatch):
+    """``stochastic/00026`` declares the boundary ``Sink`` constant.
+
+    A constant species is still outside the reaction system's flux balance, so
+    the official reference still does not describe it and the case is not
+    comparable.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    case = _stochastic_case(
+        tmp_path,
+        case_id="00026",
+        model=CONSTANT_BOUNDARY_SINK_MODEL,
+        variables="X, Source, Sink",
+        output=("X-mean, X-sd, Source-mean, Source-sd, Sink-mean, Sink-sd"),
+        results=(
+            "time,X-mean,Source-mean,Sink-mean,X-sd,Source-sd,Sink-sd\n"
+            "0,0,0,0,0,0,0\n"
+            "1,9,0,0,3,0,0\n"
+            "2,18,0,0,4,0,0\n"
+        ),
+    )
+
+    verdict = _boundary_sink_verdict(
+        tmp_path, monkeypatch, validator, case, CONSTANT_BOUNDARY_SINK_MODEL
+    )
+
+    assert verdict["status"] == "unsupported"
+    assert "Sink" in verdict["reason"]

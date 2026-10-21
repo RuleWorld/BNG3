@@ -1439,6 +1439,68 @@ def _degenerate_network_reason(network: Any, parsed: Any) -> str | None:
     )
 
 
+def _random_event_execution_verdict(parsed: Any) -> dict[str, Any] | None:
+    """Return the not-comparable verdict for a randomly ordered event model.
+
+    SBML Level 3 Version 2 Core, Release 2, section 4.12.3 ("Priority") states
+    that two events which are executed simultaneously and whose priority values
+    are mathematically equal "must be triggered in a random order", and
+    section 4.12.2 ("The persistent attribute on Trigger") states that a
+    simultaneous event whose trigger is not persistent and whose trigger
+    expression has become false again "must not be executed after all".  A
+    model that uses both rules executes exactly one of two competing events,
+    and which one is a random draw.  The official reference of such a case is
+    one draw of that random process, so a deterministic simulator cannot
+    reproduce it point-wise and the comparison does not apply.
+
+    Only a group of events that share one trigger, one priority and one delay
+    can be executed simultaneously, and only a group whose events all reset
+    their trigger can leave one of them unexecuted.  A group of persistent
+    triggers always executes all of its events, so its outcome does not depend
+    on the order the specification leaves undefined.
+
+    The verdict belongs to the point-wise comparison: a stochastic case is
+    compared with ensemble statistics, which is the right instrument for a
+    random process.
+    """
+
+    groups: dict[tuple[str, str, str], list[Any]] = {}
+    for event in getattr(parsed, "events", []) or []:
+        key = (
+            str(event.trigger or "").strip(),
+            str(event.priority or "").strip(),
+            str(event.delay or "").strip(),
+        )
+        groups.setdefault(key, []).append(event)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        if not all(event.trigger_persistent is False for event in group):
+            continue
+        assignments = {
+            frozenset(
+                str(assignment.get("variable", "")) for assignment in event.assignments
+            )
+            for event in group
+        }
+        if len(assignments) < 2:
+            # The competing events assign the same variables, so the choice
+            # between them does not change the model's state.
+            continue
+        names = ", ".join(sorted(str(event.id) for event in group))
+        return {
+            "status": "unsupported",
+            "reason": (
+                f"the source model's events {names} share one trigger and one "
+                "priority, so SBML Level 3 Version 2 Core, Release 2, section "
+                "4.12.3 requires them to be executed in a random order; the "
+                "official reference is one draw of that random process, so the "
+                "case is not comparable point-wise"
+            ),
+        }
+    return None
+
+
 def _compare_case_to_reference(
     case: dict[str, Any],
     cpp_model: Any,
@@ -1486,6 +1548,13 @@ def _compare_case_to_reference(
             "status": "unsupported",
             "reason": "no exact BNG3 result mapping for: " + ", ".join(unresolved),
         }
+
+    random_execution = _random_event_execution_verdict(parsed)
+    if random_execution is not None:
+        # The source model's competing events are executed in a random order,
+        # so the official reference is one draw of a stochastic process and the
+        # comparison cannot be made point-wise.
+        return random_execution
 
     try:
         reference_bngl, output_aliases = _with_reference_output_functions(
@@ -1947,6 +2016,77 @@ def _stochastic_statistics(
         "mean_violations": mean_violations,
         "sd_violations": sd_violations,
         "deterministic_failures": deterministic_failures,
+    }
+
+
+def _unmodelled_reference_variables(
+    parsed: Any, reference: dict[str, Any], variables: Iterable[str]
+) -> set[str]:
+    """Name the requested variables the official reference does not describe.
+
+    A species declared with ``boundaryCondition="true"`` is on the boundary of
+    the reaction system: SBML Level 3 Version 2 Core, Release 2, section 4.6.6
+    ("The constant and boundaryCondition attributes on Species") says that its
+    "amount is not determined by the reactions", so no differential equation is
+    derived from the reaction definitions for it.  The official reference
+    describes the reaction system, so it reports such a species as identically
+    zero at every output time.  A BNG3 model that accumulates the species
+    therefore disagrees with the reference about a quantity the reference does
+    not model, and the comparison on that quantity does not apply.
+    """
+
+    unmodelled: set[str] = set()
+    for variable in variables:
+        species = parsed.species.get(variable)
+        if species is None or not species.boundary_condition:
+            continue
+        columns = [
+            np.asarray(reference["expected"][f"{variable}-{statistic}"], dtype=float)
+            for statistic in ("mean", "sd")
+            if f"{variable}-{statistic}" in reference["expected"]
+        ]
+        if not columns or not all(np.all(column == 0.0) for column in columns):
+            continue
+        unmodelled.add(variable)
+    return unmodelled
+
+
+def _split_unmodelled_reference_failures(
+    parsed: Any,
+    reference: dict[str, Any],
+    deterministic_failures: Sequence[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Split the deterministic mismatches into defects and untracked quantities.
+
+    The first list holds the mismatches the official reference can judge; the
+    second names the quantities the reference does not describe at all.
+    """
+
+    variables = sorted(
+        {str(failure.get("variable", "")) for failure in deterministic_failures}
+    )
+    unmodelled = _unmodelled_reference_variables(parsed, reference, variables)
+    genuine = [
+        failure
+        for failure in deterministic_failures
+        if str(failure.get("variable", "")) not in unmodelled
+    ]
+    return genuine, sorted(unmodelled)
+
+
+def _unmodelled_reference_verdict(unmodelled: Sequence[str]) -> dict[str, Any]:
+    """Return the not-comparable verdict for the untracked quantities."""
+
+    names = ", ".join(unmodelled)
+    return {
+        "status": "unsupported",
+        "reason": (
+            f"the official reference does not track the boundary species {names}: "
+            f"the reference reports {names} as identically zero at every output "
+            "time because a boundary species is not determined by the reactions, "
+            "while the BNG3 model accumulates it, so the comparison on that "
+            "quantity does not apply"
+        ),
     }
 
 
@@ -2435,12 +2575,19 @@ def _compare_stochastic_case_to_reference(
         if total_tests
         else 1.0
     )
-    passed = not deterministic_failures and tail >= STOCHASTIC_CASE_ERROR_RATE
+    modelled_failures, unmodelled = _split_unmodelled_reference_failures(
+        parsed, reference, deterministic_failures
+    )
+    passed = not modelled_failures and tail >= STOCHASTIC_CASE_ERROR_RATE
     if degenerate_reason is not None and passed:
         return {"status": "unsupported", "reason": degenerate_reason}
+    if passed and unmodelled:
+        # Every mismatch is on a quantity the official reference does not
+        # describe, so the comparison on it does not apply.
+        return _unmodelled_reference_verdict(unmodelled)
     reason = ""
-    if deterministic_failures:
-        first = deterministic_failures[0]
+    if modelled_failures:
+        first = modelled_failures[0]
         variable = first["variable"]
         untracked = False
         for statistic in ("mean", "sd"):
@@ -2452,8 +2599,8 @@ def _compare_stochastic_case_to_reference(
         detail = (
             "the official reference reports "
             f"{variable} as identically zero (mean and standard deviation) at "
-            "every output time, so the reference does not track that variable; "
-            "the BNG3 ensemble produces a non-degenerate distribution for it"
+            "every output time while the BNG3 ensemble produces a non-degenerate "
+            "distribution for it"
             if untracked
             else f"the BNG3 ensemble mean is {first['sample_mean']!r} with a "
             f"sample standard deviation of {first['sample_sd']!r}"
@@ -2505,7 +2652,7 @@ def _compare_stochastic_case_to_reference(
         "null_violation_probability": null_probability,
         "violation_tail_probability": tail,
         "case_error_rate": STOCHASTIC_CASE_ERROR_RATE,
-        "deterministic_failures": deterministic_failures,
+        "deterministic_failures": modelled_failures,
         "output_targets": targets,
         "output_aliases": output_aliases,
         "statistics": statistics,

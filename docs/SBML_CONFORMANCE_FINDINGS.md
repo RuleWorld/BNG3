@@ -147,8 +147,9 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 ## 5. `semantic/01592` is a random-event-execution test
 
-* **Classification:** scope boundary.
-* **Cases:** `semantic/01592`.
+* **Classification:** scope boundary, now reported as *not comparable*.
+* **Cases:** `semantic/01592` and the other cases of the same construct
+  (`00952 00953 00962 00964 01589 01591 01599 01605 01626 01627`).
 * **Mechanism:** the model fires one of two events every 0.01 s **at
   random** (the case notes: "every .01 seconds, one fires and the other does
   not, at random"), and the official reference is one sample of that
@@ -156,32 +157,65 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   phases, one per firing period.
 * **Expected behaviour:** the official reference cannot be reproduced
   point-wise by a deterministic simulator; the case belongs with the
-  stochastic suite.
+  stochastic suite.  The SBML specification, Level 3 Version 2 Core, Release
+  2, section 4.12.3 ("Priority") requires two events that are executed
+  simultaneously and whose priority values are mathematically equal to "be
+  triggered in a random order", and section 4.12.2 ("The persistent attribute
+  on Trigger") requires a simultaneous event whose trigger is not persistent
+  and whose trigger expression has become false again not to be executed at
+  all.  `Qinc` and `Rinc` satisfy both rules, so exactly one of them
+  executes and the choice is a random draw.  The suite's own test tag
+  `RandomEventExecution` states the same: "correct simulation of the model
+  depends on randomly choosing which event to execute first".
 * **Observed behaviour:** the generated model's `S` differs from the
   reference by up to 99.99, and the 10,000 phases do not fit the gate's
   per-case time budget.
 * **Minimal reproducer:** `semantic/01592`; the case notes name it a
   "RandomEventExecution" test.
-* **Handling in the harness:** the case is reported as `unsupported` with
-  the reason that the generated scheduled actions exceed the documented
-  phase budget - an explicit refusal, never a pass and never a failure.
+* **Handling in the harness:** the case is reported as `unsupported` - the
+  gate's *not comparable* verdict - with the reason that names the
+  construct: "the source model's events Qinc, Rinc share one trigger and one
+  priority, so SBML Level 3 Version 2 Core, Release 2, section 4.12.3
+  requires them to be executed in a random order; the official reference is
+  one draw of that random process, so the case is not comparable
+  point-wise".  It is never a pass and never a failure.  The manifest
+  records the gap's `side` as `harness`, because nothing is wrong with the
+  model.
 
 ## 6. The official reference does not track the boundary "Sink" species
 
-* **Classification:** scope boundary (reference data).
+* **Classification:** scope boundary (reference data), now reported as *not
+  comparable*.
 * **Cases:** `stochastic/00006`, `stochastic/00024`, `stochastic/00026`.
 * **Mechanism:** the models add a boundary species `Sink` that accumulates
   the deaths, but the analytic reference the suite inherited from the DSMTS
   reports the `Sink` as identically zero (the DSMTS mean/sd files carry
   zeros for the column).
 * **Expected behaviour:** the official reference is what the suite
-  publishes; a correct simulator cannot match a placeholder.
+  publishes; a correct simulator cannot match a placeholder.  The SBML
+  specification, Level 3 Version 2 Core, Release 2, section 4.6.6 ("The
+  constant and boundaryCondition attributes on Species") puts a species with
+  `boundaryCondition="true"` on the boundary of the reaction system: its
+  "amount is not determined by the reactions", so no differential equation is
+  derived from the reaction definitions for it.  The official reference
+  describes the reaction system, so it reports such a species as identically
+  zero and does not describe it at all.
 * **Observed behaviour:** the harness detects that the reference reports the
-  variable as identically zero at every output time and says so in the
-  failure reason instead of reporting a bare numeric mismatch.
+  variable as identically zero at every output time while the model
+  accumulates it.
 * **Minimal reproducer:** `stochastic/00006`; the reference's `Sink-mean`
   and `Sink-sd` columns are zero for all 51 output points while the model
   accumulates the sink.
+* **Handling in the harness:** the case is reported as `unsupported` - the
+  gate's *not comparable* verdict - with the reason that names the
+  quantity: "the official reference does not track the boundary species
+  Sink: the reference reports Sink as identically zero at every output time
+  because a boundary species is not determined by the reactions, while the
+  BNG3 model accumulates it, so the comparison on that quantity does not
+  apply".  The comparison on every other quantity of the case - `X` in these
+  cases - is unchanged, and a mismatch there is still a failure.  The
+  manifest records the gap's `side` as `harness`, because nothing is wrong
+  with the model.
 
 ## 7. A generated network with no reaction is not comparable
 
@@ -219,8 +253,9 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 * `semantic/01592` timed out in one hosted run.  Re-run uncontended it
   completes in 11 s of wall time; the timeout was contention plus the
-  10,000-phase action block, and the phase budget now reports the case as
-  not comparable before any comparison runs.
+  10,000-phase action block, and the harness now reports the case as not
+  comparable - for the random event execution the source model defines -
+  before any comparison runs.
 * The `Lean 4.33.1 kernel and NFnext contracts` job failed with
   `SSL connect error ... releases.lean-lang.org/...` - a download error
   inside the runner image, in a workflow this change does not touch.

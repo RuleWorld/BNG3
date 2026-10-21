@@ -110,6 +110,14 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
         "harness:scheduled-actions-not-executed",
     ),
     ("repeated-run mean", "harness:stochastic-ensemble-not-evaluated"),
+    (
+        "executed in a random order",
+        "harness:random-event-execution",
+    ),
+    (
+        "does not track the boundary species",
+        "harness:reference-does-not-track-variable",
+    ),
     ("does not define an official time-course reference", "reference:not-applicable"),
     ("trigger is not a simple time threshold", "events:state-trigger-not-schedulable"),
     ("sbml event(s) parsed", "events:untranslated"),
