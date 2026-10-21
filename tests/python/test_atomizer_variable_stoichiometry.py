@@ -457,6 +457,98 @@ def test_missing_stoichiometry_attribute_reports_that_neither_is_supplied():
     assert "supplies neither" in messages[0], messages[0]
 
 
+def test_unresolvable_assignment_rule_names_the_assignment_rule():
+    """A rule that targets the reference id is the source, and says so.
+
+    Sec. 4.11.3 lets a ``speciesReference`` id be the target of a ``Rule``,
+    so an assignment rule is a third source of the symbol's value alongside
+    the ``stoichiometry`` attribute and an initial assignment.  When the
+    rule's value cannot be resolved to a number at t=0, the reason has to
+    name the rule; claiming that the source model supplies neither an
+    attribute nor an initial assignment is true here, but it leaves the
+    reader without the construct that actually governs the value.
+    """
+
+    sbml = _rate_ruled_stoichiometry_model(
+        species=(
+            '<species id="S1" compartment="C" initialAmount="1" '
+            'hasOnlySubstanceUnits="false" boundaryCondition="false" '
+            'constant="false"/>'
+        ),
+        rules=(
+            '<assignmentRule variable="S1_stoich">'
+            f'<math xmlns="{_MATHML}"><ci> q </ci></math>'
+            "</assignmentRule>"
+            '<rateRule variable="S1_stoich">'
+            f'<math xmlns="{_MATHML}"><cn>1</cn></math>'
+            "</rateRule>"
+        ),
+        products=('<speciesReference id="S1_stoich" species="S1" constant="false"/>'),
+    )
+    atomizer, _result = _atomize(sbml)
+
+    messages = [
+        warning["message"]
+        for warning in atomizer.model.import_warnings
+        if warning["category"] == "stoichiometry" and warning["severity"] == "dropped"
+    ]
+    assert len(messages) == 1, atomizer.model.import_warnings
+    message = messages[0]
+    assert "S1_stoich" in message, message
+    assert "assignment rule" in message, message
+    assert "could not be resolved to a number at t=0" in message, message
+
+
+def test_mathml_builtin_initial_assignment_is_resolved_and_raises_no_diagnostic():
+    """A resolvable initial assignment must not be called unresolvable.
+
+    The static evaluator folds the MathML built-ins, so an initial
+    assignment whose expression is a built-in *is* resolvable to a number at
+    t=0.  The diagnostic must not fire for it: a message that says the value
+    "could not be resolved" about a value the Atomizer has already resolved
+    would be lying, and the verdict would be wrong too.  The official suite
+    cases ``01516`` and ``01561`` assign their species-reference
+    stoichiometries exactly this way.
+    """
+
+    sbml = _rate_ruled_stoichiometry_model(
+        species=(
+            '<species id="S1" compartment="C" initialAmount="1" '
+            'hasOnlySubstanceUnits="false" boundaryCondition="false" '
+            'constant="false"/>'
+        ),
+        initial_assignments=(
+            '<initialAssignment symbol="S1_stoich">'
+            f'<math xmlns="{_MATHML}">'
+            '<apply><abs/><cn type="integer">-1</cn></apply></math>'
+            "</initialAssignment>"
+        ),
+        rules=(
+            '<rateRule variable="S1_stoich">'
+            f'<math xmlns="{_MATHML}"><cn>1</cn></math>'
+            "</rateRule>"
+        ),
+        products=(
+            '<speciesReference id="S1_stoich" species="S1" stoichiometry="3" '
+            'constant="false"/>'
+        ),
+    )
+    atomizer, result = _atomize(sbml)
+
+    assert not [
+        warning
+        for warning in atomizer.model.import_warnings
+        if warning["category"] == "stoichiometry" and warning["severity"] == "dropped"
+    ], atomizer.model.import_warnings
+
+    # The initial assignment's value wins over the attribute's 3 (Sec. 4.11.3),
+    # and ``abs(-1)`` is 1.
+    observables = _simulate(result.bngl, t_end=0.0, n_steps=1)
+    assert math.isclose(observables["S1_stoich_amt"][0], 1.0, rel_tol=1e-12), (
+        observables["S1_stoich_amt"],
+    )
+
+
 def test_assignment_rule_overrides_the_stoichiometry_attribute():
     """Sec. 4.11.3: a rule that targets the reference id wins.
 
