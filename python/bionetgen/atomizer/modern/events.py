@@ -990,7 +990,15 @@ class _NumericParser:
                     elif function_name == "arccsc" and len(arguments) == 1:
                         value = math.asin(1 / arguments[0])
                     elif function_name == "arccot" and len(arguments) == 1:
-                        value = math.atan2(1.0, arguments[0])
+                        # MathML's ``arccot`` is the reciprocal of ``atan``:
+                        # ``arccot(x) = atan(1/x)``.  That is the convention
+                        # the shared built-in table lowers the call to, so the
+                        # folded value has to agree with the emitted model
+                        # (and with the official reference, which uses it
+                        # too).  ``atan2(1, x)`` would put the result in
+                        # ``(0, pi)`` and differ by ``pi`` for a negative
+                        # argument.
+                        value = math.atan(1.0 / arguments[0])
                     elif function_name == "arcsech" and len(arguments) == 1:
                         value = math.acosh(1 / arguments[0])
                     elif function_name == "arccsch" and len(arguments) == 1:
@@ -2079,26 +2087,39 @@ def expand_static_parameter_event_system(
         slope = affine_rates[identifier]
         return (threshold - initial_values[identifier]) / slope
 
+    def trigger_value(index: int, time_value: float) -> Optional[float]:
+        """The trigger's truth value at ``time_value``.
+
+        A trigger whose threshold is crossed exactly at ``time_value`` is
+        true there by construction: the crossing time is computed from the
+        same arithmetic as the trigger's own expression, so evaluating the
+        expression again can land one ulp on the wrong side of the
+        threshold.  ``time - reset >= 0.01`` with ``reset = 0.02`` at
+        ``t = 0.03`` is the case in point: ``0.03 - 0.02`` is
+        ``0.009999999999999998`` in binary floating point, so the direct
+        evaluation says the trigger is false at the very moment it crossed.
+
+        Every place that asks whether a trigger holds has to ask it the
+        same way, or the expander schedules a firing and then cancels it.
+        """
+
+        edge = time_edges[index]
+        if edge is not None:
+            offset, threshold = edge
+            crossing = (values[offset] if offset else 0.0) + threshold
+            if abs(crossing - time_value) <= 1e-12:
+                return 1.0
+        if (
+            state_edges[index] is not None
+            and abs(state_edge_time(index) - time_value) <= 1e-12
+        ):
+            return 1.0
+        return evaluate(triggers[index], values, time_value)
+
     def schedule_edges(time_value: float, previous: Sequence[bool]) -> None:
         nonlocal sequence
         for index, (event, expression) in enumerate(zip(events, triggers)):
-            actual = (
-                1.0
-                if (
-                    time_edges[index] is not None
-                    and abs(
-                        (values[time_edges[index][0]] if time_edges[index][0] else 0.0)
-                        + time_edges[index][1]
-                        - time_value
-                    )
-                    <= 1e-12
-                )
-                or (
-                    state_edges[index] is not None
-                    and abs(state_edge_time(index) - time_value) <= 1e-12
-                )
-                else evaluate(expression, values, time_value)
-            )
+            actual = trigger_value(index, time_value)
             if actual is None:
                 raise ValueError("trigger evaluation failed")
             current = bool(actual)
@@ -2171,7 +2192,7 @@ def expand_static_parameter_event_system(
                 record
                 for record in batch
                 if events[record["index"]].trigger_persistent is not False
-                or bool(evaluate(triggers[record["index"]], values, next_time))
+                or bool(trigger_value(record["index"], next_time))
             ]
             while candidates:
                 priority_values: List[Optional[float]] = []
@@ -2359,7 +2380,7 @@ def expand_static_parameter_event_system(
                     candidate
                     for candidate in candidates
                     if events[candidate["index"]].trigger_persistent is not False
-                    or bool(evaluate(triggers[candidate["index"]], values, next_time))
+                    or bool(trigger_value(candidate["index"], next_time))
                 ]
                 same_time = [
                     pending_record
@@ -2376,9 +2397,7 @@ def expand_static_parameter_event_system(
                     pending_record
                     for pending_record in same_time
                     if events[pending_record["index"]].trigger_persistent is not False
-                    or bool(
-                        evaluate(triggers[pending_record["index"]], values, next_time)
-                    )
+                    or bool(trigger_value(pending_record["index"], next_time))
                 )
             current_time = next_time
         return [event for _time, event in executions]
@@ -8074,6 +8093,17 @@ def synthesize_event_actions(
                 )
             )
             continue
+        if trigger_time <= 0.0 and event.trigger_initial_value:
+            initial_truth = fold_initial(event_trigger)
+            if initial_truth == 1:
+                # SBML initializes a trigger's value from
+                # ``triggerInitialValue`` and fires the event only when that
+                # value *transitions* from false to true (SBML Level 3
+                # Version 2 Core, Sec. 4.11.4 "Event triggers").  A trigger
+                # that is already true at t=0 never rises, so the event does
+                # not fire at all.
+                normal_converted += 1
+                continue
         if gated_time_bounds is not None:
             lower_bound, upper_bound = gated_time_bounds
             if trigger_time < lower_bound - 1e-12 or trigger_time > upper_bound + 1e-12:

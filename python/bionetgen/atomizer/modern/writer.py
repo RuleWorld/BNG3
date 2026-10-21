@@ -8392,6 +8392,44 @@ def generate_bngl(
                 if not expression:
                     return None
                 expression = extend_function(expression, {}, model.function_definitions)
+                # A reaction's local parameters shadow the model's parameters
+                # of the same name (SBML Level 3 Version 2 Core, Sec. 4.9.2
+                # "Local parameters").  The trajectory of a species this
+                # reaction consumes is the trajectory the *reaction* states,
+                # so the local values have to be substituted before the rate
+                # law is read.  An event that overrides a local parameter
+                # changes the rate law at run time, and the trajectory is
+                # then not statically known.
+                local_parameters = (
+                    kinetic_law.get("localParameters", [])
+                    if isinstance(kinetic_law, Mapping)
+                    else getattr(kinetic_law, "local_parameters", [])
+                )
+                overridden_locals = {
+                    str(assignment.variable)
+                    for event in model.events
+                    for assignment in event.assignments
+                }
+                for local in local_parameters or []:
+                    local_id = str(
+                        local.get("id", "")
+                        if isinstance(local, Mapping)
+                        else getattr(local, "id", "")
+                    )
+                    raw_value = (
+                        local.get("value")
+                        if isinstance(local, Mapping)
+                        else getattr(local, "value", None)
+                    )
+                    if not local_id or raw_value is None:
+                        return None
+                    if local_id in overridden_locals:
+                        continue
+                    expression = re.sub(
+                        rf"\b{re.escape(local_id)}\b",
+                        repr(float(raw_value)),
+                        expression,
+                    )
                 try:
                     parsed = ast.parse(expression, mode="eval")
                 except (TypeError, ValueError, SyntaxError):
