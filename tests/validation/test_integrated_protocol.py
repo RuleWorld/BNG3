@@ -27,6 +27,8 @@ def test_expected_protocol_checks_are_explicit_and_issue_linked():
         "lifecycle-parameter-only-reuse",
         "lifecycle-topology-invalidation",
         "lifecycle-compartment-invalidation",
+        "protocol-action-option-equivalence",
+        "protocol-decision-sharing",
     )
     assert set(protocol._ISSUES) == set(protocol.expected_check_names)
     assert {issue for issues in protocol._ISSUES.values() for issue in issues} == {
@@ -37,6 +39,7 @@ def test_expected_protocol_checks_are_explicit_and_issue_linked():
         143,
         171,
         172,
+        178,
     }
     for name in protocol.expected_check_names:
         row = protocol._row("generated-case", name, "PASS", "checked")
@@ -400,3 +403,139 @@ def test_independent_caches_detects_a_shared_network_cache(tmp_path):
         tmp_path,
     )
     assert difference == {"field": "caches.network_shared"}
+
+
+def test_protocol_action_budget_declares_typed_probes_and_bounded_slices():
+    budget = protocol.protocol_action_budget
+    assert budget["max_cases"] == len(budget["cases"]) == 1
+    assert budget["surfaces"] == ("cli", "python-api", "bngl-action")
+    assert set(budget["explicit_options"]) == {
+        "method",
+        "t_start",
+        "t_end",
+        "n_steps",
+        "atol",
+        "rtol",
+    }
+    assert set(budget["default_options"]) == {"method", "t_end"}
+    assert budget["default_points"] == 101
+    names = [name for name, _options in budget["invalid_options"]]
+    assert names == [
+        "zero-steps",
+        "non-positive-atol",
+        "non-positive-rtol",
+        "reversed-window",
+    ]
+    for name, options in budget["invalid_options"]:
+        assert options["method"] in {"ode", "ssa"}, name
+    assert protocol._protocol_action_case_ids(budget["cases"]) == budget["cases"]
+    assert protocol.decision_sharing_budget["max_cases"] == len(
+        protocol.decision_sharing_budget["cases"]
+    )
+    assert protocol.decision_sharing_budget["capability_surfaces"] == (
+        "bngl-action",
+        "python-api",
+    )
+
+
+def test_protocol_checks_are_named_and_issue_linked():
+    names = protocol._PROTOCOL_CHECK_NAMES
+    assert len(names) == len(set(names))
+    assert set(names) == {
+        "protocol-action-option-equivalence",
+        "protocol-decision-sharing",
+    }
+    assert set(names) <= set(protocol.expected_check_names)
+    for name, detail, check in protocol._PROTOCOL_CHECKS:
+        assert callable(check)
+        assert detail and isinstance(detail, str)
+        assert protocol._ISSUES[name]
+    assert protocol._ISSUES["protocol-action-option-equivalence"] == [140]
+    assert protocol._ISSUES["protocol-decision-sharing"] == [178]
+
+
+def test_protocol_probes_render_typed_option_values():
+    assert protocol._render_option_value(True) == "1"
+    assert protocol._render_option_value(False) == "0"
+    assert protocol._render_option_value(4) == "4"
+    assert protocol._render_option_value(0.5) == "0.5"
+    assert protocol._render_option_value("ode") == '"ode"'
+    assert (
+        protocol._render_action("simulate", {"method": "ode", "n_steps": 4})
+        == 'simulate({method=>"ode",n_steps=>4})'
+    )
+    assert protocol._cli_option_arguments({"t_end": 2.0, "n_steps": 4}) == [
+        "--t-end",
+        "2.0",
+        "--n-steps",
+        "4",
+    ]
+    assert protocol._api_options({"t_end": 2.0, "sparse": 1}) == {
+        "t_end": 2.0,
+        "sparse": 1,
+    }
+
+
+def test_protocol_probe_outcomes_cover_the_defaults_and_the_invalid_options():
+    probes = protocol._protocol_action_probes()
+    assert [name for name, _options, _expected in probes] == [
+        "explicit-options",
+        "default-options",
+        "zero-steps",
+        "non-positive-atol",
+        "non-positive-rtol",
+        "reversed-window",
+    ]
+    assert [expected for _name, _options, expected in probes] == [
+        "accepted",
+        "accepted",
+        "rejected",
+        "rejected",
+        "rejected",
+        "rejected",
+    ]
+
+
+def test_trajectory_comparison_detects_a_divergent_surface():
+    left = (
+        np.array([0.0, 1.0, 2.0]),
+        ["A"],
+        [np.array([10.0, 9.0, 8.0])],
+    )
+    same = (
+        np.array([0.0, 1.0, 2.0]),
+        ["A"],
+        [np.array([10.0, 9.0, 8.0])],
+    )
+    assert protocol._trajectory_difference(left, same, atol=1e-9, rtol=1e-9) is None
+
+    shifted = (
+        np.array([0.0, 1.0, 2.0]),
+        ["A"],
+        [np.array([10.0, 9.5, 8.0])],
+    )
+    difference = protocol._trajectory_difference(left, shifted, atol=1e-9, rtol=1e-9)
+    assert difference["field"] == "observable0"
+    assert difference["left"] == 9.0
+    assert difference["right"] == 9.5
+
+    regridded = (
+        np.array([0.0, 1.0, 2.5]),
+        ["A"],
+        [np.array([10.0, 9.0, 8.0])],
+    )
+    difference = protocol._trajectory_difference(left, regridded, atol=1e-9, rtol=1e-9)
+    assert difference["field"] == "time"
+
+    renamed = (
+        np.array([0.0, 1.0, 2.0]),
+        ["B"],
+        [np.array([10.0, 9.0, 8.0])],
+    )
+    assert protocol._observable_name_difference(["A"], ["B"]) == {
+        "field": "observable_names",
+        "left": ["A"],
+        "right": ["B"],
+    }
+    assert protocol._observable_name_difference(["A"], ["A"]) is None
+    assert renamed[1] == ["B"]

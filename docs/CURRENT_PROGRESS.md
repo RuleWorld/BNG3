@@ -271,6 +271,66 @@ public `Model` API remains unsupported and stays an explicit boundary; the
 qualified topology route is the action protocol's `include_model`. The
 governance obligations of the issue keep their disposition checks, so the issue
 stays open.
+## Typed protocol actions and shared decision seams (2026-10-20 candidate)
+
+Issue #140 asked for the simulation protocol actions to be dispatched on
+validated typed values and for the command line, the public API and the BNGL
+action surface to behave the same, including the invalid options and the
+defaults. Issue #178 asked for the duplicated option, rate and capability
+decisions of the dispatch, the integrator and the exporters to be identified
+and reduced to one decision per option.
+
+The protocol harness in `tests/validation/integrated_protocol.py` names two
+new checks over the declared one-case generated slice:
+
+- `protocol-action-option-equivalence`: a generated set of typed action
+  options is applied through the installed command line, the public Python API
+  and the BNGL action surface of the same model, and the three surfaces must
+  reach the same outcome. The probes carry the explicit options, the omitted
+  options and the invalid options (`n_steps` of zero, a non-positive `atol`
+  and `rtol`, and a reversed output window); an invalid option must be refused
+  by every surface and must not leave a trajectory behind. The command-line leg
+  must import the same package as the API leg, so the surfaces cannot be two
+  different builds.
+- `protocol-decision-sharing`: the option decision is exercised through the
+  `simulate`, `simulate_pla`, `simulate_psa`, `writeMfile`, `writeCPYfile`,
+  `writeCPPfile` and `writeMexfile` actions, the capability decision through
+  the action and API surfaces for every option a method cannot honour, and the
+  rate decision through the seeded stochastic stream. A surface that keeps its
+  own copy of a decision diverges from the others, so the duplication is
+  visible as a difference rather than as a silent difference.
+
+The product now owns the decisions in one place. `cpp/compile/SimulationMethod.hpp`
+decides which method a spelling selects, which engine it names and which
+options that method can honour; `cpp/compile/ActionOptions.hpp` reads every
+action option as a typed value and keeps the source spelling for the
+diagnostic. The action dispatcher, the compile layer, the integrator, the
+Python extension and the public API use them.
+
+The checks exposed three product defects, all repaired in the same change:
+
+- The action surface accepted a non-positive `atol` or `rtol` and an output
+  window that ran backwards, while the public API refused them. The typed
+  option reader now validates them and quotes the source spelling.
+- `simulate({method=>"psa"})` ran CVODE, because the dispatcher's own method
+  list had no `psa` entry and silently fell back to the ODE default. The
+  engine name now comes from the shared decision, so the requested method is
+  the executed method.
+- The capability rules were written three times, in the dispatcher, in the
+  Python API and in the extension binding, and the copies disagreed: the API
+  refused `max_sim_steps` for the population sampler, which the engine honours,
+  and accepted `sample_times` for the population and particle samplers, which
+  ignore them. One option-support matrix now decides, and the public API reads
+  it from the engine.
+
+The regressions are `tests/cpp/test_simulation_method.cpp` for the shared
+decision and the typed option reader, and the harness contract checks in
+`tests/validation/test_integrated_protocol.py` for the probes. The four
+obligations of #140 and #178 in `provenance/issue-obligations.json` name the
+new checks instead of the `qualification:issue:*` placeholders and keep their
+original scope; the governance obligations of both issues keep their
+disposition checks, so both issues stay open.
+
 ## Public API and CLI surface qualification (2026-10-20 candidate)
 
 Issue #171 asked for the PyBioNetGen public compatibility matrix to name an

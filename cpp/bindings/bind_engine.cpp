@@ -1,4 +1,5 @@
 #include "compile/CompiledModel.hpp"
+#include "compile/SimulationMethod.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
@@ -541,11 +542,14 @@ void bind_engine(py::module_& m) {
                              std::size_t max_sim_steps,
                              std::size_t output_step_interval, bool sparse,
                              double check_product_scale) {
-        if (max_sim_steps > 0 || output_step_interval > 0) {
-            throw std::runtime_error(
-                "max_sim_steps and output_step_interval are supported only "
-                "for simulate_ssa");
-        }
+        // The options a method can honour are decided by the shared semantic
+        // layer, so the binding, the action dispatcher and the integrator
+        // accept the same option combinations.
+        bng::compile::SimulationOptionSupport requested;
+        requested.maxSimSteps = max_sim_steps > 0;
+        requested.outputStepInterval = output_step_interval > 0;
+        bng::compile::validateSimulationOptions(
+            bng::compile::SimulationMethod::Cvode, requested);
         py::gil_scoped_release release;
 
         auto t_entry = std::chrono::steady_clock::now();
@@ -688,7 +692,8 @@ void bind_engine(py::module_& m) {
 
     m.def("simulate_psa", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, double poplevel,
-                             double t_start, unsigned int seed) {
+                             double t_start, unsigned int seed,
+                             int max_sim_steps) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -696,6 +701,9 @@ void bind_engine(py::module_& m) {
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
         opts.seed = seed;
+        opts.maxSimSteps = max_sim_steps > 0
+            ? static_cast<std::size_t>(max_sim_steps)
+            : 0;
 
         PsaSimulator simulator(model, network);
         OdeResult result = simulator.simulate(opts, poplevel);
@@ -710,10 +718,33 @@ void bind_engine(py::module_& m) {
         py::arg("poplevel") = 100,
         py::arg("t_start") = 0.0,
         py::arg("seed") = 0,
+        py::arg("max_sim_steps") = 0,
         "Run PSA simulation on a generated network. "
         "Set seed > 0 for a reproducible random stream; 0 selects a system seed.");
 
     // --- Finite backend dispatch (BNGsim canonical backend) ---
+    m.def("simulation_option_support", [](const std::string& method) {
+        // The option support of a simulation method is decided by the shared
+        // semantic layer, so the public API, the action dispatcher and the
+        // numerical backends accept the same option combinations.
+        const auto selected = bng::compile::simulationMethodForEngineName(
+            method == "ode" ? "cvode" : method);
+        if (!selected.has_value()) {
+            throw std::invalid_argument("unknown simulation method: " + method);
+        }
+        const auto support = bng::compile::optionSupportFor(*selected);
+        py::dict d;
+        d["max_step"] = support.maxStep;
+        d["steady_state"] = support.steadyState;
+        d["sparse"] = support.sparse;
+        d["stop_if"] = support.stopIf;
+        d["sample_times"] = support.sampleTimes;
+        d["output_step_interval"] = support.outputStepInterval;
+        d["max_sim_steps"] = support.maxSimSteps;
+        d["check_product_scale"] = support.checkProductScale;
+        return d;
+    }, py::arg("method"),
+       "The simulation options the named method can honour");
     m.def("bngsim_available", []() { return isBngsimAvailable(); },
           "Whether the BNGsim finite backend is available in this build");
     m.def("bngsim_version", []() { return bngsimVersion(); },

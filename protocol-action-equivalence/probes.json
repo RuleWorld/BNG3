@@ -1,0 +1,64 @@
+[
+  {
+    "expected": "accepted",
+    "options": {
+      "atol": 1e-10,
+      "method": "ode",
+      "n_steps": 4,
+      "rtol": 1e-10,
+      "t_end": 2.0,
+      "t_start": 0.5
+    },
+    "probe": "explicit-options",
+    "status": "PASS"
+  },
+  {
+    "expected": "accepted",
+    "options": {
+      "method": "ode",
+      "t_end": 2.0
+    },
+    "probe": "default-options",
+    "status": "PASS"
+  },
+  {
+    "expected": "rejected",
+    "options": {
+      "method": "ode",
+      "n_steps": 0,
+      "t_end": 2.0
+    },
+    "probe": "zero-steps",
+    "status": "PASS"
+  },
+  {
+    "expected": "rejected",
+    "options": {
+      "atol": 0.0,
+      "method": "ode",
+      "t_end": 2.0
+    },
+    "probe": "non-positive-atol",
+    "status": "PASS"
+  },
+  {
+    "expected": "rejected",
+    "options": {
+      "method": "ode",
+      "rtol": 0.0,
+      "t_end": 2.0
+    },
+    "probe": "non-positive-rtol",
+    "status": "PASS"
+  },
+  {
+    "expected": "rejected",
+    "options": {
+      "method": "ode",
+      "t_end": 1.0,
+      "t_start": 2.0
+    },
+    "probe": "reversed-window",
+    "status": "PASS"
+  }
+]

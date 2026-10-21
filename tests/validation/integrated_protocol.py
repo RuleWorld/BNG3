@@ -27,6 +27,8 @@ expected_check_names = (
     "lifecycle-parameter-only-reuse",
     "lifecycle-topology-invalidation",
     "lifecycle-compartment-invalidation",
+    "protocol-action-option-equivalence",
+    "protocol-decision-sharing",
 )
 
 # Lifecycle work is deliberately bounded to a stable four-case slice. The
@@ -59,6 +61,93 @@ lifecycle_budget = {
     "volume_override_factor": 3.0,
 }
 
+# The typed protocol action probes.  Every probe states option values as
+# typed values, not as free text, and the outcome every surface must reach.
+# The explicit probes carry every option, the default probes omit the
+# optional ones, and the invalid probes carry a typed value that no surface
+# may accept.
+protocol_action_budget = {
+    "max_cases": 1,
+    "cases": ("v1-n20-r0-a0",),
+    "surfaces": ("cli", "python-api", "bngl-action"),
+    "explicit_options": {
+        "method": "ode",
+        "t_start": 0.5,
+        "t_end": 2.0,
+        "n_steps": 4,
+        "atol": 1e-10,
+        "rtol": 1e-10,
+    },
+    "default_options": {
+        "method": "ode",
+        "t_end": 2.0,
+    },
+    "invalid_options": (
+        ("zero-steps", {"method": "ode", "t_end": 2.0, "n_steps": 0}),
+        ("non-positive-atol", {"method": "ode", "t_end": 2.0, "atol": 0.0}),
+        ("non-positive-rtol", {"method": "ode", "t_end": 2.0, "rtol": 0.0}),
+        ("reversed-window", {"method": "ode", "t_start": 2.0, "t_end": 1.0}),
+    ),
+    # The comparison budgets.  The explicit probes use the same tolerances on
+    # every surface; the default probes compare against the surfaces' own
+    # documented default tolerances.
+    "explicit_atol": 1e-9,
+    "explicit_rtol": 1e-8,
+    "default_atol": 1e-6,
+    "default_rtol": 1e-6,
+    "default_points": 101,
+    "cli_timeout": 120,
+}
+
+# The decision probes.  Each decision is exercised through every surface that
+# used to duplicate it, so a duplicated decision becomes visible as a
+# divergence between the surfaces.
+decision_sharing_budget = {
+    "max_cases": 1,
+    "cases": ("v1-n20-r0-a0",),
+    # The option decision: the surfaces that read the shared time-grid and
+    # tolerance options.  A fixed surface exposes the whole output grid, an
+    # adaptive surface exposes the window it selected, and a code surface
+    # exposes the tolerances it will use.
+    "option_surfaces": (
+        ("simulate", "trajectory"),
+        ("writeMfile", "grid-code"),
+        ("writeCPYfile", "grid-code"),
+        ("simulate_pla", "adaptive"),
+        ("simulate_psa", "adaptive"),
+        ("writeCPPfile", "code"),
+        ("writeMexfile", "code"),
+    ),
+    "option_values": {
+        "t_start": 0.5,
+        "t_end": 2.0,
+        "n_steps": 4,
+        "atol": 1e-9,
+        "rtol": 1e-8,
+    },
+    # The capability decision: the option a method cannot honour, and the one
+    # it can.  Every surface that offers the method must agree.
+    "capability_probes": (
+        ("sparse", "ssa", {"sparse": 1}, "rejected"),
+        ("max-step", "ssa", {"max_step": 0.1}, "rejected"),
+        ("steady-state", "ssa", {"steady_state": 1}, "rejected"),
+        ("stop-if", "pla", {"stop_if": "time > 1"}, "rejected"),
+        ("sample-times", "pla", {"sample_times": [1.0]}, "rejected"),
+        ("output-step-interval", "ode", {"output_step_interval": 2}, "rejected"),
+        ("max-sim-steps", "ode", {"max_sim_steps": 10}, "rejected"),
+        ("check-product-scale", "ssa", {"check_product_scale": 1.0}, "rejected"),
+        ("max-sim-steps-psa", "psa", {"max_sim_steps": 10}, "accepted"),
+    ),
+    "capability_surfaces": ("bngl-action", "python-api"),
+    # The rate decision: the seed selects the random stream of a stochastic
+    # rate law, and the same seed must select the same stream everywhere.
+    "rate_surfaces": ("bngl-action", "python-api"),
+    "rate_seed": 1729,
+    "rate_options": {"method": "ssa", "t_end": 2.0, "n_steps": 10},
+    "rate_atol": 0.0,
+    "rate_rtol": 0.0,
+}
+
 _ISSUES = {
     "modern-run-equivalence": [138, 139, 140, 171, 172],
     "invalid-option-rejection": [139, 140, 171, 172],
@@ -78,6 +167,8 @@ _ISSUES = {
     "lifecycle-parameter-only-reuse": [141, 143],
     "lifecycle-topology-invalidation": [141, 143],
     "lifecycle-compartment-invalidation": [141, 143],
+    "protocol-action-option-equivalence": [140],
+    "protocol-decision-sharing": [178],
 }
 
 
@@ -620,6 +711,42 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
                         f"protocol raised {type(exc).__name__}: {exc}",
                     )
                 )
+
+    protocol_slices = {
+        "protocol-action-option-equivalence": protocol_action_budget["cases"],
+        "protocol-decision-sharing": decision_sharing_budget["cases"],
+    }
+    for name, detail, check in _PROTOCOL_CHECKS:
+        if case is None or case.get("id") not in protocol_slices[name]:
+            rows.append(
+                _row(
+                    case_id,
+                    name,
+                    "NOT_TESTED",
+                    "generated case is outside the declared protocol action slice",
+                )
+            )
+            continue
+        try:
+            difference = check(bionetgen, case, directory)
+            rows.append(
+                _row(
+                    case_id,
+                    name,
+                    "FAIL" if difference else "PASS",
+                    detail,
+                    difference,
+                )
+            )
+        except Exception as exc:
+            rows.append(
+                _row(
+                    case_id,
+                    name,
+                    "FAIL",
+                    f"protocol raised {type(exc).__name__}: {exc}",
+                )
+            )
 
     try:
         import bionetgen
@@ -1640,3 +1767,635 @@ _LIFECYCLE_CHECKS = (
 )
 
 _LIFECYCLE_CHECK_NAMES = tuple(name for name, _detail, _check in _LIFECYCLE_CHECKS)
+
+
+# ---------------------------------------------------------------------------
+# Typed protocol action probes
+#
+# The probes state typed option values.  The same option set is applied
+# through the command line, through the public Python API and through the
+# BNGL action surface, and every surface must reach the same outcome.
+# ---------------------------------------------------------------------------
+
+
+def _subprocess_environment():
+    """The environment that makes a subprocess import the same candidate."""
+    import os
+    import sys
+
+    environment = dict(os.environ)
+    entries = [
+        str(Path(entry).resolve())
+        for entry in sys.path
+        if entry and Path(entry).is_dir()
+    ]
+    existing = environment.get("PYTHONPATH")
+    if existing:
+        entries.append(existing)
+    environment["PYTHONPATH"] = os.pathsep.join(entries)
+    return environment
+
+
+def _cli_identity(executable, environment):
+    """The package the installed command line imports."""
+    import subprocess
+
+    completed = subprocess.run(
+        [executable, "info"],
+        capture_output=True,
+        text=True,
+        timeout=protocol_action_budget["cli_timeout"],
+        env=environment,
+    )
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        if line.startswith("Python package:"):
+            return line.split(":", 1)[1].strip()
+    return None
+
+
+def _protocol_action_case_ids(cases):
+    """Validate a declared probe slice against the generated corpus."""
+    from .integrated_cases import generated_cases
+
+    available = {case["id"] for case in generated_cases(full=True)}
+    if not set(cases).issubset(available):
+        raise RuntimeError(
+            "declared protocol action slice is absent from generated corpus"
+        )
+    return tuple(cases)
+
+
+def _render_option_value(value):
+    """Render a typed option value as BNGL action syntax."""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    return '"' + str(value) + '"'
+
+
+def _render_action(name, options):
+    """Render one action with typed option values."""
+    parts = [f"{key}=>{_render_option_value(value)}" for key, value in options.items()]
+    return f"{name}({{{','.join(parts)}}})"
+
+
+def _protocol_model(case, actions=None):
+    """The generated case, optionally with an action block."""
+    from .integrated_cases import reuse_bngl
+
+    text = reuse_bngl(case)
+    if not actions:
+        return text
+    block = "begin actions\n" + "\n".join(actions) + "\nend actions\n"
+    return text.replace("end model\n", block + "end model\n")
+
+
+def _cli_option_arguments(options):
+    """The command-line spelling of the shared option values."""
+    names = {
+        "method": "--method",
+        "t_start": "--t-start",
+        "t_end": "--t-end",
+        "n_steps": "--n-steps",
+        "atol": "--atol",
+        "rtol": "--rtol",
+        "seed": "--seed",
+    }
+    arguments = []
+    for key, value in options.items():
+        if key not in names:
+            continue
+        arguments += [names[key], str(value)]
+    return arguments
+
+
+def _api_options(options):
+    """The public API spelling of the shared option values."""
+    supported = (
+        "method",
+        "t_start",
+        "t_end",
+        "n_steps",
+        "atol",
+        "rtol",
+        "seed",
+        "sparse",
+        "max_step",
+        "steady_state",
+        "stop_if",
+        "sample_times",
+        "output_step_interval",
+        "max_sim_steps",
+        "check_product_scale",
+    )
+    return {key: value for key, value in options.items() if key in supported}
+
+
+def _table_trajectory(path):
+    """The trajectory of a command-line result table."""
+    import numpy as np
+
+    table = np.loadtxt(path)
+    if table.ndim != 2 or table.shape[1] < 2:
+        raise ValueError("result table has no observable columns")
+    names = [f"column{index}" for index in range(1, table.shape[1])]
+    return table[:, 0], names, [table[:, index] for index in range(1, table.shape[1])]
+
+
+def _gdat_trajectory(path):
+    """The trajectory of a written .gdat file."""
+    from .contracts import _trajectory
+
+    data, columns = _trajectory(path)
+    names = [name for index, name in enumerate(columns) if index]
+    return (
+        data[:, 0],
+        names,
+        [data[:, index] for index, name in enumerate(columns) if index],
+    )
+
+
+def _result_trajectory(result):
+    """The trajectory of a public API result."""
+    import numpy as np
+
+    names = list(result.observables)
+    return (
+        np.asarray(result.time, dtype=float),
+        names,
+        [np.asarray(result.observables[name], dtype=float) for name in names],
+    )
+
+
+def _trajectory_difference(
+    left, right, *, atol, rtol, grid_atol=1e-12, grid_rtol=1e-12
+):
+    """The first difference between two observed trajectories."""
+    import numpy as np
+
+    left_time, _left_names, left_columns = left
+    right_time, _right_names, right_columns = right
+    if left_time.shape != right_time.shape:
+        return {
+            "field": "time.shape",
+            "left": list(left_time.shape),
+            "right": list(right_time.shape),
+        }
+    # The output grid is a semantic contract, but the surfaces compute it
+    # with different floating-point operations, so the grid is compared with
+    # a tight budget rather than bit for bit.
+    if not np.allclose(
+        left_time, right_time, atol=grid_atol, rtol=grid_rtol, equal_nan=False
+    ):
+        index = int(
+            np.flatnonzero(
+                ~np.isclose(
+                    left_time,
+                    right_time,
+                    atol=grid_atol,
+                    rtol=grid_rtol,
+                    equal_nan=False,
+                )
+            )[0]
+        )
+        return {
+            "field": "time",
+            "row": index,
+            "left": float(left_time[index]),
+            "right": float(right_time[index]),
+        }
+    if len(left_columns) != len(right_columns):
+        return {
+            "field": "observable_count",
+            "left": len(left_columns),
+            "right": len(right_columns),
+        }
+    for index, (left_column, right_column) in enumerate(
+        zip(left_columns, right_columns)
+    ):
+        left_values = np.asarray(left_column, dtype=float)
+        right_values = np.asarray(right_column, dtype=float)
+        unequal = ~np.isclose(
+            left_values, right_values, atol=atol, rtol=rtol, equal_nan=False
+        )
+        if unequal.any():
+            row = int(np.flatnonzero(unequal)[0])
+            return {
+                "field": f"observable{index}",
+                "row": row,
+                "left": float(left_values[row]),
+                "right": float(right_values[row]),
+            }
+    return None
+
+
+def _observable_name_difference(left, right):
+    """The first difference between two observed observable name lists."""
+    if list(left) == list(right):
+        return None
+    return {"field": "observable_names", "left": list(left), "right": list(right)}
+
+
+def _protocol_action_probes():
+    """The generated typed probes and the outcome every surface must reach."""
+    budget = protocol_action_budget
+    probes = [
+        ("explicit-options", dict(budget["explicit_options"]), "accepted"),
+        ("default-options", dict(budget["default_options"]), "accepted"),
+    ]
+    for name, options in budget["invalid_options"]:
+        probes.append((name, dict(options), "rejected"))
+    return tuple(probes)
+
+
+def _run_protocol_action_probe(
+    bionetgen,
+    case,
+    directory,
+    probe_id,
+    options,
+    expected,
+    surfaces=protocol_action_budget["surfaces"],
+    compare_trajectories=True,
+):
+    """Run one typed option set through every surface and compare the outcome."""
+    import shutil
+    import subprocess
+
+    probe_dir = directory / probe_id
+    probe_dir.mkdir(parents=True, exist_ok=True)
+    executable = shutil.which("bionetgen")
+    if executable is None:
+        return {"field": "cli.executable", "detail": "bionetgen is not on PATH"}
+    environment = _subprocess_environment()
+    package = _cli_identity(executable, environment)
+    expected_package = str(Path(bionetgen.__file__).resolve().parent)
+    if package != expected_package:
+        return {
+            "field": "cli.package_identity",
+            "expected": expected_package,
+            "observed": package,
+        }
+
+    model = probe_dir / "probe.bngl"
+    model.write_text(_protocol_model(case))
+    action_model = probe_dir / "probe-actions.bngl"
+    action_model.write_text(
+        _protocol_model(case, actions=[_render_action("simulate", options)])
+    )
+    table = probe_dir / "result.tsv"
+    command = [
+        executable,
+        "run",
+        str(model),
+        "--output",
+        str(table),
+        *_cli_option_arguments(options),
+    ]
+    completed = None
+    if "cli" in surfaces:
+        completed = subprocess.run(
+            command,
+            cwd=probe_dir,
+            capture_output=True,
+            text=True,
+            timeout=protocol_action_budget["cli_timeout"],
+            env=environment,
+        )
+        (probe_dir / "cli.log").write_text(completed.stdout + completed.stderr)
+
+    action = None
+    if "bngl-action" in surfaces:
+        action = subprocess.run(
+            [executable, "execute", str(action_model)],
+            cwd=probe_dir,
+            capture_output=True,
+            text=True,
+            timeout=protocol_action_budget["cli_timeout"],
+            env=environment,
+        )
+        (probe_dir / "action.log").write_text(action.stdout + action.stderr)
+
+    api_failure = None
+    api_result = None
+    if "python-api" in surfaces:
+        try:
+            api_result = bionetgen.run(str(model), **_api_options(options))
+        except Exception as exc:  # noqa: BLE001 - the outcome is the observation
+            api_failure = f"{type(exc).__name__}: {exc}"
+
+    if expected == "rejected":
+        outcomes = []
+        if "cli" in surfaces:
+            outcomes.append(("cli", completed.returncode != 0))
+        if "bngl-action" in surfaces:
+            outcomes.append(("bngl-action", action.returncode != 0))
+        if "python-api" in surfaces:
+            outcomes.append(("python-api", api_failure is not None))
+        for surface, failed in outcomes:
+            if not failed:
+                return {
+                    "field": f"{surface}.invalid_option_accepted",
+                    "options": options,
+                }
+        if "cli" in surfaces and table.exists():
+            return {"field": "cli.invalid_option_wrote_output"}
+        if "bngl-action" in surfaces and action_model.with_suffix(".gdat").exists():
+            return {"field": "bngl-action.invalid_option_wrote_output"}
+        return None
+
+    if "cli" in surfaces and completed.returncode != 0:
+        return {
+            "field": "cli.run",
+            "exit_code": completed.returncode,
+            "output": (completed.stdout + completed.stderr)[-400:],
+        }
+    if "bngl-action" in surfaces and action.returncode != 0:
+        return {
+            "field": "bngl-action.execute",
+            "exit_code": action.returncode,
+            "output": (action.stdout + action.stderr)[-400:],
+        }
+    if "python-api" in surfaces and api_failure is not None:
+        return {"field": "python-api.run", "detail": api_failure}
+    if "cli" in surfaces and not table.is_file():
+        return {"field": "cli.result_table", "detail": "missing"}
+    gdat = action_model.with_suffix(".gdat")
+    if "bngl-action" in surfaces and not gdat.is_file():
+        return {"field": "bngl-action.gdat", "detail": "missing"}
+
+    explicit = probe_id == "explicit-options"
+    atol = (
+        protocol_action_budget["explicit_atol"]
+        if explicit
+        else protocol_action_budget["default_atol"]
+    )
+    rtol = (
+        protocol_action_budget["explicit_rtol"]
+        if explicit
+        else protocol_action_budget["default_rtol"]
+    )
+    observed = {}
+    if "cli" in surfaces:
+        observed["cli"] = _table_trajectory(table)
+    if "bngl-action" in surfaces:
+        observed["bngl-action"] = _gdat_trajectory(gdat)
+    if "python-api" in surfaces:
+        observed["python-api"] = _result_trajectory(api_result)
+    if not compare_trajectories:
+        return None
+    reference = observed["python-api"]
+    for name in ("cli", "bngl-action"):
+        if name not in observed:
+            continue
+        difference = _trajectory_difference(
+            observed[name], reference, atol=atol, rtol=rtol
+        )
+        if difference is not None:
+            return dict(difference, surface=name, probe=probe_id)
+    if "bngl-action" in observed:
+        difference = _observable_name_difference(
+            observed["bngl-action"][1], observed["python-api"][1]
+        )
+        if difference is not None:
+            return dict(difference, surface="bngl-action", probe=probe_id)
+    if difference is not None:
+        return dict(difference, surface="bngl-action", probe=probe_id)
+    if probe_id == "default-options":
+        points = len(reference[0])
+        if points != protocol_action_budget["default_points"]:
+            return {
+                "field": "default.points",
+                "expected": protocol_action_budget["default_points"],
+                "observed": points,
+            }
+    return None
+
+
+def _protocol_action_option_equivalence(bionetgen, case, directory):
+    """The CLI, the public API and the action surface must agree."""
+    route_dir = directory / "protocol-action-equivalence"
+    route_dir.mkdir(parents=True, exist_ok=True)
+    observations = []
+    for probe_id, options, expected in _protocol_action_probes():
+        difference = _run_protocol_action_probe(
+            bionetgen, case, route_dir, probe_id, options, expected
+        )
+        observations.append(
+            dict(probe=probe_id, options=options, expected=expected, status="PASS")
+        )
+        if difference is not None:
+            return difference
+    (route_dir / "probes.json").write_text(
+        __import__("json").dumps(observations, indent=2, sort_keys=True) + "\n"
+    )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Decision-sharing probes
+#
+# Each decision is exercised through every surface that used to duplicate it.
+# A surface that keeps its own copy of the decision diverges from the others,
+# so the duplication becomes visible.
+# ---------------------------------------------------------------------------
+
+
+def _exporter_option_surface(directory, name, options):
+    """Run one exporter action and return the grid and tolerances it used."""
+    import re
+
+    outputs = {".m", ".py", ".h", ".c"}
+    stem = directory / name
+    written = sorted(
+        path
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix in outputs
+    )
+    if not written:
+        raise AssertionError(f"{name} wrote no exporter artifact")
+    text = written[-1].read_text()
+    grid = None
+    tolerances = None
+    match = re.search(r"linspace\(([^,]+),\s*([^,]+),\s*(\d+)\)", text)
+    if match is not None:
+        grid = (
+            float(match.group(1)),
+            float(match.group(2)),
+            int(match.group(3)),
+        )
+    match = re.search(r"'RelTol',\s*([^,]+),\s*'AbsTol',\s*([^,]+)", text)
+    if match is not None:
+        tolerances = (float(match.group(2)), float(match.group(1)))
+    if tolerances is None:
+        match = re.search(r"atol=([^,]+),\s*rtol=([^)]+)", text)
+        if match is not None:
+            tolerances = (float(match.group(1)), float(match.group(2)))
+    if tolerances is None:
+        abstol = re.search(r"abstol\s*=\s*([^;]+);", text)
+        reltol = re.search(r"reltol\s*=\s*([^;]+);", text)
+        if abstol is not None and reltol is not None:
+            tolerances = (float(abstol.group(1)), float(reltol.group(1)))
+    return grid, tolerances
+
+
+def _simulation_option_surface(gdat_path):
+    """The grid a simulation action used, read from its .gdat file."""
+    time, _names, _columns = _gdat_trajectory(gdat_path)
+    return (float(time[0]), float(time[-1]), int(time.size))
+
+
+def _protocol_decision_sharing(bionetgen, case, directory):
+    """The option, capability and rate decisions are made in one place."""
+    import shutil
+    import subprocess
+
+    route_dir = directory / "protocol-decision-sharing"
+    route_dir.mkdir(parents=True, exist_ok=True)
+    executable = shutil.which("bionetgen")
+    if executable is None:
+        return {"field": "cli.executable", "detail": "bionetgen is not on PATH"}
+    environment = _subprocess_environment()
+    package = _cli_identity(executable, environment)
+    expected_package = str(Path(bionetgen.__file__).resolve().parent)
+    if package != expected_package:
+        return {
+            "field": "cli.package_identity",
+            "expected": expected_package,
+            "observed": package,
+        }
+
+    options = dict(decision_sharing_budget["option_values"])
+    windows = {}
+    grids = {}
+    tolerances = {}
+    for surface, kind in decision_sharing_budget["option_surfaces"]:
+        surface_dir = route_dir / surface
+        surface_dir.mkdir(parents=True, exist_ok=True)
+        model = surface_dir / "decision.bngl"
+        model.write_text(
+            _protocol_model(case, actions=[_render_action(surface, options)])
+        )
+        completed = subprocess.run(
+            [executable, "execute", str(model)],
+            cwd=surface_dir,
+            capture_output=True,
+            text=True,
+            timeout=protocol_action_budget["cli_timeout"],
+            env=environment,
+        )
+        (surface_dir / "execute.log").write_text(completed.stdout + completed.stderr)
+        if completed.returncode != 0:
+            return {
+                "field": f"{surface}.execute",
+                "exit_code": completed.returncode,
+                "output": (completed.stdout + completed.stderr)[-400:],
+            }
+        if kind == "trajectory":
+            gdat = model.with_suffix(".gdat")
+            if not gdat.is_file():
+                return {"field": f"{surface}.gdat", "detail": "missing"}
+            window = _simulation_option_surface(gdat)
+            windows[surface] = window[:2]
+            grids[surface] = window
+        elif kind == "adaptive":
+            gdat = model.with_suffix(".gdat")
+            if not gdat.is_file():
+                return {"field": f"{surface}.gdat", "detail": "missing"}
+            window = _simulation_option_surface(gdat)
+            windows[surface] = window[:2]
+        else:
+            grid, tolerance = _exporter_option_surface(surface_dir, surface, options)
+            if grid is not None:
+                grids[surface] = grid
+                windows[surface] = grid[:2]
+            if tolerance is not None:
+                tolerances[surface] = tolerance
+
+    reference_window = windows["simulate"]
+    for surface, window in sorted(windows.items()):
+        if window != reference_window:
+            return {
+                "field": "option.window",
+                "surface": surface,
+                "reference": reference_window,
+                "observed": window,
+            }
+    reference_grid = grids["simulate"]
+    for surface, grid in sorted(grids.items()):
+        if grid != reference_grid:
+            return {
+                "field": "option.grid",
+                "surface": surface,
+                "reference": reference_grid,
+                "observed": grid,
+            }
+    if "writeMfile" in tolerances:
+        for surface, tolerance in sorted(tolerances.items()):
+            if tolerance != tolerances["writeMfile"]:
+                return {
+                    "field": "option.tolerance",
+                    "surface": surface,
+                    "reference": tolerances["writeMfile"],
+                    "observed": tolerance,
+                }
+
+    # The capability decision: an option a method cannot honour is rejected
+    # by every surface that offers the method, and an option a method does
+    # honour is accepted by every surface that offers it.
+    for probe, method, probe_options, expected in decision_sharing_budget[
+        "capability_probes"
+    ]:
+        options = {"method": method, "t_end": 2.0, **probe_options}
+        difference = _run_protocol_action_probe(
+            bionetgen,
+            case,
+            route_dir / "capability" / probe,
+            probe,
+            options,
+            expected,
+            surfaces=decision_sharing_budget["capability_surfaces"],
+            compare_trajectories=False,
+        )
+        if difference is not None:
+            return dict(difference, probe=probe)
+
+    # The rate decision: the same seed selects the same random stream of the
+    # same rate law on every surface.
+    rate_options = dict(decision_sharing_budget["rate_options"])
+    rate_options["seed"] = decision_sharing_budget["rate_seed"]
+    rate_difference = _run_protocol_action_probe(
+        bionetgen,
+        case,
+        route_dir / "rate",
+        "seeded-rate",
+        rate_options,
+        "accepted",
+    )
+    if rate_difference is not None:
+        return dict(rate_difference, probe="seeded-rate")
+    return None
+
+
+_PROTOCOL_CHECKS = (
+    (
+        "protocol-action-option-equivalence",
+        "typed protocol action options applied through the command line, the "
+        "public API and the action surface, including the invalid options and "
+        "the defaults",
+        _protocol_action_option_equivalence,
+    ),
+    (
+        "protocol-decision-sharing",
+        "the option, capability and rate decisions applied through every "
+        "surface that used to duplicate them",
+        _protocol_decision_sharing,
+    ),
+)
+
+_PROTOCOL_CHECK_NAMES = tuple(name for name, _detail, _check in _PROTOCOL_CHECKS)

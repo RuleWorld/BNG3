@@ -133,6 +133,26 @@ target_link_libraries(test_psa_simulator PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
 catch_discover_tests(test_psa_simulator)
 
+# test_simulation_method — the shared method decision and the typed action
+# option reader own the dispatch semantics.
+add_executable(test_simulation_method test_simulation_method.cpp)
+target_include_directories(test_simulation_method PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_simulation_method PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_compile
+    bng_ast
+    bng_parser
+    antlr4_static
+)
+catch_discover_tests(test_simulation_method)
+
 # test_ode_options
 add_executable(test_ode_options test_ode_options.cpp)
 target_include_directories(test_ode_options PRIVATE

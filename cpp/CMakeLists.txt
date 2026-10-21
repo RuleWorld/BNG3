@@ -73,8 +73,10 @@ target_link_libraries(bng_parser PUBLIC antlr4_static bng_ast)
 
 # Execution-facing metadata; no NFsim runtime path is switched by this library.
 add_library(bng_compile STATIC
+    compile/ActionOptions.cpp
     compile/Capabilities.cpp
     compile/Document.cpp
+    compile/SimulationMethod.cpp
     compile/PatternDescriptor.cpp
     compile/PatternLowering.cpp
     compile/LegacyAstLowering.cpp
