@@ -57,6 +57,7 @@ def _measure_one(
 ) -> Dict[str, Any]:
     """Translate one model both ways and report the four metrics."""
 
+    import bionetgen  # noqa: F401  (adds the native extension to the package)
     import bionetgen._bionetgen_cpp as cpp
     from bionetgen.atomizer.modern import Atomizer
     from bionetgen.model import BioNetGenModel
