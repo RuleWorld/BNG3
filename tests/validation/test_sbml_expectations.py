@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,7 @@ from scripts.ci import sbml_campaign_inventory as inventory
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
-INVENTORY = REPO / "provenance" / "sbml-campaign" / "integrated-2026-10-20.json"
+INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-20.json"
 LOCK = REPO / "provenance" / "upstreams.lock.yml"
 TOOL = REPO / "scripts" / "ci" / "sbml_campaign_inventory.py"
 GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
@@ -580,3 +581,241 @@ def test_a_failed_verdict_is_a_finding_and_not_a_construct_gap():
         for stage in gap:
             assert entry[stage] == "unsupported", (case, stage)
         assert gap[stage]["construct"] != "other", (case, stage)
+
+
+# --------------------------------------------------------------------------
+# The workflow's manifest step must not fail a branch that predates the
+# manifest, and it must say why it did not compare.
+# --------------------------------------------------------------------------
+
+WORKFLOW = REPO / ".github" / "workflows" / "sbml-conformance.yml"
+MANIFEST_STEP_NAME = "Compare the run against the committed expectation manifest"
+
+
+def _manifest_step_script() -> str:
+    from tests.workflow_yaml import parse_workflow
+
+    workflow = parse_workflow(WORKFLOW)
+    steps = workflow["jobs"]["conformance"]["steps"]
+    for step in steps:
+        if step.get("name") == MANIFEST_STEP_NAME:
+            return str(step["run"])
+    raise AssertionError(f"the workflow has no step named {MANIFEST_STEP_NAME!r}")
+
+
+def _stub_tool(root: Path, body: str) -> Path:
+    """Write a stand-in for the campaign inventory tool."""
+
+    tool = root / "scripts" / "ci" / "sbml_campaign_inventory.py"
+    tool.parent.mkdir(parents=True, exist_ok=True)
+    tool.write_text(body, encoding="utf-8")
+    return tool
+
+
+def _run_manifest_step(root: Path, tmp_path: Path):
+    """Run the workflow's manifest step against ``root`` as the checkout."""
+
+    runner = tmp_path / "runner"
+    runner.mkdir(parents=True, exist_ok=True)
+    (runner / "report.json").write_text("{}", encoding="utf-8")
+    environment = {
+        **os.environ,
+        "RUNNER_TEMP": str(runner),
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"),
+    }
+    return subprocess.run(
+        ["bash", "-c", _manifest_step_script()],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+
+def test_the_manifest_step_skips_a_branch_that_predates_the_manifest(tmp_path):
+    """A tool without ``--expectations`` must skip, visibly, not fail."""
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _stub_tool(
+        root,
+        "import sys\n"
+        "if '--help' in sys.argv:\n"
+        "    print('usage: sbml_campaign_inventory.py [-h] [--suite-report X] --out OUT')\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(2)\n",
+    )
+    result = _run_manifest_step(root, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "::notice::" in result.stdout
+    assert "does not apply" in result.stdout
+    assert "predates" in result.stdout
+
+
+def test_the_manifest_step_skips_a_branch_without_the_tool(tmp_path):
+    root = tmp_path / "checkout"
+    root.mkdir()
+    result = _run_manifest_step(root, tmp_path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "::notice::" in result.stdout
+    assert "does not apply" in result.stdout
+
+
+def test_the_manifest_step_still_fails_on_a_real_difference(tmp_path):
+    """The skip must not become a blanket pass."""
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _stub_tool(
+        root,
+        "import sys\n"
+        "if '--help' in sys.argv:\n"
+        "    print('usage: sbml_campaign_inventory.py [-h] [--suite-report X] [--expectations X] --out OUT')\n"
+        "    raise SystemExit(0)\n"
+        "print('1 expectation difference(s) against the manifest:', file=sys.stderr)\n"
+        "print('  semantic/00001 [conversion]: expected passed, observed unsupported (regression)', file=sys.stderr)\n"
+        "raise SystemExit(1)\n",
+    )
+    result = _run_manifest_step(root, tmp_path)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "::notice::" not in result.stdout
+    assert "semantic/00001" in result.stderr
+
+
+def test_the_manifest_step_documents_the_selection_limit():
+    """A reader must not take a green pull-request gate as a current manifest."""
+
+    script = _manifest_step_script()
+    assert "128-case feature-cover" in script
+    assert "scheduled full run compares every case" in script
+
+
+@pytest.mark.smoke
+def test_the_committed_manifest_is_internally_consistent():
+    """Every case, every stage, every gap — the record must describe itself."""
+
+    manifest = _manifest()
+    cases = manifest["cases"]
+    assert manifest["suite"]["case_count"] == len(cases) == 1923
+
+    for identity, entry in cases.items():
+        assert set(inventory.EXPECTATION_STAGES) <= set(entry), identity
+        for stage in inventory.EXPECTATION_STAGES:
+            assert entry[stage] in inventory.EXPECTATION_STATUSES, (identity, stage)
+        gap = entry.get("gap")
+        if gap is None:
+            continue
+        for stage, detail in gap.items():
+            # A gap is recorded only for a refusal, and it names the construct
+            # that is not representable today.
+            assert entry[stage] == "unsupported", (identity, stage)
+            assert detail["construct"], (identity, stage)
+            assert detail["construct"] != "other", (identity, stage)
+
+    # A reference mismatch is a finding, not a missing construct: the
+    # official-reference failures are recorded as failures and carry no gap.
+    failures = [
+        identity
+        for identity, entry in cases.items()
+        if entry["official_reference"] == "failed"
+    ]
+    assert failures
+    for identity in failures:
+        assert "official_reference" not in cases[identity].get("gap", {}), identity
+
+
+@pytest.mark.smoke
+def test_the_manifests_stage_counts_agree_with_its_per_case_verdicts():
+    """The summary and the detail are one record, not two."""
+
+    manifest = _manifest()
+    cases = manifest["cases"]
+    recorded = manifest["stage_counts"]
+    for stage in inventory.EXPECTATION_STAGES:
+        tally = Counter(entry[stage] for entry in cases.values())
+        assert dict(sorted(tally.items())) == recorded[stage], stage
+        assert sum(recorded[stage].values()) == len(cases), stage
+
+
+def test_the_manifest_step_compares_whenever_the_tool_supports_expectations(
+    tmp_path,
+):
+    """A tool that can compare must never be mistaken for one that cannot.
+
+    The step reads the tool's usage text rather than piping it into a
+    matcher, so a tool that writes a long usage text cannot lose the
+    comparison to a broken pipe.
+    """
+
+    root = tmp_path / "checkout"
+    root.mkdir()
+    _stub_tool(
+        root,
+        "import sys\n"
+        "if '--help' in sys.argv:\n"
+        "    print('usage: sbml_campaign_inventory.py [-h] [--suite-report X] "
+        "[--expectations X] --out OUT')\n"
+        "    for index in range(2000):\n"
+        "        print('filler line ' + str(index))\n"
+        "    raise SystemExit(0)\n"
+        "raise SystemExit(1)\n",
+    )
+    result = _run_manifest_step(root, tmp_path)
+    # The tool supports --expectations, so the step must compare and fail on
+    # the tool's non-zero exit, not skip.
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "::notice::" not in result.stdout
+
+
+@pytest.mark.smoke
+def test_every_gap_records_the_side_of_the_boundary_it_sits_on():
+    """A harness-side gap is a measurement limit; an Atomizer-side one is not."""
+
+    manifest = _manifest()
+    sides = set()
+    for case, entry in manifest["cases"].items():
+        for stage, gap in entry.get("gap", {}).items():
+            assert gap["side"] in inventory.GAP_SIDES, (case, stage)
+            sides.add(gap["side"])
+            if gap["construct"].startswith("harness:"):
+                assert gap["side"] == "harness", (case, stage)
+            if gap["construct"] == "reference:not-applicable":
+                assert gap["side"] == "not-applicable", (case, stage)
+            if gap["construct"] == "reference:no-result-mapping":
+                assert gap["side"] == "harness", (case, stage)
+    assert sides == set(inventory.GAP_SIDES)
+
+
+def test_the_failure_clusters_follow_the_official_feature_tags():
+    """The cluster a case lands in is decided by its own official metadata."""
+
+    from scripts.ci import sbml_campaign_tables as tables
+
+    assert tables.FAILURE_CLUSTER_TAGS == (
+        ("CSymbolDelay", "CSymbolDelay"),
+        ("CSymbolRateOf", "CSymbolRateOf"),
+        ("CSymbolAvogadro", "CSymbolAvogadro"),
+        ("AlgebraicRule", "AlgebraicRule"),
+        ("InitialAssignment", "InitialAssignment"),
+        ("AssignmentRule", "AssignmentRule"),
+        ("RateRule", "RateRule"),
+    )
+
+    def cluster_for(tags: list[str]) -> str:
+        for tag, label in tables.FAILURE_CLUSTER_TAGS:
+            if tag in tags:
+                return label
+        return tables.FAILURE_CLUSTER_OTHER
+
+    # The most specific tag wins, so a case that also carries an
+    # InitialAssignment tag is still reported as a delay case.
+    assert cluster_for(["Compartment", "CSymbolDelay", "InitialAssignment"]) == (
+        "CSymbolDelay"
+    )
+    assert cluster_for(["CSymbolAvogadro", "Parameter"]) == "CSymbolAvogadro"
+    assert cluster_for(["InitialAssignment", "Species"]) == "InitialAssignment"
+    assert cluster_for(["AssignmentRule", "Parameter"]) == "AssignmentRule"
+    assert cluster_for(["RateRule", "Reaction", "Species"]) == "RateRule"
+    assert cluster_for(["AlgebraicRule", "Parameter"]) == "AlgebraicRule"
+    assert cluster_for(["Compartment", "Reaction", "Species"]) == "other"

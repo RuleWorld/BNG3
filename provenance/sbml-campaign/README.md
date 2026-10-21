@@ -10,7 +10,12 @@ them changes a verdict.
 | `expectations.json` | the expected verdict of every official SBML Test Suite case at every stage of the gate | `scripts/ci/sbml_campaign_inventory.py --expectations-out` |
 | `baseline-2026-10-19.json` | the measured inventory at campaign base commit `219c76da` | `scripts/ci/sbml_campaign_inventory.py --out` |
 | `integrated-2026-10-20.json` | the measured inventory after the campaign's integrated changes | `scripts/ci/sbml_campaign_inventory.py --out` |
+| `current-2026-10-20.json` | the measured inventory of the current merged tree | `scripts/ci/sbml_campaign_inventory.py --out` |
 | `provenance-<label>.json` | the measurement metadata merged into the matching inventory | hand-maintained; reviewed with the inventory it describes |
+
+The baseline and the integrated inventories are **historical facts** and are
+not rewritten. A new measurement is recorded as a *current* inventory
+alongside them.
 
 ## Expectation manifest schema
 
@@ -58,16 +63,34 @@ human to read two large reports side by side.
   labels for it (`causes`):
 
   ```json
-  "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["constraints"]}}}
+  "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["constraints"], "side": "atomizer"}}}
   ```
+
+  The `side` says which boundary the gap sits on. A **harness-side** gap is a
+  measurement limitation — the gate could not evaluate the case, so the case
+  is not a claim about the Atomizer (the reference runner cannot execute
+  actions on the official grid, the official reference needs an ensemble, the
+  result mapping is missing). An **Atomizer-side** gap is a representational
+  one: a construct is not representable today. A case that defines no
+  official reference is `not-applicable`. The two kinds are different and
+  must not be counted together.
 
   No entry claims that a currently-unsupported construct should become
   supported. An `unsupported` entry is never counted as support, and a case
   that stops being refused is a finding to be reported, not a pass.
 * `status_mapping` states how each harness field becomes a verdict, so the
   mapping is auditable rather than implicit.
+* `stage_counts` is the recorded summary of the four stages. It is derived
+  from the per-case verdicts, not typed in, so the summary and the detail
+  cannot drift apart.
 * `suite.revision`, `source_report.sha256` and `source_report.bng3_commit`
   identify exactly which suite and which run the manifest describes.
+* `provenance` records the measurement environment: the commit the manifest
+  describes (`measured_commit`), the commit the run actually executed
+  (`measured_at_commit`), the source tree and the native extension's
+  SHA-256, and any note the operator supplied. A run may execute a branch
+  head whose Atomizer behaviour is identical to the described commit; that
+  difference is stated here rather than left implicit.
 
 ## Regenerating the manifest
 
@@ -77,14 +100,70 @@ committed file and the diff is the review.
 ```bash
 PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   --suite-dir /path/to/sbml-test-suite \
-  --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 6 \
+  --categories semantic stochastic --isolate-cases --case-timeout 120 --jobs 3 \
   --json /tmp/bng3-campaign/report.json
 
 python scripts/ci/sbml_campaign_inventory.py \
   --suite-report /tmp/bng3-campaign/report.json \
   --expectations-out provenance/sbml-campaign/expectations.json \
-  --measurement-date "$(date -u +%Y-%m-%d)"
+  --measurement-date "$(date -u +%Y-%m-%d)" \
+  --measured-commit "$(git rev-parse HEAD)" \
+  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-20.json
 ```
+
+`--measured-commit` is the commit the manifest *describes*; the report's own
+`source_provenance.bng3_commit` is kept as `measured_at_commit`, the commit
+the run actually executed. When the two differ, say why in the provenance
+document: the reader must be able to tell which native build and which source
+tree produced the numbers.
+
+## What the pull-request gate does and does not cover
+
+The official conformance workflow compares a run against this manifest, but a
+pull-request run executes only the **128-case feature-cover selection** of
+the official suite. The comparison therefore covers the cases that run
+executed; the rest are reported as *not executed* rather than as
+differences. Only the **scheduled** workflow run executes the full 1923
+cases and compares every one of them.
+
+A green pull-request gate is therefore **not** evidence that the manifest is
+current. A case outside the selection that changed verdict is detected by the
+scheduled full run, not by the pull request.
+
+## The merge-flow convention
+
+The manifest is a ratchet: it records what each case is *expected* to do, and
+a difference from that record fails. So **any merge that changes a verdict
+leaves `main`'s manifest stale, and the gate then fails on `main` itself**
+until the manifest is regenerated.
+
+The convention is therefore: **after each merge that changes a verdict, the
+manifest is regenerated from the new `main` and landed as a small follow-up
+commit.** The regeneration is mechanical and is one command (the measurement
+plus the rewrite):
+
+```bash
+python scripts/ci/validate_sbml_test_suite.py \
+  --suite-dir /path/to/sbml-test-suite \
+  --categories semantic stochastic --isolate-cases --jobs 3 \
+  --json /tmp/bng3-campaign/main-report.json
+
+python scripts/ci/sbml_campaign_inventory.py \
+  --suite-report /tmp/bng3-campaign/main-report.json \
+  --expectations-out provenance/sbml-campaign/expectations.json \
+  --measurement-date "$(date -u +%Y-%m-%d)" \
+  --measured-commit "$(git rev-parse HEAD)" \
+  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-20.json
+
+# verify the regenerated manifest against the report it came from
+python scripts/ci/sbml_campaign_inventory.py \
+  --suite-report /tmp/bng3-campaign/main-report.json \
+  --expectations provenance/sbml-campaign/expectations.json
+```
+
+The third command must print that every case matches. The follow-up commit
+changes only the manifest (and the campaign document's generated tables, if
+they name the new measurement), so the diff is the review.
 
 ## Comparing a run against the manifest
 
