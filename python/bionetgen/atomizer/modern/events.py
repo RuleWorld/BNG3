@@ -599,6 +599,13 @@ class EventTranslationContext:
     resolve_first_order_chain_event_system: Callable[
         [], Optional[Tuple[str, str, str, float, float]]
     ] = _no_first_order_chain_event_system
+    # Native ``bng3_events`` lowering.  Maps an SBML state symbol (a species
+    # or a rate-rule parameter) to the BNGL observable that carries its
+    # state, the factor that converts the SBML value into that observable's
+    # units, and the compartment the state lives in.
+    resolve_native_state: Callable[[str], Optional["NativeStateTarget"]] = (
+        lambda _identifier: None
+    )
 
     @property
     def resolveSpeciesPattern(self):
@@ -655,6 +662,21 @@ class EventSet:
     target: str
     value: float
     variable: str
+
+
+@dataclass(frozen=True)
+class NativeStateTarget:
+    """BNGL state that an SBML event trigger or assignment refers to.
+
+    ``observable`` is the BNGL observable that carries the state's amount,
+    ``amount_factor`` converts an SBML value of that state into the same
+    amount units, and ``compartment`` names the compartment the state lives
+    in so that two states can be compared only when their units agree.
+    """
+
+    observable: str
+    amount_factor: float
+    compartment: str
 
 
 @dataclass
@@ -1267,6 +1289,14 @@ _COMPARISON_ALIASES = {
 }
 _COMPARISON_ALIAS_PATTERN = "|".join(sorted(_COMPARISON_ALIASES, key=len, reverse=True))
 _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
+
+# The native ``bng3_events`` runtime locates the trigger's rising edge with
+# continuous root finding.  A strict inequality is true exactly on one side of
+# its root, so a sign change is the rising trigger edge; a non-strict
+# inequality is also true at a tangential contact that leaves no sign change.
+# Both therefore carry the same documented limitation: a truth interval that
+# opens and closes between two solver steps is not observed.
+_NATIVE_COMPARISON_OPERATORS = {"lt": "<", "gt": ">", "leq": "<=", "geq": ">="}
 
 
 # Names a trigger expression uses for built-in functions rather than model
@@ -2842,6 +2872,445 @@ def _render_sets(sets: Sequence[Tuple[str, str, float]]) -> List[str]:
                 f'"{_format_number(value)}")'
             )
     return lines
+
+
+def _native_state_target(
+    identifier: str, context: EventTranslationContext
+) -> Optional[NativeStateTarget]:
+    """Return the BNGL state that an SBML identifier names, if any."""
+    text = str(identifier or "").strip()
+    if not text or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", text):
+        return None
+    return context.resolve_native_state(text)
+
+
+def _native_static_text(
+    expression: str, context: EventTranslationContext
+) -> Optional[str]:
+    """Return the BNGL text of a static SBML expression, or ``None``.
+
+    A static side of a trigger may not reference any dynamic state: the
+    native runtime classifies the crossing by the sign of the difference
+    between the two sides, so both sides have to be continuous functions of
+    the model state, and a mixed expression hides that classification.
+    """
+    expanded = context.expand_functions(str(expression or "").strip())
+    if not expanded:
+        return None
+    for run in _expression_id_runs(expanded):
+        if context.resolve_native_state(run) is not None:
+            return None
+        if not context.is_compile_time_constant(run):
+            return None
+    return expanded
+
+
+def _native_scaled_static(
+    expression: str, factor: float, context: EventTranslationContext
+) -> Optional[str]:
+    """Scale a static SBML side into the units of a stateful side."""
+    static = _native_static_text(expression, context)
+    if static is None:
+        return None
+    if factor == 1.0:
+        return static
+    return f"({_format_number(factor)} * ({static}))"
+
+
+def _native_state_is_monotone(
+    identifier: str, event: SBMLEvent, context: EventTranslationContext
+) -> bool:
+    """True when the state has a provably monotone trajectory.
+
+    A non-strict comparison is also true at a tangential contact that leaves
+    no sign change, so its rising edge is only a crossing when the state
+    cannot reverse at the threshold.  A state whose trajectory is affine,
+    exponential, or square-linear with a fixed sign has no such contact.
+    """
+    affine = context.resolve_affine_rate_for_event(identifier, event)
+    if affine is not None:
+        try:
+            initial, slope = affine
+        except (TypeError, ValueError):
+            initial = slope = None
+        if (
+            initial is not None
+            and slope is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(slope))
+        ):
+            return True
+    exponential = context.resolve_exponential_rate_for_event(identifier, event)
+    if exponential is not None:
+        try:
+            initial, exponent = exponential
+        except (TypeError, ValueError):
+            initial = exponent = None
+        if (
+            initial is not None
+            and exponent is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(exponent))
+        ):
+            return float(initial) * float(exponent) >= 0.0
+    square_linear = context.resolve_square_linear_rate_for_event(identifier, event)
+    if square_linear is not None:
+        try:
+            initial, squared_slope = square_linear
+        except (TypeError, ValueError):
+            initial = squared_slope = None
+        if (
+            initial is not None
+            and squared_slope is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(squared_slope))
+        ):
+            return float(squared_slope) >= 0.0
+    return False
+
+
+def _native_comparison_expression(
+    left_text: str,
+    right_text: str,
+    operator: str,
+    event: SBMLEvent,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Render one comparison of state and static quantities in BNGL terms."""
+    symbol = _NATIVE_COMPARISON_OPERATORS[operator]
+    left_state = _native_state_target(left_text, context)
+    right_state = _native_state_target(right_text, context)
+    if symbol in {"<=", ">="}:
+        # A non-strict comparison holds at a tangential contact, so the
+        # crossing has to be provably transversal.
+        for state, text in ((left_state, left_text), (right_state, right_text)):
+            if state is None:
+                continue
+            if not _native_state_is_monotone(text, event, context):
+                return None
+    if left_state is not None and right_state is not None:
+        # Two states compare directly only when they share their units; a
+        # difference of two species in different compartments would need a
+        # ratio that the native trigger grammar cannot express.
+        if left_state.amount_factor != right_state.amount_factor:
+            return None
+        return f"{left_state.observable} {symbol} {right_state.observable}"
+    if left_state is not None:
+        scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
+        if scaled is None:
+            return None
+        return f"{left_state.observable} {symbol} {scaled}"
+    if right_state is not None:
+        scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
+        if scaled is None:
+            return None
+        return f"{scaled} {symbol} {right_state.observable}"
+    return None
+
+
+def _native_conjunction_expression(
+    trigger: str, event: SBMLEvent, context: EventTranslationContext
+) -> Optional[str]:
+    """Lower a conjunction of state comparisons to a native BNGL expression.
+
+    A conjunction holds only where every conjunct holds, so the native
+    runtime compares the smallest of the conjunct differences with zero.  The
+    runtime needs every conjunct to be a strict comparison, because only a
+    strict comparison has a rising edge that a sign change can attribute.
+    """
+    terms = _split_call_arguments(str(trigger or "").strip())
+    if terms is None or len(terms) < 2:
+        return None
+    rendered: List[str] = []
+    for term in terms:
+        comparison = _match_comparison_call(term)
+        if comparison is None:
+            return None
+        operator, arguments_text = comparison
+        if operator not in _NATIVE_COMPARISON_OPERATORS:
+            return None
+        arguments = _split_arguments(arguments_text)
+        if arguments is None or len(arguments) != 2:
+            return None
+        left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+        expression = _native_comparison_expression(
+            left_text, right_text, operator, event, context
+        )
+        if expression is None:
+            return None
+        rendered.append(f"({expression})")
+    return " && ".join(rendered)
+
+
+def _native_trigger_expression(
+    event: SBMLEvent, context: EventTranslationContext
+) -> Optional[str]:
+    """Lower a state-dependent SBML trigger to a native BNGL inequality."""
+    conjunction = _native_conjunction_expression(event.trigger, event, context)
+    if conjunction is not None:
+        return conjunction
+    comparison = _match_comparison_call(event.trigger)
+    if comparison is None:
+        return None
+    operator, arguments_text = comparison
+    # Only a strict inequality has a crossing that the continuous root
+    # finder can attribute to exactly one trigger edge.  A non-strict
+    # inequality is also true at a tangential contact, which leaves the
+    # crossing unclassified, so it stays with the analytic lowering path.
+    if operator not in _NATIVE_COMPARISON_OPERATORS:
+        return None
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return None
+    left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    return _native_comparison_expression(
+        left_text, right_text, operator, event, context
+    )
+
+
+def _native_fold_term(
+    node: ast.AST, context: EventTranslationContext
+) -> Optional[float]:
+    """Fold one additive term to a number when it names only static values."""
+    try:
+        text = ast.unparse(node)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return _native_fold_term_text(text, context)
+
+
+def _native_fold_term_text(
+    text: str, context: EventTranslationContext
+) -> Optional[float]:
+    """Fold an SBML expression to a number when it names only static values."""
+    expanded = context.expand_functions(str(text or "").strip())
+    if not expanded:
+        return None
+
+    def resolve(identifier: str) -> Optional[float]:
+        if context.resolve_native_state(identifier) is not None:
+            return None
+        if not context.is_compile_time_constant(identifier):
+            return None
+        return context.resolve_param(identifier)
+
+    return fold_numeric(expanded, resolve)
+
+
+def _native_additive_terms(node: ast.AST) -> Optional[List[Tuple[int, ast.AST]]]:
+    """Flatten an additive expression into signed multiplicative terms."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+        left = _native_additive_terms(node.left)
+        right = _native_additive_terms(node.right)
+        if left is None or right is None:
+            return None
+        if isinstance(node.op, ast.Sub):
+            right = [(-sign, term) for sign, term in right]
+        return left + right
+    return [(1, node)]
+
+
+def _native_multiplicative_factors(node: ast.AST) -> Optional[List[ast.AST]]:
+    """Flatten a multiplicative term into its factors."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+        left = _native_multiplicative_factors(node.left)
+        right = _native_multiplicative_factors(node.right)
+        if left is None or right is None:
+            return None
+        return left + right
+    if isinstance(node, ast.BinOp):
+        # A quotient between a state and a constant would need the state's
+        # unit factor in a denominator; the native value grammar has no
+        # division.
+        return None
+    return [node]
+
+
+def _native_factor_constant(
+    node: ast.AST, context: EventTranslationContext
+) -> Optional[float]:
+    """Return the numeric value of a constant factor, or ``None``."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        if isinstance(node.value, bool):
+            return None
+        return float(node.value)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        inner = _native_factor_constant(node.operand, context)
+        if inner is None:
+            return None
+        return inner if isinstance(node.op, ast.UAdd) else -inner
+    return None
+
+
+def _native_term_expression(
+    sign: int,
+    node: ast.AST,
+    target: NativeStateTarget,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Render one assignment term in the units of the assignment target."""
+    folded = _native_fold_term(node, context)
+    if folded is not None:
+        value = folded * sign
+        if value == 0:
+            return "0"
+        if target.amount_factor == 1.0:
+            return _format_number(value)
+        return (
+            f"({_format_number(value)} * " f"({_format_number(target.amount_factor)}))"
+        )
+    factors = _native_multiplicative_factors(node)
+    if factors is None:
+        return None
+    coefficient = float(sign)
+    names: List[str] = []
+    state: Optional[NativeStateTarget] = None
+    for factor in factors:
+        value = _native_factor_constant(factor, context)
+        if value is not None:
+            coefficient *= value
+            continue
+        if isinstance(factor, ast.Name):
+            resolved = context.resolve_native_state(factor.id)
+            if resolved is not None:
+                if state is not None:
+                    # Two states in one term would need their unit factors
+                    # multiplied out; the native value grammar keeps a single
+                    # state per term.
+                    return None
+                state = resolved
+                continue
+            if not context.is_compile_time_constant(factor.id):
+                return None
+            names.append(standardize_name(factor.id))
+            continue
+        return None
+    if state is not None:
+        if state.amount_factor != target.amount_factor:
+            return None
+        parts: List[str] = []
+        if coefficient != 1.0:
+            parts.append(_format_number(coefficient))
+        parts.extend(names)
+        parts.append(state.observable)
+        return " * ".join(parts)
+    if not names and coefficient == 0:
+        return "0"
+    parts = []
+    if coefficient != 1.0:
+        parts.append(_format_number(coefficient))
+    parts.extend(names)
+    if target.amount_factor != 1.0:
+        parts.append(f"({_format_number(target.amount_factor)})")
+    if not parts:
+        parts.append("1")
+    return " * ".join(parts)
+
+
+def _native_value_expression(
+    expression: str, target: NativeStateTarget, context: EventTranslationContext
+) -> Optional[str]:
+    """Rewrite an SBML assignment value into the units of its target."""
+    text = str(expression or "").strip()
+    if not text:
+        return None
+    try:
+        tree = ast.parse(context.expand_functions(text), mode="eval")
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    terms = _native_additive_terms(tree.body)
+    if terms is None:
+        return None
+    rendered: List[str] = []
+    for sign, node in terms:
+        term = _native_term_expression(sign, node, target, context)
+        if term is None:
+            return None
+        if not rendered:
+            rendered.append(term if sign > 0 else f"-({term})")
+        else:
+            rendered.append((" + " if sign > 0 else " - ") + term)
+    if not rendered:
+        return None
+    return "".join(rendered)
+
+
+def synthesize_native_event_block(
+    events: Sequence[SBMLEvent], context: EventTranslationContext
+) -> Optional[str]:
+    """Lower one SBML event into the native ``bng3_events`` block.
+
+    The native runtime detects the trigger's rising edge with continuous root
+    finding, so it executes a state-dependent trigger that no finite list of
+    scheduled actions can express.  The supported subclass is deliberately
+    narrow: one event, no delay, no priority, a persistent trigger, a single
+    strict continuous inequality, and assignments to observable state.
+    """
+
+    if len(events) != 1:
+        return None
+    event = events[0]
+    if context.unapplied_algebraic_rule:
+        # The source model has an algebraic rule the Atomizer did not apply,
+        # so the generated model does not reproduce the source dynamics and
+        # the trigger cannot be evaluated on it.
+        return None
+    if str(context.method or "ode").lower() not in {"ode", "cvode"}:
+        # The native runtime finds a trigger crossing with the continuous ODE
+        # solver; a stochastic run needs jump scheduling instead.
+        return None
+    priority = 0.0
+    if event.priority:
+        # The priority orders the assignments of events that are executed
+        # simultaneously.  With one event there is nothing to order, so the
+        # value is carried but does not change the execution.
+        priority = _native_fold_term_text(event.priority, context)
+        if priority is None or not math.isfinite(priority):
+            return None
+    if event.trigger_persistent is False:
+        return None
+    delay = 0.0
+    if event.delay:
+        delay = _native_fold_term_text(event.delay, context)
+        if delay is None or not math.isfinite(delay) or delay < 0:
+            return None
+    trigger = _native_trigger_expression(event, context)
+    if trigger is None:
+        return None
+    assignments: List[Tuple[str, str]] = []
+    for assignment in event.assignments:
+        variable, expression = _event_assignment(assignment)
+        target = context.resolve_native_state(variable)
+        if target is None:
+            # The native runtime assigns observable state; a parameter or
+            # compartment assignment has no equivalent there.
+            return None
+        value = _native_value_expression(expression, target, context)
+        if value is None:
+            return None
+        assignments.append((target.observable, value))
+    if not assignments:
+        return None
+    lines = [
+        "begin bng3_events version 1",
+        f'  event "{event.id or "event"}"',
+        f"    trigger: {trigger}",
+        "    initial_value: "
+        + ("true" if event.trigger_initial_value is not False else "false"),
+        "    persistent: "
+        + ("true" if event.trigger_persistent is not False else "false"),
+        "    use_values_from_trigger_time: "
+        + ("true" if event.use_values_from_trigger_time is not False else "false"),
+    ]
+    if delay:
+        lines.append(f"    delay: {_format_number(delay)}")
+    if event.priority:
+        lines.append(f"    priority: {_format_number(priority)}")
+    for observable, value in assignments:
+        lines.append(f"    assignment: {observable} = {value}")
+    lines.append("  end event")
+    lines.append("end bng3_events")
+    return "\n".join(lines)
 
 
 def synthesize_event_actions(
@@ -8189,6 +8658,7 @@ def synthesize_event_actions(
 foldNumeric = fold_numeric
 parseTimeThreshold = parse_time_threshold
 synthesizeEventActions = synthesize_event_actions
+synthesizeNativeEventBlock = synthesize_native_event_block
 
 
 __all__ = [
@@ -8196,10 +8666,13 @@ __all__ = [
     "EventSet",
     "EventTranslationContext",
     "EventTranslationResult",
+    "NativeStateTarget",
     "foldNumeric",
     "fold_numeric",
     "parseTimeThreshold",
     "parse_time_threshold",
     "synthesizeEventActions",
     "synthesize_event_actions",
+    "synthesizeNativeEventBlock",
+    "synthesize_native_event_block",
 ]

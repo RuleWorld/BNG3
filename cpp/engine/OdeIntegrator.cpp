@@ -198,6 +198,19 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
         nativeEvent_->id = event.id;
         nativeEvent_->trigger = compile::lowerResolvedExpressionToAst(event.trigger, compiled);
         nativeEvent_->initialValue = event.initialValue;
+        nativeEvent_->persistent = event.persistent;
+        nativeEvent_->useValuesFromTriggerTime = event.useValuesFromTriggerTime;
+        useValuesFromTriggerTime_ = event.useValuesFromTriggerTime;
+        if (event.delay) {
+            const auto delay = compile::lowerResolvedExpressionToAst(*event.delay, compiled);
+            const double value = delay.evaluate([&](const std::string& name) {
+                return model_.getParameters().evaluate(name, 0.0);
+            }, 0.0);
+            if (!std::isfinite(value) || value < 0) {
+                throw std::runtime_error("bng3_events delay must be a finite nonnegative constant");
+            }
+            eventDelay_ = value;
+        }
         for (const auto& assignment : event.assignments) {
             nativeEvent_->assignments.push_back({assignment.target,
                 compile::lowerResolvedExpressionToAst(assignment.value, compiled)});
@@ -1682,42 +1695,27 @@ bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
 
 void OdeIntegrator::validateEventRootSurface() {
     if (!nativeEvent_) return;
-    const auto& arguments = nativeEvent_->trigger.args();
     const auto dynamic = [&](const ast::Expression& value) {
         return (value.kind() == ast::ExpressionKind::Identifier ||
                 value.kind() == ast::ExpressionKind::ObservableRef) &&
                (value.name() == "time" || observableIndex_.count(value.name()));
     };
-    const auto& variable = dynamic(arguments[0]) ? arguments[0] : arguments[1];
-    if (variable.name() == "time") return;
-    const auto fail = [] {
-        throw std::runtime_error("bng3_events event species trigger requires monotone constant-rate unary dynamics");
-    };
-    const auto& entries = compiledGroups_[observableIndex_.at(variable.name())].entries;
-    if (entries.size() != 1 || entries.front().second != 1.0) fail();
-    const auto species = entries.front().first;
-    if (fixedSpecies_[species]) return;
-    // This deliberately narrow proof excludes hidden tangencies and multiple
-    // crossings between solver steps. Every contributing flux depends only on
-    // this species, has a nonnegative constant coefficient, and moves it in
-    // the same direction. Assignments may reset it and rearm the next crossing.
-    int direction = 0;
-    for (const auto& reaction : compiledRxns_) {
-        const auto consumed = std::count(reaction.reactantIndices.begin(),
-                                         reaction.reactantIndices.end(), species);
-        const auto produced = std::count(reaction.productIndices.begin(),
-                                         reaction.productIndices.end(), species);
-        const auto change = produced - consumed;
-        if (change == 0) continue;
-        if (reaction.isFunctional || reaction.isTotalRate ||
-            !std::isfinite(reaction.rateConstant) || reaction.rateConstant < 0 ||
-            reaction.reactantIndices.size() > 1 ||
-            (!reaction.reactantIndices.empty() && reaction.reactantIndices.front() != species)) fail();
-        if (reaction.rateConstant == 0) continue;
-        const int sign = change > 0 ? 1 : -1;
-        if (direction != 0 && direction != sign) fail();
-        direction = sign;
+    for (const auto* conjunct : triggerConjuncts(nativeEvent_->trigger)) {
+        const auto& arguments = conjunct->args();
+        if (!dynamic(arguments[0]) && !dynamic(arguments[1])) {
+            throw std::runtime_error(
+                "bng3_events trigger requires one time or species observable "
+                "against a static threshold");
+        }
     }
+    // The runtime's contract is uniform: the trigger's rising edge is the
+    // first sign change of the root function, and the root function is
+    // positive exactly where the trigger holds.  A strict inequality is true
+    // on one side of its root, so the sign change is exactly the rising
+    // edge; a non-strict inequality is also true at a tangential contact
+    // that leaves no sign change, which the crossing detection cannot see.
+    // Both forms therefore carry the same documented limitation, and neither
+    // needs a monotonicity proof on the state.
 }
 
 void OdeIntegrator::validateEventTargets() {
@@ -1754,24 +1752,161 @@ double OdeIntegrator::eventValue(const ast::Expression& expression,
     return value;
 }
 
-void OdeIntegrator::applyEvent(double time, std::vector<double>& state) const {
+std::vector<double> OdeIntegrator::eventValues(double time, const double* state) const {
     const auto& assignments = nativeEvent_->assignments;
     std::vector<double> values;
     for (const auto& assignment : assignments) {
-        const double value = eventValue(assignment.value, time, state.data());
+        const double value = eventValue(assignment.value, time, state);
         if (value < 0) throw std::runtime_error("bng3_events assignment amount must be nonnegative");
         values.push_back(value);
     }
+    return values;
+}
+
+void OdeIntegrator::assignEventValues(std::vector<double>& state,
+                                       const std::vector<double>& values) const {
     for (std::size_t i = 0; i < values.size(); ++i) state[eventTargets_[i]] = values[i];
+}
+
+double OdeIntegrator::eventSideDerivative(const ast::Expression& expression,
+                                           double time,
+                                           const std::vector<double>& derivatives) const {
+    if (expression.kind() != ast::ExpressionKind::Identifier &&
+        expression.kind() != ast::ExpressionKind::ObservableRef) {
+        // A static threshold does not move with the model state.
+        return 0.0;
+    }
+    if (expression.name() == "time") return 1.0;
+    const auto observable = observableIndex_.find(expression.name());
+    if (observable == observableIndex_.end()) return 0.0;
+    double total = 0.0;
+    for (const auto& entry : compiledGroups_[observable->second].entries) {
+        if (entry.first < derivatives.size()) {
+            total += entry.second * derivatives[entry.first];
+        }
+    }
+    return total;
+}
+
+double OdeIntegrator::eventRootDerivative(const ast::Expression& trigger,
+                                           double time,
+                                           const std::vector<double>& derivatives) const {
+    const auto& arguments = trigger.args();
+    const double difference =
+        eventSideDerivative(arguments[0], time, derivatives) -
+        eventSideDerivative(arguments[1], time, derivatives);
+    // The root function is positive exactly where the trigger holds.
+    return trigger.name()[0] == '<' ? -difference : difference;
+}
+
+std::vector<const ast::Expression*> OdeIntegrator::triggerConjuncts(
+    const ast::Expression& trigger) {
+    std::vector<const ast::Expression*> conjuncts;
+    if (trigger.kind() == ast::ExpressionKind::Binary && trigger.name() == "&&") {
+        for (const auto& child : trigger.args()) {
+            for (const auto* conjunct : triggerConjuncts(child)) {
+                conjuncts.push_back(conjunct);
+            }
+        }
+        return conjuncts;
+    }
+    conjuncts.push_back(&trigger);
+    return conjuncts;
+}
+
+bool OdeIntegrator::isStrictTrigger(const ast::Expression& trigger) {
+    for (const auto* conjunct : triggerConjuncts(trigger)) {
+        if (conjunct->name() != "<" && conjunct->name() != ">") return false;
+    }
+    return true;
+}
+
+double OdeIntegrator::eventRootValue(const ast::Expression& trigger, double time,
+                                      const double* state) const {
+    const auto conjuncts = triggerConjuncts(trigger);
+    if (conjuncts.size() == 1) {
+        const auto& arguments = conjuncts.front()->args();
+        const double difference =
+            eventValue(arguments[0], time, state) -
+            eventValue(arguments[1], time, state);
+        return conjuncts.front()->name()[0] == '<' ? -difference : difference;
+    }
+    // A conjunction holds only where every conjunct holds, so its root
+    // function is the smallest of the conjunct root functions.
+    double smallest = std::numeric_limits<double>::infinity();
+    for (const auto* conjunct : conjuncts) {
+        smallest = std::min(smallest, eventRootValue(*conjunct, time, state));
+    }
+    return smallest;
+}
+
+OdeIntegrator::TriggerSurface OdeIntegrator::triggerSurface(
+    const ast::Expression& trigger, double time, const double* state,
+    const std::vector<double>& derivatives) const {
+    TriggerSurface surface;
+    const auto conjuncts = triggerConjuncts(trigger);
+    double smallest = std::numeric_limits<double>::infinity();
+    const ast::Expression* active = nullptr;
+    for (const auto* conjunct : conjuncts) {
+        const double value = eventRootValue(*conjunct, time, state);
+        if (value < smallest) {
+            smallest = value;
+            active = conjunct;
+        }
+    }
+    surface.difference = smallest;
+    if (active != nullptr) {
+        surface.derivative = eventRootDerivative(*active, time, derivatives);
+    }
+    return surface;
+}
+
+void OdeIntegrator::applyEvent(double time, std::vector<double>& state) const {
+    assignEventValues(state, eventValues(time, state.data()));
+}
+
+bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
+    bool applied = false;
+    std::vector<PendingEvent> cascades;
+    for (auto pending = pendingEvents_.begin(); pending != pendingEvents_.end();) {
+        if (pending->executionTime > time + 1e-12) {
+            ++pending;
+            continue;
+        }
+        // The trigger is re-tested after the execution: an assignment that
+        // makes the trigger true again triggers the event once more, and that
+        // execution is queued like the first one.
+        const bool before =
+            eventValue(nativeEvent_->trigger, pending->executionTime, state.data()) != 0.0;
+        if (useValuesFromTriggerTime_) {
+            assignEventValues(state, pending->values);
+        } else {
+            assignEventValues(
+                state, eventValues(pending->executionTime, state.data()));
+        }
+        const bool after =
+            eventValue(nativeEvent_->trigger, pending->executionTime, state.data()) != 0.0;
+        if (!before && after) {
+            PendingEvent cascade;
+            cascade.executionTime = pending->executionTime + eventDelay_;
+            if (useValuesFromTriggerTime_) {
+                cascade.values = eventValues(pending->executionTime, state.data());
+            }
+            cascades.push_back(std::move(cascade));
+        }
+        pending = pendingEvents_.erase(pending);
+        applied = true;
+    }
+    // The cascades are appended after the walk: growing the queue while an
+    // iterator points into it would invalidate that iterator.
+    for (auto& cascade : cascades) pendingEvents_.push_back(std::move(cascade));
+    return applied;
 }
 
 double OdeIntegrator::cvodeEventRoot(double time, const double* scaledState) const {
     std::vector<double> state(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = scaledState[i] * cvodeStateScale_[i];
-    const auto& trigger = nativeEvent_->trigger;
-    const double difference = eventValue(trigger.args()[0], time, state.data()) -
-                              eventValue(trigger.args()[1], time, state.data());
-    return trigger.name()[0] == '<' ? -difference : difference;
+    return eventRootValue(nativeEvent_->trigger, time, state.data());
 }
 
 OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
@@ -2661,6 +2796,9 @@ struct CvodeSession {
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
+    // A queued event belongs to one run: a second integration of the same
+    // integrator must not inherit it.
+    pendingEvents_.clear();
 
     std::vector<double> initialState(nSpecies_);
     std::vector<double> initialDerivatives(nSpecies_);
@@ -2675,13 +2813,42 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     if (!!nativeEvent_.has_value()) {
         const auto& event = *nativeEvent_;
         const auto& trigger = event.trigger;
-        if ((trigger.name() == ">" || trigger.name() == "<") &&
-            eventValue(trigger.args()[0], opts.tStart, initialState.data()) ==
-            eventValue(trigger.args()[1], opts.tStart, initialState.data())) {
-            throw std::runtime_error("bng3_events strict trigger equals its threshold at the initial time");
+        // A strict trigger is false while its two sides are equal, so an
+        // equality at the start of the simulation is a falling edge and the
+        // event still waits for the next rising edge.  That is only decidable
+        // when the trigger does not also become true straight away: the very
+        // first instant has no crossing to attribute.
+        const bool strict = isStrictTrigger(trigger);
+        if (strict) {
+            bool rising = true;
+            try {
+                std::vector<double> initialRates(nSpecies_);
+                derivs(opts.tStart, initialState.data(), initialRates.data());
+                const auto surface = triggerSurface(
+                    trigger, opts.tStart, initialState.data(), initialRates);
+                rising = surface.difference == 0.0 && !(surface.derivative < 0.0);
+            } catch (const std::exception&) {
+                rising = true;
+            }
+            if (rising) {
+                throw std::runtime_error(
+                    std::string(ast::kUnsupportedEventExecutionMessage) +
+                    ": strict trigger equals its threshold at the initial time");
+            }
         }
         if (!event.initialValue && eventValue(event.trigger, opts.tStart, initialState.data()) != 0.0) {
-            applyEvent(opts.tStart, initialState);
+            if (eventDelay_ > 0.0) {
+                // A delayed trigger queues the event; its assignments run
+                // once the delay elapses.
+                PendingEvent pending;
+                pending.executionTime = opts.tStart + eventDelay_;
+                if (useValuesFromTriggerTime_) {
+                    pending.values = eventValues(opts.tStart, initialState.data());
+                }
+                pendingEvents_.push_back(std::move(pending));
+            } else {
+                applyEvent(opts.tStart, initialState);
+            }
         }
     }
 
@@ -2854,7 +3021,31 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         if (tOut > t) {
             long int maxSteps = 2000;
             while (true) {
-                flag = CVode(cvode_mem, tOut, y, &t, CV_NORMAL);
+                // A queued event executes at its own instant, so the solver
+                // stops there before the output grid continues.
+                double target = tOut;
+                for (const auto& pending : pendingEvents_) {
+                    if (pending.executionTime < target) target = pending.executionTime;
+                }
+                if (target < t) target = t;
+                if (target <= t) {
+                    // Nothing lies between the current instant and the output
+                    // time: only a queued event that is due now remains.
+                    std::vector<double> dueState(nSpecies_);
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        dueState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+                    }
+                    if (!applyDueEvents(t, dueState)) break;
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
+                    }
+                    if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
+                        // The session releases the SUNDIALS handles.
+                        throw std::runtime_error("bng3_events CVodeReInit failed");
+                    }
+                    continue;
+                }
+                flag = CVode(cvode_mem, target, y, &t, CV_NORMAL);
 
                 if (flag == CV_ROOT_RETURN) {
                     int rootInfo = 0;
@@ -2862,18 +3053,53 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     if (rootInfo > 0) {
                         std::vector<double> state(nSpecies_);
                         for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
-                        // An exception here unwinds the integration; the
-                        // session releases the SUNDIALS handles.
-                        applyEvent(t, state);
-                        for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
-                        if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
-                            throw std::runtime_error("bng3_events CVodeReInit failed");
+                        // The session owns the SUNDIALS handles: an
+                        // exception here unwinds the integration and the
+                        // session releases the linear solver, the matrix,
+                        // the solver memory, the vector and the context
+                        // exactly once.
+                        if (eventDelay_ > 0.0) {
+                            // The trigger edge queues the event; the
+                            // assignments run once the delay elapses.
+                            PendingEvent pending;
+                            pending.executionTime = t + eventDelay_;
+                            if (useValuesFromTriggerTime_) {
+                                pending.values = eventValues(t, state.data());
+                            }
+                            pendingEvents_.push_back(std::move(pending));
+                        } else {
+                            // The trigger just became true, so it is still
+                            // true when the assignment runs: an immediate
+                            // execution cannot produce a cascade.  A delayed
+                            // execution can, and the queue below re-tests the
+                            // trigger there.
+                            applyEvent(t, state);
+                            for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
+                            if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
+                                throw std::runtime_error("bng3_events CVodeReInit failed");
+                            }
                         }
                     }
                     if (t >= tOut) break;
                     continue;
                 }
                 if (flag == CV_SUCCESS || flag == CV_TSTOP_RETURN) {
+                    // Execute the queued events whose delay has elapsed before
+                    // the trajectory continues.
+                    std::vector<double> dueState(nSpecies_);
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        dueState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+                    }
+                    if (applyDueEvents(t, dueState)) {
+                        for (std::size_t i = 0; i < nSpecies_; ++i) {
+                            NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
+                        }
+                        if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
+                            // The session releases the SUNDIALS handles.
+                            throw std::runtime_error("bng3_events CVodeReInit failed");
+                        }
+                        continue;
+                    }
                     break;
                 } else if (flag == CV_TOO_MUCH_WORK) {
                     // Auto-increase max steps (matches BNG2 behavior)

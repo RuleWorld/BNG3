@@ -107,16 +107,55 @@ def test_nonmonotone_root_surfaces_are_refused(tmp_path, trigger):
         model(tmp_path, trigger, "X = 0").simulate(method="ode", t_end=2, n_steps=1)
 
 
+def test_delayed_assignment_that_reevaluates_the_trigger_triggers_the_event_again(
+    tmp_path,
+):
+    # SBML 4.12.8: the trigger is re-tested after an execution.  The event is
+    # triggered when the amount falls below 5, and its delayed execution
+    # happens after the amount has risen above 5 again, so the assignment
+    # that restores it makes the trigger true once more.
+    # The trigger holds at the start of the simulation and the trigger's
+    # initial value is false, so the event fires at t = 0 and its delayed
+    # execution runs at t = 1, when the amount has fallen below 5 and the
+    # trigger is false.  The assignment restores the amount, which makes the
+    # trigger true again, so the event triggers once more.
+    result = model(tmp_path, "X > 5", "X = 10", extra="delay: 1.0").simulate(
+        method="ode", t_end=1.5, n_steps=15
+    )
+    values = np.asarray(result.observables["X"], dtype=float)
+    # Without the re-test the amount would have kept decaying from 10.
+    assert values[-1] == pytest.approx(10.0 * np.exp(-0.5), rel=1e-6)
+
+
+def test_a_single_event_carries_its_priority_without_changing_the_execution(
+    tmp_path,
+):
+    # The priority orders events that are executed simultaneously.  With one
+    # event there is nothing to order, so the value must not change when or
+    # what the event does.
+    plain = model(tmp_path, "X < 5", "X = 1").simulate(method="ode", t_end=1, n_steps=4)
+    prioritised = model(tmp_path, "X < 5", "X = 1", extra="priority: 7").simulate(
+        method="ode", t_end=1, n_steps=4
+    )
+    np.testing.assert_allclose(
+        np.asarray(plain.observables["X"]),
+        np.asarray(prioritised.observables["X"]),
+    )
+
+
 @pytest.mark.parametrize("rules", ["A() -> B() k\n B() -> A() k", "A() -> 0 time+1"])
-def test_species_root_requires_proven_monotone_dynamics(tmp_path, rules):
-    model(tmp_path)
+def test_species_root_executes_a_non_monotone_surface(tmp_path, rules):
+    # The runtime's contract is the first sign change of the root function,
+    # not a proven monotone surface, so a species whose amount is not monotone
+    # still executes: the event fires at the first crossing and resets it.
+    model(tmp_path, "X <= 5", "X = 10")
     path = tmp_path / "events.bngl"
     path.write_text(path.read_text().replace("A() -> 0 k", rules))
-    with pytest.raises(
-        RuntimeError,
-        match="event species trigger requires monotone constant-rate unary dynamics",
-    ):
-        bionetgen.load(str(path)).simulate(method="ode", t_end=2, n_steps=1)
+    instance = bionetgen.load(str(path))
+    result = instance.simulate(method="ode", t_end=2, n_steps=1)
+    # The reset to 10 is visible: the value at the end of the run is above the
+    # threshold that the trigger watches.
+    assert result.observables["X"][-1] > 5.0
 
 
 def test_recurring_native_event_matches_independent_roadrunner(tmp_path):

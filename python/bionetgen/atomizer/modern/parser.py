@@ -3629,9 +3629,9 @@ class SBMLParser:
                 {
                     "category": "event",
                     "message": (
-                        f"{len(result.events)} SBML event(s) parsed; discrete state "
-                        "changes are not executed by the simulation engine and are "
-                        "emitted as an annotated block for review."
+                        f"{len(result.events)} SBML event(s) parsed; the event "
+                        "lowering decides whether the simulation engine "
+                        "executes them."
                     ),
                     "count": len(result.events),
                     "severity": "dropped",

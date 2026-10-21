@@ -149,9 +149,46 @@ private:
 
     void validateEventTargets();
     double eventValue(const ast::Expression& expression, double time, const double* state) const;
+    // Execute the queued events whose execution instant has arrived.  Returns
+    // true when the state changed.
+    bool applyDueEvents(double time, std::vector<double>& state);
+    double eventSideDerivative(const ast::Expression& expression, double time,
+                               const std::vector<double>& derivatives) const;
+    double eventRootDerivative(const ast::Expression& trigger, double time,
+                               const std::vector<double>& derivatives) const;
+    // The trigger's signed root function: positive exactly where the trigger
+    // holds.  A conjunction is the conjunction of its conjuncts, so its root
+    // function is the smallest of the conjunct root functions.
+    double eventRootValue(const ast::Expression& trigger, double time,
+                          const double* state) const;
+    // The conjuncts of a trigger; a single inequality is one conjunct.
+    static std::vector<const ast::Expression*> triggerConjuncts(
+        const ast::Expression& trigger);
+    // True when every conjunct of the trigger is a strict inequality.
+    static bool isStrictTrigger(const ast::Expression& trigger);
+    // The difference that decides the sign of the trigger at a given time and
+    // the rate of change of that difference.
+    struct TriggerSurface {
+        double difference = 0.0;
+        double derivative = 0.0;
+    };
+    TriggerSurface triggerSurface(const ast::Expression& trigger, double time,
+                                  const double* state,
+                                  const std::vector<double>& derivatives) const;
     void applyEvent(double time, std::vector<double>& state) const;
+    std::vector<double> eventValues(double time, const double* state) const;
+    void assignEventValues(std::vector<double>& state,
+                            const std::vector<double>& values) const;
+    // A trigger edge that is waiting for its delay to elapse.
+    struct PendingEvent {
+        double executionTime = 0.0;
+        std::vector<double> values;
+    };
     std::vector<std::size_t> eventTargets_;
     std::optional<ast::Event> nativeEvent_;
+    std::vector<PendingEvent> pendingEvents_;
+    bool useValuesFromTriggerTime_ = true;
+    double eventDelay_ = 0.0;
     void validateEventRootSurface();
     void compile();
     void compileGroups();

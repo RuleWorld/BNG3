@@ -200,6 +200,19 @@ SbmlWriter::SymbolIds SbmlWriter::computeSymbolIds(
     for (const auto& group : groups) {
         result.observables.emplace(group.name, group.sbmlId);
         result.observables.emplace(makeValidSBMLId(group.name), group.sbmlId);
+        if (group.entries.size() == 1 && group.entries.front().second == 1.0) {
+            // The observable equals that species' amount, so an event may
+            // name the species and a re-imported document keeps the event.
+            result.observableSpecies.emplace(
+                group.name, "S" + std::to_string(group.entries.front().first + 1));
+            result.observableSpecies.emplace(
+                makeValidSBMLId(group.name),
+                "S" + std::to_string(group.entries.front().first + 1));
+        }
+    }
+    for (const auto& event : model.getEvents()) {
+        const auto id = allocate(event.id, "event_");
+        result.events.emplace(event.id, id);
     }
     return result;
 }
@@ -211,7 +224,6 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
     requireNoEnergySemantics(model, "SBML");
-    compile::requireNoNativeEvents(model, "SBML export");
     const compile::CompiledModel compiled(model);
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default
@@ -263,6 +275,11 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     // Reactions
     if (network && options.networksExport) {
         sbml << writeReactions(*network, model, symbolIds, options.level);
+    }
+
+    // Events
+    if (model.getEventFormatVersion().has_value()) {
+        sbml << writeEvents(model, groups, symbolIds, network, options.level);
     }
 
     sbml << "  </model>\n";
@@ -578,6 +595,101 @@ std::string SbmlWriter::writeAssignmentRules(
     return sbml.str();
 }
 
+std::string SbmlWriter::writeEvents(
+    const ast::Model& model,
+    const std::vector<ObservableGroup>& groups,
+    const SymbolIds& symbolIds,
+    const engine::GeneratedNetwork* network,
+    int level) {
+    const auto& events = model.getEvents();
+    if (events.empty()) return {};
+
+    // An event assignment targets observable state, which the exported
+    // document spells as the single network species the observable covers.
+    const auto speciesForTarget = [&](const std::string& target) -> std::string {
+        for (const auto& group : groups) {
+            if (group.name != target) continue;
+            if (group.entries.size() != 1 || group.entries.front().second != 1.0) {
+                throw std::runtime_error(
+                    "SBML export cannot preserve an event assignment to the "
+                    "aggregate observable '" + target + "'");
+            }
+            return "S" + std::to_string(group.entries.front().first + 1);
+        }
+        throw std::runtime_error(
+            "SBML export cannot preserve an event assignment to the unknown "
+            "observable '" + target + "'");
+    };
+
+    std::ostringstream sbml;
+    sbml << std::setprecision(17);
+    sbml << "    <listOfEvents>\n";
+    for (const auto& event : events) {
+        const auto idIt = symbolIds.events.find(event.id);
+        const auto id = idIt == symbolIds.events.end()
+            ? makeValidSBMLId(event.id) : idIt->second;
+        // SBML Level 2 carries the delay as an event attribute, and it must
+        // be a constant there; a Level 3 delay element carries an expression.
+        std::string delayAttribute;
+        if (event.delay && level < 3) {
+            const double value = event.delay->evaluate([&](const std::string& name) {
+                return model.getParameters().evaluate(name);
+            }, 0.0);
+            if (!std::isfinite(value) || value < 0) {
+                throw std::runtime_error(
+                    "SBML export cannot preserve a non-constant event delay");
+            }
+            delayAttribute = " delay=\"" + std::to_string(value) + "\"";
+        }
+        if (event.priority && level < 3) {
+            throw std::runtime_error(
+                "SBML export cannot preserve an event priority below Level 3");
+        }
+        sbml << "      <event id=\"" << escapeXml(id)
+             << "\" name=\"" << escapeXml(event.id)
+             << "\" useValuesFromTriggerTime=\""
+             << (event.useValuesFromTriggerTime ? "true" : "false")
+             << "\"" << delayAttribute << ">\n";
+        sbml << "        <trigger initialValue=\""
+             << (event.initialValue ? "true" : "false")
+             << "\" persistent=\"" << (event.persistent ? "true" : "false")
+             << "\">\n";
+        sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+        sbml << exprToMathML(event.trigger, "            ", symbolIds, true);
+        sbml << "          </math>\n";
+        sbml << "        </trigger>\n";
+        if (event.delay && level >= 3) {
+            sbml << "        <delay>\n";
+            sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+            sbml << exprToMathML(*event.delay, "            ", symbolIds, true);
+            sbml << "          </math>\n";
+            sbml << "        </delay>\n";
+        }
+        if (event.priority) {
+            sbml << "        <priority>\n";
+            sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+            sbml << exprToMathML(*event.priority, "            ", symbolIds, true);
+            sbml << "          </math>\n";
+            sbml << "        </priority>\n";
+        }
+        if (!event.assignments.empty()) {
+            sbml << "        <listOfEventAssignments>\n";
+            for (const auto& assignment : event.assignments) {
+                sbml << "          <eventAssignment variable=\""
+                     << escapeXml(speciesForTarget(assignment.target)) << "\">\n";
+                sbml << "            <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+                sbml << exprToMathML(assignment.value, "              ", symbolIds, true);
+                sbml << "            </math>\n";
+                sbml << "          </eventAssignment>\n";
+            }
+            sbml << "        </listOfEventAssignments>\n";
+        }
+        sbml << "      </event>\n";
+    }
+    sbml << "    </listOfEvents>\n";
+    return sbml.str();
+}
+
 std::string SbmlWriter::writeReactions(
     const engine::GeneratedNetwork& network,
     const ast::Model& model,
@@ -754,7 +866,8 @@ std::vector<SbmlWriter::ObservableGroup> SbmlWriter::computeObservableGroups(
 std::string SbmlWriter::exprToMathML(
     const ast::Expression& expr,
     const std::string& indent,
-    const SymbolIds& symbolIds) {
+    const SymbolIds& symbolIds,
+    bool preferSpecies) {
     std::ostringstream out;
 
     switch (expr.kind()) {
@@ -777,6 +890,12 @@ std::string SbmlWriter::exprToMathML(
                 } else if (const auto it = symbolIds.functions.find(expr.name());
                            it != symbolIds.functions.end()) {
                     id = it->second;
+                } else if (preferSpecies &&
+                           symbolIds.observableSpecies.count(expr.name()) != 0) {
+                    // An observable that covers one species names that
+                    // species, so the exported event keeps its meaning and a
+                    // re-imported document can execute it.
+                    id = symbolIds.observableSpecies.at(expr.name());
                 } else if (const auto it = symbolIds.observables.find(expr.name());
                            it != symbolIds.observables.end()) {
                     id = it->second;
@@ -789,15 +908,15 @@ std::string SbmlWriter::exprToMathML(
             if (expr.name() == "-") {
                 out << indent << "<apply>\n";
                 out << indent << "  <minus/>\n";
-                out << exprToMathML(expr.args()[0], indent + "  ", symbolIds);
+                out << exprToMathML(expr.args()[0], indent + "  ", symbolIds, preferSpecies);
                 out << indent << "</apply>\n";
             } else if (expr.name() == "!") {
                 out << indent << "<apply>\n";
                 out << indent << "  <not/>\n";
-                out << exprToMathML(expr.args()[0], indent + "  ", symbolIds);
+                out << exprToMathML(expr.args()[0], indent + "  ", symbolIds, preferSpecies);
                 out << indent << "</apply>\n";
             } else {
-                out << exprToMathML(expr.args()[0], indent, symbolIds);
+                out << exprToMathML(expr.args()[0], indent, symbolIds, preferSpecies);
             }
             break;
 
@@ -821,8 +940,8 @@ std::string SbmlWriter::exprToMathML(
             else if (op == "^^") out << indent << "  <xor/>\n";
             else out << indent << "  <times/>\n";
 
-            out << exprToMathML(expr.args()[0], indent + "  ", symbolIds);
-            out << exprToMathML(expr.args()[1], indent + "  ", symbolIds);
+            out << exprToMathML(expr.args()[0], indent + "  ", symbolIds, preferSpecies);
+            out << exprToMathML(expr.args()[1], indent + "  ", symbolIds, preferSpecies);
             out << indent << "</apply>\n";
             break;
         }
@@ -862,7 +981,7 @@ std::string SbmlWriter::exprToMathML(
                             emitExtremum = [&](std::size_t first, std::size_t last,
                                                const std::string& levelIndent) {
                                 if (first == last) {
-                                    return exprToMathML(args[first], levelIndent, symbolIds);
+                                    return exprToMathML(args[first], levelIndent, symbolIds, preferSpecies);
                                 }
                                 std::ostringstream nested;
                                 nested << levelIndent << "<piecewise>\n";
@@ -872,11 +991,11 @@ std::string SbmlWriter::exprToMathML(
                                 nested << levelIndent << "      <"
                                        << (isMin ? "lt" : "gt") << "/>\n";
                                 nested << emitExtremum(first, last - 1, levelIndent + "      ");
-                                nested << exprToMathML(args[last], levelIndent + "      ", symbolIds);
+                                nested << exprToMathML(args[last], levelIndent + "      ", symbolIds, preferSpecies);
                                 nested << levelIndent << "    </apply>\n";
                                 nested << levelIndent << "  </piece>\n";
                                 nested << levelIndent << "  <otherwise>\n";
-                                nested << exprToMathML(args[last], levelIndent + "    ", symbolIds);
+                                nested << exprToMathML(args[last], levelIndent + "    ", symbolIds, preferSpecies);
                                 nested << levelIndent << "  </otherwise>\n";
                                 nested << levelIndent << "</piecewise>\n";
                                 return nested.str();
@@ -913,7 +1032,7 @@ std::string SbmlWriter::exprToMathML(
                     out << indent << "  <" << sbmlFunctionName << "/>\n";
                 }
                 for (const auto& arg : expr.args()) {
-                    out << exprToMathML(arg, indent + "  ", symbolIds);
+                    out << exprToMathML(arg, indent + "  ", symbolIds, preferSpecies);
                 }
                 out << indent << "</apply>\n";
             } else if (funcName == "delay" || funcName == "rateOf") {
@@ -953,18 +1072,18 @@ std::string SbmlWriter::exprToMathML(
                     << "http://www.sbml.org/sbml/symbols/" << funcName << "\">"
                     << " " << funcName << " </csymbol>\n";
                 for (const auto& arg : expr.args()) {
-                    out << exprToMathML(arg, indent + "  ", symbolIds);
+                    out << exprToMathML(arg, indent + "  ", symbolIds, preferSpecies);
                 }
                 out << indent << "</apply>\n";
             } else if (funcName == "if" && expr.args().size() == 3) {
                 // Piecewise for if(cond, then, else)
                 out << indent << "<piecewise>\n";
                 out << indent << "  <piece>\n";
-                out << exprToMathML(expr.args()[1], indent + "    ", symbolIds);
-                out << exprToMathML(expr.args()[0], indent + "    ", symbolIds);
+                out << exprToMathML(expr.args()[1], indent + "    ", symbolIds, preferSpecies);
+                out << exprToMathML(expr.args()[0], indent + "    ", symbolIds, preferSpecies);
                 out << indent << "  </piece>\n";
                 out << indent << "  <otherwise>\n";
-                out << exprToMathML(expr.args()[2], indent + "    ", symbolIds);
+                out << exprToMathML(expr.args()[2], indent + "    ", symbolIds, preferSpecies);
                 out << indent << "  </otherwise>\n";
                 out << indent << "</piecewise>\n";
             } else {
@@ -1035,7 +1154,7 @@ std::string SbmlWriter::exprToMathML(
                 std::ostringstream condition;
                 condition << conditionIndent << "<apply>\n"
                           << conditionIndent << "  <lt/>\n"
-                          << exprToMathML(counter, conditionIndent + "  ", symbolIds)
+                          << exprToMathML(counter, conditionIndent + "  ", symbolIds, preferSpecies)
                           << emitNumber(upper, conditionIndent + "  ")
                           << conditionIndent << "</apply>\n";
                 return condition.str();
@@ -1070,7 +1189,7 @@ std::string SbmlWriter::exprToMathML(
                         << valueIndent << "        <divide/>\n"
                         << valueIndent << "          <apply>\n"
                         << valueIndent << "            <minus/>\n"
-                        << exprToMathML(counter, valueIndent + "            ", symbolIds)
+                        << exprToMathML(counter, valueIndent + "            ", symbolIds, preferSpecies)
                         << emitNumber(xValues[index], valueIndent + "            ")
                         << valueIndent << "          </apply>\n"
                         << emitNumber(denominator, valueIndent + "          ")

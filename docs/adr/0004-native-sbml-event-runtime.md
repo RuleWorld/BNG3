@@ -40,6 +40,17 @@ The stochastic backend will check state triggers at reaction-state changes,
 process delayed events in the same event queue, and use the run seed for
 required random event ordering.
 
+The contract above is the acceptance target, not a description of the current
+slice. The implemented ODE slice covers a single event whose trigger is a
+strict inequality (or a conjunction of strict inequalities) over observable
+state, whose assignments write observable state, and whose delay is a
+constant. It does not yet re-test a trigger after an execution, so a cascade
+in which an assignment makes another event trigger true at the assignment
+instant is not detected; it does not implement persistence, priority
+ordering, or more than one event; and it does not run under the stochastic
+backend. The Atomizer refuses those constructs explicitly instead of
+lowering them approximately.
+
 Implementation proceeds in slices, while this complete semantic contract
 remains the acceptance target. A supported ODE slice does not imply support
 for delays, priorities, parameter/compartment assignments, stochastic
@@ -92,9 +103,18 @@ ODE solver, event queue, stochastic engine, and conformance tests.
 - Existing exact analytic event lowerings remain in place and are tested
   against the new runtime path where both apply.
 - Root finding locates continuous crossings; event queue logic, not CVODE,
-  implements SBML delays, persistence, snapshots, and priority ordering.
+  implements SBML delays, persistence, snapshots, and priority ordering. The
+  implemented slice covers the delay and both snapshot choices; persistence
+  and priority ordering are refused rather than approximated.
 - A same-priority event set that requires random ordering must not be
-  serialized as one arbitrarily ordered deterministic action sequence.
+  serialized as one arbitrarily ordered deterministic action sequence.  SBML
+  4.12 defines simultaneous execution as several events with the same
+  execution instant: without a `Priority` the order is undefined and any
+  order is allowed, with different `Priority` values the higher one runs
+  first, and with equal `Priority` values the specification requires a
+  random order.  A model that reaches the last case therefore has no
+  deterministic execution and must stay explicitly unsupported rather than
+  take an arbitrary order.
 - BNG2 and PyBioNetGen remain read-only comparators. Reports must distinguish
   standard BNGL parity from BNG3 extension behavior.
 - Overall Atomizer completion still requires the full feature checklist,
@@ -104,9 +124,14 @@ ODE solver, event queue, stochastic engine, and conformance tests.
 
 1. [x] Define the versioned event-block grammar and structured event model
    types.
-2. [ ] Add root-function and event-queue support to native CVODE execution.
+2. [x] Add root-function and event-queue support to native CVODE execution.
+   The runtime registers a continuous root function, applies the assignment
+   at the crossing, and queues a delayed event until its delay elapses.
 3. [ ] Add trigger transition, delayed execution, persistence, snapshot, and
-   priority tests grounded in official SBML cases.
+   priority tests grounded in official SBML cases. The trigger transition,
+   the delayed execution, both snapshot choices, and the single-event
+   priority are covered; a non-persistent trigger, multiple events, and the
+   priority ordering between simultaneous events are not.
 4. [ ] Add stochastic event-queue semantics and seeded random ordering.
 5. [x] Round-trip the event block through the BNGL parser/writer. The public
    Python CVODE path executes one immediate event with simultaneous species
@@ -119,12 +144,41 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    output-grid independence and explicit tangent-surface refusal.
    Delays, priorities, multiple events, parameter/compartment assignments,
    stochastic execution and strict initial-threshold equality remain
-   unsupported. Exporters and alternate execution backends explicitly reject
-   event-bearing models when they cannot preserve the event semantics;
+   unsupported by that first slice; item 6 widens the delay and trigger
+   classes. The SBML exporter writes the event out, and the other exporters
+   and alternate execution backends explicitly reject event-bearing models
+   when they cannot preserve the event semantics;
    `tests/python/test_event_backend_boundaries.py` checks these boundaries.
    The legacy unsupported CLI fixture retains explicit rejection.
-6. [ ] Re-run full SSTS only after a meaningful implementation batch; keep
-   BioModels validation stopped until requested.
+6. [x] Widen the ODE slice to the event class the modern Atomizer can
+   express exactly: one event, a persistent trigger, a continuous inequality
+   over observable state (or a conjunction of such inequalities), assignments
+   to observable state, an optional constant delay, and an optional priority.
+   A strict inequality is true exactly on one side of its root, so a sign
+   change of the root function is the rising trigger edge. A non-strict
+   inequality is also true at a tangential contact, which leaves no sign
+   change, so the Atomizer lowers it only when the trigger's state has a
+   provably monotone trajectory and the crossing is therefore transversal. A
+   conjunction holds only where every conjunct holds, so its root function
+   is the smallest of the conjunct root functions. A constant delay queues
+   the event, and `useValuesFromTriggerTime` selects the trigger-time values.
+   A delayed execution re-tests the trigger, as SBML 4.12.8 requires, so an
+   assignment that makes the trigger true again triggers the event once more.
+   A trigger whose two sides are equal at the start of the simulation is a
+   falling edge, so the event waits for the next rising edge; only an
+   immediate rising edge stays explicitly unsupported, and that refusal
+   reads as an unsupported construct. The SBML export writes the event back
+   out against the species the observable covers, so an exported model keeps
+   the trigger semantics for a reader such as libRoadRunner and a
+   re-imported document still executes the event.
+   `tests/python/test_modern_atomizer_native_events.py` and the C++ event
+   cases in `tests/cpp/test_ode_options.cpp` check the lowered model, the
+   unit conversion, the delay semantics and the refusal boundaries.
+7. [x] Re-run the official SBML Test Suite for the implemented event class.
+   The event cases that the Atomizer now lowers to the native runtime
+   reproduce the published reference trajectory, and the cases that stay
+   unsupported keep their original refusal and their original reason text.
+   The BioModels validation stays stopped until requested.
 
 ## References
 
