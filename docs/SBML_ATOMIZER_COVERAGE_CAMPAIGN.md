@@ -253,20 +253,28 @@ so a cluster table can no longer omit the cases it forgot.
    reactions"). **Lowering a fast reaction as an ordinary reaction would
    therefore have turned 35 refused cases into 35 failed ones.**
 
-   The Atomizer now lowers the one shape whose pseudo steady state it can
-   express exactly - a reaction converting one species into one species whose
-   kinetic law is a constant multiple of one of them, where that species is
-   held at zero and the other absorbs its initial amount scaled by the
-   stoichiometry ratio - and refuses every other shape with the construct that
-   blocks it: a rate over both converted species, a rate constant that is not
-   time-independent, several fast reactions, a `delay` of the converted
-   species, a conversion factor, a variable stoichiometry. 14 official cases
-   move `unsupported → passed` (00871 00874 00875 00986 01396 01397 01547
-   01548 01549 01550 01551 01558 01559 01560) and 21 stay `unsupported` with
-   a construct-naming reason. The reversible fast reaction of 00870, 00872,
-   00873, 01051, 01052 and 01053 needs an algebraic (DAE) solve in the
-   simulation engine with a non-integer stoichiometry in the slow reaction:
-   **a separate feature, not a missing diagnostic.**
+   The Atomizer now lowers the two shapes whose pseudo steady state is
+   closed-form.  A rate that vanishes with one of the two species the
+   reaction converts - `c*X`, `c*Y` or `c*X*Y` with a time-independent
+   constant `c` - holds that species at zero and lets the other absorb its
+   amount, scaled by the stoichiometry ratio and by the conversion factors;
+   the sign of `c` says which of the two the reaction runs towards.  A rate
+   that *balances* the two species - `k_f*X - k_r*Y` - is held on the
+   algebraic balance `k_f*X = k_r*Y`, and the slow reactions move along that
+   balance: the eliminated species carries the reduced rate as a rate rule
+   and the fast subsystem's conserved combination changes at the slow
+   reactions' own rate.  That reduction is a closed-form pre-solve of the
+   initial condition plus an exact rate substitution, not a numerical
+   algebraic solve, so it needs no engine feature.  Independent fast
+   reactions each reduce on their own as long as they do not share a
+   species, and a rate constant an algebraic rule fixes is a constant.  29
+   official cases move `unsupported → passed` (00870 00871
+   00872 00873 00874 00875 00986 01051 01052 01053 01396 01397 01399 01544
+   01545 01546 01547 01548 01549 01550 01551 01558 01559 01560 01565 01567
+   01569 01571 01572) and 5 stay `unsupported` with a construct-naming
+   reason: a rate constant an event or a rule sets (00987 00988 01568
+   01570), a stoichiometry an event changes (01398), and a `delay` of the
+   converted species (01539).
 
 The combined effect of all nine changes is recorded in the integrated
 result below.
