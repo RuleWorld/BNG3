@@ -696,6 +696,16 @@ jobs:
           MPLBACKEND: Agg
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
 
+      - name: Run the stochastic-consistency validation check
+        # The check needs the native extension, so it runs here rather than in
+        # the lint job.  It writes a synthetic four-case suite into a
+        # temporary directory and completes in well under a second.
+        run: pytest tests/validation/test_stochastic_consistency.py -v --tb=short
+        env:
+          SYMPY_USE_GMPY: "0"
+          MPLBACKEND: Agg
+          MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
+
       - name: Retain Python test results
         if: always()
         uses: actions/upload-artifact@v4
