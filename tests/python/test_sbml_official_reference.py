@@ -1047,3 +1047,70 @@ def test_a_constant_boundary_species_is_not_comparable(tmp_path, monkeypatch):
 
     assert verdict["status"] == "unsupported"
     assert "Sink" in verdict["reason"]
+
+
+def _inert_reaction_model(stoichiometry: float = 1.0):
+    """A source model whose only reaction has zero net stoichiometry."""
+
+    from bionetgen.atomizer.modern.types import (
+        SBMLCompartment,
+        SBMLModel,
+        SBMLReaction,
+        SBMLSpecies,
+        SBMLSpeciesReference,
+    )
+
+    species = SBMLSpecies(id="A", compartment="C", initial_amount=1.0)
+    reaction = SBMLReaction(
+        id="J0",
+        reactants=[SBMLSpeciesReference("A", stoichiometry=stoichiometry)],
+        products=[SBMLSpeciesReference("A", stoichiometry=stoichiometry)],
+    )
+    return SBMLModel(
+        id="inert",
+        compartments={"C": SBMLCompartment(id="C", size=1)},
+        species={"A": species},
+        reactions={"J0": reaction},
+    )
+
+
+def test_degenerate_network_is_not_comparable_when_a_source_reaction_has_an_effect():
+    """An empty network over a model with an effective reaction is refused.
+
+    A rule that degenerates to a self-loop produces an empty network.  When
+    the source reaction can change a species, the generated model's flat
+    trajectory says nothing about the dynamics, so the comparison must not be
+    reported as agreement.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    network = SimpleNamespace(num_reactions=0)
+    parsed = _inert_reaction_model(stoichiometry=1.0)
+    # One reactant and one product of the same species: the net stoichiometry
+    # is zero, so this model is inert.
+    assert validator._degenerate_network_reason(network, parsed) is None
+
+    effective = _inert_reaction_model(stoichiometry=1.0)
+    effective.reactions["J0"].products = []
+    reason = validator._degenerate_network_reason(network, effective)
+    assert reason is not None
+    assert "no reaction" in reason
+
+
+def test_degenerate_network_over_an_inert_source_model_is_comparable():
+    """A source reaction with zero net stoichiometry cannot change a species.
+
+    SBML Level 3 Version 2 Core, Sec. 4.11 ("Reactions"), makes a species'
+    amount change by ``stoichiometry * extent rate``, so a reaction whose net
+    stoichiometry is zero leaves every amount alone.  Such a source model is
+    flat by construction, and a generated model with no reaction states the
+    same dynamics rather than a degenerate lowering of them, so the two are
+    comparable.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    network = SimpleNamespace(num_reactions=0)
+    parsed = _inert_reaction_model(stoichiometry=1.0)
+
+    assert not validator._source_reactions_can_change_state(parsed)
+    assert validator._degenerate_network_reason(network, parsed) is None

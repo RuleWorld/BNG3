@@ -1425,6 +1425,38 @@ def _with_reference_output_functions(
     return bngl, expressions
 
 
+def _source_reactions_can_change_state(parsed: Any) -> bool:
+    """Report whether a source reaction can change a species' amount.
+
+    A species' amount changes by ``stoichiometry * extent rate`` (SBML
+    Level 3 Version 2 Core, Sec. 4.11 "Reactions"), so a reaction whose net
+    stoichiometry is zero for every one of its species cannot change any
+    species' amount.  A model whose reactions are all inert has a flat
+    trajectory by construction, and a generated model with no reaction
+    reproduces that trajectory exactly.
+    """
+
+    for reaction in parsed.reactions.values():
+        reactants = getattr(reaction, "reactants", None)
+        products = getattr(reaction, "products", None)
+        if reactants is None or products is None:
+            # The reaction's stoichiometry is not available, so its effect on
+            # the species cannot be ruled out.
+            return True
+        net: dict[str, float] = {}
+        for reference in reactants:
+            net[reference.species] = net.get(reference.species, 0.0) - float(
+                getattr(reference, "stoichiometry", 1.0)
+            )
+        for reference in products:
+            net[reference.species] = net.get(reference.species, 0.0) + float(
+                getattr(reference, "stoichiometry", 1.0)
+            )
+        if any(abs(value) > 1e-12 for value in net.values()):
+            return True
+    return False
+
+
 def _degenerate_network_reason(network: Any, parsed: Any) -> str | None:
     """Describe a generated network that contains no reaction at all.
 
@@ -1432,9 +1464,17 @@ def _degenerate_network_reason(network: Any, parsed: Any) -> str | None:
     produces an empty network, and a rule that degenerates to a self-loop does
     the same.  A flat trajectory must never be reported as agreement with the
     official reference.
+
+    A source reaction whose net stoichiometry is zero cannot change any
+    species, so a source model built only from such reactions is flat by
+    construction and a generated model with no reaction states the same
+    dynamics rather than a degenerate lowering of them.  Those cases are
+    comparable and are measured.
     """
 
     if network is None or network.num_reactions != 0 or not parsed.reactions:
+        return None
+    if not _source_reactions_can_change_state(parsed):
         return None
     return (
         "the generated network contains no reaction although the source model "
@@ -1521,14 +1561,19 @@ def _compare_case_to_reference(
 
     from bionetgen.atomizer.modern.types import standardize_name
 
-    if network is not None and network.num_reactions == 0 and parsed.reactions:
+    degenerate_reason = (
+        _degenerate_network_reason(network, parsed)
+        if network is not None and network.num_reactions == 0 and parsed.reactions
+        else None
+    )
+    if degenerate_reason is not None:
         # A rule that names observable names instead of molecule types parses
         # but produces an empty network, and a rule that degenerates to a
         # self-loop does the same.  A flat trajectory must never be reported
         # as agreement with the official reference; the comparison still runs
         # so that a *mismatch* over the degenerate model stays a failure.
         degenerate = {
-            "reason": _degenerate_network_reason(network, parsed),
+            "reason": degenerate_reason,
             "source_reactions": len(parsed.reactions),
         }
     else:

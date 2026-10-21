@@ -329,8 +329,8 @@ def test_colliding_argument_taking_functions_do_not_report():
 
     assert _entries(colliding, "reaction rules") == _entries(control, "reaction rules")
     assert _entries(colliding, "reaction rules") == [
-        "R1: @c:M_A() -> @c:M_P() 1",
-        "R2: @c:M_B() -> @c:M_Q() 3.5",
+        "R1: @c:M_A() -> @c:M_P() (1) * (__compartment_c__)**-1",
+        "R2: @c:M_B() -> @c:M_Q() (3.5) * (__compartment_c__)**-1",
     ]
     assert not [
         line for line in _entries(colliding, "functions") if line.startswith("f")
@@ -395,14 +395,17 @@ def test_colliding_reaction_ids_do_not_report_because_rules_stay_distinct():
     colliding_rules = _entries(_render(colliding), "reaction rules")
 
     assert control_rules == [
-        "R_1: @c:M_A() -> @c:M_P() 0.5",
-        "R2: @c:M_B() -> @c:M_Q() 1.5",
+        "R_1: @c:M_A() -> @c:M_P() (0.5) * (__compartment_c__)**-1",
+        "R2: @c:M_B() -> @c:M_Q() (1.5) * (__compartment_c__)**-1",
     ]
     assert len(colliding_rules) == 2
     assert colliding_rules[0] == control_rules[0]
     # Only the label is suffixed; the rule body and its rate are unchanged.
     assert colliding_rules[1].split(":", 1)[1] == control_rules[1].split(":", 1)[1]
-    assert colliding_rules[1] == "R_1_2: @c:M_B() -> @c:M_Q() 1.5"
+    assert (
+        colliding_rules[1]
+        == "R_1_2: @c:M_B() -> @c:M_Q() (1.5) * (__compartment_c__)**-1"
+    )
 
     assert _identifier_warnings(colliding) == []
 

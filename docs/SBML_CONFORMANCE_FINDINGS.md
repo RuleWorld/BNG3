@@ -96,7 +96,10 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 ## 3. A rate law on a concentration-valued species is not scaled by the compartment volume
 
-* **Classification:** Atomizer defect.
+* **Classification:** Atomizer defect.  **CLOSED** on
+  `campaign/fix-concentration-rate-law` (pull request #363): the lowering now
+  carries the compartment volume, `stochastic/00011` reproduces the official
+  reference, and the rule is stated in general below.
 * **Cases:** `stochastic/00011` (all official mean/standard-deviation
   acceptance tests violated).  The companion case `stochastic/00018` was
   fixed on `main` by the multiplicative compartment factor (PR #342) after
@@ -119,6 +122,36 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   reference exactly (`X(t=1) = 99.50125` against the reference
   `99.50125`), and the same model with the unscaled constant gives
   `99.005` (`100*exp(-0.01)`), which is the amount-based reading.
+* **The general rule the fix implements.**  Section 4.11 ("Reactions") makes
+  the kinetic law's value the reaction's *extent* rate, and section 4.6
+  ("Species") makes a species' value its amount when it has
+  `hasOnlySubstanceUnits="true"` and its concentration otherwise.  A law with
+  `m` reactant factors of which `a` are amount-valued therefore has the
+  value `k * n**m / V**(m - a)`, and BNGL's own mass-action rate divides the
+  extent rate by one volume factor per reactant beyond the first, so the
+  equivalent BNGL constant is
+
+      k * V**(a - 1)
+
+  plus one power of `V` when the law multiplies by the compartment's size and
+  minus one when it divides by it.  The case `a = m` is the amount-based
+  correction of PR #319, so the two compose instead of double-counting.  The
+  mixed law (one amount-valued and one concentration-valued operand) needs
+  `V**0`: the concentration reading and BNGL's own volume factor cancel.
+  The rule is checked against libRoadRunner 2.10.0 on the source SBML for
+  every operand shape, and it does not double-count the volume with the
+  scheduled-action conversion of PR #361: a model that combines a
+  concentration-valued rate law with a concentration-valued event assignment
+  states the volume once in each place.
+* **Numbers:** `stochastic/00011` went from 100 of 100 official mean and
+  standard-deviation acceptance tests violated to 0 violated; the official
+  mean at `t = 1` is `99.50125` and the ensemble gives `99.5135` with a
+  standard deviation of `3.2148` against the reference's `3.228244105`.
+  Against libRoadRunner 2.10.0 on the source SBML, the maximum relative error
+  of the lowered model's amount trajectory is 5.4e-11 (unimolecular), 2.9e-11
+  (bimolecular) and 1.1e-10 (mixed); before the fix the concentration-valued
+  shapes were 83%, 28% and 80% off.
+
 
 ## 4. The multi-worker CPU batch SSA is not reproducible for a fixed seed
 
@@ -219,33 +252,134 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 ## 7. A generated network with no reaction is not comparable
 
-* **Classification:** Atomizer defect (degenerate lowering), reported as
-  *not comparable* by the harness.
-* **Cases:** `semantic/01423` and `semantic/01431` (their generated network
-  contains no reaction: the Atomizer lowers the source's negative-rate
+* **Classification:** harness defect (the guard could not tell an inert
+  source model from a degenerate lowering).  **CLOSED** on
+  `campaign/fix-concentration-rate-law` (pull request #363): the guard now
+  refuses only when a source reaction can change a species, so the three
+  affected cases are measured and pass.
+* **Cases:** `semantic/01422`, `semantic/01423` and `semantic/01431` (their
+  generated network contains no reaction: the Atomizer lowers the source's
   reaction to a self-loop, `J0: @C:M_A() -> @C:M_A() 1 TotalRate`).
-* **Expected behaviour:** a reaction whose rate is negative is not a valid
-  SBML model; the Atomizer already reports it
+* **Why the network has no reaction.**  Section 4.11 ("Reactions") of the SBML
+  Level 3 Version 2 Core makes a species' amount change by
+  `stoichiometry * extent rate`, so a reaction whose *net* stoichiometry is
+  zero for every one of its species cannot change any species' amount.  All
+  three source models have exactly one reaction and its net stoichiometry is
+  zero (`A -> A`, `A + B -> A + B` and `A + A -> A`).  The Atomizer lowers
+  such a reaction to a self-loop, which is the correct BNGL spelling, and the
+  network generator drops a rule with no effect on the state - the same
+  thing BNG2 does.  The generated model is therefore *flat because the source
+  model is flat*, not because the lowering dropped an effect.
+* **Expected behaviour:** a source model built only from inert reactions has
+  a flat trajectory by construction, so the generated model's flat
+  trajectory is the same dynamics and the two are comparable.  For
+  `semantic/01423` the rate is negative (`-1`), which is not a valid SBML
+  kinetic law; the Atomizer reports that
   (`Reaction "J0" has a negative numeric rate (-1); reversed the reaction
-  sides and emitted ...`), but the emitted model has no reaction at all.
-* **Observed behaviour:** the generated trajectory is flat.
-* **Handling in the harness:** a case whose generated network has no
-  reaction while the source model has some is reported as `unsupported` -
+  sides and emitted ...`) and reverses the sides, which leaves the net
+  stoichiometry - and therefore the dynamics - unchanged.
+* **Observed behaviour:** the harness reported the cases as `unsupported` -
   "the generated network contains no reaction ... the generated model is
   degenerate, so its flat trajectory is not comparable with the official
-  reference".  It is never reported as a pass over a flat trajectory.
+  reference" - even though the official reference is flat for the same reason.
+* **Handling in the harness:** the guard now asks whether a source reaction
+  can change a species and refuses only then, so a degenerate *lowering* is
+  still never reported as agreement over a flat trajectory.  The three cases
+  are measured against the official reference and pass.  The suite's other
+  degenerate lowerings are unaffected: thirteen cases in the pinned suite have
+  only inert reactions, and the other ten still produce a network with a
+  reaction.
 
 ## 8. Other newly measured mismatches
 
-* **Classification:** Atomizer defects, not yet reduced to a single
-  mechanism.
+* **Classification:** Atomizer defects.  **REDUCED** to four mechanisms on
+  `campaign/fix-concentration-rate-law` (pull request #363); three are fixed
+  and one is identified and documented.
 * **Cases:** `semantic/00963 00967 01530 01531 01532 01533 01701 01702
-  01715 01716` (the trajectory diverges at a scheduled action that assigns a
-  *rate-rule state*, so the assignment does not have the effect the source
-  event has) and `semantic/00707 00736 00929` (the trajectory diverges
-  before the first scheduled action).
+  01715 01716` and `semantic/00707 00736 00929`.
+
+### 8a. The `arccot` folding disagreed with the emitted model - FIXED
+
+* **Cases:** `semantic/01530`, `semantic/01531`, `semantic/01532`,
+  `semantic/01533`; all four now pass.
+* **Mechanism:** the shared MathML built-in table lowers `arccot(x)` onto
+  `atan(1/(x))` and evaluates the call the same way, but the event
+  assignment's folder used `atan2(1, x)`, whose result lies in `(0, pi)`.
+  For a negative argument the two differ by `pi`, so the folded parameter
+  and the emitted model described different systems.  The suite's own
+  reference for these cases reports `P44 = -1.47112767` for
+  `P44 = arccot(-0.1)`, which is `atan(1/x)`, and libRoadRunner 2.10.0 on
+  the source SBML reports the same value.
+* **Fix:** the event folder uses `atan(1/x)`, the convention the emitted
+  model computes.
+
+### 8b. A trigger's truth was computed two different ways - FIXED
+
+* **Cases:** `semantic/00963`, `semantic/00967`.  The Atomizer defect is
+  fixed; the corrected lowering needs 1001 simulation phases, one more than
+  the harness's documented budget of 1000, so the harness now reports the two
+  cases as *not comparable* instead of as a numeric mismatch.  With the
+  budget raised the fixed model reproduces the official reference exactly
+  (4 s per case).
+* **Mechanism:** the event expander detects a trigger's crossing with a
+  tolerance, then re-evaluated the trigger's own expression to decide
+  whether a scheduled firing was still valid.  For
+  `time - reset >= 0.01` with `reset = 0.02` at `t = 0.03` the two
+  disagree: `0.03 - 0.02` is `0.009999999999999998` in binary floating
+  point, so the direct evaluation says the trigger is false at the very
+  moment it crossed, and the expander cancelled the firing it had just
+  scheduled.  A recurring reset event then stopped after its second firing:
+  the generated action block had three phases instead of the 1001 the
+  recurrence needs.
+* **Fix:** every place that asks whether a trigger holds asks it the same
+  way, through one helper that keeps the crossing tolerance.
+
+### 8c. A state-triggered event ignored the reaction's local parameters - FIXED
+
+* **Cases:** `semantic/00707`, `semantic/00736`; both now pass.
+* **Mechanism:** section 4.9.2 ("Local parameters") of the SBML Level 3
+  Version 2 Core makes a reaction's local parameters shadow the model's
+  parameters of the same name, but the species trajectory that a crossing
+  time is computed from resolved the rate law's symbols against the model's
+  parameters only.  `semantic/00707` fires its event at `ln(4) / 0.75`
+  instead of `ln(4) / 5`, because the global `k = 0.75` shadowed the
+  reaction's local `k = 5`; `semantic/00736` has the same shape with the
+  global and local `k1`.
+* **Fix:** the rate law a species' trajectory is read from is resolved with
+  the reaction's local parameters substituted.
+
+### 8d. An event with an initially true trigger fired - FIXED
+
+* **Case:** `semantic/00929`; it now passes.
+* **Mechanism:** section 4.11.4 ("Event triggers") of the SBML Level 3
+  Version 2 Core initializes a trigger's value from `triggerInitialValue`
+  and fires the event only when that value *transitions* from false to true.
+  A trigger that is already true when the simulation starts never rises, so
+  the event does not fire at all.  The Atomizer scheduled the event anyway
+  and set `S1 = 1` at `t = 0`, against the source's initial amount of
+  `1.5e-4`.
+* **Fix:** a trigger that is already true at `t = 0` with
+  `triggerInitialValue="true"` does not fire the event.
+
+### 8e. A scheduled action assigns a parameter, not the rate-rule state - OPEN
+
+* **Cases:** `semantic/01701`, `semantic/01702`, `semantic/01715`,
+  `semantic/01716`.  These are the four cases that still fail.
+* **Mechanism:** a parameter that carries a rate rule is lowered to a
+  synthetic state species (`M___rate_rule_state__k1()`), and the model's
+  observable reports that species.  The event's assignment is lowered to
+  `setParameter("k1", "3.2")`, which sets the *parameter*; the rate rule
+  keeps driving the *species*, so the assignment has no effect on the
+  quantity the reference reports.  The source's semantics are the opposite:
+  an event assignment to a rate-ruled variable sets the variable and the
+  rate rule continues from the assigned value.
+* **Expected behaviour:** the action has to assign the state species, so
+  that the rate rule continues from the assigned value.
 * **Handling:** the harness reports the numeric mismatch with the official
-  reference, which is the correct verdict; the next agent reduces them.
+  reference, which is the correct verdict.  The fix is not in this pull
+  request: it needs the action lowering to resolve a rate-rule state's
+  pattern and to state the assignment in the units the state carries.
+
 
 ---
 
