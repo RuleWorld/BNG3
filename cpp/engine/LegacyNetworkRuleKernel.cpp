@@ -54,7 +54,7 @@ struct LegacyNetworkRuleKernel::Impl {
     std::string name;
     ast::ReactionRule rule;
     std::unique_ptr<ast::ReactionRule::ExecutionState> state;
-    compile::CompiledRuleExecutionHooks publicHooks;
+    LegacyNetworkRuleHooks publicHooks;
     ast::ReactionRule::ExecutionHooks astHooks;
 
     Impl(const compile::CompiledRule& compiledRule,
@@ -88,44 +88,14 @@ struct LegacyNetworkRuleKernel::Impl {
     }
 
     void refreshHooks() {
+        astHooks.reactantFilter = publicHooks.reactantFilter;
+        astHooks.productFilter = publicHooks.productFilter;
         astHooks.localRateFingerprint = publicHooks.localRateFingerprint;
-        astHooks.productScopeMatchSignature =
+    astHooks.productScopeMatchSignature =
         publicHooks.productScopeMatchSignature;
-        astHooks.rejectZeroRate = publicHooks.rejectZeroRate;
-        // The compile-owned filter callbacks speak the backend neutral graph
-        // vocabulary. The AST expansion speaks the legacy species vocabulary.
-        // Only install the adapter when the contract actually declares the
-        // filter: an unset contract keeps the expansion's own default.
-        if (publicHooks.reactantFilter) {
-            const auto filter = publicHooks.reactantFilter;
-            astHooks.reactantFilter =
-                [filter](std::size_t patternIndex, const ast::SpeciesGraph& species) {
-                    return filter(patternIndex, species.getGraph());
-                };
-        }
-        if (publicHooks.productFilter) {
-            const auto filter = publicHooks.productFilter;
-            astHooks.productFilter =
-                [filter](const std::vector<ast::SpeciesGraph>& products) {
-                    std::vector<const BNGcore::PatternGraph*> graphs;
-                    graphs.reserve(products.size());
-                    for (const auto& product : products)
-                        graphs.push_back(&product.getGraph());
-                    return filter(graphs);
-                };
-        }
-        if (publicHooks.productLocalRateFingerprint) {
-            const auto fingerprint = publicHooks.productLocalRateFingerprint;
-            astHooks.productLocalRateFingerprint =
-                [fingerprint](const std::vector<ast::SpeciesGraph>& products,
-                              const std::vector<std::size_t>& productPatternIndices) {
-                    std::vector<const BNGcore::PatternGraph*> graphs;
-                    graphs.reserve(products.size());
-                    for (const auto& product : products)
-                        graphs.push_back(&product.getGraph());
-                    return fingerprint(graphs, productPatternIndices);
-                };
-        }
+    astHooks.productLocalRateFingerprint =
+        publicHooks.productLocalRateFingerprint;
+    astHooks.rejectZeroRate = publicHooks.rejectZeroRate;
   }
 };
 
@@ -143,7 +113,7 @@ LegacyNetworkRuleKernel& LegacyNetworkRuleKernel::operator=(LegacyNetworkRuleKer
 
 const std::string& LegacyNetworkRuleKernel::name() const noexcept { return impl_->name; }
 
-void LegacyNetworkRuleKernel::setHooks(compile::CompiledRuleExecutionHooks hooks) {
+void LegacyNetworkRuleKernel::setHooks(LegacyNetworkRuleHooks hooks) {
     impl_->publicHooks = std::move(hooks);
     impl_->refreshHooks();
 }
@@ -156,17 +126,10 @@ std::size_t LegacyNetworkRuleKernel::expand(
     ast::SpeciesList& species,
     ast::RxnList& reactions,
     std::size_t currentIteration,
-    const std::function<bool(const BNGcore::PatternGraph&)>& productFilter,
+    const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
     std::size_t speciesBoundary) {
-    std::function<bool(const ast::SpeciesGraph&)> astProductFilter;
-    if (productFilter) {
-        astProductFilter =
-            [productFilter](const ast::SpeciesGraph& graph) {
-                return productFilter(graph.getGraph());
-            };
-    }
     return impl_->rule.expandRule(
-        species, reactions, currentIteration, *impl_->state, astProductFilter,
+        species, reactions, currentIteration, *impl_->state, productFilter,
         speciesBoundary, nullptr, &impl_->astHooks);
 }
 

@@ -355,9 +355,7 @@ double MMRxnClass::update_a()
 	// Reactant compartment conversion (Rxn.pm unit_conversion): MM is a
 	// concentration-based law, so the count propensity needs the same
 	// 1/product(remaining sizes) factor as Basic/Sat/Hill.
-	// The symmetry factor of identical reactants scales a special rate as it
-	// scales the base rate of an ordinary reaction.
-	a *= volumeConversionFactor * getTransformationSet()->getSymmetryFactor();
+	a *= volumeConversionFactor;
 	return a;
 }
 
@@ -443,12 +441,7 @@ double SatRxnClass::update_a()
             rate *= count;
         }
     }
-    // The symmetry factor of identical reactants belongs to the rule, not to
-    // the rate law's shape, so it scales a special rate exactly as it scales
-    // the base rate of an ordinary reaction (see the ReactionClass
-    // constructor).  Without it the special-rate laws dropped the factor the
-    // rule's reactants carry, and this backend disagreed with the engine.
-    a = rate * volumeConversionFactor * getTransformationSet()->getSymmetryFactor();
+    a = rate * volumeConversionFactor;
     if (!std::isfinite(a) || a < 0.0) a = 0.0;
     return a;
 }
@@ -529,9 +522,7 @@ double HillRxnClass::update_a()
     for (unsigned int i = 1; i < n_reactants; ++i) {
         a *= static_cast<double>(getCorrectedReactantCount(i));
     }
-    // The symmetry factor of identical reactants scales a special rate as it
-    // scales the base rate of an ordinary reaction.
-    a *= volumeConversionFactor * getTransformationSet()->getSymmetryFactor();
+    a *= volumeConversionFactor;
     if (!std::isfinite(a) || a < 0.0) a = 0.0;
     return a;
 }

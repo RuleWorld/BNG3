@@ -412,7 +412,6 @@ def simulate_pla(
     n_steps: int = 100,
     config_str: str = "",
     t_start: float = 0.0,
-    seed: int = 0,
 ) -> Dict[str, object]:
     """Run PLA simulation on a generated network.
 
@@ -430,8 +429,6 @@ def simulate_pla(
         PLA configuration string.
     t_start : float
         Start time.
-    seed : int
-        Random seed; 0 selects a system seed.
 
     Returns
     -------
@@ -448,7 +445,6 @@ def simulate_psa(
     n_steps: int = 100,
     poplevel: float = 100,
     t_start: float = 0.0,
-    seed: int = 0,
 ) -> Dict[str, object]:
     """Run PSA simulation on a generated network.
 
@@ -466,8 +462,6 @@ def simulate_psa(
         Population level threshold for PSA.
     t_start : float
         Start time.
-    seed : int
-        Random seed; 0 selects a system seed.
 
     Returns
     -------

@@ -14,7 +14,6 @@
 #include <vector>
 
 #include "nfsim/NFinput/TinyXML/tinyxml.h"
-#include "compile/TotalRate.hpp"
 
 namespace bng::io {
 
@@ -1001,7 +1000,7 @@ NetReader::ParseResult SbmlReader::parse(
                 if (annotation != nullptr) {
                     for (auto* marker = annotation->FirstChildElement(); marker != nullptr;
                          marker = marker->NextSiblingElement()) {
-                        if (bng::compile::isTotalRateMarkerName(marker->Value())) {
+                        if (std::string(marker->Value()).find("totalRate") != std::string::npos) {
                             totalRate = true;
                             break;
                         }

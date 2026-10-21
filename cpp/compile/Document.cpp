@@ -8,7 +8,6 @@
 #include <stdexcept>
 #include <utility>
 
-#include "SimulationMethod.hpp"
 #include "ast/Model.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -657,12 +656,29 @@ SimulationOptions compileSimulationOptions(
 
 std::optional<SimulationOptions> compileSimulationOptions(
     const ast::Action& action) {
-    // The method decision is shared with the action dispatcher, so the typed
-    // options are compiled for exactly the actions the dispatcher runs as a
-    // deterministic or direct-method stochastic simulation.
-    const auto decision = tryDecideSimulationMethod(action);
-    if (!decision.has_value() ||
-        (!decision->deterministic && !decision->stochastic)) {
+    const auto name = [&]() {
+        std::string value = action.name;
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return value;
+    }();
+
+    const auto methodArgument = action.arguments.find("method");
+    std::string method = methodArgument == action.arguments.end()
+        ? "ode"
+        : unquoteActionValue(methodArgument->second);
+    std::transform(method.begin(), method.end(), method.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    const bool deterministic = name == "simulate_ode" ||
+        (name == "simulate" && (method.empty() || method == "ode" ||
+                                 method == "cvode" || method == "euler" ||
+                                 method == "rk4"));
+    const bool stochastic = name == "simulate_ssa" ||
+        (name == "simulate" && method == "ssa");
+    if (!deterministic && !stochastic) {
         return std::nullopt;
     }
     return compileSimulationOptions(action.arguments);

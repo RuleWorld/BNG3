@@ -194,9 +194,9 @@ bool isMoleculeNode(const BNGcore::Node& node) {
     return !isBondNode(node) && !isComponentNode(node);
 }
 
-std::map<std::string, std::size_t> countMolecules(const BNGcore::PatternGraph& graph) {
+std::map<std::string, std::size_t> countMolecules(const ast::SpeciesGraph& graph) {
     std::map<std::string, std::size_t> counts;
-    for (auto nodeIter = graph.begin(); nodeIter != graph.end(); ++nodeIter) {
+    for (auto nodeIter = graph.getGraph().begin(); nodeIter != graph.getGraph().end(); ++nodeIter) {
         if (isMoleculeNode(**nodeIter)) {
             ++counts[(*nodeIter)->get_type().get_type_name()];
         }
@@ -205,7 +205,7 @@ std::map<std::string, std::size_t> countMolecules(const BNGcore::PatternGraph& g
 }
 
 bool withinStoichLimits(
-    const BNGcore::PatternGraph& graph,
+    const ast::SpeciesGraph& graph,
     const compile::ProtocolAction::GenerateNetworkOptions::MaxStoichLimits& limits) {
     if (limits.empty()) {
         return true;
@@ -224,10 +224,10 @@ bool withinStoichLimits(
     return true;
 }
 
-bool withinAggLimit(const BNGcore::PatternGraph& graph, double maxAgg) {
+bool withinAggLimit(const ast::SpeciesGraph& graph, double maxAgg) {
     // Count total number of molecules in the species (regardless of type)
     std::size_t totalMolecules = 0;
-    for (auto nodeIter = graph.begin(); nodeIter != graph.end(); ++nodeIter) {
+    for (auto nodeIter = graph.getGraph().begin(); nodeIter != graph.getGraph().end(); ++nodeIter) {
         if (isMoleculeNode(**nodeIter)) {
             ++totalMolecules;
         }
@@ -416,7 +416,7 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
             const auto ngE0 = clock::now();
             const auto created = plan.expand(
                 network.species, network.reactions, iter,
-                [&](const BNGcore::PatternGraph& graph) {
+                [&](const ast::SpeciesGraph& graph) {
                     const auto ngF0 = clock::now();
                     bool ok = true;
                     if (!withinStoichLimits(graph, maxStoich)) ok = false;

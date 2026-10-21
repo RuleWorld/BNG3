@@ -498,25 +498,6 @@ files, per-case outcomes and the first identity difference stay in the report
 directory. Invalid generated inputs and evidence-harness failures retain their
 own classifications, and do not stop later cases.
 
-The campaign also runs the generated identity-contract controls. For every
-generated family, the two native graph encodings (BNGcore's `PatternGraph`
-canonical label and NFsim's `Complex` canonical label) and the network species
-identity are compared against one independent identity contract, the validation
-graph matcher, at the layer each surface decides. The network label decides the
-structure layer (compartments excluded), the NFsim label decides the structure
-and compartment layers (NFcore carries the compartment on the molecule), and the
-network species identity decides the species layer. Every result states the
-layer it decided, so a surface that decides a different layer is visible
-instead of silent. A label is never accepted as proof of identity: the
-partition a label induces is compared with the partition the independent
-matcher computes, so two different graphs that share a label are a mismatch and
-not a merge. The contract itself lives in `cpp/core/IdentityContract.hpp`, and
-each surface declares the layer it decides. The generated families spell a
-species compartment as the `@C:` prefix and a molecule compartment as the
-`A(...)@C` suffix; the native parser reads the molecule-prefix spelling
-`A@C(...)` differently, so the families do not use it. Run just this group
-with `--graph-identity-contract-only`.
-
 ## Exceptions
 `exceptions.json` is the only expected-failure ledger. Every entry names exact tests, model, method/platform scope, tracking URL, technical reason, owner, introduction/review dates, and expected assertion signature. `exception_ledger.py` rejects incomplete, duplicate, expired, or stale references and exposes `--max-exceptions` for a non-increasing budget gate.
 
@@ -609,21 +590,6 @@ controls; their unit descriptions and concentration-coordinate seed conversion
 do not establish product ingestion of physical-unit annotations. Existing
 unit-annotated SBML families and source-oracle checks remain separate.
 
-`bngsim-boundary` states the supported BNGsim boundary as an executable
-contract over a generated set of finite-network models and methods. Every
-generated case either lowers the model onto the BNGsim backend and reproduces
-the independent closed-form law, or it falls back to the native backend with a
-named route (`result.backend_route`) and a reason. The expectation is the
-analytic amount trajectory or the exact count law of the generated model, never
-another implementation's output, and an explicit BNGsim request that cannot be
-honoured is refused rather than downgraded. The family is registered as
-`bngsim-boundary:<case>:<method>:route-decision`,
-`bngsim-boundary:<case>:<method>:independent-law`,
-`bngsim-boundary:differential-native-routes` and
-`bngsim-boundary:differential-bngsim-route`; the last one reports
-`UNSUPPORTED` with its reason in a build that does not link the adapter.
-`--bngsim-boundary-only` selects the bounded family.
-
 Native BNGIR adversarial controls now execute seeds, RHS and closed-form
 trajectories after disabling BNGL parsing/rendering during reconstruction.
 Molecule-ID permutations are positive controls. Compartment controls preserve
@@ -638,119 +604,3 @@ budget. They remain trajectory disagreements without an established cause;
 neither source-law acceptance nor equal seeds establishes full path equivalence.
 `--quantity-laws-only` selects the new bounded campaign; `--full` expands it.
 Manual workflow `bounded=true` retains PR selection on a stacked candidate.
-
-### JAX backend stage profile
-
-`jax-backend-measurement` measures the performance and resource profile of the
-JAX backend family on a fixed generated corpus of three mass-action cases. It
-is selected on its own with `--jax-backend-measurement-only`.
-
-Every timed stage (parse, generate, JAX compilation cold and warm, the JAX ODE
-integration, the native ODE, SSA, NFsim and parameter-scan stages, the cold and
-warm setup and the allocation measurement) carries an independent correctness
-control: the closed-form law of the case, derived from the case parameters and
-not from anything the measured code produced. A timing whose correctness
-control failed is not recorded as a result.
-
-Each timed stage is also measured by repeating the same arm. The spread of
-those repetitions is the A/A control and is recorded per stage. A stage whose
-spread exceeds the noise limit is not recorded as a result either, so a busy
-host produces no timing rather than an unreliable one; the A/A control reports
-that as a host-noise observation and never as a product failure. The
-environment, the corpus digest, the revision and the host load are recorded
-with the numbers, and the numbers are specific to that machine.
-
-A comparison that does not show the JAX backend winning is recorded as
-`NO-WIN`. The stages the JAX backend does not provide (SSA, NFsim, parameter
-scans) are recorded as explicit boundaries: the JAX SSA entry point refuses,
-the public `simulate()` API rejects `method="jax"`, and the JAX family's
-public API declares no NFsim or scan route, so the measured SSA, NFsim and scan
-stages belong to the native engine arm.
-### Public API and CLI surface family
-
-`api-surface` qualifies the public Python API and the installed command-line
-interface as one family. It runs every supported simulation method
-(`ode`, `ssa`, `nf`, `pla`, `psa`) through both entry points and judges each
-route against an independent law: the closed-form first-order decay
-trajectory for the deterministic route, and the exact binomial count law of
-the same process for the stochastic routes. A route is never judged against
-the other route's output alone; the route-agreement check only records whether
-the two routes agree for the same recorded seed after both matched the law.
-
-The stochastic statements are limited to the terminal-time marginal of one
-generated decay family: a 24-replicate ensemble with recorded seeds, an
-analytic standard-error budget for the ensemble mean, a declared chi-square
-band for the ensemble dispersion, the exact binomial central range for every
-replicate, and the harness's own Hoeffding/DKW source-count-law comparator.
-They do not qualify complete stochastic equivalence.
-
-The command-line leg must import the same package and the same native
-extension as the API leg; the family refuses to compare two different builds.
-The installed console script is used when the installed distribution owns the
-imported package, and the module entry point with a pinned package root
-otherwise.
-
-Every API/CLI difference is declared in `api_surface.INTENTIONAL_INCOMPATIBILITIES`
-and exercised by the `intentional-incompatibilities` check, so an unexplained
-divergence fails instead of being reported as a benign difference. The
-declared differences are the result container, the result table columns, the
-positional method dispatch, the unsupported timeout, the action block
-execution, the exception and exit-code contract, the optional imports, and the
-explicit `None` time arguments.
-
-```bash
-# Qualify the installed public API and CLI surface on its own.
-PYTHONPATH=python:build/cpp python -m tests.validation.api_surface \
-  --report-dir /tmp/bng3-api-surface
-```
-
-The family also runs as a campaign-level stage of the integrated report, so
-its named rows reach the issue queue with the other exact-revision evidence.
-
-### Shared rate-law contract
-
-`rate-law-contract` states the shared rate-law and local-function conventions
-as an executable contract over a generated, parameterized case matrix. It is
-selected on its own with `--rate-law-contract-only`.
-
-The conventions are stated once, in the module: the special rates (`Sat`,
-`Hill` and the two-reactant `MM`), the table function, the local molecule
-scope, the mass-action multiplicity, the dependency/evaluation convention and
-the cache-invalidation convention. Every case is checked against them, and the
-declared slice is explicit: single-reaction rules over free, non-compartment
-molecules with no filter, no rule modifier, no energy pattern and no
-population map.
-
-The supported backends' coefficients, right-hand sides and SSA propensities are
-compared against closed-form laws written in the harness, never against
-another implementation's output: the elementary mass-action law, the total
-saturation and Hill laws, the self-consistent Michaelis-Menten root, the
-linear table interpolation with its clamped ends, the scoped rate, the
-symmetry factor with the discrete identical-reactant product, and the
-observable-dependent coefficient re-evaluated at each state. A model that
-declares a construct outside the slice is reported as `UNSUPPORTED` with the
-construct named; it is never skipped quietly.
-
-The cache control changes a rate parameter, and a parameter that is defined in
-terms of another, and requires the compiled coefficient, the right-hand side
-and the closed-form decay to follow the change.
-
-### NFnext slice contract
-
-`nfnext-slices` states the approved NFnext slice and the boundary of every
-candidate family of the capability matrix. It is selected on its own with
-`--nfnext-slices-only`.
-
-The approved slice is unary site-state rules with a static elementary rate,
-isolated integer seed populations and unary `Molecules` observables. For that
-slice the family checks the NFIR representation, the executor and an
-independent reference: the exact pure-death law of the seeded population, with
-a declared error budget over a recorded ensemble, a variance control and a
-fixed-seed reproducibility control.
-
-Every candidate family outside the approved slice -- dynamic rates, rule
-filters, rule modifiers, compartments, population maps and energy patterns --
-is checked as a named refusal: the lowering must report the construct, the
-executor must refuse by name, and no partial lowering of the family may be
-carried. A refusal is recorded as a diagnostic observation, never as supported
-execution.

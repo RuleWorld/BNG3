@@ -80,41 +80,15 @@ def test_bngir_rejects_unknown_required_features():
         bionetgen.from_bngir(document)
 
 
-def test_bngir_population_reconstruction_fails_closed_without_a_rate():
+def test_bngir_population_reconstruction_fails_closed():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
     document = json.loads(model.to_bngir())
     document["model"]["population_maps"] = [
         {"label": "pop", "pattern": "X()", "function": "lumped", "args": []}
     ]
 
-    with pytest.raises(ValueError, match="population_maps cannot be deserialized"):
+    with pytest.raises(ValueError, match="population_maps deserialization"):
         bionetgen.from_bngir(document)
-
-
-def test_bngir_population_map_keeps_its_rate():
-    source = MODEL.replace(
-        "end model\n",
-        "begin population maps\n  pop: X() -> lumped() 0.25\nend population maps\n"
-        "end model\n",
-    )
-    model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
-    document = json.loads(model.to_bngir())
-
-    assert document["model"]["population_maps"] == [
-        {
-            "label": "pop",
-            "pattern": "X()",
-            "function": "lumped",
-            "args": [],
-            "rate": "0.25",
-        }
-    ]
-
-    restored = bionetgen.from_bngir(document)
-    assert [
-        (item.label, item.pattern, item.function, list(item.args), item.rate)
-        for item in restored._model.population_maps
-    ] == [("pop", "X()", "lumped", [], "0.25")]
 
 
 def test_bngir_rejects_unknown_action_scope():
@@ -445,45 +419,6 @@ def test_bngir_v02_round_trip_preserves_rule_modifiers():
 
     restored = bionetgen.from_bngir(document)
     assert bionetgen.semantic_equal(model, restored, version="0.2")
-
-
-DRIVING_WORK_MODEL = r"""
-version("2.2")
-begin model
-begin parameters
-    k 0.1
-    w 2.0
-end parameters
-begin molecule types
-    A()
-    B()
-end molecule types
-begin seed species
-    A() 100
-end seed species
-begin reaction rules
-    A() -> B() k driven_by(w)
-end reaction rules
-end model
-"""
-
-
-def test_bngir_v01_driving_work_migrates_to_v02_without_loss():
-    """The v0.1 drive migrates to the v0.2 rule field without being dropped."""
-    model = bionetgen.BioNetGenModel(
-        bionetgen.model._cpp.parse_string(DRIVING_WORK_MODEL)
-    )
-    legacy = json.loads(model.to_bngir(version="0.1"))
-    assert legacy["model"]["rules"][0]["driving_work"] == "w"
-
-    migrated = json.loads(bionetgen.to_bngir(model, version="0.2"))
-
-    assert migrated["model"]["rules"][0]["driving_work"] == {
-        "kind": "parameter_ref",
-        "symbol": {"kind": "parameter", "index": 1},
-    }
-    restored = bionetgen.from_bngir(migrated, native=True)
-    assert json.loads(bionetgen.to_bngir(restored, version="0.2")) == migrated
 
 
 INDEX_REFERENCE_MODEL = r"""

@@ -175,10 +175,7 @@ barrier-only models keep the optimization.
   bidirectional Arrhenius form does not reach that branch.
 - **Python IR** (`bngir.py`): a `barrier_patterns` section and `driving_work`
   on each rule, with `barrier_patterns` and `driven_reservoirs` feature flags,
-  in both the v0.1 and v0.2 emitters. The v0.2 barrier entry carries the
-  transition's structured reactant and product patterns and a resolved
-  expression tree beside the transition text, so a consumer can rebuild the
-  transition and its reaction center without parsing the text.
+  in both the v0.1 and v0.2 emitters.
 - **BNGsim adapter**: rejects barrier patterns and driven rules explicitly. A
   driven rule can reach it without energy patterns, and dropping the work would
   turn a nonequilibrium model into an equilibrium one with no diagnostic.

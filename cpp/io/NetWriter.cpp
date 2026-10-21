@@ -27,7 +27,6 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "compile/CompiledModel.hpp"
 #include "compile/RuleUnitConversion.hpp"
-#include "compile/TotalRate.hpp"
 #include "compile/UnitAnalysis.hpp"
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/energy/BarrierTable.hpp"
@@ -64,16 +63,32 @@ const std::unordered_map<std::string, std::string> builtinCanonicalName = {
     {"hybrid", "Hybrid"}, {"Hybrid", "Hybrid"},
 };
 
-// The statistical factor the NET writer applies to a reaction's rate
-// constant: the 1/n! correction for identical reactant patterns.  A total-rate
-// rule states a macroscopic rate, so no pair correction is applied to it.
-//
-// The total-rate decision belongs to the compile layer, which owns the
-// modifier's spelling and resolves the reverse direction of a rule.
-double statisticalFactor(const ast::Rxn& reaction, const ast::Model& model) {
-    if (bng::compile::isTotalRateReaction(model, reaction.getOriginRuleName()))
-        return 1.0;
-    return reaction.getFactor();
+bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
+    std::string ruleName = origin;
+    if (ruleName.rfind("_reverse__", 0) == 0) {
+        ruleName.erase(0, std::string("_reverse__").size());
+    } else if (!ruleName.empty() && ruleName.front() == '_') {
+        ruleName.erase(0, 1);
+    }
+    constexpr std::string_view reverseSuffix = "_reverse";
+    if (ruleName.size() > reverseSuffix.size() &&
+        ruleName.compare(ruleName.size() - reverseSuffix.size(),
+                         reverseSuffix.size(), reverseSuffix) == 0) {
+        ruleName.erase(ruleName.size() - reverseSuffix.size());
+    }
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getRuleName() != ruleName) continue;
+        for (const auto& modifier : rule.getModifiers()) {
+            std::string lowered = modifier;
+            std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                           [](unsigned char c) {
+                               return static_cast<char>(std::tolower(c));
+                           });
+            if (lowered == "totalrate") return true;
+        }
+        break;
+    }
+    return false;
 }
 
 // Simple recursive evaluator for mathematical expressions
@@ -851,22 +866,12 @@ std::string formatSpecies(const ast::Species& species) {
 }
 
 std::string formatFactor(double factor) {
-    // A factor is written as an integer only when it rounds to a nonzero
-    // integer that fits the 64-bit range.  A tiny factor must not collapse to
-    // zero (the reaction would stop firing) and a huge one must not overflow
-    // the integer conversion.
-    const auto decimal = [&]() {
-        std::ostringstream out;
-        out << std::setprecision(12) << factor;
-        return out.str();
-    };
-    if (!std::isfinite(factor)) return decimal();
-    const double rounded = std::round(factor);
-    if (rounded != 0.0 && std::abs(factor) <= 9.0e18 &&
-        std::abs(factor - rounded) < 1e-9) {
+    if (std::abs(factor - std::round(factor)) < 1e-9) {
         return std::to_string(static_cast<long long>(std::llround(factor)));
     }
-    return decimal();
+    std::ostringstream out;
+    out << std::setprecision(12) << factor;
+    return out.str();
 }
 
 std::string compactExpression(std::string text) {
@@ -1217,20 +1222,7 @@ std::optional<double> unitConversionFactor(const ast::Rxn& reaction, const ast::
                     "unit-aware rate conversion failed for '" + reaction.getRateLaw() + "': " +
                     converted.error);
             }
-            // A typed rate constant states the physical rate per distinct
-            // reactant pair, while BNG2's statistical factor converts the
-            // count propensity from the ordered-pair convention into that
-            // distinct-pair convention.  The NET writer applies the factor to
-            // the rate constant separately, so the typed conversion cancels it
-            // here; otherwise the pair correction is counted twice and an
-            // identical-reactant rule runs at half its physical rate.
-            const double statFactor = statisticalFactor(reaction, model);
-            if (!std::isfinite(statFactor) || statFactor <= 0.0) {
-                throw std::runtime_error(
-                    "unit-aware rate conversion requires a positive statistical factor for '" +
-                    reaction.getRateLaw() + "'");
-            }
-            return *converted.factor / statFactor;
+            return converted.factor;
         }
     }
 
@@ -2091,16 +2083,6 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         // because every Arrhenius rule consults it.
         compile::energy::BarrierTable barrierTable;
         if (!model.getBarrierPatterns().empty()) {
-            // Barrier patterns are an experimental extension. The capability
-            // report refuses them for the network compiler unless the gate is
-            // set, so lowering them anyway would apply experimental
-            // transition-state semantics to a model that never opted in.
-            if (!compile::energy::generalEnergyEnabled()) {
-                throw std::runtime_error(
-                    "barrier patterns require " +
-                    std::string(compile::energy::generalEnergyGateName()) +
-                    " to be set");
-            }
             std::vector<std::string> barrierDiagnostics;
             const bool built = compile::energy::buildBarrierTable(
                 model,
@@ -2545,7 +2527,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     std::size_t reactionIndex = 1;
     for (const auto& reaction : network.reactions.all()) {
         const bool totalRate =
-            bng::compile::isTotalRateReaction(model, reaction.getOriginRuleName());
+            hasTotalRateModifier(model, reaction.getOriginRuleName());
         // Perl BNG2 (Rxn.pm::stringID) sorts reactant/product indices for
         // Ele and Function rate laws, but preserves match order for the
         // saturating builtins (MM/Sat/Hill/Arrhenius).

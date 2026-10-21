@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -23,16 +22,6 @@ std::string trimCopy(const std::string& s) {
     if (first == std::string::npos) return "";
     const auto last = s.find_last_not_of(" \t\r\n");
     return s.substr(first, last - first + 1);
-}
-
-std::string joinBlockers(const std::vector<std::string>& blockers) {
-    if (blockers.empty()) return "unsupported";
-    std::ostringstream joined;
-    for (std::size_t index = 0; index < blockers.size(); ++index) {
-        if (index != 0) joined << "; ";
-        joined << blockers[index];
-    }
-    return joined.str();
 }
 
 } // namespace
@@ -67,7 +56,7 @@ std::string bngsimVersion() {
 
 FiniteBackend finiteBackendFromString(const std::string& name) {
     const auto n = toLowerCopy(trimCopy(name));
-    if (n.empty() || n == "auto" || n == "automatic") return FiniteBackend::Auto;
+    if (n.empty() || n == "auto" || n == "automatic") return FiniteBackend::Native; // auto resolves dynamically; caller should use resolveFiniteBackend
     if (n == "native" || n == "bng3" || n == "default") return FiniteBackend::Native;
     if (n == "bngsim" || n == "bng_sim" || n == "bng-sim") return FiniteBackend::Bngsim;
     throw std::invalid_argument("Unknown finite backend: '" + name + "'. Use 'auto', 'native', or 'bngsim'.");
@@ -77,94 +66,31 @@ std::string finiteBackendToString(FiniteBackend backend) {
     switch (backend) {
     case FiniteBackend::Native: return "native";
     case FiniteBackend::Bngsim: return "bngsim";
-    case FiniteBackend::Auto: return "auto";
     }
     return "native";
 }
 
-bool bngsimClaimsMethod(const std::string& method) {
-    const auto normalized = toLowerCopy(trimCopy(method));
-    return normalized == "ode" || normalized == "ssa";
-}
-
-FiniteBackendDecision resolveFiniteBackend(
+FiniteBackend resolveFiniteBackend(
     FiniteBackend requested,
-    const std::string& method,
     const ast::Model& model,
-    const GeneratedNetwork& network) {
-    FiniteBackendDecision decision;
-    decision.method = method;
-
-    const auto capabilities = getBngsimCapabilities();
-    decision.bngsimAvailable = capabilities.available;
-    decision.bngsimVersion = capabilities.version;
-
-    if (requested == FiniteBackend::Native) {
-        decision.backend = FiniteBackend::Native;
-        decision.route = finite_backend_route::kNativeExplicit;
-        decision.reason = "the native finite backend was requested explicitly";
-        return decision;
-    }
-
-    if (!bngsimClaimsMethod(method)) {
-        decision.backend = FiniteBackend::Native;
-        decision.route = finite_backend_route::kFallbackMethodNotClaimed;
-        decision.reason =
-            "BNGsim backend does not yet support method='" + method + "'";
-        return decision;
-    }
-
-    // The semantic boundary is a property of the model, not of the build, so
-    // an explicit BNGsim request decides it first and names the blocker.
-    // The automatic route stays cheap: it is resolved from the build and the
-    // migration policy, and the semantic boundary is queried explicitly.
+    const GeneratedNetwork& network,
+    BngsimLoweringCheck* outCheck) {
     if (requested == FiniteBackend::Bngsim) {
-        const auto check = checkBngsimLowering(model, network);
-        decision.bngsimLoweringChecked = true;
-        decision.bngsimLowerable = check.supported;
-        decision.blockers = check.blockers;
-        if (!check.supported) {
-            decision.backend = FiniteBackend::Native;
-            decision.route = finite_backend_route::kFallbackUnsupported;
-            decision.reason =
-                "BioNetGen finite-network backend cannot represent model for "
-                "BNGsim: " + joinBlockers(check.blockers);
-            return decision;
-        }
-        if (!capabilities.available) {
-            decision.backend = FiniteBackend::Native;
-            decision.route = finite_backend_route::kFallbackUnavailable;
-            decision.reason =
-                "BNGsim backend unavailable: build without BUILD_BNGSIM_ADAPTER";
-            return decision;
-        }
-        decision.backend = FiniteBackend::Bngsim;
-        decision.route = finite_backend_route::kBngsimExplicit;
-        decision.reason =
-            "the BNGsim adapter is available and the generated network is "
-            "faithfully lowerable";
-        return decision;
+        auto check = checkBngsimLowering(model, network);
+        if (outCheck) *outCheck = check;
+        if (isBngsimAvailable() && check.supported) return FiniteBackend::Bngsim;
+        // Explicit bngsim request but unsupported — caller should surface the
+        // blocker; we return Native so callers that want fail-closed can throw.
+        return FiniteBackend::Native;
     }
-
-    if (!capabilities.available) {
-        decision.backend = FiniteBackend::Native;
-        decision.route = finite_backend_route::kFallbackUnavailable;
-        decision.reason =
-            "BNGsim backend unavailable: build without BUILD_BNGSIM_ADAPTER";
-        return decision;
-    }
-
-    // The automatic route keeps the native backend as the default while the
-    // ADR 0003 migration is in its Phase A-C state.  The decision is named so
-    // the route is never implicit.
-    decision.backend = FiniteBackend::Native;
-    decision.route = finite_backend_route::kPolicyAutoNative;
-    decision.reason =
-        "the BNGsim adapter is available and the generated network may be "
-        "faithfully lowerable, but the ADR 0003 migration policy keeps the "
-        "native finite backend as the default until the differential parity "
-        "gate passes";
-    return decision;
+    // Native or auto: prefer bngsim when trivially lowerable, otherwise native.
+    // Auto semantics are intentionally conservative during migration.
+    auto check = checkBngsimLowering(model, network);
+    if (outCheck) *outCheck = check;
+    // For now "auto" == native to preserve default stability. Phase D will
+    // flip auto to prefer bngsim when supported.
+    (void)check;
+    return FiniteBackend::Native;
 }
 
 OdeResult simulateFiniteOde(
@@ -172,9 +98,6 @@ OdeResult simulateFiniteOde(
     const GeneratedNetwork& network,
     const OdeOptions& options,
     FiniteBackend backend) {
-    if (backend == FiniteBackend::Auto) {
-        backend = resolveFiniteBackend(FiniteBackend::Auto, "ode", model, network).backend;
-    }
     if (backend == FiniteBackend::Bngsim) {
         return simulateOdeViaBngsim(model, network, options);
     }
@@ -187,9 +110,6 @@ OdeResult simulateFiniteSsa(
     const GeneratedNetwork& network,
     const OdeOptions& options,
     FiniteBackend backend) {
-    if (backend == FiniteBackend::Auto) {
-        backend = resolveFiniteBackend(FiniteBackend::Auto, "ssa", model, network).backend;
-    }
     if (backend == FiniteBackend::Bngsim) {
         return simulateSsaViaBngsim(model, network, options);
     }

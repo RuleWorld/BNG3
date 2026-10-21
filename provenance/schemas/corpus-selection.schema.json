@@ -8,31 +8,17 @@
     "$schema",
     "schema_version",
     "selection_status",
-    "accepted_selections",
     "source_lock",
     "rulehub",
     "tiers",
-    "tier_justifications",
-    "reconciliation",
     "records",
     "notes"
   ],
   "properties": {
     "$schema": {"type": "string"},
-    "schema_version": {"const": 2},
+    "schema_version": {"const": 1},
     "selection_status": {
       "enum": ["pending-maintainer-approval", "approved"]
-    },
-    "accepted_selections": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["status", "approved_tiers", "approved_models", "note"],
-      "properties": {
-        "status": {"enum": ["observed", "pending-maintainer-approval", "approved"]},
-        "approved_tiers": {"$ref": "#/$defs/id_list"},
-        "approved_models": {"$ref": "#/$defs/id_list"},
-        "note": {"type": "string", "minLength": 1}
-      }
     },
     "source_lock": {"$ref": "#/$defs/lock_reference"},
     "rulehub": {
@@ -61,69 +47,6 @@
         "b": {"$ref": "#/$defs/id_list"}
       }
     },
-    "tier_justifications": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["s", "p", "nf", "expr", "x", "b"],
-      "properties": {
-        "s": {"$ref": "#/$defs/tier_justification"},
-        "p": {"$ref": "#/$defs/tier_justification"},
-        "nf": {"$ref": "#/$defs/tier_justification"},
-        "expr": {"$ref": "#/$defs/tier_justification"},
-        "x": {"$ref": "#/$defs/tier_justification"},
-        "b": {"$ref": "#/$defs/tier_justification"}
-      }
-    },
-    "reconciliation": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "workflow",
-        "tested_head",
-        "status",
-        "selection_manifest_sha256",
-        "selected_model_count",
-        "result",
-        "failure_categories",
-        "evidence",
-        "added_models",
-        "coverage_claim"
-      ],
-      "properties": {
-        "workflow": {"type": "string", "minLength": 1},
-        "tested_head": {"$ref": "#/$defs/sha"},
-        "status": {"type": "string", "minLength": 1},
-        "selection_manifest_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "selected_model_count": {"type": "integer", "minimum": 1},
-        "result": {"type": "string", "minLength": 1},
-        "failure_categories": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["count", "models"],
-            "properties": {
-              "count": {"type": "integer", "minimum": 0},
-              "models": {"$ref": "#/$defs/id_list"}
-            }
-          }
-        },
-        "evidence": {"type": "string", "minLength": 1},
-        "added_models": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["id", "recorded_outcome"],
-            "properties": {
-              "id": {"type": "string", "minLength": 1},
-              "recorded_outcome": {"type": "string", "minLength": 1}
-            }
-          }
-        },
-        "coverage_claim": {"type": "string", "minLength": 1}
-      }
-    },
     "records": {
       "type": "array",
       "items": {"$ref": "#/$defs/record"}
@@ -147,45 +70,16 @@
       "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
     },
-    "tier_justification": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["question", "owner", "capability", "budget"],
-      "properties": {
-        "question": {"type": "string", "minLength": 1},
-        "owner": {"type": "string", "minLength": 1},
-        "capability": {"type": "string", "minLength": 1},
-        "budget": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": {"type": "integer", "minimum": 0}
-        },
-        "empty_reason": {"type": "string", "minLength": 1}
-      }
-    },
     "record": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "path", "sha256", "origin", "tiers", "selection"],
+      "required": ["id", "path", "sha256", "origin", "tiers"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "path": {"type": "string", "minLength": 1},
         "sha256": {"$ref": "#/$defs/digest"},
         "origin": {"const": "repository-fixture"},
-        "tiers": {"$ref": "#/$defs/id_list"},
-        "selection": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["reason", "tiers", "capability", "provenance"],
-          "properties": {
-            "reason": {"type": "string", "minLength": 1},
-            "tiers": {"$ref": "#/$defs/id_list"},
-            "capability": {"type": "string", "minLength": 1},
-            "provenance": {
-              "enum": ["frozen-selection", "added-after-the-frozen-selection"]
-            }
-          }
-        }
+        "tiers": {"$ref": "#/$defs/id_list"}
       }
     }
   }

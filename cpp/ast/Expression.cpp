@@ -165,20 +165,15 @@ double requireArity(const std::string& name, const std::vector<Expression>& args
     return 0.0;
 }
 
-// The BNGL spellings of the function-call keywords the grammar spells in
-// mixed case. The parser lower-cases every function name it reads, but the
-// grammar's keywords are 'Sat', 'MM', 'Hill', 'Arrhenius' and
-// 'FunctionProduct', so a lower-cased name is not a function call when the
-// text is read back: it is an ordinary identifier, and the model then fails
-// to execute with "unresolved expression symbol". The canonical spelling is
-// what the BNGL reader -- and canonical BioNetGen -- accept.
-const char* canonicalBnglFunctionName(const std::string& name) {
-    if (name == "sat") return "Sat";
-    if (name == "mm") return "MM";
-    if (name == "hill") return "Hill";
-    if (name == "arrhenius") return "Arrhenius";
-    if (name == "functionproduct") return "FunctionProduct";
-    return nullptr;
+std::string joinArgs(const std::vector<Expression>& args) {
+    std::ostringstream out;
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        if (i > 0) {
+            out << ", ";
+        }
+        out << args[i].toString();
+    }
+    return out.str();
 }
 
 std::string encodeHex(const std::string& value) {
@@ -908,24 +903,6 @@ std::set<std::string> Expression::getDependencies() const {
 }
 
 std::string Expression::toString() const {
-    return renderExpression(false);
-}
-
-std::string Expression::toBnglString() const {
-    return renderExpression(true);
-}
-
-std::string Expression::renderExpression(bool canonicalFunctionNames) const {
-    const auto join = [&](const std::vector<Expression>& args) {
-        std::ostringstream out;
-        for (std::size_t i = 0; i < args.size(); ++i) {
-            if (i > 0) {
-                out << ", ";
-            }
-            out << args[i].renderExpression(canonicalFunctionNames);
-        }
-        return out.str();
-    };
     switch (kind_) {
     case ExpressionKind::Number: {
         std::ostringstream out;
@@ -936,20 +913,13 @@ std::string Expression::renderExpression(bool canonicalFunctionNames) const {
     case ExpressionKind::Identifier:
         return text_;
     case ExpressionKind::Unary:
-        return text_ + children_.front().renderExpression(canonicalFunctionNames);
+        return text_ + children_.front().toString();
     case ExpressionKind::Binary:
-        return "(" + children_[0].renderExpression(canonicalFunctionNames) + " " +
-               text_ + " " +
-               children_[1].renderExpression(canonicalFunctionNames) + ")";
-    case ExpressionKind::Function: {
-        const char* canonical =
-            canonicalFunctionNames ? canonicalBnglFunctionName(text_) : nullptr;
-        const std::string name =
-            canonical != nullptr ? std::string(canonical) : text_;
-        return name + "(" + join(children_) + ")";
-    }
+        return "(" + children_[0].toString() + " " + text_ + " " + children_[1].toString() + ")";
+    case ExpressionKind::Function:
+        return text_ + "(" + joinArgs(children_) + ")";
     case ExpressionKind::ObservableRef:
-        return text_ + "(" + join(children_) + ")";
+        return text_ + "(" + joinArgs(children_) + ")";
     case ExpressionKind::TableFunction: {
         std::ostringstream out;
         out << "tfun(";
@@ -968,9 +938,7 @@ std::string Expression::renderExpression(bool canonicalFunctionNames) const {
             out << ", ";
             writeValues(tableYValues_);
         }
-        if (!children_.empty()) {
-            out << ", " << children_.front().renderExpression(canonicalFunctionNames);
-        }
+        if (!children_.empty()) out << ", " << children_.front().toString();
         if (tableMethod_ != "linear") out << ", method=>\"" << tableMethod_ << "\"";
         out << ')';
         return out.str();

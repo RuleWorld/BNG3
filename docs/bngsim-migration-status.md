@@ -5,34 +5,11 @@
 > records the required fallback. It is test-backed: every row has a owning
 > test or a `TODO` ticket.
 
-**Last audited:** 2026-10-20
+**Last audited:** 2026-10-08
 **Capability source:** `cpp/engine/BngsimAdapter.cpp` (always compiled)
 **Network adapter:** `cpp/engine/BngsimAdapter.cpp` (`buildBngsimNetwork` is optional)
 **Pinned BNGsim:** `49dc939035f5a272da663f8c9586e3c9f0e1c041` (see `provenance/upstreams.lock.yml`)
 **Default backend:** `native` (auto-select prefers `bngsim` only when faithfully lowerable)
-
-## Named routing decisions (ADR 0003)
-
-Every finite-network result records the decision that selected its backend:
-`result.backend` names the backend, `result.backend_route` names the decision
-and `result.backend_reason` states why. A native route is never implicit. The
-routes are produced by `resolveFiniteBackend` in `cpp/engine/FiniteBackend.cpp`
-and are the only values the qualification harness accepts:
-
-| Route | Meaning |
-|---|---|
-| `native-explicit` | the native backend was requested explicitly |
-| `bngsim-explicit` | BNGsim was requested, the adapter is linked and the network is faithfully lowerable |
-| `native-fallback:unsupported-semantics` | BNGsim was wanted but the generated network is not faithfully lowerable; the blockers are recorded |
-| `native-fallback:bngsim-unavailable` | BNGsim was wanted but the adapter is not linked into this build |
-| `native-fallback:method-not-claimed` | BNGsim was wanted but does not claim the requested method (`pla`, `psa`) |
-| `native-policy:auto-native-during-migration` | the automatic route resolved to native because the Phase A–C migration policy keeps native as the default |
-
-An explicit `backend="bngsim"` request is refused with the route and the
-reason when it cannot be honoured; it is never downgraded to a silent native
-run. The automatic route is cheap by design: it is decided from the build and
-the migration policy, and the semantic boundary is queried explicitly through
-`checkBngsimLowering`, which is compiled in every build.
 
 ## How to read
 
@@ -125,36 +102,3 @@ responsible for constructing `bngsim::NetworkModel` only after that preflight.
   maps are representable in BNGsim today.
 - It does not claim relative TFUN or non-reference rates are already bridged.
 - It does not change `method="nf"` routing.
-
-## Qualified boundary (issue #144)
-
-`tests/validation/bngsim_boundary.py` states this inventory as an executable
-contract over a generated set of finite-network models and methods
-(`bngsim-boundary:*` check identities). For every generated case the run
-either lowers the model onto the BNGsim backend and reproduces the independent
-closed-form law, or it falls back to the native backend with a named route
-above. The expectation is the analytic amount trajectory or the exact count
-law of the generated model, never another implementation's output, and an
-explicit BNGsim request that cannot be honoured must be refused rather than
-downgraded.
-
-The qualified set is bounded and does not close the open rows of this
-inventory:
-
-- lowerable: elementary parameter rates, a pair of elementary rates, and a
-  bounded zero-argument function rate;
-- refused with a recorded blocker: compartments, function arguments,
-  non-reference rate laws, and protocol actions.
-
-Remaining limits, in particular:
-
-- The BNGsim route itself can only be executed in a build that links the
-  adapter (`BUILD_BNGSIM_ADAPTER=ON`). In a native build the differential
-  BNGsim check reports `UNSUPPORTED` with that reason, and the native routes
-  are compared against the same independent law instead.
-- A rate law that the compiler folded to a literal (for example `rate()`
-  called on a zero-argument function) is refused as "not a direct parameter
-  or function reference" even though the value is constant. Closing that
-  Type A gap needs a BNGsim-linked build to prove the lowering.
-- The differential evidence in this inventory is a count-marginal comparison
-  under a Hoeffding/DKW bound, not a pathwise equivalence proof.

@@ -2906,10 +2906,6 @@ namespace NFcore
 
 			// get canonical label
 			string getCanonicalLabel ( );
-			// the layer of the shared identity contract
-			// (cpp/core/IdentityContract.hpp) that this canonical label
-			// decides: the structure and compartment layers
-			static const char* identityLayer ( );
 			// check if this is canonical
 			bool isCanonical ( ) const { return is_canonical; };
 			// unset canonical flag

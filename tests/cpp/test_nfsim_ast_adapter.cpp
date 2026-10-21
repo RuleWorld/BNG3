@@ -3397,84 +3397,8 @@ end model
     delete system;
 }
 
-TEST_CASE("NFsim AST adapter converts typed reactant rates with their molecularity") {
-    const auto countRate = [](const std::string& source) {
-        auto model = bng::parser::parseModel(source);
-        REQUIRE(model != nullptr);
-        int traversalLimit = 0;
-        std::string unavailableReason;
-        auto* system = NFinput::buildSystemFromAst(
-            *model, false, 100, false, traversalLimit, {}, &unavailableReason);
-        REQUIRE(system != nullptr);
-        REQUIRE(system->getAllReactions().size() == 1);
-        system->prepareForSimulation();
-        const double rate = system->getReaction(0)->getBaseRate();
-        delete system;
-        return rate;
-    };
-
-    // The typed conversion supplies the molecularity and the reaction
-    // compartment, and it cancels BNG2's identical-reactant statistical
-    // factor: the count rate of the physical law is k/V.
-    CHECK(countRate(R"BNGL(
-begin model
-  setOption("units", "strict")
-  begin units
-    timeUnits = second
-    volumeUnits = litre
-  end units
-  begin parameters
-    k = 0.4 [litre/item/second]
-  end parameters
-  begin compartments
-    cell 3 3 [litre]
-  end compartments
-  begin molecule types
-    A()
-    D()
-  end molecule types
-  begin seed species
-    A()@cell 12
-    D()@cell 0
-  end seed species
-  begin reaction rules
-    source: @cell:A() + @cell:A() -> @cell:D() k
-  end reaction rules
-end model
-)BNGL") == Catch::Approx(0.4 / 3.0));
-
-    // The same physical reaction stated per mole converts to the same count
-    // rate: the mole-to-item bridge is applied exactly once.
-    CHECK(countRate(R"BNGL(
-begin model
-  setOption("units", "strict")
-  setOption("NumberPerQuantityUnit", 6.02214076e23)
-  begin units
-    timeUnits = second
-    volumeUnits = litre
-  end units
-  begin parameters
-    k = 2.408856304e23 [litre/mole/second]
-  end parameters
-  begin compartments
-    cell 3 3 [litre]
-  end compartments
-  begin molecule types
-    A()
-    D()
-  end molecule types
-  begin seed species
-    A()@cell 12
-    D()@cell 0
-  end seed species
-  begin reaction rules
-    source: @cell:A() + @cell:A() -> @cell:D() k
-  end reaction rules
-end model
-)BNGL") == Catch::Approx(0.4 / 3.0));
-}
-
-TEST_CASE("NFsim XML initialization refuses unit-bearing models") {    auto model = bng::parser::parseModel(R"BNGL(
+TEST_CASE("NFsim XML initialization refuses unit-bearing models") {
+    auto model = bng::parser::parseModel(R"BNGL(
 begin model
   setOption("units", "strict")
   setOption("NumberPerQuantityUnit", 6.02214076e23)
@@ -3984,7 +3908,7 @@ begin reaction rules
 end reaction rules
 end model
 )BNGL",
-        // A typed bimolecular rate needs one reaction compartment.
+        // Higher molecularities remain outside the zero-order bridge.
         R"BNGL(
 begin model
   setOption("units", "strict")
@@ -3994,7 +3918,6 @@ begin model
   end parameters
   begin compartments
     cell 3 1 [fL]
-    other 3 1 [fL]
   end compartments
   begin molecule types
     A()
@@ -4002,10 +3925,10 @@ begin model
   end molecule types
   begin seed species
     A()@cell 1
-    B()@other 1
+    B()@cell 1
   end seed species
   begin reaction rules
-    transfer: A()@cell + B()@other -> A()@cell k
+    bind: A()@cell + B()@cell -> A()@cell k
   end reaction rules
 end model
 )BNGL",

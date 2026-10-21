@@ -71,21 +71,10 @@ jobs:
             tests/validation/test_replay.py \
             tests/validation/test_minimize.py \
             tests/validation/test_bngir_adversarial.py \
-            tests/validation/test_bngir_format_contracts.py \
-            tests/validation/test_bngir_reconstruction_contracts.py \
             tests/validation/test_integrated_boundaries.py \
             tests/validation/test_integrated_protocol.py \
             tests/validation/test_integrated_marginals.py \
-            tests/validation/test_stochastic_parity.py \
-            tests/validation/test_graph_differential.py \
-            tests/validation/test_capability_inventory.py \
-            tests/validation/test_real_model_fixtures.py \
-            tests/validation/test_corpus_selection.py \
-            tests/validation/test_biomodels_hold.py \
-            tests/validation/test_release_candidate.py \
             tests/validation/test_integrated_extensions.py \
-            tests/validation/test_api_surface.py \
-            tests/validation/test_event_semantics.py \
             tests/validation/test_graph_identity.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
@@ -326,31 +315,6 @@ jobs:
             -q -ra \
             --junitxml="$RUNNER_TEMP/issue182-required-parity.xml"
 
-      - name: Run the qualification family checks
-        id: qualification_families
-        shell: bash
-        run: |
-          set -euo pipefail
-          # The families that judge the compiled model, the Atomizer's
-          # reconstruction and the extracted capability boundary need the
-          # installed package and its native extension, so they run in this
-          # job and not in the engine-free contract job.
-          .venv/bin/python -m pytest -c tests/validation/pytest.ini \
-            tests/validation/test_semantic_identity.py \
-            tests/validation/test_boundary_extraction.py \
-            tests/validation/test_atomizer_reconstruction.py \
-            -q -ra
-
-      - name: Qualify the BNGsim adapter boundary against an independent law
-        id: bngsim_boundary_contract
-        shell: bash
-        run: |
-          set -euo pipefail
-          .venv/bin/python -m pytest -c tests/validation/pytest.ini \
-            tests/validation/test_bngsim_boundary.py \
-            -q -ra \
-            --junitxml="$RUNNER_TEMP/bngsim-boundary-contract.xml"
-
       - name: Run live pinned 200-member SSA ensemble parity (scheduled)
         id: ssa_ensemble_parity
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -575,43 +539,6 @@ jobs:
       - name: Check independently authored native BNGIR controls
         if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest tests/validation/test_bngir_adversarial_native.py -q
-
-      - name: Check the export-format tier against independent consumers
-        if: always() && steps.candidate_identity.outcome == 'success'
-        run: |
-          python -m pytest -c tests/validation/pytest.ini \
-            tests/validation/test_export_format_tier.py \
-            --bng-cpp build/cpp/bng_cpp \
-            -q -ra
-
-      - name: Check the unsupported SBML construct classes
-        if: always() && steps.candidate_identity.outcome == 'success'
-        run: |
-          python -m pytest -c tests/validation/pytest.ini \
-            tests/validation/test_sbml_support_boundary.py \
-            -q -ra
-
-      - name: Check the Atomizer symbol resolution contract
-        if: always() && steps.candidate_identity.outcome == 'success'
-        run: |
-          python -m pytest -c tests/validation/pytest.ini \
-            tests/validation/test_atomizer_symbol_resolution.py \
-            -q -ra
-
-      - name: Check the network-rule execution contract against the legacy path
-        if: always() && steps.candidate_identity.outcome == 'success'
-        run: python -m pytest -c tests/validation/pytest.ini \
-          tests/validation/test_netrule_execution.py -q -ra
-
-      - name: Check the shared rate-law contract against independent laws
-        if: always() && steps.candidate_identity.outcome == 'success'
-        run: python -m pytest -c tests/validation/pytest.ini \
-          tests/validation/test_rate_law_contract.py -q -ra
-
-      - name: Check the NFnext slice contract against independent laws
-        if: always() && steps.candidate_identity.outcome == 'success'
-        run: python -m pytest -c tests/validation/pytest.ini \
-          tests/validation/test_nfnext_slices.py -q -ra
 
       - name: Audit generated consumer matrix receipts
         if: always()

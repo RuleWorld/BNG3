@@ -865,18 +865,6 @@ CompiledModel::CompiledModel(const ast::Model& model)
             addDiagnostic(diagnostics_, ValidationCategory::Energy, compiled.label,
                           "barrier pattern transition is unsupported: " + diagnostic);
         }
-        // The transition's structure is resolved here so a consumer can
-        // rebuild the transition without reading the transition's source text.
-        // The transition is the barrier's semantics; its text is provenance.
-        compiled.bidirectional = barrier.transition().isBidirectional();
-        for (const auto& graph : barrier.transition().getReactantPatterns()) {
-            compiled.reactantPatterns.push_back(
-                Pattern::fromSpeciesGraph(graph, model, symbols_, &diagnostics_));
-        }
-        for (const auto& graph : barrier.transition().getProductPatterns()) {
-            compiled.productPatterns.push_back(
-                Pattern::fromSpeciesGraph(graph, model, symbols_, &diagnostics_));
-        }
         barrierFactors_.push_back(std::move(compiled));
     }
 

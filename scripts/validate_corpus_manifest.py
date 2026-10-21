@@ -49,32 +49,13 @@ def inside_repo(relative: Any) -> Path | None:
 
 def validate(document: dict[str, Any]) -> list[str]:
     errors: list[str] = []
-    if document.get("schema_version") != 2:
-        errors.append("schema_version must be 2")
+    if document.get("schema_version") != 1:
+        errors.append("schema_version must be 1")
     if document.get("selection_status") not in {
         "pending-maintainer-approval",
         "approved",
     }:
         errors.append("selection_status is invalid")
-
-    accepted = document.get("accepted_selections")
-    if not isinstance(accepted, dict):
-        errors.append("accepted_selections must be an object")
-    else:
-        if accepted.get("status") not in {
-            "observed",
-            "pending-maintainer-approval",
-            "approved",
-        }:
-            errors.append("accepted_selections.status is invalid")
-        for key in ("approved_tiers", "approved_models"):
-            value = accepted.get(key)
-            if not isinstance(value, list) or any(
-                not isinstance(item, str) or not item for item in value
-            ):
-                errors.append(f"accepted_selections.{key} must be a list of names")
-        if not accepted.get("note"):
-            errors.append("accepted_selections.note must be non-empty")
 
     lock_ref = document.get("source_lock")
     if not isinstance(lock_ref, dict):
@@ -164,21 +145,6 @@ def validate(document: dict[str, Any]) -> list[str]:
             or any(tier not in TIERS for tier in tiers)
         ):
             errors.append(f"{where}.tiers must be a unique list of known tiers")
-        selection = record.get("selection")
-        if not isinstance(selection, dict):
-            errors.append(f"{where}.selection must be an object")
-        else:
-            if not str(selection.get("reason") or "").strip():
-                errors.append(f"{where}.selection.reason must be non-empty")
-            if selection.get("tiers") != tiers:
-                errors.append(f"{where}.selection.tiers disagrees with the record")
-            if not str(selection.get("capability") or "").strip():
-                errors.append(f"{where}.selection.capability must be non-empty")
-            if selection.get("provenance") not in {
-                "frozen-selection",
-                "added-after-the-frozen-selection",
-            }:
-                errors.append(f"{where}.selection.provenance is invalid")
 
     tiers_document = document.get("tiers")
     if not isinstance(tiers_document, dict):
@@ -197,95 +163,6 @@ def validate(document: dict[str, Any]) -> list[str]:
         expected = [tier for tier in TIERS if model_id in tiers_document.get(tier, [])]
         if record.get("tiers") != expected:
             errors.append(f"records[{model_id!r}].tiers disagrees with tier lists")
-
-    justifications = document.get("tier_justifications")
-    if not isinstance(justifications, dict):
-        errors.append("tier_justifications must be an object")
-        justifications = {}
-    for tier in TIERS:
-        entry = justifications.get(tier)
-        if not isinstance(entry, dict):
-            errors.append(f"tier_justifications.{tier} must be an object")
-            continue
-        for key in ("question", "owner", "capability"):
-            if not str(entry.get(key) or "").strip():
-                errors.append(f"tier_justifications.{tier}.{key} must be non-empty")
-        budget = entry.get("budget")
-        if not isinstance(budget, dict) or not budget:
-            errors.append(f"tier_justifications.{tier}.budget must be an object")
-        empty = not tiers_document.get(tier)
-        if empty and not str(entry.get("empty_reason") or "").strip():
-            errors.append(
-                f"tier_justifications.{tier}.empty_reason must record why the "
-                "tier is empty"
-            )
-        if not empty and entry.get("empty_reason"):
-            errors.append(
-                f"tier_justifications.{tier}.empty_reason must not be recorded "
-                "for a populated tier"
-            )
-
-    reconciliation = document.get("reconciliation")
-    if not isinstance(reconciliation, dict):
-        errors.append("reconciliation must be an object")
-    else:
-        for key in ("workflow", "tested_head", "result", "evidence"):
-            if not str(reconciliation.get(key) or "").strip():
-                errors.append(f"reconciliation.{key} must be non-empty")
-        if not SHA_RE.fullmatch(str(reconciliation.get("tested_head"))):
-            errors.append("reconciliation.tested_head must be a full git SHA")
-        if not re.fullmatch(
-            r"[0-9a-f]{64}", str(reconciliation.get("selection_manifest_sha256"))
-        ):
-            errors.append(
-                "reconciliation.selection_manifest_sha256 must be a sha256 digest"
-            )
-        count = reconciliation.get("selected_model_count")
-        if type(count) is not int or count < 1:
-            errors.append("reconciliation.selected_model_count must be a positive int")
-        categories = reconciliation.get("failure_categories")
-        if not isinstance(categories, dict) or not categories:
-            errors.append("reconciliation.failure_categories must be an object")
-        else:
-            for name, category in categories.items():
-                if not isinstance(category, dict):
-                    errors.append(
-                        f"reconciliation.failure_categories.{name} must be an object"
-                    )
-                    continue
-                if category.get("count") != len(category.get("models") or []):
-                    errors.append(
-                        f"reconciliation.failure_categories.{name}.count does not "
-                        "match its models"
-                    )
-        added = reconciliation.get("added_models")
-        if not isinstance(added, list) or not added:
-            errors.append("reconciliation.added_models must be a non-empty list")
-        else:
-            for entry in added:
-                if (
-                    not isinstance(entry, dict)
-                    or not str(entry.get("id") or "").strip()
-                    or not str(entry.get("recorded_outcome") or "").strip()
-                ):
-                    errors.append(
-                        "reconciliation.added_models entries require an id and a "
-                        "recorded outcome"
-                    )
-                    continue
-                if entry["id"] not in by_id:
-                    errors.append(
-                        f"reconciliation.added_models names unselected model "
-                        f"{entry['id']!r}"
-                    )
-                record = by_id.get(entry["id"], {})
-                if record.get("selection", {}).get("provenance") != (
-                    "added-after-the-frozen-selection"
-                ):
-                    errors.append(
-                        f"records[{entry['id']!r}].selection.provenance does not "
-                        "record the addition"
-                    )
 
     return errors
 

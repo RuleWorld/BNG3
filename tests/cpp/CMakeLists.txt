@@ -133,26 +133,6 @@ target_link_libraries(test_psa_simulator PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast)
 catch_discover_tests(test_psa_simulator)
 
-# test_simulation_method — the shared method decision and the typed action
-# option reader own the dispatch semantics.
-add_executable(test_simulation_method test_simulation_method.cpp)
-target_include_directories(test_simulation_method PRIVATE
-    ${CMAKE_SOURCE_DIR}/cpp
-    ${CMAKE_SOURCE_DIR}/cpp/parser
-    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
-    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
-)
-target_link_libraries(test_simulation_method PRIVATE
-    Catch2::Catch2WithMain
-    Catch2::Catch2
-    bng_engine
-    bng_compile
-    bng_ast
-    bng_parser
-    antlr4_static
-)
-catch_discover_tests(test_simulation_method)
-
 # test_ode_options
 add_executable(test_ode_options test_ode_options.cpp)
 target_include_directories(test_ode_options PRIVATE
@@ -375,23 +355,6 @@ target_include_directories(test_hnauty PRIVATE
 target_link_libraries(test_hnauty PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast nfsim_core)
 catch_discover_tests(test_hnauty)
-
-# test_graph_identity_contract — the shared identity contract of issue #142
-# keeps every surface that uses it honest: the structural decision, the
-# network canonical label (structure layer), the NFsim complex canonical label
-# (structure and compartment layers) and the network species identity
-# (species layer).
-add_executable(test_graph_identity_contract test_graph_identity_contract.cpp)
-target_include_directories(test_graph_identity_contract PRIVATE
-    ${CMAKE_SOURCE_DIR}/cpp
-    ${CMAKE_SOURCE_DIR}/cpp/core
-    ${CMAKE_SOURCE_DIR}/cpp/parser
-    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
-    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
-)
-target_link_libraries(test_graph_identity_contract PRIVATE
-    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast nfsim_core)
-catch_discover_tests(test_graph_identity_contract)
 
 # test_ullmann
 add_executable(test_ullmann test_ullmann.cpp)

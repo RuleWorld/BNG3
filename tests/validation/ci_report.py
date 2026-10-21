@@ -266,9 +266,7 @@ def _external_report(
         ).read_text()
     )
     capabilities = inventory.discover_capabilities(
-        Path(__file__).resolve().parents[2],
-        matrix["validation_capabilities"],
-        inventory.load_union(Path(__file__).resolve().parents[2]),
+        Path(__file__).resolve().parents[2], matrix["validation_capabilities"]
     )
     reporting.attach_coverage(capabilities, results)
 

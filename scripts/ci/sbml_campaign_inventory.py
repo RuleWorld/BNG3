@@ -167,8 +167,6 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ),
     ("sbml event(s) parsed", "events:untranslated"),
     ("is marked fast", "fast-reaction:no-fast-equilibrium-solve"),
-    ("has an infinite value", "parameters:non-finite-value"),
-    ("has nan value", "parameters:non-finite-value"),
     ("in math; bngl has no built-in function", "mathml:no-bngl-builtin"),
     ("no mathml expression", "sbml:empty-math"),
     ("have no mathml kinetic law", "sbml:reaction-without-kinetic-law"),
@@ -356,25 +354,16 @@ def _biomodels_causes(record: dict[str, Any], reason: str) -> list[str]:
 
 
 def biomodels_inventory(report: dict[str, Any]) -> dict[str, Any]:
-    """Reduce a curated BioModels harness report to a compact inventory.
-
-    The retained inventory keeps the five result categories separate - pass,
-    unsupported, failed, timed out and invalid source - so a retained result
-    says which of them it is, and it keeps the corpus the results came from:
-    the pinned corpus manifest, its digest and the counts it declares.
-    """
+    """Reduce a curated BioModels harness report to a compact inventory."""
 
     records = report.get("records") or []
     rows: list[dict[str, Any]] = []
     status_counts: Counter = Counter()
     cause_counts: Counter = Counter()
     cause_sets: Counter = Counter()
-    category_counts: Counter = Counter()
     for record in records:
         status = str(record.get("status", "unknown"))
         status_counts[status] += 1
-        category = _biomodels_category(status)
-        category_counts[category] += 1
         reason = _biomodels_reason(record)
         causes = _biomodels_causes(record, reason)
         for cause in causes:
@@ -388,40 +377,18 @@ def biomodels_inventory(report: dict[str, Any]) -> dict[str, Any]:
                 "reason_signature": (
                     reason_signature(reason) if status != "passed" else ""
                 ),
-                "category": category,
                 "causes": causes,
-                "source_sha256": (record.get("source_artifact") or {}).get("sha256"),
             }
         )
     intersections = [
         {"causes": list(pair), "count": count}
         for pair, count in cause_sets.most_common(40)
     ]
-    corpus = report.get("corpus") or {}
     return {
         "record_count": len(rows),
         "status_counts": dict(sorted(status_counts.items())),
-        "category_counts": {
-            category: category_counts.get(category, 0)
-            for category in (
-                "passed",
-                "unsupported",
-                "failed",
-                "timeout",
-                "invalid_source",
-            )
-        },
         "cause_counts": dict(cause_counts.most_common()),
         "cause_sets": intersections,
-        "corpus": {
-            "manifest": corpus.get("manifest"),
-            "manifest_sha256": corpus.get("manifest_sha256"),
-            "snapshot_date": corpus.get("snapshot_date"),
-            "curation_query": corpus.get("curation_query"),
-            "expected_records": corpus.get("expected_records"),
-            "expected_sbml_records": corpus.get("expected_sbml_records"),
-            "expected_non_sbml_records": corpus.get("expected_non_sbml_records"),
-        },
         "cases": rows,
     }
 
@@ -1178,22 +1145,6 @@ def format_difference(diff: dict[str, Any]) -> str:
         f"{diff['case']} [{diff['stage']}]: expected {diff['expected']}, "
         f"observed {diff['observed']} ({diff['classification']})"
     )
-
-
-def _biomodels_category(status: str) -> str:
-    """Map a BioModels record status onto one of the five result categories."""
-    value = str(status or "").strip().lower()
-    if value in {"passed", "pass"}:
-        return "passed"
-    if value in {"unsupported", "unsupported_format"}:
-        return "unsupported"
-    if value in {"timeout", "timed-out", "timed_out"}:
-        return "timeout"
-    if value in {"invalid_source", "invalid-source"}:
-        return "invalid_source"
-    if value in {"failed", "fail", "error"}:
-        return "failed"
-    return "failed"
 
 
 def _digest(path: Path) -> str:

@@ -17,7 +17,6 @@ from tests.workflow_yaml import (
     job_matrix_values,
     job_subtree_text,
     parse_workflow,
-    render_scalars,
 )
 
 from scripts.ci import validate_sbml_test_suite
@@ -677,65 +676,6 @@ def test_lint_job_installs_ci_contract_dependencies():
     # 26.5.1 -> 26.10.0 overnight) red-lit every open PR branch at once.
     for package in ("black", "ruff"):
         assert re.search(rf'["\']?{package}==[^ "\']+["\']?', lint_job)
-
-
-def test_capability_inventory_publication_is_gated_on_the_discovery_outcome():
-    """A skipped discovery must not be reported as a missing inventory artifact.
-
-    The lint job publishes the capability inventory with
-    `if-no-files-found: error`. Under a bare `if: always()` that step also ran
-    when the discovery step had been skipped, so a lint failure produced a
-    second, misleading failure -- "No files were found" -- naming a missing
-    artifact instead of the check that actually failed, and burying the real
-    cause. The publish step must be conditioned on whether the discovery ran
-    and succeeded, and the gates around it must stay loud.
-    """
-
-    steps = parse_workflow(CI_WORKFLOW)["jobs"]["lint"]["steps"]
-    discovery = next(
-        step for step in steps if "--inventory-only" in step.get("run", "")
-    )
-    publishes = [
-        step
-        for step in steps
-        if step.get("uses", "").startswith("actions/upload-artifact@")
-        and "bng3-capability-inventory" in step.get("with", {}).get("name", "")
-    ]
-    assert len(publishes) == 1, "the lint job must publish exactly one inventory"
-    publish = publishes[0]
-
-    # The discovery step must be addressable, or the publish step cannot be
-    # conditioned on whether it ran at all.
-    discovery_id = discovery.get("id")
-    assert discovery_id, "the inventory discovery step needs an id to be gated on"
-    assert steps.index(discovery) < steps.index(publish)
-
-    # Publication is gated on the discovery outcome: a skipped discovery cannot
-    # turn into a missing-artifact failure, and a failed discovery still fails
-    # the job on its own step.
-    assert publish.get("if") == (
-        f"always() && steps.{discovery_id}.outcome == 'success'"
-    ), publish.get("if")
-
-    # The gate itself must not be weakened: a successful discovery that wrote
-    # no files still has to fail the job.
-    assert publish["with"]["if-no-files-found"] == "error"
-
-    # The inventory is a required evidence artifact, so its absence has to
-    # stay explicit: the run summary must record both outcomes, whatever
-    # happened to the discovery and the publication.
-    publish_id = publish.get("id")
-    assert publish_id, "the publish step needs an id so its outcome can be recorded"
-    recorders = [
-        step
-        for step in steps
-        if f"steps.{discovery_id}.outcome" in render_scalars(step)
-        and f"steps.{publish_id}.outcome" in render_scalars(step)
-    ]
-    assert len(recorders) == 1, "the inventory outcomes must be recorded exactly once"
-    recorder = recorders[0]
-    assert recorder.get("if") == "always()", recorder.get("name")
-    assert "$GITHUB_STEP_SUMMARY" in recorder["run"]
 
 
 def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():

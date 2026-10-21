@@ -138,7 +138,7 @@ std::string BnglWriter::writeParameters(const ast::Model& model, const Options& 
         if (opts.evaluateExpressions) {
             bngl << formatNumber(param.getValue());
         } else {
-            bngl << param.getExpression().toBnglString();
+            bngl << param.getExpression().toString();
         }
 
         if (param.hasUnit()) bngl << " [" << param.getUnitName() << "]";
@@ -159,7 +159,7 @@ std::string BnglWriter::writeCompartments(const ast::Model& model,
              << " " << comp.getDimension() << " ";
 
         if (!opts.evaluateExpressions && comp.getVolumeExpression().has_value()) {
-            bngl << comp.getVolumeExpression()->toBnglString();
+            bngl << comp.getVolumeExpression()->toString();
         } else {
             bngl << formatNumber(comp.getVolume());
         }
@@ -268,7 +268,7 @@ std::string BnglWriter::writeFunctions(const ast::Model& model) {
 
     for (const auto& func : model.getFunctions()) {
         bngl << "  " << func.getName() << "()";
-        bngl << " = " << func.getExpression().toBnglString();
+        bngl << " = " << func.getExpression().toString();
         bngl << "\n";
     }
 
@@ -282,7 +282,7 @@ std::string BnglWriter::writeEnergyPatterns(const ast::Model& model) {
     for (const auto& pattern : model.getEnergyPatterns()) {
         bngl << "  ";
         if (!pattern.getLabel().empty()) bngl << pattern.getLabel() << ": ";
-        bngl << pattern.getPattern() << " " << pattern.getExpression().toBnglString()
+        bngl << pattern.getPattern() << " " << pattern.getExpression().toString()
              << "\n";
     }
     bngl << "end energy patterns\n\n";
@@ -312,7 +312,7 @@ std::string BnglWriter::writeBarrierPatterns(const ast::Model& model) {
             bngl << products[index];
         }
         if (barrier.hasExpression()) {
-            bngl << " " << barrier.expression().toBnglString();
+            bngl << " " << barrier.expression().toString();
         }
         bngl << "\n";
     }
@@ -359,16 +359,16 @@ std::string BnglWriter::writeReactionRules(const ast::Model& model) {
         // Rates
         const auto& rates = rule.getRates();
         if (!rates.empty()) {
-            bngl << " " << rates[0].toBnglString();
+            bngl << " " << rates[0].toString();
             if (rule.isBidirectional() && rates.size() > 1) {
-                bngl << ", " << rates[1].toBnglString();
+                bngl << ", " << rates[1].toString();
             }
         }
 
         // Reservoir work is part of the rule's kinetics, not a comment: losing
         // it here would silently turn a driven model into an equilibrium one.
         if (rule.hasDrivingWork()) {
-            bngl << " driven_by(" << rule.drivingWorkExpression().toBnglString() << ")";
+            bngl << " driven_by(" << rule.drivingWorkExpression().toString() << ")";
         }
 
         bngl << "\n";
@@ -405,20 +405,20 @@ std::string BnglWriter::writeEvents(const ast::Model& model) {
     bngl << "begin bng3_events version " << *model.getEventFormatVersion() << "\n";
     for (const auto& event : model.getEvents()) {
         bngl << "  event \"" << event.id << "\"\n"
-             << "    trigger: " << event.trigger.toBnglString() << "\n"
+             << "    trigger: " << event.trigger.toString() << "\n"
              << "    initial_value: " << (event.initialValue ? "true" : "false") << "\n"
              << "    persistent: " << (event.persistent ? "true" : "false") << "\n"
              << "    use_values_from_trigger_time: "
              << (event.useValuesFromTriggerTime ? "true" : "false") << "\n";
         if (event.delay.has_value()) {
-            bngl << "    delay: " << event.delay->toBnglString() << "\n";
+            bngl << "    delay: " << event.delay->toString() << "\n";
         }
         if (event.priority.has_value()) {
-            bngl << "    priority: " << event.priority->toBnglString() << "\n";
+            bngl << "    priority: " << event.priority->toString() << "\n";
         }
         for (const auto& assignment : event.assignments) {
             bngl << "    assignment: " << assignment.target << " = "
-                 << assignment.value.toBnglString() << "\n";
+                 << assignment.value.toString() << "\n";
         }
         bngl << "  end event\n";
     }

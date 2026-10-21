@@ -121,10 +121,6 @@ jobs:
           cp build/cpp/bng_cpp${{ matrix.binary_ext }} dist/${{ matrix.artifact_name }}/
           cp build/cpp/NFsim${{ matrix.binary_ext }} dist/${{ matrix.artifact_name }}/
           cp README.md dist/${{ matrix.artifact_name }}/
-          # The licence and the third-party notices travel with the binaries:
-          # the bundled nauty and NFsim sources and the linked ANTLR4 and
-          # SUNDIALS runtimes carry their own notice obligations.
-          cp LICENSE NOTICE dist/${{ matrix.artifact_name }}/
           cd dist && tar czf ${{ matrix.artifact_name }}.tar.gz ${{ matrix.artifact_name }}/
 
       - name: Upload binary artifact
