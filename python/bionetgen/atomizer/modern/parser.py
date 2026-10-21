@@ -75,6 +75,22 @@ def _float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _declared_value(value: Any) -> float:
+    """Return a declared attribute value, keeping a non-finite declaration.
+
+    SBML's ``double`` type admits ``INF``, ``-INF`` and ``NaN`` (SBML Level 3
+    Version 2 Core, Sec. 4.7.3).  BNGL has no spelling for those, so the
+    writer reports the approximation it makes.  Replacing a non-finite
+    declaration with a finite number here would instead make the model
+    silently disagree with its source.
+    """
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _bool(value: Any, default: bool = False) -> bool:
     if value is None:
         return default
@@ -3221,6 +3237,7 @@ class SBMLParser:
         _lower_delays_of_static_expressions(result)
         SBMLParser._fold_static_species_assignments(result)
         SBMLParser._fold_static_parameter_initial_assignments(result)
+        SBMLParser._fold_static_compartment_initial_assignments(result)
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
             if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
@@ -3834,6 +3851,112 @@ class SBMLParser:
             ]
 
     @staticmethod
+    def _fold_static_compartment_initial_assignments(model: SBMLModel) -> None:
+        """Apply an initial assignment that sets a compartment's size.
+
+        SBML Level 3 Version 2 Core (Sec. 4.8.5) states that the value
+        calculated by an ``initialAssignment`` overrides the value assigned by
+        the object that defines the symbol: "if a Compartment's size is set
+        in its definition, and the model also contains an InitialAssignment
+        having that compartment's id as its symbol value, then the size
+        assigned in the Compartment object definition should be ignored".
+        A compartment whose size is set by an initial assignment therefore
+        has that size at t=0, so the seed amounts and the emitted
+        compartment size must use it rather than the ``size`` attribute.
+
+        Only a compartment whose t=0 size is settled by the initial
+        assignment is folded.  An assignment rule governs its target at
+        every time (Sec. 3.4.8 gives rules precedence over the value an
+        element carries in its definition), and an event assignment may
+        replace the value again, so those compartments keep their declared
+        size.  A rate rule only governs t>0 (Sec. 3.4.8), so a rate-ruled
+        compartment still takes its t=0 size from the initial assignment.
+        """
+
+        if not model.initial_assignments:
+            return
+
+        assignment_rule_targets = {
+            str(rule.variable)
+            for rule in model.rules
+            if rule.type == "assignment" and rule.variable
+        }
+        event_targets = {
+            str(assignment.variable)
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", None)
+        }
+        pending = []
+        for assignment in model.initial_assignments:
+            symbol = str(getattr(assignment, "symbol", "") or "")
+            if symbol not in model.compartments:
+                continue
+            if symbol in assignment_rule_targets or symbol in event_targets:
+                continue
+            pending.append(assignment)
+        if not pending:
+            return
+
+        # A compartment that an initial assignment targets takes its size
+        # from that assignment, not from its declared ``size`` attribute, so
+        # it must not contribute its declared size here.  Its folded value
+        # joins the table below instead.
+        initial_assignment_targets = {
+            str(getattr(assignment, "symbol", "") or "")
+            for assignment in model.initial_assignments
+        }
+        symbols: Dict[str, float] = {}
+        for parameter_id, parameter in model.parameters.items():
+            if (
+                not parameter.constant
+                or str(parameter_id) in assignment_rule_targets
+                or str(parameter_id) in initial_assignment_targets
+            ):
+                continue
+            if math.isfinite(parameter.value):
+                symbols[str(parameter_id)] = parameter.value
+                symbols[standardize_name(str(parameter_id))] = parameter.value
+        for compartment_id, compartment in model.compartments.items():
+            if (
+                not compartment.constant
+                or str(compartment_id) in assignment_rule_targets
+                or str(compartment_id) in initial_assignment_targets
+            ):
+                continue
+            if math.isfinite(compartment.size):
+                symbols[str(compartment_id)] = compartment.size
+                symbols[standardize_name(str(compartment_id))] = compartment.size
+        # SBML assumes a zero start time, so the built-in time symbol is 0
+        # while the initial values are established.
+        symbols["time"] = 0.0
+
+        # One initial assignment may use the value another one establishes,
+        # so fold repeatedly until no further compartment resolves.
+        folded: Dict[int, str] = {}
+        for _ in range(len(pending) + 1):
+            progressed = False
+            for assignment in pending:
+                if id(assignment) in folded:
+                    continue
+                expression = str(getattr(assignment, "math", "") or "")
+                if not expression:
+                    continue
+                value = _evaluate_static_arithmetic(
+                    expression, symbols, model.function_definitions
+                )
+                if value is None or not math.isfinite(value):
+                    continue
+                symbol = str(assignment.symbol)
+                model.compartments[symbol].size = value
+                symbols[symbol] = value
+                symbols[standardize_name(symbol)] = value
+                folded[id(assignment)] = symbol
+                progressed = True
+            if not progressed:
+                break
+
+    @staticmethod
     def _fold_static_species_assignments(model: SBMLModel) -> None:
         """Lower isolated constant species assignment rules to initial values."""
 
@@ -4216,10 +4339,12 @@ class SBMLParser:
             if not raw_id:
                 continue
             item_id = standardize_name(raw_id)
+            raw_value = _attribute(item, "value")
+            declared_value = _declared_value(raw_value)
             parameter = SBMLParameter(
                 id=item_id,
                 name=str(_attribute(item, "name", item_id) or item_id),
-                value=_float(_attribute(item, "value"), 0),
+                value=declared_value,
                 units=str(_attribute(item, "units", "") or ""),
                 constant=_bool(_attribute(item, "constant"), True),
                 value_set=_attribute(item, "value") is not None,
@@ -4228,7 +4353,7 @@ class SBMLParser:
             )
             existing = result.get(item_id)
             if existing is not None:
-                values_match = (
+                values_match = existing.value == parameter.value or (
                     math.isfinite(existing.value)
                     and math.isfinite(parameter.value)
                     and abs(existing.value - parameter.value) <= 1e-12
