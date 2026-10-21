@@ -3090,6 +3090,10 @@ _EVENT_REFUSAL_SUBCAUSES: tuple[tuple[str, str], ...] = (
         "simultaneous same-priority event group requires a random execution order",
     ),
     (
+        "simultaneous_equal_priority_conflict",
+        "simultaneous equal-priority events assign conflicting values",
+    ),
+    (
         "simultaneous_unordered_event",
         "simultaneous event without a priority has an undefined execution order",
     ),

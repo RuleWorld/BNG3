@@ -3490,6 +3490,44 @@ def _group_trigger_is_independent_of_assignments(
     return True
 
 
+# The refusal for a group of simultaneous events that share a priority and
+# disagree about the value of a shared target.
+_EQUAL_PRIORITY_CONFLICT_REFUSAL = (
+    "simultaneous equal-priority events assign conflicting values to a "
+    "shared target; the specification requires a random execution order"
+)
+
+
+def _equal_priority_conflicts(
+    members: Sequence[Tuple[float, Sequence[Tuple[str, str, float]]]],
+) -> List[Tuple[str, str]]:
+    """Return the shared targets that two equal-priority events assign
+    differently.
+
+    SBML leaves the execution order of two simultaneous events that share a
+    priority undefined: they are executed in a random order, so the order
+    differs from run to run.  When their assignments disagree on a shared
+    target the outcome depends on that order, so the group cannot be
+    serialized into one deterministic action sequence.  The conflict is
+    reported instead of being resolved by an arbitrary order.
+    """
+    tiers: Dict[float, List[Sequence[Tuple[str, str, float]]]] = {}
+    for priority, sets in members:
+        tiers.setdefault(priority, []).append(sets)
+    conflicts: List[Tuple[str, str]] = []
+    for tier in tiers.values():
+        if len(tier) < 2:
+            continue
+        for index in range(len(tier)):
+            left = {(kind, target): value for kind, target, value in tier[index]}
+            for other in range(index + 1, len(tier)):
+                right = {(kind, target): value for kind, target, value in tier[other]}
+                for key in sorted(set(left) & set(right)):
+                    if left[key] != right[key]:
+                        conflicts.append((key[1], f"{left[key]} != {right[key]}"))
+    return conflicts
+
+
 def synthesize_event_actions(
     events: Sequence[SBMLEvent], context: EventTranslationContext
 ) -> EventTranslationResult:
@@ -8592,6 +8630,28 @@ def synthesize_event_actions(
         ):
             end += 1
         group = normalized_scheduled[index:end]
+        conflicts = _equal_priority_conflicts(
+            (item[2], item[1])
+            for item in group
+            if item[3] is not None
+            and str(getattr(item[3], "priority", "") or "").strip()
+        )
+        if conflicts:
+            # Two events that are executed simultaneously and declare the
+            # same priority are executed in a random order, so their
+            # assignments must not disagree about a shared target: the
+            # outcome would depend on an order the specification leaves to
+            # chance.  A deterministic action sequence cannot express that,
+            # so the group is refused instead of being serialized in an
+            # arbitrary order.  An event without a priority is not part of
+            # this rule: the specification leaves the order of such events
+            # undefined, and any order is a valid implementation.
+            normal_converted -= sum(item[3] is not None for item in group)
+            for item in group:
+                if item[3] is not None:
+                    untranslated.append((item[3], _EQUAL_PRIORITY_CONFLICT_REFUSAL))
+            index = end
+            continue
         if not any(item[4] for item in group):
             priority_order = sorted(group, key=lambda item: -item[2])
             group_events = [item[3] for item in group]
