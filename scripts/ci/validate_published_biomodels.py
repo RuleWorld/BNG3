@@ -1426,6 +1426,23 @@ def main() -> int:
             f"(trace: {package_trace['rule']})",
             file=sys.stderr,
         )
+    try:
+        import bionetgen._bionetgen_cpp as cpp
+        from bionetgen import BioNetGenModel
+    except ImportError as exc:
+        raise SystemExit(
+            "BNG3 C++ extension is unavailable; set PYTHONPATH=python:build/cpp"
+        ) from exc
+    try:
+        extension_trace = verify_native_extension(
+            Path(__file__).resolve().parents[2],
+            extension_file=cpp.__file__,
+            package_trace=package_trace,
+        )
+    except ForeignPackageError as exc:
+        print(f"native extension preflight failed: {exc}", file=sys.stderr)
+        return 1
+    runtime_info = _runtime_provenance(package_trace, extension_trace)
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     args.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1472,24 +1489,6 @@ def main() -> int:
         and completeness["sbml_records"] == expected_sbml
         and completeness["non_sbml_records"] == expected_non_sbml
     )
-
-    try:
-        import bionetgen._bionetgen_cpp as cpp
-        from bionetgen import BioNetGenModel
-    except ImportError as exc:
-        raise SystemExit(
-            "BNG3 C++ extension is unavailable; set PYTHONPATH=python:build/cpp"
-        ) from exc
-    try:
-        extension_trace = verify_native_extension(
-            Path(__file__).resolve().parents[2],
-            extension_file=cpp.__file__,
-            package_trace=package_trace,
-        )
-    except ForeignPackageError as exc:
-        print(f"native extension preflight failed: {exc}", file=sys.stderr)
-        return 1
-    runtime_info = _runtime_provenance(package_trace, extension_trace)
 
     records: list[dict[str, Any]] = []
     modes = (False, True) if args.mode == "both" else (args.mode == "atomized",)
