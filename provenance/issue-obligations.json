@@ -573,26 +573,29 @@
           "criterion": "Replace string-based semantic dispatch/arguments with validated typed protocol values while preserving source spelling for diagnostics.",
           "scope": "Replace string-based semantic dispatch/arguments with validated typed protocol values while preserving source spelling for diagnostics.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The action options are read by the shared typed option reader in cpp/compile/ActionOptions.hpp and the method by the shared decision in cpp/compile/SimulationMethod.hpp.",
+            "The qualified slice is the generated decay case; other model shapes and the network-free action path are not qualified by this check."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:140:replace-string-based-semantic-dispatch-arguments-with-validated",
+              "id": "v1-n20-r0-a0:protocol:protocol-action-option-equivalence",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The typed action options are validated as typed values on every surface: the invalid options are refused with their source spelling and the defaults are the declared ones.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
           "test_references": [
-            "tests/cpp/test_symbol_table.cpp",
-            "tests/python/test_cli.py",
-            "tests/test_validate.py"
+            "tests/cpp/test_simulation_method.cpp",
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/test_integrated_protocol.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:140:replace-string-based-semantic-dispatch-arguments-with-validated.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -601,22 +604,28 @@
           "criterion": "Verify equivalent CLI, Python and BNGL action behavior, including invalid options and defaults.",
           "scope": "Verify equivalent CLI, Python and BNGL action behavior, including invalid options and defaults.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The three surfaces are compared on one generated conversion model with a fixed option set; the analytic dynamics are checked separately.",
+            "The action surface keeps its own documented default tolerances, so the default probe compares the output grid and a declared value budget."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:140:verify-equivalent-cli-python-and-bngl-action-behavior-including",
+              "id": "v1-n20-r0-a0:protocol:protocol-action-option-equivalence",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The command line, the public Python API and the BNGL action surface reach the same outcome for the same typed options, including the invalid options and the defaults.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/test_integrated_protocol.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:140:verify-equivalent-cli-python-and-bngl-action-behavior-including.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -7213,24 +7222,28 @@
           "criterion": "Identify duplicate option/rate/capability logic in large dispatch, integrator and exporter modules.",
           "scope": "Identify duplicate option/rate/capability logic in large dispatch, integrator and exporter modules.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The decision sites are the shared method decision and option-support matrix in cpp/compile/SimulationMethod.hpp and the typed option reader in cpp/compile/ActionOptions.hpp.",
+            "The qualified slice is the generated decay case; the network-free and population-sampler option sets are not compared."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:178:identify-duplicate-option-rate-capability-logic-in-large-dispatc",
+              "id": "v1-n20-r0-a0:protocol:protocol-decision-sharing",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The option, rate and capability decisions are exercised through every surface that used to duplicate them and reach the same outcome, so a duplicated decision is visible as a divergence.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
           "test_references": [
-            "tests/validation/test_export_formats.py"
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/test_integrated_protocol.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:178:identify-duplicate-option-rate-capability-logic-in-large-dispatc.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -7239,22 +7252,28 @@
           "criterion": "Extract existing coherent seams with behavioral regression tests and reduce duplicated decisions without a new parallel framework.",
           "scope": "Extract existing coherent seams with behavioral regression tests and reduce duplicated decisions without a new parallel framework.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The regression coverage is the shared decision's own unit tests plus the cross-surface probes; the wider option inventory of the dispatch, the integrator and the exporters is not re-qualified by this check."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:178:extract-existing-coherent-seams-with-behavioral-regression-tests",
+              "id": "v1-n20-r0-a0:protocol:protocol-decision-sharing",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The extracted seams keep the supported semantics: the surfaces that used to duplicate a decision agree on the option grid, the tolerances, the capability rejections and the seeded rate stream.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/cpp/test_simulation_method.cpp",
+            "tests/validation/integrated_protocol.py",
+            "tests/validation/test_integrated_protocol.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:178:extract-existing-coherent-seams-with-behavioral-regression-tests.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },

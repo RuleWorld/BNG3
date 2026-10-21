@@ -957,6 +957,8 @@ def main(argv=None):
     parser.add_argument("--netrule-execution-only", action="store_true")
     parser.add_argument("--bngsim-boundary-only", action="store_true")
     parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--stochastic-parity-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -1094,6 +1096,7 @@ def main(argv=None):
         or args.quantity_laws_only
         or args.jax_backend_measurement_only
         or args.stochastic_parity_only
+        or args.api_surface_only
     )
     qualification_selection["include_netrule_execution"] = not focused
     qualification_selection["include_jax_backend_measurement"] = not focused
@@ -1180,6 +1183,8 @@ def main(argv=None):
         "export-format-tier": ["--export-format-tier-only"],
         "netrule-execution": ["--netrule-execution-only"],
         "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "stochastic-parity": ["--stochastic-parity-only"],
+        "api-surface": ["--api-surface-only"],
     }
     for row in rows:
         case_id = row.get("integration_case")

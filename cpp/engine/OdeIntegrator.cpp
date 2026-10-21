@@ -1,4 +1,5 @@
 #include "compile/LegacyAstLowering.hpp"
+#include "compile/SimulationMethod.hpp"
 #include "ast/EventSupport.hpp"
 #include "OdeIntegrator.hpp"
 
@@ -1773,10 +1774,19 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
     if (!!nativeEvent_.has_value() && options.method != "cvode") {
         throw std::runtime_error("bng3_events require CVODE continuous root detection");
     }
-    if (options.method != "ssa" &&
-        (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
+    // The options a method can honour are decided by the shared semantic
+    // layer, so the integrator, the action dispatcher and the public API
+    // accept the same option combinations.
+    const auto support = bng::compile::optionSupportFor(
+        bng::compile::simulationMethodForEngineName(options.method).value_or(
+            bng::compile::SimulationMethod::Cvode));
+    if (!support.maxSimSteps && options.maxSimSteps > 0) {
         throw std::runtime_error(
-            "max_sim_steps and output_step_interval are supported only for SSA");
+            "max_sim_steps requires an SSA or PSA simulation method");
+    }
+    if (!support.outputStepInterval && options.outputStepInterval > 0) {
+        throw std::runtime_error(
+            "output_step_interval requires an SSA simulation method");
     }
     if (options.method == "ssa" && options.batchSize > 0 &&
         !options.stopIf.empty()) {

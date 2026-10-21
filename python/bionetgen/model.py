@@ -392,30 +392,31 @@ class BioNetGenModel:
         if n_steps == 0 and not normalized_sample_times:
             raise ValueError("n_steps must be positive unless sample_times is set")
 
-        ode_only_options = (
+        # The options a method can honour are decided by the engine, so the
+        # public API, the action dispatcher and the numerical backends accept
+        # the same option combinations for the same method.
+        support = _cpp.simulation_option_support(method)
+        if not support["max_step"] and (
             max_step > 0.0 or steady_state or sparse or check_product_scale > 0.0
-        )
-        if method != "ode" and ode_only_options:
+        ):
             raise ValueError(
                 "max_step, steady-state, sparse, and check_product_scale are "
                 "supported only for method='ode'"
             )
-        if method == "ode" and (max_sim_steps or output_step_interval):
+        if not support["max_sim_steps"] and max_sim_steps:
             raise ValueError(
-                "max_sim_steps and output_step_interval are supported only "
-                "for method='ssa'"
+                "max_sim_steps is supported only for method='ssa' or method='psa'"
             )
-        if method not in {"ode", "ssa", "nf"} and (
-            stop_if or max_sim_steps or output_step_interval
-        ):
+        if not support["output_step_interval"] and output_step_interval:
+            raise ValueError("output_step_interval is supported only for method='ssa'")
+        if not support["stop_if"] and stop_if:
             raise ValueError(
-                "stop_if, max_sim_steps, and output_step_interval are supported "
-                "only for method='ode' or method='ssa'"
+                "stop_if is supported only for method='ode' or method='ssa'"
             )
-        if method == "nf" and (stop_if or max_sim_steps or output_step_interval):
+        if not support["sample_times"] and normalized_sample_times:
             raise ValueError(
-                "stop_if, max_sim_steps, and output_step_interval are supported "
-                "only for method='ode' or method='ssa'"
+                "sample_times are supported only for method='ode', "
+                "method='ssa' or method='nf'"
             )
 
         if method == "nf":
@@ -593,6 +594,7 @@ class BioNetGenModel:
                     poplevel=psa_poplevel,
                     t_start=t_start,
                     seed=seed,
+                    max_sim_steps=max_sim_steps,
                 )
                 if isinstance(raw, dict) and "backend" not in raw:
                     raw["backend"] = "native"
