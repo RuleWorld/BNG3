@@ -140,6 +140,26 @@ def _locked_ssts_checkout(tmp_path: Path) -> tuple[Path, Path]:
     return suite, lock
 
 
+def _gate_environment() -> dict[str, str]:
+    """Return an environment in which the gate measures this checkout.
+
+    The gate refuses to measure a package it cannot trace to the checkout
+    that owns it, so a test that runs the gate has to hand it one: the
+    checkout's own source tree and its built extension when they exist, and
+    otherwise the installed distribution.
+    """
+
+    environment = dict(os.environ)
+    build_cpp = REPO / "build" / "cpp"
+    if any(build_cpp.glob("_bionetgen_cpp*")):
+        entries = [str(REPO / "python"), str(build_cpp)]
+        existing = environment.get("PYTHONPATH")
+        if existing:
+            entries.append(existing)
+        environment["PYTHONPATH"] = os.pathsep.join(entries)
+    return environment
+
+
 def _run_gate(
     suite: Path,
     lock: Path,
@@ -169,7 +189,12 @@ def _run_gate(
         *(extra or []),
     ]
     return subprocess.run(
-        command, cwd=REPO, capture_output=True, text=True, check=False
+        command,
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=_gate_environment(),
     )
 
 
