@@ -477,6 +477,134 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   failures left.
 
 
+## 9. A fast reaction's pseudo steady state is not an ordinary reaction
+
+* **Classification:** Atomizer defect (model semantics).  **CLOSED** on
+  `campaign/fast-equilibrium-solve` (pull request #370): the two shapes whose
+  pseudo steady state is closed-form are now lowered exactly, and the rest
+  stay refused with the construct that blocks them.
+* **Cases:** the official SBML Test Suite cases whose source marks a reaction
+  `fast="true"`: 34 cases in the pinned suite.  29 of them now reproduce the
+  published reference (`unsupported` -> `passed`) and 5 stay `unsupported`
+  with a construct-naming reason.
+
+### The specification's requirement
+
+SBML Level 2 Version 4/5 and Level 3 Version 1 Core, section 4.11
+("Reactions"), do not describe a `fast="true"` reaction as merely faster.
+The text reads:
+
+> "The set of reactions having `fast`=`true` (known as *fast reactions*)
+> should be assumed to be operating on a time scale significantly faster than
+> the other reactions (the *slow reactions*). Fast reactions are considered to
+> be instantaneous relative to the slow reactions. **Software tools should
+> use a pseudo steady-state approximation for the set of fast reactions when
+> constructing the system of equations for the model.**"
+
+and
+
+> "Note that the `fast` attribute has a significant effect on the mathematical
+> interpretation of a model and **cannot be safely ignored** if a software
+> tool does not implement support for the corresponding concept."
+
+Level 3 Version 2 removes the attribute outright: "every Reaction in an
+L3V2 model is equivalent to an SBML Level 3 Version 1 Reaction with a `fast`
+value of false".  The appendix *Mathematical consequences of the `fast`
+attribute on Reaction* gives the reduction itself: the fast subsystem
+contributes the algebraic constraint `A1*v_f(x) = 0`, and the slow dynamics
+follow from `B*dx/dt = B*A2*v_s` with `B` the left null space of `A1`.
+
+So `fast` is a property of the *model*, not of the solver: the model is the
+system of equations with the fast subsystem in equilibrium, and a tool that
+does not build that system describes a different model.
+
+### The published references agree
+
+Every published `-results.csv` of these cases is the pseudo-steady-state
+trajectory.  `semantic/00870` is already at `Kf1*A4 = Kr1*A2` at `t = 0`;
+`semantic/00986` is exactly `B(t) = e^{-t}`, the solution of the reduced
+one-reaction system; the cases' own notes say "the 'fast' reaction should go
+to completion instantly".  Measured with libRoadRunner 2.10.0's exact CVODE on
+the same models with the attribute cleared, the raw-ODE solution deviates
+from every reference by 100x-53000x the suite's own tolerance, and
+libRoadRunner refuses to load a `fast="true"` model at all ("Unable to
+support 'fast' reactions").  Lowering a fast reaction as an ordinary
+reaction would therefore have turned every refused case into a failed one.
+
+### What the reduction is
+
+The pseudo steady state of a fast reaction is an *algebraic* condition, not a
+differential one, and it is closed-form for two shapes:
+
+* **A rate that vanishes with one of the two species it converts.**  A rate
+  of the form `c*X`, `c*Y` or `c*X*Y` (with `c` a time-independent constant)
+  is zero exactly when the species it is proportional to is zero, so the
+  infinitely fast relaxation holds that species at zero and lets the other
+  absorb its amount, scaled by the stoichiometry ratio.  The fast
+  subsystem's conserved combination `nu_P*R + nu_R*P` does not change while
+  it relaxes.  The sign of `c` says which of the two species the reaction
+  runs towards: a positive coefficient runs the reaction forwards and holds
+  the reactant at zero, a negative one runs it backwards and holds the
+  product at zero.  A conversion factor scales the amount a reaction moves
+  (SBML Level 3 Version 2 Core, Sec. 4.11.7), so it scales the absorbed
+  amount as well.
+* **A rate that balances the two species it converts.**  A rate of the form
+  `k_f*X - k_r*Y` is zero on the algebraic balance `k_f*X = k_r*Y`, and the
+  slow reactions then move *along* that balance: the eliminated species
+  changes at the slow reactions' scaled rate
+  `k_r/(k_f*nu_X + k_r*nu_Y)` of the flux, and the fast subsystem's
+  conserved combination changes at the slow reactions' own rate.  The
+  reduction is a closed-form pre-solve of the initial condition (the fast
+  subsystem is placed on the balance, conserving its combination) plus an
+  exact rate substitution (the two species carry the reduced rates as rate
+  rules, and the slow reaction keeps its own flux).
+
+### What the cases show
+
+| case | construct | outcome |
+| --- | --- | --- |
+| 00870 00872 00873 01051 01052 01053 | the reversible fast reaction `A4 <-> A2` with the rate `(Kf1*A4 - Kr1*A2)*C` | the balance `Kf1*A4 = Kr1*A2`; passed |
+| 01399 | a rate over both converted species with a negative coefficient | the product is held at zero; passed |
+| 01544 01545 01546 | a species or model conversion factor | the absorbed amount follows the conversion factors; passed |
+| 01565 | 52 independent fast reactions whose rates carry a MathML built-in | each reduces on its own; passed |
+| 01569 | two independent fast reactions whose rate constants an initial assignment sets | each reduces on its own; passed |
+| 01567 | an algebraic rule fixes the fast reaction's rate constant | the fixed constant is a constant, so the reaction runs backwards; passed |
+| 01571 01572 | a rate over both converted species with a non-unity stoichiometry | the absorbed amount follows the stoichiometry ratio; passed |
+| 00871 00874 00875 00986 01396 01397 01547 01548 01549 01550 01551 01558 01559 01560 | a rate proportional to one species | the species is held at zero; passed |
+| 00987 00988 | an event sets the fast reaction's rate constant | refused: "the fast reaction's rate constant is not a time-independent value" |
+| 01398 | an event changes the fast reaction's stoichiometry | refused: "the fast reaction's stoichiometry is not a constant" |
+| 01539 | a `delay` expression reads the converted species | refused: "species \"S1\" is read by a delay expression" |
+| 01568 01570 | the fast reaction's rate constant follows a rule | refused: "the fast reaction's rate constant is not a time-independent value" |
+
+The refused cases name the construct that blocks the reduction, and the
+diagnostic keeps the `is marked fast` wording the campaign's gap taxonomy
+matches, so the construct they are filed under does not change.
+
+### Numbers
+
+Against the published references, with the suite's own tolerance
+(`abs(expected-actual) <= absolute + relative*abs(expected)`, read from each
+case's `-settings.txt`):
+
+| case | tolerance (abs, rel) | worst scaled error | variable |
+| --- | --- | --- | --- |
+| 00870 01051 | 1e-2, 1e-4 | 0.046 | A1 |
+| 00872 01052 | 1e-2, 1e-4 | 0.331 | A3 |
+| 00873 01053 | 1e-2, 1e-4 | 0.002 | A1 |
+| 01399 | 1e-4, 1e-4 | 0.000 | S1 |
+| 01544 01545 01546 | 1e-4, 1e-4 | 0.000 | S2 |
+| 01565 | 1e-4, 1e-4 | 0.0001 | S33 |
+| 01567 | 1e-4, 1e-4 | 0.000 | S1 |
+| 01569 | 1e-4, 1e-4 | 0.000 | S1 |
+| 01571 01572 | 1e-4, 1e-4 | 0.000 | S2 |
+
+The residual of the six reversible cases is the reference's own integration
+error: the published trajectory satisfies `A4 = 2*A2` to machine precision
+(the balance holds exactly) and conserves `A1 + A3` to machine precision, and
+the deviation from the exact reduced solution oscillates with the sign of a
+fixed-step integrator's truncation error.
+
+
 ---
 
 ## Measurements that are *not* findings
