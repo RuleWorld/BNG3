@@ -169,6 +169,28 @@ def is_model_artifact(name: str) -> bool:
     return artifact_role(name) == ROLE_MODEL
 
 
+def _runtime_identity(payload: Any) -> dict[str, Any]:
+    """Return the identity of the build a run observed the corpus with.
+
+    The report says which package tree and which native extension produced
+    the artifacts.  A reader has to be able to see it, because a run that
+    measured a stale installed package measures the wrong code.
+    """
+
+    if not isinstance(payload, dict):
+        return {}
+    provenance = payload.get("runtime_provenance")
+    if not isinstance(provenance, dict):
+        return {}
+    return {
+        "bionetgen_package_path": provenance.get("bionetgen_package_path"),
+        "native_extension_resolved_path": provenance.get(
+            "native_extension_resolved_path"
+        ),
+        "bionetgen_version": provenance.get("bionetgen_version"),
+    }
+
+
 def discover_cases(root: Path) -> dict[str, Path]:
     """Return the per-case artifact directories under an artifacts root.
 
@@ -358,7 +380,14 @@ def _read_text(path: Path) -> str:
 
 
 def _load_record(payload: Any, case_key: str) -> dict[str, Any] | None:
-    """Return the record for a case from a gate report or a per-case report."""
+    """Return the record for a case from a gate report or a per-case report.
+
+    A report that holds several records must match the case exactly: falling
+    back to an unrelated record would compare one case's verdict against
+    another's, which is exactly the kind of false difference this tool must
+    not produce.  A report that holds a single record -- the per-case worker
+    report the gate retains next to the artifacts -- is unambiguous.
+    """
 
     if not isinstance(payload, dict):
         return None
@@ -367,9 +396,8 @@ def _load_record(payload: Any, case_key: str) -> dict[str, Any] | None:
         for record in records:
             if isinstance(record, dict) and case_key_from_record(record) == case_key:
                 return record
-        for record in records:
-            if isinstance(record, dict):
-                return record
+        if len(records) == 1 and isinstance(records[0], dict):
+            return records[0]
         return None
     if "status" in payload or "core_passed" in payload:
         return payload
@@ -888,6 +916,8 @@ def main() -> int:
     first_seed = args.first_seed or _seed_from_payload(first_payload)
     second_seed = args.second_seed or _seed_from_payload(second_payload)
     seed_condition = _seed_condition(first_seed, second_seed)
+    first_identity = _runtime_identity(first_payload)
+    second_identity = _runtime_identity(second_payload)
 
     first_cases = discover_cases(args.first_artifacts)
     second_cases = discover_cases(args.second_artifacts)
@@ -990,11 +1020,13 @@ def main() -> int:
             "artifacts": str(args.first_artifacts),
             "report": str(args.first_report) if args.first_report else None,
             "seed": first_seed,
+            "runtime_identity": first_identity,
         },
         "second": {
             "artifacts": str(args.second_artifacts),
             "report": str(args.second_report) if args.second_report else None,
             "seed": second_seed,
+            "runtime_identity": second_identity,
         },
         "seed_condition": seed_condition,
         "numeric_tolerance": {"rtol": args.numeric_rtol, "atol": args.numeric_atol},
@@ -1010,6 +1042,26 @@ def main() -> int:
     print(f"  first : {args.first_artifacts} (seed: {first_seed or 'not recorded'})")
     print(f"  second: {args.second_artifacts} (seed: {second_seed or 'not recorded'})")
     print(f"  seed condition: {seed_condition}")
+    for label, identity in (("first", first_identity), ("second", second_identity)):
+        package_path = identity.get("bionetgen_package_path")
+        if package_path:
+            print(f"  {label} package: {package_path}")
+    if first_identity and second_identity and first_identity != second_identity:
+        print(
+            "  note: the two runs observed the corpus under different runtime "
+            "identities (not a verdict)"
+        )
+    missing = [
+        case["case"]
+        for case in cases
+        if case["outcome"] == OUTCOME_UNRESOLVED
+        and any(
+            entry.get("status", "").startswith("missing-in-")
+            for entry in case["artifacts"].values()
+        )
+    ]
+    if missing:
+        print(f"  cases present in only one run: {len(missing)}")
     print(f"  cases: {len(cases)}")
     print("outcomes:")
     print(f"  {OUTCOME_CHANGED_CHANGED}: {counts[OUTCOME_CHANGED_CHANGED]}")

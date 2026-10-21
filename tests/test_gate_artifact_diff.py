@@ -405,13 +405,13 @@ def _run_cli(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _cli_tree(tmp_path: Path, changed: bool) -> Path:
-    root = tmp_path / ("second" if changed else "first")
+def _cli_tree(tmp_path: Path, name: str, changed: bool) -> Path:
+    root = tmp_path / name
     files = dict(MODEL_FILES)
     if changed:
         files["translated.bngl"] = "begin\n  k1 0.5\nend\n"
     _write_case(root, "semantic/00001", files)
-    report = tmp_path / f"{root.name}-report.json"
+    report = tmp_path / f"{name}-report.json"
     report.write_text(json.dumps(_report([_record("00001")])), encoding="utf-8")
     return root
 
@@ -419,8 +419,8 @@ def _cli_tree(tmp_path: Path, changed: bool) -> Path:
 def test_the_command_line_reports_no_difference_for_two_identical_runs(tmp_path):
     """Two runs that produced the same artifacts must report no difference."""
 
-    first = _cli_tree(tmp_path, changed=False)
-    second = _cli_tree(tmp_path, changed=False)
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=False)
 
     result = _run_cli(
         "--first-artifacts",
@@ -438,8 +438,8 @@ def test_the_command_line_reports_a_changed_model_with_an_unchanged_verdict(
 ):
     """The headline case must be visible in the command-line report."""
 
-    first = _cli_tree(tmp_path, changed=False)
-    second = _cli_tree(tmp_path, changed=True)
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=True)
 
     result = _run_cli(
         "--first-artifacts",
@@ -456,8 +456,8 @@ def test_the_command_line_reports_a_changed_model_with_an_unchanged_verdict(
 def test_the_command_line_can_compare_one_case(tmp_path):
     """One case is how a single report is investigated."""
 
-    first = _cli_tree(tmp_path, changed=False)
-    second = _cli_tree(tmp_path, changed=True)
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=True)
     _write_case(first, "semantic/00002", dict(MODEL_FILES))
     _write_case(second, "semantic/00002", dict(MODEL_FILES))
 
@@ -475,11 +475,33 @@ def test_the_command_line_can_compare_one_case(tmp_path):
     assert "semantic/00002" not in result.stdout
 
 
+def test_a_report_that_does_not_hold_the_case_yields_no_verdict():
+    """An unrelated record must never stand in for the case under comparison."""
+
+    payload = {
+        "records": [
+            _record("00001"),
+            _record("00002", status="failed", core_passed=False),
+        ]
+    }
+
+    assert diff._load_record(payload, "semantic/00003") is None
+    assert diff._load_record(payload, "semantic/00002")["status"] == "failed"
+
+
+def test_a_single_record_report_is_unambiguous():
+    """The per-case worker report holds one record and names the case."""
+
+    payload = {"records": [_record("00001")]}
+
+    assert diff._load_record(payload, "semantic/00001")["status"] == "passed"
+
+
 def test_the_command_line_writes_a_json_report(tmp_path):
     """The report must be machine-readable for a campaign that aggregates."""
 
-    first = _cli_tree(tmp_path, changed=False)
-    second = _cli_tree(tmp_path, changed=True)
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=True)
     output = tmp_path / "diff.json"
 
     result = _run_cli(
@@ -498,6 +520,75 @@ def test_the_command_line_writes_a_json_report(tmp_path):
     assert report["cases"][0]["case"] == "semantic/00001"
 
 
+def test_the_runtime_identity_of_each_run_is_reported(tmp_path):
+    """A reader must be able to see which package tree each run measured.
+
+    A stale installed ``bionetgen`` in site-packages makes a bare run
+    measure the wrong code, and the report is where that has to be visible.
+    """
+
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=True)
+    first_report = tmp_path / "first-report.json"
+    second_report = tmp_path / "second-report.json"
+    first_report.write_text(
+        json.dumps(
+            _report(
+                [_record("00001")],
+                runtime_provenance={
+                    "bionetgen_package_path": "/repo/python/bionetgen/__init__.py"
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+    second_report.write_text(
+        json.dumps(
+            _report(
+                [_record("00001")],
+                runtime_provenance={
+                    "bionetgen_package_path": "/site-packages/bionetgen/__init__.py"
+                },
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_cli(
+        "--first-artifacts",
+        str(first),
+        "--second-artifacts",
+        str(second),
+        "--first-report",
+        str(first_report),
+        "--second-report",
+        str(second_report),
+    )
+
+    assert "/repo/python/bionetgen/__init__.py" in result.stdout
+    assert "/site-packages/bionetgen/__init__.py" in result.stdout
+    assert "different runtime identities" in result.stdout
+
+
+def test_a_case_present_in_only_one_run_is_reported(tmp_path):
+    """A case the two runs did not both cover is a coverage difference."""
+
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=False)
+    _write_case(first, "semantic/00002", dict(MODEL_FILES))
+
+    result = _run_cli(
+        "--first-artifacts",
+        str(first),
+        "--second-artifacts",
+        str(second),
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "cases present in only one run: 1" in result.stdout
+    assert "missing-in-second" in result.stdout
+
+
 def test_the_command_line_reports_a_non_reproducible_artifact_as_such(tmp_path):
     """The probe must excuse a difference the generator cannot reproduce."""
 
@@ -510,8 +601,8 @@ def test_the_command_line_reports_a_non_reproducible_artifact_as_such(tmp_path):
         "(case / 'translated.bngl').write_text('k1 %f\\n' % random.random())\n",
         encoding="utf-8",
     )
-    first = _cli_tree(tmp_path, changed=False)
-    second = _cli_tree(tmp_path, changed=True)
+    first = _cli_tree(tmp_path, "first", changed=False)
+    second = _cli_tree(tmp_path, "second", changed=True)
 
     result = _run_cli(
         "--first-artifacts",
