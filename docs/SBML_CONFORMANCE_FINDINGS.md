@@ -97,7 +97,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 ## 3. A rate law on a concentration-valued species is not scaled by the compartment volume
 
 * **Classification:** Atomizer defect.  **CLOSED** on
-  `campaign/fix-concentration-rate-law` (pull request #358): the lowering now
+  `campaign/fix-concentration-rate-law` (pull request #363): the lowering now
   carries the compartment volume, `stochastic/00011` reproduces the official
   reference, and the rule is stated in general below.
 * **Cases:** `stochastic/00011` (all official mean/standard-deviation
@@ -254,7 +254,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 * **Classification:** harness defect (the guard could not tell an inert
   source model from a degenerate lowering).  **CLOSED** on
-  `campaign/fix-concentration-rate-law` (pull request #358): the guard now
+  `campaign/fix-concentration-rate-law` (pull request #363): the guard now
   refuses only when a source reaction can change a species, so the three
   affected cases are measured and pass.
 * **Cases:** `semantic/01422`, `semantic/01423` and `semantic/01431` (their
@@ -293,7 +293,7 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 ## 8. Other newly measured mismatches
 
 * **Classification:** Atomizer defects.  **REDUCED** to four mechanisms on
-  `campaign/fix-concentration-rate-law` (pull request #358); three are fixed
+  `campaign/fix-concentration-rate-law` (pull request #363); three are fixed
   and one is identified and documented.
 * **Cases:** `semantic/00963 00967 01530 01531 01532 01533 01701 01702
   01715 01716` and `semantic/00707 00736 00929`.
