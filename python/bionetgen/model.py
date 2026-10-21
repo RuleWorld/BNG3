@@ -64,6 +64,7 @@ class BioNetGenModel:
         self._source_path = source_path
         self._source_metadata = source_metadata or ""
         self._network: Optional[_cpp.GeneratedNetwork] = None
+        self._finite_backend_decision_cache = None
 
     @property
     def parameters(self) -> list:
@@ -123,6 +124,7 @@ class BioNetGenModel:
             # parameter-dependent compile results. Also discard the cache if
             # parameter reevaluation raises after changing the model.
             self._network = None
+            self._finite_backend_decision_cache = None
 
     def parameter_scan(self, *args, **kwargs):
         from bionetgen.scan import parameter_scan as _parameter_scan
@@ -183,6 +185,34 @@ class BioNetGenModel:
         self._network = _cpp.generate_network(self._model, max_iter=max_iter)
         return self._network
 
+    def _finite_backend_decision(self, requested: str, method: str) -> dict:
+        """Return the engine's named finite-backend routing decision.
+
+        The decision is owned by the engine so the Python layer does not
+        re-implement the capability or lowering rules.  It is cached per
+        generated network because the semantic lowering check is not free for
+        large networks and the network identity already invalidates on every
+        model mutation.
+        """
+        if _cpp is None or not hasattr(_cpp, "finite_backend_decision"):
+            raise RuntimeError(
+                "finite backend decision unavailable: the compiled extension "
+                "does not expose finite_backend_decision"
+            )
+        network = self._network
+        cached = getattr(self, "_finite_backend_decision_cache", None)
+        if (
+            cached is not None
+            and cached[0] is network
+            and cached[1] == (requested, method)
+        ):
+            return cached[2]
+        decision = _cpp.finite_backend_decision(
+            self._model, network, requested=requested, method=method
+        )
+        self._finite_backend_decision_cache = (network, (requested, method), decision)
+        return decision
+
     def simulate(
         self,
         method: str = "ode",
@@ -224,7 +254,9 @@ class BioNetGenModel:
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
-            Random seed (SSA/NF only; 0 = system default).
+            Random seed (SSA/NF/PLA/PSA only; 0 = system default). A non-zero
+            value selects a reproducible random stream for the stochastic
+            methods.
         pla_config : str
             PLA configuration string (PLA only).
         psa_poplevel : float
@@ -360,30 +392,31 @@ class BioNetGenModel:
         if n_steps == 0 and not normalized_sample_times:
             raise ValueError("n_steps must be positive unless sample_times is set")
 
-        ode_only_options = (
+        # The options a method can honour are decided by the engine, so the
+        # public API, the action dispatcher and the numerical backends accept
+        # the same option combinations for the same method.
+        support = _cpp.simulation_option_support(method)
+        if not support["max_step"] and (
             max_step > 0.0 or steady_state or sparse or check_product_scale > 0.0
-        )
-        if method != "ode" and ode_only_options:
+        ):
             raise ValueError(
                 "max_step, steady-state, sparse, and check_product_scale are "
                 "supported only for method='ode'"
             )
-        if method == "ode" and (max_sim_steps or output_step_interval):
+        if not support["max_sim_steps"] and max_sim_steps:
             raise ValueError(
-                "max_sim_steps and output_step_interval are supported only "
-                "for method='ssa'"
+                "max_sim_steps is supported only for method='ssa' or method='psa'"
             )
-        if method not in {"ode", "ssa", "nf"} and (
-            stop_if or max_sim_steps or output_step_interval
-        ):
+        if not support["output_step_interval"] and output_step_interval:
+            raise ValueError("output_step_interval is supported only for method='ssa'")
+        if not support["stop_if"] and stop_if:
             raise ValueError(
-                "stop_if, max_sim_steps, and output_step_interval are supported "
-                "only for method='ode' or method='ssa'"
+                "stop_if is supported only for method='ode' or method='ssa'"
             )
-        if method == "nf" and (stop_if or max_sim_steps or output_step_interval):
+        if not support["sample_times"] and normalized_sample_times:
             raise ValueError(
-                "stop_if, max_sim_steps, and output_step_interval are supported "
-                "only for method='ode' or method='ssa'"
+                "sample_times are supported only for method='ode', "
+                "method='ssa' or method='nf'"
             )
 
         if method == "nf":
@@ -412,10 +445,21 @@ class BioNetGenModel:
             # NFsim path remains independent; annotate backend for diagnostics.
             if isinstance(raw, dict) and "backend" not in raw:
                 raw["backend"] = "nfsim"
+            if isinstance(raw, dict):
+                raw.setdefault(
+                    "backend_route", "nfsim:network-free-outside-finite-boundary"
+                )
+                raw.setdefault(
+                    "backend_reason",
+                    "network-free execution uses NFsim; the BNGsim finite "
+                    "backend does not apply (ADR 0003)",
+                )
         else:
             # Finite-network backend dispatch (ADR 0003).
-            # Default is "auto" -> native during migration; explicit "bngsim"
-            # opts into the canonical BNGsim backend where faithfully lowerable.
+            # The engine owns the routing decision: "auto" keeps the native
+            # backend during the migration and records why, and an explicit
+            # "bngsim" opts into the canonical BNGsim backend where it can be
+            # faithfully lowered.
             # Env var BIONETGEN_FINITE_BACKEND provides CI/developer switch.
             effective_backend = backend
             if effective_backend is None:
@@ -437,54 +481,17 @@ class BioNetGenModel:
             if self._network is None:
                 self.generate_network()
 
-            # For explicit bngsim we fail closed; for auto we keep native as
-            # default (Phase A-C). Phase D will flip auto to prefer bngsim
-            # when check_bngsim_lowering reports supported.
-            use_bngsim = False
-            bngsim_blockers = None
-            if eb == "bngsim":
-                use_bngsim = True
-            elif eb == "auto":
-                # Conservative: stay on native. Developers can set
-                # BIONETGEN_FINITE_BACKEND=bngsim to exercise the BNGsim path
-                # for supported models in CI.
-                use_bngsim = False
-
-            if use_bngsim:
-                # PLA/PSA not yet claimed for BNGsim — fail closed before any
-                # lowering check so the message is precise even when the build
-                # is unavailable.
-                if method in ("pla", "psa"):
-                    raise RuntimeError(
-                        f"BNGsim backend does not yet support method='{method}'; native fallback required"
-                    )
-                # Solver availability and semantic lowerability are separate
-                # capabilities; check each boundary before dispatch.
-                if _cpp is None or not hasattr(_cpp, "check_bngsim_lowering"):
-                    raise RuntimeError("BNGsim backend unavailable in this build")
-                if not hasattr(_cpp, "bngsim_available") or not _cpp.bngsim_available():
-                    raise RuntimeError(
-                        "BNGsim backend unavailable: build without BUILD_BNGSIM_ADAPTER"
-                    )
-                try:
-                    chk = _cpp.check_bngsim_lowering(self._model, self._network)
-                    if not chk.get("supported", False):
-                        blockers = chk.get("blockers", [])
-                        bngsim_blockers = (
-                            "; ".join(blockers) if blockers else "unsupported"
-                        )
-                        # Distinguish build vs semantic for the error prefix.
-                        if any("unavailable" in b.lower() for b in blockers):
-                            raise RuntimeError(
-                                f"BNGsim backend unavailable: {bngsim_blockers}"
-                            )
-                        raise RuntimeError(
-                            f"BioNetGen finite-network backend cannot represent model for BNGsim: {bngsim_blockers}"
-                        )
-                except RuntimeError:
-                    raise
-                except Exception as exc:
-                    raise RuntimeError(f"BNGsim lowering check failed: {exc}") from exc
+            # The routing decision is taken by the engine, not re-implemented
+            # here, and it is recorded: a native route always carries a named
+            # route and a reason (ADR 0003).
+            decision = self._finite_backend_decision(eb, method)
+            use_bngsim = decision["backend"] == "bngsim"
+            if eb == "bngsim" and not use_bngsim:
+                # An explicit BNGsim request is never downgraded silently.
+                raise RuntimeError(
+                    f"BNGsim backend refused ({decision['route']}): "
+                    f"{decision['reason']}"
+                )
 
             if method == "ode":
                 if use_bngsim:
@@ -563,12 +570,8 @@ class BioNetGenModel:
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "native"
             elif method == "pla":
-                # PLA/PSA not yet routed through BNGsim in this phase; keep native
-                # but surface a precise message if backend=bngsim was requested.
-                if use_bngsim:
-                    raise RuntimeError(
-                        "BNGsim backend does not yet support method='pla'; native fallback required"
-                    )
+                # PLA/PSA are not claimed for BNGsim; an explicit request was
+                # refused by the routing decision above.
                 raw = _cpp.simulate_pla(
                     self._model,
                     self._network,
@@ -576,15 +579,13 @@ class BioNetGenModel:
                     n_steps=n_steps,
                     config_str=pla_config,
                     t_start=t_start,
+                    seed=seed,
                 )
                 if isinstance(raw, dict) and "backend" not in raw:
                     raw["backend"] = "native"
             elif method == "psa":
-                if use_bngsim:
-                    # PSA not claimed; fail closed rather than silently running native
-                    raise RuntimeError(
-                        "BNGsim backend does not yet support method='psa'; native fallback required"
-                    )
+                # PSA is not claimed for BNGsim; an explicit request was
+                # refused by the routing decision above.
                 raw = _cpp.simulate_psa(
                     self._model,
                     self._network,
@@ -592,11 +593,19 @@ class BioNetGenModel:
                     n_steps=n_steps,
                     poplevel=psa_poplevel,
                     t_start=t_start,
+                    seed=seed,
+                    max_sim_steps=max_sim_steps,
                 )
                 if isinstance(raw, dict) and "backend" not in raw:
                     raw["backend"] = "native"
             else:
                 raise AssertionError("validated method dispatch is incomplete")
+
+            # Record the routing decision with the result so a native route is
+            # never implicit (ADR 0003).
+            if isinstance(raw, dict):
+                raw.setdefault("backend_route", decision["route"])
+                raw.setdefault("backend_reason", decision["reason"])
 
         return SimResult(raw)
 
@@ -604,7 +613,15 @@ class BioNetGenModel:
         """Execute all actions defined in the model's action block."""
         self._require_export_supported("Action execution")
         source = self._source_path or "."
-        _cpp.execute(self._model, source, verbose=verbose)
+        try:
+            _cpp.execute(self._model, source, verbose=verbose)
+        finally:
+            # Actions can change the model's topology, seed species,
+            # compartments and parameters (include_model, readFile,
+            # setVolume, setParameter). A generated network compiled before
+            # the action would then describe a model that no longer exists,
+            # so the cached network is discarded even when the action failed.
+            self._network = None
 
     def write_xml(self, path: str) -> None:
         self._require_export_supported("BNG-XML export")

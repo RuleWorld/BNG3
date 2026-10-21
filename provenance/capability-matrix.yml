@@ -244,11 +244,12 @@ validation_capabilities:
   tests:
   - tests/cpp/test_pk_rate_laws.cpp
   - tests/cpp/test_signaling_rate_laws.cpp
+  - tests/validation/rate_law_contract.py
   issues:
   - 143
   reference: bionetgen
   support: partial
-  notes: Existing implementation/test mapping; independent qualification remains incomplete.
+  notes: The declared rate-law slice (elementary parameter rates, the Saturation/MichaelisMenten/Hill special rates, table functions, local molecule scopes, elementary mass-action multiplicity and observable-dependent rates) is compared against closed-form laws for the compiled coefficient, the right-hand side and the SSA propensity; compartment-scoped, filtered, modified, energy-bearing and population-mapped models stay outside the slice and are reported as unsupported with their reason.
 - id: compiler.protocol
   sources:
   - cpp/compile/Document*
@@ -309,6 +310,7 @@ validation_capabilities:
   tests:
   - tests/cpp/test_network_generator.cpp
   - tests/validation/test_parity_net.py
+  - tests/validation/netrule_execution.py
   issues:
   - 139
   reference: bionetgen
@@ -502,13 +504,14 @@ validation_capabilities:
   - cpp/nfnext/*
   tests:
   - tests/architecture_contracts/nfnext
+  - tests/validation/nfnext_slices.py
   issues:
   - 147
   - 148
   - 149
   reference: nfsim
   support: partial
-  notes: Existing implementation/test mapping; independent qualification remains incomplete.
+  notes: The approved NFnext slice is unary site-state rules with a static elementary rate, isolated integer seeds and unary Molecules observables; its representation, executor and the independent pure-death law are qualified, and the dynamic-rate, filter, modifier, compartment, population-map and energy families are qualified as named refusals rather than as support.
 - id: atomizer.core-lowering
   sources:
   - python/bionetgen/atomizer/modern/core.py
@@ -956,6 +959,7 @@ validation_capabilities:
   tests:
   - tests/python/test_jax_ode.py
   - tests/python/test_jax_ssa.py
+  - tests/validation/jax_backend_measurement.py
   issues:
   - 174
   reference: jax
@@ -1079,6 +1083,19 @@ validation_capabilities:
   reference: bionetgen-and-molecular-unit-conservation
   support: partial
   notes: A named identical-reactant dimer probe checks k/2, distinct Molecules/Species weights, full cdat agreement and conservation; does not qualify arbitrary automorphisms.
+
+- id: platform.jax-backend
+  sources:
+  - python/bionetgen/jax_ode.py
+  - python/bionetgen/jax_ssa.py
+  tests:
+  - tests/python/test_jax_ode.py
+  - tests/python/test_jax_ssa.py
+  - tests/validation/jax_backend_measurement.py
+  issues: [174]
+  reference: independent-closed-form-law-of-the-generated-corpus
+  support: partial
+  notes: The JAX ODE backend is executed against the closed-form law of a fixed generated mass-action corpus, with a controlled A/A repeatability control and an explicit no-win comparison against the native engine; the JAX SSA backend refuses explicitly, and the measured numbers are specific to one host and revision.
 
 - id: integration.cross-component
   sources:

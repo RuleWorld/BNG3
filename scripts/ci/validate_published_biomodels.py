@@ -1025,13 +1025,13 @@ def _validate_mode(
     try:
         result["source_xml"] = _validate_xml(sbml, "source SBML")
     except RuntimeError as exc:
-        # A small number of archived BioModels files contain malformed or
-        # stale package XML.  Preserve the exact libSBML diagnosis, but do
-        # not call a source-document defect an Atomizer or writer failure.
+        # A source document that is not valid SBML is an invalid source, not
+        # an unsupported feature and not a product failure.  The categories
+        # stay separate so a retained result says which of the three it is.
         reason = f"source SBML is not libSBML-valid: {exc}"
         result["source_xml"] = {"passed": False, "error": str(exc)}
-        result["status"] = "unsupported"
-        result["unsupported_reason"] = reason
+        result["status"] = "invalid_source"
+        result["invalid_source_reason"] = reason
         result["simulation_comparison"] = {
             "passed": False,
             "skipped": True,
@@ -1628,6 +1628,16 @@ def main() -> int:
             ]
             if "failed" in mode_statuses:
                 record["status"] = "failed"
+            elif "invalid_source" in mode_statuses:
+                # An invalid source document is its own category: it is not a
+                # parity failure and not an unsupported feature.
+                record["status"] = "invalid_source"
+                record["invalid_source_reason"] = "; ".join(
+                    mode.get("invalid_source_reason", "")
+                    for mode in record["modes"]
+                    if mode.get("status") == "invalid_source"
+                    and mode.get("invalid_source_reason")
+                )
             elif "unsupported" in mode_statuses:
                 record["status"] = "unsupported"
                 record["unsupported_reason"] = "; ".join(
@@ -1697,9 +1707,22 @@ def main() -> int:
     )
     failed = sum(record.get("status") == "failed" for record in records)
     timeouts = sum(record.get("status") == "timeout" for record in records)
+    invalid_sources = sum(
+        record.get("status") == "invalid_source" for record in records
+    )
     report = {
-        "schema_version": 4,
+        "schema_version": 5,
         "manifest": str(args.manifest.resolve()),
+        "corpus": {
+            "manifest": str(args.manifest.resolve()),
+            "manifest_sha256": _sha256(args.manifest),
+            "snapshot_date": manifest.get("snapshot_date"),
+            "curation_query": manifest.get("curation_query"),
+            "sbml_query": manifest.get("sbml_query"),
+            "expected_records": expected_total,
+            "expected_sbml_records": expected_sbml,
+            "expected_non_sbml_records": expected_non_sbml,
+        },
         "cache_dir": str(args.cache_dir.resolve()),
         "runtime_provenance": runtime_info,
         "writer_sbml_version": "L3V2",
@@ -1736,6 +1759,7 @@ def main() -> int:
             "unsupported_records": unsupported,
             "failed_records": failed,
             "timeout_records": timeouts,
+            "invalid_source_records": invalid_sources,
         },
         "core_passed": (
             not partial

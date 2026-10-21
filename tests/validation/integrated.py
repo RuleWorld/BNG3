@@ -91,6 +91,12 @@ def annotate_acceptance_evidence(rows):
             }
         )
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
+    consumers.update(integrated_extensions.check_ids("api-surface"))
+    consumers.update(integrated_extensions.check_ids("stochastic-parity"))
+    consumers.update(integrated_extensions.check_ids("graph-identity-contract"))
+    consumers.update(integrated_extensions.check_ids("sbml-support-boundary"))
+    consumers.update(integrated_extensions.check_ids("atomizer-symbol-resolution"))
+    consumers.update(integrated_extensions.check_ids("bngsim-boundary"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -110,6 +116,32 @@ def expected_contract_ids(
     include_graph_identity=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_export_format_tier=True,
+    include_netrule_execution=True,
+    include_bngsim_boundary=True,
+    include_jax_backend_measurement=True,
+    include_rate_law_contract=True,
+    include_nfnext_slices=True,
+    include_api_surface=True,
+    include_stochastic_parity=True,
+    include_graph_identity_contract=True,
+    include_sbml_support_boundary=True,
+    include_atomizer_symbol_resolution=True,
+    include_atomizer_reconstruction=True,
+    include_energy_qualification=True,
+    include_workload_profile=True,
+    include_semantic_identity=True,
+    include_graph_differential=True,
+    include_capability_inventory=True,
+    include_real_model_fixtures=True,
+    include_corpus_selection=True,
+    include_biomodels_hold=True,
+    include_nfsim_fixtures=True,
+    include_nfnext_boundary=True,
+    include_engine_routes=True,
+    include_boundary_extraction=True,
+    include_release_candidate=True,
+    include_event_semantics=True,
     full=False,
 ):
     return [
@@ -156,6 +188,32 @@ def expected_contract_ids(
         include_graph_identity=include_graph_identity,
         include_bngir_adversarial=include_bngir_adversarial,
         include_quantity_laws=include_quantity_laws,
+        include_export_format_tier=include_export_format_tier,
+        include_netrule_execution=include_netrule_execution,
+        include_bngsim_boundary=include_bngsim_boundary,
+        include_jax_backend_measurement=include_jax_backend_measurement,
+        include_rate_law_contract=include_rate_law_contract,
+        include_nfnext_slices=include_nfnext_slices,
+        include_api_surface=include_api_surface,
+        include_stochastic_parity=include_stochastic_parity,
+        include_graph_identity_contract=include_graph_identity_contract,
+        include_sbml_support_boundary=include_sbml_support_boundary,
+        include_atomizer_symbol_resolution=include_atomizer_symbol_resolution,
+        include_atomizer_reconstruction=include_atomizer_reconstruction,
+        include_energy_qualification=include_energy_qualification,
+        include_workload_profile=include_workload_profile,
+        include_semantic_identity=include_semantic_identity,
+        include_graph_differential=include_graph_differential,
+        include_capability_inventory=include_capability_inventory,
+        include_real_model_fixtures=include_real_model_fixtures,
+        include_corpus_selection=include_corpus_selection,
+        include_biomodels_hold=include_biomodels_hold,
+        include_nfsim_fixtures=include_nfsim_fixtures,
+        include_nfnext_boundary=include_nfnext_boundary,
+        include_engine_routes=include_engine_routes,
+        include_boundary_extraction=include_boundary_extraction,
+        include_release_candidate=include_release_candidate,
+        include_event_semantics=include_event_semantics,
         full=full,
     )
 
@@ -919,6 +977,71 @@ def _preflight(args):
     return references
 
 
+# The focused-campaign flag of every qualification: the qualification's name
+# and the argument that selects it.  A focused flag selects exactly its own
+# qualification and excludes the others, and the selection is derived from
+# this table, so a new qualification cannot silently exclude itself.
+FOCUS_FLAGS = {
+    "boundaries": "boundaries_only",
+    "graph_identity": "graph_identity_only",
+    "bngir_adversarial": "bngir_adversarial_only",
+    "quantity_laws": "quantity_laws_only",
+    "export_format_tier": "export_format_tier_only",
+    "netrule_execution": "netrule_execution_only",
+    "bngsim_boundary": "bngsim_boundary_only",
+    "jax_backend_measurement": "jax_backend_measurement_only",
+    "rate_law_contract": "rate_law_contract_only",
+    "nfnext_slices": "nfnext_slices_only",
+    "api_surface": "api_surface_only",
+    "stochastic_parity": "stochastic_parity_only",
+    "graph_identity_contract": "graph_identity_contract_only",
+    "sbml_support_boundary": "sbml_support_boundary_only",
+    "atomizer_symbol_resolution": "atomizer_symbol_resolution_only",
+    "atomizer_reconstruction": "atomizer_reconstruction_only",
+    "energy_qualification": "energy_qualification_only",
+    "workload_profile": "workload_profile_only",
+    "semantic_identity": "semantic_identity_only",
+    "graph_differential": "graph_differential_only",
+    "capability_inventory": "capability_inventory_only",
+    "real_model_fixtures": "real_model_fixtures_only",
+    "corpus_selection": "corpus_selection_only",
+    "biomodels_hold": "biomodels_hold_only",
+    "nfsim_fixtures": "nfsim_fixtures_only",
+    "nfnext_boundary": "nfnext_boundary_only",
+    "engine_routes": "engine_routes_only",
+    "boundary_extraction": "boundary_extraction_only",
+    "release_candidate": "release_candidate_only",
+    "event_semantics": "event_semantics_only",
+}
+
+
+def select_qualifications(focused_flags):
+    """Return the qualification selection for the focused campaign flags.
+
+    Every focused campaign flag selects exactly its own qualification and
+    excludes the others. The selection is derived from the flag table so a
+    new qualification cannot silently exclude itself.
+    """
+    if not isinstance(focused_flags, dict) or not focused_flags:
+        raise ValueError("the focused flag table must be a non-empty mapping")
+
+    def _other_focused(name):
+        return any(value for key, value in focused_flags.items() if key != name)
+
+    return {f"include_{name}": not _other_focused(name) for name in FOCUS_FLAGS}
+
+
+def focus_selection(args):
+    """Return the family selection of one campaign run.
+
+    Without a focused flag every qualification runs.  With one, that
+    qualification runs and the others do not.
+    """
+    return select_qualifications(
+        {name: bool(getattr(args, dest, False)) for name, dest in FOCUS_FLAGS.items()}
+    )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in (
@@ -939,6 +1062,32 @@ def main(argv=None):
     parser.add_argument("--graph-identity-only", action="store_true")
     parser.add_argument("--bngir-adversarial-only", action="store_true")
     parser.add_argument("--quantity-laws-only", action="store_true")
+    parser.add_argument("--export-format-tier-only", action="store_true")
+    parser.add_argument("--netrule-execution-only", action="store_true")
+    parser.add_argument("--bngsim-boundary-only", action="store_true")
+    parser.add_argument("--jax-backend-measurement-only", action="store_true")
+    parser.add_argument("--rate-law-contract-only", action="store_true")
+    parser.add_argument("--api-surface-only", action="store_true")
+    parser.add_argument("--stochastic-parity-only", action="store_true")
+    parser.add_argument("--graph-identity-contract-only", action="store_true")
+    parser.add_argument("--sbml-support-boundary-only", action="store_true")
+    parser.add_argument("--atomizer-symbol-resolution-only", action="store_true")
+    parser.add_argument("--atomizer-reconstruction-only", action="store_true")
+    parser.add_argument("--energy-qualification-only", action="store_true")
+    parser.add_argument("--workload-profile-only", action="store_true")
+    parser.add_argument("--semantic-identity-only", action="store_true")
+    parser.add_argument("--graph-differential-only", action="store_true")
+    parser.add_argument("--capability-inventory-only", action="store_true")
+    parser.add_argument("--real-model-fixtures-only", action="store_true")
+    parser.add_argument("--corpus-selection-only", action="store_true")
+    parser.add_argument("--biomodels-hold-only", action="store_true")
+    parser.add_argument("--nfsim-fixtures-only", action="store_true")
+    parser.add_argument("--nfnext-boundary-only", action="store_true")
+    parser.add_argument("--engine-routes-only", action="store_true")
+    parser.add_argument("--boundary-extraction-only", action="store_true")
+    parser.add_argument("--release-candidate-only", action="store_true")
+    parser.add_argument("--event-semantics-only", action="store_true")
+    parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -948,6 +1097,12 @@ def main(argv=None):
                 args.graph_identity_only,
                 args.bngir_adversarial_only,
                 args.quantity_laws_only,
+                args.export_format_tier_only,
+                args.netrule_execution_only,
+                args.bngsim_boundary_only,
+                args.jax_backend_measurement_only,
+                args.rate_law_contract_only,
+                args.nfnext_slices_only,
             )
         )
         > 1
@@ -973,6 +1128,12 @@ def main(argv=None):
         or args.graph_identity_only
         or args.bngir_adversarial_only
         or args.quantity_laws_only
+        or args.export_format_tier_only
+        or args.netrule_execution_only
+        or args.bngsim_boundary_only
+        or args.jax_backend_measurement_only
+        or args.rate_law_contract_only
+        or args.nfnext_slices_only
     ):
         selected = []
     for name in (
@@ -999,24 +1160,10 @@ def main(argv=None):
     )
     env.pop("PYTHONPATH", None)
     env["BIONETGEN_USE_PERL"] = "0"
-    qualification_selection = dict(
-        include_boundaries=not (
-            args.graph_identity_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-        ),
-        include_graph_identity=not (
-            args.boundaries_only
-            or args.bngir_adversarial_only
-            or args.quantity_laws_only
-        ),
-        include_bngir_adversarial=not (
-            args.boundaries_only or args.graph_identity_only or args.quantity_laws_only
-        ),
-    )
-    qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only
-    )
+    # Every focused campaign flag selects exactly its own qualification and
+    # excludes the others. The selection is derived from the flag table so a
+    # new qualification cannot silently exclude itself.
+    qualification_selection = focus_selection(args)
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
     )
@@ -1034,6 +1181,90 @@ def main(argv=None):
             )
         if qualification_selection["include_quantity_laws"]:
             integrated_extensions.invoke("quantity-laws", args, rows, env, run_stage)
+        if qualification_selection["include_export_format_tier"]:
+            integrated_extensions.invoke(
+                "export-format-tier", args, rows, env, run_stage
+            )
+        if qualification_selection["include_netrule_execution"]:
+            integrated_extensions.invoke(
+                "netrule-execution", args, rows, env, run_stage
+            )
+        if qualification_selection["include_bngsim_boundary"]:
+            integrated_extensions.invoke("bngsim-boundary", args, rows, env, run_stage)
+        if qualification_selection["include_jax_backend_measurement"]:
+            integrated_extensions.invoke(
+                "jax-backend-measurement", args, rows, env, run_stage
+            )
+        if qualification_selection["include_api_surface"]:
+            integrated_extensions.invoke("api-surface", args, rows, env, run_stage)
+        if qualification_selection["include_stochastic_parity"]:
+            integrated_extensions.invoke(
+                "stochastic-parity", args, rows, env, run_stage
+            )
+        if qualification_selection["include_graph_identity_contract"]:
+            integrated_extensions.invoke(
+                "graph-identity-contract", args, rows, env, run_stage
+            )
+        if qualification_selection["include_sbml_support_boundary"]:
+            integrated_extensions.invoke(
+                "sbml-support-boundary", args, rows, env, run_stage
+            )
+        if qualification_selection["include_atomizer_symbol_resolution"]:
+            integrated_extensions.invoke(
+                "atomizer-symbol-resolution", args, rows, env, run_stage
+            )
+        if qualification_selection["include_energy_qualification"]:
+            integrated_extensions.invoke(
+                "energy-qualification", args, rows, env, run_stage
+            )
+        if qualification_selection["include_semantic_identity"]:
+            integrated_extensions.invoke(
+                "semantic-identity", args, rows, env, run_stage
+            )
+        if qualification_selection["include_capability_inventory"]:
+            integrated_extensions.invoke(
+                "capability-inventory", args, rows, env, run_stage
+            )
+        if qualification_selection["include_real_model_fixtures"]:
+            integrated_extensions.invoke(
+                "real-model-fixtures", args, rows, env, run_stage
+            )
+        if qualification_selection["include_corpus_selection"]:
+            integrated_extensions.invoke("corpus-selection", args, rows, env, run_stage)
+        if qualification_selection["include_nfsim_fixtures"]:
+            integrated_extensions.invoke("nfsim-fixtures", args, rows, env, run_stage)
+        if qualification_selection["include_nfnext_boundary"]:
+            integrated_extensions.invoke("nfnext-boundary", args, rows, env, run_stage)
+        if qualification_selection["include_boundary_extraction"]:
+            integrated_extensions.invoke(
+                "boundary-extraction", args, rows, env, run_stage
+            )
+        if qualification_selection["include_event_semantics"]:
+            integrated_extensions.invoke("event-semantics", args, rows, env, run_stage)
+        if qualification_selection["include_release_candidate"]:
+            integrated_extensions.invoke(
+                "release-candidate", args, rows, env, run_stage
+            )
+        if qualification_selection["include_engine_routes"]:
+            integrated_extensions.invoke("engine-routes", args, rows, env, run_stage)
+        if qualification_selection["include_biomodels_hold"]:
+            integrated_extensions.invoke("biomodels-hold", args, rows, env, run_stage)
+        if qualification_selection["include_graph_differential"]:
+            integrated_extensions.invoke(
+                "graph-differential", args, rows, env, run_stage
+            )
+        if qualification_selection["include_workload_profile"]:
+            integrated_extensions.invoke("workload-profile", args, rows, env, run_stage)
+        if qualification_selection["include_atomizer_reconstruction"]:
+            integrated_extensions.invoke(
+                "atomizer-reconstruction", args, rows, env, run_stage
+            )
+        if qualification_selection["include_rate_law_contract"]:
+            integrated_extensions.invoke(
+                "rate-law-contract", args, rows, env, run_stage
+            )
+        if qualification_selection["include_nfnext_slices"]:
+            integrated_extensions.invoke("nfnext-slices", args, rows, env, run_stage)
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1071,15 +1302,54 @@ def main(argv=None):
     ):
         replay_base += ["--" + name.replace("_", "-"), str(getattr(args, name))]
     replay_base += ["--ensemble-runs", str(args.ensemble_runs)]
+    focused_qualifications = {
+        "quantity-laws": ["--quantity-laws-only"],
+        "api-surface": ["--api-surface-only"],
+        "stochastic-parity": ["--stochastic-parity-only"],
+        "graph-identity-contract": ["--graph-identity-contract-only"],
+        "sbml-support-boundary": ["--sbml-support-boundary-only"],
+        "atomizer-symbol-resolution": ["--atomizer-symbol-resolution-only"],
+        "atomizer-reconstruction": ["--atomizer-reconstruction-only"],
+        "energy-qualification": ["--energy-qualification-only"],
+        "workload-profile": ["--workload-profile-only"],
+        "semantic-identity": ["--semantic-identity-only"],
+        "graph-differential": ["--graph-differential-only"],
+        "capability-inventory": ["--capability-inventory-only"],
+        "real-model-fixtures": ["--real-model-fixtures-only"],
+        "corpus-selection": ["--corpus-selection-only"],
+        "biomodels-hold": ["--biomodels-hold-only"],
+        "nfsim-fixtures": ["--nfsim-fixtures-only"],
+        "nfnext-boundary": ["--nfnext-boundary-only"],
+        "engine-routes": ["--engine-routes-only"],
+        "boundary-extraction": ["--boundary-extraction-only"],
+        "release-candidate": ["--release-candidate-only"],
+        "event-semantics": ["--event-semantics-only"],
+        "boundaries": ["--boundaries-only"],
+        "bngir-adversarial": ["--bngir-adversarial-only"],
+        "graph-identity": ["--graph-identity-only"],
+        "export-format-tier": ["--export-format-tier-only"],
+        "netrule-execution": ["--netrule-execution-only"],
+        "jax-backend-measurement": ["--jax-backend-measurement-only"],
+        "rate-law-contract": ["--rate-law-contract-only"],
+        "nfnext-slices": ["--nfnext-slices-only"],
+    }
     for row in rows:
         case_id = row.get("integration_case")
+        selection = focused_qualifications.get(row.get("qualification"))
+        if selection is None:
+            selection = ["--case", case_id] if case_id else []
         row["command"] = (
             replay_base
             + (["--full"] if args.full else [])
+            + selection
             + (
                 ["--quantity-laws-only"]
                 if row.get("qualification") == "quantity-laws"
-                else []
+                else (
+                    ["--bngsim-boundary-only"]
+                    if row.get("qualification") == "bngsim-boundary"
+                    else []
+                )
             )
             + (
                 ["--boundaries-only"]
@@ -1127,18 +1397,74 @@ def main(argv=None):
             ]
         row.setdefault("question", "generated-cross-component-handoff")
         if row["stage"] in integrated_extensions.OPERATIONS:
-            row["source_locations"] = [
-                {
-                    "boundaries": "tests/validation/integrated_boundaries.py",
-                    "protocol": "tests/validation/integrated_protocol.py",
-                    "nf-marginals": "tests/validation/integrated_marginals.py",
-                    "quantity-laws": "tests/validation/integrated_marginals.py",
-                    "bngir-adversarial": "tests/validation/bngir_adversarial.py",
-                    "graph-identity": "tests/validation/graph_identity.py",
-                }[row["stage"]]
-            ]
+            source_locations = {
+                "boundaries": "tests/validation/integrated_boundaries.py",
+                "protocol": "tests/validation/integrated_protocol.py",
+                "nf-marginals": "tests/validation/integrated_marginals.py",
+                "quantity-laws": "tests/validation/integrated_marginals.py",
+                "bngir-adversarial": [
+                    "tests/validation/bngir_adversarial.py",
+                    "tests/validation/bngir_format_contracts.py",
+                    "tests/validation/bngir_reconstruction_contracts.py",
+                ],
+                "graph-identity": "tests/validation/graph_identity.py",
+                "export-format-tier": "tests/validation/export_format_tier.py",
+                "api-surface": "tests/validation/api_surface.py",
+                "stochastic-parity": "tests/validation/stochastic_parity.py",
+                "graph-identity-contract": (
+                    "tests/validation/graph_identity_contract.py"
+                ),
+                "sbml-support-boundary": ("tests/validation/sbml_support_boundary.py"),
+                "atomizer-symbol-resolution": (
+                    "tests/validation/atomizer_symbol_resolution.py"
+                ),
+                "atomizer-reconstruction": (
+                    "tests/validation/atomizer_reconstruction.py"
+                ),
+                "energy-qualification": "tests/validation/energy_qualification.py",
+                "workload-profile": "tests/validation/workload_profile.py",
+                "semantic-identity": "tests/validation/semantic_identity.py",
+                "graph-differential": "tests/validation/graph_differential.py",
+                "capability-inventory": "tests/validation/capability_inventory.py",
+                "real-model-fixtures": "tests/validation/real_model_fixtures.py",
+                "corpus-selection": "tests/validation/corpus_selection.py",
+                "biomodels-hold": "tests/validation/biomodels_hold.py",
+                "nfsim-fixtures": "tests/validation/integrated_nfsim_fixtures.py",
+                "nfnext-boundary": "tests/validation/integrated_nfnext_boundary.py",
+                "engine-routes": "tests/validation/integrated_engine_routes.py",
+                "boundary-extraction": "tests/validation/boundary_extraction.py",
+                "release-candidate": "tests/validation/release_candidate.py",
+                "event-semantics": "tests/validation/event_semantics.py",
+                "netrule-execution": [
+                    "tests/validation/netrule_execution.py",
+                    "cpp/engine/NetworkRulePlan.cpp",
+                    "cpp/engine/LegacyNetworkRuleKernel.cpp",
+                ],
+                "bngsim-boundary": [
+                    "tests/validation/bngsim_boundary.py",
+                    "cpp/engine/FiniteBackend.cpp",
+                ],
+                "jax-backend-measurement": [
+                    "tests/validation/jax_backend_measurement.py",
+                    "python/bionetgen/jax_ode.py",
+                    "python/bionetgen/jax_ssa.py",
+                ],
+            }[row["stage"]]
+            row["source_locations"] = (
+                source_locations
+                if isinstance(source_locations, list)
+                else [source_locations]
+            )
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
+            if row["stage"] == "netrule-execution":
+                row["question"] = (
+                    "compile-owned-network-rule-contract-vs-legacy-path-and-oracle"
+                )
+            if row["stage"] == "jax-backend-measurement":
+                row["question"] = (
+                    "jax-backend-stage-profile-vs-independent-closed-form-law"
+                )
         if row["stage"] == "rate-trace":
             row["source_locations"] = [
                 "tests/validation/integrated_traces.py",
@@ -1158,6 +1484,54 @@ def main(argv=None):
                 issues = [143, 146, 151, 167]
             elif stage == "graph-identity":
                 issues = [142]
+            elif stage == "export-format-tier":
+                issues = [163]
+            elif stage == "netrule-execution":
+                issues = [139]
+            elif stage == "bngsim-boundary":
+                issues = [144]
+            elif stage == "api-surface":
+                issues = [171]
+            elif stage == "stochastic-parity":
+                issues = [167]
+            elif stage == "graph-identity-contract":
+                issues = [142]
+            elif stage == "sbml-support-boundary":
+                issues = [160]
+            elif stage == "atomizer-symbol-resolution":
+                issues = [164]
+            elif stage == "atomizer-reconstruction":
+                issues = [161]
+            elif stage == "energy-qualification":
+                issues = [177]
+            elif stage == "workload-profile":
+                issues = [176]
+            elif stage == "semantic-identity":
+                issues = [166]
+            elif stage == "graph-differential":
+                issues = [168]
+            elif stage == "capability-inventory":
+                issues = [137]
+            elif stage == "real-model-fixtures":
+                issues = [152]
+            elif stage == "corpus-selection":
+                issues = [181]
+            elif stage == "biomodels-hold":
+                issues = [162]
+            elif stage == "nfsim-fixtures":
+                issues = [146]
+            elif stage == "nfnext-boundary":
+                issues = [149]
+            elif stage == "engine-routes":
+                issues = [148]
+            elif stage == "boundary-extraction":
+                issues = [164]
+            elif stage == "release-candidate":
+                issues = [184]
+            elif stage == "event-semantics":
+                issues = [157, 158]
+            elif stage == "jax-backend-measurement":
+                issues = [174]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
@@ -1179,6 +1553,10 @@ def main(argv=None):
                 issues = [138, 140, 143, 163]
             row["related_issues"] = issues
         row["capabilities"] = ["integration.cross-component"]
+        if row["stage"] == "netrule-execution":
+            # The compile-owned network-rule contract qualification is the
+            # independent evidence for the network expansion capability.
+            row["capabilities"].append("network.expansion")
     import yaml
 
     matrix = yaml.safe_load((ROOT / "provenance/capability-matrix.yml").read_text())
@@ -1233,6 +1611,9 @@ def main(argv=None):
                 ROOT / "tests/validation/integrated_boundaries.py",
                 ROOT / "tests/validation/integrated_marginals.py",
                 ROOT / "tests/validation/integrated_cases.py",
+                ROOT / "tests/validation/export_format_tier.py",
+                ROOT / "tests/validation/netrule_execution.py",
+                ROOT / "tests/validation/bngsim_boundary.py",
                 ROOT / "tests/validation/compare.py",
                 ROOT / "provenance/upstreams.lock.yml",
                 ROOT / "provenance/capability-matrix.yml",

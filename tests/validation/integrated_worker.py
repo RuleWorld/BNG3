@@ -715,6 +715,48 @@ def write_legacy_result(result):
     )
 
 
+# The qualification operations the worker can dispatch.  The worker runs in
+# isolated mode, so it cannot import the harness registry to derive this
+# list; the contract test in test_integrated_extensions.py asserts that the
+# two agree, so a family the registry knows cannot be missing here.  A
+# qualification the worker cannot dispatch reports itself as not tested,
+# which reads as an executed family that did nothing.
+QUALIFICATION_OPERATIONS = (
+    "boundaries",
+    "protocol",
+    "nf-marginals",
+    "graph-identity",
+    "bngir-adversarial",
+    "quantity-laws",
+    "export-format-tier",
+    "netrule-execution",
+    "bngsim-boundary",
+    "jax-backend-measurement",
+    "rate-law-contract",
+    "nfnext-slices",
+    "api-surface",
+    "stochastic-parity",
+    "graph-identity-contract",
+    "sbml-support-boundary",
+    "atomizer-symbol-resolution",
+    "atomizer-reconstruction",
+    "energy-qualification",
+    "workload-profile",
+    "semantic-identity",
+    "graph-differential",
+    "capability-inventory",
+    "real-model-fixtures",
+    "corpus-selection",
+    "biomodels-hold",
+    "nfsim-fixtures",
+    "nfnext-boundary",
+    "engine-routes",
+    "boundary-extraction",
+    "release-candidate",
+    "event-semantics",
+)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -731,12 +773,7 @@ def main():
             "bngl-reload",
             "sbml-reload",
             "reuse",
-            "boundaries",
-            "protocol",
-            "nf-marginals",
-            "graph-identity",
-            "bngir-adversarial",
-            "quantity-laws",
+            *QUALIFICATION_OPERATIONS,
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -750,6 +787,7 @@ def main():
     parser.add_argument("--ensemble-runs", type=int, default=32)
     parser.add_argument("--ensemble-cases", type=int, default=48)
     parser.add_argument("--xml-out", type=Path)
+    parser.add_argument("--bng-cpp", type=Path)
     args = parser.parse_args()
     consumer_operations = (
         "bngir-v01",
@@ -822,14 +860,7 @@ def main():
     Path("identity.json").write_text(json.dumps(identity, indent=2) + "\n")
     import bionetgen
 
-    if args.operation in (
-        "boundaries",
-        "protocol",
-        "nf-marginals",
-        "graph-identity",
-        "bngir-adversarial",
-        "quantity-laws",
-    ):
+    if args.operation in QUALIFICATION_OPERATIONS:
         from tests.validation.integrated_extensions import run_worker
 
         checks = run_worker(args.operation, args)

@@ -69,3 +69,8 @@ scratch/
 
 # Local test build directory
 build-tests/
+build-asan/
+
+# Harness output directories a validation run can create in the working
+# directory.  They are run artefacts, not sources.
+lifecycle-public-routes/

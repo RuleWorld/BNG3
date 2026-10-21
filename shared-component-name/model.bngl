@@ -1,0 +1,29 @@
+begin model
+begin parameters
+  k 0.5
+  k2 k + 1.0
+end parameters
+begin compartments
+  PM 2 1.0
+  CP 3 1.0 PM
+end compartments
+begin molecule types
+  A(x~u~p)
+  B(x~on~off)
+end molecule types
+begin functions
+  f(v) = k + 1.0
+end functions
+begin observables
+  Molecules O1 A(x)
+  Species O2 B(x)
+end observables
+begin seed species
+  A(x~u) 10
+  B(x~on) 5
+end seed species
+begin reaction rules
+  conv: A(x~u) -> A(x~p) k
+  call: B(x~on) -> B(x~off) f(k2)
+end reaction rules
+end model

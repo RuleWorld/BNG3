@@ -83,6 +83,29 @@ end seed species
 end model
 """
 
+# A model with a transition-state barrier. The barrier needs a matching
+# energy pattern: there is no Arrhenius expansion for a barrier to modify
+# without one.
+BARRIER_SOURCE = r"""
+begin model
+begin molecule types
+    A(s~U~P)
+end molecule types
+begin seed species
+    A(s~U) 10
+end seed species
+begin energy patterns
+    e: A(s~U) 1.0
+end energy patterns
+begin barrier patterns
+    b: A(s~U) -> A(s~P) 2.0
+end barrier patterns
+begin reaction rules
+    A(s~U) -> A(s~P) 3.0
+end reaction rules
+end model
+"""
+
 # A model whose rate law is written with model functions: one function binds
 # its own argument, one calls another model function, and one names an
 # observable the way the Playground-derived Atomizer writes its helpers.
@@ -143,7 +166,7 @@ def _reorder_parameter_ids(model: dict, names: tuple[str, ...]) -> None:
     remap(model)
 
 
-def test_direct_native_builder_refuses_schema_valid_population_type():
+def test_direct_native_builder_accepts_a_schema_valid_population_type():
     document = _document(POPULATION_SOURCE)
     schema_path = (
         Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
@@ -154,8 +177,9 @@ def test_direct_native_builder_refuses_schema_valid_population_type():
     )
     assert population_type["population"] is True
 
-    with pytest.raises(RuntimeError, match="population molecule types are unsupported"):
-        _cpp._model_from_bngir_v02(document["model"])
+    model = _cpp._model_from_bngir_v02(document["model"])
+    imported = next(item for item in model.molecule_types if item.name == "P")
+    assert imported.is_population
 
 
 @pytest.mark.parametrize(
@@ -256,23 +280,21 @@ def test_direct_native_builder_preserves_supported_models_and_executes(
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
 
 
-def test_direct_native_builder_rejects_molecule_type_components():
+def test_direct_native_builder_accepts_molecule_type_components():
     document = _document()
     document["model"]["molecule_types"][0]["components"] = [
         {"index": 0, "name": "x", "states": ["u", "p"]}
     ]
 
-    with pytest.raises(RuntimeError, match="molecule type components are unsupported"):
-        _cpp._model_from_bngir_v02(document["model"])
+    model = _cpp._model_from_bngir_v02(document["model"])
+    imported = next(item for item in model.molecule_types if item.name == "A")
+    assert [component.name for component in imported.components] == ["x"]
 
 
 @pytest.mark.parametrize("location", ["seed", "reactant", "product"])
-def test_direct_native_builder_rejects_molecule_sites(location):
+def test_direct_native_builder_accepts_molecule_sites(location):
     document = _document(SITES_SOURCE)
     model = document["model"]
-    # Isolate the pattern-site boundary from the earlier molecule-type guard.
-    for molecule_type in model["molecule_types"]:
-        molecule_type["components"] = []
 
     patterns = {
         "seed": model["seeds"][0]["pattern"],
@@ -284,8 +306,8 @@ def test_direct_native_builder_rejects_molecule_sites(location):
         pattern["molecules"][0]["sites"] = []
     patterns[location]["molecules"][0]["sites"] = selected_sites
 
-    with pytest.raises(RuntimeError, match="does not support molecule sites"):
-        _cpp._model_from_bngir_v02(model)
+    imported = _cpp._model_from_bngir_v02(model)
+    assert imported is not None
 
 
 @pytest.mark.parametrize(
@@ -643,22 +665,27 @@ def test_direct_native_builder_rejects_invalid_parameter_reference_symbols(
         _cpp._model_from_bngir_v02(document["model"])
 
 
-@pytest.mark.parametrize(
-    "section",
-    [
-        "energy_patterns",
-        "barrier_patterns",
-        "population_maps",
-        "population_types",
-    ],
-)
-def test_direct_native_builder_rejects_nonempty_unsupported_sections(section):
-    document = _document()
-    document["model"][section].append({})
+def test_direct_native_builder_reconstructs_a_barrier_pattern():
+    document = _document(BARRIER_SOURCE)
+    barrier = document["model"]["barrier_patterns"][0]
+    assert barrier["center_resolved"] is True
+    assert barrier["reaction_center"]
 
-    with pytest.raises(
-        RuntimeError, match=f"native BNGIR model.{section} is not supported"
-    ):
+    model = _cpp._model_from_bngir_v02(document["model"])
+
+    barriers = list(model.barrier_patterns)
+    assert len(barriers) == 1
+    assert barriers[0].label == "b"
+    assert barriers[0].has_expression
+    assert barriers[0].transition.reactant_patterns == ["A(s~U)"]
+    assert barriers[0].transition.product_patterns == ["A(s~P)"]
+
+
+def test_direct_native_builder_rejects_a_mismatched_barrier_reaction_center():
+    document = _document(BARRIER_SOURCE)
+    document["model"]["barrier_patterns"][0]["reaction_center"] = "state:B.x~p|B.x~u"
+
+    with pytest.raises(RuntimeError, match="reaction center does not match"):
         _cpp._model_from_bngir_v02(document["model"])
 
 
@@ -677,6 +704,118 @@ def test_direct_native_builder_reconstructs_rendered_observables():
         ("A_total", "Molecules", ["A()"]),
         ("all_species", "Species", ["A()", "B()"]),
     ]
+
+
+def test_v01_population_map_and_barrier_pattern_migrate_and_import_natively():
+    """A v0.1 document with both features migrates and imports natively.
+
+    The population map carries its rate, and the barrier pattern carries the
+    matching energy pattern a barrier needs: there is no Arrhenius expansion
+    for a barrier to modify without one.
+    """
+    document = {
+        "format": "BNGIR",
+        "version": "0.1",
+        "features": {
+            "required": [],
+            "used": [
+                "barrier_patterns",
+                "energy_patterns",
+                "population_maps",
+                "rules",
+                "seeds",
+            ],
+        },
+        "model": {
+            "name": "population_and_barrier",
+            "version": "2.2",
+            "substance_units": "",
+            "options": {},
+            "parameters": [{"name": "k", "expression": "0.1"}],
+            "molecule_types": [
+                {
+                    "name": "A",
+                    "population": False,
+                    "components": [{"name": "x", "allowed_states": ["u", "p"]}],
+                },
+                {"name": "P", "population": True, "components": []},
+            ],
+            "compartments": [],
+            "seeds": [
+                {
+                    "pattern": "A(x~u)",
+                    "amount": "10",
+                    "constant": False,
+                    "compartment": "",
+                }
+            ],
+            "observables": [],
+            "functions": [],
+            "energy_patterns": [
+                {"label": "e", "pattern": "A(x~u)", "expression": "1.0"}
+            ],
+            "barrier_patterns": [
+                {
+                    "label": "b",
+                    "reactants": ["A(x~u)"],
+                    "products": ["A(x~p)"],
+                    "bidirectional": False,
+                    "expression": "1.0",
+                }
+            ],
+            "population_maps": [
+                {
+                    "label": "pm",
+                    "pattern": "A(x~u)",
+                    "function": "P",
+                    "args": [],
+                    "rate": "1.0",
+                }
+            ],
+            "rules": [
+                {
+                    "name": "convert",
+                    "label": "convert",
+                    "reactants": ["A(x~u)"],
+                    "products": ["A(x~p)"],
+                    "rates": ["k"],
+                    "modifiers": [],
+                    "bidirectional": False,
+                    "driving_work": "",
+                }
+            ],
+        },
+        "protocol": {"actions": []},
+    }
+
+    model = bionetgen.from_bngir(document)
+    migrated = json.loads(model.to_bngir(version="0.2"))
+
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(migrated, json.loads(schema_path.read_text()))
+
+    # Both features survive the migration with their semantics.
+    assert migrated["model"]["barrier_patterns"][0]["center_resolved"] is True
+    assert migrated["model"]["barrier_patterns"][0]["reaction_center"]
+    assert migrated["model"]["population_maps"][0]["population"] == "P"
+    assert migrated["model"]["population_maps"][0]["rate"] == {
+        "kind": "number",
+        "value": 1.0,
+    }
+
+    restored = bionetgen.from_bngir(migrated, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == migrated
+
+    barriers = list(restored._model.barrier_patterns)
+    assert len(barriers) == 1
+    assert barriers[0].label == "b"
+    mappings = list(restored._model.population_maps)
+    assert len(mappings) == 1
+    assert mappings[0].label == "pm"
+    assert mappings[0].function == "P"
+    assert mappings[0].rate == "1"
 
 
 def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypatch):
@@ -1023,22 +1162,10 @@ def test_native_import_rejects_malformed_declaration_ids_before_building(monkeyp
 
 def test_native_import_rejects_out_of_slice_semantics_without_fallback(monkeypatch):
     document = _document()
-    document["model"]["energy_patterns"].append(
+    document["model"]["population_types"].append(
         {
             "id": 0,
-            "label": "dG",
-            "pattern": {
-                "compartment_prefix": False,
-                "molecules": [
-                    {
-                        "occurrence": 0,
-                        "sites": [],
-                        "type": "A",
-                        "type_id": 0,
-                    }
-                ],
-            },
-            "expression": {"kind": "number", "value": 1.0},
+            "name": "P",
         }
     )
 
@@ -1047,7 +1174,8 @@ def test_native_import_rejects_out_of_slice_semantics_without_fallback(monkeypat
 
     monkeypatch.setattr(_cpp, "parse_string", forbidden)
     with pytest.raises(
-        ValueError, match="native BNGIR.*energy_patterns|energy_patterns.*native BNGIR"
+        ValueError,
+        match="native BNGIR.*population_types|population_types.*native BNGIR",
     ):
         bionetgen.from_bngir(document, native=True)
 
@@ -1243,17 +1371,24 @@ def test_native_import_rejects_unknown_fields_and_provenance():
 
     document = _document()
     document["model"]["metadata"]["substance_units"] = "mole"
-    with pytest.raises(ValueError, match="substance-unit metadata"):
-        bionetgen.from_bngir(document, native=True)
+    model = bionetgen.from_bngir(document, native=True)
+    exported = json.loads(model.to_bngir(version="0.2"))
+    assert exported["model"]["metadata"]["substance_units"] == "mole"
 
 
 @pytest.mark.parametrize(
     ("field", "value", "expected"),
     [
-        ("bidirectional", True, "forward ordinary rule"),
-        ("bidirectional", 0, "forward ordinary rule"),
-        ("modifiers", ["DeleteMolecules"], "forward ordinary rule"),
-        ("reverse", {}, "unsupported reverse"),
+        ("bidirectional", True, "missing its reverse direction"),
+        ("bidirectional", 0, "bidirectional flag must be a boolean"),
+        ("modifiers", ["DeleteMolecules"], "rule modifier must be an object"),
+        ("modifiers", [{}], "rule modifier is missing its kind"),
+        (
+            "modifiers",
+            [{"kind": "include_reactants"}],
+            "modifier kind is not supported",
+        ),
+        ("reverse", {}, "reverse direction on a forward rule"),
     ],
 )
 def test_direct_native_builder_refuses_unrepresented_rule_semantics(
@@ -1265,11 +1400,209 @@ def test_direct_native_builder_refuses_unrepresented_rule_semantics(
         _cpp._model_from_bngir_v02(document["model"])
 
 
-@pytest.mark.parametrize("field", ["filters", "local_scopes"])
-def test_direct_native_builder_refuses_unrepresented_direction_semantics(field):
+def test_direct_native_builder_accepts_a_bidirectional_rule_with_its_reverse():
     document = _document()
-    document["model"]["rules"][0]["forward"][field] = [{}]
-    with pytest.raises(RuntimeError, match="filters or local scopes"):
+    forward = document["model"]["rules"][0]["forward"]
+    reverse = copy.deepcopy(forward)
+    reverse["reactants"] = forward["products"]
+    reverse["products"] = forward["reactants"]
+    document["model"]["rules"][0]["bidirectional"] = True
+    document["model"]["rules"][0]["reverse"] = reverse
+    model = _cpp._model_from_bngir_v02(document["model"])
+    assert model.reaction_rules[0].is_bidirectional
+
+
+def test_direct_native_builder_accepts_a_rule_modifier():
+    document = _document()
+    document["model"]["rules"][0]["modifiers"] = [{"kind": "total_rate"}]
+    model = _cpp._model_from_bngir_v02(document["model"])
+    assert list(model.reaction_rules[0].modifiers) == ["TotalRate"]
+
+
+DRIVEN_SCOPED_SOURCE = r"""
+begin model
+begin parameters
+    k 0.1
+    w 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    %x::A() -> %x::B() k driven_by(w)
+end reaction rules
+end model
+"""
+
+
+def _driven_scoped_document() -> dict:
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(DRIVEN_SCOPED_SOURCE))
+    return json.loads(source_model.to_bngir(version="0.2"))
+
+
+def test_native_import_round_trips_a_rule_with_driving_work_and_local_scopes():
+    """A v0.2 document with a reservoir work and local scopes reproduces itself."""
+    document = _driven_scoped_document()
+    rule = document["model"]["rules"][0]
+    assert rule["driving_work"] == {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 1},
+    }
+    assert rule["forward"]["local_scopes"] == [
+        {
+            "name": "x",
+            "kind": "species",
+            "side": "reactant",
+            "pattern_index": 0,
+            "reactant_pattern": 0,
+        }
+    ]
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    assert restored.reaction_rules[0].has_driving_work is True
+    assert restored.reaction_rules[0].driving_work == "w"
+
+
+def test_native_import_carries_local_scopes_and_driving_work_into_the_compiled_model():
+    document = _driven_scoped_document()
+
+    restored = bionetgen.from_bngir(document, native=True)
+    snapshot = _cpp._compiled_snapshot(restored._model)
+
+    assert snapshot["rules"][0]["forward"]["local_scopes"] == [
+        {
+            "name": "x",
+            "kind": "species",
+            "side": "reactant",
+            "pattern_index": 0,
+            "reactant_pattern": 0,
+        }
+    ]
+    assert snapshot["rules"][0]["driving_work"] == {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 1},
+    }
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected"),
+    [
+        ("kind", "unsupported native BNGIR expression kind: unresolved"),
+        ("value", "expression value must be numeric"),
+        ("index", "parameter reference is out of range"),
+    ],
+    ids=["kind", "value", "index"],
+)
+def test_direct_native_builder_refuses_malformed_driving_work(mutation, expected):
+    document = _document()
+    work = {
+        "kind": "parameter_ref",
+        "symbol": {"kind": "parameter", "index": 0},
+    }
+    if mutation == "kind":
+        work = {"kind": "unresolved"}
+    elif mutation == "value":
+        work = {"kind": "number", "value": "fast"}
+    elif mutation == "index":
+        work = {
+            "kind": "parameter_ref",
+            "symbol": {"kind": "parameter", "index": 7},
+        }
+    document["model"]["rules"][0]["driving_work"] = work
+
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "reactant",
+                "pattern_index": 3,
+                "reactant_pattern": 3,
+            },
+            "rule direction local scope pattern index is out of range",
+        ),
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "reactant",
+                "pattern_index": 0,
+                "reactant_pattern": 1,
+            },
+            "rule direction local scope reactant pattern does not match its "
+            "pattern index",
+        ),
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "product",
+                "pattern_index": 0,
+                "reactant_pattern": 0,
+            },
+            "rule direction local scope product-side scope must not name a "
+            "reactant pattern",
+        ),
+        (
+            {
+                "name": "x",
+                "kind": "species",
+                "side": "reactant",
+                "pattern_index": 0,
+                "reactant_pattern": 0,
+                "molecule_occurrence": 0,
+            },
+            "rule direction local scope species scope must not name a molecule "
+            "occurrence",
+        ),
+    ],
+    ids=["pattern", "reactant-pattern", "product-side", "species-occurrence"],
+)
+def test_direct_native_builder_refuses_malformed_local_scopes(scope, expected):
+    document = _document()
+    document["model"]["rules"][0]["forward"]["local_scopes"] = [scope]
+
+    with pytest.raises(RuntimeError, match=expected):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_refuses_duplicate_local_scope_names():
+    document = _document()
+    scope = {
+        "name": "x",
+        "kind": "species",
+        "side": "reactant",
+        "pattern_index": 0,
+        "reactant_pattern": 0,
+    }
+    document["model"]["rules"][0]["forward"]["local_scopes"] = [scope, dict(scope)]
+
+    with pytest.raises(RuntimeError, match="local scope names must be nonempty"):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_direct_native_builder_refuses_malformed_local_scopes():
+    document = _document()
+    document["model"]["rules"][0]["forward"]["local_scopes"] = [{}]
+    with pytest.raises(
+        RuntimeError, match="rule direction local scope is missing name"
+    ):
         _cpp._model_from_bngir_v02(document["model"])
 
 

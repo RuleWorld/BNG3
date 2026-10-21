@@ -1,0 +1,16 @@
+begin model
+begin parameters
+  k 0.4
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 6
+  B() 0
+end seed species
+begin reaction rules
+  A() + A() -> B() k
+end reaction rules
+end model

@@ -1,24 +1,13 @@
 #pragma once
 
-#include <cstddef>
-#include <vector>
+// The candidate-reaction context is compile-owned: it describes a candidate
+// in the backend neutral graph vocabulary. This header keeps the historical
+// ``bng::ast`` spelling available for AST-side callers.
 
-namespace BNGcore {
-class Node;
-class PatternGraph;
-}
+#include "compile/RateCandidateContext.hpp"
 
 namespace bng::ast {
 
-// Structural information available for one candidate reaction. Mapped
-// molecules follow compiled reactant-pattern order; product graphs and their
-// pattern indices appear once the transformation is constructed. This context
-// contains graph structure only, never populations or state.
-struct RateCandidateContext {
-    std::vector<const BNGcore::PatternGraph *> speciesGraphs;
-    std::vector<std::vector<const BNGcore::Node *>> mappedMolecules;
-    std::vector<const BNGcore::PatternGraph *> productSpeciesGraphs;
-    std::vector<std::size_t> productPatternIndices;
-};
+using RateCandidateContext = compile::RateCandidateContext;
 
 } // namespace bng::ast

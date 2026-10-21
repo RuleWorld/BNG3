@@ -1,10 +1,428 @@
 # BNG3 current progress
 
+## Semantic-identity correspondence and differential graph identity (2026-10-20 candidate)
+
+Issue #166 asks for the production lowering correspondence to be stated: how the
+resolved C++ model, the serialized semantic identities and the compiled ids
+correspond, and what refinement that correspondence states. Issue #168 asks
+for differential cases that compare the production graph identity and the
+generated network against an independent construction, and for the intended
+bounded equivalence to be stated with an explicit domain and termination
+argument. Both issues had no named executable check for those obligations.
+
+`tests/validation/semantic_identity.py` states the correspondence as an
+executable contract over a generated family of models. Three named checks per
+case carry it: `identity-packing` (the compiled ids of every declaration
+namespace are dense and follow the declaration order, the source rule label is
+retained beside the generated rule name, and the BNGIR v0.2 model section is
+exactly the resolved model's compiled snapshot), `identity-reference` (every
+serialized id reference denotes the declaration the serialization names beside
+it) and `identity-refinement` (the compiled ids refine the name-keyed
+declaration correspondence and every reference resolves to exactly one
+declaration). The expectation is the identity table the generator wrote before
+the compiler ran, so a defect in the compiler's id assignment appears as a
+difference against an expectation the compiler never produced. The declared
+domain is the generated declaration grammar; the Lean kernel-verified
+correspondence stays a separate artifact that this fixture does not discharge.
+
+`tests/validation/graph_differential.py` compares the production network with
+the network the canonical Perl BNG2 generates for the same source. Both `.net`
+artifacts are read by the harness's own reader and the species sets are
+compared with the harness's own labeled-graph matcher, so the comparison never
+depends on how either implementation spells a species. `network-species-bijection`
+states that the two species sets are in bijection under that relation, and
+`graph-identity-relation` states that the isomorphism relation between the two
+networks is exactly that correspondence. The domain (at most four rules, at most
+three pairwise non-isomorphic seed species, no dangling bond in a seed species,
+at most eight species and twelve reactions per network, at most twelve vertices
+per species) and the termination argument (both generators bounded, the size
+bounds re-checked after both networks exist, a finite bipartite matching) are
+stated in the module. A case outside the domain, or one the canonical
+implementation refuses, is refused with its reason and reported as
+`UNSUPPORTED`; it is never scored as a pass.
+
+The qualification exposed a defect in the campaign that was to run these
+families: `tests/validation/integrated.py` consulted `args.stochastic_parity_only`
+and `args.api_surface_only`, and neither flag was defined by the argument
+parser, so every campaign run died with an `AttributeError` before a single
+check was executed. The missing flags are now defined, the focused selection is
+uniform (a focused flag selects exactly one family, its own, and never excludes
+itself), and the replay command recorded on each row names the focused flag of
+its own family. The regression is
+`tests/validation/test_integrated.py::test_every_focused_qualification_flag_is_defined_and_selects_one_family`.
+
+Both issues stay open: the machine-checked Lean statements, the governance
+closure record and the wider feature combinations are not discharged here.
+
+## JAX backend stage profile (2026-10-20 candidate)
+
+Issue #174 asks for representative speed and memory baselines on a fixed
+revision: parse/compile/generate, ODE/SSA/NFsim, scans, cold/warm setup, peak
+memory and allocations, with independent semantic oracles, controlled A/A
+timing, the exact environment and corpus, and retained no-win results. The
+family had no generated check, so the two technical obligations of #174 were
+unqualified.
+
+`tests/validation/jax_backend_measurement.py` now measures that profile for
+the JAX backend family on a fixed generated corpus of three mass-action cases
+(two first-order conversions of different size and one dimerization). The JAX
+backend is the candidate arm; the native engine is the incumbent arm for the
+stages where the JAX backend has no route.
+
+Four rules keep the numbers honest:
+
+* Every timing carries an independent correctness control. The control is the
+  closed-form law of the case, derived from the case parameters and not from
+  anything the measured code produced. A timing whose correctness control
+  failed is not recorded as a result.
+* Every timed stage is measured by repeating the same arm (an A/A control) and
+  the spread of those repetitions is recorded. A stage whose spread exceeds
+  the noise limit is not recorded as a result either, so a noisy host cannot
+  be mistaken for a measurement. The A/A control reports a host-noise
+  observation as a failed control, never as a product failure.
+* A comparison that does not show the candidate winning is recorded as
+  `NO-WIN`. It is a result, not a failure to hide.
+* The environment, the corpus digest, the revision and the host load are
+  recorded with the numbers.
+
+The stages the JAX backend does not provide (SSA, NFsim, parameter scans) are
+recorded as explicit boundaries: the JAX SSA entry point refuses, the public
+`simulate()` API rejects `method="jax"`, and the JAX family's public API
+declares no NFsim or scan route. The measured SSA, NFsim and scan stages
+therefore belong to the native engine arm and are labelled as such.
+
+The evidence qualifies the JAX backend family on one host, one revision and
+one corpus. The numbers are machine-specific; the C++ allocation counters of
+`tools/memory_allocs` are not exercised, and the issue's acceptance threshold
+and the other backends' profiles remain unqualified.
+
+## Network-rule execution contract qualification (2026-10-20 candidate)
+
+Issue #139 asks for the compile-owned network-rule execution contract and the
+legacy path to agree before any legacy path is retired. Nothing compared them,
+so the family had no generated check at all.
+
+`tests/validation/netrule_execution.py` now qualifies the two views against
+each other and against an expectation that neither of them produced. The
+compile-owned view is read from the compiled model: the reactant and product
+patterns of each direction, the resolved rate-law expression, the rule filters,
+the local scopes and the forward/reverse directions. The legacy view is the
+network the engine's rule execution produces, observed through the generated
+`.net` artifact and through the engine's compiled per-reaction rate
+coefficients. The independent expectation is a hand-derived closed-form law per
+case, plus the canonical Perl BNG2 network as an external oracle.
+
+The qualified slice is declared: single-molecule rule patterns without bonds,
+compartments or delete-molecules, with explicit site states. A case outside
+that slice is reported as `UNSUPPORTED` with its reason instead of being
+skipped quietly. Nine named checks cover the reaction graph, the compiled rate
+law, rule filters, local scopes and reversible rule directions, and the
+integrated campaign imports them under the `netrule-execution` qualification.
+
+The evidence qualifies that slice only. The `LegacyNetworkRuleKernel`
+reconstruction is not replaced by it and no legacy path is retired.
+
+## Shared rate-law and NFnext slice qualification (2026-10-20 candidate)
+
+Issues #143 and #147 had no named executable check for the shared rate-law
+contract or for the NFnext slice families, so both families stayed detection
+gaps.
+
+`tests/validation/rate_law_contract.py` states the rate-law conventions once
+-- the special rates (`Sat`, `Hill` and the two-reactant `MM`), the table
+function, the local molecule scope, the mass-action multiplicity, the
+dependency/evaluation convention and the cache-invalidation convention -- and
+checks a generated, parameterized case matrix against them. The compiled
+coefficient, the right-hand side and the SSA propensity of every case are
+compared against closed-form laws written in the harness, never against another
+implementation's output. The declared slice is explicit, and a model that
+declares a construct outside it is reported as `UNSUPPORTED` with the construct
+named instead of being skipped quietly. The cache control changes a rate
+parameter and a parameter defined in terms of another, and requires the
+compiled coefficient, the right-hand side and the closed-form decay to follow
+the change. The engine's own SSA propensity is now observable through
+`OdeIntegrator::evaluatePropensities`, so the discrete convention is compared
+directly instead of being inferred from a sampled trajectory.
+
+`tests/validation/nfnext_slices.py` states the approved NFnext slice -- unary
+site-state rules with a static elementary rate, isolated integer seeds and
+unary `Molecules` observables -- and checks its representation, its executor
+and an independent reference: the exact pure-death law of the seeded
+population, with a declared error budget over a recorded ensemble, a variance
+control and a fixed-seed reproducibility control. Every candidate family
+outside the approved slice (dynamic rates, filters, modifiers, compartments,
+population maps and energy) is checked as a named refusal, and a refusal is
+recorded as a diagnostic observation rather than as supported execution. NFnext
+is reachable from the harness through the new `_nfnext_lower` and
+`_nfnext_execute` bindings, which expose the native lowering and executor
+instead of reimplementing them in Python.
+
+The evidence qualifies those slices only. The rate-law contract says nothing
+about compartment-scoped, filtered, modified, energy-bearing or
+population-mapped models, and the NFnext contract does not qualify any family
+outside the approved slice as supported.
+reconstruction is not replaced by it and no legacy path is retired. The
+compile-owned execution contract that later takes over the plan's decisions is
+described under "Legacy compatibility-path migration slice" below.
+
+## Legacy compatibility-path migration slice (2026-10-20 candidate)
+
+Issues #138, #139 and #172 asked for product migration: an executable
+dependency inventory of the legacy compatibility paths, the retirement of the
+paths whose callers are already covered by a qualified contract, and an
+explicit blocker for every path that cannot be retired yet.
+
+`tools/check_legacy_dependency_inventory.py` is the executable inventory. It
+walks the live Python import graph and the live C++ include graph and records,
+per legacy path, the live product callers, the live test callers, the status
+and the precise blocker. The recorded graph lives in
+`provenance/architecture/legacy_dependency_inventory.json` and the check fails
+when the live graph drifts away from it, when a retired path is still imported
+and when a retained path does not state its blocker. It runs as the ctest
+`architecture_legacy_dependency_inventory` and as
+`tests/python/test_legacy_dependency_inventory.py`.
+
+The legacy pure-Python network reader (`python/bionetgen/network/`) was
+retired: no live module imported it, the native `bng::io::NetReader`
+supersedes it, and the `.net` reading behaviour is covered by
+`tests/cpp/test_sbml_reader.cpp` and by the harness `.net` comparison checks.
+Its two test callers were removed with it. Importing the retired path now
+fails with an explicit `ModuleNotFoundError` that names the missing module
+instead of the misleading Cement `ImportError` the package used to raise.
+
+The `modelapi`, `simulator` and Cement paths stay. Their callers are live
+(`bionetgen.bngmodel`, `bionetgen.sim_getter`, the legacy Cement CLI and the
+modelapi package itself), their behaviour is covered by qualified checks, and
+none of them has a native replacement yet, so each is retained as the
+deliberate compatibility adapter with its blocker recorded in the inventory.
+The missing-Cement and missing-libRoadRunner cases were already diagnostic:
+they raise `ImportError` instead of degrading silently, and the
+`api-surface:surface:optional-imports` check keeps that contract honest.
+
+For #139 the network-rule execution contract is now compile-owned.
+`compile::CompiledRuleExecutionHooks`
+(`cpp/compile/CompiledRuleExecution.hpp`) carries the rule's filters, local
+scopes and zero-rate decision in backend-neutral types, and
+`compile::RateCandidateContext` moved out of the AST layer for the same
+reason. `cpp/engine/NetworkRulePlan.cpp` therefore no longer includes the
+legacy AST and left `provenance/architecture/ast_compat_allowlist.txt`
+(42 entries before this change, 41 after); the compatibility kernel adapts the
+compile-owned contract to the AST expansion hooks instead of recovering the
+decisions from a reconstructed rule. The AST expansion algorithm behind
+`LegacyNetworkRuleKernel` is unchanged, so the kernel is not retired and the
+netrule-execution family still compares the engine's rule execution against
+the hand-derived closed form and the canonical Perl BNG2 oracle.
+
+## Compile-once model reuse lifecycle qualification (2026-10-20 candidate)
+
+Issue #141 still had no named executable check for repeated instantiation,
+concurrent instantiation, independent RNG ownership, independent caches,
+independent solver state, exception cleanup, parameter-only reuse, topology
+invalidation and compartment invalidation. The lifecycle harness in
+`tests/validation/integrated_protocol.py` now names one check per obligation and
+runs it over the declared four-case generated slice (`v1-n20-r0-a0`,
+`reversible-v3-n80-r0-a0`, `dimerization-v1-n20-r0-a0`, `dimerization-v3-n80-r0-a0`).
+Every check compares against an independent expectation, a freshly compiled
+model or a closed-form law, and never against the instance under test.
+
+- `lifecycle-repeated-instantiation`: one compiled model instantiated three
+  times; every deterministic and every seeded trajectory equals a fresh
+  compilation of the same source.
+- `lifecycle-concurrent-instantiation`: four concurrently constructed and
+  concurrently simulated instances; every seeded trajectory equals a fresh
+  compilation with the same seed, equal seeds agree, different seeds differ,
+  and the generated-network caches are distinct objects.
+- `lifecycle-independent-rng`: an interleaved replay of one seed reproduces its
+  trajectory exactly, a second seed produces a different trajectory, and an
+  independently constructed instance reproduces the same seed.
+- `lifecycle-independent-caches`: one instance mutated while its sibling keeps
+  its own parameter values and its own generated-network object; both
+  trajectories equal fresh compilations.
+- `lifecycle-independent-solver-state`: repeated, early-stopped and interleaved
+  stochastic runs on one instance leave the deterministic trajectory equal to a
+  fresh compilation.
+- `lifecycle-exception-cleanup`: a stop-condition failure raised after the
+  solver allocated its state leaves the instance usable, and every recovered
+  trajectory equals a fresh compilation.
+- `lifecycle-parameter-only-reuse`: a rate-parameter override preserves the
+  compiled structure and reproduces a fresh compilation and the closed-form law.
+- `lifecycle-topology-invalidation`: a topology-changing `include_model` action
+  invalidates the cached network; the rebuilt trajectory equals a fresh
+  compilation of the merged source and the closed-form chain law.
+- `lifecycle-compartment-invalidation`: a `setVolume` action invalidates reuse;
+  the rebuilt trajectory equals a fresh compilation with the new volume and the
+  closed-form volume law.
+
+The topology and compartment checks exposed a product defect.
+`BioNetGenModel.execute()` applied the model's actions to the compiled model but
+left the cached generated network in place, so a model whose action changed the
+topology, the seed species, the compartments or the parameters was then
+simulated with the network compiled before the action. `python/bionetgen/model.py`
+now discards the cached network when the action block runs, in a `finally`
+clause so that a failed action cannot leave a stale cache either. The
+regressions are `tests/python/test_model_reuse_contract.py::test_action_execution_invalidates_the_cached_generated_network`
+and `::test_volume_action_invalidates_the_cached_generated_network`; both fail
+against the unrepaired model and pass against the repaired one.
+
+The nine #141 obligations in `provenance/issue-obligations.json` now name these
+checks instead of the `qualification:issue:141:*` placeholders and declare their
+scope boundaries and feature combinations. Runtime topology editing through the
+public `Model` API remains unsupported and stays an explicit boundary; the
+qualified topology route is the action protocol's `include_model`. The
+governance obligations of the issue keep their disposition checks, so the issue
+stays open.
+## Typed protocol actions and shared decision seams (2026-10-20 candidate)
+
+Issue #140 asked for the simulation protocol actions to be dispatched on
+validated typed values and for the command line, the public API and the BNGL
+action surface to behave the same, including the invalid options and the
+defaults. Issue #178 asked for the duplicated option, rate and capability
+decisions of the dispatch, the integrator and the exporters to be identified
+and reduced to one decision per option.
+
+The protocol harness in `tests/validation/integrated_protocol.py` names two
+new checks over the declared one-case generated slice:
+
+- `protocol-action-option-equivalence`: a generated set of typed action
+  options is applied through the installed command line, the public Python API
+  and the BNGL action surface of the same model, and the three surfaces must
+  reach the same outcome. The probes carry the explicit options, the omitted
+  options and the invalid options (`n_steps` of zero, a non-positive `atol`
+  and `rtol`, and a reversed output window); an invalid option must be refused
+  by every surface and must not leave a trajectory behind. The command-line leg
+  must import the same package as the API leg, so the surfaces cannot be two
+  different builds.
+- `protocol-decision-sharing`: the option decision is exercised through the
+  `simulate`, `simulate_pla`, `simulate_psa`, `writeMfile`, `writeCPYfile`,
+  `writeCPPfile` and `writeMexfile` actions, the capability decision through
+  the action and API surfaces for every option a method cannot honour, and the
+  rate decision through the seeded stochastic stream. A surface that keeps its
+  own copy of a decision diverges from the others, so the duplication is
+  visible as a difference rather than as a silent difference.
+
+The product now owns the decisions in one place. `cpp/compile/SimulationMethod.hpp`
+decides which method a spelling selects, which engine it names and which
+options that method can honour; `cpp/compile/ActionOptions.hpp` reads every
+action option as a typed value and keeps the source spelling for the
+diagnostic. The action dispatcher, the compile layer, the integrator, the
+Python extension and the public API use them.
+
+The checks exposed three product defects, all repaired in the same change:
+
+- The action surface accepted a non-positive `atol` or `rtol` and an output
+  window that ran backwards, while the public API refused them. The typed
+  option reader now validates them and quotes the source spelling.
+- `simulate({method=>"psa"})` ran CVODE, because the dispatcher's own method
+  list had no `psa` entry and silently fell back to the ODE default. The
+  engine name now comes from the shared decision, so the requested method is
+  the executed method.
+- The capability rules were written three times, in the dispatcher, in the
+  Python API and in the extension binding, and the copies disagreed: the API
+  refused `max_sim_steps` for the population sampler, which the engine honours,
+  and accepted `sample_times` for the population and particle samplers, which
+  ignore them. One option-support matrix now decides, and the public API reads
+  it from the engine.
+
+The regressions are `tests/cpp/test_simulation_method.cpp` for the shared
+decision and the typed option reader, and the harness contract checks in
+`tests/validation/test_integrated_protocol.py` for the probes. The four
+obligations of #140 and #178 in `provenance/issue-obligations.json` name the
+new checks instead of the `qualification:issue:*` placeholders and keep their
+original scope; the governance obligations of both issues keep their
+disposition checks, so both issues stay open.
+
+## Public API and CLI surface qualification (2026-10-20 candidate)
+
+Issue #171 asked for the PyBioNetGen public compatibility matrix to name an
+executable check. The `api-surface` family in `tests/validation/api_surface.py`
+adds one: it drives all five supported simulation methods (`ode`, `ssa`, `nf`,
+`pla`, `psa`) through the public Python API and through the installed
+command-line interface, and judges each route against an independent law
+rather than against the other route's output.
+
+The law is a generated first-order decay model. The deterministic route is
+compared with the closed-form trajectory; the stochastic routes are compared
+with the exact binomial count law of the same process through a 24-replicate
+ensemble with recorded seeds, an analytic standard-error budget for the
+ensemble mean, a declared chi-square band for the ensemble dispersion, the
+exact binomial central range for every replicate, and the existing
+Hoeffding/DKW source-count-law comparator. The stochastic statements cover the
+terminal-time marginal of that one family only.
+
+The same family covers the documented surface: signatures and defaults,
+positional dispatch, timeouts, the action block, result containers and written
+files, exceptions, and the optional distributions that must stay optional. The
+eight API/CLI differences are declared explicitly and each one is exercised,
+so an unexplained divergence fails instead of being reported as a benign
+difference. The command-line leg must import the same package and the same
+native extension as the API leg; the family refuses to compare two different
+builds.
+
+The family exposed one product defect: `Model.simulate(seed=...)` silently
+ignored the seed for the PLA and PSA routes, because the bindings never
+forwarded it even though both simulators already honoured `OdeOptions::seed`.
+The bindings now take the seed, the Python wrapper passes it, and
+`tests/python/test_stochastic_seed_contract.py` is the focused regression.
+Before the repair the new route-agreement checks for `pla` and `psa` fail;
+after it they pass.
+
+The named checks are recorded in `provenance/issue-obligations.json` for the
+two behavioral obligations of #171, and the closure record is now an explicit
+maintainer disposition. #171 stays open: the family qualifies one generated
+model family, and notebook execution, third-party integrations and other
+model shapes remain outside the executed scope.
+
+## Locked SBML conformance and Atomizer reconstruction qualification (2026-10-20 candidate)
+
+Issue #159 asked for the existing locked-suite runner to be executed on an
+identified build with the conversion, round trip, official-reference
+conformance and independent comparison reported separately. The
+`sbml-conformance` family in `tests/validation/sbml_conformance.py` does that:
+it runs `scripts/ci/validate_sbml_test_suite.py` in a child process against
+the locked official SBML Test Suite revision, retains the runner's per-case
+artifacts, and turns the runner's own stage buckets into four separate rows.
+A green conversion therefore cannot stand in for a failed reference
+comparison. The event-target cases and the zero-observable cases are reported
+as their own cohorts; a case with no observable output carries no reference
+evidence and is never counted as independent-oracle evidence. A stage that was
+not executed is `NOT_TESTED`, a stage whose cases are all explicitly
+unsupported is `UNSUPPORTED`, and a failed or timed-out case is `FAIL`.
+
+The locked suite is an external, revision-locked corpus. Where the checkout is
+absent, every row is `NOT_TESTED` with the reason: a missing corpus is not
+conformance evidence. The full-suite, all-category and stochastic-ensemble
+results still need the hosted environment; the local run covers the bounded
+128-case semantic feature cover only.
+
+Issue #161 asked for the structural Atomizer to be qualified on reconstruction,
+reaction and bond changes, compartments, quantities and retained metadata, and
+for the full execution and the semantic round trip to be compared with
+independent references instead of a successful parse. The
+`atomizer-reconstruction` family in
+`tests/validation/atomizer_reconstruction.py` generates that family: nine
+SBML models covering a plain conversion, complex formation, complex
+dissociation, a reversible bond, a non-unit compartment, a concentration-valued
+species, an annotated model, an SBML Multi state change and one model the
+reconstruction cannot represent.
+
+Each supported case is reconstructed with the modern Atomizer, executed with
+the BNG3 engine, written to SBML, read back, reconstructed again and executed
+again. Both executions are compared against two independent references: the
+closed-form law of the generated model, derived from the case parameters, and
+libRoadRunner running the source SBML. The unrepresentable case must be
+refused with a named import diagnostic; a parse that drops a construct is a
+failure rather than a success, and no execution claim is made for it.
+
+The named checks are recorded in `provenance/issue-obligations.json` for the
+behavioral obligations of #159 and #161, and the closure records are explicit
+maintainer dispositions. Both issues stay open: the conformance family covers
+one bounded selection of one suite revision, and the reconstruction family
+covers a generated structural slice whose event semantics, dynamic-rule
+classes and SBML packages remain outside it.
 This file records the live verification state. The scope boundary of the
 SBML atomizer — the constructs it refuses, why, and whether each boundary is
 reducible — is recorded separately in
 [`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md).
-
 ## Structural SBML atomization recovers molecular identity
 
 The atomized SBML translation (`atomize=True`) recognized a molecular
@@ -403,6 +821,27 @@ failures for outer-compartment changes and loss of a non-default local
 compartment. This was a harness representation discrepancy, not evidence of a
 BNG3 graph-identity defect.
 
+The identity-contract qualification (2026-10-20 candidate) adds a second
+generated #142 detector to the same campaign. For seven generated families it
+compares the two native graph encodings -- BNGcore's `PatternGraph` canonical
+label and NFsim's `Complex` canonical label -- and the network species identity
+against the independent validation graph matcher, at the layer each surface
+declares in the shared identity contract (`cpp/core/IdentityContract.hpp`): the
+network label decides the structure layer (compartments excluded), the NFsim
+label decides the structure and compartment layers (NFcore carries the
+compartment on the molecule), and the network species identity decides the
+species layer. Every result names the layer it decided, so a surface that
+decides a different layer is visible instead of silent, and a label is never
+accepted as proof of identity: the partition a label induces is compared with
+the partition the independent matcher computes, so two different graphs that
+share a label are a mismatch and not a merge. The generated families are 3-, 4-
+and 5-molecule symmetric rings under bond renumbering, reversed traversal and
+swapped site order, per-molecule and species compartment distinctions, and
+site-state and bond-topology controls. The comparison is bounded to those
+families; the standalone NFsim binary is not executed by it, and it does not
+establish general network equivalence. #142's implementation/contract criteria
+remain open.
+
 The next integrated-campaign slice preserves the 48-case baseline (18
 PR-selected cases) and adds six generated semantic siblings to PR runs and
 twelve to full runs. Three function-definition cases pass a rate through a
@@ -438,7 +877,7 @@ A bounded repair does not close its broader issue.
 | #135/#136 | #187/#189 | Current issue-linked ledger and corrected architecture/validation claims. Closed after review; historical reports remain historical. |
 | #140 | #207/#220/#236/#241/#244/#248/#254/#257/#260 | Compile-owned numeric max_iter/max_agg, product filtering, finite ODE/SSA n_steps expressions, static numeric setParameter expressions, a bounded unlimited-stoichiometry correction, numeric-only static max_stoich compilation, strict full-input standalone expression parsing, preserved identifier spelling in scalar action expressions, and default-grid initial-state stop_if checking. PR #260 checks stop_if before the first output interval; it does not fix the separate explicit sample_times timing discrepancy. Dynamic parameter-backed arithmetic, functions/names, quoted numeric text, non-finite values, Safe-Perl caret semantics, general raw-option/typed-dispatch, sequential-action/default/entrypoint behavior, CLI/Python equivalence, invalid-option coverage and installed-package qualification remain open. Product-only limits preserve seed amounts, matching pinned BNG2. |
 | #141/#142 | #203/#211/#222/#224 | Worker identity, graph-cache race repairs, compartmental seed association and exact species identity. Concurrent ODE instances with distinct rate snapshots have a shared-topology contract; serial scan exceptions restore base/dependent parameters and the original network before successful analytic/fresh-model recovery. Broader invalidation/lifecycle and graph encoding unification remain open. |
-| #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. No default backend promotion; #145 closed. |
+| #144/#145 | #200/#214 | Shared fail-closed BNGsim capability boundary, adapter ON/OFF agreement and scoped steady-state options. Every finite-network result now records a named routing decision and its reason, an explicit BNGsim request that cannot be honoured is refused instead of downgraded, and the generated boundary contract compares the executed route against an independent closed-form law. No default backend promotion; #145 closed. |
 | #138/#163 | #196/#197/#228/#230/#233/#237 | Compile-owned units and version-aware SBML units; NET has an independent Network3 analytic consumer contract. Observable projection preserves graph-prefix context, counting modes, inert Molecules qualifiers and qualified Species CountUnique termination; #237 explicitly rejects unsupported Counter/Fraction kinds before opening the NET destination, without adding runtime support. Broader runtime migration/export qualification remains open. |
 | #139 | #225; commits `c5ca62df` / `5a5bf0ba` | Compiler-owned direction-specific whole-deletion and typed DeleteMolecules hooks drive compatibility execution; full kernel retirement remains open. The previously recorded connected-context deletion discrepancy was repaired. The current `[issue139]` native regression passes 36 assertions, including rejection of bound product-only sites, preservation of free-site/state-change behavior, explicit bond breaks and DeleteMolecules partner release. This local regression is not a fresh independent BNG2 campaign or proof of broader graph equivalence. |
 | #151 | #231 | Verified static zero-order physical count rates and bound parameter updates in one explicit positive 3D compartment. Physical XML fallback refuses; broader molecularity, unit seeds and dynamic contexts remain unsupported. |
@@ -958,6 +1397,66 @@ The closure audit found no accepted disposition for #146/#154. Both remain
 reopened with their full unmet criteria:
 [#146](https://github.com/RuleWorld/BNG3/issues/146#issuecomment-6089843989),
 [#154](https://github.com/RuleWorld/BNG3/issues/154#issuecomment-6089844484).
+
+## Unsupported SBML construct classes and Atomizer symbol resolution (2026-10-20 candidate)
+
+Issue #160 asked for the current unsupported SBML cases to be grouped by
+dynamic rules and events, history, algebraic constraints, stoichiometry, fast
+reactions and packages, and for that grouping to be executable. Issue #164
+asked for characterization tests around symbol resolution, feature checks,
+event planning, units, structural mapping and text output. Neither family had
+a named executable check.
+
+Two qualifications now cover them, both wired into the existing campaign
+harness and both generated and parameterized:
+
+* `tests/validation/sbml_support_boundary.py` generates one SBML model per
+  unsupported construct and requires the Atomizer to report a diagnostic that
+  identifies the construct and records the class it belongs to. The
+  expectation is written from the SBML semantics of the construct, never read
+  back from the Atomizer, so a model refused for an unnamed reason fails
+  instead of joining a generic bucket. A corpus check requires every refusal
+  in the generated corpus to carry a named class, so a newly unsupported
+  construct becomes visible.
+* `tests/validation/atomizer_symbol_resolution.py` generates models that
+  declare a named symbol in a given scope and carry a given SBML feature, and
+  compares the resolver's answer against an independently stated expectation.
+  The family covers global parameters, reaction-local parameters, a
+  reaction-local symbol used out of scope, species, compartments, user
+  functions, rate-rule targets and conversion factors, and it requires the
+  emitted model to compile.
+
+Two product changes were required by these checks.
+
+Every Atomizer import diagnostic now records the unsupported-construct class
+it belongs to, in a new `group` field on the diagnostic record. The class is a
+property of the diagnostic's identity, not of its message, so a reworded
+message cannot silently change the grouping. The taxonomy lives in
+`python/bionetgen/atomizer/modern/types.py` and covers the seven classes issue
+#160 names plus the classes of the constructs that are refused outside them.
+
+The symbol-resolution family exposed a product defect: a reaction whose
+kinetic law references another reaction's local parameter was emitted with
+that undeclared symbol in its rate law, and the generated model then failed to
+compile with `unresolved expression symbol`. The writer now refuses that
+reaction by name, records the `scope` diagnostic that already named it, and
+omits the rule, so the emitted model still compiles. The regression is
+`tests/python/test_modern_atomizer_scope.py`.
+
+The checks are fail-closed: against the pre-change product the
+support-boundary family reports an empty class for every refusal, and the
+symbol-resolution family reports the broken rule and the missing class. Both
+families pass against the repaired product.
+
+The #160 and #164 obligations in `provenance/issue-obligations.json` now name
+these checks, and their rows in
+`provenance/issue-reconciliation-2026-10-19.md` match. The issues keep their
+original scope and stay open: the generated corpus covers one construct per
+class rather than the full current unsupported-case set, the symbol-resolution
+family does not cover event planning, units, structural mapping or text
+output, and the per-class supported-subset decisions remain maintainer
+dispositions. The exact-revision campaign evidence for this candidate is
+pending; no retained campaign run has selected these families yet.
 
 ## Candidates under review
 

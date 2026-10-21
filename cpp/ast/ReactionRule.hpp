@@ -67,6 +67,27 @@ public:
         bool operator<(const ComponentRef& other) const;
     };
 
+    // A local-function scope declared by a rule. The scope names the pattern
+    // a local function argument is bound to and, for a molecule scope, the
+    // molecule inside that pattern. A species scope binds the whole matched
+    // species and therefore names no molecule.
+    //
+    // The scopes are declared structurally so a rule that was built from
+    // resolved patterns (rather than from source text) can still carry them.
+    // The compiler prefers these declarations over the `%name` markers it
+    // reads from the pattern text.
+    struct LocalScope {
+        enum class Kind { Molecule, Species };
+        enum class Side { Reactant, Product };
+
+        std::string name;
+        Kind kind = Kind::Molecule;
+        Side side = Side::Reactant;
+        std::size_t patternIndex = 0;
+        // Only a molecule scope names a molecule occurrence.
+        std::optional<std::size_t> moleculeOccurrence;
+    };
+
     struct TransformOp {
         enum class Type {
             AddBond,
@@ -131,7 +152,10 @@ public:
         std::string label,
         std::vector<Expression> rates,
         std::vector<SpeciesGraph> reactantPatterns,
-        std::vector<SpeciesGraph> productPatterns);
+        std::vector<SpeciesGraph> productPatterns,
+        std::vector<std::string> modifiers = {},
+        bool bidirectional = false,
+        bool parseTextModifiers = false);
     ~ReactionRule();
     ReactionRule(ReactionRule&&) noexcept;
     ReactionRule& operator=(ReactionRule&&) noexcept;
@@ -162,6 +186,11 @@ public:
 
     const std::vector<SpeciesGraph>& getReactantPatterns() const;
     const std::vector<SpeciesGraph>& getProductPatterns() const;
+    // The local-function scopes the rule declares. An empty list means the
+    // rule declares none; the compiler then reads the `%name` markers from
+    // the rule's pattern text instead.
+    const std::vector<LocalScope>& getLocalScopes() const;
+    void setLocalScopes(std::vector<LocalScope> scopes);
     const std::vector<TransformOp>& getOperations() const;
     // Default deletion of every molecule in a pattern removes its entire
     // matched species, including context absent from the pattern (BNG2 MolDel).
@@ -263,6 +292,7 @@ private:
     bool hasDrivingWork_ = false;
     std::vector<SpeciesGraph> reactantPatterns_;
     std::vector<SpeciesGraph> productPatterns_;
+    std::vector<LocalScope> localScopes_;
     struct PatternCache;
     mutable std::unique_ptr<PatternCache> patternCache_;
     std::vector<TransformOp> operations_;

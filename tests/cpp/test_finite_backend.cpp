@@ -1,6 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <memory>
+#include <string>
+
 #include "ast/Observable.hpp"
 #include "engine/FiniteBackend.hpp"
 #include "engine/NetworkGenerator.hpp"
@@ -168,14 +171,124 @@ end reaction rules
 }
 
 TEST_CASE("FiniteBackend backend string parsing", "[finite_backend]") {
-    REQUIRE(engine::finiteBackendFromString("auto") == engine::FiniteBackend::Native);
+    REQUIRE(engine::finiteBackendFromString("auto") == engine::FiniteBackend::Auto);
     REQUIRE(engine::finiteBackendFromString("native") == engine::FiniteBackend::Native);
     REQUIRE(engine::finiteBackendFromString("bngsim") == engine::FiniteBackend::Bngsim);
     REQUIRE(engine::finiteBackendFromString("BNGSIM") == engine::FiniteBackend::Bngsim);
     REQUIRE(engine::finiteBackendToString(engine::FiniteBackend::Bngsim) == "bngsim");
+    REQUIRE(engine::finiteBackendToString(engine::FiniteBackend::Auto) == "auto");
     REQUIRE_THROWS_WITH(
         engine::finiteBackendFromString("unknown"),
         Catch::Matchers::ContainsSubstring("Unknown finite backend"));
+}
+
+namespace {
+
+std::unique_ptr<ast::Model> parseBoundaryModel() {
+    return parser::parseModel(R"(
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 100
+end seed species
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+)");
+}
+
+std::unique_ptr<ast::Model> parseCompartmentModel() {
+    return parser::parseModel(R"(
+begin parameters
+    k 0.1
+end parameters
+begin compartments
+    CYT 3 1
+end compartments
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 100
+end seed species
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+)");
+}
+
+} // namespace
+
+TEST_CASE("FiniteBackend records a named route for every decision", "[finite_backend]") {
+    auto model = parseBoundaryModel();
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator gen(*model);
+    auto net = gen.generateNative();
+
+    const auto explicitNative = engine::resolveFiniteBackend(
+        engine::FiniteBackend::Native, "ode", *model, net);
+    REQUIRE(explicitNative.backend == engine::FiniteBackend::Native);
+    REQUIRE(explicitNative.route == "native-explicit");
+    REQUIRE_FALSE(explicitNative.reason.empty());
+    // An explicit native request never runs the semantic lowering check.
+    REQUIRE_FALSE(explicitNative.bngsimLoweringChecked);
+
+    const auto autoDecision = engine::resolveFiniteBackend(
+        engine::FiniteBackend::Auto, "ode", *model, net);
+    REQUIRE(autoDecision.backend == engine::FiniteBackend::Native);
+    REQUIRE_FALSE(autoDecision.route.empty());
+    REQUIRE_FALSE(autoDecision.reason.empty());
+
+    const auto explicitBngsim = engine::resolveFiniteBackend(
+        engine::FiniteBackend::Bngsim, "ode", *model, net);
+    // The explicit request is decided, never silently downgraded: the route
+    // names the reason the BNGsim backend could not run.
+    REQUIRE((explicitBngsim.backend != engine::FiniteBackend::Bngsim ||
+             explicitBngsim.route == "bngsim-explicit"));
+    REQUIRE(explicitBngsim.bngsimLoweringChecked);
+#ifndef BNG3_HAS_BNGSIM_ADAPTER
+    REQUIRE(explicitBngsim.backend == engine::FiniteBackend::Native);
+    REQUIRE(explicitBngsim.route == "native-fallback:bngsim-unavailable");
+    REQUIRE(explicitBngsim.reason.find("unavailable") != std::string::npos);
+    REQUIRE(explicitBngsim.bngsimLowerable);
+#endif
+}
+
+TEST_CASE("FiniteBackend names the semantic blocker of an unsupported model", "[finite_backend]") {
+    auto model = parseCompartmentModel();
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator gen(*model);
+    auto net = gen.generateNative();
+
+    const auto decision = engine::resolveFiniteBackend(
+        engine::FiniteBackend::Bngsim, "ode", *model, net);
+    REQUIRE(decision.backend == engine::FiniteBackend::Native);
+    REQUIRE(decision.route == "native-fallback:unsupported-semantics");
+    REQUIRE_FALSE(decision.bngsimLowerable);
+    REQUIRE(decision.blockers.size() == 1);
+    REQUIRE(decision.reason.find("compartments") != std::string::npos);
+}
+
+TEST_CASE("FiniteBackend names the methods the BNGsim backend does not claim", "[finite_backend]") {
+    auto model = parseBoundaryModel();
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator gen(*model);
+    auto net = gen.generateNative();
+
+    for (const auto* method : {"pla", "psa"}) {
+        const auto decision = engine::resolveFiniteBackend(
+            engine::FiniteBackend::Bngsim, method, *model, net);
+        REQUIRE(decision.backend == engine::FiniteBackend::Native);
+        REQUIRE(decision.route == "native-fallback:method-not-claimed");
+        REQUIRE(decision.reason.find("does not yet support") != std::string::npos);
+    }
+    REQUIRE(engine::bngsimClaimsMethod("ode"));
+    REQUIRE(engine::bngsimClaimsMethod("ssa"));
+    REQUIRE_FALSE(engine::bngsimClaimsMethod("pla"));
 }
 
 TEST_CASE("FiniteBackend native ODE simulation still works", "[finite_backend]") {

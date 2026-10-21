@@ -315,10 +315,10 @@ def assess_obligations(obligations, reports, revision):
         ):
             if not isinstance(obligation.get(name), list):
                 raise ValueError("invalid obligation list: " + name)
-        checks = obligation["required_checks"]
-        if len({c["id"] for c in checks}) != len(checks):
+        required_checks = obligation["required_checks"]
+        if len({c["id"] for c in required_checks}) != len(required_checks):
             raise ValueError("duplicate required check identity")
-        for check in checks:
+        for check in required_checks:
             if check.get("evidence_kind") not in {
                 "supported-execution",
                 "diagnostic-only",
@@ -332,8 +332,51 @@ def assess_obligations(obligations, reports, revision):
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate obligation identity")
     for obligation in obligations:
+        manual_requirements = []
+        for check in obligation["required_checks"]:
+            if check["evidence_kind"] == "disposition":
+                manual_requirements.append(
+                    dict(
+                        id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                        kind="disposition",
+                        criterion=obligation["criterion"],
+                        text=check["expectation"],
+                    )
+                )
+        for decision in obligation["decisions"]:
+            manual_requirements.append(
+                dict(
+                    id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                    kind="human-decision",
+                    criterion=obligation["criterion"],
+                    text=decision,
+                )
+            )
+        for scope in obligation["unmapped_scope"]:
+            manual_requirements.append(
+                dict(
+                    id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                    kind="scope-reconciliation",
+                    criterion=obligation["criterion"],
+                    text=scope,
+                )
+            )
+        if (
+            obligation.get("scope_status") == "STALE_SCOPE"
+            and not obligation["unmapped_scope"]
+        ):
+            manual_requirements.append(
+                dict(
+                    id=f"{obligation['id']}:manual:{len(manual_requirements) + 1}",
+                    kind="scope-reconciliation",
+                    criterion=obligation["criterion"],
+                    text="Reconcile the live issue text with this reviewed scope.",
+                )
+            )
         checks = []
         for required in obligation["required_checks"]:
+            if required["evidence_kind"] == "disposition":
+                continue
             key = required["id"]
             record = dict(required, status="NOT_TESTED", missing_evidence=[])
             if key in conflicts:
@@ -374,14 +417,12 @@ def assess_obligations(obligations, reports, revision):
                 bool(check.get("observation")) and check["status"] != "NOT_TESTED"
             )
         statuses = {c["status"] for c in checks}
-        if (
-            obligation.get("scope_status") in {"STALE_SCOPE", "UNMAPPED"}
-            or obligation.get("unmapped_scope")
-            or obligation.get("decisions")
-        ):
-            status = "DECISION_REQUIRED"
+        if checks:
+            technical_status = "DEMONSTRATED"
         else:
-            status = "DEMONSTRATED" if checks else "EVIDENCE_GAP"
+            technical_status = (
+                "NOT_APPLICABLE" if manual_requirements else "EVIDENCE_GAP"
+            )
         for candidate in (
             "NOT_TESTED",
             "EVIDENCE_GAP",
@@ -393,13 +434,17 @@ def assess_obligations(obligations, reports, revision):
             "CONFLICT",
         ):
             if candidate in statuses:
-                status = candidate
-        if status == "DEMONSTRATED" and statuses != {"PASS"}:
-            status = "EVIDENCE_GAP"
+                technical_status = candidate
+        if technical_status == "DEMONSTRATED" and statuses != {"PASS"}:
+            technical_status = "EVIDENCE_GAP"
+        status = "DECISION_REQUIRED" if manual_requirements else technical_status
         assessed.append(
             dict(
                 obligation,
                 status=status,
+                technical_status=technical_status,
+                decision_status=("REQUIRED" if manual_requirements else "NONE"),
+                manual_requirements=manual_requirements,
                 checks=checks,
                 test_reference_status=(
                     "RELEVANT_TEST_EXISTS"
@@ -429,14 +474,20 @@ def assess_obligations(obligations, reports, revision):
         added = {
             o["id"]
             for o in assessed
-            if o["status"] == "DEMONSTRATED" and set(o["dependencies"]) <= demonstrated
+            if o["status"] == "DEMONSTRATED"
+            and o["decision_status"] != "REQUIRED"
+            and set(o["dependencies"]) <= demonstrated
         } - demonstrated
         if not added:
             break
         demonstrated.update(added)
     for row in assessed:
         row["blocked_dependencies"] = sorted(set(row["dependencies"]) - demonstrated)
-        if row["status"] == "DEMONSTRATED" and row["id"] not in demonstrated:
+        if (
+            row["status"] == "DEMONSTRATED"
+            and row["decision_status"] != "REQUIRED"
+            and row["id"] not in demonstrated
+        ):
             row["status"] = "BLOCKED"
     return dict(obligations=assessed, evidence_audit=audit)
 
@@ -459,7 +510,53 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
         raise ValueError("campaign family budget must be between zero and ten")
     from .integrated_cases import generated_cases
     from .integrated import expected_contract_ids
-    from .bngir_adversarial import check_ids
+    from .bngir_adversarial import check_ids as adversarial_check_ids
+    from .bngir_format_contracts import check_ids as format_check_ids
+    from .bngir_reconstruction_contracts import check_ids as reconstruction_check_ids
+    from .netrule_execution import check_ids as netrule_check_ids
+    from .netrule_execution import cases as netrule_cases
+    from .nfnext_slices import check_ids as nfnext_slice_check_ids
+    from .rate_law_contract import check_ids as rate_law_check_ids
+    from . import api_surface
+    from .stochastic_parity import check_ids as stochastic_parity_check_ids
+    from .sbml_support_boundary import check_ids as sbml_boundary_check_ids
+    from .atomizer_symbol_resolution import check_ids as symbol_resolution_check_ids
+    from .atomizer_reconstruction import (
+        check_ids as atomizer_reconstruction_check_ids,
+    )
+    from .energy_qualification import check_ids as energy_check_ids
+    from .workload_profile import check_ids as workload_profile_check_ids
+    from .semantic_identity import check_ids as semantic_identity_check_ids
+    from .graph_differential import check_ids as graph_differential_check_ids
+    from .capability_inventory import check_ids as capability_inventory_check_ids
+    from .real_model_fixtures import check_ids as real_model_fixtures_check_ids
+    from .corpus_selection import check_ids as corpus_selection_check_ids
+    from .biomodels_hold import check_ids as biomodels_hold_check_ids
+    from .integrated_nfsim_fixtures import check_ids as nfsim_fixture_check_ids
+    from .integrated_nfnext_boundary import check_ids as nfnext_boundary_check_ids
+    from .integrated_engine_routes import check_ids as engine_route_check_ids
+    from .boundary_extraction import check_ids as boundary_extraction_check_ids
+    from .release_candidate import check_ids as release_candidate_check_ids
+    from . import event_semantics
+    from .sbml_conformance import check_ids as conformance_check_ids
+    from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
+    from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
+
+    def graph_identity_check_ids():
+        return [
+            f"graph-identity-contract:{case['id']}:{check}"
+            for case in GRAPH_CONTRACT_CASES
+            for check in GRAPH_CONTRACT_CHECKS
+        ]
+
+    from .bngsim_boundary import check_ids as boundary_check_ids
+    from .jax_backend_measurement import check_ids as jax_measurement_check_ids
+
+    check_ids = [
+        *adversarial_check_ids(),
+        *format_check_ids(),
+        *reconstruction_check_ids(),
+    ]
 
     cases = generated_cases(full=False)
     families = []
@@ -475,6 +572,12 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                     include_graph_identity=False,
                     include_bngir_adversarial=False,
                     include_quantity_laws=False,
+                    include_export_format_tier=False,
+                    include_netrule_execution=False,
+                    include_bngsim_boundary=False,
+                    include_jax_backend_measurement=False,
+                    include_rate_law_contract=False,
+                    include_nfnext_slices=False,
                 ),
                 runner="tests.validation.integrated",
                 budget=dict(
@@ -487,14 +590,29 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
         dict(
             id="native-bngir-adversarial",
             case_ids=[],
-            check_ids=check_ids(),
+            check_ids=check_ids,
             runner="tests.validation.integrated",
-            budget=dict(checks=len(check_ids()), stage_timeout_seconds=60),
+            budget=dict(checks=len(check_ids), stage_timeout_seconds=60),
             limits="Bounded generated native reader shapes; no complete migration or arbitrary graph coverage.",
+        )
+    )
+    families.append(
+        dict(
+            id="network-rule-execution",
+            case_ids=[case["id"] for case in netrule_cases()],
+            check_ids=netrule_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(netrule_check_ids()), stage_timeout_seconds=120),
+            limits=(
+                "Single-molecule rule shapes without bonds, compartments or "
+                "delete-molecules; no legacy network-rule path is retired by "
+                "this evidence and other rule shapes remain unqualified."
+            ),
         )
     )
     from .integrated_marginals import source_law_check_ids
     from .integrated_cases import source_law_cases
+    from .export_format_tier import check_ids as export_format_tier_check_ids
 
     families.append(
         dict(
@@ -508,6 +626,450 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                 stage_timeout_seconds=900,
             ),
             limits="Finite prelowered physical-law and bare BNGL count controls; no unit-annotation ingestion or joint-law qualification.",
+        )
+    )
+    families.append(
+        dict(
+            id="export-format-tier",
+            case_ids=[],
+            check_ids=export_format_tier_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(export_format_tier_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits="Bounded generated export-format tier: BNGL/NET/SBML round trips with independent consumers and the eBNGL energy refusal boundary; no exhaustive format matrix and no structural/graph exporter qualification.",
+        )
+    )
+    families.append(
+        dict(
+            id="bngsim-boundary",
+            case_ids=[],
+            check_ids=boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(boundary_check_ids()), stage_timeout_seconds=300),
+            limits="Generated finite-network models with an independent closed-form law; the BNGsim route itself needs a build with the adapter linked.",
+        )
+    )
+    families.append(
+        dict(
+            id="jax-backend-measurement",
+            case_ids=[],
+            check_ids=jax_measurement_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(jax_measurement_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "Measured profile of the JAX backend on a fixed generated corpus "
+                "on one host: the stage timings, the A/A repeatability control, "
+                "the independent closed-form controls and the no-win verdicts "
+                "are machine-specific, and the stages the JAX backend does not "
+                "provide (SSA, NFsim, parameter scans) are recorded as explicit "
+                "boundaries rather than measured through another backend."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="rate-law-contract",
+            case_ids=[],
+            check_ids=rate_law_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(rate_law_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The declared rate-law slice only: elementary parameter rates, "
+                "the Saturation/MichaelisMenten/Hill special rates, table "
+                "functions, local molecule scopes, elementary mass-action "
+                "multiplicity and observable-dependent rates, compared against "
+                "closed-form laws; compartment-scoped, filtered, modified, "
+                "energy-bearing and population-mapped models stay outside the "
+                "slice and are reported as unsupported with their reason."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="api-surface",
+            case_ids=[],
+            check_ids=api_surface.check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(checks=len(api_surface.check_ids()), stage_timeout_seconds=300),
+            limits=(
+                "One generated first-order decay family through the public API "
+                "and the installed CLI; the stochastic statements cover the "
+                "terminal-time marginal only."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="stochastic-parity",
+            case_ids=[],
+            check_ids=stochastic_parity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(stochastic_parity_check_ids()), stage_timeout_seconds=600
+            ),
+            limits=(
+                "Generated stochastic rate conventions against the exact binomial "
+                "count law with a recorded seed and a stated error budget; the "
+                "claims cover the terminal-time marginal only."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="graph-identity-contract",
+            case_ids=[],
+            check_ids=graph_identity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(graph_identity_check_ids()), stage_timeout_seconds=300
+            ),
+            limits=(
+                "The generated identity families only: the network, NFsim and "
+                "species layers are compared against one shared contract for "
+                "isomorphic spellings and non-isomorphic controls."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="sbml-support-boundary",
+            case_ids=[],
+            check_ids=sbml_boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(sbml_boundary_check_ids()), stage_timeout_seconds=300
+            ),
+            limits=(
+                "The generated unsupported-construct groups only; a construct the "
+                "engine now supports must be reported as such rather than grouped "
+                "as unsupported."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="atomizer-symbol-resolution",
+            case_ids=[],
+            check_ids=symbol_resolution_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(symbol_resolution_check_ids()), stage_timeout_seconds=300
+            ),
+            limits=(
+                "The generated symbol-resolution contract only: names, scopes and "
+                "feature checks resolved against an independent expectation."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="atomizer-reconstruction",
+            case_ids=[],
+            check_ids=atomizer_reconstruction_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(atomizer_reconstruction_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated structural reconstruction families only: reaction "
+                "and bond changes, compartments, quantities and retained metadata, "
+                "compared against independent references."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="official-sbml-conformance",
+            case_ids=[],
+            check_ids=conformance_check_ids(),
+            runner="tests.validation.sbml_conformance",
+            budget=dict(
+                checks=len(conformance_check_ids()), stage_timeout_seconds=3600
+            ),
+            limits=(
+                "One invocation of the existing locked-suite runner over the "
+                "locked official SBML Test Suite revision. The conversion, round "
+                "trip, official-reference and independent-comparison outcomes are "
+                "reported separately; a missing suite checkout is not evidence."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="energy-qualification",
+            case_ids=[],
+            check_ids=energy_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(energy_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The energy extension on a fixed generated corpus of two-state "
+                "energy models and one driven cycle: the rate claims are "
+                "compared against the closed-form law and the extension stays "
+                "experimental and opt-in."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="workload-profile",
+            case_ids=[],
+            check_ids=workload_profile_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(workload_profile_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The reconciliation of the recorded NFsim CPU/ensemble/device "
+                "plan against the implemented surface, plus the measured "
+                "profile of the network-SSA and network-free execution modes."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="semantic-identity",
+            case_ids=[],
+            check_ids=semantic_identity_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(semantic_identity_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated identity families only: the compiled identifiers, "
+                "the serialized references and the refinement between them are "
+                "compared against an expectation written before the compiler "
+                "runs."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="graph-differential",
+            case_ids=[],
+            check_ids=graph_differential_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(graph_differential_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated differential graph families only: the production "
+                "network's species are compared with the canonical reference "
+                "under the harness's own graph matcher, and a case outside the "
+                "declared domain is refused by name."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="capability-union-inventory",
+            case_ids=[],
+            check_ids=capability_inventory_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(capability_inventory_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The generated capability-union inventory only: every capability "
+                "the supported surfaces expose carries a support status, an "
+                "owner and an acceptance gate, and every exclusion is recorded "
+                "rather than left implicit."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="real-model-fixtures",
+            case_ids=[],
+            check_ids=real_model_fixtures_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(real_model_fixtures_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The named real-model fixture families only, each compared "
+                "against an independent expectation; a fixture the engine "
+                "cannot represent is refused rather than skipped."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="corpus-selection",
+            case_ids=[],
+            check_ids=corpus_selection_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(corpus_selection_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The recorded corpus selection only: the selected models, the "
+                "separate workflow and the accepted selections agree, every "
+                "selection carries a reason, and an empty tier is reported."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="biomodels-retention",
+            case_ids=[],
+            check_ids=biomodels_hold_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(biomodels_hold_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The recorded BioModels stop only: the stop stays in effect as "
+                "a diagnostic and the retained results carry the corpus and the "
+                "source hashes they came from. No category count is claimed."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="nfsim-fixtures",
+            case_ids=[],
+            check_ids=nfsim_fixture_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(nfsim_fixture_check_ids()),
+                stage_timeout_seconds=900,
+            ),
+            limits=(
+                "The declared fixture families only: the scopes, dynamic rates, "
+                "observables, symmetry and deletion cases compared across the "
+                "direct route, the XML route and the independent NFsim result "
+                "with a fixed seed and a stated error control."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="nfnext-boundary",
+            case_ids=[],
+            check_ids=nfnext_boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(nfnext_boundary_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The NFcore2 route only: whether the route is promoted, "
+                "qualified or deprecated is stated, and the overlap is "
+                "contained without changing the supported semantics."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="engine-routes",
+            case_ids=[],
+            check_ids=engine_route_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(engine_route_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The declared route families only: the seeds, observables, "
+                "parameter and function graphs are carried and initialized, and "
+                "the production-lowered execution is compared with the "
+                "reference fixtures."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="extracted-capability-boundary",
+            case_ids=[],
+            check_ids=boundary_extraction_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(boundary_extraction_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The extracted total-rate capability only: the seam owns the "
+                "capability, the callers agree on its outcome, and the "
+                "existing qualified checks still pass unchanged."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="release-candidate-evidence",
+            case_ids=[],
+            check_ids=release_candidate_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(release_candidate_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "What one host can decide about the release candidate: the "
+                "licence and notice inventory, the memory contract, the "
+                "declared sanitizer configuration and the platform matrix "
+                "shape. The hosted arms are recorded as evidence to collect, "
+                "never claimed."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="event-semantics",
+            case_ids=[],
+            check_ids=event_semantics.check_ids(),
+            runner="tests.validation.event_semantics",
+            budget=dict(
+                checks=len(event_semantics.check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The declared event families only: the native event runtime, "
+                "the Atomizer's event lowering and the scheduled stochastic "
+                "route, each compared against a closed-form law. The official "
+                "SBML suite, a second independent engine, the delay, snapshot, "
+                "persistence, cancellation and cascade semantics and the "
+                "native parameter and compartment assignment targets stay "
+                "outside the slice and are refused by name."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="nfnext-slices",
+            case_ids=[],
+            check_ids=nfnext_slice_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(nfnext_slice_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The approved NFnext slice only: unary site-state rules with a "
+                "static elementary rate, isolated integer seeds and unary "
+                "Molecules observables; the dynamic-rate, filter, modifier, "
+                "compartment, population-map and energy families are checked as "
+                "named refusals and are not qualified as supported."
+            ),
         )
     )
     selected = []
@@ -545,11 +1107,227 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
             else (
                 ["--quantity-laws-only"]
                 if family["id"] == "quantity-source-laws"
-                else [
-                    argument
-                    for case_id in family["case_ids"]
-                    for argument in ("--case", case_id)
-                ]
+                else (
+                    ["--export-format-tier-only"]
+                    if family["id"] == "export-format-tier"
+                    else (
+                        ["--netrule-execution-only"]
+                        if family["id"] == "network-rule-execution"
+                        else (
+                            ["--bngsim-boundary-only"]
+                            if family["id"] == "bngsim-boundary"
+                            else (
+                                ["--jax-backend-measurement-only"]
+                                if family["id"] == "jax-backend-measurement"
+                                else (
+                                    ["--stochastic-parity-only"]
+                                    if family["id"] == "stochastic-parity"
+                                    else (
+                                        ["--api-surface-only"]
+                                        if family["id"] == "public-api-surface"
+                                        else (
+                                            ["--graph-identity-contract-only"]
+                                            if family["id"] == "graph-identity-contract"
+                                            else (
+                                                ["--rate-law-contract-only"]
+                                                if family["id"] == "rate-law-contract"
+                                                else (
+                                                    ["--nfsim-fixtures-only"]
+                                                    if family["id"] == "nfsim-fixtures"
+                                                    else (
+                                                        ["--atomizer-events-only"]
+                                                        if family["id"]
+                                                        == "atomizer-events"
+                                                        else (
+                                                            ["--energy-contract-only"]
+                                                            if family["id"]
+                                                            == "energy-contract"
+                                                            else (
+                                                                [
+                                                                    "--semantic-identity-only"
+                                                                ]
+                                                                if family["id"]
+                                                                == "semantic-identity"
+                                                                else (
+                                                                    [
+                                                                        "--capability-inventory-only"
+                                                                    ]
+                                                                    if family["id"]
+                                                                    == "capability-inventory"
+                                                                    else (
+                                                                        [
+                                                                            "--sbml-support-boundary-only"
+                                                                        ]
+                                                                        if family["id"]
+                                                                        == "sbml-support-boundary"
+                                                                        else (
+                                                                            [
+                                                                                "--atomizer-symbol-resolution-only"
+                                                                            ]
+                                                                            if family[
+                                                                                "id"
+                                                                            ]
+                                                                            == "atomizer-symbol-resolution"
+                                                                            else (
+                                                                                [
+                                                                                    "--atomizer-reconstruction-only"
+                                                                                ]
+                                                                                if family[
+                                                                                    "id"
+                                                                                ]
+                                                                                == "atomizer-reconstruction"
+                                                                                else (
+                                                                                    [
+                                                                                        "--energy-qualification-only"
+                                                                                    ]
+                                                                                    if family[
+                                                                                        "id"
+                                                                                    ]
+                                                                                    == "energy-qualification"
+                                                                                    else (
+                                                                                        [
+                                                                                            "--workload-profile-only"
+                                                                                        ]
+                                                                                        if family[
+                                                                                            "id"
+                                                                                        ]
+                                                                                        == "workload-profile"
+                                                                                        else (
+                                                                                            [
+                                                                                                "--semantic-identity-only"
+                                                                                            ]
+                                                                                            if family[
+                                                                                                "id"
+                                                                                            ]
+                                                                                            == "semantic-identity"
+                                                                                            else (
+                                                                                                [
+                                                                                                    "--graph-differential-only"
+                                                                                                ]
+                                                                                                if family[
+                                                                                                    "id"
+                                                                                                ]
+                                                                                                == "graph-differential"
+                                                                                                else (
+                                                                                                    [
+                                                                                                        "--capability-inventory-only"
+                                                                                                    ]
+                                                                                                    if family[
+                                                                                                        "id"
+                                                                                                    ]
+                                                                                                    == "capability-union-inventory"
+                                                                                                    else (
+                                                                                                        [
+                                                                                                            "--real-model-fixtures-only"
+                                                                                                        ]
+                                                                                                        if family[
+                                                                                                            "id"
+                                                                                                        ]
+                                                                                                        == "real-model-fixtures"
+                                                                                                        else (
+                                                                                                            [
+                                                                                                                "--corpus-selection-only"
+                                                                                                            ]
+                                                                                                            if family[
+                                                                                                                "id"
+                                                                                                            ]
+                                                                                                            == "corpus-selection"
+                                                                                                            else (
+                                                                                                                [
+                                                                                                                    "--biomodels-hold-only"
+                                                                                                                ]
+                                                                                                                if family[
+                                                                                                                    "id"
+                                                                                                                ]
+                                                                                                                == "biomodels-retention"
+                                                                                                                else (
+                                                                                                                    [
+                                                                                                                        "--nfsim-fixtures-only"
+                                                                                                                    ]
+                                                                                                                    if family[
+                                                                                                                        "id"
+                                                                                                                    ]
+                                                                                                                    == "nfsim-fixtures"
+                                                                                                                    else (
+                                                                                                                        [
+                                                                                                                            "--nfnext-boundary-only"
+                                                                                                                        ]
+                                                                                                                        if family[
+                                                                                                                            "id"
+                                                                                                                        ]
+                                                                                                                        == "nfnext-boundary"
+                                                                                                                        else (
+                                                                                                                            [
+                                                                                                                                "--engine-routes-only"
+                                                                                                                            ]
+                                                                                                                            if family[
+                                                                                                                                "id"
+                                                                                                                            ]
+                                                                                                                            == "engine-routes"
+                                                                                                                            else (
+                                                                                                                                [
+                                                                                                                                    "--boundary-extraction-only"
+                                                                                                                                ]
+                                                                                                                                if family[
+                                                                                                                                    "id"
+                                                                                                                                ]
+                                                                                                                                == "extracted-capability-boundary"
+                                                                                                                                else (
+                                                                                                                                    [
+                                                                                                                                        "--release-candidate-only"
+                                                                                                                                    ]
+                                                                                                                                    if family[
+                                                                                                                                        "id"
+                                                                                                                                    ]
+                                                                                                                                    == "release-candidate-evidence"
+                                                                                                                                    else (
+                                                                                                                                        [
+                                                                                                                                            "--event-semantics-only"
+                                                                                                                                        ]
+                                                                                                                                        if family[
+                                                                                                                                            "id"
+                                                                                                                                        ]
+                                                                                                                                        == "event-semantics"
+                                                                                                                                        else [
+                                                                                                                                            argument
+                                                                                                                                            for case_id in family[
+                                                                                                                                                "case_ids"
+                                                                                                                                            ]
+                                                                                                                                            for argument in (
+                                                                                                                                                "--case",
+                                                                                                                                                case_id,
+                                                                                                                                            )
+                                                                                                                                        ]
+                                                                                                                                    )
+                                                                                                                                )
+                                                                                                                            )
+                                                                                                                        )
+                                                                                                                    )
+                                                                                                                )
+                                                                                                            )
+                                                                                                        )
+                                                                                                    )
+                                                                                                )
+                                                                                            )
+                                                                                        )
+                                                                                    )
+                                                                                )
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                )
+                                                            )
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
             )
         )
         family["confirmed_failures"] = sum(o.get("status") == "FAIL" for o in targets)
@@ -574,10 +1352,14 @@ def acceptance_dashboard(queue, assessment, campaigns):
         row["obligations"] = obligations
         row["obligation_outcomes"] = dict(Counter(o["status"] for o in obligations))
         row["demonstrated_obligations"] = [
-            o["id"] for o in obligations if o["status"] == "DEMONSTRATED"
+            o["id"]
+            for o in obligations
+            if o["status"] == "DEMONSTRATED" and o["decision_status"] != "REQUIRED"
         ]
         row["remaining_obligations"] = [
-            o["id"] for o in obligations if o["status"] != "DEMONSTRATED"
+            o["id"]
+            for o in obligations
+            if o["status"] != "DEMONSTRATED" or o["decision_status"] == "REQUIRED"
         ]
         row["selected_families"] = [
             f["id"] for f in campaigns if row["number"] in f["issues"]
@@ -599,12 +1381,15 @@ def acceptance_dashboard(queue, assessment, campaigns):
                 obligation=o["id"],
                 decisions=o["decisions"],
                 unmapped_scope=o["unmapped_scope"],
+                manual_requirements=o["manual_requirements"],
             )
             for o in obligations
-            if o["decisions"] or o["unmapped_scope"]
+            if o["manual_requirements"]
         ]
         row["ranking_basis"] = dict(
-            confirmed_failures=sum(o["status"] == "FAIL" for o in obligations),
+            confirmed_failures=sum(
+                check["status"] == "FAIL" for o in obligations for check in o["checks"]
+            ),
             remaining=len(row["remaining_obligations"]),
             shared_issues=len(
                 {

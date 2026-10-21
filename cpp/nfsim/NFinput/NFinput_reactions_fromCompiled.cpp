@@ -2364,15 +2364,88 @@ bool lowerDirection(const CompiledModel& model,
                 reaction->volumeConversionFactor = 1.0;
             }
         }
-    } else if (!compiledRate.unit.has_value()) {
+    } else if (compiledRate.unit.has_value()) {
+        // A typed reactant-bearing rate states the physical rate per distinct
+        // reactant pair.  The count propensity multiplies the reactant counts,
+        // so the typed conversion supplies the molecularity exponent and the
+        // reaction compartment, and it cancels the identical-reactant
+        // permutation factor that would otherwise count the pair correction
+        // twice.  The typed conversion already includes the compartment
+        // volume, so the legacy reactant volume scaling is not applied on top
+        // of it.
+        const bng::compile::CompiledCompartment* contextCompartment = nullptr;
+        std::size_t molecularity = 0;
+        for (const auto& pattern : direction.reactantPatterns) {
+            if (pattern.molecules().size() != 1) {
+                diagnostic = "physical rates require single-molecule reactant patterns";
+                delete reaction;
+                return false;
+            }
+            ++molecularity;
+            const auto* declaration = reactantCompartmentDeclaration(model, pattern);
+            if (declaration == nullptr) {
+                diagnostic = "physical rates require one declared reactant compartment";
+                delete reaction;
+                return false;
+            }
+            if (contextCompartment != nullptr && contextCompartment != declaration) {
+                diagnostic = "physical rates in multiple compartments are ambiguous";
+                delete reaction;
+                return false;
+            }
+            contextCompartment = declaration;
+        }
+        if (contextCompartment == nullptr || !contextCompartment->declaredUnit.has_value() ||
+            contextCompartment->volumeTimeDependent ||
+            !std::isfinite(contextCompartment->volume) ||
+            contextCompartment->volume <= 0.0) {
+            diagnostic = "physical rates require a positive static declared 3D volume with volume units";
+            delete reaction;
+            return false;
+        }
+        bng::units::ConversionContext context;
+        if (system.getNumberPerQuantityUnit() > 0.0)
+            context.numberPerQuantityUnit = system.getNumberPerQuantityUnit();
+        context.compartmentVolume = contextCompartment->volume;
+        context.volumeUnit = contextCompartment->declaredUnit;
+        const auto conversion = bng::units::stochasticRateFactor(
+            *compiledRate.unit, molecularity, context);
+        if (!conversion) {
+            diagnostic = "physical rate unit cannot be converted to a count rate: " +
+                         conversion.error;
+            delete reaction;
+            return false;
+        }
+        const double permutationFactor = rule.modifiers().empty()
+            ? direction.wholeReactantPermutationFactor() : 1.0;
+        if (!std::isfinite(permutationFactor) || permutationFactor <= 0.0) {
+            diagnostic = "physical rates require a positive reactant permutation factor";
+            delete reaction;
+            return false;
+        }
+        const double factor = *conversion.factor / permutationFactor;
+        if (!std::isfinite(factor) || factor < 0.0) {
+            diagnostic = "converted physical count rate must be finite and non-negative";
+            delete reaction;
+            return false;
+        }
+        // The typed conversion carries the compartment volume, so the legacy
+        // volume conversion must not be applied to this reaction as well.
+        reaction->volumeConversionFactor = 1.0;
+        if (compiledRate.resolvedExpression().kind ==
+            bng::compile::ResolvedExpressionKind::ParameterRef)
+            reaction->setBaseRateParameterConversionFactor(factor);
+        else
+            reaction->scaleBaseRate(factor, "");
+    } else {
         // Reactant-bearing bare rate. NFsim's default propensity is the
         // mass-action count law, which already carries BNG2's identical-reactant
         // permutation factor but does not divide by compartment volume. Apply
         // the Perl-faithful Rxn.pm conversion so the count hazard matches the
         // source law and the deterministic path (NetWriter::unitConversionFactor
         // writes the same 1/product(sizes) factor as unit_conversion in .net).
-        // Physical-unit rates never reach here: nfSimPhysicalUnitBridgeRejection
-        // rejects reactant-bearing typed rates before construction, and the
+        // A typed rate never reaches here: the typed branch above converts it
+        // with its molecularity and reaction compartment, and the
         // unit.has_value() guard keeps this a no-op if that ever changes.
         std::vector<NFcore::Compartment*> runtimeCompartments;
         bool hasWildcardCompartment = false;

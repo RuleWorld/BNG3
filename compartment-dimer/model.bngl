@@ -1,0 +1,17 @@
+begin model
+begin compartments
+  PM 2 1
+end compartments
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  @PM:A(b) 10
+end seed species
+begin reaction rules
+  self: @PM:A(b) + @PM:A(b) -> @PM:A(b!1).A(b!1) 0.01
+end reaction rules
+begin actions
+  generate_network({overwrite=>1})
+end actions
+end model

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "SymbolTable.hpp"
+#include "TotalRate.hpp"
 #include "ast/Model.hpp"
 #include "ast/ReactionRule.hpp"
 
@@ -27,7 +28,8 @@ ModifierKind translateModifier(const std::string& rawModifier) {
     if (modifier == "deletemolecules") return ModifierKind::DeleteMolecules;
     if (modifier == "moveconnected") return ModifierKind::MoveConnected;
     if (modifier == "matchonce") return ModifierKind::MatchOnce;
-    if (modifier == "totalrate") return ModifierKind::TotalRate;
+    // The TotalRate spelling belongs to the compile layer's total-rate seam.
+    if (isTotalRateModifier(rawModifier)) return ModifierKind::TotalRate;
     if (modifier.rfind("include_reactants(", 0) == 0) return ModifierKind::IncludeReactants;
     if (modifier.rfind("exclude_reactants(", 0) == 0) return ModifierKind::ExcludeReactants;
     if (modifier.rfind("include_products(", 0) == 0) return ModifierKind::IncludeProducts;
@@ -204,10 +206,65 @@ void addAffectedComponent(std::vector<PatternSiteRef>& refs, const PatternSiteRe
     if (std::find(refs.begin(), refs.end(), ref) == refs.end()) refs.push_back(ref);
 }
 
+// The scopes a rule declares structurally. A rule built from resolved
+// patterns has no pattern text to read `%name` markers from, so the
+// declaration is the only source of its local scopes.
+//
+// The declared scopes are grouped the same way the text markers are: a name
+// declared on both sides binds to the direction's own reactants, and a name
+// declared on one side only keeps that side.
+std::vector<CompiledLocalScope> declaredLocalScopes(
+    const ast::ReactionRule& rule,
+    std::vector<Diagnostic>* diagnostics,
+    PatternSide preferredSide) {
+    std::vector<CompiledLocalScope> preferred;
+    std::vector<CompiledLocalScope> other;
+    for (const auto& scope : rule.getLocalScopes()) {
+        CompiledLocalScope candidate;
+        candidate.name = scope.name;
+        candidate.side = scope.side == ast::ReactionRule::LocalScope::Side::Reactant
+                             ? PatternSide::Reactant
+                             : PatternSide::Product;
+        candidate.patternIndex = scope.patternIndex;
+        candidate.kind = scope.kind == ast::ReactionRule::LocalScope::Kind::Species
+                             ? LocalScopeKind::Species
+                             : LocalScopeKind::Molecule;
+        candidate.moleculeOccurrence = scope.moleculeOccurrence;
+
+        auto& bucket = candidate.side == preferredSide ? preferred : other;
+        const auto found = std::find_if(
+            bucket.begin(), bucket.end(),
+            [&](const auto& entry) { return entry.name == candidate.name; });
+        if (found != bucket.end()) {
+            if (found->patternIndex != candidate.patternIndex ||
+                found->kind != candidate.kind ||
+                found->moleculeOccurrence != candidate.moleculeOccurrence) {
+                addRuleDiagnostic(diagnostics, rule.getRuleName(),
+                    "local scope identifier '" + candidate.name +
+                    "' is ambiguous across reactant patterns/molecules");
+            }
+            continue;
+        }
+        bucket.push_back(std::move(candidate));
+    }
+
+    std::vector<CompiledLocalScope> result = preferred;
+    for (auto& scope : other) {
+        const bool declared = std::any_of(
+            result.begin(), result.end(),
+            [&](const auto& entry) { return entry.name == scope.name; });
+        if (!declared) result.push_back(std::move(scope));
+    }
+    return result;
+}
+
 std::vector<CompiledLocalScope> collectLocalScopes(
     const ast::ReactionRule& rule,
     std::vector<Diagnostic>* diagnostics,
     PatternSide preferredSide) {
+    if (!rule.getLocalScopes().empty()) {
+        return declaredLocalScopes(rule, diagnostics, preferredSide);
+    }
     std::vector<CompiledLocalScope> scopes;
     const auto collectSide = [&](const std::vector<std::string> &patterns,
                                PatternSide side) {
@@ -341,6 +398,13 @@ public:
         compiled.conservativeInvalidation_ = rule.getOperations().empty();
         compiled.bidirectional_ = rule.isBidirectional();
 
+        // The local scopes decide which names in a rate law are local
+        // references, so they are resolved before the rate laws and the
+        // reservoir work are compiled.
+        compiled.forward_.localScopes = collectLocalScopes(
+            rule, diagnostics, PatternSide::Reactant);
+        const auto rateLocalScopeNames = localScopeNames(compiled.forward_.localScopes);
+
         // Reservoir work must be statically evaluable: a time- or
         // observable-dependent drive would change the cycle affinity during a
         // trajectory, which no backend implements. Record the expression
@@ -349,6 +413,23 @@ public:
         if (rule.hasDrivingWork()) {
             compiled.hasDrivingWork_ = true;
             compiled.drivingWorkExpression_ = rule.drivingWorkExpression().toString();
+            if (symbols != nullptr) {
+                // The resolved tree is the semantic content of the drive: a
+                // wire format that carries the work carries this tree, not the
+                // source text of the expression.
+                const std::vector<ast::Function> noFunctions;
+                const auto& functions =
+                    model != nullptr ? model->getFunctions() : noFunctions;
+                auto work = CompiledRateLaw::compile(
+                    rule.drivingWorkExpression(), *symbols, rateLocalScopeNames,
+                    functions);
+                if (diagnostics != nullptr) {
+                    diagnostics->insert(diagnostics->end(),
+                                        work.diagnostics().begin(),
+                                        work.diagnostics().end());
+                }
+                compiled.drivingWork_ = work.resolvedExpression();
+            }
             if (model != nullptr) {
                 try {
                     compiled.drivingWorkValue_ = rule.drivingWorkExpression().evaluate(
@@ -406,9 +487,6 @@ public:
                 compiled.forward_.wholeSpeciesDeletions.push_back(index);
         }
 
-        compiled.forward_.localScopes = collectLocalScopes(
-            rule, diagnostics, PatternSide::Reactant);
-        const auto rateLocalScopeNames = localScopeNames(compiled.forward_.localScopes);
         compiled.rateLaws_.reserve(rule.getRates().size());
         for (const auto& rate : rule.getRates()) {
             CompiledRateLaw compiledRate;

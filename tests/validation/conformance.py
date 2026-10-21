@@ -585,7 +585,9 @@ def main(argv=None):
     errors = inventory.validate_plan(ROOT, plan)
     if errors:
         parser.error("invalid capability plan: " + "; ".join(errors))
-    capabilities = inventory.discover_capabilities(ROOT, plan["capabilities"])
+    capabilities = inventory.discover_capabilities(
+        ROOT, plan["capabilities"], inventory.load_union(ROOT)
+    )
     selection = json.loads((ROOT / "provenance/corpus/selection.json").read_text())
     lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
     env = os.environ.copy()

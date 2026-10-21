@@ -210,6 +210,24 @@ def test_a_pep604_annotation_is_reported_when_it_is_evaluated():
     assert "PEP 604" in _features(findings)
 
 
+def test_a_bitwise_or_of_shouted_constants_is_not_a_union():
+    # 'os.O_WRONLY | os.O_CREAT' is a bitwise OR of two flags, not a union of
+    # two types, and every supported interpreter evaluates it.  The check read
+    # the shouted attribute name as a class name and reported the whole file
+    # as needing a newer interpreter.
+    findings = _findings(
+        "import os\n" "\n" "\n" "def f():\n" "    return os.O_WRONLY | os.O_CREAT\n"
+    )
+    assert findings == [], [finding.render() for finding in findings]
+
+
+def test_a_bitwise_or_of_two_classes_is_still_reported():
+    findings = _findings(
+        "class A:\n    pass\n\n\nclass B:\n    pass\n\n\ndef f():\n    return A | B\n"
+    )
+    assert "PEP 604" in _features(findings)
+
+
 def test_a_deferred_pep604_annotation_is_not_reported():
     findings = _findings(
         "from __future__ import annotations\n"

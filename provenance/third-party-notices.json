@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "scope": "the third-party components whose code is compiled into or linked into the artefacts that the release workflow packages: the command line binaries, the Python wheels and the source distribution",
+  "project": {
+    "name": "bionetgen",
+    "licence": "MIT",
+    "licence_file": "LICENSE",
+    "notice_file": "NOTICE",
+    "inventory_file": "provenance/third-party-notices.json"
+  },
+  "components": [
+    {
+      "id": "nauty",
+      "name": "nauty",
+      "upstream": "http://cs.anu.edu.au/~bdm/nauty/",
+      "revision": "2.4",
+      "bundled_paths": [
+        "cpp/nauty"
+      ],
+      "licence": "nauty permission notice",
+      "notice_source": "cpp/nauty/nauty.h",
+      "notice_text": "Copyright (1984-2007) Brendan McKay. All rights reserved. Permission is hereby given for use and/or distribution with the exception of sale for profit or application with nontrivial military significance. You must not remove this copyright notice, and you must document any changes that you make to this program. This software is subject to this copyright only, irrespective of any copyright attached to any package of which this is a part.",
+      "obligation": "The copyright notice must not be removed and every change to the program must be documented.",
+      "change_record": "cpp/nauty/README.md"
+    },
+    {
+      "id": "nfsim",
+      "name": "NFsim",
+      "upstream": "https://github.com/RuleWorld/NFsim",
+      "revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+      "bundled_paths": [
+        "cpp/nfsim"
+      ],
+      "licence": "MIT",
+      "notice_source": "cpp/nfsim/LICENSE.txt",
+      "notice_text": "MIT License\n\nCopyright (c) 2016 Michael W. Sneddon, James R. Faeder, Thierry Emonet\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.",
+      "obligation": "The copyright notice and the permission notice must be included in all copies and substantial portions of the software.",
+      "change_record": null
+    },
+    {
+      "id": "antlr4-runtime",
+      "name": "ANTLR4 C++ runtime",
+      "upstream": "https://github.com/antlr/antlr4",
+      "revision": "4.13.2",
+      "bundled_paths": [],
+      "licence": "BSD-3-Clause",
+      "notice_source": "https://github.com/antlr/antlr4/blob/4.13.2/LICENSE.txt",
+      "notice_text": "Copyright (c) 2012-2022 The ANTLR Project. All rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions\nare met:\n\n1. Redistributions of source code must retain the above copyright\nnotice, this list of conditions and the following disclaimer.\n\n2. Redistributions in binary form must reproduce the above copyright\nnotice, this list of conditions and the following disclaimer in the\ndocumentation and/or other materials provided with the distribution.\n\n3. Neither name of copyright holders nor the names of its contributors\nmay be used to endorse or promote products derived from this software\nwithout specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS\n``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT\nLIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR\nA PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR\nCONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,\nEXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,\nPROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR\nPROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF\nLIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING\nNEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS\nSOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+      "obligation": "A binary distribution must reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials provided with the distribution.",
+      "change_record": null
+    },
+    {
+      "id": "sundials",
+      "name": "SUNDIALS",
+      "upstream": "https://github.com/LLNL/sundials",
+      "revision": "v7.6.0",
+      "bundled_paths": [],
+      "licence": "BSD-3-Clause",
+      "notice_source": "https://github.com/LLNL/sundials/blob/v7.6.0/LICENSE",
+      "notice_text": "BSD 3-Clause License\n\nCopyright (c) 2025-2026, Lawrence Livermore National Security, University of Maryland Baltimore County, and the SUNDIALS contributors.\nCopyright (c) 2013-2025, Lawrence Livermore National Security and Southern Methodist University.\nCopyright (c) 2002-2013, Lawrence Livermore National Security.\nAll rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are met:\n\n* Redistributions of source code must retain the above copyright notice, this\n  list of conditions and the following disclaimer.\n\n* Redistributions in binary form must reproduce the above copyright notice,\n  this list of conditions and the following disclaimer in the documentation\n  and/or other materials provided with the distribution.\n\n* Neither the name of the copyright holder nor the names of its\n  contributors may be used to endorse or promote products derived from\n  this software without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\"\nAND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE\nIMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\nDISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\nFOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\nDAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\nSERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\nCAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\nOR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\nOF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.",
+      "obligation": "A binary distribution must reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials provided with the distribution.",
+      "change_record": null
+    },
+    {
+      "id": "pybind11",
+      "name": "pybind11",
+      "upstream": "https://github.com/pybind/pybind11",
+      "revision": "v2.13.6",
+      "bundled_paths": [],
+      "licence": "BSD-3-Clause",
+      "notice_source": "https://github.com/pybind/pybind11/blob/v2.13.6/LICENSE",
+      "notice_text": "Copyright (c) 2016 Wenzel Jakob <wenzel.jakob@epfl.ch>, All rights reserved.\n\nRedistribution and use in source and binary forms, with or without\nmodification, are permitted provided that the following conditions are met:\n\n1. Redistributions of source code must retain the above copyright notice, this\n   list of conditions and the following disclaimer.\n\n2. Redistributions in binary form must reproduce the above copyright notice,\n   this list of conditions and the following disclaimer in the documentation\n   and/or other materials provided with the distribution.\n\n3. Neither the name of the copyright holder nor the names of its contributors\n   may be used to endorse or promote products derived from this software\n   without specific prior written permission.\n\nTHIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS \"AS IS\" AND\nANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED\nWARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\nDISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE\nFOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL\nDAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR\nSERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER\nCAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,\nOR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE\nOF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n\nPlease also refer to the file .github/CONTRIBUTING.md, which clarifies licensing of\nexternal contributions to this project including patches, pull requests, etc.",
+      "obligation": "A binary distribution must reproduce the copyright notice, the conditions and the disclaimer in the documentation or other materials provided with the distribution.",
+      "change_record": null
+    }
+  ],
+  "notes": [
+    "The components are the vendored source trees that the build compiles and the external projects that the build fetches and links; the test only dependency is not part of a shipped artefact.",
+    "The inventory records the notices as the bundled sources state them. It is not a legal review and it does not approve a distribution."
+  ]
+}

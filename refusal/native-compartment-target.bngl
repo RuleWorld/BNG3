@@ -1,0 +1,26 @@
+begin model
+begin parameters
+  k 1.0
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Molecules X A()
+end observables
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+  event "decay-reset"
+  trigger: X <= 5
+  initial_value: false
+  persistent: true
+  use_values_from_trigger_time: true
+  assignment: C = 2
+  end event
+end bng3_events
+end model

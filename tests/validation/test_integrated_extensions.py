@@ -7,7 +7,10 @@ from pathlib import Path
 
 from tests.validation import (
     bngir_adversarial,
+    bngir_format_contracts,
+    bngir_reconstruction_contracts,
     graph_identity,
+    graph_identity_contract,
     integrated_extensions as extensions,
     integrated_cases,
 )
@@ -19,20 +22,55 @@ def args(tmp_path):
     )
 
 
+_RELATED_ISSUES = {
+    **{
+        check: bngir_format_contracts.ISSUES
+        for check in bngir_format_contracts.check_ids()
+    },
+    **{
+        check: bngir_reconstruction_contracts.ISSUES
+        for check in bngir_reconstruction_contracts.check_ids()
+    },
+}
+
+
 def test_final_registry_covers_each_stage_and_namespaced_check_once():
     cases = integrated_cases.generated_cases()
     ids = extensions.expected_ids(cases)
     assert len(ids) == len(set(ids))
     assert "campaign:boundaries" in ids
     assert "campaign:graph-identity" in ids
+    assert "campaign:graph-identity-contract" in ids
     assert "campaign:bngir-adversarial" in ids
     assert set(bngir_adversarial.check_ids()).issubset(ids)
+    assert set(bngir_format_contracts.check_ids()).issubset(ids)
+    assert set(bngir_reconstruction_contracts.check_ids()).issubset(ids)
     assert not set(
         extensions.expected_ids(cases, include_bngir_adversarial=False)
-    ).intersection({"campaign:bngir-adversarial", *bngir_adversarial.check_ids()})
+    ).intersection(
+        {
+            "campaign:bngir-adversarial",
+            *bngir_adversarial.check_ids(),
+            *bngir_format_contracts.check_ids(),
+            *bngir_reconstruction_contracts.check_ids(),
+        }
+    )
     assert set(extensions.check_ids("graph-identity")) == {
         f"graph-identity:{case['id']}" for case in graph_identity.CASES
     }
+    assert set(extensions.check_ids("graph-identity-contract")) == {
+        f"graph-identity-contract:{case['id']}:{check}"
+        for case in graph_identity_contract.CASES
+        for check in graph_identity_contract.CHECKS
+    }
+    assert not set(
+        extensions.expected_ids(cases, include_graph_identity_contract=False)
+    ).intersection(
+        {
+            "campaign:graph-identity-contract",
+            *extensions.check_ids("graph-identity-contract"),
+        }
+    )
     for case in cases:
         assert f"{case['id']}:protocol" in ids
         assert (f"{case['id']}:nf-marginals" in ids) == (
@@ -52,7 +90,9 @@ def test_bngir_adversarial_extension_requires_exact_issue_linked_checks(tmp_path
                 "check": identity.rsplit(":", 1)[-1],
                 "status": "PASS",
                 "detail": "native structural control",
-                "related_issues": [153, 154, 155, 156],
+                "related_issues": list(
+                    _RELATED_ISSUES.get(identity, [153, 154, 155, 156])
+                ),
                 "evidence_kind": "diagnostic-only",
                 "supported_execution": False,
                 "source_artifact": identity.rsplit(":", 1)[-1] + ".bngir.json",
@@ -77,7 +117,11 @@ def test_bngir_adversarial_extension_requires_exact_issue_linked_checks(tmp_path
     assert parent["status"] == "PASS"
     assert parent["qualification"] == "bngir-adversarial"
     assert [row["id"] for row in rows[1:]] == extensions.check_ids("bngir-adversarial")
-    assert all(row["related_issues"] == [153, 154, 155, 156] for row in rows[1:])
+    assert all(
+        row["related_issues"]
+        == list(_RELATED_ISSUES.get(row["id"], [153, 154, 155, 156]))
+        for row in rows[1:]
+    )
 
 
 def test_graph_identity_receipt_links_each_generated_observation_to_issue_142(
@@ -215,6 +259,51 @@ def test_quantity_source_laws_are_declared_before_execution():
     assert set(names) <= set(extensions.expected_ids([]))
 
 
+def test_every_focused_qualification_has_a_command_line_flag():
+    """A focus flag without a parser argument crashes the campaign.
+
+    The focused flags select one qualification on their own, so every one of
+    them has to exist as a command line argument: a missing argument made
+    the whole campaign raise before it ran anything.
+    """
+    import ast
+
+    from tests.validation import integrated
+
+    source = Path(integrated.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    flags = {
+        node.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "add_argument"
+        and node.args
+        and isinstance(node.args[0], ast.Constant)
+        and isinstance(node.args[0].value, str)
+    }
+    for name, flag in extensions.FOCUS_FLAGS.items():
+        assert flag in flags, name
+        assert name in integrated.FOCUS_FLAGS
+        assert integrated.FOCUS_FLAGS[name] == flag.lstrip("-").replace("-", "_")
+    assert set(integrated.FOCUS_FLAGS) == set(extensions.FOCUS_FLAGS)
+
+
+def test_a_focused_campaign_excludes_every_other_qualification():
+    from tests.validation import integrated
+
+    focused = ["boundaries"]
+    selection = {
+        "include_" + name.replace("-", "_"): (not focused or focused[0] == name)
+        for name in integrated.FOCUS_FLAGS
+    }
+    assert selection["include_boundaries"] is True
+    assert selection["include_capability_inventory"] is False
+    assert selection["include_real_model_fixtures"] is False
+    assert selection["include_corpus_selection"] is False
+    assert selection["include_biomodels_hold"] is False
+
+
 def test_scientific_lane_runs_independent_checks_after_case_failure():
     import yaml
 
@@ -233,3 +322,18 @@ def test_scientific_lane_runs_independent_checks_after_case_failure():
         s for s in steps if s.get("name") == "Verify spawned scientific worker identity"
     )
     assert "test_worker_package_identity.py" in worker["run"]
+
+
+def test_the_worker_can_dispatch_every_registered_qualification():
+    # The worker runs in isolated mode, so it cannot derive its dispatch list
+    # from the registry at run time.  A qualification the worker cannot
+    # dispatch reports itself as not tested, which reads as an executed family
+    # that did nothing.
+    from tests.validation import integrated_worker
+
+    registered = set(extensions.OPERATIONS)
+    dispatchable = set(integrated_worker.QUALIFICATION_OPERATIONS)
+    assert dispatchable == registered, {
+        "missing_from_worker": sorted(registered - dispatchable),
+        "unknown_to_worker": sorted(dispatchable - registered),
+    }

@@ -1,0 +1,19 @@
+begin model
+begin parameters
+  k 0.4
+  k_gather 0.2
+end parameters
+begin population maps
+  A() -> A_pop() k_gather
+end population maps
+begin molecule types
+  A()
+  A_pop()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model

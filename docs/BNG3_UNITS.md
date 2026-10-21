@@ -85,11 +85,28 @@ The current backend capability boundary is explicit:
 
 * native network, ODE, PLA and PSA lowering supports the validated
   concentration/count and elementary-rate paths;
-* the direct NFsim adapter reports physical units as unsupported until its
-  count-rate bridge is independently integrated and validated;
+* the direct NFsim adapter supports the validated elementary count-rate
+  bridge: a static typed rate constant with single-molecule reactant patterns
+  in one declared three-dimensional compartment is converted with the
+  reaction molecularity and that compartment, and the compartment volume is
+  applied exactly once;
+* the direct NFsim adapter still refuses unit-bearing seed amounts, dynamic
+  or compound-parameter rates, time-dependent compartment volumes, rules whose
+  reactants span several compartments, and every rate law outside the
+  elementary subset;
 * unknown functions, dynamic seed quantities, missing compartment context and
   unsupported imported unit terms are diagnostics or hard failures, not
   implicit dimensionless values.
+
+A typed rate constant states the physical rate per distinct reactant pair, so
+the conversion cancels the statistical factor that converts the count
+propensity from the ordered-pair convention into that distinct-pair
+convention. Applying both would count the pair correction twice and run an
+identical-reactant rule at half its physical rate.
+
+The converted count rate is a static value: the compartment volume is read
+when the model is compiled, so a compartment whose volume changes at runtime
+does not rescale a typed rate.
 
 ## SBML Core and SBML-Multi mapping
 

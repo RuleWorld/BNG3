@@ -1,0 +1,28 @@
+begin model
+begin parameters
+  k 0.40000000000000002
+  N 20
+  V 1
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  B()
+  D()
+end molecule types
+begin seed species
+  @cell:A() N
+  @cell:B() 0
+  @cell:D() 5
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules B @cell:B()
+  Molecules D @cell:D()
+end observables
+begin reaction rules
+  forward: @cell:A() -> @cell:B() k
+end reaction rules
+end model

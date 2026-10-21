@@ -20,11 +20,41 @@ from .integrated_cases import (
     expected_trajectory,
     source_law_cases,
     source_law_bngl,
+    physical_bridge_bngl,
+    physical_bridge_cases,
+    physical_bridge_refusal_bngl,
+    physical_bridge_refusal_cases,
 )
 
 CHECKS = ("sample-validity", "marginal-means", "source-cdf", "seed-spread")
 SOURCE_LAW_CHECKS = ("ode-source-law", "ssa-source-marginals")
 ISSUES = (143, 146, 151, 167)
+
+# The named obligations of the physical-unit count-rate bridge.  Each check
+# below runs against an independent count law, never against the product's own
+# output.
+PHYSICAL_BRIDGE_CHECKS = (
+    "amount-count-conversion",
+    "elementary-rate-conversion",
+    "molecularity",
+    "compartment-context",
+    "independent-count-model-comparison",
+    "missing-context-refusal",
+    "unsupported-dimension-refusal",
+    "double-scaling-refusal",
+)
+
+# The number of standard errors the count-rate discrimination uses.  The
+# recorded seed policy and run budget fix the sampling error, so a converted
+# count rate is accepted only when the observed mean is inside this many
+# standard errors of the independent source law and outside the same distance
+# of the law a wrong conversion would produce.
+DISCRIMINATION_SIGMA = 4.0
+
+
+def physical_bridge_check_ids():
+    """Stable check identities for the physical-unit count-rate bridge."""
+    return [f"qualification:issue:151:{name}" for name in PHYSICAL_BRIDGE_CHECKS]
 
 
 def binomial_mass(population, probability):
@@ -148,6 +178,13 @@ def source_law_check_ids(full=False):
             for engine in ("embedded", "native")
             for name in CHECKS
         )
+    for case in physical_bridge_cases(full=full):
+        ids.extend(
+            f"{case['id']}:nf-marginals:{engine}.{name}"
+            for engine in ("embedded", "native")
+            for name in CHECKS
+        )
+    ids.extend(physical_bridge_check_ids())
     return ids
 
 
@@ -534,6 +571,487 @@ def run(
     return output
 
 
+def _count_law_mean(case):
+    """Expected count of the independent source law at the final time."""
+    mass = source_marginal_mass(case)
+    return float(np.dot(np.arange(mass.shape[1]), mass[-1]))
+
+
+def _count_rate_alternatives(case):
+    """The count laws a wrong conversion of this rule would produce.
+
+    ``volume`` drops the compartment context, ``double`` applies the
+    compartment volume a second time, and ``order`` states the rule with a
+    different molecularity.  Each alternative is a count law of the same
+    reaction under a different conversion, so the observed ensemble can be
+    told apart from it.
+    """
+    alternatives = {}
+    if case["law"] == "second-order":
+        alternatives["volume"] = dict(case, volume=1.0)
+        alternatives["double"] = dict(case, volume=case["volume"] ** 2)
+        alternatives["order"] = dict(
+            case,
+            law="first-order",
+            family="first-order",
+            rate=case["rate"],
+        )
+    elif case["law"] == "zero-order":
+        alternatives["double"] = dict(case, rate=case["rate"] * case["volume"])
+    return alternatives
+
+
+def _discriminates(observed_mean, standard_error, expected_mean):
+    """Whether the observed mean is inside the error budget of the law."""
+    if not math.isfinite(observed_mean) or not math.isfinite(expected_mean):
+        return False
+    budget = DISCRIMINATION_SIGMA * standard_error
+    return abs(observed_mean - expected_mean) <= budget
+
+
+def _separates(observed_mean, standard_error, alternative_mean):
+    """Whether the observed mean is outside the error budget of the law."""
+    if not math.isfinite(observed_mean) or not math.isfinite(alternative_mean):
+        return False
+    return abs(observed_mean - alternative_mean) > DISCRIMINATION_SIGMA * standard_error
+
+
+def _embedded_bridge_samples(case, source, directory, runs):
+    """Sample the embedded NFsim count marginals of a typed model."""
+    import bionetgen
+
+    samples = []
+    for index in range(runs):
+        seed = 17 + 7919 * (index + 1)
+        result = bionetgen.load(str(source)).simulate(
+            method="nf", t_end=2, n_steps=10, seed=seed
+        )
+        names = list(result.observables)
+        if "A" not in names:
+            raise ValueError("typed model does not report the A observable")
+        data = np.column_stack(
+            [result.time] + [result.observables[name] for name in names]
+        )
+        if data.shape[0] != len(case["times"]) or not np.allclose(
+            data[:, 0], np.asarray(case["times"], dtype=float), rtol=0, atol=1e-9
+        ):
+            raise ValueError("typed model changed the source-law time grid")
+        samples.append(data[:, 1 + names.index("A")])
+    np.save(directory / "embedded-samples.npy", np.asarray(samples))
+    return np.asarray(samples)
+
+
+def run_physical_bridge(directory, *, full=False, runs=32, alpha=None):
+    """Execute the typed count-rate bridge cases and their refusal controls.
+
+    The product converts a unit-annotated physical law into a count rate; the
+    observed count marginals are compared against the independent count law of
+    the same physical reaction.  The controls below state the conversions the
+    product must not apply: a missing conversion context, an unsupported
+    compartment dimension, and a second application of the compartment volume.
+    """
+    import bionetgen
+
+    if type(runs) is not int or not 8 <= runs <= 256:
+        raise ValueError("ensemble budget must be 8..256 runs")
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    cases = physical_bridge_cases(full=full)
+    alpha = alpha if alpha is not None else 1e-6 / (2 * len(cases))
+    output = []
+    observations = {}
+    for case in cases:
+        case_dir = directory / case["id"]
+        case_dir.mkdir(parents=True, exist_ok=True)
+        source = case_dir / "typed.bngl"
+        source.write_text(physical_bridge_bngl(case), encoding="utf-8")
+        try:
+            samples = _embedded_bridge_samples(case, source, case_dir, runs)
+        except Exception as exc:
+            detail = f"typed NFsim execution raised {type(exc).__name__}: {exc}"
+            output.extend(
+                dict(
+                    id=f"{case['id']}:nf-marginals:embedded.{name}",
+                    check=name,
+                    status="FAIL" if name == "sample-validity" else "NOT_TESTED",
+                    detail=detail,
+                    related_issues=list(ISSUES),
+                )
+                for name in CHECKS
+            )
+            output.extend(
+                dict(
+                    id=f"{case['id']}:nf-marginals:native.{name}",
+                    check=name,
+                    status="NOT_TESTED",
+                    detail=(
+                        "the typed model is not handed to the pinned oracle: the "
+                        "oracle reads the count-rate convention, and the "
+                        "prelowered counterpart of this case in the same family "
+                        "already samples that count law with it"
+                    ),
+                    applicability="native-oracle-unit-conversion-unsupported",
+                    related_issues=list(ISSUES),
+                )
+                for name in CHECKS
+            )
+            observations[case["id"]] = None
+            continue
+        rows = assess_samples(samples, case, alpha=alpha)
+        for row in rows:
+            row.update(
+                id=f"{case['id']}:nf-marginals:embedded.{row['check']}",
+                check=row["check"],
+                source_representation="unit-annotated physical quantity law",
+                rate_convention=case["rate_convention"],
+                quantity_basis=case["quantity_basis"],
+                substance_basis=case["substance_basis"],
+                ensemble_runs_requested=runs,
+                ensemble_runs_completed=len(samples),
+                seed_policy="17 + 7919 * (index + 1); fresh model per seed",
+            )
+            output.append(row)
+        output.extend(
+            dict(
+                id=f"{case['id']}:nf-marginals:native.{name}",
+                check=name,
+                status="NOT_TESTED",
+                detail=(
+                    "the typed model is not handed to the pinned oracle: the "
+                    "oracle reads the count-rate convention, and the prelowered "
+                    "counterpart of this case in the same family already samples "
+                    "that count law with it"
+                ),
+                applicability="native-oracle-unit-conversion-unsupported",
+                related_issues=list(ISSUES),
+            )
+            for name in CHECKS
+        )
+        final = samples[:, -1].astype(float)
+        observations[case["id"]] = dict(
+            mean=float(final.mean()),
+            standard_error=(
+                float(final.std(ddof=1) / math.sqrt(len(final)))
+                if len(final) > 1
+                else 0.0
+            ),
+            rows={row["check"]: row["status"] for row in rows},
+        )
+
+    output.extend(_physical_bridge_obligations(cases, observations, runs=runs))
+    output.extend(_physical_bridge_refusals(directory))
+    return output
+
+
+def _physical_bridge_obligations(cases, observations, *, runs):
+    """Summarise the typed bridge cases into the named obligation checks."""
+
+    def observation(case_id):
+        return observations.get(case_id)
+
+    def law_mean(case):
+        return _count_law_mean(case)
+
+    def case_by(**fields):
+        for case in cases:
+            if all(case.get(key) == value for key, value in fields.items()):
+                return case
+        return None
+
+    rows = []
+
+    def row(name, ok, detail, *, evidence_kind, first_difference=None, **evidence):
+        rows.append(
+            dict(
+                id=f"qualification:issue:151:{name}",
+                check=name,
+                status="PASS" if ok else "FAIL",
+                detail=detail,
+                related_issues=[151],
+                evidence_kind=evidence_kind,
+                supported_execution=evidence_kind == "supported-execution",
+                first_difference=first_difference,
+                **evidence,
+            )
+        )
+
+    # The amount/count conversion: the same physical reaction stated per mole
+    # and per item must produce the same count law.
+    mole = case_by(law="second-order", substance_basis="mole")
+    item = case_by(law="second-order", substance_basis="item")
+    ok = True
+    detail = ""
+    difference = None
+    for case in (mole, item):
+        observed = observation(case["id"])
+        if observed is None:
+            ok = False
+            detail = "the typed mole/item case did not execute"
+            break
+        expected = law_mean(case)
+        if not _discriminates(observed["mean"], observed["standard_error"], expected):
+            ok = False
+            detail = (
+                "the typed case does not reproduce the independent count law of "
+                "the same physical reaction"
+            )
+            difference = dict(
+                case=case["id"],
+                observed_mean=observed["mean"],
+                expected_mean=expected,
+                standard_error=observed["standard_error"],
+            )
+            break
+        detail = (
+            "the mole-basis and item-basis statements of the same physical "
+            "reaction reproduce the same independent count law"
+        )
+    row(
+        "amount-count-conversion",
+        ok,
+        detail or "the mole-to-item bridge is applied exactly once",
+        evidence_kind="supported-execution",
+        first_difference=difference,
+        ensemble_runs=runs,
+    )
+
+    # The elementary rate conversion: the typed rate constant of every order
+    # becomes the count rate of the independent source law.
+    ok = True
+    detail = ""
+    for case in cases:
+        observed = observation(case["id"])
+        if observed is None:
+            ok = False
+            detail = f"the typed case {case['id']} did not execute"
+            break
+        if (
+            observed["rows"].get("source-cdf") != "PASS"
+            or observed["rows"].get("marginal-means") != "PASS"
+        ):
+            ok = False
+            detail = (
+                f"the typed case {case['id']} does not match the independent count law"
+            )
+            break
+        detail = (
+            "every typed rate constant converts to the count rate of the "
+            "independent source law"
+        )
+    row(
+        "elementary-rate-conversion",
+        ok,
+        detail or "the typed rate constants are converted to count rates",
+        evidence_kind="supported-execution",
+        ensemble_runs=runs,
+    )
+
+    # The molecularity: the conversion exponent follows the reaction order.
+    order_case = case_by(law="second-order", substance_basis="item")
+    observed = observation(order_case["id"]) if order_case else None
+    ok = observed is not None
+    difference = None
+    detail = "the molecularity of the reacting order selects the count-rate exponent"
+    if ok:
+        expected = law_mean(order_case)
+        alternatives = _count_rate_alternatives(order_case)
+        ok = _discriminates(
+            observed["mean"], observed["standard_error"], expected
+        ) and all(
+            _separates(
+                observed["mean"],
+                observed["standard_error"],
+                law_mean(alternative),
+            )
+            for alternative in alternatives.values()
+        )
+        if not ok:
+            difference = dict(
+                case=order_case["id"],
+                observed_mean=observed["mean"],
+                expected_mean=expected,
+                standard_error=observed["standard_error"],
+                alternatives={
+                    name: law_mean(alternative)
+                    for name, alternative in alternatives.items()
+                },
+            )
+            detail = (
+                "the observed count law is not the molecularity-selected law, or "
+                "it is not separated from a different reaction order"
+            )
+    row(
+        "molecularity",
+        ok,
+        detail,
+        evidence_kind="supported-execution",
+        first_difference=difference,
+        ensemble_runs=runs,
+    )
+
+    # The compartment context: the conversion uses the reaction compartment.
+    ok = True
+    detail = ""
+    difference = None
+    for case in cases:
+        observed = observation(case["id"])
+        if observed is None:
+            ok = False
+            detail = f"the typed case {case['id']} did not execute"
+            break
+        alternatives = _count_rate_alternatives(case)
+        if "volume" not in alternatives:
+            continue
+        expected = law_mean(case)
+        if not _discriminates(
+            observed["mean"], observed["standard_error"], expected
+        ) or not _separates(
+            observed["mean"],
+            observed["standard_error"],
+            law_mean(alternatives["volume"]),
+        ):
+            ok = False
+            detail = "the converted count rate does not use the reaction compartment"
+            difference = dict(
+                case=case["id"],
+                observed_mean=observed["mean"],
+                expected_mean=expected,
+                standard_error=observed["standard_error"],
+                without_compartment_mean=law_mean(alternatives["volume"]),
+            )
+            break
+        detail = (
+            "the converted count rate uses the declared reaction compartment, and "
+            "is separated from the law without that compartment"
+        )
+    row(
+        "compartment-context",
+        ok,
+        detail
+        or "the conversion context of every typed case is the reaction compartment",
+        evidence_kind="supported-execution",
+        first_difference=difference,
+        ensemble_runs=runs,
+    )
+
+    # The independent count model comparison: the sampled count marginals of
+    # every typed case match the independent source count law.
+    ok = True
+    detail = ""
+    for case in cases:
+        observed = observation(case["id"])
+        if observed is None:
+            ok = False
+            detail = f"the typed case {case['id']} did not execute"
+            break
+        if observed["rows"].get("source-cdf") != "PASS":
+            ok = False
+            detail = f"the typed case {case['id']} does not match the source count CDF"
+            break
+        detail = (
+            "every typed case reproduces the count marginals of the independent "
+            "source count law"
+        )
+    row(
+        "independent-count-model-comparison",
+        ok,
+        detail or "the typed cases match the independent source count laws",
+        evidence_kind="supported-execution",
+        ensemble_runs=runs,
+    )
+
+    # The double volume scaling: the converted count rate applies the
+    # compartment volume once, so the observed law is separated from the law a
+    # second application would produce.
+    ok = True
+    detail = ""
+    difference = None
+    for case in cases:
+        observed = observation(case["id"])
+        if observed is None:
+            ok = False
+            detail = f"the typed case {case['id']} did not execute"
+            break
+        alternatives = _count_rate_alternatives(case)
+        if "double" not in alternatives:
+            continue
+        if not _separates(
+            observed["mean"],
+            observed["standard_error"],
+            law_mean(alternatives["double"]),
+        ):
+            ok = False
+            detail = (
+                "the observed count law is not separated from the law a second "
+                "compartment-volume scaling would produce"
+            )
+            difference = dict(
+                case=case["id"],
+                observed_mean=observed["mean"],
+                double_scaled_mean=law_mean(alternatives["double"]),
+                standard_error=observed["standard_error"],
+            )
+            break
+        detail = (
+            "the compartment volume is applied once: the observed count law is "
+            "separated from the doubly scaled law"
+        )
+    row(
+        "double-scaling-refusal",
+        ok,
+        detail or "no typed case applies the compartment volume twice",
+        evidence_kind="diagnostic-only",
+        first_difference=difference,
+        ensemble_runs=runs,
+    )
+    return rows
+
+
+def _physical_bridge_refusals(directory):
+    """The refusal controls of the physical-unit count-rate bridge."""
+    import bionetgen
+
+    rows = []
+    for case in physical_bridge_refusal_cases():
+        case_dir = directory / case["id"]
+        case_dir.mkdir(parents=True, exist_ok=True)
+        source = case_dir / "typed.bngl"
+        source.write_text(physical_bridge_refusal_bngl(case), encoding="utf-8")
+        refused = False
+        detail = "the model was executed instead of being refused"
+        try:
+            bionetgen.load(str(source)).simulate(
+                method="nf", t_end=2, n_steps=10, seed=17
+            )
+        except Exception as exc:
+            message = str(exc)
+            refused = "physical-unit" in message
+            detail = (
+                f"the product refused the model: {type(exc).__name__}: {message}"
+                if refused
+                else f"the product refused the model without naming the physical-unit "
+                f"boundary: {type(exc).__name__}: {message}"
+            )
+        name = (
+            "missing-context-refusal"
+            if case["refusal"] == "missing-context"
+            else "unsupported-dimension-refusal"
+        )
+        rows.append(
+            dict(
+                id=f"qualification:issue:151:{name}",
+                check=name,
+                status="PASS" if refused else "FAIL",
+                detail=detail,
+                related_issues=[151],
+                evidence_kind="diagnostic-only",
+                supported_execution=False,
+                model=str(source),
+            )
+        )
+    return rows
+
+
 def _source_law_mean(case):
     """Deterministic amount trajectory implied by a declared source law."""
     law = case["law"]
@@ -564,6 +1082,7 @@ def run_source_laws(directory, native_binary, *, full=False, runs=32):
     directory.mkdir(parents=True, exist_ok=True)
     output = []
     alpha = 1e-6 / max(1, 3 * len(cases))
+    physical_alpha = 1e-6 / max(1, 3 * len(physical_bridge_cases(full=full)))
     import json
 
     (directory / "source-law-plan.json").write_text(
@@ -574,9 +1093,15 @@ def run_source_laws(directory, native_binary, *, full=False, runs=32):
                 ensemble_runs=runs,
                 campaign_alpha=1e-6,
                 alpha_per_engine_case=alpha,
+                physical_bridge_alpha=physical_alpha,
                 nf_seed_policy="17 + 7919 * (index + 1)",
                 ssa_seed_policy="19 + 7919 * (index + 1)",
-                scope="A count marginals only; physical laws prelowered independently, not unit-annotation ingestion",
+                scope=(
+                    "A count marginals only; the physical source-law controls are "
+                    "prelowered independently, and the typed physical-bridge family "
+                    "states the physical law with unit annotations so the product "
+                    "performs the amount/count and count-rate conversion itself"
+                ),
             ),
             indent=2,
         )
@@ -765,4 +1290,12 @@ def run_source_laws(directory, native_binary, *, full=False, runs=32):
             )
             for row in nf_rows
         )
+    output.extend(
+        run_physical_bridge(
+            directory / "physical-bridge",
+            full=full,
+            runs=runs,
+            alpha=physical_alpha,
+        )
+    )
     return output

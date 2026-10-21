@@ -1,0 +1,16 @@
+begin model
+begin parameters
+  Vmax 2.0
+  Km 5.0
+end parameters
+begin molecule types
+  A()
+  D()
+end molecule types
+begin seed species
+  A() 50
+end seed species
+begin reaction rules
+  A() + A() -> D() Sat(Vmax,Km)
+end reaction rules
+end model

@@ -72,6 +72,211 @@ def source_law_cases(full=False):
     return cases
 
 
+# The number of items per mole the generated physical cases use to state the
+# same physical reaction in the mole basis and in the item basis.
+NUMBER_PER_QUANTITY_UNIT = 6.02214076e23
+
+# The typed rate unit of each elementary law, in the SBML mass-action
+# convention: an n-th order rate constant has concentration^(1-n)/time units.
+PHYSICAL_RATE_UNITS = {
+    "zero-order": "item/second",
+    "first-order": "second^-1",
+    "second-order": "litre/item/second",
+}
+
+
+def physical_bridge_cases(full=False):
+    """Generated unit-annotated quantity laws for the NFsim count-rate bridge.
+
+    Every case states the physical law with unit annotations, so the product
+    performs the amount/count and elementary-rate conversion itself.  The
+    independent source law stays the count law of the same physical reaction:
+    ``rate`` is the count-basis rate constant of that law, while
+    ``model_rate``/``model_rate_unit`` state the same reaction in the typed
+    model.  The mole-basis case states the identical reaction per mole, so it
+    must produce the same count law as its item-basis counterpart.
+    """
+    volumes = (1, 3) if full else (3,)
+    cases = []
+    axes = (
+        ("zero-order", "item"),
+        ("first-order", "item"),
+        ("second-order", "item"),
+        ("second-order", "mole"),
+    )
+    for law, basis in axes:
+        for volume in volumes:
+            initial = (
+                0 if law == "zero-order" else (12 if law == "second-order" else 40)
+            )
+            # The zero-order law produces few molecules at the recorded rate, so
+            # it uses a rate that leaves the count marginal informative.
+            rate = 4.0 if law == "zero-order" else 0.4
+            model_rate = rate
+            if basis == "mole":
+                # A rate constant stated per mole is the count-basis constant
+                # times the number of items per mole.
+                model_rate = rate * NUMBER_PER_QUANTITY_UNIT
+            cases.append(
+                dict(
+                    id=f"physical-{law}-{basis}-v{volume}",
+                    law=law,
+                    family=law,
+                    rate_convention="physical_source_law",
+                    quantity_basis="amount",
+                    substance_basis=basis,
+                    initial=initial,
+                    initial_coordinate_value=initial,
+                    rate=rate,
+                    model_rate=model_rate,
+                    model_rate_unit=PHYSICAL_RATE_UNITS[law],
+                    model_rate_unit_mole=(
+                        "litre/mole/second" if law == "second-order" else None
+                    ),
+                    volume=volume,
+                    times=tuple(float(t) for t in TIMES),
+                    observable="A",
+                    source_units=(
+                        "item/second"
+                        if law == "zero-order"
+                        else (
+                            "1/second" if law == "first-order" else "litre/item/second"
+                        )
+                    ),
+                )
+            )
+    return cases
+
+
+def physical_bridge_bngl(case):
+    """Return the unit-annotated BNGL fixture for a physical-bridge case.
+
+    The model states the physical law in the unit-annotated form, so the
+    product converts it to a count rate.  The compartment size is a literal so
+    the conversion context is static and the generated count law is exactly
+    the one the independent source law states.
+    """
+    law = case["law"]
+    rate_unit = case["model_rate_unit"]
+    if case.get("substance_basis") == "mole" and case.get("model_rate_unit_mole"):
+        rate_unit = case["model_rate_unit_mole"]
+    if law == "zero-order":
+        reactants, products = "0", "@cell:A()"
+    elif law == "first-order":
+        reactants, products = "@cell:A()", "@cell:B()"
+    elif law == "second-order":
+        reactants, products = "@cell:A() + @cell:A()", "@cell:D()"
+    else:
+        raise ValueError(f"unknown physical-bridge family: {law!r}")
+    bridge = (
+        f'  setOption("NumberPerQuantityUnit", {NUMBER_PER_QUANTITY_UNIT:.17g})\n'
+        if case.get("substance_basis") == "mole"
+        else ""
+    )
+    return f"""# Physical quantity law: {case["law"]} in the {case["substance_basis"]} basis; the product converts it to a count rate.
+begin model
+  setOption("units", "strict")
+{bridge}  begin units
+    timeUnits = second
+    volumeUnits = litre
+  end units
+  begin parameters
+    k {case["model_rate"]:.17g} [{rate_unit}]
+  end parameters
+  begin compartments
+    cell 3 {case["volume"]:.17g} [litre]
+  end compartments
+  begin molecule types
+    A()
+    B()
+    D()
+  end molecule types
+  begin seed species
+    @cell:A() {case["initial"]}
+    @cell:B() 0
+    @cell:D() 0
+  end seed species
+  begin observables
+    Molecules A @cell:A()
+  end observables
+  begin reaction rules
+    source: {reactants} -> {products} k
+  end reaction rules
+end model
+"""
+
+
+def physical_bridge_refusal_cases():
+    """Generated typed models whose conversion context is missing or invalid.
+
+    Each case must be refused by the product instead of being executed with a
+    guessed conversion: a mole-based rate without the mole-to-item bridge, and
+    a concentration rate in a compartment that has no volume dimension.
+    """
+    return (
+        dict(
+            id="physical-refusal-missing-mole-bridge",
+            refusal="missing-context",
+            law="second-order",
+            substance_basis="mole",
+            volume=3,
+            model_rate=0.4 * NUMBER_PER_QUANTITY_UNIT,
+            model_rate_unit="litre/mole/second",
+            bridge=False,
+            dimension=3,
+        ),
+        dict(
+            id="physical-refusal-unsupported-dimension",
+            refusal="unsupported-dimension",
+            law="second-order",
+            substance_basis="item",
+            volume=3,
+            model_rate=0.4,
+            model_rate_unit="litre/item/second",
+            bridge=True,
+            dimension=2,
+        ),
+    )
+
+
+def physical_bridge_refusal_bngl(case):
+    """Return the typed model whose conversion context must be refused."""
+    bridge = (
+        f'  setOption("NumberPerQuantityUnit", {NUMBER_PER_QUANTITY_UNIT:.17g})\n'
+        if case.get("bridge")
+        else ""
+    )
+    return f"""# Physical quantity law with a {case["refusal"]} conversion context; the product must refuse it.
+begin model
+  setOption("units", "strict")
+{bridge}  begin units
+    timeUnits = second
+    volumeUnits = litre
+  end units
+  begin parameters
+    k {case["model_rate"]:.17g} [{case["model_rate_unit"]}]
+  end parameters
+  begin compartments
+    cell {case["dimension"]} {case["volume"]:.17g} [litre]
+  end compartments
+  begin molecule types
+    A()
+    D()
+  end molecule types
+  begin seed species
+    @cell:A() 12
+    @cell:D() 0
+  end seed species
+  begin observables
+    Molecules A @cell:A()
+  end observables
+  begin reaction rules
+    source: @cell:A() + @cell:A() -> @cell:D() k
+  end reaction rules
+end model
+"""
+
+
 def source_law_bngl(case):
     """Return a parameter-backed BNGL fixture for a source-law descriptor."""
     law = case["law"]
@@ -420,3 +625,130 @@ begin reaction rules
 end reaction rules
 end model
 """
+
+
+def lifecycle_volume_bngl(case, *, volume=None, population=None, rate=RATE, actions=""):
+    """Native control whose rate law depends on the compartment volume.
+
+    The generated decay and reversible families use first-order rules whose
+    rate does not depend on the compartment volume, so a volume override is
+    not observable there. This control keeps the dimerization shape for every
+    generated case, which gives the compartment-invalidation check an
+    observable effect and a closed-form law.
+    """
+    volume = case["volume"] if volume is None else volume
+    population = case["initial"] if population is None else population
+    action_block = f"begin actions\n{actions}\nend actions\n" if actions else ""
+    return f"""begin model
+begin parameters
+  k {rate:.17g}
+  N {population}
+  V {volume:.17g}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  D()
+end molecule types
+begin seed species
+  @cell:A() N
+  @cell:D() 0
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules D @cell:D()
+end observables
+begin reaction rules
+  dimerize: @cell:A() + @cell:A() -> @cell:D() 2*k
+end reaction rules
+{action_block}end model
+"""
+
+
+def lifecycle_topology_sources(
+    case, *, rate=RATE, fragment="lifecycle-topology-fragment.bngl"
+):
+    """Return the base, fragment and merged sources for the topology check.
+
+    The base model carries an ``include_model`` action, so executing it adds a
+    species to the compiled model under test. The fragment declares only the
+    molecule type it introduces: merging a fragment that carries its own
+    reaction rules or infers an existing molecule type would collide with the
+    base model's identifiers. The merged source states the same semantics
+    independently and is the fresh-compilation reference.
+    """
+    population = case["initial"]
+    extra = max(1, int(population) // 4)
+    base = f"""begin model
+begin parameters
+  k {rate:.17g}
+  N {population}
+  V {case["volume"]}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  @cell:A() N
+  @cell:B() 0
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules B @cell:B()
+end observables
+begin reaction rules
+  forward: @cell:A() -> @cell:B() k
+end reaction rules
+begin actions
+  include_model({{file=>"{fragment}"}})
+end actions
+end model
+"""
+    fragment_source = f"""begin model
+begin molecule types
+  D()
+end molecule types
+begin seed species
+  @cell:D() {extra}
+end seed species
+begin observables
+  Molecules D @cell:D()
+end observables
+end model
+"""
+    merged = f"""begin model
+begin parameters
+  k {rate:.17g}
+  N {population}
+  V {case["volume"]}
+end parameters
+begin compartments
+  cell 3 V
+end compartments
+begin molecule types
+  A()
+  B()
+  D()
+end molecule types
+begin seed species
+  @cell:A() N
+  @cell:B() 0
+  @cell:D() {extra}
+end seed species
+begin observables
+  Molecules A @cell:A()
+  Molecules B @cell:B()
+  Molecules D @cell:D()
+end observables
+begin reaction rules
+  forward: @cell:A() -> @cell:B() k
+end reaction rules
+end model
+"""
+    return base, fragment_source, merged

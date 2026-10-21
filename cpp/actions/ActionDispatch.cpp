@@ -22,8 +22,10 @@
 #include <vector>
 
 #include "ast/Parameter.hpp"
+#include "compile/ActionOptions.hpp"
 #include "compile/Capabilities.hpp"
 #include "compile/Document.hpp"
+#include "compile/SimulationMethod.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "engine/PlaSimulator.hpp"
@@ -73,28 +75,46 @@ namespace bng::actions {
 
 namespace {
 
-std::string trim(std::string value) {
-    auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) {
-        return std::isspace(c) != 0;
-    });
-    auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) {
-        return std::isspace(c) != 0;
-    }).base();
-    if (first >= last) {
-        return {};
+// The action language's value readers live in one place so that every
+// action option is read with the same rules.
+using bng::compile::ActionOptions;
+using bng::compile::applyTimeGridOptions;
+using bng::compile::lowercase;
+
+/// The action name of a `generate_hybrid_model` action string.
+///
+/// The option carries the action source text (`writeXML()`), so the leading
+/// identifier is the action name the dispatcher will use.
+std::string hybridActionName(const std::string& action) {
+    std::size_t length = 0;
+    while (length < action.size() &&
+           (std::isalnum(static_cast<unsigned char>(action[length])) ||
+            action[length] == '_')) {
+        ++length;
     }
-    return std::string(first, last);
+    return lowercase(action.substr(0, length));
 }
 
-std::string stripQuotes(const std::string& text) {
-    if (text.size() >= 2 &&
-        ((text.front() == '"' && text.back() == '"') || (text.front() == '\'' && text.back() == '\''))) {
-        return text.substr(1, text.size() - 2);
-    }
-    return text;
+/// Whether a `generate_hybrid_model` action would simulate the hybrid model.
+///
+/// The generated hybrid model states its populations as molecule types with
+/// population mapping rules.  BNG3 has no population execution semantics, so
+/// simulating the hybrid model would execute the population species as
+/// ordinary molecules and silently change the model's meaning.
+bool isHybridSimulationAction(const std::string& name) {
+    static const std::set<std::string> simulationActions = {
+        "simulate",     "simulate_ode", "simulate_ssa",         "simulate_pla",
+        "simulate_nf",  "simulate_rm",  "simulate_psa",         "simulate_protocol",
+        "parameter_scan", "bifurcate",  "linearparametersensitivity"};
+    return simulationActions.find(name) != simulationActions.end();
 }
 
-std::string lowercase(std::string value);
+using bng::compile::parseBoolean;
+using bng::compile::parseNonNegativeCount;
+using bng::compile::parseScalarValue;
+using bng::compile::parseSimulationStepCount;
+using bng::compile::stripQuotes;
+using bng::compile::trim;
 
 ast::SpeciesGraph parseNetSpeciesGraph(const std::string& pattern,
                                        ast::Model& model) {
@@ -380,71 +400,6 @@ std::vector<std::string> parseQuotedStringList(const std::string& text,
     return entries;
 }
 
-std::string lowercase(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return value;
-}
-
-double parseScalarValue(const std::string& text, ast::Model& model) {
-    const std::string raw = stripQuotes(trim(text));
-
-    // Keep identifiers intact while parsing expressions. The lexer recognizes
-    // Fortran D exponents as numeric tokens, and parseNumberLiteral normalizes
-    // only those tokens before passing them to std::stod.
-    if (model.getParameters().contains(raw)) {
-        return model.getParameters().evaluate(raw);
-    }
-
-    std::string value = raw;
-
-    std::size_t consumed = 0;
-    try {
-        const double parsed = std::stod(value, &consumed);
-        if (consumed == value.size()) {
-            return parsed;
-        }
-    } catch (const std::exception&) {
-        // Try the expression forms below.
-    }
-
-    // Try evaluating as expression with parameter resolution
-    try {
-        // Simple recursive evaluator for expressions like "2e-9*NA*V"
-        double result = 1.0;
-        std::string token;
-        std::istringstream stream(value);
-        bool allResolved = true;
-        while (std::getline(stream, token, '*')) {
-            std::string t = trim(token);
-            if (t.empty()) continue;
-            std::size_t pos = 0;
-            try {
-                double val = std::stod(t, &pos);
-                if (pos == t.size()) { result *= val; continue; }
-            } catch (...) {}
-            if (model.getParameters().contains(t)) {
-                result *= model.getParameters().evaluate(t);
-            } else {
-                allResolved = false;
-                break;
-            }
-        }
-        if (allResolved) return result;
-    } catch (...) {}
-
-    // Fallback: parse as a full expression (handles nested parentheses, division, etc.)
-    try {
-        auto expr = bng::parser::parseExpression(value);
-        return expr.evaluate([&](const std::string& name) {
-            return model.getParameters().evaluate(name);
-        });
-    } catch (...) {}
-
-    throw std::runtime_error("Unsupported scalar action value: '" + text + "'");
-}
-
 std::vector<double> parseSampleTimes(const std::string& text, ast::Model& model) {
     std::string value = trim(stripQuotes(text));
     if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
@@ -706,137 +661,6 @@ std::vector<double> parseScalarList(const std::string& text,
         throw std::runtime_error(name + " must not be empty");
     }
     return values;
-}
-
-std::size_t parseNonNegativeCount(const std::string& text,
-                                  ast::Model& model,
-                                  const std::string& name) {
-    const double value = parseScalarValue(text, model);
-    if (!std::isfinite(value) || value < 0.0 || std::floor(value) != value ||
-        value > static_cast<double>(std::numeric_limits<std::size_t>::max())) {
-        throw std::runtime_error(name + " must be a non-negative integer");
-    }
-    return static_cast<std::size_t>(value);
-}
-
-bool supportsRuntimeSafeStepArithmetic(const ast::Expression& expression,
-                                       ast::Model& model,
-                                       std::size_t& powerOperators) {
-    using ast::ExpressionKind;
-    switch (expression.kind()) {
-    case ExpressionKind::Number:
-        return std::isfinite(expression.numberValue());
-    case ExpressionKind::Identifier:
-        return true;
-    case ExpressionKind::Unary:
-        return (expression.name() == "+" || expression.name() == "-") &&
-            expression.args().size() == 1 &&
-            supportsRuntimeSafeStepArithmetic(expression.args().front(), model,
-                                              powerOperators);
-    case ExpressionKind::Binary: {
-        const auto& op = expression.name();
-        if (op != "+" && op != "-" && op != "*" && op != "/" && op != "**") {
-            return false;
-        }
-        if (expression.args().size() != 2 ||
-            !supportsRuntimeSafeStepArithmetic(expression.args()[0], model,
-                                               powerOperators) ||
-            !supportsRuntimeSafeStepArithmetic(expression.args()[1], model,
-                                               powerOperators)) {
-            return false;
-        }
-        if (op == "**") {
-            if (++powerOperators > 1) {
-                return false;
-            }
-            try {
-                const double base = expression.args()[0].evaluate(
-                    [&](const std::string& name) {
-                        return model.getParameters().evaluate(name);
-                    });
-                if (!std::isfinite(base) || base < 0.0) {
-                    return false;
-                }
-            } catch (const std::exception&) {
-                return false;
-            }
-        }
-        return true;
-    }
-    case ExpressionKind::Function:
-    case ExpressionKind::ObservableRef:
-    case ExpressionKind::TableFunction:
-        return false;
-    }
-    return false;
-}
-
-std::size_t checkedSimulationStepCount(double value, const std::string& source) {
-    if (!std::isfinite(value) || value < 0.0 || std::floor(value) != value) {
-        throw std::runtime_error(
-            "n_steps must be a non-negative integer (value '" + source + "')");
-    }
-    const double firstUnsupportedValue =
-        std::ldexp(1.0, std::numeric_limits<std::size_t>::digits);
-    if (value >= firstUnsupportedValue) {
-        throw std::runtime_error(
-            "n_steps exceeds the supported integer step-count range: '" + source + "'");
-    }
-    return static_cast<std::size_t>(value);
-}
-
-std::size_t parseSimulationStepCount(const std::string& text, ast::Model& model) {
-    const auto expressionSource = stripQuotes(trim(text));
-    if (expressionSource.find('^') != std::string::npos) {
-        throw std::runtime_error(
-            "invalid n_steps '" + text +
-            "': Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
-    }
-
-    if (expressionSource.find("**") == std::string::npos) {
-        return checkedSimulationStepCount(
-            parseScalarValue(expressionSource, model), text);
-    }
-
-    ast::Expression expression;
-    try {
-        expression = parser::parseExpression(expressionSource);
-    } catch (const std::exception& error) {
-        throw std::runtime_error(
-            "invalid n_steps '" + text +
-            "': could not be parsed as a Safe-Perl numeric expression: " + error.what());
-    }
-
-    std::size_t powerOperators = 0;
-    if (!supportsRuntimeSafeStepArithmetic(expression, model, powerOperators)) {
-        throw std::runtime_error(
-            "invalid n_steps '" + text +
-            "': cannot be translated without changing Safe-Perl arithmetic semantics");
-    }
-    double value = 0.0;
-    try {
-        value = expression.evaluate([&](const std::string& name) {
-            return model.getParameters().evaluate(name);
-        });
-    } catch (const std::exception& error) {
-        throw std::runtime_error(
-            "invalid n_steps '" + text + "': could not be evaluated: " + error.what());
-    }
-    return checkedSimulationStepCount(value, text);
-}
-
-bool parseBoolean(const std::string& text, bool defaultValue = false) {
-    const auto value = lowercase(stripQuotes(trim(text)));
-    if (value.empty()) {
-        return defaultValue;
-    }
-    if (value == "1" || value == "true" || value == "yes" || value == "on") {
-        return true;
-    }
-    if (value == "0" || value == "false" || value == "no" || value == "off") {
-        return false;
-    }
-    throw std::runtime_error("Expected a boolean value, got '" + text + "'");
 }
 
 struct ScanData {
@@ -1290,29 +1114,10 @@ engine::GeneratedNetwork networkFromParsedData(
 }
 
 std::string resolveSimulationMethod(const ast::Action& action) {
-    std::string name = lowercase(action.name);
-    if (name == "simulate_ode") {
-        return "cvode";
-    }
-    if (name == "simulate_ssa") {
-        return "ssa";
-    }
-
-    std::string method = lowercase(stripQuotes(readArgument(action, "method", "ode")));
-    if (method == "ode") {
-        return "cvode";
-    }
-    if (method == "pla") {
-        return "pla";
-    }
-    if (method == "nf") {
-        return "nf";
-    }
-    if (method == "cvode" || method == "ssa" || method == "euler" ||
-        method == "rk4" || method == "psa") {
-        return method;
-    }
-    throw std::runtime_error("simulate: unsupported simulation method: " + method);
+    // The method decision is owned by the shared semantic layer, so the
+    // compile layer, this dispatcher and the numerical backends cannot
+    // disagree about which method a spelling selects.
+    return compile::decideSimulationMethod(action).engineName;
 }
 
 std::optional<std::size_t> findSpeciesIndex(const engine::GeneratedNetwork& network, const std::string& target) {
@@ -1589,10 +1394,13 @@ void runSimulation(
         }
     }
 
-    const auto method = resolveSimulationMethod(action);
-    const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
-    const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
-    const auto sampleTimesText = readArgument(action, "sample_times", "");
+    const auto methodDecision = compile::decideSimulationMethod(action);
+    const auto method = methodDecision.engineName;
+    const ActionOptions options(action, model);
+    const auto tEnd = stripQuotes(options.text("t_end", ""));
+    const auto nSteps = stripQuotes(options.text(
+        "n_steps", stripQuotes(options.text("n_output_steps", ""))));
+    const auto sampleTimesText = options.text("sample_times", "");
     const bool hasSampleTimes = !trim(stripQuotes(sampleTimesText)).empty();
     const bool hasStepCount = !nSteps.empty();
     if (tEnd.empty() && (!hasSampleTimes || hasStepCount)) {
@@ -1613,9 +1421,7 @@ void runSimulation(
         const bool usesCompiledInlineValue = compiledOptions != nullptr &&
             inlineSteps != actionOrig.arguments.end() &&
             stripQuotes(trim(inlineSteps->second)) == stripQuotes(trim(nSteps));
-        const bool finiteOdeOrSsaMethod =
-            method == "cvode" || method == "ssa" ||
-            method == "euler" || method == "rk4";
+        const bool finiteOdeOrSsaMethod = methodDecision.expressionStepCount;
         if (!finiteOdeOrSsaMethod) {
             // Keep the existing PLA/PSA count parsing path outside this
             // bounded ODE/SSA expression change.
@@ -1637,9 +1443,17 @@ void runSimulation(
     }
 
     // Parse t_start (BNG2 parity)
-    const auto tStartText = readArgument(action, "t_start", "");
+    const auto tStartText = options.text("t_start", "");
     if (!tStartText.empty()) {
         opts.tStart = parseScalarValue(tStartText, model);
+    }
+
+    // The output window is a typed value: it must not run backwards, as the
+    // public API requires.
+    if (!tEnd.empty() && opts.tEnd < opts.tStart) {
+        throw std::runtime_error(
+            "t_end must be greater than or equal to t_start (t_end '" + tEnd +
+            "', t_start '" + tStartText + "')");
     }
 
     if (hasSampleTimes && hasStepCount) {
@@ -1664,33 +1478,22 @@ void runSimulation(
             : 1;
     }
 
-    // Parse method (match BNG2 defaults)
-    if (method == "cvode" || method == "ode") {
-        opts.method = "cvode";
-    } else if (method == "ssa") {
-        opts.method = "ssa";
-    } else if (method == "euler") {
-        opts.method = "euler";
-    } else if (method == "rk4") {
-        opts.method = "rk4";
-    } else if (method == "pla") {
-        opts.method = "pla";
-    } else {
-        opts.method = "cvode";  // Default to CVODE (matches BNG2)
-    }
+    // The engine name is the one the shared method decision selected, so the
+    // dispatcher cannot silently substitute a different method.
+    opts.method = method;
 
     // Parse seed for SSA/PLA
     if (opts.method == "ssa" || opts.method == "pla") {
-        const auto seedText = readArgument(action, "seed", "");
-        if (!seedText.empty()) {
-            opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
+        if (options.hasValue("seed")) {
+            opts.seed = static_cast<unsigned int>(
+                parseScalarValue(options.sourceSpelling("seed"), model));
         }
     }
 
     // Parse batch_size for batched SSA (GPU/CPU pool).
     // Only honoured when method == "ssa"; silently ignored otherwise.
     if (opts.method == "ssa") {
-        const auto batchText = stripQuotes(readArgument(action, "batch_size", "0"));
+        const auto batchText = stripQuotes(options.text("batch_size", "0"));
         if (!batchText.empty() && batchText != "0") {
             const auto batchVal = static_cast<std::size_t>(
                 parseScalarValue(batchText, model));
@@ -1700,42 +1503,49 @@ void runSimulation(
             }
             opts.batchSize = batchVal;
         }
-        const auto batchGpuText = lowercase(stripQuotes(readArgument(action, "batch_gpu", "1")));
-        opts.batchGpuPreferred = (batchGpuText != "0" && batchGpuText != "false");
+        opts.batchGpuPreferred = options.flagUnlessOff("batch_gpu", true);
         // "auto" (default) picks the best compiled-in backend that has a device;
         // "cuda"/"metal" force one, "none" forces the CPU pool.
-        opts.batchGpuBackend = stripQuotes(readArgument(action, "batch_gpu_backend", "auto"));
+        opts.batchGpuBackend = stripQuotes(options.text("batch_gpu_backend", "auto"));
     }
 
     // BNG2's Perl action path defaults both CVODE tolerances to 1e-8. Keep
     // that action-level contract here without changing the stricter defaults
     // used by OdeOptions and the direct Python API.
-    const auto atolText = readArgument(action, "atol", "1e-8");
+    const auto atolText = options.text("atol", "1e-8");
     if (!atolText.empty()) {
         opts.atol = parseScalarValue(atolText, model);
     }
-    const auto rtolText = readArgument(action, "rtol", "");
-    if (!rtolText.empty()) {
-        opts.rtol = parseScalarValue(rtolText, model);
+    if (const auto rtol = options.optionalNumber("rtol")) {
+        opts.rtol = *rtol;
+    }
+    // The tolerances are typed values: a non-positive tolerance is rejected
+    // with its source spelling, as the public API rejects it.
+    if (!std::isfinite(opts.atol) || opts.atol <= 0.0) {
+        throw std::runtime_error(
+            "atol must be finite and positive (value '" +
+            options.sourceSpelling("atol") + "')");
+    }
+    if (!std::isfinite(opts.rtol) || opts.rtol <= 0.0) {
+        throw std::runtime_error(
+            "rtol must be finite and positive (value '" +
+            options.sourceSpelling("rtol") + "')");
     }
 
-    const auto maxStepText = readArgument(action, "max_step", "");
-    if (!maxStepText.empty()) {
-        opts.maxStep = parseScalarValue(maxStepText, model);
+    if (const auto maxStep = options.optionalNumber("max_step")) {
+        opts.maxStep = *maxStep;
         if (!std::isfinite(opts.maxStep) || opts.maxStep < 0.0) {
             throw std::runtime_error("max_step must be finite and non-negative");
         }
     }
 
     // Parse steady_state option (BNG2 parity)
-    const auto steadyStateText = lowercase(stripQuotes(readArgument(action, "steady_state", "0")));
-    opts.steadyState = (steadyStateText == "1" || steadyStateText == "true");
+    opts.steadyState = options.flag("steady_state", false);
     if (opts.steadyState) {
         opts.steadyStateTol = opts.atol;  // Use atol for steady-state check
     }
-    const auto steadyStateTolText = readArgument(action, "steady_state_tol", "");
-    if (!steadyStateTolText.empty()) {
-        opts.steadyStateTol = parseScalarValue(steadyStateTolText, model);
+    if (const auto steadyStateTol = options.optionalNumber("steady_state_tol")) {
+        opts.steadyStateTol = *steadyStateTol;
         if (!std::isfinite(opts.steadyStateTol) || opts.steadyStateTol <= 0.0) {
             throw std::runtime_error(
                 "steady_state_tol must be finite and positive");
@@ -1743,23 +1553,21 @@ void runSimulation(
     }
 
     // Parse stop_if expression (BNG2 parity)
-    opts.stopIf = stripQuotes(readArgument(action, "stop_if", ""));
+    opts.stopIf = stripQuotes(options.text("stop_if", ""));
 
     // Parse print_CDAT flag (BNG2 parity)
-    const auto printCDATText = lowercase(stripQuotes(readArgument(action, "print_CDAT", readArgument(action, "print_cdat", "1"))));
-    opts.printCDAT = (printCDATText != "0" && printCDATText != "false");
+    opts.printCDAT = options.hasValue("print_CDAT")
+        ? options.flagUnlessOff("print_CDAT", true)
+        : options.flagUnlessOff("print_cdat", true);
 
     // Parse print_functions flag (BNG2 parity: include function values in .gdat)
-    const auto printFunctionsText = lowercase(stripQuotes(readArgument(action, "print_functions", "0")));
-    opts.printFunctions = (printFunctionsText == "1" || printFunctionsText == "true");
+    opts.printFunctions = options.flag("print_functions", false);
 
     // Parse binary_output flag (BNG2 parity: write .cdat/.gdat in binary format)
-    const auto binaryOutputText = lowercase(stripQuotes(readArgument(action, "binary_output", "0")));
-    opts.binaryOutput = (binaryOutputText == "1" || binaryOutputText == "true");
+    opts.binaryOutput = options.flag("binary_output", false);
 
     // Parse continue flag (BNG2 parity)
-    const auto continueText = lowercase(stripQuotes(readArgument(action, "continue", "0")));
-    bool continueSimulation = (continueText == "1" || continueText == "true");
+    bool continueSimulation = options.flag("continue", false);
 
     // When continue=1 and no explicit t_start, use the previous simulation's end time
     if (continueSimulation && tStartText.empty() && lastSimulationEndTime > 0.0) {
@@ -1772,76 +1580,48 @@ void runSimulation(
     }
 
     // Parse save_progress flag (BNG2 parity: write .net checkpoint at each output step)
-    const auto saveProgressText = lowercase(stripQuotes(readArgument(action, "save_progress", "0")));
-    opts.saveProgress = (saveProgressText == "1" || saveProgressText == "true");
+    opts.saveProgress = options.flag("save_progress", false);
 
     // Parse print_net flag (BNG2 parity: write .net file after simulation with final concentrations)
-    const auto printNetText = lowercase(stripQuotes(readArgument(action, "print_net", "0")));
-    opts.printNet = (printNetText == "1" || printNetText == "true");
+    opts.printNet = options.flag("print_net", false);
 
     // Parse print_end flag (BNG2 parity: output final state when simulation stops early)
-    const auto printEndText = lowercase(stripQuotes(readArgument(action, "print_end", "0")));
-    opts.printEnd = (printEndText == "1" || printEndText == "true");
+    opts.printEnd = options.flag("print_end", false);
 
     // Parse netfile option (BNG2 parity: use custom .net file instead of auto-generating)
-    opts.netfile = stripQuotes(readArgument(action, "netfile", ""));
+    opts.netfile = stripQuotes(options.text("netfile", ""));
 
     // Parse output_step_interval (BNG2 parity: output every N internal steps, mainly for SSA/PLA)
-    const auto outputStepIntervalText = readArgument(action, "output_step_interval", "");
-    if (!outputStepIntervalText.empty()) {
-        opts.outputStepInterval = parseNonNegativeCount(
-            outputStepIntervalText, model, "output_step_interval");
+    if (const auto interval = options.optionalEventCount("output_step_interval")) {
+        opts.outputStepInterval = *interval;
     }
 
-    const auto maxSimStepsText = readArgument(action, "max_sim_steps", "");
-    if (!maxSimStepsText.empty()) {
-        opts.maxSimSteps = parseNonNegativeCount(
-            maxSimStepsText, model, "max_sim_steps");
+    if (const auto maxSteps = options.optionalEventCount("max_sim_steps")) {
+        opts.maxSimSteps = *maxSteps;
     }
 
     // Parse sparse option (request sparse Jacobian for large networks)
-    const auto sparseText = lowercase(stripQuotes(readArgument(action, "sparse", "0")));
-    opts.sparse = (sparseText == "1" || sparseText == "true");
+    opts.sparse = options.flag("sparse", false);
 
     // Parse evaluate_expressions option (BNG2: keep symbolic expressions in .net)
-    const auto evalExprText = lowercase(stripQuotes(readArgument(action, "evaluate_expressions", "1")));
-    opts.evaluateExpressions = (evalExprText != "0" && evalExprText != "false");
+    opts.evaluateExpressions = options.flagUnlessOff("evaluate_expressions", true);
 
     // Parse check_product_scale option (validate product concentrations)
-    const auto checkProdScaleText = readArgument(action, "check_product_scale", "");
-    if (!checkProdScaleText.empty()) {
-        opts.checkProductScale = parseScalarValue(checkProdScaleText, model);
+    if (const auto scale = options.optionalNumber("check_product_scale")) {
+        opts.checkProductScale = *scale;
         if (!std::isfinite(opts.checkProductScale) || opts.checkProductScale < 0.0) {
             throw std::runtime_error(
                 "check_product_scale must be finite and non-negative");
         }
     }
 
-    const bool isOdeMethod = opts.method == "cvode" || opts.method == "euler" ||
-        opts.method == "rk4";
-    if (!isOdeMethod && (opts.maxStep > 0.0 || opts.steadyState || opts.sparse)) {
-        throw std::runtime_error(
-            "max_step, steady_state, and sparse require an ODE simulation method");
-    }
-    if (!isOdeMethod && opts.method != "ssa" && !opts.stopIf.empty()) {
-        throw std::runtime_error("stop_if requires an ODE or SSA simulation method");
-    }
-    if (!isOdeMethod && opts.method != "ssa" && hasSampleTimes) {
-        throw std::runtime_error(
-            "sample_times requires an ODE or SSA simulation method");
-    }
-    if (opts.method != "ssa" && opts.outputStepInterval > 0) {
-        throw std::runtime_error(
-            "output_step_interval requires an SSA simulation method");
-    }
-    if (opts.method != "ssa" && opts.method != "psa" && opts.maxSimSteps > 0) {
-        throw std::runtime_error(
-            "max_sim_steps requires an SSA or PSA simulation method");
-    }
-    if (!isOdeMethod && opts.method != "psa" && opts.checkProductScale > 0.0) {
-        throw std::runtime_error(
-            "check_product_scale requires an ODE or PSA simulation method");
-    }
+    // The options a method can honour are decided by the shared semantic
+    // layer, so the dispatcher, the numerical backends and the public API
+    // cannot accept different combinations for the same method.
+    compile::validateSimulationOptions(
+        compile::simulationMethodForEngineName(opts.method).value_or(
+            compile::SimulationMethod::Cvode),
+        options.requestedSimulationOptions());
 
     // BNGL actions emit the initial state at t_start even when an explicit
     // output grid begins later. Keep this adjustment in the action layer so
@@ -3102,8 +2882,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "simulate_pla") {
             ensureNetwork();
-            const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
-            const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
+            const ActionOptions options(action, model);
+            const auto tEnd = stripQuotes(options.text("t_end", ""));
+            const auto nSteps = stripQuotes(options.text(
+                "n_steps", stripQuotes(options.text("n_output_steps", ""))));
             if (tEnd.empty() || nSteps.empty()) {
                 throw std::runtime_error("simulate_pla requires t_end and n_steps");
             }
@@ -3111,7 +2893,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             engine::OdeOptions opts;
             opts.tEnd = parseScalarValue(tEnd, model);
             opts.tStart = parseScalarValue(
-                stripQuotes(readArgument(action, "t_start", "0")), model);
+                stripQuotes(options.text("t_start", "0")), model);
             opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
             if (opts.nSteps == 0) {
                 throw std::runtime_error("n_steps must be positive");
@@ -3123,13 +2905,19 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
             opts.method = "pla";
 
-            const auto seedText = readArgument(action, "seed", "");
-            if (!seedText.empty()) {
-                opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
+            // The options a method can honour are decided by the shared
+            // semantic layer.
+            compile::validateSimulationOptions(
+                compile::SimulationMethod::Pla,
+                options.requestedSimulationOptions());
+
+            if (options.hasValue("seed")) {
+                opts.seed = static_cast<unsigned int>(
+                    parseScalarValue(options.sourceSpelling("seed"), model));
             }
 
             // Parse PLA config
-            const auto plaConfigStr = stripQuotes(readArgument(action, "pla_config", "fEuler|pre-neg:sb|eps=0.03"));
+            const auto plaConfigStr = stripQuotes(options.text("pla_config", "fEuler|pre-neg:sb|eps=0.03"));
             auto plaConfig = engine::PlaConfig::parse(plaConfigStr);
 
             if (verbose) {
@@ -3155,8 +2943,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "simulate_psa") {
             ensureNetwork();
-            const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
-            const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
+            const ActionOptions options(action, model);
+            const auto tEnd = stripQuotes(options.text("t_end", ""));
+            const auto nSteps = stripQuotes(options.text(
+                "n_steps", stripQuotes(options.text("n_output_steps", ""))));
             if (tEnd.empty() || nSteps.empty()) {
                 throw std::runtime_error("simulate_psa requires t_end and n_steps");
             }
@@ -3164,7 +2954,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             engine::OdeOptions opts;
             opts.tEnd = parseScalarValue(tEnd, model);
             opts.tStart = parseScalarValue(
-                stripQuotes(readArgument(action, "t_start", "0")), model);
+                stripQuotes(options.text("t_start", "0")), model);
             opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
             if (opts.nSteps == 0) {
                 throw std::runtime_error("n_steps must be positive");
@@ -3175,17 +2965,27 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "simulate_psa requires finite times with t_end greater than or equal to t_start");
             }
 
-            const auto seedText = readArgument(action, "seed", "");
-            if (!seedText.empty()) {
-                opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
+            if (options.hasValue("seed")) {
+                opts.seed = static_cast<unsigned int>(
+                    parseScalarValue(options.sourceSpelling("seed"), model));
             }
+
+            // The options a method can honour are decided by the shared
+            // semantic layer.
+            compile::validateSimulationOptions(
+                compile::SimulationMethod::Psa,
+                options.requestedSimulationOptions());
 
             // Parse poplevel: threshold for population (ODE) vs particle (SSA)
             // Default 0 means pure SSA
             double poplevel = 0.0;
-            const auto poplevelText = readArgument(action, "poplevel", "");
-            if (!poplevelText.empty()) {
-                poplevel = parseScalarValue(poplevelText, model);
+            if (const auto level = options.optionalNumber("poplevel")) {
+                poplevel = *level;
+            }
+
+            // The population sampler honours the internal step budget.
+            if (const auto maxSteps = options.optionalEventCount("max_sim_steps")) {
+                opts.maxSimSteps = *maxSteps;
             }
 
             if (verbose) {
@@ -3884,23 +3684,40 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             // Optionally execute the hybrid model
+            // `execute=>1` runs the requested actions on the hybrid model, as
+            // BNG2 does (bng2/Perl2/BNGAction.pm executes the `actions` list
+            // against the generated hybrid model).  It must not run the
+            // original model: the hybrid model is a population/particle
+            // artifact whose population execution refinement BNG3 does not
+            // implement, so a simulation of it would be an approximation with
+            // changed semantics.  Such an action is refused instead.
             if (hppOpts.execute) {
-                if (verbose) {
-                    std::cerr << "[bng_cpp] generate_hybrid_model: execute=1, running ODE on full network\n";
+                for (const auto& requested : hppOpts.actions) {
+                    const std::string name = hybridActionName(requested);
+                    if (isHybridSimulationAction(name)) {
+                        throw std::runtime_error(
+                            "generate_hybrid_model: execute=>1 requested the action '" +
+                            name + "' on the generated hybrid model, but hybrid "
+                            "population execution refinement is not supported; the "
+                            "hybrid model was generated at " +
+                            genResult.hybridBnglPath +
+                            " and no simulation output was produced for it");
+                    }
                 }
-                engine::OdeOptions odeOpts;
-                odeOpts.tEnd = hppOpts.tEnd;
-                odeOpts.nSteps = hppOpts.nSteps;
-                odeOpts.method = "cvode";
-                engine::OdeIntegrator integrator(model, *network);
-                auto odeResult = integrator.integrate(odeOpts);
-                const auto prefix = sourcePath.stem().string();
-                const auto outputPrefix = sourcePath.parent_path() / (prefix + "_" + hppOpts.suffix);
-                integrator.writeOutputFiles(outputPrefix.string(), odeResult);
-                if (verbose) {
-                    std::cerr << "[bng_cpp] Wrote hybrid simulation output: "
-                              << outputPrefix.string() << ".cdat, .gdat\n";
+                auto hybridModel =
+                    bng::parser::parseModelFromFile(genResult.hybridBnglPath);
+                if (!hybridModel) {
+                    throw std::runtime_error(
+                        "generate_hybrid_model: the generated hybrid model could "
+                        "not be read back: " + genResult.hybridBnglPath);
                 }
+                if (verbose) {
+                    std::cerr << "[bng_cpp] generate_hybrid_model: execute=1, "
+                              << "running the requested actions on the hybrid model "
+                              << genResult.hybridBnglPath << "\n";
+                }
+                bng::actions::ActionDispatch::execute(
+                    *hybridModel, genResult.hybridBnglPath, verbose);
             }
             continue;
         }
@@ -4060,27 +3877,19 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writemfile") {
             ensureNetwork();
             io::MatlabWriter::Options mOpts;
-            // Parse action arguments for writeMfile options
-            const auto tStartText = readArgument(action, "t_start", "");
-            if (!tStartText.empty()) mOpts.tStart = parseScalarValue(tStartText, model);
-            const auto tEndText = readArgument(action, "t_end", "");
-            if (!tEndText.empty()) mOpts.tEnd = parseScalarValue(tEndText, model);
-            const auto nStepsText = readArgument(action, "n_steps", "");
-            if (!nStepsText.empty()) mOpts.nSteps = static_cast<std::size_t>(parseScalarValue(nStepsText, model));
-            const auto atolText2 = readArgument(action, "atol", "");
-            if (!atolText2.empty()) mOpts.atol = parseScalarValue(atolText2, model);
-            const auto rtolText2 = readArgument(action, "rtol", "");
-            if (!rtolText2.empty()) mOpts.rtol = parseScalarValue(rtolText2, model);
-            const auto maxOrderText = readArgument(action, "max_order", readArgument(action, "maxOrder", ""));
+            const ActionOptions options(action, model);
+            // The time-grid options are read in one place; the writer keeps
+            // its own documented defaults for the options that are absent.
+            applyTimeGridOptions(options, mOpts);
+            const auto maxOrderText = options.text("max_order", options.text("maxOrder", ""));
             if (!maxOrderText.empty()) mOpts.maxOrder = static_cast<int>(parseScalarValue(maxOrderText, model));
-            const auto statsText = lowercase(stripQuotes(readArgument(action, "stats", "0")));
-            mOpts.stats = (statsText == "1" || statsText == "on" || statsText == "true");
-            const auto bdfText = lowercase(stripQuotes(readArgument(action, "bdf", "0")));
-            mOpts.bdf = (bdfText == "1" || bdfText == "on" || bdfText == "true");
-            const auto maxStepText = readArgument(action, "max_step", "");
-            if (!maxStepText.empty()) mOpts.maxStep = parseScalarValue(maxStepText, model);
+            mOpts.stats = options.flagOn("stats", false);
+            mOpts.bdf = options.flagOn("bdf", false);
+            if (const auto maxStep = options.optionalNumber("max_step")) {
+                mOpts.maxStep = *maxStep;
+            }
 
-            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            const auto suffix = stripQuotes(options.text("suffix", ""));
             const auto mContent = io::MatlabWriter::write(model, *network, mOpts);
             std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
@@ -4099,30 +3908,21 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writecppfile") {
             ensureNetwork();
             io::CppExportWriter::Options cppOpts;
-            const auto tStartText = readArgument(action, "t_start", "");
-            if (!tStartText.empty()) cppOpts.tStart = parseScalarValue(tStartText, model);
-            const auto tEndText = readArgument(action, "t_end", "");
-            if (!tEndText.empty()) cppOpts.tEnd = parseScalarValue(tEndText, model);
-            const auto nStepsText = readArgument(action, "n_steps", "");
-            if (!nStepsText.empty()) cppOpts.nSteps = static_cast<std::size_t>(parseScalarValue(nStepsText, model));
-            const auto atolText3 = readArgument(action, "atol", "");
-            if (!atolText3.empty()) cppOpts.atol = parseScalarValue(atolText3, model);
-            const auto rtolText3 = readArgument(action, "rtol", "");
-            if (!rtolText3.empty()) cppOpts.rtol = parseScalarValue(rtolText3, model);
-            const auto maxNumStepsText = readArgument(action, "max_num_steps", "");
+            const ActionOptions options(action, model);
+            applyTimeGridOptions(options, cppOpts);
+            const auto maxNumStepsText = options.text("max_num_steps", "");
             if (!maxNumStepsText.empty()) cppOpts.maxNumSteps = static_cast<int>(parseScalarValue(maxNumStepsText, model));
-            const auto maxErrText = readArgument(action, "max_err_test_fails", "");
+            const auto maxErrText = options.text("max_err_test_fails", "");
             if (!maxErrText.empty()) cppOpts.maxErrTestFails = static_cast<int>(parseScalarValue(maxErrText, model));
-            const auto maxConvText = readArgument(action, "max_conv_fails", "");
+            const auto maxConvText = options.text("max_conv_fails", "");
             if (!maxConvText.empty()) cppOpts.maxConvFails = static_cast<int>(parseScalarValue(maxConvText, model));
-            const auto maxStepText3 = readArgument(action, "max_step", "");
-            if (!maxStepText3.empty()) cppOpts.maxStep = parseScalarValue(maxStepText3, model);
-            const auto stiffText = lowercase(stripQuotes(readArgument(action, "stiff", "1")));
-            cppOpts.stiff = (stiffText != "0" && stiffText != "false" && stiffText != "off");
-            const auto sparseText = lowercase(stripQuotes(readArgument(action, "sparse", "0")));
-            cppOpts.sparse = (sparseText == "1" || sparseText == "on" || sparseText == "true");
+            if (const auto maxStep = options.optionalNumber("max_step")) {
+                cppOpts.maxStep = *maxStep;
+            }
+            cppOpts.stiff = options.flagUnlessOff("stiff", true);
+            cppOpts.sparse = options.flagOn("sparse", false);
 
-            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            const auto suffix = stripQuotes(options.text("suffix", ""));
             const auto cppContent = io::CppExportWriter::write(model, *network, cppOpts);
             std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
@@ -4142,18 +3942,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writecpyfile") {
             ensureNetwork();
             io::PythonExportWriter::Options pyOpts;
-            const auto tStartText = readArgument(action, "t_start", "");
-            if (!tStartText.empty()) pyOpts.tStart = parseScalarValue(tStartText, model);
-            const auto tEndText = readArgument(action, "t_end", "");
-            if (!tEndText.empty()) pyOpts.tEnd = parseScalarValue(tEndText, model);
-            const auto nStepsText = readArgument(action, "n_steps", "");
-            if (!nStepsText.empty()) pyOpts.nSteps = static_cast<std::size_t>(parseScalarValue(nStepsText, model));
-            const auto atolText4 = readArgument(action, "atol", "");
-            if (!atolText4.empty()) pyOpts.atol = parseScalarValue(atolText4, model);
-            const auto rtolText4 = readArgument(action, "rtol", "");
-            if (!rtolText4.empty()) pyOpts.rtol = parseScalarValue(rtolText4, model);
+            const ActionOptions options(action, model);
+            applyTimeGridOptions(options, pyOpts);
 
-            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            const auto suffix = stripQuotes(options.text("suffix", ""));
             const auto pyContent = io::PythonExportWriter::write(model, *network, pyOpts);
             std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
@@ -4173,17 +3965,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writemexfile") {
             ensureNetwork();
             io::MexWriter::Options mexOpts;
-            const auto tStartText = readArgument(action, "t_start", "");
-            if (!tStartText.empty()) mexOpts.tStart = parseScalarValue(tStartText, model);
-            const auto tEndText = readArgument(action, "t_end", "");
-            if (!tEndText.empty()) mexOpts.tEnd = parseScalarValue(tEndText, model);
-            const auto nStepsText = readArgument(action, "n_steps", "");
-            if (!nStepsText.empty()) mexOpts.nSteps = static_cast<std::size_t>(parseScalarValue(nStepsText, model));
-            const auto atolText5 = readArgument(action, "atol", "");
-            if (!atolText5.empty()) mexOpts.atol = parseScalarValue(atolText5, model);
-            const auto rtolText5 = readArgument(action, "rtol", "");
-            if (!rtolText5.empty()) mexOpts.rtol = parseScalarValue(rtolText5, model);
-            const auto maxNumStepsText5 = readArgument(action, "max_num_steps", "");
+            const ActionOptions options(action, model);
+            applyTimeGridOptions(options, mexOpts);
+            const auto maxNumStepsText5 = options.text("max_num_steps", "");
             if (!maxNumStepsText5.empty()) mexOpts.maxNumSteps = static_cast<int>(parseScalarValue(maxNumStepsText5, model));
 
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));

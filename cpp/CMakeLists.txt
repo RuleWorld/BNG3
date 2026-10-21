@@ -73,8 +73,10 @@ target_link_libraries(bng_parser PUBLIC antlr4_static bng_ast)
 
 # Execution-facing metadata; no NFsim runtime path is switched by this library.
 add_library(bng_compile STATIC
+    compile/ActionOptions.cpp
     compile/Capabilities.cpp
     compile/Document.cpp
+    compile/SimulationMethod.cpp
     compile/PatternDescriptor.cpp
     compile/PatternLowering.cpp
     compile/LegacyAstLowering.cpp
@@ -87,6 +89,7 @@ add_library(bng_compile STATIC
     compile/energy/DrivenEnergy.cpp
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
+    compile/TotalRate.cpp
     compile/CompiledModel.cpp)
 target_link_libraries(bng_compile PUBLIC bng_ast PRIVATE bng_parser)
 
@@ -449,10 +452,12 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_compile_snapshot.cpp
         bindings/bind_parser.cpp
         bindings/bind_engine.cpp
+        bindings/bind_graph_identity.cpp
         bindings/bind_nfsim.cpp
         bindings/bind_io.cpp
         bindings/bind_viz.cpp
         bindings/bind_jax_ssa.cpp
+        bindings/bind_nfnext.cpp
     )
     target_link_libraries(_bionetgen_cpp PRIVATE bionetgen_core)
     # The extension links the C++ runtime dynamically, unlike the CLI

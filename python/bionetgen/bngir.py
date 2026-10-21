@@ -228,6 +228,10 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             "pattern": mapping.pattern,
             "function": mapping.function,
             "args": list(mapping.args),
+            # The mapping rate is part of the map's meaning: a map without one
+            # compiles to a zero rate, so the rate is stated explicitly rather
+            # than left to the reader's default.
+            "rate": mapping.rate if mapping.has_rate else "0",
         }
         for mapping in native.population_maps
     ]
@@ -299,6 +303,7 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
         ("functions", "functions"),
         ("observables", "observables"),
         ("population_maps", "population_maps"),
+        ("population_types", "population_types"),
         ("rules", "rules"),
         ("seeds", "seeds"),
     ):
@@ -323,6 +328,10 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
                 f"BNGIR {STRUCTURAL_VERSION} cannot represent "
                 f"{observable.type!r} observable kinds; use version {VERSION!r}"
             )
+    # The v0.2 rule format carries the reservoir work as a resolved
+    # expression tree, the same way it carries every other expression. A
+    # drive that the compiler cannot evaluate statically makes the compiled
+    # model invalid, and the structural snapshot refuses it there.
     try:
         from .model import _cpp
 
@@ -447,21 +456,30 @@ def _quote_string(value: Any) -> str:
     return f'"{escaped}"'
 
 
+# The actions whose grammar form is positional: a quoted target and a value.
+# Every other action takes a bracketed named-argument list.
+_POSITIONAL_ACTIONS = frozenset(
+    {"setparameter", "setconcentration", "addconcentration"}
+)
+
+
 def _action_lines(action: Mapping[str, Any]) -> str:
+    name = str(action.get("name", ""))
     arguments = action.get("arguments", {})
+    if name.lower() in _POSITIONAL_ACTIONS:
+        target = _quote_string(arguments.get("target", ""))
+        value = _action_value(arguments.get("value", ""))
+        return f"  {name}({target}, {value})"
     if not arguments:
-        return f"  {action['name']}()"
+        return f"  {name}()"
     pairs = ", ".join(
         f"{key}=>{_action_value(value)}" for key, value in arguments.items()
     )
-    return f"  {action['name']}({{{pairs}}})"
+    return f"  {name}({{{pairs}}})"
 
 
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     model = _require_mapping(root["model"], "model")
-    if model.get("population_maps"):
-        raise ValueError("BNGIR population_maps deserialization is not yet supported")
-
     lines: list[str] = []
     if model.get("version"):
         lines.append(f"version({_quote_string(model['version'])})")
@@ -548,6 +566,28 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
                 f"  {label}{reactants} {arrow} {products} {item['expression']}"
             )
         lines += ["end barrier patterns"]
+    population_maps = model.get("population_maps", [])
+    if population_maps:
+        lines += ["begin population maps"]
+        for item in population_maps:
+            label = f"{item['label']}: " if item.get("label") else ""
+            rate = item.get("rate")
+            if not isinstance(rate, str) or not rate:
+                # A map without a rate would be rebuilt with a zero rate, which
+                # is a different map. Refuse instead of approximating.
+                raise ValueError(
+                    "BNGIR population_maps cannot be deserialized because the "
+                    "wire format does not carry a population map's rate"
+                )
+            population = item.get("population", item.get("function"))
+            if not isinstance(population, str) or not population:
+                raise ValueError(
+                    "BNGIR population_maps cannot be deserialized because the "
+                    "wire format does not carry a population map's target"
+                )
+            args = ",".join(item.get("args", []))
+            lines.append(f"  {label}{item['pattern']} -> {population}({args}) {rate}")
+        lines += ["end population maps"]
     rules = model.get("rules", [])
     if rules:
         lines += ["begin reaction rules"]
@@ -889,6 +929,52 @@ def _validate_pattern_ref_v02(
             raise ValueError(f"BNGIR {where} site reference is out of range")
 
 
+def _local_scope_side(scope: Mapping[str, Any]) -> str:
+    """Return the side a local scope is anchored on.
+
+    A scope is anchored on the reactants of its direction unless the wire
+    form says otherwise. The reverse direction of a rule has the forward
+    direction's products as its reactants.
+    """
+    side = scope.get("side", "reactant")
+    if side not in {"reactant", "product"}:
+        raise ValueError(f"BNGIR local scope has an invalid side: {side!r}")
+    return side
+
+
+def _local_scope_pattern_v02(
+    scope: Mapping[str, Any],
+    where: str,
+    reactant_count: int,
+    product_count: int,
+) -> int:
+    """Return the pattern a local scope is anchored on.
+
+    A reactant-anchored scope names the reactant pattern it indexes; a
+    product-anchored scope names the product pattern it indexes and has no
+    reactant pattern of its own.
+    """
+    side = _local_scope_side(scope)
+    count = reactant_count if side == "reactant" else product_count
+    index = scope.get("pattern_index")
+    if index is None and side == "reactant":
+        index = scope.get("reactant_pattern")
+    if not _is_json_integer(index) or index < 0 or index >= count:
+        raise ValueError(f"BNGIR {where} local scope pattern is out of range")
+    reactant_pattern = scope.get("reactant_pattern")
+    if side == "reactant":
+        if reactant_pattern is not None and reactant_pattern != index:
+            raise ValueError(
+                f"BNGIR {where} local scope reactant pattern does not match "
+                "its pattern index"
+            )
+    elif reactant_pattern is not None:
+        raise ValueError(
+            f"BNGIR {where} product-side local scope must not name a reactant pattern"
+        )
+    return index
+
+
 def _validate_direction_v02(
     direction: Mapping[str, Any], model: Mapping[str, Any], where: str
 ) -> None:
@@ -908,23 +994,23 @@ def _validate_direction_v02(
         raise ValueError(f"BNGIR {where}.local_scopes must be an array")
     local_names: set[str] = set()
     reactants = direction.get("reactants", [])
+    products = direction.get("products", [])
     for i, raw_scope in enumerate(scopes):
         scope = _require_mapping(raw_scope, f"{where}.local_scopes[{i}]")
         name = scope.get("name")
         kind = scope.get("kind")
-        pi = scope.get("reactant_pattern")
         if not isinstance(name, str) or not name or name in local_names:
             raise ValueError(f"BNGIR {where} has invalid/duplicate local scope name")
         local_names.add(name)
         if kind not in {"molecule", "species"}:
             raise ValueError(f"BNGIR {where} has invalid local scope kind")
-        if not _is_json_integer(pi) or pi < 0 or pi >= len(reactants):
-            raise ValueError(
-                f"BNGIR {where} local scope reactant pattern is out of range"
-            )
+        pi = _local_scope_pattern_v02(
+            scope, f"{where}.local_scopes[{i}]", len(reactants), len(products)
+        )
         occurrence = scope.get("molecule_occurrence")
         if kind == "molecule":
-            molecules = _require_mapping(reactants[pi], f"{where}.reactants[{pi}]").get(
+            anchored = reactants if _local_scope_side(scope) == "reactant" else products
+            molecules = _require_mapping(anchored[pi], f"{where}.patterns[{pi}]").get(
                 "molecules", []
             )
             if (
@@ -1183,15 +1269,40 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"BNGIR model.barrier_patterns[{i}].transition must be a reaction transition"
             )
-        expression_text = barrier.get("expression")
-        if not isinstance(expression_text, str) or not expression_text:
-            raise ValueError(
-                f"BNGIR model.barrier_patterns[{i}].expression must be a non-empty string"
-            )
+        # The transition-state energy is a resolved expression tree, like
+        # every other expression in the wire object.
+        _validate_expression_v02(
+            _require_mapping(barrier.get("expression"), "barrier-pattern expression"),
+            model,
+            local_names=set(),
+            where=f"model.barrier_patterns[{i}].expression",
+        )
         if barrier.get("center_resolved") is not True:
             raise ValueError(
                 f"BNGIR model.barrier_patterns[{i}] {label!r} does not carry "
                 "a resolved reaction center"
+            )
+        # The transition's structure, when the document states it, is a
+        # structured pattern. A document that states only the transition text
+        # is still readable; the text is then the transition's representation.
+        for side in ("reactants", "products"):
+            patterns = barrier.get(side)
+            if patterns is None:
+                continue
+            if not isinstance(patterns, list):
+                raise ValueError(
+                    f"BNGIR model.barrier_patterns[{i}].{side} must be an array"
+                )
+            for j, pattern in enumerate(patterns):
+                _validate_pattern_v02(
+                    _require_mapping(pattern, "barrier-pattern transition pattern"),
+                    model,
+                    f"model.barrier_patterns[{i}].{side}[{j}]",
+                )
+        bidirectional = barrier.get("bidirectional")
+        if bidirectional is not None and not isinstance(bidirectional, bool):
+            raise ValueError(
+                f"BNGIR model.barrier_patterns[{i}].bidirectional must be a boolean"
             )
 
     population_types = _section_id_map(model, "population_types")
@@ -1202,12 +1313,25 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             model,
             f"model.population_maps[{i}].pattern",
         )
+        # `population` is the canonical target name; `function` is the legacy
+        # alias for it. Both may be present, but they must agree.
+        population = mapping.get("population")
+        legacy = mapping.get("function")
+        if population is None:
+            population = legacy
+        elif legacy is not None and legacy != population:
+            raise ValueError(
+                f"BNGIR model.population_maps[{i}] population name and function "
+                "alias disagree"
+            )
+        if not isinstance(population, str) or not population:
+            raise ValueError(f"BNGIR model.population_maps[{i}] has no population name")
         population_id = mapping.get("population_id")
         if not _is_json_integer(population_id) or population_id not in population_types:
             raise ValueError(
                 f"BNGIR model.population_maps[{i}] references unknown population type"
             )
-        if mapping.get("population") != population_types[population_id].get("name"):
+        if population != population_types[population_id].get("name"):
             raise ValueError(
                 f"BNGIR model.population_maps[{i}] population name/id disagree"
             )
@@ -1261,6 +1385,16 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"BNGIR model.rules[{i}] has unsupported modifier kind: {kind!r}"
             )
+        driving_work = rule.get("driving_work")
+        if driving_work is not None:
+            # The reservoir work is a model-level quantity: it names the
+            # parameters of the model, not a local scope of the rule.
+            _validate_expression_v02(
+                _require_mapping(driving_work, f"model.rules[{i}].driving_work"),
+                model,
+                local_names=set(),
+                where=f"model.rules[{i}].driving_work",
+            )
 
 
 def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
@@ -1268,7 +1402,11 @@ def _load_document_v02(document: str | Mapping[str, Any]) -> Mapping[str, Any]:
     if root.get("version") != STRUCTURAL_VERSION:
         raise ValueError("expected BNGIR v0.2")
     features = _require_mapping(root.get("features"), "features")
-    supported = _FEATURES | {"structured_patterns", "structured_expressions"}
+    supported = _FEATURES | {
+        "structured_patterns",
+        "structured_expressions",
+        "population_types",
+    }
     validated: dict[str, list[str]] = {}
     for feature_kind in ("required", "used"):
         values = features.get(feature_kind, [])
@@ -1334,6 +1472,7 @@ def _native_expression_v02(
     where: str,
     *,
     local_names: frozenset[str] | None = None,
+    local_description: str = "function argument",
     function_ids: frozenset[int] = frozenset(),
     function_arities: Mapping[int, int] | None = None,
     observable_ids: frozenset[int] = frozenset(),
@@ -1378,7 +1517,7 @@ def _native_expression_v02(
         name = expression["name"]
         if not isinstance(name, str) or name not in local_names:
             raise ValueError(
-                f"native BNGIR {where} references an unknown function argument"
+                f"native BNGIR {where} references an unknown {local_description}"
             )
         return
     if kind == "function_ref":
@@ -1419,6 +1558,7 @@ def _native_expression_v02(
                 parameter_ids,
                 f"{where}.arguments[{argument_index}]",
                 local_names=local_names,
+                local_description=local_description,
                 function_ids=function_ids,
                 function_arities=function_arities,
                 observable_ids=observable_ids,
@@ -1473,6 +1613,7 @@ def _native_expression_v02(
             parameter_ids,
             f"{where}.arguments[0]",
             local_names=local_names,
+            local_description=local_description,
             function_ids=function_ids,
             function_arities=function_arities,
             observable_ids=observable_ids,
@@ -1499,6 +1640,7 @@ def _native_expression_v02(
                 parameter_ids,
                 f"{where}.arguments[{index}]",
                 local_names=local_names,
+                local_description=local_description,
                 function_ids=function_ids,
                 function_arities=function_arities,
                 observable_ids=observable_ids,
@@ -1572,8 +1714,131 @@ def _native_pattern_v02(
         raise ValueError(f"native BNGIR {where} references an unknown molecule type id")
     if not isinstance(molecule["type"], str) or not molecule["type"]:
         raise ValueError(f"native BNGIR {where} has no molecule type name")
-    if molecule["sites"] != []:
-        raise ValueError(f"native BNGIR {where} does not support molecule sites")
+    for site_index, raw_site in enumerate(molecule["sites"]):
+        site = _require_mapping(raw_site, f"{where}.molecules[0].sites[{site_index}]")
+        _native_required_optional_keys(
+            site,
+            {"occurrence", "component", "state", "bond"},
+            {"occurrence", "component", "component_index", "label", "state", "bond"},
+            f"{where}.molecules[0].sites[{site_index}]",
+        )
+        if (
+            isinstance(site["occurrence"], bool)
+            or not isinstance(site["occurrence"], int)
+            or site["occurrence"] != 0
+        ):
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] requires "
+                "site occurrence zero"
+            )
+        if not isinstance(site["component"], str) or not site["component"]:
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] has no "
+                "component name"
+            )
+        state = _require_mapping(
+            site["state"], f"{where}.molecules[0].sites[{site_index}].state"
+        )
+        if state.get("kind") not in {"any", "exact", "set"}:
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] has an "
+                "unsupported state constraint kind"
+            )
+        bond = _require_mapping(
+            site["bond"], f"{where}.molecules[0].sites[{site_index}].bond"
+        )
+        if bond.get("kind") not in {"unspecified", "unbound", "bound", "any", "exact"}:
+            raise ValueError(
+                f"native BNGIR {where}.molecules[0].sites[{site_index}] has an "
+                "unsupported bond constraint kind"
+            )
+
+
+def _native_local_scopes_v02(
+    scopes: Any,
+    where: str,
+    *,
+    reactant_count: int,
+    product_count: int,
+) -> list[str]:
+    """Validate the local-function scopes a rule direction declares.
+
+    The wire form names the scope, its kind, the side it is anchored on, the
+    pattern it indexes and, for a molecule scope, the molecule occurrence
+    inside that pattern. A scope anchored on the reactants names that
+    reactant pattern; a scope anchored on the products has no reactant
+    pattern of its own.
+    """
+    if not isinstance(scopes, list):
+        raise ValueError(f"native BNGIR {where}.local_scopes must be an array")
+    names: list[str] = []
+    for index, raw in enumerate(scopes):
+        scope = _require_mapping(raw, f"{where}.local_scopes[{index}]")
+        _native_required_optional_keys(
+            scope,
+            {"name", "kind", "side", "pattern_index", "reactant_pattern"},
+            {
+                "name",
+                "kind",
+                "side",
+                "pattern_index",
+                "reactant_pattern",
+                "molecule_occurrence",
+            },
+            f"{where}.local_scopes[{index}]",
+        )
+        name = scope["name"]
+        if not isinstance(name, str) or not name or name in names:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] has an invalid or "
+                "duplicated name"
+            )
+        names.append(name)
+        kind = scope["kind"]
+        if kind not in {"molecule", "species"}:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] has an unsupported kind"
+            )
+        side = scope["side"]
+        if side not in {"reactant", "product"}:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] has an unsupported side"
+            )
+        pattern_index = scope["pattern_index"]
+        pattern_count = reactant_count if side == "reactant" else product_count
+        if (
+            not _is_json_integer(pattern_index)
+            or not 0 <= pattern_index < pattern_count
+        ):
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] references an "
+                "unknown pattern"
+            )
+        reactant_pattern = scope["reactant_pattern"]
+        if side == "reactant":
+            if reactant_pattern != pattern_index:
+                raise ValueError(
+                    f"native BNGIR {where}.local_scopes[{index}] reactant pattern "
+                    "does not match its pattern index"
+                )
+        elif reactant_pattern is not None:
+            raise ValueError(
+                f"native BNGIR {where}.local_scopes[{index}] product-side scope "
+                "must not name a reactant pattern"
+            )
+        occurrence = scope.get("molecule_occurrence")
+        if occurrence is not None:
+            if kind != "molecule":
+                raise ValueError(
+                    f"native BNGIR {where}.local_scopes[{index}] species scope "
+                    "must not name a molecule occurrence"
+                )
+            if not _is_json_integer(occurrence) or occurrence < 0:
+                raise ValueError(
+                    f"native BNGIR {where}.local_scopes[{index}] has an invalid "
+                    "molecule occurrence"
+                )
+    return names
 
 
 def _native_multi_pattern_direction_v02(
@@ -1657,14 +1922,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         "rules",
     }
     _native_exact_keys(model, sections, "model")
-    for section in (
-        "energy_patterns",
-        "barrier_patterns",
-        "population_maps",
-        "population_types",
-    ):
-        if model[section] != []:
-            raise ValueError(f"native BNGIR does not support model.{section}")
 
     metadata = _require_mapping(model["metadata"], "model.metadata")
     _native_exact_keys(
@@ -1673,8 +1930,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     for key in ("name", "version", "substance_units"):
         if not isinstance(metadata[key], str):
             raise ValueError(f"native BNGIR model.metadata.{key} must be a string")
-    if metadata["substance_units"]:
-        raise ValueError("native BNGIR does not support substance-unit metadata")
     options = _require_mapping(metadata["options"], "model.metadata.options")
     if not all(
         isinstance(key, str) and isinstance(value, str)
@@ -1752,10 +2007,36 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"native BNGIR molecule type name is invalid or duplicated: {name!r}"
             )
-        if molecule["population"] is not False or molecule["components"] != []:
+        if not isinstance(molecule["population"], bool):
             raise ValueError(
-                f"native BNGIR molecule type {name!r} must be an ordinary site-free type"
+                f"native BNGIR molecule type {name!r} has an invalid population flag"
             )
+        for component_index, raw_component in enumerate(molecule["components"]):
+            component = _require_mapping(
+                raw_component,
+                f"model.molecule_types[{index}].components[{component_index}]",
+            )
+            _native_exact_keys(
+                component,
+                {"index", "name", "states"},
+                f"model.molecule_types[{index}].components[{component_index}]",
+            )
+            if component["index"] != component_index:
+                raise ValueError(
+                    f"native BNGIR molecule type {name!r} component indices must "
+                    "be dense and ordered"
+                )
+            if not isinstance(component["name"], str) or not component["name"]:
+                raise ValueError(
+                    f"native BNGIR molecule type {name!r} has an invalid component name"
+                )
+            if not isinstance(component["states"], list) or not all(
+                isinstance(state, str) for state in component["states"]
+            ):
+                raise ValueError(
+                    f"native BNGIR molecule type {name!r} component states must be "
+                    "a string array"
+                )
         molecule_ids.add(index)
         molecule_names.add(name)
 
@@ -1926,10 +2207,216 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             allow_function_calls=True,
         )
 
+    # The barrier patterns add a transition-state energy to the reaction
+    # center their transition lowers to. The native reader rebuilds the
+    # transition from the document's structured patterns, so the native path
+    # requires them.
+    for index, raw in enumerate(model["barrier_patterns"]):
+        barrier = _require_mapping(raw, f"model.barrier_patterns[{index}]")
+        _native_exact_keys(
+            barrier,
+            {
+                "index",
+                "label",
+                "transition",
+                "expression",
+                "reaction_center",
+                "center_resolved",
+                "value",
+                "reactants",
+                "products",
+                "bidirectional",
+            },
+            f"model.barrier_patterns[{index}]",
+        )
+        if (
+            isinstance(barrier["index"], bool)
+            or not isinstance(barrier["index"], int)
+            or barrier["index"] != index
+        ):
+            raise ValueError(
+                "native BNGIR barrier pattern ids must be dense and ordered"
+            )
+        if not isinstance(barrier["label"], str):
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].label must be a string"
+            )
+        transition = barrier["transition"]
+        if not isinstance(transition, str) or not transition:
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].transition must be a "
+                "non-empty string"
+            )
+        if barrier["center_resolved"] is not True:
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}] does not carry a "
+                "resolved reaction center"
+            )
+        reaction_center = barrier["reaction_center"]
+        if not isinstance(reaction_center, str) or not reaction_center:
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}] does not carry a "
+                "resolved reaction center"
+            )
+        value = barrier["value"]
+        if value is not None and not _is_native_finite_number(value):
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].value must be finite"
+            )
+        if not isinstance(barrier["bidirectional"], bool):
+            raise ValueError(
+                f"native BNGIR model.barrier_patterns[{index}].bidirectional must be "
+                "a boolean"
+            )
+        for side in ("reactants", "products"):
+            patterns = barrier[side]
+            if not isinstance(patterns, list) or not patterns:
+                raise ValueError(
+                    f"native BNGIR model.barrier_patterns[{index}].{side} must hold at "
+                    "least one pattern"
+                )
+            for pattern_index, pattern in enumerate(patterns):
+                _native_pattern_v02(
+                    pattern,
+                    f"model.barrier_patterns[{index}].{side}[{pattern_index}]",
+                    molecule_ids,
+                )
+        _native_expression_v02(
+            barrier["expression"],
+            parameter_ids,
+            f"model.barrier_patterns[{index}].expression",
+            function_ids=frozenset(function_ids),
+            function_arities=function_arities,
+            allow_function_calls=True,
+        )
+
+    # The population types are the distinct targets the population maps name.
+    # The compiler derives them from the maps in first-appearance order, so the
+    # document has to state exactly that list for the native model to rebuild
+    # the same semantics.
+    population_type_names: list[str] = []
+    for index, raw in enumerate(model["population_types"]):
+        population_type = _require_mapping(raw, f"model.population_types[{index}]")
+        _native_exact_keys(
+            population_type,
+            {"id", "name"},
+            f"model.population_types[{index}]",
+        )
+        if (
+            isinstance(population_type["id"], bool)
+            or not isinstance(population_type["id"], int)
+            or population_type["id"] != index
+        ):
+            raise ValueError(
+                "native BNGIR population type ids must be dense and ordered"
+            )
+        name = population_type["name"]
+        if not isinstance(name, str) or not name or name in population_type_names:
+            raise ValueError(
+                "native BNGIR population type names must be nonempty and unique"
+            )
+        population_type_names.append(name)
+
+    for index, raw in enumerate(model["population_maps"]):
+        mapping = _require_mapping(raw, f"model.population_maps[{index}]")
+        _native_required_optional_keys(
+            mapping,
+            {
+                "index",
+                "label",
+                "pattern",
+                "population",
+                "population_id",
+                "arguments",
+                "rate",
+            },
+            {
+                "arguments",
+                "function",
+                "index",
+                "label",
+                "pattern",
+                "population",
+                "population_id",
+                "rate",
+            },
+            f"model.population_maps[{index}]",
+        )
+        if (
+            isinstance(mapping["index"], bool)
+            or not isinstance(mapping["index"], int)
+            or mapping["index"] != index
+        ):
+            raise ValueError(
+                "native BNGIR population map ids must be dense and ordered"
+            )
+        if not isinstance(mapping["label"], str):
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}].label must be a string"
+            )
+        population = mapping["population"]
+        legacy = mapping.get("function")
+        if legacy is not None and legacy != population:
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] population name and "
+                "function alias disagree"
+            )
+        if not isinstance(population, str) or not population:
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] has no population name"
+            )
+        population_id = mapping["population_id"]
+        if (
+            isinstance(population_id, bool)
+            or not isinstance(population_id, int)
+            or not 0 <= population_id < len(population_type_names)
+        ):
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] references an unknown "
+                "population type"
+            )
+        if population_type_names[population_id] != population:
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}] population name/id disagree"
+            )
+        arguments = mapping["arguments"]
+        if not isinstance(arguments, list) or not all(
+            isinstance(argument, str) for argument in arguments
+        ):
+            raise ValueError(
+                f"native BNGIR model.population_maps[{index}].arguments must be strings"
+            )
+        _native_pattern_v02(
+            mapping["pattern"],
+            f"model.population_maps[{index}].pattern",
+            molecule_ids,
+        )
+        _native_expression_v02(
+            mapping["rate"],
+            parameter_ids,
+            f"model.population_maps[{index}].rate",
+            function_ids=frozenset(function_ids),
+            function_arities=function_arities,
+            allow_function_calls=True,
+        )
+
+    # The compiler derives the population types from the maps, so a document
+    # that states a different list would rebuild into a different model.
+    derived_population_types: list[str] = []
+    for mapping in model["population_maps"]:
+        name = mapping["population"]
+        if name not in derived_population_types:
+            derived_population_types.append(name)
+    if derived_population_types != population_type_names:
+        raise ValueError(
+            "native BNGIR model.population_types do not match the population "
+            "targets the population maps name"
+        )
+
     rule_names: set[str] = set()
     for index, raw in enumerate(model["rules"]):
         rule = _require_mapping(raw, f"model.rules[{index}]")
-        _native_exact_keys(
+        _native_required_optional_keys(
             rule,
             {
                 "id",
@@ -1940,6 +2427,18 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 "forward",
                 "molecule_mappings",
                 "component_mappings",
+            },
+            {
+                "id",
+                "name",
+                "label",
+                "bidirectional",
+                "modifiers",
+                "forward",
+                "reverse",
+                "molecule_mappings",
+                "component_mappings",
+                "driving_work",
             },
             f"model.rules[{index}]",
         )
@@ -1957,10 +2456,64 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         ):
             raise ValueError(f"native BNGIR model.rules[{index}] has invalid names")
         rule_names.add(rule["name"])
-        if rule["bidirectional"] is not False or rule["modifiers"] != []:
+        if not isinstance(rule["bidirectional"], bool):
             raise ValueError(
-                f"native BNGIR model.rules[{index}] must be a forward ordinary rule"
+                f"native BNGIR model.rules[{index}] has an invalid bidirectional flag"
             )
+        if rule["bidirectional"]:
+            # The compiler materializes the reverse direction by swapping the
+            # forward patterns, so the document's reverse direction must be
+            # exactly that swap or the native model would differ from it.
+            if "reverse" not in rule:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] is bidirectional but has "
+                    "no reverse direction"
+                )
+            reverse = _require_mapping(rule["reverse"], f"model.rules[{index}].reverse")
+            _native_exact_keys(
+                reverse,
+                {
+                    "reactants",
+                    "products",
+                    "rate",
+                    "filters",
+                    "local_scopes",
+                    "mutations",
+                    "transformations_complete",
+                },
+                f"model.rules[{index}].reverse",
+            )
+            forwardDirection = _require_mapping(
+                rule["forward"], f"model.rules[{index}].forward"
+            )
+            if (
+                reverse["reactants"] != forwardDirection["products"]
+                or reverse["products"] != forwardDirection["reactants"]
+            ):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] reverse direction does not "
+                    "swap the forward patterns"
+                )
+        elif "reverse" in rule:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] carries a reverse direction "
+                "on a forward rule"
+            )
+        native_modifier_kinds = {
+            "delete_molecules",
+            "move_connected",
+            "match_once",
+            "total_rate",
+        }
+        for modifier_index, raw_modifier in enumerate(rule["modifiers"]):
+            modifier = _require_mapping(
+                raw_modifier, f"model.rules[{index}].modifiers[modifier_index]"
+            )
+            if modifier.get("kind") not in native_modifier_kinds:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].modifiers[modifier_index] "
+                    "has an unsupported modifier kind"
+                )
         if not isinstance(rule["molecule_mappings"], list) or not isinstance(
             rule["component_mappings"], list
         ):
@@ -1981,10 +2534,30 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             },
             f"model.rules[{index}].forward",
         )
-        if direction["filters"] != [] or direction["local_scopes"] != []:
-            raise ValueError(
-                f"native BNGIR model.rules[{index}] does not support filters or local scopes"
+        for filter_index, raw_filter in enumerate(direction["filters"]):
+            filter_ = _require_mapping(
+                raw_filter, f"model.rules[{index}].forward.filters[{filter_index}]"
             )
+            if not isinstance(filter_.get("include"), bool):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] must have a boolean include flag"
+                )
+            if filter_.get("side") not in {"reactant", "product"}:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] has an unsupported side"
+                )
+            if not _is_json_integer(filter_.get("pattern_index")):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] must have an integer pattern index"
+                )
+            if not isinstance(filter_.get("patterns"), list):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].forward.filters"
+                    f"[{filter_index}] must have a pattern array"
+                )
         if direction["transformations_complete"] is not True:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] has incomplete transformations"
@@ -2008,6 +2581,30 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     molecule_ids,
                 )
         _native_multi_pattern_direction_v02(rule, direction, index, model, molecule_ids)
+        # The local scopes bind a local function argument to a reactant of the
+        # direction that declares them. The reverse direction's reactants are
+        # the forward direction's products.
+        forward_scope_names = _native_local_scopes_v02(
+            direction["local_scopes"],
+            f"model.rules[{index}].forward",
+            reactant_count=len(direction["reactants"]),
+            product_count=len(direction["products"]),
+        )
+        reverse_scope_names: list[str] = []
+        if "reverse" in rule:
+            reverse_scope_names = _native_local_scopes_v02(
+                _require_mapping(rule["reverse"], f"model.rules[{index}].reverse")[
+                    "local_scopes"
+                ],
+                f"model.rules[{index}].reverse",
+                reactant_count=len(direction["products"]),
+                product_count=len(direction["reactants"]),
+            )
+            if sorted(forward_scope_names) != sorted(reverse_scope_names):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] declares different local "
+                    "scopes for its two directions"
+                )
         if len(rule["molecule_mappings"]) > 1:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] has too many molecule mappings"
@@ -2044,10 +2641,9 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     raise ValueError(
                         f"native BNGIR model.rules[{index}] has an out-of-slice molecule mapping reference"
                     )
-        if rule["component_mappings"]:
-            raise ValueError(
-                f"native BNGIR model.rules[{index}] does not support component mappings"
-            )
+        # The native rule derives its component mappings from the reactant and
+        # product patterns. The document states them so a consumer can read the
+        # mapping without deriving it; the native importer checks the two agree.
         rate = _require_mapping(direction["rate"], f"model.rules[{index}].forward.rate")
         _native_exact_keys(
             rate, {"kind", "expression"}, f"model.rules[{index}].forward.rate"
@@ -2060,10 +2656,45 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             rate["expression"],
             parameter_ids,
             f"model.rules[{index}].forward.rate.expression",
+            local_names=frozenset(forward_scope_names),
+            local_description="local scope",
             function_ids=frozenset(function_ids),
             function_arities=function_arities,
             allow_function_calls=True,
         )
+        if "reverse" in rule:
+            reverse_rate = _require_mapping(
+                _require_mapping(rule["reverse"], f"model.rules[{index}].reverse")[
+                    "rate"
+                ],
+                f"model.rules[{index}].reverse.rate",
+            )
+            _native_exact_keys(
+                reverse_rate,
+                {"kind", "expression"},
+                f"model.rules[{index}].reverse.rate",
+            )
+            _native_expression_v02(
+                reverse_rate["expression"],
+                parameter_ids,
+                f"model.rules[{index}].reverse.rate.expression",
+                local_names=frozenset(reverse_scope_names),
+                local_description="local scope",
+                function_ids=frozenset(function_ids),
+                function_arities=function_arities,
+                allow_function_calls=True,
+            )
+        if "driving_work" in rule:
+            # The reservoir work is a model-level quantity: it names the
+            # parameters of the model, not a local scope of the rule.
+            _native_expression_v02(
+                rule["driving_work"],
+                parameter_ids,
+                f"model.rules[{index}].driving_work",
+                function_ids=frozenset(function_ids),
+                function_arities=function_arities,
+                allow_function_calls=True,
+            )
         mutations = direction["mutations"]
         if not isinstance(mutations, list):
             raise ValueError(
@@ -2078,10 +2709,87 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             if not isinstance(kind, str) or kind not in {
                 "add_molecule",
                 "delete_molecule",
+                "change_state",
             }:
                 raise ValueError(
                     f"native BNGIR model.rules[{index}] has unsupported mutation kind {kind!r}"
                 )
+            if kind == "change_state":
+                # The native rule derives a state change from the reactant and
+                # product patterns. The document states it so a consumer can
+                # read it without deriving it, and the two must agree.
+                _native_exact_keys(
+                    mutation,
+                    {"kind", "source", "state", "state_index"},
+                    f"model.rules[{index}].forward.mutations[{mutation_index}]",
+                )
+                source = _require_mapping(
+                    mutation["source"],
+                    f"model.rules[{index}].forward.mutations[{mutation_index}].source",
+                )
+                _native_exact_keys(
+                    source,
+                    {"side", "pattern", "molecule", "site"},
+                    f"model.rules[{index}].forward.mutations[{mutation_index}].source",
+                )
+                if source["side"] != "reactant":
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change must come "
+                        "from the reactant side"
+                    )
+                if (
+                    isinstance(source["pattern"], bool)
+                    or not isinstance(source["pattern"], int)
+                    or not 0 <= source["pattern"] < len(direction["reactants"])
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown reactant pattern"
+                    )
+                if (
+                    isinstance(source["molecule"], bool)
+                    or not isinstance(source["molecule"], int)
+                    or source["molecule"] != 0
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown reactant molecule"
+                    )
+                reactant = direction["reactants"][source["pattern"]]
+                reactantMolecules = reactant["molecules"]
+                if source["molecule"] >= len(reactantMolecules):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown reactant molecule"
+                    )
+                product = direction["products"][source["pattern"]]
+                if source["pattern"] >= len(direction["products"]):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown product pattern"
+                    )
+                productMolecules = product["molecules"]
+                if source["molecule"] >= len(productMolecules):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown product molecule"
+                    )
+                reactantSites = reactantMolecules[source["molecule"]].get("sites", [])
+                productSites = productMolecules[source["molecule"]].get("sites", [])
+                if source["site"] >= len(reactantSites) or source["site"] >= len(
+                    productSites
+                ):
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change references "
+                        "an unknown site"
+                    )
+                target = productSites[source["site"]]
+                if target.get("state", {}).get("value") != mutation["state"]:
+                    raise ValueError(
+                        f"native BNGIR model.rules[{index}] state change does not "
+                        "match the product pattern state"
+                    )
+                continue
             _native_exact_keys(
                 mutation,
                 {"kind", "molecule"},
@@ -2115,13 +2823,40 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
 
     protocol = _require_mapping(root["protocol"], "protocol")
     _native_exact_keys(protocol, {"actions"}, "protocol")
-    if protocol["actions"] != []:
-        raise ValueError("native BNGIR does not support protocol actions")
+    for action_index, raw_action in enumerate(protocol["actions"]):
+        action = _require_mapping(raw_action, f"protocol.actions[{action_index}]")
+        _native_exact_keys(
+            action, {"scope", "name", "arguments"}, f"protocol.actions[{action_index}]"
+        )
+        if action["scope"] not in {"model", "simulation_protocol"}:
+            raise ValueError(
+                f"native BNGIR protocol.actions[{action_index}] has an unsupported scope"
+            )
+        if not isinstance(action["name"], str) or not action["name"]:
+            raise ValueError(
+                f"native BNGIR protocol.actions[{action_index}] has an invalid name"
+            )
+        arguments = _require_mapping(
+            action["arguments"], f"protocol.actions[{action_index}].arguments"
+        )
+        if not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in arguments.items()
+        ):
+            raise ValueError(
+                f"native BNGIR protocol.actions[{action_index}].arguments must map "
+                "strings to strings"
+            )
     expected_used = sorted(
         ["structured_patterns", "structured_expressions"]
+        + (["barrier_patterns"] if model.get("barrier_patterns") else [])
         + (["compartments"] if model.get("compartments") else [])
+        + (["energy_patterns"] if model.get("energy_patterns") else [])
         + (["functions"] if model["functions"] else [])
         + (["observables"] if model["observables"] else [])
+        + (["population_maps"] if model.get("population_maps") else [])
+        + (["population_types"] if model.get("population_types") else [])
+        + (["protocol"] if protocol["actions"] else [])
         + (["rules"] if model["rules"] else [])
         + (["seeds"] if model["seeds"] else [])
     )
@@ -2365,13 +3100,16 @@ def _direction_pattern_strings_v02(
     direction: Mapping[str, Any], side: str
 ) -> list[str]:
     patterns = direction.get(side, [])
-    if side != "reactants":
-        return [_pattern_v02(pattern) for pattern in patterns]
     molecule_scopes: dict[int, dict[int, list[str]]] = {}
     species_scopes: dict[int, list[str]] = {}
+    scope_side = "reactant" if side == "reactants" else "product"
     for raw in direction.get("local_scopes", []):
         scope = _require_mapping(raw, "rule local scope")
-        pi = int(scope["reactant_pattern"])
+        # A scope is anchored on the reactants of its direction unless the
+        # wire form says otherwise.
+        if _local_scope_side(scope) != scope_side:
+            continue
+        pi = int(scope.get("pattern_index", scope.get("reactant_pattern")))
         if scope["kind"] == "species":
             species_scopes.setdefault(pi, []).append(str(scope["name"]))
         else:
@@ -2528,10 +3266,29 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         # Follows energy patterns for the same reason as the v0.1 emitter.
         lines.append("begin barrier patterns")
         for item in barrier_patterns:
-            # The wire transition is BarrierPattern::toString(): it already
-            # carries the label prefix, the arrow, and the energy expression,
-            # so it is the whole line. Validation guaranteed it is present.
-            lines.append(f"  {item['transition']}")
+            reactants = item.get("reactants")
+            products = item.get("products")
+            if reactants is not None and products is not None:
+                # The transition's structure is stated, so the barrier is
+                # rebuilt from that structure. The native reader rebuilds the
+                # same structure, so both routes agree on the model.
+                label = f"{item['label']}: " if item.get("label") else ""
+                arrow = "<->" if item.get("bidirectional") else "->"
+                rendered_reactants = (
+                    " + ".join(_pattern_v02(pattern) for pattern in reactants) or "0"
+                )
+                rendered_products = (
+                    " + ".join(_pattern_v02(pattern) for pattern in products) or "0"
+                )
+                energy = _expression_v02(item["expression"], model)
+                lines.append(
+                    f"  {label}{rendered_reactants} {arrow} {rendered_products} {energy}"
+                )
+            else:
+                # The wire transition is BarrierPattern::toString(): it already
+                # carries the label prefix, the arrow, and the energy expression,
+                # so it is the whole line. Validation guaranteed it is present.
+                lines.append(f"  {item['transition']}")
         lines.append("end barrier patterns")
 
     population_maps = model.get("population_maps", [])
@@ -2540,10 +3297,11 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         for item in population_maps:
             label = f"{item['label']}: " if item.get("label") else ""
             args = ",".join(item.get("arguments", []))
+            population = item.get("population", item.get("function"))
             rate = _expression_v02(item["rate"], model)
             lines.append(
                 f"  {label}{_pattern_v02(item['pattern'])} -> "
-                f"{item['population']}({args}) {rate}"
+                f"{population}({args}) {rate}"
             )
         lines.append("end population maps")
 
@@ -2642,7 +3400,7 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
             }
             for observable in model_data["observables"]
         ]
-        result_cpp = _cpp._model_from_bngir_v02(native_data)
+        result_cpp = _cpp._model_from_bngir_v02(native_data, root["protocol"])
         result = BioNetGenModel(result_cpp)
         rebuilt = _parse_document(to_bngir(result, version=STRUCTURAL_VERSION))
         if rebuilt != root:
@@ -2668,6 +3426,18 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
         )
 
     native = _cpp.parse_string(source)
+    if root["version"] == VERSION:
+        # A v0.1 document can describe a model the compiler does not accept,
+        # for example a pattern that names a component the molecule type does
+        # not declare. Refuse the document here instead of letting the failure
+        # surface later as an internal snapshot error.
+        try:
+            _cpp._compiled_snapshot(native)
+        except RuntimeError as exc:
+            raise ValueError(
+                f"BNGIR {VERSION} document does not describe a model the "
+                f"compiler accepts: {exc}"
+            ) from exc
     result = BioNetGenModel(native)
     if name:
         result._model.set_model_name(name)

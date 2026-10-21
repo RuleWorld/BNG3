@@ -566,8 +566,21 @@
                   "molecule"
                 ]
               },
-              "reactant_pattern": {
+              "side": {
+                "enum": [
+                  "reactant",
+                  "product"
+                ]
+              },
+              "pattern_index": {
                 "type": "integer",
+                "minimum": 0
+              },
+              "reactant_pattern": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "minimum": 0
               },
               "molecule_occurrence": {
@@ -671,6 +684,9 @@
           "items": {
             "$ref": "#/$defs/mapping"
           }
+        },
+        "driving_work": {
+          "$ref": "#/$defs/expression"
         }
       }
     },
@@ -973,10 +989,19 @@
               "index": {"type": "integer", "minimum": 0},
               "label": {"type": "string"},
               "transition": {"type": "string"},
-              "expression": {"type": "string"},
+              "expression": {"$ref": "#/$defs/expression"},
               "reaction_center": {"type": "string"},
               "center_resolved": {"type": "boolean"},
-              "value": {"type": ["number", "null"]}
+              "value": {"type": ["number", "null"]},
+              "reactants": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/pattern"}
+              },
+              "products": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/pattern"}
+              },
+              "bidirectional": {"type": "boolean"}
             }
           }
         },
@@ -1008,7 +1033,6 @@
               "index",
               "label",
               "pattern",
-              "function",
               "arguments"
             ],
             "properties": {
@@ -1025,13 +1049,35 @@
               "function": {
                 "type": "string"
               },
+              "population": {
+                "type": "string"
+              },
+              "population_id": {
+                "type": "integer",
+                "minimum": 0
+              },
               "arguments": {
                 "type": "array",
                 "items": {
                   "type": "string"
                 }
+              },
+              "rate": {
+                "$ref": "#/$defs/expression"
               }
             },
+            "anyOf": [
+              {
+                "required": [
+                  "function"
+                ]
+              },
+              {
+                "required": [
+                  "population"
+                ]
+              }
+            ],
             "additionalProperties": false
           }
         },

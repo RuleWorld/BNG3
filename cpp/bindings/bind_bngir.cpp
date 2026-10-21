@@ -11,16 +11,20 @@
 
 #include <pybind11/pybind11.h>
 
+#include "ast/BarrierPattern.hpp"
+#include "ast/EnergyPattern.hpp"
 #include "ast/Expression.hpp"
 #include "ast/Function.hpp"
 #include "ast/Model.hpp"
 #include "ast/MoleculeType.hpp"
 #include "ast/Observable.hpp"
 #include "ast/Parameter.hpp"
+#include "ast/PopulationMap.hpp"
 #include "ast/ReactionRule.hpp"
 #include "ast/SeedSpecies.hpp"
 #include "ast/SpeciesGraph.hpp"
 #include "compile/CompiledRateLaw.hpp"
+#include "compile/energy/BarrierCompiler.hpp"
 #include "core/BNGcore.hpp"
 
 namespace py = pybind11;
@@ -97,6 +101,14 @@ void requireObjectKeys(const py::dict& object,
     }
 }
 
+// Read a model section that a document may leave out. The wire format makes
+// the barrier and population-map sections optional, so an absent section
+// means the model has none of that kind rather than a malformed document.
+py::list optionalSection(const py::dict& document, const std::string& key) {
+    if (!document.contains(py::str(key))) return py::list();
+    return py::cast<py::list>(document[py::str(key)]);
+}
+
 void requireParameterKeys(const py::dict& parameter) {
     static const std::vector<std::string> required = {"id", "name", "expression"};
     static const std::vector<std::string> allowed = {
@@ -129,22 +141,6 @@ void requireExpressionProperties(const py::dict& expression,
     requireObjectKeys(expression, {}, allowed, "expression");
 }
 
-void rejectUnsupportedModelSections(const py::dict& document) {
-    static const std::vector<std::string> sections = {
-        "energy_patterns", "barrier_patterns", "population_maps",
-        "population_types",
-    };
-    for (const auto& section : sections) {
-        const py::str key(section);
-        if (!document.contains(key)) continue;
-        const auto entries = py::cast<py::list>(document[key]);
-        if (!entries.empty()) {
-            throw std::runtime_error(
-                "native BNGIR model." + section + " is not supported");
-        }
-    }
-}
-
 // The names a wire expression can point at. The compiler resolves a bare name
 // to a parameter, an observable or a function in that order, so the importer
 // has to know every name in the model to rebuild a reference faithfully.
@@ -157,11 +153,16 @@ struct BngirNames {
 
 // The scope an expression is rebuilt in. A model-level expression has no
 // arguments; a function body is rebuilt with the arguments of the function
-// that owns it, because a local reference is only meaningful there.
+// that owns it, because a local reference is only meaningful there. A rule
+// rate is rebuilt with the local scopes the rule declares, because a local
+// reference there names one of those scopes.
 struct BngirScope {
     const BngirNames* names = nullptr;
     std::vector<std::string> localNames;
     bool functionBody = false;
+    // A local reference is only meaningful where a local name exists: inside
+    // a function body or inside a rule that declares local scopes.
+    bool localScopes = false;
 };
 
 bool containsName(const std::vector<std::string>& names, const std::string& name) {
@@ -186,18 +187,24 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
         }
         const auto& name = names.parameterNames[index];
         // The compiler resolves an argument before a parameter, so a parameter
-        // that shares a name with an argument is unreachable in the body.
+        // that shares a name with an argument is unreachable in the body. The
+        // same holds for a rule's local scopes.
         if (containsName(scope.localNames, name)) {
+            if (scope.functionBody) {
+                throw std::runtime_error(
+                    "native BNGIR function parameter reference is shadowed by an argument");
+            }
             throw std::runtime_error(
-                "native BNGIR function parameter reference is shadowed by an argument");
+                "native BNGIR rule parameter reference is shadowed by a local scope");
         }
         return Expression::identifier(name);
     }
     if (kind == "local_ref") {
         requireExpressionProperties(value, {"kind", "name"});
-        if (!scope.functionBody) {
+        if (!scope.functionBody && !scope.localScopes) {
             throw std::runtime_error(
-                "native BNGIR local reference is only supported inside a function body");
+                "native BNGIR local reference is only supported inside a "
+                "function body or a rule with local scopes");
         }
         if (!py::isinstance<py::str>(value["name"])) {
             throw std::runtime_error(
@@ -205,8 +212,12 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
         }
         const auto name = py::cast<std::string>(value["name"]);
         if (!containsName(scope.localNames, name)) {
+            if (scope.functionBody) {
+                throw std::runtime_error(
+                    "native BNGIR local reference is not a function argument");
+            }
             throw std::runtime_error(
-                "native BNGIR local reference is not a function argument");
+                "native BNGIR local reference is not a local scope of the rule");
         }
         return Expression::identifier(name);
     }
@@ -377,6 +388,10 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
         throw std::runtime_error(
             "native BNGIR pattern requires exactly one molecule");
     }
+    // A bond group is shared by the sites it joins, and those sites can live on
+    // different molecules of the same pattern, so the bond node is shared per
+    // pattern rather than per molecule.
+    std::map<int, BNGcore::Node*> bondNodesByGroup;
     for (const auto& rawMolecule : molecules) {
         const auto molecule = py::cast<py::dict>(rawMolecule);
         static const std::vector<std::string> requiredMoleculeKeys = {
@@ -393,10 +408,6 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
                 "native BNGIR pattern requires molecule occurrence zero");
         }
         const auto sites = py::cast<py::list>(molecule["sites"]);
-        if (!sites.empty()) {
-            throw std::runtime_error(
-                "native BNGIR pattern does not support molecule sites");
-        }
         const auto typeId =
             indexFromBngir(molecule["type_id"], "molecule type reference");
         if (typeId >= model.getMoleculeTypes().size()) {
@@ -450,10 +461,201 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
             node.set_compartment(moleculeCompartment);
         }
 
-        graph.add_node(node);
+        auto* moleculeNode = graph.add_node(node);
+        // A site is a component of the molecule type with a state constraint.
+        // The native pattern graph keeps each component as its own node joined
+        // to the molecule node, which is how the parser lowers a site too.
+        for (const auto& rawSite : sites) {
+            const auto site = py::cast<py::dict>(rawSite);
+            const auto componentName = py::cast<std::string>(site["component"]);
+            const bng::ast::ComponentType* componentType = nullptr;
+            for (const auto& candidate : moleculeType.getComponents()) {
+                if (candidate.name == componentName) {
+                    componentType = &candidate;
+                    break;
+                }
+            }
+            if (componentType == nullptr) {
+                throw std::runtime_error(
+                    "native BNGIR pattern molecule names a component the "
+                    "molecule type does not declare");
+            }
+            BNGcore::Node componentNodeValue(
+                model.getGraphTypeRegistry().ensureComponentType(
+                    moleculeType, *componentType));
+            auto* componentNode = graph.add_node(componentNodeValue);
+            graph.add_edge(moleculeNode, componentNode);
+
+            const auto state = py::cast<py::dict>(site["state"]);
+            const auto stateKind = py::cast<std::string>(state["kind"]);
+            const auto& runtimeStateType =
+                componentNode->get_type().get_state_type();
+            if (const auto* labelStateType =
+                    dynamic_cast<const BNGcore::LabelStateType*>(&runtimeStateType)) {
+                if (stateKind == "exact") {
+                    componentNode->set_state(BNGcore::LabelState(
+                        *labelStateType, py::cast<std::string>(state["value"])));
+                } else if (stateKind == "any") {
+                    componentNode->set_state(
+                        BNGcore::LabelState(*labelStateType, "?"));
+                } else {
+                    throw std::runtime_error(
+                        "native BNGIR pattern molecule site state kind is not "
+                        "supported: " + stateKind);
+                }
+            }
+
+            const auto bond = py::cast<py::dict>(site["bond"]);
+            const auto bondKind = py::cast<std::string>(bond["kind"]);
+            BNGcore::Node* bondNode = nullptr;
+            if (bondKind == "bound" || bondKind == "exact") {
+                const int group = bond.contains("group")
+                    ? py::cast<int>(bond["group"])
+                    : 0;
+                const auto found = bondNodesByGroup.find(group);
+                if (found != bondNodesByGroup.end()) {
+                    bondNode = found->second;
+                } else {
+                    BNGcore::Node bondNodeValue(BNGcore::BOND_NODE_TYPE);
+                    bondNode = graph.add_node(bondNodeValue);
+                    bondNode->set_state(BNGcore::BOUND_STATE);
+                    bondNodesByGroup.emplace(group, bondNode);
+                }
+            } else {
+                BNGcore::Node bondNodeValue(BNGcore::BOND_NODE_TYPE);
+                bondNode = graph.add_node(bondNodeValue);
+                if (bondKind == "any") {
+                    bondNode->set_state(BNGcore::BondState(
+                        BNGcore::BOND_STATE_TYPE, BNGcore::WILDCARD_STRING));
+                } else {
+                    // An unbound or unspecified bond cannot be a bound one.
+                    bondNode->set_state(BNGcore::UNBOUND_STATE);
+                }
+            }
+            graph.add_edge(componentNode, bondNode);
+        }
     }
     SpeciesGraph result(graph, outerCompartment);
     result.setCompartmentIsPrefix(isPrefix);
+    return result;
+}
+
+// The population map's pattern is compiled from the map's pattern text, so
+// the importer renders the document's structured pattern back to that text.
+// The compartment form the document states is preserved, because the text is
+// the only representation the compiler reads.
+std::string patternTextFromBngir(const SpeciesGraph& graph) {
+    // The per-molecule compartments belong to the pattern, so each molecule
+    // is annotated with the compartment it carries.
+    std::vector<std::string> moleculeCompartments;
+    const auto body = graph.getGraph().get_BNG2_string(moleculeCompartments);
+    std::string rendered = body;
+    bool hasMoleculeCompartment = false;
+    for (const auto& compartment : moleculeCompartments) {
+        if (!compartment.empty()) {
+            hasMoleculeCompartment = true;
+            break;
+        }
+    }
+    if (hasMoleculeCompartment) {
+        std::string annotated;
+        std::size_t moleculeIndex = 0;
+        std::size_t position = 0;
+        while (position < body.size()) {
+            int depth = 0;
+            std::size_t moleculeEnd = position;
+            while (moleculeEnd < body.size()) {
+                const auto character = body[moleculeEnd];
+                if (character == '(') {
+                    ++depth;
+                } else if (character == ')') {
+                    --depth;
+                } else if (character == '.' && depth == 0) {
+                    break;
+                }
+                ++moleculeEnd;
+            }
+            annotated.append(body, position, moleculeEnd - position);
+            if (moleculeIndex < moleculeCompartments.size() &&
+                !moleculeCompartments[moleculeIndex].empty()) {
+                annotated += "@" + moleculeCompartments[moleculeIndex];
+            }
+            ++moleculeIndex;
+            if (moleculeEnd < body.size()) {
+                annotated += '.';
+                position = moleculeEnd + 1;
+            } else {
+                position = moleculeEnd;
+            }
+        }
+        rendered = annotated;
+    }
+    const auto& compartment = graph.getCompartment();
+    if (compartment.empty()) return rendered;
+    if (graph.isCompartmentPrefix()) return "@" + compartment + ":" + rendered;
+    return rendered + "@" + compartment;
+}
+
+// Build the population map the compiler expects: the pattern, the population
+// target, its arguments, and the mapping rate. A map without a rate would
+// compile to a zero rate, so the rate is required here rather than defaulted.
+PopulationMap populationMapFromBngir(Model& model,
+                                     const py::dict& mapping,
+                                     const BngirScope& scope) {
+    static const std::vector<std::string> requiredKeys = {
+        "index", "label", "pattern", "arguments", "rate",
+    };
+    static const std::vector<std::string> allowedKeys = {
+        "arguments", "function", "index", "label", "pattern", "population",
+        "population_id", "rate",
+    };
+    requireObjectKeys(mapping, requiredKeys, allowedKeys, "population map");
+
+    PopulationMap result;
+    result.label = py::cast<std::string>(mapping["label"]);
+    const auto pattern =
+        patternFromBngir(model, py::cast<py::dict>(mapping["pattern"]));
+    result.patternText = patternTextFromBngir(pattern);
+
+    std::string populationName;
+    if (mapping.contains(py::str("population"))) {
+        populationName = py::cast<std::string>(mapping["population"]);
+    }
+    if (mapping.contains(py::str("function"))) {
+        // `function` is the legacy alias for the canonical population name.
+        const auto legacy = py::cast<std::string>(mapping["function"]);
+        if (!populationName.empty() && populationName != legacy) {
+            throw std::runtime_error(
+                "native BNGIR population map population name and function alias "
+                "disagree");
+        }
+        populationName = legacy;
+    }
+    if (populationName.empty()) {
+        throw std::runtime_error(
+            "native BNGIR population map has no population name");
+    }
+    result.populationName = populationName;
+
+    const auto rawArguments = py::cast<py::list>(mapping["arguments"]);
+    result.populationArgs.reserve(rawArguments.size());
+    for (const auto& rawArgument : rawArguments) {
+        if (!py::isinstance<py::str>(rawArgument)) {
+            throw std::runtime_error(
+                "native BNGIR population map arguments must be strings");
+        }
+        result.populationArgs.push_back(py::cast<std::string>(rawArgument));
+    }
+
+    const auto rate =
+        expressionFromBngir(py::cast<py::dict>(mapping["rate"]), scope);
+    result.rateExpression = rate;
+    result.rateText = rate.toString();
+    result.hasExplicitRate = true;
+
+    // Compatibility aliases retained for older callers while they migrate.
+    result.populationFunction = result.populationName;
+    result.functionArgs = result.populationArgs;
     return result;
 }
 
@@ -462,6 +664,89 @@ struct BngirFunction {
     std::string name;
     std::vector<std::string> arguments;
 };
+
+// Build the barrier pattern the compiler expects: a transition rule whose
+// single rewrite is the reaction center the barrier applies to, plus the
+// transition-state energy. The document's transition text is kept as the
+// barrier's own representation of that rewrite, so the wire form round-trips
+// exactly; the transition's semantics come from the structured patterns.
+BarrierPattern barrierPatternFromBngir(Model& model,
+                                       const py::dict& barrier,
+                                       const BngirScope& scope,
+                                       std::size_t index) {
+    static const std::vector<std::string> requiredKeys = {
+        "index", "label", "transition", "expression", "reaction_center",
+        "center_resolved", "value", "reactants", "products", "bidirectional",
+    };
+    static const std::vector<std::string> allowedKeys = {
+        "bidirectional", "center_resolved", "expression", "index", "label",
+        "products", "reactants", "reaction_center", "transition", "value",
+    };
+    requireObjectKeys(barrier, requiredKeys, allowedKeys, "barrier pattern");
+
+    const auto label = py::cast<std::string>(barrier["label"]);
+    const py::handle resolved = barrier["center_resolved"];
+    if (!PyBool_Check(resolved.ptr()) || !py::cast<bool>(resolved)) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern does not carry a resolved reaction center");
+    }
+    const auto reactionCenter = py::cast<std::string>(barrier["reaction_center"]);
+    if (reactionCenter.empty()) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern does not carry a resolved reaction center");
+    }
+
+    std::vector<SpeciesGraph> reactantGraphs;
+    std::vector<std::string> reactantTexts;
+    for (const auto& rawPattern :
+         py::cast<py::list>(barrier["reactants"])) {
+        const auto graph =
+            patternFromBngir(model, py::cast<py::dict>(rawPattern));
+        reactantTexts.push_back(patternTextFromBngir(graph));
+        reactantGraphs.push_back(std::move(graph));
+    }
+    std::vector<SpeciesGraph> productGraphs;
+    std::vector<std::string> productTexts;
+    for (const auto& rawPattern :
+         py::cast<py::list>(barrier["products"])) {
+        const auto graph =
+            patternFromBngir(model, py::cast<py::dict>(rawPattern));
+        productTexts.push_back(patternTextFromBngir(graph));
+        productGraphs.push_back(std::move(graph));
+    }
+    if (reactantGraphs.empty() || productGraphs.empty()) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern transition has no reactant or product pattern");
+    }
+
+    const auto bidirectional = py::cast<bool>(barrier["bidirectional"]);
+    std::vector<Expression> rates;
+    rates.push_back(expressionFromBngir(
+        py::cast<py::dict>(barrier["expression"]), scope));
+
+    ReactionRule transition(
+        "__bng3_barrier_" + std::to_string(index), label,
+        std::move(reactantTexts), std::move(productTexts), std::move(rates), {},
+        bidirectional, std::move(reactantGraphs), std::move(productGraphs));
+    BarrierPattern result(label, std::move(transition));
+
+    // The reaction center the compiler derives from the rebuilt transition
+    // must be the one the document states, or the two disagree about which
+    // rewrite the barrier applies to.
+    bng::compile::energy::ReactionCenterKey key;
+    std::string diagnostic;
+    if (!bng::compile::energy::compileBarrierCenter(
+            result.transition(), key, diagnostic)) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern transition is unsupported: " + diagnostic);
+    }
+    if (key.toString() != reactionCenter) {
+        throw std::runtime_error(
+            "native BNGIR barrier pattern reaction center does not match its transition");
+    }
+    result.setSourceText(py::cast<std::string>(barrier["transition"]));
+    return result;
+}
 
 // Read the function declarations. The compiler resolves a bare name to a
 // parameter, an observable or a function in that order, so a function whose
@@ -521,8 +806,139 @@ std::vector<BngirFunction> functionsFromBngir(
     return result;
 }
 
-std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
-    rejectUnsupportedModelSections(document);
+
+// Build the include/exclude filter modifier text the native rule parser
+// understands: the pattern index is one-based and the molecule name selects
+// the molecule the filter applies to.
+std::string filterModifierText(const py::dict& filter) {
+    const auto include = py::cast<bool>(filter["include"]);
+    const auto side = py::cast<std::string>(filter["side"]);
+    if (side != "reactant" && side != "product") {
+        throw std::runtime_error("native BNGIR filter side is not supported");
+    }
+    const auto patternIndex = indexFromBngir(
+        filter["pattern_index"], "filter pattern index");
+    const auto patterns = py::cast<py::list>(filter["patterns"]);
+    if (patterns.size() == 0) {
+        throw std::runtime_error("native BNGIR filter has no pattern");
+    }
+    const auto pattern = py::cast<py::dict>(patterns[0]);
+    const auto molecules = py::cast<py::list>(pattern["molecules"]);
+    if (molecules.size() == 0) {
+        throw std::runtime_error("native BNGIR filter pattern has no molecule");
+    }
+    const auto molecule = py::cast<py::dict>(molecules[0]);
+    const auto moleculeName = py::cast<std::string>(molecule["type"]);
+    return std::string(include ? "include_" : "exclude_") +
+           (side == "product" ? "products" : "reactants") + "(" +
+           std::to_string(patternIndex + 1) + "," + moleculeName + ")";
+}
+
+// Read the local-function scopes a direction declares.
+//
+// The wire form names the scope, its kind, the side it is anchored on, the
+// pattern it indexes and, for a molecule scope, the molecule occurrence
+// inside that pattern. A scope anchored on the reactants names that reactant
+// pattern; a scope anchored on the products has no reactant pattern of its
+// own.
+std::vector<ReactionRule::LocalScope> localScopesFromBngir(
+    const py::list& scopes,
+    std::size_t reactantCount,
+    std::size_t productCount,
+    const std::string& where) {
+    std::vector<ReactionRule::LocalScope> result;
+    result.reserve(scopes.size());
+    std::set<std::string> names;
+    for (const auto& rawScope : scopes) {
+        const auto scope = py::cast<py::dict>(rawScope);
+        static const std::vector<std::string> required = {
+            "name", "kind", "side", "pattern_index", "reactant_pattern",
+        };
+        static const std::vector<std::string> allowed = {
+            "name", "kind", "side", "pattern_index", "reactant_pattern",
+            "molecule_occurrence",
+        };
+        requireObjectKeys(scope, required, allowed, where);
+        if (!py::isinstance<py::str>(scope["name"])) {
+            throw std::runtime_error(
+                "native BNGIR " + where + " name must be a string");
+        }
+        const auto name = py::cast<std::string>(scope["name"]);
+        if (name.empty() || !names.insert(name).second) {
+            throw std::runtime_error(
+                "native BNGIR " + where + " names must be nonempty and unique");
+        }
+        ReactionRule::LocalScope localScope;
+        localScope.name = name;
+
+        const auto kind = py::cast<std::string>(scope["kind"]);
+        if (kind == "species") {
+            localScope.kind = ReactionRule::LocalScope::Kind::Species;
+        } else if (kind == "molecule") {
+            localScope.kind = ReactionRule::LocalScope::Kind::Molecule;
+        } else {
+            throw std::runtime_error(
+                "native BNGIR " + where + " kind must be molecule or species");
+        }
+
+        const auto side = py::cast<std::string>(scope["side"]);
+        const bool reactantSide = side == "reactant";
+        if (!reactantSide && side != "product") {
+            throw std::runtime_error(
+                "native BNGIR " + where + " side must be reactant or product");
+        }
+        localScope.side = reactantSide
+            ? ReactionRule::LocalScope::Side::Reactant
+            : ReactionRule::LocalScope::Side::Product;
+
+        const auto patternIndex =
+            indexFromBngir(scope["pattern_index"], where + " pattern index");
+        const auto patternCount = reactantSide ? reactantCount : productCount;
+        if (patternIndex >= patternCount) {
+            throw std::runtime_error(
+                "native BNGIR " + where + " pattern index is out of range");
+        }
+        localScope.patternIndex = patternIndex;
+
+        if (reactantSide) {
+            const auto reactantPattern = indexFromBngir(
+                scope["reactant_pattern"], where + " reactant pattern");
+            if (reactantPattern != patternIndex) {
+                throw std::runtime_error(
+                    "native BNGIR " + where +
+                    " reactant pattern does not match its pattern index");
+            }
+        } else if (!scope["reactant_pattern"].is_none()) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " product-side scope must not name a reactant pattern");
+        }
+
+        if (scope.contains(py::str("molecule_occurrence"))) {
+            if (localScope.kind != ReactionRule::LocalScope::Kind::Molecule) {
+                throw std::runtime_error(
+                    "native BNGIR " + where +
+                    " species scope must not name a molecule occurrence");
+            }
+            localScope.moleculeOccurrence = indexFromBngir(
+                scope["molecule_occurrence"], where + " molecule occurrence");
+        }
+        result.push_back(std::move(localScope));
+    }
+    return result;
+}
+
+// The names a direction declares as local scopes.
+std::vector<std::string> localScopeNames(
+    const std::vector<ReactionRule::LocalScope>& scopes) {
+    std::vector<std::string> names;
+    names.reserve(scopes.size());
+    for (const auto& scope : scopes) names.push_back(scope.name);
+    return names;
+}
+
+std::unique_ptr<Model> modelFromBngirV02(const py::dict& document,
+                                        const py::object& protocol) {
     const auto parameters = py::cast<py::list>(document["parameters"]);
     const auto moleculeTypes = py::cast<py::list>(document["molecule_types"]);
     const auto seeds = py::cast<py::list>(document["seeds"]);
@@ -548,15 +964,6 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         if (!PyBool_Check(population.ptr())) {
             throw std::runtime_error(
                 "native BNGIR molecule type population must be boolean");
-        }
-        if (py::cast<bool>(population)) {
-            throw std::runtime_error(
-                "native BNGIR population molecule types are unsupported");
-        }
-        const auto components = py::cast<py::list>(moleculeType["components"]);
-        if (!components.empty()) {
-            throw std::runtime_error(
-                "native BNGIR molecule type components are unsupported");
         }
     }
 
@@ -657,8 +1064,22 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             throw std::runtime_error(
                 "native BNGIR molecule type names must be unique");
         }
+        std::vector<bng::ast::ComponentType> componentTypes;
+        for (const auto& rawComponent :
+             py::cast<py::list>(moleculeType["components"])) {
+            const auto component = py::cast<py::dict>(rawComponent);
+            bng::ast::ComponentType componentType;
+            componentType.name = py::cast<std::string>(component["name"]);
+            for (const auto& rawState :
+                 py::cast<py::list>(component["states"])) {
+                componentType.allowedStates.push_back(
+                    py::cast<std::string>(rawState));
+            }
+            componentTypes.push_back(std::move(componentType));
+        }
         model->addMoleculeType(MoleculeType(
-            name, {}, false));
+            name, std::move(componentTypes),
+            py::cast<bool>(moleculeType[py::str("population")])));
     }
 
     std::set<std::string> uniqueCompartmentNames;
@@ -750,14 +1171,49 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         const auto rule = py::cast<py::dict>(rawRule);
         static const std::vector<std::string> ruleKeys = {
             "id", "name", "label", "bidirectional", "modifiers", "forward",
+            "molecule_mappings", "component_mappings", "reverse",
+            "driving_work",
+        };
+        static const std::vector<std::string> requiredRuleKeys = {
+            "id", "name", "label", "bidirectional", "modifiers", "forward",
             "molecule_mappings", "component_mappings",
         };
-        requireObjectKeys(rule, ruleKeys, ruleKeys, "rule");
+        requireObjectKeys(rule, requiredRuleKeys, ruleKeys, "rule");
         const py::handle bidirectional = rule["bidirectional"];
-        if (!PyBool_Check(bidirectional.ptr()) || py::cast<bool>(bidirectional) ||
-            !py::cast<py::list>(rule["modifiers"]).empty()) {
+        if (!PyBool_Check(bidirectional.ptr())) {
             throw std::runtime_error(
-                "native BNGIR requires a forward ordinary rule");
+                "native BNGIR rule bidirectional flag must be a boolean");
+        }
+        // The keyword modifiers the compiler understands. Include/exclude
+        // semantics live in direction.filters and are not modifier text.
+        static const std::map<std::string, std::string> modifierNames = {
+            {"delete_molecules", "DeleteMolecules"},
+            {"move_connected", "MoveConnected"},
+            {"match_once", "MatchOnce"},
+            {"total_rate", "TotalRate"},
+        };
+        std::vector<std::string> modifiers;
+        for (const auto& rawModifier : py::cast<py::list>(rule["modifiers"])) {
+            if (!py::isinstance<py::dict>(rawModifier)) {
+                throw std::runtime_error(
+                    "native BNGIR rule modifier must be an object");
+            }
+            const auto modifier = py::cast<py::dict>(rawModifier);
+            if (!modifier.contains("kind")) {
+                throw std::runtime_error(
+                    "native BNGIR rule modifier is missing its kind");
+            }
+            const auto kind = py::cast<std::string>(modifier["kind"]);
+            const auto found = modifierNames.find(kind);
+            if (found == modifierNames.end()) {
+                throw std::runtime_error(
+                    "native BNGIR rule modifier kind is not supported: " + kind);
+            }
+            modifiers.push_back(found->second);
+        }
+        if (!py::cast<bool>(bidirectional) && rule.contains("reverse")) {
+            throw std::runtime_error(
+                "native BNGIR rule carries a reverse direction on a forward rule");
         }
         const auto direction = py::cast<py::dict>(rule["forward"]);
         static const std::vector<std::string> directionKeys = {
@@ -765,17 +1221,55 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             "mutations", "transformations_complete",
         };
         requireObjectKeys(direction, directionKeys, directionKeys, "rule direction");
-        if (!py::cast<py::list>(direction["filters"]).empty() ||
-            !py::cast<py::list>(direction["local_scopes"]).empty()) {
-            throw std::runtime_error(
-                "native BNGIR does not support filters or local scopes");
-        }
         const auto reactants = py::cast<py::list>(direction["reactants"]);
         const auto products = py::cast<py::list>(direction["products"]);
         if (reactants.empty() || products.empty()) {
             throw std::runtime_error(
                 "native BNGIR does not support a rule direction without a "
                 "reactant and product pattern");
+        }
+        // The local scopes a direction declares are part of the rule's
+        // semantics: they bind a local function argument to a reactant.
+        const auto forwardScopes = localScopesFromBngir(
+            py::cast<py::list>(direction["local_scopes"]),
+            reactants.size(), products.size(), "rule direction local scope");
+        std::vector<ReactionRule::LocalScope> localScopes = forwardScopes;
+        if (py::cast<bool>(bidirectional)) {
+            // A bidirectional rule states its reverse direction. The compiler
+            // materializes the reverse rule from the forward one and takes the
+            // reverse rate from the second rate, so the document's reverse
+            // rate is what the reverse direction must use.
+            if (!rule.contains("reverse")) {
+                throw std::runtime_error(
+                    "native BNGIR bidirectional rule is missing its reverse direction");
+            }
+            const auto reverse = py::cast<py::dict>(rule["reverse"]);
+            const auto reverseScopes = localScopesFromBngir(
+                py::cast<py::list>(reverse["local_scopes"]),
+                products.size(), reactants.size(),
+                "rule reverse direction local scope");
+            // The reverse direction's reactants are the forward direction's
+            // products, so a scope of the reverse direction is anchored on the
+            // opposite side of the forward direction.
+            for (auto scope : reverseScopes) {
+                scope.side = scope.side == ReactionRule::LocalScope::Side::Reactant
+                                 ? ReactionRule::LocalScope::Side::Product
+                                 : ReactionRule::LocalScope::Side::Reactant;
+                localScopes.push_back(std::move(scope));
+            }
+            // Both directions of a rule share the tags of the rule, so the
+            // scopes of the two directions must name the same scopes.
+            const auto forwardNames = localScopeNames(forwardScopes);
+            const auto reverseNames = localScopeNames(reverseScopes);
+            std::vector<std::string> sortedForward = forwardNames;
+            std::vector<std::string> sortedReverse = reverseNames;
+            std::sort(sortedForward.begin(), sortedForward.end());
+            std::sort(sortedReverse.begin(), sortedReverse.end());
+            if (sortedForward != sortedReverse) {
+                throw std::runtime_error(
+                    "native BNGIR bidirectional rule declares different local "
+                    "scopes for its two directions");
+            }
         }
         std::vector<SpeciesGraph> reactantGraphs;
         std::vector<SpeciesGraph> productGraphs;
@@ -841,15 +1335,128 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                 }
             }
         }
+        std::vector<std::string> filterModifiers;
+        for (const auto& rawFilter :
+             py::cast<py::list>(direction["filters"])) {
+            filterModifiers.push_back(
+                filterModifierText(py::cast<py::dict>(rawFilter)));
+        }
+        if (rule.contains("reverse")) {
+            const auto reverse = py::cast<py::dict>(rule["reverse"]);
+            for (const auto& rawFilter :
+                 py::cast<py::list>(reverse["filters"])) {
+                filterModifiers.push_back(
+                    filterModifierText(py::cast<py::dict>(rawFilter)));
+            }
+        }
+        // The include/exclude filters are carried as the modifier text the
+        // native rule parser understands; they are the semantic content of the
+        // filter, not a separate field.
+        modifiers.insert(
+            modifiers.end(), filterModifiers.begin(), filterModifiers.end());
         const auto rate = py::cast<py::dict>(direction["rate"]);
+        // A rate may name the rule's local scopes. The compiler resolves a
+        // local name before a parameter, so the rate is rebuilt in the scope
+        // of the local scopes the rule declares.
+        BngirScope ruleScope{&names, localScopeNames(forwardScopes), false};
+        ruleScope.localScopes = !forwardScopes.empty();
         std::vector<Expression> rates;
         rates.push_back(expressionFromBngir(
-            py::cast<py::dict>(rate["expression"]), modelScope));
-        model->addReactionRule(ReactionRule::fromResolvedPatterns(
+            py::cast<py::dict>(rate["expression"]), ruleScope));
+        if (py::cast<bool>(bidirectional)) {
+            // A bidirectional rule states its reverse direction. The compiler
+            // materializes the reverse rule from the forward one and takes the
+            // reverse rate from the second rate, so the document's reverse
+            // rate is what the reverse direction must use.
+            const auto reverse = py::cast<py::dict>(rule["reverse"]);
+            const auto reverseRate = py::cast<py::dict>(reverse["rate"]);
+            rates.push_back(expressionFromBngir(
+                py::cast<py::dict>(reverseRate["expression"]), ruleScope));
+        }
+        auto reactionRule = ReactionRule::fromResolvedPatterns(
             py::cast<std::string>(rule["name"]),
             py::cast<std::string>(rule["label"]),
             std::move(rates),
-            std::move(reactantGraphs), std::move(productGraphs)));
+            std::move(reactantGraphs), std::move(productGraphs),
+            std::move(modifiers), py::cast<bool>(bidirectional),
+            !filterModifiers.empty());
+        reactionRule.setLocalScopes(std::move(localScopes));
+        // The reservoir work is part of the rule's thermodynamics. It is a
+        // model-level quantity, so it is rebuilt in the model scope.
+        if (rule.contains(py::str("driving_work"))) {
+            reactionRule.setDrivingWorkExpression(expressionFromBngir(
+                py::cast<py::dict>(rule["driving_work"]), modelScope));
+        }
+        model->addReactionRule(std::move(reactionRule));
+    }
+
+    // The energy patterns give a transition-state energy to the patterns they
+    // match. The compiled factor takes the expression and the graph as its
+    // semantic content, so the document's structured pattern is lowered the
+    // same way a rule pattern is.
+    for (const auto& rawEnergyPattern :
+         py::cast<py::list>(document["energy_patterns"])) {
+        const auto energyPattern = py::cast<py::dict>(rawEnergyPattern);
+        const auto label = py::cast<std::string>(energyPattern["label"]);
+        const auto pattern =
+            patternFromBngir(*model, py::cast<py::dict>(energyPattern["pattern"]));
+        const auto expression = expressionFromBngir(
+            py::cast<py::dict>(energyPattern["expression"]), modelScope);
+        model->addEnergyPattern(bng::ast::EnergyPattern(
+            label, pattern.toString(), std::move(expression), std::move(pattern)));
+    }
+
+    // The barrier patterns add a transition-state energy to the reaction
+    // center their transition lowers to. The transition is rebuilt from the
+    // document's structured patterns, so the barrier keeps its center instead
+    // of being dropped.
+    const auto barrierPatterns = optionalSection(document, "barrier_patterns");
+    for (std::size_t index = 0; index < barrierPatterns.size(); ++index) {
+        const auto barrier = py::cast<py::dict>(barrierPatterns[index]);
+        if (indexFromBngir(barrier["index"], "barrier pattern index") != index) {
+            throw std::runtime_error(
+                "native BNGIR barrier pattern ids must be dense and ordered");
+        }
+        model->addBarrierPattern(
+            barrierPatternFromBngir(*model, barrier, modelScope, index));
+    }
+
+    // The population maps bind a species pattern to a population-level target
+    // with a mapping rate. The compiler reads the map's pattern from its
+    // pattern text, so the importer renders the document's structured pattern
+    // back to that text instead of dropping the map.
+    const auto populationMaps = optionalSection(document, "population_maps");
+    for (std::size_t index = 0; index < populationMaps.size(); ++index) {
+        const auto mapping = py::cast<py::dict>(populationMaps[index]);
+        if (indexFromBngir(mapping["index"], "population map index") != index) {
+            throw std::runtime_error(
+                "native BNGIR population map ids must be dense and ordered");
+        }
+        model->addPopulationMap(
+            populationMapFromBngir(*model, mapping, modelScope));
+    }
+
+    // The protocol actions are execution instructions. The native model keeps
+    // them beside the model scope so a document that states an action does not
+    // lose it.
+    if (!protocol.is_none()) {
+        const auto protocolObject = py::cast<py::dict>(protocol);
+        for (const auto& rawAction :
+             py::cast<py::list>(protocolObject["actions"])) {
+            const auto actionObject = py::cast<py::dict>(rawAction);
+            bng::ast::Action action;
+            action.name = py::cast<std::string>(actionObject["name"]);
+            const auto arguments = py::cast<py::dict>(actionObject["arguments"]);
+            for (const auto& entry : arguments) {
+                action.arguments[py::cast<std::string>(entry.first)] =
+                    py::cast<std::string>(entry.second);
+            }
+            if (py::cast<std::string>(actionObject["scope"]) == "model") {
+                model->addAction(std::move(action));
+            } else {
+                model->addProtocolAction(std::move(action));
+            }
+        }
     }
 
     // The function bodies are rebuilt last: a body may name a parameter, one
@@ -872,6 +1479,6 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
 
 void bind_bngir(py::module_& module) {
     module.def("_model_from_bngir_v02", &modelFromBngirV02,
-               py::arg("model"),
+               py::arg("model"), py::arg("protocol") = py::none(),
                "Build the supported BNGIR v0.2 subset directly from native structures.");
 }

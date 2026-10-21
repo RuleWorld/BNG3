@@ -1,4 +1,4 @@
-"""Hand-authored native BNGIR v0.2 controls for cross-reference integrity."""
+"""Independent native BNGIR v0.2 controls for cross-reference integrity."""
 
 from __future__ import annotations
 
@@ -363,6 +363,30 @@ def generated_cases():
     bad_identity["model"]["seeds"][0]["pattern"]["molecules"][0]["type"] = "B"
     mutations.append(("seed-type-name-id-disagreement", bad_identity))
 
+    # Seed references were covered, but rule-side reactant/product patterns
+    # are separate native import paths. Exercise both paths with the same
+    # schema-valid out-of-range and name/id mismatch controls.
+    for side in ("reactants", "products"):
+        pattern_name = side.removesuffix("s")
+        out_of_range = copy.deepcopy(baseline)
+        molecule = out_of_range["model"]["rules"][0]["forward"][side][0]["molecules"][0]
+        molecule["type_id"] = 99
+        mutations.append(
+            (f"rule-{pattern_name}-type-reference-out-of-range", out_of_range)
+        )
+
+        name_id_mismatch = copy.deepcopy(baseline)
+        molecule = name_id_mismatch["model"]["rules"][0]["forward"][side][0][
+            "molecules"
+        ][0]
+        molecule_types = name_id_mismatch["model"]["molecule_types"]
+        molecule["type"] = next(
+            item["name"] for item in molecule_types if item["id"] != molecule["type_id"]
+        )
+        mutations.append(
+            (f"rule-{pattern_name}-type-name-id-disagreement", name_id_mismatch)
+        )
+
     duplicate_id = copy.deepcopy(baseline)
     duplicate_id["model"]["molecule_types"][1]["id"] = 0
     mutations.append(("duplicate-molecule-type-id", duplicate_id))
@@ -514,8 +538,8 @@ def evaluate_case(case, *, native_import, wrap_model, output=None):
     except NativeRefusal as exc:
         if case["oracle"] in {"unsupported", "accept-or-unsupported"} and (
             str(exc) == "native BNGIR model.compartments is not supported"
-            or str(exc) == "native BNGIR molecule type components are unsupported"
             or str(exc) == "native BNGIR does not support compartments"
+            or str(exc) == "native BNGIR pattern requires exactly one molecule"
         ):
             row.update(
                 status="UNSUPPORTED",

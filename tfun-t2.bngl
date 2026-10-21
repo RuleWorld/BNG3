@@ -1,0 +1,17 @@
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  X()
+end molecule types
+begin seed species
+  X() 0
+end seed species
+begin functions
+  f() = tfun([0,1,2], [0,10,20], time)
+end functions
+begin reaction rules
+  0 -> X() f()
+end reaction rules
+end model

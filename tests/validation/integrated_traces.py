@@ -737,6 +737,28 @@ def native_count_rate_xml(source_xml, target_xml) -> dict:
                 detail="the exported model's reaction rule identity changed while it was parsed",
             )
         if rule["rate_law_type"] != "Ele" or len(rule["rate_constants"]) != 1:
+            # A rule whose rate is not an elementary constant needs no
+            # count-rate conversion when the export states no compartment
+            # context: there is no unit conversion to fold into the rate
+            # constant and no symmetry factor to drop, so the oracle samples
+            # the model the embedded engine executes.  The export is handed
+            # over unchanged.  Every other rule stays unsupported.
+            conversion = rule["compartment_unit_conversion"]
+            symmetry = float(rule["symmetry_factor"] or 1.0)
+            oracle_conversion = _oracle_zero_order_conversion(element, geometry)
+            if conversion == 1.0 and symmetry == 1.0 and oracle_conversion == 1.0:
+                normalised.append(
+                    dict(
+                        id=rule["id"],
+                        rate_constant=None,
+                        symmetry_factor=symmetry,
+                        compartment_unit_conversion=conversion,
+                        oracle_zero_order_conversion=oracle_conversion,
+                        count_rate_coefficient=None,
+                        reactant_pattern_count=rule["reactant_pattern_count"],
+                    )
+                )
+                continue
             return dict(
                 status="UNSUPPORTED",
                 detail=(

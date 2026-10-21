@@ -1,0 +1,11 @@
+begin model
+begin molecule types
+  D()
+end molecule types
+begin seed species
+  @cell:D() 5
+end seed species
+begin observables
+  Molecules D @cell:D()
+end observables
+end model
