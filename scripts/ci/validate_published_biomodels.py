@@ -972,6 +972,7 @@ def _validate_mode(
     simulation_rtol: float,
     simulation_atol: float,
     source_path: Path | None = None,
+    artifacts_dir: Path | None = None,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -1070,6 +1071,10 @@ def _validate_mode(
         raise
     if not atomized.success:
         raise RuntimeError(atomized.error or "modern Atomizer returned failure")
+    if artifacts_dir is not None:
+        (artifacts_dir / f"translated.{mode}.bngl").write_text(
+            atomized.bngl, encoding="utf-8"
+        )
     source_warnings = _merge_generated_warnings(
         source_warnings, _warnings(atomizer.model)
     )
@@ -1104,6 +1109,8 @@ def _validate_mode(
         str(output_path),
         source_metadata=source_metadata,
     )
+    if artifacts_dir is not None:
+        (artifacts_dir / output_path.name).write_bytes(output_path.read_bytes())
     roundtrip_sbml = output_path.read_text(encoding="utf-8")
     result["written_xml"] = _validate_xml(roundtrip_sbml, "written SBML")
 
@@ -1139,6 +1146,10 @@ def _validate_mode(
     ).atomize(roundtrip_sbml)
     if not reimport.success:
         raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
+    if artifacts_dir is not None:
+        (artifacts_dir / f"reimported.{mode}.bngl").write_text(
+            reimport.bngl, encoding="utf-8"
+        )
     reimport_cpp = cpp.parse_string(reimport.bngl)
     reimport_network = cpp.generate_network(reimport_cpp, max_iter=100)
     result["reimport_network"] = {
@@ -1306,6 +1317,8 @@ def _run_isolated_model(
     ]
     if args.ode_smoke:
         command.append("--ode-smoke")
+    if args.artifacts_dir is not None:
+        command.extend(["--artifacts-dir", str(args.artifacts_dir.resolve())])
     try:
         completed = subprocess.run(
             command,
@@ -1347,6 +1360,14 @@ def main() -> int:
     )
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--json", type=Path, required=True)
+    parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        help=(
+            "retain each model's source SBML, generated BNGL, exported SBML "
+            "and record so two runs' artifacts can be compared"
+        ),
+    )
     parser.add_argument("--mode", choices=("flat", "atomized", "both"), default="flat")
     parser.add_argument("--refresh-inventory", action="store_true")
     parser.add_argument("--offline", action="store_true")
@@ -1454,6 +1475,7 @@ def main() -> int:
             sbml_selected.append(entry)
             continue
 
+        model_artifacts: Path | None = None
         try:
             path = args.cache_dir / str(entry["filename"])
             record["sha256"] = _download_if_needed(path, entry)
@@ -1464,6 +1486,9 @@ def main() -> int:
                 "sha256": record["sha256"],
                 "size_bytes": path.stat().st_size,
             }
+            if args.artifacts_dir is not None:
+                model_artifacts = args.artifacts_dir / str(entry["id"])
+                model_artifacts.mkdir(parents=True, exist_ok=True)
             if is_archive:
                 from bionetgen.atomizer.modern import extract_sbml_from_archive
 
@@ -1496,6 +1521,8 @@ def main() -> int:
             else:
                 sbml = path.read_text(encoding="utf-8-sig")
                 record["extracted_sbml"] = False
+            if model_artifacts is not None:
+                (model_artifacts / "source.xml").write_text(sbml, encoding="utf-8")
             with tempfile.TemporaryDirectory(
                 prefix=f"{entry['id']}-", dir=args.cache_dir
             ) as temp:
@@ -1517,6 +1544,7 @@ def main() -> int:
                                 args.simulation_rtol,
                                 args.simulation_atol,
                                 source_path=path if not is_archive else None,
+                                artifacts_dir=model_artifacts,
                             )
                         )
                     except Exception as exc:
@@ -1560,6 +1588,11 @@ def main() -> int:
             record["error"] = message
             if record["status"] == "unsupported":
                 record["unsupported_reason"] = message
+        if model_artifacts is not None:
+            (model_artifacts / "record.json").write_text(
+                json.dumps(_json_compatible(record), indent=2, allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
         records.append(record)
         print(f"{entry['id']}: {record['status'].upper()}", flush=True)
 
