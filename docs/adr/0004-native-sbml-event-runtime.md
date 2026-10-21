@@ -120,6 +120,12 @@ ODE solver, event queue, stochastic engine, and conformance tests.
   triggered at the same instant and nothing in the model proves that they
   cannot, so the native lowering requires every event of a model with more
   than one event to carry a static priority of its own.
+- The *scheduled action* path orders a simultaneous group by evaluating the
+  priorities at the execution instant, which the specification prescribes
+  (Sec. 4.12.3).  A priority that reads the model state is therefore usable
+  there, and the group is only accepted when the events cannot make the
+  shared trigger re-enter, because a re-entry would give the group two
+  different crossings.
 - BNG2 and PyBioNetGen remain read-only comparators. Reports must distinguish
   standard BNGL parity from BNG3 extension behavior.
 - Overall Atomizer completion still requires the full feature checklist,

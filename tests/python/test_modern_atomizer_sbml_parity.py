@@ -5028,3 +5028,92 @@ def test_sbml_ids_with_distinct_display_names_do_not_collide():
     assert "Species A @c:M_A()" in result.bngl
     assert "Species B @c:M_B()" in result.bngl
     assert "identifier:" not in result.bngl
+
+
+def _state_triggered_priority_pair_model(assignment_target: str = "p2") -> str:
+    """Two events that share one state trigger and assign the same variable.
+
+    The first event's priority reads the trigger's own state, so it is only
+    known at the execution instant; the second event's priority is a constant.
+    """
+
+    return f"""<sbml xmlns="http://www.w3.org/1998/Math/MathML" xmlns:sbml="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+      <model id="state_triggered_priority_pair">
+        <listOfParameters>
+          <parameter id="p1" value="2" constant="false"/>
+          <parameter id="p2" value="10" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="p1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </rateRule>
+        </listOfRules>
+        <listOfEvents>
+          <event id="dynamic-priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>p1</ci><cn>3</cn></apply>
+              </math>
+            </trigger>
+            <priority>
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>p1</ci></math>
+            </priority>
+            <listOfEventAssignments>
+              <eventAssignment variable="{assignment_target}">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+          <event id="constant-priority" useValuesFromTriggerTime="true">
+            <trigger initialValue="true" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><gt/><ci>p1</ci><cn>3</cn></apply>
+              </math>
+            </trigger>
+            <priority>
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
+            </priority>
+            <listOfEventAssignments>
+              <eventAssignment variable="{assignment_target}">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_state_triggered_group_with_a_dynamic_priority_is_ordered():
+    # SBML L3V2 Core Sec. 4.12.3: the priority orders the events that are
+    # executed simultaneously, and Sec. 4.12.3 also says the priority is
+    # evaluated at the execution instant, so a priority that reads the model
+    # state orders the group as well.
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True).atomize(_state_triggered_priority_pair_model())
+
+    assert result.success, result.error
+    assert "Events NOT simulated" not in result.bngl
+    # The constant priority 5 is higher than the state's value 3 at the
+    # crossing, so the constant-priority event runs first and the other
+    # event's value is the one that survives.
+    assert result.bngl.index('setParameter("p2", "2")') < result.bngl.index(
+        'setParameter("p2", "1")'
+    )
+
+
+def test_state_triggered_group_that_assigns_the_trigger_state_stays_unsupported():
+    # The events of the group cross at the same instant only when their
+    # assignments leave the trigger's state alone.  An assignment to the
+    # trigger's own state could make the trigger re-enter, and then the two
+    # crossings would differ, so the group is not one simultaneous execution.
+    from bionetgen.atomizer.modern import Atomizer
+
+    result = Atomizer(quiet_mode=True).atomize(
+        _state_triggered_priority_pair_model(assignment_target="p1")
+    )
+
+    assert result.success, result.error
+    assert "Events NOT simulated" in result.bngl
+    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl

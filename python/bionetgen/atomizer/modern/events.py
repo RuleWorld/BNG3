@@ -3457,6 +3457,33 @@ def synthesize_native_event_block(
     return lower_native_events(events, context).block
 
 
+def _group_trigger_is_independent_of_assignments(
+    events: Sequence[SBMLEvent], event: SBMLEvent
+) -> bool:
+    """True when no event of a group assigns a symbol the shared trigger reads.
+
+    The events that share one trigger cross at the same instant, because the
+    model state evolves identically until the first crossing and the
+    assignments happen at the crossing.  An assignment to a symbol the trigger
+    reads could make the trigger re-enter after the crossing, and then the
+    crossings of the group would differ, so the group would not be one
+    simultaneous execution and could not be ordered by its priorities.
+    """
+
+    trigger_symbols = {
+        standardize_name(identifier)
+        for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", event.trigger or "")
+    }
+    for group_event in events:
+        if group_event.trigger.strip() != event.trigger.strip():
+            continue
+        for assignment in group_event.assignments:
+            variable, _expression = _event_assignment(assignment)
+            if standardize_name(variable) in trigger_symbols:
+                return False
+    return True
+
+
 def synthesize_event_actions(
     events: Sequence[SBMLEvent], context: EventTranslationContext
 ) -> EventTranslationResult:
@@ -3897,7 +3924,17 @@ def synthesize_event_actions(
         if trigger_time <= 0 or len(events) < 2:
             return False
         threshold = parse_time_threshold(event.trigger)
-        if threshold is None:
+        # A state trigger has no fixed threshold, so the group is checked
+        # against the state instead: the events that share one trigger cross
+        # at the same instant, because the model state evolves identically
+        # until the first crossing and the assignments happen at the crossing.
+        # That holds only when no event of the group assigns one of the
+        # symbols the trigger reads, because such an assignment could make
+        # the trigger re-enter and the crossings would then differ.
+        state_trigger = threshold is None
+        if state_trigger and not _group_trigger_is_independent_of_assignments(
+            events, event
+        ):
             return False
         for other_event in events:
             if other_event.trigger.strip() != event.trigger.strip():
@@ -3907,6 +3944,28 @@ def synthesize_event_actions(
                 or not other_event.use_values_from_trigger_time
             ):
                 return False
+            other_delay = (
+                fold_at_state(
+                    other_event.delay,
+                    trigger_time,
+                    event_context=other_event,
+                )
+                if other_event.delay
+                else 0.0
+            )
+            if (
+                other_delay is None
+                or not math.isfinite(other_delay)
+                or other_delay < 0
+                or abs(other_delay - delay) > 1e-12
+            ):
+                return False
+            if state_trigger:
+                # The shared trigger crosses at the same instant, so the
+                # executions coincide when the delays coincide.
+                if abs(trigger_time + delay - execution_time) > 1e-12:
+                    return False
+                continue
             other_threshold = parse_time_threshold(other_event.trigger)
             if other_threshold is None:
                 return False
@@ -3916,15 +3975,6 @@ def synthesize_event_actions(
                 or abs(other_trigger_time - trigger_time) > 1e-12
             ):
                 return False
-            other_delay = (
-                fold_at_state(
-                    other_event.delay,
-                    other_trigger_time,
-                    event_context=other_event,
-                )
-                if other_event.delay
-                else 0.0
-            )
             if (
                 other_delay is None
                 or not math.isfinite(other_delay)
@@ -8642,19 +8692,39 @@ def synthesize_event_actions(
             == {id(event) for event in events}
         )
         if group_is_complete:
+            execution_time = group[0][0]
             for event in group_events:
                 assert event is not None
                 threshold = parse_time_threshold(event.trigger)
-                trigger_time = (
-                    fold(threshold, event_context=event)
-                    if threshold is not None
-                    else None
-                )
-                delay = (
-                    fold_at_state(event.delay, trigger_time, event_context=event)
-                    if event.delay and trigger_time is not None
-                    else 0.0
-                )
+                if threshold is not None:
+                    trigger_time = fold(threshold, event_context=event)
+                    delay = (
+                        fold_at_state(
+                            event.delay,
+                            trigger_time,
+                            event_context=event,
+                        )
+                        if event.delay and trigger_time is not None
+                        else 0.0
+                    )
+                else:
+                    # A state trigger has no fixed threshold: the event's
+                    # execution instant and its delay give the instant the
+                    # trigger crossed.
+                    delay = (
+                        fold_at_state(
+                            event.delay,
+                            execution_time,
+                            event_context=event,
+                        )
+                        if event.delay
+                        else 0.0
+                    )
+                    trigger_time = (
+                        execution_time - delay
+                        if delay is not None and math.isfinite(delay)
+                        else None
+                    )
                 if (
                     trigger_time is None
                     or delay is None
