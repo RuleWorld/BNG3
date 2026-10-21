@@ -321,9 +321,7 @@ def biomodels_inventory(report: dict[str, Any]) -> dict[str, Any]:
         category = _biomodels_category(status)
         category_counts[category] += 1
         reason = _biomodels_reason(record)
-        causes = sorted(
-            set(str(cause) for cause in (record.get("unsupported_causes") or []))
-        )
+        causes = _biomodels_causes(record, reason)
         for cause in causes:
             cause_counts[cause] += 1
         cause_sets[tuple(causes)] += 1
