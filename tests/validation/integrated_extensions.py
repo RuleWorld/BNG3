@@ -13,6 +13,8 @@ from . import (
     integrated_boundaries,
     bngir_adversarial,
     api_surface,
+    boundary_extraction,
+    release_candidate,
     integrated_nfsim_fixtures as nfsim_fixtures,
     integrated_nfnext_boundary as nfnext_boundary,
     integrated_engine_routes as engine_routes,
@@ -75,6 +77,8 @@ OPERATIONS = (
     "nfsim-fixtures",
     "nfnext-boundary",
     "engine-routes",
+    "boundary-extraction",
+    "release-candidate",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -106,6 +110,8 @@ FOCUS_FLAGS = {
     "nfsim_fixtures": "--nfsim-fixtures-only",
     "nfnext_boundary": "--nfnext-boundary-only",
     "engine_routes": "--engine-routes-only",
+    "boundary_extraction": "--boundary-extraction-only",
+    "release_candidate": "--release-candidate-only",
 }
 
 
@@ -146,6 +152,10 @@ def check_ids(operation, case=None, *, full=False):
         return nfnext_boundary.check_ids()
     if operation == "engine-routes":
         return engine_routes.check_ids()
+    if operation == "boundary-extraction":
+        return boundary_extraction.check_ids()
+    if operation == "release-candidate":
+        return release_candidate.check_ids()
     if operation == "energy-qualification":
         return energy_qualification.check_ids()
     if operation == "workload-profile":
@@ -193,6 +203,10 @@ def check_ids(operation, case=None, *, full=False):
         return nfnext_boundary.run_worker(Path.cwd())
     if operation == "engine-routes":
         return engine_routes.run_worker(Path.cwd())
+    if operation == "boundary-extraction":
+        return boundary_extraction.run_worker(Path.cwd())
+    if operation == "release-candidate":
+        return release_candidate.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":
@@ -253,6 +267,8 @@ def expected_ids(
     include_nfsim_fixtures=True,
     include_nfnext_boundary=True,
     include_engine_routes=True,
+    include_boundary_extraction=True,
+    include_release_candidate=True,
     include_stochastic_parity=True,
     include_graph_identity_contract=True,
     full=False,
@@ -332,6 +348,10 @@ def expected_ids(
         ids.extend(["campaign:nfnext-boundary", *check_ids("nfnext-boundary")])
     if include_engine_routes:
         ids.extend(["campaign:engine-routes", *check_ids("engine-routes")])
+    if include_boundary_extraction:
+        ids.extend(["campaign:boundary-extraction", *check_ids("boundary-extraction")])
+    if include_release_candidate:
+        ids.extend(["campaign:release-candidate", *check_ids("release-candidate")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     if include_graph_identity_contract:
@@ -392,6 +412,10 @@ def run_worker(operation, args):
         return nfnext_boundary.run_worker(Path.cwd())
     if operation == "engine-routes":
         return engine_routes.run_worker(Path.cwd())
+    if operation == "boundary-extraction":
+        return boundary_extraction.run_worker(Path.cwd())
+    if operation == "release-candidate":
+        return release_candidate.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":

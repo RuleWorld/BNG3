@@ -360,7 +360,16 @@ def check_ids():
 # --------------------------------------------------------------------------- #
 
 
-def _row(check, status, detail, *, first_difference=None, artifact=None, kind=None):
+def _row(
+    check,
+    status,
+    detail,
+    *,
+    first_difference=None,
+    artifact=None,
+    kind=None,
+    applicability=None,
+):
     if kind is None:
         kind = {
             "PASS": "supported-execution",
@@ -376,6 +385,8 @@ def _row(check, status, detail, *, first_difference=None, artifact=None, kind=No
         "evidence_kind": kind,
         "supported_execution": status == "PASS" and kind == "supported-execution",
     }
+    if applicability is not None:
+        row["applicability"] = applicability
     if artifact is not None:
         row["source_artifact"] = artifact.name
         row["source_sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -1325,9 +1336,12 @@ def _aa_row(case, stages, artifact=None):
         f"{name} {spreads[name] * 100.0:.1f}%" for name in sorted(spreads)
     )
     if noisy:
+        # The control did its job: it refused a measurement the host could not
+        # make.  The timings are not recorded, so nothing was tested; the
+        # refusal is not a product failure and must not gate the campaign.
         return _row(
             check,
-            "FAIL",
+            "NOT_TESTED",
             "the A/A control measured the same arm "
             f"{REPETITIONS} times per stage and found a spread above the "
             f"{AA_RELATIVE_LIMIT * 100.0:.0f}% limit for {', '.join(sorted(noisy))} "
@@ -1335,6 +1349,7 @@ def _aa_row(case, stages, artifact=None):
             "timings are not recorded as results. This is a host-noise "
             f"observation, not a product failure. Spreads: {summary}",
             artifact=artifact,
+            applicability="host-noise-refusal",
         )
     return _row(
         check,

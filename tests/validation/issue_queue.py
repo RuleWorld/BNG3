@@ -535,6 +535,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .integrated_nfsim_fixtures import check_ids as nfsim_fixture_check_ids
     from .integrated_nfnext_boundary import check_ids as nfnext_boundary_check_ids
     from .integrated_engine_routes import check_ids as engine_route_check_ids
+    from .boundary_extraction import check_ids as boundary_extraction_check_ids
+    from .release_candidate import check_ids as release_candidate_check_ids
     from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
@@ -995,6 +997,42 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="extracted-capability-boundary",
+            case_ids=[],
+            check_ids=boundary_extraction_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(boundary_extraction_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The extracted total-rate capability only: the seam owns the "
+                "capability, the callers agree on its outcome, and the "
+                "existing qualified checks still pass unchanged."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="release-candidate-evidence",
+            case_ids=[],
+            check_ids=release_candidate_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(release_candidate_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "What one host can decide about the release candidate: the "
+                "licence and notice inventory, the memory contract, the "
+                "declared sanitizer configuration and the platform matrix "
+                "shape. The hosted arms are recorded as evidence to collect, "
+                "never claimed."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -1204,16 +1242,34 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                                                                                                                 "id"
                                                                                                                             ]
                                                                                                                             == "engine-routes"
-                                                                                                                            else [
-                                                                                                                                argument
-                                                                                                                                for case_id in family[
-                                                                                                                                    "case_ids"
+                                                                                                                            else (
+                                                                                                                                [
+                                                                                                                                    "--boundary-extraction-only"
                                                                                                                                 ]
-                                                                                                                                for argument in (
-                                                                                                                                    "--case",
-                                                                                                                                    case_id,
+                                                                                                                                if family[
+                                                                                                                                    "id"
+                                                                                                                                ]
+                                                                                                                                == "extracted-capability-boundary"
+                                                                                                                                else (
+                                                                                                                                    [
+                                                                                                                                        "--release-candidate-only"
+                                                                                                                                    ]
+                                                                                                                                    if family[
+                                                                                                                                        "id"
+                                                                                                                                    ]
+                                                                                                                                    == "release-candidate-evidence"
+                                                                                                                                    else [
+                                                                                                                                        argument
+                                                                                                                                        for case_id in family[
+                                                                                                                                            "case_ids"
+                                                                                                                                        ]
+                                                                                                                                        for argument in (
+                                                                                                                                            "--case",
+                                                                                                                                            case_id,
+                                                                                                                                        )
+                                                                                                                                    ]
                                                                                                                                 )
-                                                                                                                            ]
+                                                                                                                            )
                                                                                                                         )
                                                                                                                     )
                                                                                                                 )

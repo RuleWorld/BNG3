@@ -322,3 +322,18 @@ def test_scientific_lane_runs_independent_checks_after_case_failure():
         s for s in steps if s.get("name") == "Verify spawned scientific worker identity"
     )
     assert "test_worker_package_identity.py" in worker["run"]
+
+
+def test_the_worker_can_dispatch_every_registered_qualification():
+    # The worker runs in isolated mode, so it cannot derive its dispatch list
+    # from the registry at run time.  A qualification the worker cannot
+    # dispatch reports itself as not tested, which reads as an executed family
+    # that did nothing.
+    from tests.validation import integrated_worker
+
+    registered = set(extensions.OPERATIONS)
+    dispatchable = set(integrated_worker.QUALIFICATION_OPERATIONS)
+    assert dispatchable == registered, {
+        "missing_from_worker": sorted(registered - dispatchable),
+        "unknown_to_worker": sorted(dispatchable - registered),
+    }

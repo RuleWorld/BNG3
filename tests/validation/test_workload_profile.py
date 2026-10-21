@@ -183,7 +183,11 @@ def test_a_noisy_measurement_is_not_recorded_as_a_result(tmp_path, monkeypatch):
     noisy_rows = _by_id(profile.run_worker(tmp_path))
     for case in profile.cases():
         control = noisy_rows[f"workload-profile:{case['id']}:aa-control"]
-        assert control["status"] == "FAIL"
+        # The control refused the measurement, so nothing was tested.  The
+        # refusal is recorded with a non-gating applicability, because a noisy
+        # host is not a product failure.
+        assert control["status"] == "NOT_TESTED"
+        assert control["applicability"] == "host-noise-refusal"
         assert "host-noise observation" in control["detail"]
         for stage in profile.TIMED_STAGES:
             row = noisy_rows[f"workload-profile:{case['id']}:{stage}-timing"]

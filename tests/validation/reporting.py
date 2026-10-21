@@ -16,6 +16,7 @@ BAD = {"FAIL", "TIMEOUT", "HARNESS_ERROR"}
 # NOT_TESTED rows that record an explained, scoped absence of execution rather
 # than an unexplained gap.  Each token names the specific missing prerequisite.
 NON_GATING_APPLICABILITY = {
+    "host-noise-refusal",
     "no-observables",
     "no-rate-parameter-dependency",
     "native-oracle-unit-conversion-unsupported",

@@ -4,6 +4,7 @@
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/CompiledRule.hpp"
 #include "compile/SymbolTable.hpp"
+#include "compile/TotalRate.hpp"
 
 #include <sstream>
 #include <iomanip>
@@ -1434,21 +1435,13 @@ std::string xmlRateLawType(const ast::Model& model, const ast::Expression& rate)
     return "Ele";
 }
 
-bool ruleHasModifier(const ast::ReactionRule& rule, const std::string& wanted) {
-    const auto needle = lowercaseName(wanted);
-    return std::any_of(rule.getModifiers().begin(), rule.getModifiers().end(),
-                       [&](const auto& modifier) {
-                           return lowercaseName(modifier) == needle;
-                       });
-}
-
 // BNG2 forces an elementary rate into a generated zero-argument function when
 // TotalRate is present. Rates already represented by another XML type need no
 // wrapper.
 bool needsTotalRateFunctionWrapper(const ast::Model& model,
                                    const ast::ReactionRule& rule,
                                    const ast::Expression& rate) {
-    return ruleHasModifier(rule, "TotalRate") &&
+    return bng::compile::isTotalRateRule(rule) &&
            xmlRateLawType(model, rate) == "Ele";
 }
 
@@ -1749,7 +1742,7 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
 
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
             << "\" totalrate=\""
-            << (hasModifier(rule.getModifiers(), "TotalRate") ? "1" : "0") << "\"";
+            << (bng::compile::isTotalRateRule(rule) ? "1" : "0") << "\"";
         // Signed reservoir work travels with the rate law because it modifies
         // dG rather than the rule's structure. Emitted only when present, so
         // ordinary models produce byte-identical XML.

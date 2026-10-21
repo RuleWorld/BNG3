@@ -41,6 +41,8 @@ QUALIFICATIONS = {
     "nfsim_fixtures": "include_nfsim_fixtures",
     "nfnext_boundary": "include_nfnext_boundary",
     "engine_routes": "include_engine_routes",
+    "boundary_extraction": "include_boundary_extraction",
+    "release_candidate": "include_release_candidate",
 }
 
 

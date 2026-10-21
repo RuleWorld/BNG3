@@ -139,6 +139,8 @@ def expected_contract_ids(
     include_nfsim_fixtures=True,
     include_nfnext_boundary=True,
     include_engine_routes=True,
+    include_boundary_extraction=True,
+    include_release_candidate=True,
     full=False,
 ):
     return [
@@ -208,6 +210,8 @@ def expected_contract_ids(
         include_nfsim_fixtures=include_nfsim_fixtures,
         include_nfnext_boundary=include_nfnext_boundary,
         include_engine_routes=include_engine_routes,
+        include_boundary_extraction=include_boundary_extraction,
+        include_release_candidate=include_release_candidate,
         full=full,
     )
 
@@ -1003,6 +1007,8 @@ FOCUS_FLAGS = {
     "nfsim_fixtures": "nfsim_fixtures_only",
     "nfnext_boundary": "nfnext_boundary_only",
     "engine_routes": "engine_routes_only",
+    "boundary_extraction": "boundary_extraction_only",
+    "release_candidate": "release_candidate_only",
 }
 
 
@@ -1075,6 +1081,8 @@ def main(argv=None):
     parser.add_argument("--nfsim-fixtures-only", action="store_true")
     parser.add_argument("--nfnext-boundary-only", action="store_true")
     parser.add_argument("--engine-routes-only", action="store_true")
+    parser.add_argument("--boundary-extraction-only", action="store_true")
+    parser.add_argument("--release-candidate-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1223,6 +1231,14 @@ def main(argv=None):
             integrated_extensions.invoke("nfsim-fixtures", args, rows, env, run_stage)
         if qualification_selection["include_nfnext_boundary"]:
             integrated_extensions.invoke("nfnext-boundary", args, rows, env, run_stage)
+        if qualification_selection["include_boundary_extraction"]:
+            integrated_extensions.invoke(
+                "boundary-extraction", args, rows, env, run_stage
+            )
+        if qualification_selection["include_release_candidate"]:
+            integrated_extensions.invoke(
+                "release-candidate", args, rows, env, run_stage
+            )
         if qualification_selection["include_engine_routes"]:
             integrated_extensions.invoke("engine-routes", args, rows, env, run_stage)
         if qualification_selection["include_biomodels_hold"]:
@@ -1299,6 +1315,8 @@ def main(argv=None):
         "nfsim-fixtures": ["--nfsim-fixtures-only"],
         "nfnext-boundary": ["--nfnext-boundary-only"],
         "engine-routes": ["--engine-routes-only"],
+        "boundary-extraction": ["--boundary-extraction-only"],
+        "release-candidate": ["--release-candidate-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1407,6 +1425,8 @@ def main(argv=None):
                 "nfsim-fixtures": "tests/validation/integrated_nfsim_fixtures.py",
                 "nfnext-boundary": "tests/validation/integrated_nfnext_boundary.py",
                 "engine-routes": "tests/validation/integrated_engine_routes.py",
+                "boundary-extraction": "tests/validation/boundary_extraction.py",
+                "release-candidate": "tests/validation/release_candidate.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1496,6 +1516,10 @@ def main(argv=None):
                 issues = [149]
             elif stage == "engine-routes":
                 issues = [148]
+            elif stage == "boundary-extraction":
+                issues = [164]
+            elif stage == "release-candidate":
+                issues = [184]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

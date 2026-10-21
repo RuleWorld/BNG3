@@ -17,6 +17,7 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
+#include "compile/TotalRate.hpp"
 #include "ast/ReactionRule.hpp"
 
 namespace bng::engine {
@@ -150,24 +151,13 @@ void PsaSimulator::compile() {
         crxn.productIndices = rxn.getProducts();
         crxn.statFactor = rxn.getFactor();
 
-        // Check for TotalRate modifier
         const auto& originRuleName = rxn.getOriginRuleName();
-        if (!originRuleName.empty()) {
-            std::string lookupName = originRuleName;
-            if (lookupName.rfind("_reverse__", 0) == 0) {
-                lookupName = lookupName.substr(std::string("_reverse__").size());
-            }
-            for (const auto& rule : model_.getReactionRules()) {
-                if (rule.getRuleName() == lookupName) {
-                    for (const auto& mod : rule.getModifiers()) {
-                        if (mod == "TotalRate") {
-                            crxn.isTotalRate = true;
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
+
+        // The compile layer owns the total-rate decision: it knows the
+        // modifier's spelling and resolves the reverse direction of a rule.
+        if (!originRuleName.empty() &&
+            bng::compile::isTotalRateReaction(model_, originRuleName)) {
+            crxn.isTotalRate = true;
         }
 
         // Build rate string (same logic as OdeIntegrator::compile)

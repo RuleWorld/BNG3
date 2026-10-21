@@ -8185,24 +8185,65 @@
           "criterion": "Extract cohesive boundaries incrementally without changing supported semantics or introducing parallel implementations.",
           "scope": "Extract cohesive boundaries incrementally without changing supported semantics or introducing parallel implementations.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The extracted boundary is one cohesive capability: the decision that a reaction's rate states the complete macroscopic rate. The seam owns the modifier's spelling and resolves the reverse direction of a rule, so every consumer asks the same question.",
+            "The extraction changed one writer's outcome and repaired it: the SBML writer did not see the reverse direction of a TotalRate rule and therefore exported a reaction as an ordinary elementary reaction that the native engine executes as a total rate. The reverse direction is now a total rate in the SBML export as well.",
+            "The Atomizer's remaining split - event planning, unit lowering, structural mapping and text output - is not characterized by these checks and stays unqualified; this obligation records one extracted boundary, not the whole refactoring of issue #164.",
+            "The supported semantics are unchanged apart from the repaired divergence: the proof is the existing qualified checks that cover the affected surface, executed unchanged, and not a new expectation written to match the new code."
+          ],
           "required_checks": [
+            {
+              "id": "boundary-extraction:seam-ownership",
+              "evidence_kind": "supported-execution",
+              "expectation": "The total-rate capability lives behind one named seam: the seam declares the contract, every consumer asks the seam, and no other translation unit decides the capability by comparing a value against the modifier's spelling.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "boundary-extraction:caller-agreement",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network writer and the SBML writer agree on the total-rate decision of every reaction of the generated family, and both express the rate the model source declares.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "boundary-extraction:semantics-unchanged",
+              "evidence_kind": "supported-execution",
+              "expectation": "The existing qualified checks that cover the affected surface - the rate-law contract and the network-rule execution contract - pass unchanged; no expectation of theirs is rewritten.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
             {
               "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "cpp/compile/TotalRate.hpp",
+            "cpp/compile/TotalRate.cpp",
+            "cpp/io/NetWriter.cpp",
+            "cpp/io/SbmlWriter.cpp",
+            "cpp/io/XmlWriter.cpp",
+            "cpp/io/SbmlReader.cpp",
+            "cpp/engine/OdeIntegrator.cpp",
+            "cpp/engine/PsaSimulator.cpp",
+            "tests/validation/boundary_extraction.py",
+            "tests/validation/test_boundary_extraction.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo.",
+            "The Atomizer's remaining split - event planning, unit lowering, structural mapping and text output - stays unqualified; the extracted boundary is the total-rate capability, not the whole refactoring.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          ],
+          "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged."
         },
         {
           "id": "issue:164:closure-record",
@@ -11301,24 +11342,88 @@
           "criterion": "Verify final-candidate platform, sanitizer/memory, licenses/notices and reproducible-build evidence; retain normal CI's narrower scope.",
           "scope": "Verify final-candidate platform, sanitizer/memory, licenses/notices and reproducible-build evidence; retain normal CI's narrower scope.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The arms that one host can decide are decided here: the licence and notice inventory of the shipped artefacts, the memory contract of the artefacts, the sanitizer configuration the CI declares and the declared shape of the platform matrix.",
+            "The sanitizer runs themselves and the per-platform results cannot be produced on one host; they are recorded as evidence to collect with the exact command and the expected artefact, and the family never reports them as executed.",
+            "The inventory of the licences and notices records the notices as the bundled sources state them; it is not a legal review and it does not approve a distribution.",
+            "Normal CI keeps its narrower scope: the release candidate needs the hosted arms on top of it, and the release lane itself does not carry sanitizer instrumentation or an embedded C++ runtime."
+          ],
           "required_checks": [
+            {
+              "id": "release-candidate:license-inventory",
+              "evidence_kind": "supported-execution",
+              "expectation": "The shipped artefacts carry the licence that the package metadata declares, and the release workflow packages it with the binaries.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "release-candidate:notice-inventory",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every bundled or fetched component that ends up in a shipped artefact is inventoried with the notice its own sources state, and the notice travels with the artefacts.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "release-candidate:memory-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The shipped artefacts carry no sanitizer instrumentation and no embedded C++ runtime, and the CI lane declares the leak-detection policy.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "release-candidate:sanitizer-configuration",
+              "evidence_kind": "supported-execution",
+              "expectation": "The CI declares a sanitizer job that builds with the sanitizer and runs the test suite under it.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "release-candidate:platform-matrix-shape",
+              "evidence_kind": "supported-execution",
+              "expectation": "The release workflow declares one platform matrix for the binaries and the wheels, and every declared platform is built, smoke-tested and packaged.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "release-candidate:hosted-evidence",
+              "evidence_kind": "supported-execution",
+              "expectation": "The arms that need the hosted matrix are recorded with the exact command and the artefact the hosted run has to produce; no arm is reported as executed.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
             {
               "id": "qualification:issue:184:verify-final-candidate-platform-sanitizer-memory-licenses-notice",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The arms one host can decide are decided by named checks, and the arms that need the hosted matrix are recorded as evidence to collect with their command and their artefact.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "provenance/third-party-notices.json",
+            "NOTICE",
+            "LICENSE",
+            "cpp/nfsim/LICENSE.txt",
+            ".github/workflows/release.yml",
+            ".github/workflows/ci.yml",
+            "tests/validation/release_candidate.py",
+            "tests/validation/test_release_candidate.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:184:verify-final-candidate-platform-sanitizer-memory-licenses-notice.",
+            "The sanitizer runs and the per-platform results need the hosted matrix; they are recorded as evidence to collect in the report's hosted-evidence artefact, and the release maintainer owns their collection.",
+            "The reproducible-build evidence of the hosted artefacts is not decided here; the hosted arms produce the digests.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          ],
+          "expectation": "The arms one host can decide are decided by named checks, and the arms that need the hosted matrix are recorded as evidence to collect with their command and their artefact."
         },
         {
           "id": "issue:184:closure-record",
