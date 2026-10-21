@@ -880,22 +880,30 @@ void OdeIntegrator::compile() {
                 }
 
                 // A special rate law is a complete flux: the engine does not
-                // multiply it by the reactant concentrations and does not
-                // apply the compartment-volume conversion to it.  It does
-                // carry the rule's statistical factor, because that factor is
-                // a property of the rule's reactants and not of the rate
-                // law's shape.  Canonical Perl BNG2 2.9.3 writes it as a
-                // prefix on the rate law for every rate law type
-                // (RateLaw::toString in RateLaw.pm), so its own network for
-                // ``A() + A() -> D() Sat(kcat,K)`` reads ``0.5*Sat kcat K``,
-                // and this engine's own network writer emits the same
-                // prefix.  Without the factor the engine disagreed with the
-                // network it exported and with BNG2's trajectory.
+                // multiply it by the reactant concentrations.  It does carry
+                // the rule's statistical factor and the compartment-volume
+                // conversion, because canonical Perl BNG2 2.9.3 writes both
+                // as a prefix on the rate law for every rate law type
+                // (RateLaw::toString in RateLaw.pm).  Its own network for
+                // ``@cell:A() + @cell:A() -> @cell:D() Sat(kcat,K)`` in a
+                // 100-unit volume reads ``0.005*Sat kcat K`` with
+                // ``unit_conversion=1/100.0``: 0.5 is the statistical factor
+                // of the two identical reactants and 0.01 is the volume
+                // conversion.  This engine's own network writer emits the
+                // same prefix, so the engine has to apply the same two
+                // factors or it disagrees with the network it exported.
                 //
-                // A TotalRate rule states its complete flux, so it takes no
-                // statistical factor: canonical BNG2 forces the factor to one
-                // for a TotalRate rule (Rxn.pm).
+                // A TotalRate rule states its complete flux, so it takes
+                // neither: canonical BioNetGen forces the statistical factor
+                // to one for a TotalRate rule (Rxn.pm), and this engine's
+                // network writer leaves both prefixes off for one.
                 double combinedFactor = 1.0;
+                if (!ruleIsTotalRate) {
+                    const auto uf =
+                        bng::io::NetWriter::computeUnitConversionFactor(
+                            rxn, model_, network_);
+                    if (uf.has_value()) combinedFactor *= *uf;
+                }
                 if (!ruleIsTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
                     combinedFactor *= rxn.getFactor();
                 }
