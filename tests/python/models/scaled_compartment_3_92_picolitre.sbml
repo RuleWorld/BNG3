@@ -1,0 +1,850 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no'?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" layout:required="false" level="3" metaid="a4b67f8a-bc50-47ec-9c3b-8168a5a04511" render:required="false" version="1" xmlns:layout="http://www.sbml.org/sbml/level3/version1/layout/version1" xmlns:render="http://www.sbml.org/sbml/level3/version1/render/version1">
+  <model areaUnits="area" extentUnits="substance" id="MODEL1610220001" lengthUnits="length" metaid="COPASI0" name="Bush2016 - Extended Carrousel model of GPCR-RGS" substanceUnits="substance" timeUnits="time" volumeUnits="volume">
+      <listOfUnitDefinitions>
+      <unitDefinition id="length" metaid="e4ae9afd-4c2d-4ad9-963b-7015892e1486" name="length">
+        <listOfUnits>
+          <unit exponent="1" kind="metre" metaid="_65e28729-bd9f-4773-8eaa-22916ca4e9ba" multiplier="1" scale="0"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="area" metaid="_962d4b0a-cae2-4725-b6f2-17d320fb8113" name="area">
+        <listOfUnits>
+          <unit exponent="2" kind="metre" metaid="_0a14d3a1-fec8-451f-8768-f698760ae08d" multiplier="1" scale="0"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="volume" metaid="_40fa3ad7-e464-4e2a-a4a4-13fed4899058" name="volume">
+        <listOfUnits>
+          <unit exponent="1" kind="litre" metaid="_7c26e9ca-3bb6-4787-97a6-a4be41dbb162" multiplier="1" scale="-15"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="time" metaid="_48afcc93-b7df-4510-b1f0-3fda036328a6" name="time">
+        <listOfUnits>
+          <unit exponent="1" kind="second" metaid="_46f4a3bb-b5f4-4016-9520-a85375f74c80" multiplier="1" scale="0"/>
+        </listOfUnits>
+      </unitDefinition>
+      <unitDefinition id="substance" metaid="_11e5a54f-0f53-49de-b6a0-033a3f0c5427" name="substance">
+        <listOfUnits>
+          <unit exponent="1" kind="item" metaid="_0302fc24-a1a9-4abf-8030-78bd5f81b2ee" multiplier="1" scale="0"/>
+        </listOfUnits>
+      </unitDefinition>
+    </listOfUnitDefinitions>
+    <listOfCompartments>
+      <compartment constant="true" id="PM" metaid="COPASI1" name="PM" sboTerm="SBO:0000290" size="3.92" spatialDimensions="3" units="volume">
+            </compartment>
+      <compartment constant="true" id="cyt" metaid="COPASI2" name="cyt" sboTerm="SBO:0000290" size="36.4" spatialDimensions="3" units="volume">
+            </compartment>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="R" initialConcentration="843.877551020408" metaid="COPASI3" name="R" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LR" initialConcentration="0" metaid="COPASI4" name="LR" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="G" initialConcentration="520.918367346939" metaid="COPASI5" name="G" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="Gt" initialConcentration="0" metaid="COPASI6" name="Gt" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="Gd" initialConcentration="0" metaid="COPASI7" name="Gd" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="RG" initialConcentration="0" metaid="COPASI8" name="RG" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="Gbg" initialConcentration="0" metaid="COPASI9" name="Gbg" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LRG" initialConcentration="0" metaid="COPASI10" name="LRG" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LRGt" initialConcentration="0" metaid="COPASI11" name="LRGt" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="RGd" initialConcentration="0" metaid="COPASI12" name="RGd" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="RGt" initialConcentration="0" metaid="COPASI13" name="RGt" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LRGd" initialConcentration="0" metaid="COPASI14" name="LRGd" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LRrgs" initialConcentration="0" metaid="COPASI15" name="LRrgs" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LRrgsG" initialConcentration="0" metaid="COPASI16" name="LRrgsG" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LRrgsGd" initialConcentration="0" metaid="COPASI17" name="LRrgsGd" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="LRrgsGt" initialConcentration="0" metaid="COPASI18" name="LRrgsGt" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="Rrgs" initialConcentration="0" metaid="COPASI19" name="Rrgs" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="RrgsG" initialConcentration="0" metaid="COPASI20" name="RrgsG" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="RrgsGd" initialConcentration="0" metaid="COPASI21" name="RrgsGd" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="PM" constant="false" hasOnlySubstanceUnits="false" id="RrgsGt" initialConcentration="0" metaid="COPASI22" name="RrgsGt" substanceUnits="substance">
+            </species>
+      <species boundaryCondition="false" compartment="cyt" constant="false" hasOnlySubstanceUnits="false" id="rgs" initialConcentration="164.835164835165" metaid="COPASI23" name="rgs" substanceUnits="substance">
+            </species>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter constant="true" id="L" metaid="COPASI24" name="L" value="0">
+            </parameter>
+      <parameter constant="true" id="K_d_L_R" metaid="COPASI25" name="K_d_L·R" value="5.6">
+            </parameter>
+      <parameter constant="true" id="lambda" metaid="COPASI26" name="lambda" value="1">
+            </parameter>
+      <parameter constant="true" id="lambda_t" metaid="COPASI27" name="lambda_t" value="1">
+            </parameter>
+      <parameter constant="true" id="lambda_d" metaid="COPASI28" name="lambda_d" value="1">
+            </parameter>
+      <parameter constant="true" id="K_d_R_G" metaid="COPASI29" name="K_d_R·G" value="36">
+            </parameter>
+      <parameter constant="true" id="eta" metaid="COPASI30" name="eta" value="1">
+            </parameter>
+      <parameter constant="true" id="rho" metaid="COPASI31" name="rho" value="1">
+            </parameter>
+      <parameter constant="false" id="k_Ef_G" metaid="COPASI32" name="k_Ef_G" value="0.00062">
+            </parameter>
+      <parameter constant="true" id="k_Hf_Gt" metaid="COPASI33" name="k_Hf_Gt" value="0.002">
+            </parameter>
+      <parameter constant="false" id="k_Af_Gd" metaid="COPASI34" name="k_Af_Gd" value="0.2158">
+            </parameter>
+      <parameter constant="true" id="k_Ef_RG" metaid="COPASI35" name="k_Ef_RG" value="0.00062">
+            </parameter>
+      <parameter constant="true" id="k_Ef_LRG" metaid="COPASI36" name="k_Ef_LRG" value="1.5">
+            </parameter>
+      <parameter constant="false" id="k_Hf_LRGt" metaid="COPASI37" name="k_Hf_LRGt" value="0.002">
+            </parameter>
+      <parameter constant="false" id="k_Af_LRGd" metaid="COPASI38" name="k_Af_LRGd" value="0.2158">
+            </parameter>
+      <parameter constant="true" id="k_Hf_RGt" metaid="COPASI39" name="k_Hf_RGt" value="0.002">
+            </parameter>
+      <parameter constant="false" id="k_Af_RGd" metaid="COPASI40" name="k_Af_RGd" value="0.2158">
+            </parameter>
+      <parameter constant="true" id="Rtot" metaid="COPASI41" name="Rtot" value="3308">
+            </parameter>
+      <parameter constant="true" id="Gtot" metaid="COPASI42" name="Gtot" value="2042">
+            </parameter>
+      <parameter constant="false" id="k_on_L_R" metaid="COPASI43" name="k_on_L·R" value="0">
+            </parameter>
+      <parameter constant="true" id="k_off_L_R" metaid="COPASI44" name="k_off_L·R" value="0.001">
+            </parameter>
+      <parameter constant="false" id="k_on_L_RG" metaid="COPASI45" name="k_on_L·RG" value="0">
+            </parameter>
+      <parameter constant="false" id="k_off_L_RG" metaid="COPASI46" name="k_off_L·RG" value="0.001">
+            </parameter>
+      <parameter constant="false" id="k_on_L_RGt" metaid="COPASI47" name="k_on_L·RGt" value="0">
+            </parameter>
+      <parameter constant="false" id="k_off_L_RGt" metaid="COPASI48" name="k_off_L·RGt" value="0.001">
+            </parameter>
+      <parameter constant="false" id="k_on_L_RGd" metaid="COPASI49" name="k_on_L·RGd" value="0">
+            </parameter>
+      <parameter constant="false" id="k_off_L_RGd" metaid="COPASI50" name="k_off_L·RGd" value="0.001">
+            </parameter>
+      <parameter constant="false" id="k_on_R_G" metaid="COPASI51" name="k_on_R·G" value="0.00415">
+            </parameter>
+      <parameter constant="true" id="k_off_R_G" metaid="COPASI52" name="k_off_R·G" value="0.09">
+            </parameter>
+      <parameter constant="false" id="k_on_LR_G" metaid="COPASI53" name="k_on_LR·G" value="0.00415">
+            </parameter>
+      <parameter constant="false" id="k_off_LR_G" metaid="COPASI54" name="k_off_LR·G" value="0.09">
+            </parameter>
+      <parameter constant="false" id="k_on_R_Gt" metaid="COPASI55" name="k_on_R·Gt" value="0.00415">
+            </parameter>
+      <parameter constant="false" id="k_off_R_Gt" metaid="COPASI56" name="k_off_R·Gt" value="0.09">
+            </parameter>
+      <parameter constant="false" id="k_on_LR_Gt" metaid="COPASI57" name="k_on_LR·Gt" value="0.00415">
+            </parameter>
+      <parameter constant="false" id="k_off_LR_Gt" metaid="COPASI58" name="k_off_LR·Gt" value="0.09">
+            </parameter>
+      <parameter constant="false" id="k_on_R_Gd" metaid="COPASI59" name="k_on_R·Gd" value="0.00415">
+            </parameter>
+      <parameter constant="false" id="k_off_R_Gd" metaid="COPASI60" name="k_off_R·Gd" value="0.09">
+            </parameter>
+      <parameter constant="false" id="k_on_LR_Gd" metaid="COPASI61" name="k_on_LR·Gd" value="0.00415">
+            </parameter>
+      <parameter constant="false" id="k_off_LR_Gd" metaid="COPASI62" name="k_off_LR·Gd" value="0.09">
+            </parameter>
+      <parameter constant="false" id="k_Ar_Gd" metaid="COPASI63" name="k_Ar_Gd" value="0.0013">
+            </parameter>
+      <parameter constant="false" id="k_Ar_RGd" metaid="COPASI64" name="k_Ar_RGd" value="0.0013">
+            </parameter>
+      <parameter constant="false" id="k_Ar_LRGd" metaid="COPASI65" name="k_Ar_LRGd" value="0.0013">
+            </parameter>
+      <parameter constant="false" id="tot_LR" metaid="COPASI66" name="tot_LR" value="0">
+            </parameter>
+      <parameter constant="false" id="tot_RG" metaid="COPASI67" name="tot_RG" value="0">
+            </parameter>
+      <parameter constant="false" id="tot_G" metaid="COPASI68" name="tot_G" value="520.918367346939">
+            </parameter>
+      <parameter constant="false" id="tot_Gd" metaid="COPASI69" name="tot_Gd" value="0">
+            </parameter>
+      <parameter constant="false" id="tot_Gt" metaid="COPASI70" name="tot_Gt" value="0">
+            </parameter>
+      <parameter constant="true" id="k_Ef_Gd" metaid="COPASI71" name="k_Ef_Gd" value="0.00062">
+            </parameter>
+      <parameter constant="false" id="k_Ef_RGd" metaid="COPASI72" name="k_Ef_RGd" value="0.00062">
+            </parameter>
+      <parameter constant="false" id="k_Ef_LRGd" metaid="COPASI73" name="k_Ef_LRGd" value="1.5">
+            </parameter>
+      <parameter constant="true" id="K_d_Gd_Gbg" metaid="COPASI74" name="K_d_Gd·Gbg" value="0.01">
+            </parameter>
+      <parameter constant="false" id="k_Hf_LRrgsGt" metaid="COPASI75" name="k_Hf_LRrgsGt" value="0.28">
+            </parameter>
+      <parameter constant="true" id="k_Hf_RrgsGt" metaid="COPASI76" name="k_Hf_RrgsGt" value="0.28">
+            </parameter>
+      <parameter constant="true" id="rgs_tot" metaid="COPASI77" name="rgs_tot" value="6000">
+            </parameter>
+      <parameter constant="true" id="K_d_R_rgs" metaid="COPASI78" name="K_d_R·rgs" value="328">
+            </parameter>
+      <parameter constant="true" id="k_off_R_rgs" metaid="COPASI79" name="k_off_R·rgs" value="3">
+            </parameter>
+      <parameter constant="false" id="k_on_R_rgs" metaid="COPASI80" name="k_on_R.rgs" value="0.0151829268292683">
+            </parameter>
+      <parameter constant="false" id="tot_Rrgs" metaid="COPASI81" name="tot_Rrgs" value="0">
+            </parameter>
+      <parameter constant="true" id="ModelValue_54" metaid="f4c47d7e-7f61-4468-afcd-c7579b04fe51" name="Initial for K_d_R·rgs" value="328">
+            </parameter>
+      <parameter constant="true" id="ModelValue_52" metaid="_646f208e-c4cc-4961-93d7-351d69708f6e" name="Initial for k_Hf_RrgsGt" value="0.28">
+            </parameter>
+      <parameter constant="true" id="ModelValue_55" metaid="c1fa11a8-a74d-4d05-a4cd-190a749ecec9" name="Initial for k_off_R·rgs" value="3">
+            </parameter>
+    </listOfParameters>
+    <listOfInitialAssignments>
+      <initialAssignment metaid="fea471c3-c444-44d6-81a0-64e13e0034a1" symbol="R">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> Rtot </ci>
+            <ci> PM </ci>
+          </apply>
+        </math>
+            </initialAssignment>
+      <initialAssignment metaid="_90e53f85-2bd6-4eee-9871-57eaa84dd73e" symbol="G">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> Gtot </ci>
+            <ci> PM </ci>
+          </apply>
+        </math>
+            </initialAssignment>
+      <initialAssignment metaid="_25307182-1dd7-4f8b-b6f3-88a232464338" symbol="rgs">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> rgs_tot </ci>
+            <ci> cyt </ci>
+          </apply>
+        </math>
+            </initialAssignment>
+      <initialAssignment metaid="_55653b8e-45b2-4a52-9ac8-8c8c91254201" symbol="ModelValue_54">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> K_d_R_rgs </ci>
+        </math>
+            </initialAssignment>
+      <initialAssignment metaid="_7c4c1f3c-1c06-451d-aed2-5b8e6d2b3e58" symbol="ModelValue_52">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_Hf_RrgsGt </ci>
+        </math>
+            </initialAssignment>
+      <initialAssignment metaid="_088c01ce-8f7b-436e-9322-b86f543b2957" symbol="ModelValue_55">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_R_rgs </ci>
+        </math>
+            </initialAssignment>
+    </listOfInitialAssignments>
+    <listOfRules>
+      <assignmentRule metaid="_7bb4512b-9f1a-4a9f-a418-e6a305f62614" variable="k_Ef_G">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_Ef_Gd </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_6a1ff8d3-683c-42f5-b95b-72dde8e2fbba" variable="k_off_LR_G">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_R_G </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_4b30439c-16e9-4874-aad6-9159c2ebfbb9" variable="tot_RG">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <plus/>
+            <ci> RG </ci>
+            <ci> RGd </ci>
+            <ci> RGt </ci>
+            <ci> LRG </ci>
+            <ci> LRGd </ci>
+            <ci> LRGt </ci>
+            <ci> RrgsG </ci>
+            <ci> RrgsGd </ci>
+            <ci> RrgsGt </ci>
+            <ci> LRrgsG </ci>
+            <ci> LRrgsGd </ci>
+            <ci> LRrgsGt </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="cb3c0ddd-9442-46e6-8ec3-87a95ffc7522" variable="k_Af_Gd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <times/>
+            <cn> 1.66 </cn>
+            <cn> 0.13 </cn>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_991bd652-8151-4c54-a90d-dca7e0a1fe08" variable="k_Hf_LRGt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_Hf_RGt </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_7378eb3e-55c0-42bf-b921-c569b6b4a64d" variable="k_Af_LRGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_Af_Gd </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="f3a6c9f7-3abb-42e5-8509-64b0b3414f24" variable="k_Af_RGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_Af_Gd </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_2b301fcc-bd5c-4117-819f-166b6ce53cd8" variable="k_on_L_R">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <times/>
+            <ci> L </ci>
+            <apply>
+              <divide/>
+              <ci> k_off_L_R </ci>
+              <ci> K_d_L_R </ci>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="faeda0c1-8785-463b-82ea-e525f5bf771c" variable="k_off_L_RG">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_L_R </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_074650af-2e72-4ce3-b245-b7ed1bdf6d0e" variable="k_on_L_RG">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <times/>
+            <ci> L </ci>
+            <apply>
+              <divide/>
+              <ci> k_off_L_RG </ci>
+              <apply>
+                <times/>
+                <ci> lambda </ci>
+                <ci> K_d_L_R </ci>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="c5ef9b30-f141-4dd0-aaf4-b779f032c853" variable="k_off_L_RGt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_L_R </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="f9078b19-bfdd-4b16-a04f-e41161a347d7" variable="k_on_L_RGt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <times/>
+            <ci> L </ci>
+            <apply>
+              <divide/>
+              <ci> k_off_L_RGt </ci>
+              <apply>
+                <times/>
+                <ci> lambda_t </ci>
+                <ci> K_d_L_R </ci>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_63d775a6-a1b7-4e1a-9285-3a8db3f2be14" variable="k_off_L_RGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_L_R </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_48a075b3-e8c0-41fe-a46b-af8b68a9d01e" variable="k_on_L_RGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <times/>
+            <ci> L </ci>
+            <apply>
+              <divide/>
+              <ci> k_off_L_RGd </ci>
+              <apply>
+                <times/>
+                <ci> lambda_d </ci>
+                <ci> K_d_L_R </ci>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="ce74a5ad-75f0-493a-9134-38916d3e2094" variable="k_on_R_G">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> k_off_R_G </ci>
+            <apply>
+              <divide/>
+              <ci> K_d_R_G </ci>
+              <cn> 1.66 </cn>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="b14c2a79-0c6d-49ca-8c46-2dae109f488b" variable="k_on_LR_G">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> k_off_LR_G </ci>
+            <apply>
+              <times/>
+              <ci> lambda </ci>
+              <apply>
+                <divide/>
+                <ci> K_d_R_G </ci>
+                <cn> 1.66 </cn>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_763ab64e-f1ea-49e0-b6d7-842eee2a4f70" variable="k_off_R_Gt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_R_G </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_7826f37f-c7f7-4770-adb5-0079886bb31d" variable="k_on_R_Gt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> k_off_R_Gt </ci>
+            <apply>
+              <times/>
+              <ci> eta </ci>
+              <apply>
+                <divide/>
+                <ci> K_d_R_G </ci>
+                <cn> 1.66 </cn>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_7909af00-9e80-4009-9f02-caf2c6617bcf" variable="k_off_LR_Gt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_R_G </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="a0cbec74-1ad1-419c-a631-1ab65772d219" variable="k_on_LR_Gt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> k_off_LR_Gt </ci>
+            <apply>
+              <times/>
+              <ci> lambda_t </ci>
+              <ci> eta </ci>
+              <apply>
+                <divide/>
+                <ci> K_d_R_G </ci>
+                <cn> 1.66 </cn>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="a261de81-d654-4dd8-a9a8-5a74af92b36c" variable="k_off_R_Gd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_R_G </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="e08a0807-1043-41eb-b0b5-adce52ad5469" variable="k_on_R_Gd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> k_off_R_Gd </ci>
+            <apply>
+              <times/>
+              <ci> rho </ci>
+              <apply>
+                <divide/>
+                <ci> K_d_R_G </ci>
+                <cn> 1.66 </cn>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_593cd4c4-e52e-4a50-8908-ff45463b1423" variable="k_off_LR_Gd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_off_R_G </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_8909f338-7ae7-4a55-adf4-d60dfe66de35" variable="k_on_LR_Gd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> k_off_LR_Gd </ci>
+            <apply>
+              <times/>
+              <ci> lambda_d </ci>
+              <ci> rho </ci>
+              <apply>
+                <divide/>
+                <ci> K_d_R_G </ci>
+                <cn> 1.66 </cn>
+              </apply>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_06328853-d55e-4dc1-a9b4-e04d82c779c9" variable="k_Ar_Gd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <times/>
+            <apply>
+              <divide/>
+              <ci> k_Af_Gd </ci>
+              <cn> 1.66 </cn>
+            </apply>
+            <ci> K_d_Gd_Gbg </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_90ce4d93-9224-46bd-b24b-20b94b83627a" variable="k_Ar_RGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <apply>
+              <times/>
+              <apply>
+                <divide/>
+                <ci> k_Af_RGd </ci>
+                <cn> 1.66 </cn>
+              </apply>
+              <ci> K_d_Gd_Gbg </ci>
+            </apply>
+            <ci> rho </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_54221815-21fd-402c-b13f-e10aeabb1563" variable="k_Ar_LRGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <apply>
+              <times/>
+              <ci> lambda </ci>
+              <apply>
+                <divide/>
+                <ci> k_Af_LRGd </ci>
+                <cn> 1.66 </cn>
+              </apply>
+              <ci> K_d_Gd_Gbg </ci>
+            </apply>
+            <apply>
+              <times/>
+              <ci> lambda_d </ci>
+              <ci> rho </ci>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="e1f6d5b4-3982-4fd2-ad08-c3824cb949cd" variable="tot_LR">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <plus/>
+            <ci> LRG </ci>
+            <ci> LRGd </ci>
+            <ci> LRGt </ci>
+            <ci> LR </ci>
+            <ci> LRrgsG </ci>
+            <ci> LRrgsGd </ci>
+            <ci> LRrgsGt </ci>
+            <ci> LRrgs </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="f46c4d85-164c-4064-87c2-1c162310db67" variable="tot_G">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <plus/>
+            <ci> G </ci>
+            <ci> LRG </ci>
+            <ci> RG </ci>
+            <ci> LRrgsG </ci>
+            <ci> RrgsG </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_2579db09-00b9-4020-89bd-348f4f56703a" variable="tot_Gd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <plus/>
+            <ci> Gd </ci>
+            <ci> LRGd </ci>
+            <ci> RGd </ci>
+            <ci> LRrgsGd </ci>
+            <ci> RrgsGd </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_38ca1434-8e9b-4890-96f6-2062f47028d5" variable="tot_Gt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <plus/>
+            <ci> Gt </ci>
+            <ci> LRGt </ci>
+            <ci> RGt </ci>
+            <ci> RrgsGt </ci>
+            <ci> LRrgsGt </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="f419c4c6-130c-4bd9-9eba-f34da8f5c916" variable="k_Ef_RGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_Ef_RG </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_781579d3-ec72-4c6a-a502-cdcc9099525d" variable="k_Ef_LRGd">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> k_Ef_LRG </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_002c3828-557a-400c-b068-396070ba231c" variable="k_Hf_LRrgsGt">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <ci> ModelValue_52 </ci>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_61aba402-595d-4894-bf45-53e479ed8cad" variable="k_on_R_rgs">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <divide/>
+            <ci> ModelValue_55 </ci>
+            <apply>
+              <divide/>
+              <ci> ModelValue_54 </ci>
+              <cn> 1.66 </cn>
+            </apply>
+          </apply>
+        </math>
+            </assignmentRule>
+      <assignmentRule metaid="_1ad9b764-9397-4db3-b70c-e38dc4a406dc" variable="tot_Rrgs">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">        
+          <apply>
+            <plus/>
+            <ci> LRrgs </ci>
+            <ci> LRrgsG </ci>
+            <ci> LRrgsGd </ci>
+            <ci> LRrgsGt </ci>
+            <ci> Rrgs </ci>
+            <ci> RrgsG </ci>
+            <ci> RrgsGd </ci>
+            <ci> RrgsGt </ci>
+          </apply>
+        </math>
+            </assignmentRule>
+    </listOfRules>
+    <listOfReactions>
+      <reaction fast="false" id="binding_R_rgs" metaid="COPASI120" name="binding_R·rgs" reversible="true" sboTerm="SBO:0000177">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="da182b5d-edd0-4152-9401-184ce9f44c06" species="R" stoichiometry="1"/>
+          <speciesReference constant="true" metaid="_6e1f9772-89ba-49ff-aa6f-fe3f37792977" species="rgs" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="_0d3064eb-a179-43b1-a388-7d94607811cd" species="Rrgs" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="_24d8130e-7587-43bf-bc39-cf10d2519444">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <minus/>
+              <apply>
+                <times/>
+                <ci> k_on_R_rgs </ci>
+                <ci> R </ci>
+                <ci> rgs </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> k_off_R_rgs </ci>
+                <ci> Rrgs </ci>
+              </apply>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+      <reaction fast="false" id="binding_LRG_rgs" metaid="COPASI123" name="binding_LRG·rgs" reversible="true" sboTerm="SBO:0000177">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="f4dd9d0f-b3ba-490b-9565-2008cc731e7f" species="LRG" stoichiometry="1"/>
+          <speciesReference constant="true" metaid="_972a66b6-2256-4846-abfa-fab2f586ca93" species="rgs" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="e5817927-3a2b-411e-bf0f-797b33545287" species="LRrgsG" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="e92a0f48-383d-4ac8-8b7d-0a160a984db7">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <minus/>
+              <apply>
+                <times/>
+                <ci> k_on_R_rgs </ci>
+                <ci> LRG </ci>
+                <ci> rgs </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> k_off_R_rgs </ci>
+                <ci> LRrgsG </ci>
+              </apply>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+      <reaction fast="false" id="binding_RGt_rgs" metaid="COPASI124" name="binding_RGt·rgs" reversible="true" sboTerm="SBO:0000177">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="_18ad9705-8654-476d-ac93-a3aa38e7bdb9" species="RGt" stoichiometry="1"/>
+          <speciesReference constant="true" metaid="_6be66775-947c-4b95-a429-f7a38e3a2f2b" species="rgs" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="b4a48442-91ab-4d70-a0e4-ab0980a6eaae" species="RrgsGt" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="b6d3f029-d37f-4b4a-8927-8d8dc6aa5f65">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <minus/>
+              <apply>
+                <times/>
+                <ci> k_on_R_rgs </ci>
+                <ci> RGt </ci>
+                <ci> rgs </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> k_off_R_rgs </ci>
+                <ci> RrgsGt </ci>
+              </apply>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+      <reaction fast="false" id="binding_LRGt_rgs" metaid="COPASI125" name="binding_LRGt·rgs" reversible="true" sboTerm="SBO:0000177">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="f35115ec-d79b-43a4-87a2-4aba648d4a78" species="LRGt" stoichiometry="1"/>
+          <speciesReference constant="true" metaid="_858da9b6-4785-48f7-85dd-648cd6805839" species="rgs" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="dedaf5b6-3bcb-4b19-9bce-693ff6ee665e" species="LRrgsGt" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="_3c3452e7-5936-47a3-9184-0f5902b60a48">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <minus/>
+              <apply>
+                <times/>
+                <ci> k_on_R_rgs </ci>
+                <ci> LRGt </ci>
+                <ci> rgs </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> k_off_R_rgs </ci>
+                <ci> LRrgsGt </ci>
+              </apply>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+      <reaction fast="false" id="binding_RGd_rgs" metaid="COPASI126" name="binding_RGd·rgs" reversible="true" sboTerm="SBO:0000177">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="_942355c7-d86f-4ee1-a7f3-f4c7887a6eec" species="RGd" stoichiometry="1"/>
+          <speciesReference constant="true" metaid="ba872fd5-e9fd-43ea-9580-d8a31a6372dc" species="rgs" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="_9c147296-1305-424a-9c36-b1f7bd9b3c4d" species="RrgsGd" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="_021b8a5e-8c5f-4a34-9099-efb689b5bcff">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <minus/>
+              <apply>
+                <times/>
+                <ci> k_on_R_rgs </ci>
+                <ci> RGd </ci>
+                <ci> rgs </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> k_off_R_rgs </ci>
+                <ci> RrgsGd </ci>
+              </apply>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+      <reaction fast="false" id="binding_LRGd_rgs" metaid="COPASI127" name="binding_LRGd·rgs" reversible="true" sboTerm="SBO:0000177">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="defcec92-d29c-40df-81f7-6bfe8a1fbf39" species="LRGd" stoichiometry="1"/>
+          <speciesReference constant="true" metaid="_5680c12b-4b0a-4d98-ae9f-776af81e62ca" species="rgs" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="_6d605998-d3d6-4c3e-bba1-903653b5bf6e" species="LRrgsGd" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="_536b1515-139e-425a-a1b8-4d110ccc346b">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <minus/>
+              <apply>
+                <times/>
+                <ci> k_on_R_rgs </ci>
+                <ci> LRGd </ci>
+                <ci> rgs </ci>
+              </apply>
+              <apply>
+                <times/>
+                <ci> k_off_R_rgs </ci>
+                <ci> LRrgsGd </ci>
+              </apply>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+      <reaction fast="false" id="hydrolysis_LRrgsGt" metaid="COPASI128" name="hydrolysis_LRrgsGt" reversible="false" sboTerm="SBO:0000376">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="_246248cc-3544-41e6-bb87-efdd50a62c1d" species="LRrgsGt" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="_60b24f07-c3f3-43d5-9dca-b3d0941cf6c5" species="LRrgsGd" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="_9c5cc08f-2bbb-401d-8f27-f19850bef2d4">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <times/>
+              <ci> PM </ci>
+              <ci> k_Hf_LRrgsGt </ci>
+              <ci> LRrgsGt </ci>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+      <reaction fast="false" id="hydrolysis_RrgsGt" metaid="COPASI129" name="hydrolysis_RrgsGt" reversible="false" sboTerm="SBO:0000376">
+              <listOfReactants>
+          <speciesReference constant="true" metaid="f843f3ac-d75c-4f6f-ada4-c1dd7a75e75a" species="RrgsGt" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference constant="true" metaid="a01fdf5b-84e7-48eb-af1c-d4a11d9fd4d9" species="RrgsGd" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw metaid="_497e697e-0da9-4c7d-bae0-0e02f8f119d6">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">          
+            <apply>
+              <times/>
+              <ci> PM </ci>
+              <ci> k_Hf_RrgsGt </ci>
+              <ci> RrgsGt </ci>
+            </apply>
+          </math>
+                </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>

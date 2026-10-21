@@ -77,6 +77,30 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
             "function."
         ),
     },
+    "BIOMD0000000638": {
+        "layer": "atomizer",
+        "construct": "compartment size in a scaled unit",
+        "summary": (
+            "The unit conversion multiplied the declared size by the double "
+            "approximation of the conversion factor, which rounds the product "
+            "twice.  The scaled size was one unit in the last place away from "
+            "the value the source states, and the record's rate laws divide by "
+            "it, so the rate coefficients are of order 1e19 and the model is "
+            "stiff: that one unit stopped libRoadRunner's CVODE from taking its "
+            "first step."
+        ),
+    },
+    "BIOMD0000000954": {
+        "layer": "atomizer",
+        "construct": "rate law that names a species the reaction does not consume",
+        "summary": (
+            "The numeric mass-action probe replaced the state-dependent rate "
+            "law of the Cdh1dp production with a fitted constant, so the "
+            "emitted model was a snapshot of the law at the probe points "
+            "rather than the law itself.  The constant changed with the probe, "
+            "so the record's status was not reproducible at a fixed commit."
+        ),
+    },
     "BIOMD0000001098": {
         "layer": "atomizer",
         "construct": "MathML <apply> without an operator",
@@ -268,6 +292,26 @@ BRANCH_EFFECT: dict[str, dict[str, Any]] = {
             "initial assignment sets; the compartment was rewritten to the "
             "constant volume parameter, producing a call to an undeclared "
             "function."
+        ),
+    },
+    "BIOMD0000000638": {
+        "construct": "compartment size in a scaled unit",
+        "main": "failed",
+        "branch": "passed",
+        "cause": (
+            "The scaled compartment size was one unit in the last place away "
+            "from the value the source states, and the independent oracle "
+            "failed to converge on it."
+        ),
+    },
+    "BIOMD0000000954": {
+        "construct": "rate law that names a species the reaction does not consume",
+        "main": "failed",
+        "branch": "passed",
+        "cause": (
+            "A state-dependent rate law was replaced by a numerically fitted "
+            "constant, so the exported model was not the model the source "
+            "states."
         ),
     },
     "BIOMD0000001098": {
