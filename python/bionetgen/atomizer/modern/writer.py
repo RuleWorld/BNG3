@@ -4358,26 +4358,40 @@ def _seed_symbol_values(
 ) -> Dict[str, float]:
     """Resolve numeric SBML values needed by expression-valued seed species.
 
-    Initial values are established in SBML specification order (SBML Level 3
-    Core \u00a74.8 "Rules" and \u00a74.11: assignment rules determine their targets'
-    values at t=0 before initial assignments are evaluated, so an initial
-    assignment may reference a variable defined by an assignment rule):
+    Initial values are established in SBML specification order:
 
       1. explicit initial values from attributes (parameter ``value``,
          compartment ``size``, species amount/concentration) form the base;
-      2. assignment rules determine the t=0 value of their targets.  A
-         ``constant="false"`` parameter without a ``value`` attribute has no
-         defined initial value in SBML, so it is deliberately left out of the
-         base here -- its assignment rule supplies the value instead of a
-         silent default ``0`` that would shadow the rule;
-      3. initial assignments are then evaluated using those values and may
-         reference assignment-rule targets and other initial assignments.
+      2. the assignment rules and the initial assignments form one set of
+         assignment statements (Sec. 4.9.5) and are resolved together to a
+         fixpoint.  An assignment rule holds for all time, t >= 0, and
+         overrides the value assigned to its target by the object defining
+         that symbol (Sec. 4.9.3), so an initial assignment that reads a
+         rule-defined variable observes the rule's value -- the official
+         SBML Test Suite requires this (e.g. semantic/00617).  An initial
+         assignment that reads another initial assignment's target observes
+         that initial assignment's value (Sec. 4.8.4);
+      3. a model must not contain both an assignment rule and an initial
+         assignment for the same variable: that would be indeterminate
+         (Sec. 4.9.3, Sec. 4.8.4).  BNG3 resolves that invalid combination
+         deterministically: the initial assignment's value is what the other
+         initial assignments observe, and the assignment rule still governs
+         the variable's own value in the emitted model.
+
+    A symbol that no construct establishes a value for -- a parameter with no
+    value attribute, no rule and no initial assignment -- is underdetermined
+    rather than invalid, and SBML stipulates no particular course of action
+    for it (Sec. 3.4.9).  BNG3 leaves such a value out of the table instead
+    of inventing a 0, so an expression that reads it stays unresolved rather
+    than silently becoming 0.
 
     Seed species expressions are folded last so their resolved amounts become
     available to later retries of the initial-assignment loop.
     """
 
     symbols: Dict[str, float] = {}
+    rule_values: Dict[str, float] = {}
+    ia_values: Dict[str, float] = {}
     _add_seed_symbol(symbols, "__Avogadro__", 1)
     # SBML initial assignments are evaluated at t=0.  Treat the built-in time
     # symbol as that initial value so expression-valued seeds become numeric
@@ -4386,8 +4400,9 @@ def _seed_symbol_values(
 
     # --- Base: explicit initial values from attributes ---------------------
     # A constant parameter defaults to 0 when SBML omits its ``value``
-    # attribute.  A non-constant parameter without a ``value`` attribute has no
-    # defined initial value and is deliberately not added here.
+    # attribute.  A non-constant parameter without a ``value`` attribute has
+    # no established value (Sec. 3.4.9), so it is deliberately left out of
+    # the table rather than filled in with a 0.
     for parameter_id, parameter in model.parameters.items():
         if parameter.value_set or parameter.constant:
             _add_seed_symbol(symbols, parameter_id, parameter.value)
@@ -4429,12 +4444,31 @@ def _seed_symbol_values(
             value in species_ids or standardize_name(value) in standardized_species_ids
         )
 
-    def set_resolved(identifier: object, expression: object) -> bool:
-        """Resolve an expression and (re)set its symbol, overriding any prior value."""
-        if identifier is None or not expression:
-            return False
-        value = _substitute_seed_symbols(str(expression), symbols)
-        return _set_seed_symbol_if_changed(symbols, identifier, value)
+    def resolved_values() -> Dict[str, float]:
+        """The values that are visible while an expression is resolved.
+
+        The initial assignments and the assignment rules are resolved
+        together, and this view decides which value each variable shows:
+
+        * a variable an initial assignment has established shows that
+          initial assignment's value, so one initial assignment may reference
+          another;
+        * otherwise a variable an assignment rule defines shows the rule's
+          value, because an assignment rule holds for all time and its target
+          already carries that value at t=0;
+        * otherwise the variable shows its declared attribute value.
+
+        A variable named by both an assignment rule and an initial assignment
+        is not valid SBML (Sec. 4.9.3), so that case is not specified.  This
+        view merges the two maps in that order, so it holds the initial
+        assignment's value for such a variable; the assignment rule still
+        governs the variable's own value in the emitted model.
+        """
+
+        merged = dict(symbols)
+        merged.update(rule_values)
+        merged.update(ia_values)
+        return merged
 
     for _ in range(12):
         changed = False
@@ -4450,14 +4484,19 @@ def _seed_symbol_values(
             ):
                 continue
             value = _substitute_seed_symbols(
-                str(getattr(function, "math", "") or ""), symbols
+                str(getattr(function, "math", "") or ""), resolved_values()
             )
             if value is not None:
                 for candidate in candidates:
                     changed = _add_seed_symbol(symbols, candidate, value) or changed
 
-        # Assignment rules determine their targets' t=0 values and override
-        # attribute defaults.  Species assignment rules are handled elsewhere
+        # The assignment rules and the initial assignments are resolved
+        # together to a fixpoint; ``resolved_values`` decides which value
+        # each variable shows.  The rules are resolved first in each pass, so
+        # an initial assignment that reads a rule-defined variable observes
+        # the rule's value.  The rule value is kept in its own map so that
+        # resolving a rule never overwrites an initial assignment for the
+        # same variable.  Species assignment rules are handled elsewhere
         # (_fold_static_species_assignments) and are not resolved here.
         for rule in model.rules:
             variable = getattr(rule, "variable", None)
@@ -4465,19 +4504,33 @@ def _seed_symbol_values(
                 continue
             if is_species(variable):
                 continue
-            changed = set_resolved(variable, getattr(rule, "math", "")) or changed
+            value = _substitute_seed_symbols(
+                str(getattr(rule, "math", "") or ""), resolved_values()
+            )
+            if value is None:
+                continue
+            changed = (
+                _set_seed_symbol_if_changed(rule_values, variable, value) or changed
+            )
 
-        # Initial assignments are evaluated after assignment rules so they can
-        # reference rule-derived values, and they override attribute defaults.
+        # The initial assignments replace the declared value of their target,
+        # and one of them may reference a variable that another initial
+        # assignment defines, so they are resolved against each other too.
         for assignment in model.initial_assignments:
             symbol = getattr(assignment, "symbol", "")
-            changed = set_resolved(symbol, getattr(assignment, "math", "")) or changed
+            value = _substitute_seed_symbols(
+                str(getattr(assignment, "math", "") or ""), resolved_values()
+            )
+            if value is None:
+                continue
+            changed = _set_seed_symbol_if_changed(ia_values, symbol, value) or changed
 
         for seed in seed_species:
             identifier = seed.sbml_id
-            if identifier in symbols or standardize_name(identifier) in symbols:
+            values = resolved_values()
+            if identifier in values or standardize_name(identifier) in values:
                 continue
-            value = _substitute_seed_symbols(str(seed.concentration), symbols)
+            value = _substitute_seed_symbols(str(seed.concentration), values)
             if value is None:
                 continue
             changed = _add_seed_symbol(symbols, identifier, value) or changed
@@ -4494,7 +4547,7 @@ def _seed_symbol_values(
         if not changed:
             break
 
-    return symbols
+    return resolved_values()
 
 
 def _map_seed_identifiers(expression: str, model: SBMLModel) -> str:

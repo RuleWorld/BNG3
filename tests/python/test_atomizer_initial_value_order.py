@@ -1,19 +1,52 @@
-"""Regression tests for SBML initial-value resolution order in seed species.
+"""Regression tests for SBML initial-value resolution in seed species.
 
-These tests cover the spec-mandated ordering (SBML Level 3 Version 2 Core
-\u00a74.8 "Rules" and \u00a74.11): assignment rules determine their targets'
-values at t=0 before initial assignments are evaluated, so an initial
-assignment may reference a variable defined by an assignment rule.  A
-non-constant parameter without a ``value`` attribute has no defined initial
-value and must not be seeded with the default 0, which would shadow its
-assignment rule.
+SBML determines a model's initial values from the model's assignment
+statements considered as a whole (Sec. 4.8.4, "Semantics of initial
+assignments"; Sec. 4.9.5, "Additional restrictions on rules").  Two
+consequences matter here:
 
-Each regression is derived from the SBML Test Suite semantics (official
-reference data are authoritative) and must fail on the unfixed source.
+* an initial assignment that reads a variable an assignment rule defines
+  observes the rule's value, because an assignment rule holds for all time
+  and overrides the value its target's definition gives it (Sec. 4.9.3).  The
+  official SBML Test Suite requires this: semantic/00617 and seventeen
+  further cases have that shape, and in every one of them the rule target has
+  no declared value;
+* an initial assignment that reads a variable another initial assignment
+  defines observes that initial assignment's value, not the value given in
+  the symbol's definition (Sec. 4.8.4).
+
+A model that names the same variable in an assignment rule and an initial
+assignment is **not valid SBML** -- it would be indeterminate (Sec. 4.9.3) --
+so the specification says nothing about it.  The two tests that build such a
+model pin BNG3's deterministic tie-break for that invalid combination; they
+do not assert a specified behaviour.
+
+A symbol that no construct establishes a value for is underdetermined rather
+than invalid (Sec. 3.4.9).  BNG3 leaves such a value unresolved instead of
+inventing a 0, and one test pins that.
+
+The expected values were derived offline with libRoadRunner 2.10.0 as an
+independent oracle; the tests themselves do not import it.
+
+What each test discriminates:
+
+* ``test_assignment_rule_value_precedes_initial_assignment``,
+  ``test_initial_assignment_references_assignment_rule_target``,
+  ``test_non_constant_parameter_without_value_is_not_seeded_zero``,
+  ``test_assignment_rule_reads_initial_assignment_value`` and
+  ``test_parameter_without_value_is_not_silently_seeded_zero`` fail against
+  the source before PR #316;
+* ``test_initial_assignment_group_resolves_before_assignment_rules`` fails
+  against the source before this change, which resolved the invalid
+  combination by a different route;
+* ``test_assignment_rule_governs_variable_named_by_initial_assignment`` and
+  ``test_initial_assignment_chain`` pass on every source tried; they pin
+  behaviour that must not drift.
 """
 
 from __future__ import annotations
 
+import re
 from collections import OrderedDict
 
 import pytest
@@ -40,6 +73,26 @@ def _math(math: str) -> str:
         f'<math xmlns="{SBML_NS}"><apply><times/>{math}</apply></math>'
         if "<" not in math
         else f'<math xmlns="{SBML_NS}">{math}</math>'
+    )
+
+
+def _initial_assignment(symbol: str, math: str) -> str:
+    return (
+        '<initialAssignment symbol="'
+        + symbol
+        + '">'
+        + _math(math)
+        + "</initialAssignment>"
+    )
+
+
+def _assignment_rule(variable: str, math: str) -> str:
+    return (
+        '<assignmentRule variable="'
+        + variable
+        + '">'
+        + _math(math)
+        + "</assignmentRule>"
     )
 
 
@@ -264,3 +317,177 @@ def test_concentration_species_initial_assignment_applies_volume():
         model, sct, get_molecule_types(sct), get_seed_species(sct, model)
     )
     assert "@cell:M_S1() 0.2" in bngl, bngl
+
+
+def _overlap_sbml(
+    initial_assignments: str,
+    rules: str,
+    parameters: str = '<parameter id="p" constant="false"/>',
+    species: str = (
+        '<species id="S1" compartment="C" initialAmount="0"'
+        ' hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>'
+        '<species id="S2" compartment="C" initialAmount="0"'
+        ' hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>'
+    ),
+) -> str:
+    """Build a small SBML model that exercises initial-value resolution."""
+
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+      <model id="overlap">
+        <listOfCompartments>
+          <compartment id="C" spatialDimensions="3" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>{species}</listOfSpecies>
+        <listOfParameters>{parameters}</listOfParameters>
+        <listOfInitialAssignments>{initial_assignments}</listOfInitialAssignments>
+        {rules}
+        <listOfReactions>
+          <reaction id="R0" reversible="false">
+            <listOfReactants>
+              <speciesReference species="S1" stoichiometry="1" constant="true"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="S1" stoichiometry="1" constant="true"/>
+            </listOfProducts>
+            <kineticLaw><math xmlns="{SBML_NS}"><cn>0</cn></math></kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>
+    """
+
+
+def _bngl_function(bngl: str, name: str) -> str:
+    match = re.search(rf"(?m)^\s*{re.escape(name)}\(\)\s*=\s*(.+)$", bngl)
+    assert match is not None, f"{name}() is not emitted:\n{bngl}"
+    return match.group(1).strip()
+
+
+def test_initial_assignment_group_resolves_before_assignment_rules():
+    # The model below is NOT valid SBML: an assignment rule and an initial
+    # assignment name the same variable, which Sec. 4.9.3 declares
+    # indeterminate.  Nothing is specified for it, so this test pins BNG3's
+    # deterministic tie-break and nothing more.  The tie-break is that the
+    # initial assignment's value is what the other initial assignments
+    # observe, so S1 = p and S2 = S1 both see p's initial assignment value 3,
+    # while the assignment rule still gives p its own value 5.
+    # libRoadRunner 2.10.0 reports the same t=0 values (S1 = 3, S2 = 3,
+    # p = 5) for this model.
+    sbml = _overlap_sbml(
+        initial_assignments=(
+            _initial_assignment("S1", "<ci>p</ci>")
+            + _initial_assignment("p", "<cn>3</cn>")
+            + _initial_assignment("S2", "<ci>S1</ci>")
+        ),
+        rules="<listOfRules>" + _assignment_rule("p", "<cn>5</cn>") + "</listOfRules>",
+    )
+    res = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert res.success, res.error
+    seeds = _bngl_seed_lines(res.bngl)
+    assert seeds["S1"] == pytest.approx(3.0, abs=1e-9), seeds
+    assert seeds["S2"] == pytest.approx(3.0, abs=1e-9), seeds
+
+
+def test_assignment_rule_governs_variable_named_by_initial_assignment():
+    # The model below is NOT valid SBML: p is named by both an initial
+    # assignment and an assignment rule, which Sec. 4.9.3 declares
+    # indeterminate.  Nothing is specified for it, so this test pins BNG3's
+    # deterministic tie-break: the initial assignment's value is what the
+    # other initial assignments observe (S1 = 2 * 3 = 6), while the
+    # assignment rule still governs p's own value in the emitted model
+    # (p() = 5).  libRoadRunner 2.10.0 reports the same t=0 values
+    # (S1 = 6, p = 5) for this model.
+    sbml = _overlap_sbml(
+        initial_assignments=(
+            _initial_assignment("p", "<cn>3</cn>")
+            + _initial_assignment("S1", "<apply><times/><cn>2</cn><ci>p</ci></apply>")
+        ),
+        rules="<listOfRules>" + _assignment_rule("p", "<cn>5</cn>") + "</listOfRules>",
+    )
+    res = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert res.success, res.error
+    seeds = _bngl_seed_lines(res.bngl)
+    assert seeds["S1"] == pytest.approx(6.0, abs=1e-9), seeds
+    # The rule determines the value of p itself.
+    assert _bngl_function(res.bngl, "p") == "5", res.bngl
+
+
+def test_assignment_rule_reads_initial_assignment_value():
+    # The initial assignments are evaluated first, so the rule p = q + 1 sees
+    # q's initial assignment value 3 and gives p = 4.  libRoadRunner reports
+    # p = 4 and S1 = 2 * 4 = 8 at t=0.
+    sbml = _overlap_sbml(
+        initial_assignments=(
+            _initial_assignment("q", "<cn>3</cn>")
+            + _initial_assignment("S1", "<apply><times/><cn>2</cn><ci>p</ci></apply>")
+        ),
+        rules=(
+            "<listOfRules>"
+            + _assignment_rule("p", "<apply><plus/><ci>q</ci><cn>1</cn></apply>")
+            + "</listOfRules>"
+        ),
+        parameters=(
+            '<parameter id="p" value="1" constant="true"/>'
+            '<parameter id="q" value="1" constant="true"/>'
+        ),
+    )
+    res = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert res.success, res.error
+    seeds = _bngl_seed_lines(res.bngl)
+    assert seeds["S1"] == pytest.approx(8.0, abs=1e-9), seeds
+    assert _bngl_function(res.bngl, "p") == "3 + 1", res.bngl
+
+
+def test_parameter_without_value_is_not_silently_seeded_zero():
+    # A constant="false" parameter with no value attribute, no rule and no
+    # initial assignment is underdetermined rather than invalid (Sec. 3.4.9),
+    # and SBML stipulates no particular course of action for it.  BNG3 leaves
+    # the value out of the table, so an initial assignment that reads it
+    # stays unresolved -- the seed keeps the symbolic expression instead of
+    # silently becoming 0.  libRoadRunner refuses such a model outright
+    # ("Global parameter 'k' is missing a value"), so the symbolic seed is
+    # the honest rendering.
+    sbml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+      <model id="undefined_parameter">
+        <listOfCompartments>
+          <compartment id="C" spatialDimensions="3" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S1" compartment="C" initialAmount="0"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false"
+                   constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="k" name="k" constant="false"/>
+        </listOfParameters>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="S1">
+            <math xmlns="{SBML_NS}"><apply><times/><cn>2</cn><ci>k</ci></apply></math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+      </model>
+    </sbml>
+    """
+    res = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert res.success, res.error
+    in_seed = False
+    emitted = []
+    for line in res.bngl.splitlines():
+        stripped = line.strip()
+        if stripped == "begin seed species":
+            in_seed = True
+            continue
+        if stripped == "end seed species":
+            break
+        if in_seed and stripped:
+            emitted.append(stripped)
+    assert emitted, res.bngl
+    amounts = [entry.split()[-1] for entry in emitted]
+    # The undefined variable must not be resolved to the number 0.
+    assert "0" not in amounts, res.bngl
+    assert "0.0" not in amounts, res.bngl
+    # The seed keeps the unresolved expression, so the model does not claim a
+    # value the source never established.
+    assert any("k" in amount for amount in amounts), res.bngl

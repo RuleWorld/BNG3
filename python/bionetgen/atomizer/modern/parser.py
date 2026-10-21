@@ -145,6 +145,16 @@ _IDENTIFIER_PATTERN = re.compile(
 )
 
 
+# The SBML ``time`` csymbol is the simulation clock, not a model symbol: its
+# ``definitionURL`` identifies it and its text is only a display label.  A model
+# may nevertheless declare a parameter called ``time``, and the identifier
+# rewrite that maps source spellings onto canonical ids would retarget the
+# csymbol onto that parameter.  The MathML conversion therefore renders the
+# csymbol with this token, which no identifier rewrite can match, and the
+# clock spelling is restored once the rewrite is done.
+_TIME_CSYMBOL_TOKEN = "__sbml_time_csymbol__"
+
+
 def _csymbol_kind(element: Any) -> str:
     """Return the SBML symbol a ``csymbol`` element denotes.
 
@@ -724,7 +734,7 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
         if tag == "csymbol":
             kind = _csymbol_kind(element)
             if kind == "time":
-                return "time"
+                return _TIME_CSYMBOL_TOKEN
             if kind == "avogadro":
                 return format(_SBML_AVOGADRO_VALUE, ".15g")
             if kind == "delay":
@@ -732,7 +742,7 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
             if kind == "rateOf":
                 return "rateOf"
         if "symbols/time" in definition_url:
-            return "time"
+            return _TIME_CSYMBOL_TOKEN
         if "symbols/avogadro" in definition_url:
             return format(_SBML_AVOGADRO_VALUE, ".15g")
         if "symbols/delay" in definition_url:
@@ -3058,16 +3068,21 @@ class SBMLParser:
                 canonical = str(canonical or "").strip()
                 if alias and canonical and alias != canonical:
                     mapping.setdefault(alias, canonical)
-        if not mapping:
-            return normalized
-        # Longest alternative first. The trailing lookahead already makes
-        # the match unambiguous, but ordering by length keeps the engine from
-        # backtracking through every shorter prefix of a longer alias.
-        alternatives = "|".join(
-            re.escape(alias) for alias in sorted(mapping, key=len, reverse=True)
-        )
-        pattern = re.compile(rf"(?<![A-Za-z0-9_])(?:{alternatives})(?![A-Za-z0-9_])")
-        return pattern.sub(lambda match: mapping[match.group(0)], normalized)
+        if mapping:
+            # Longest alternative first. The trailing lookahead already makes
+            # the match unambiguous, but ordering by length keeps the engine from
+            # backtracking through every shorter prefix of a longer alias.
+            alternatives = "|".join(
+                re.escape(alias) for alias in sorted(mapping, key=len, reverse=True)
+            )
+            pattern = re.compile(
+                rf"(?<![A-Za-z0-9_])(?:{alternatives})(?![A-Za-z0-9_])"
+            )
+            normalized = pattern.sub(lambda match: mapping[match.group(0)], normalized)
+        # The SBML ``time`` csymbol is the simulation clock, not a model
+        # symbol, so it is restored to the clock spelling only now that the
+        # model identifiers have been rewritten.
+        return normalized.replace(_TIME_CSYMBOL_TOKEN, "time")
 
     @staticmethod
     def _parse_xml_model(
