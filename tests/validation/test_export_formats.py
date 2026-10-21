@@ -155,7 +155,7 @@ begin molecule types
     A()
 end molecule types
 begin actions
-    readFile({{file=>\"{net_input.as_posix()}\"}})
+    readFile({{file=>"{net_input.as_posix()}"}})
     writeNetwork({{overwrite=>1}})
 end actions
 """,
@@ -328,8 +328,8 @@ end groups
     B()
 end molecule types
 begin actions
-    readFile({{file=>\"{net_input.as_posix()}\"}})
-    simulate({{method=>\"ode\",t_end=>1,n_steps=>1,prefix=>\"trajectory\"}})
+    readFile({{file=>"{net_input.as_posix()}"}})
+    simulate({{method=>"ode",t_end=>1,n_steps=>1,prefix=>"trajectory"}})
     writeNetwork({{overwrite=>1}})
 end actions
 """,
