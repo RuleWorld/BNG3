@@ -2,8 +2,9 @@
 
 SBML determines a model's initial values from the model's assignment
 statements considered as a whole (Sec. 4.8.4, "Semantics of initial
-assignments"; Sec. 4.9.5, "Additional restrictions on rules").  Two
-consequences matter here:
+assignments"; Sec. 4.9.5, "Additional restrictions on rules"; Sec. 3.4.8,
+ "Initial conditions and special considerations", for the order in which
+the values at t <= 0 are established).  Two consequences matter here:
 
 * an initial assignment that reads a variable an assignment rule defines
   observes the rule's value, because an assignment rule holds for all time

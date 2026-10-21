@@ -1278,6 +1278,43 @@ def _mask_reaction_local_rate_of(expression: str, kinetic_law: Any) -> str:
     return masked
 
 
+def _fast_reaction_rule(level: Optional[int], version: Optional[int]) -> str:
+    """State the fast-reaction rule that a document's SBML level defines.
+
+    SBML Level 3 Version 2 Core Sec. 4.11 removed the ``fast`` attribute:
+    "every Reaction in a L3V2 model is equivalent to an SBML Level 3
+    Version 1 Reaction with a fast value of false".  The pseudo
+    steady-state approximation therefore belongs to Level 3 Version 1 and
+    Level 2, whose Sec. 4.11 asks that "software tools should use a pseudo
+    steady-state approximation for the set of fast reactions when
+    constructing the system of equations for the model".
+
+    The Reactions section is Sec. 4.11 in Level 3 and in Level 2 Version 3
+    and earlier; Level 2 Version 4 added Compartment types and Species
+    types and moved it to Sec. 4.13.
+    """
+
+    if level == 3 and version is not None and version >= 2:
+        return (
+            "SBML Level 3 Version 2 Core Sec. 4.11 removed the fast attribute; "
+            "a document that still sets it states the Level 3 Version 1 / "
+            "Level 2 intent, whose rule asks for a pseudo steady-state "
+            "approximation of such a reaction"
+        )
+    if level == 3:
+        return (
+            "SBML Level 3 Version 1 Core Sec. 4.11 asks for a pseudo "
+            "steady-state approximation of such a reaction"
+        )
+    if level == 2:
+        section = "4.13" if version is not None and version >= 4 else "4.11"
+        return (
+            f"SBML Level 2 Sec. {section} asks for a pseudo steady-state "
+            "approximation of such a reaction"
+        )
+    return "SBML asks for a pseudo steady-state approximation of such a reaction"
+
+
 def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
     """Inline ``rateOf`` calls whose targets have explicit SBML rate rules.
 
@@ -3510,11 +3547,11 @@ class SBMLParser:
                         "category": "fastReaction",
                         "message": (
                             f'Reaction "{reaction_id}" is marked fast '
-                            '(fast="true"); SBML Level 3 Core Sec. 4.11 asks '
-                            "for a pseudo steady-state approximation of such a "
-                            "reaction, so treating it as an ordinary reaction "
-                            "changes the trajectory. BNG3 has no fast-equilibrium "
-                            "solve, so it is treated as an ordinary reaction."
+                            '(fast="true"); '
+                            + _fast_reaction_rule(result.level, result.version)
+                            + ", so treating it as an ordinary reaction changes "
+                            "the trajectory. BNG3 has no fast-equilibrium solve, "
+                            "so it is treated as an ordinary reaction."
                         ),
                         "count": 1,
                         "severity": "approximated",

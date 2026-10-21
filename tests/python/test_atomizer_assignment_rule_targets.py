@@ -1,10 +1,10 @@
 """Regression tests for assignment rules whose target is a parameter.
 
-SBML Level 3 Version 2 Core (Sec. 4.8) says that a species identifier in a
-mathematical expression denotes the species' *amount* or *concentration*,
-depending on its ``hasOnlySubstanceUnits`` attribute.  An assignment rule
-whose target is a parameter therefore carries that quantity, and the Atomizer
-has to report it exactly.
+SBML Level 3 Version 2 Core (Sec. 4.6 "Species") says that a species
+identifier in a mathematical expression denotes the species' *amount* or
+*concentration*, depending on its ``hasOnlySubstanceUnits`` attribute.  An
+assignment rule whose target is a parameter therefore carries that quantity,
+and the Atomizer has to report it exactly.
 
 No BNGL observable can report a concentration: a ``Molecules`` observable
 counts molecules, and a ``Species`` observable of a pattern reports the same

@@ -115,6 +115,27 @@ most important fact in the campaign: most of the remaining official coverage
 gap is not an Atomizer defect. The generated baseline table above gives the
 exact counts, grouped by the component that owns each blocking reason.
 
+The gap taxonomy counts every gap at every stage of the gate, and the side
+each gap falls on is the most important remaining structural fact about the
+campaign's coverage:
+
+| Side | n | What it is |
+| --- | --- | --- |
+| harness | 558 | a **measurement** limitation: the model converts and runs, but the gate cannot evaluate it (439 scheduled actions, 100 stochastic ensembles, 19 result mappings) |
+| Atomizer | 286 | a **representational** limitation: the model uses a construct BNGL cannot say (95 at the official-reference stage — 35 fast reactions, 28 untranslated events, 16 empty MathML, 9 delay, … — and 191 at the conversion stage) |
+| not applicable | 34 | the case defines no official time-course reference |
+
+A harness-side gap is a statement about the *measurement*, not about the
+model: the official suite exercises a construct BNG3 can represent and the
+gate is what cannot yet evaluate it. An Atomizer-side gap is a statement
+about the *representation*: the model uses something BNGL cannot say. The
+first kind is the campaign's remaining instrumentation work, the second is
+its remaining coverage work, and they need different fixes.
+
+_Source: the measurement of `main` in the generated current tables above
+(878 gaps in all: 191 at the conversion stage and 687 at the
+official-reference stage)._
+
 The baseline official-reference failures are also grouped by each case's own
 official `componentTags` metadata, read from the pinned suite's own
 `NNNNN-model.m` notes. The generated baseline table lists every failing case,
@@ -125,12 +146,14 @@ so a cluster table can no longer omit the cases it forgot.
 1. **Initial-value resolution order** (PR #316). A `constant="false"`
    parameter with no `value` attribute was seeded with the default `0`,
    shadowing the value its `assignmentRule` supplies, and `initialAssignment`s
-   were evaluated before `assignmentRule`s. SBML L3 Core §4.8/§4.11 fixes the
-   order. 15 official cases move `failed → passed`.
+   were evaluated before `assignmentRule`s. SBML L3 Core §3.4.8 (the order in
+   which the values at `t ≤ 0` are established) and §4.9.3 (an assignment
+   rule's value overrides the value its target's own definition carries)
+   fix the order. 15 official cases move `failed → passed`.
 
 2. **SBML `avogadro` csymbol conflated with BNGL's `__Avogadro__`, and
    `csymbol` identified by its text** (PR #318). SBML's `avogadro` csymbol
-   has the fixed value `6.02214179e+23` (SBML L3 Core §4.2.5, which requires
+   has the fixed value `6.02214179e+23` (SBML L3 Core §3.4.6, which requires
    readers of this version to use exactly that number); BNGL's
    `__Avogadro__` is BNG's molecule-count factor and is `1`. The
    operator-position `csymbol` path also keyed on the element *text* rather
@@ -157,16 +180,39 @@ so a cluster table can no longer omit the cases it forgot.
    such model integrated a different trajectory.
 
 5. **SBML `delay` / `rateOf` semantics** (PR #324). MathML has no `delay` or
-   `rateOf` operator: SBML L3 Core §4.3.4 and §4.3.5 define both as
-   `csymbol` operators. The C++ SBML writer emitted `<ci>delay</ci>`, which
-   is invalid SBML. The writer now emits the `csymbol` form that libSBML
-   5.21.1 itself emits, the native reader reads it back, a delayed read of a
-   symbol with an `initialAssignment` uses the assignment evaluated at the
-   delayed time rather than the `t = 0` value (§4.3), and `rateOf` of a
-   reaction-local parameter is zero because the local parameter shadows the
-   global one (§4.3.5). A delay whose history the BNG3 engine cannot
-   reproduce stays explicitly unsupported, and the diagnostic now names that
-   boundary instead of blaming the SBML writer.
+   `rateOf` operator: SBML L3 Core §3.4.6 defines both as `csymbol`
+   operators, and §3.4.8 gives the rules for the values before `t = 0`. The
+   C++ SBML writer emitted `<ci>delay</ci>`, which is invalid SBML. The
+   writer now emits the `csymbol` form that libSBML 5.21.1 itself emits and
+   the native reader reads it back. That C++ work is real and is covered by
+   new C++ unit tests, but it is **not reachable through this campaign's
+   harness**: the refusal a model with an unlowerable `delay` receives is
+   emitted by the *Python Atomizer* (`writer.py`), whose wording names the
+   C++ writer, and the harness classifies such a model as `unsupported` at
+   the conversion stage, which returns before `cpp.io.write_sbml` is ever
+   called. The baseline's `delay`-related bucket of unsupported verdicts is
+   therefore untouched: those cases stay unsupported for the same reason.
+   The generated "unsupported verdicts, by owner" table above still lists
+   that bucket under the C++ writer, because that is how the Atomizer's
+   refusal names it; the refusal itself is the Atomizer's.
+
+   On the measured surface the change moved **7 official-reference cases
+   from `failed` to `passed`** — 00938 00940 00942 01460 01498 01534 01542 —
+   with the maximum absolute difference against the published
+   `-results.csv` dropping from 0.4–20 to ≤ 4.6e-7; **no conversion verdict
+   changed in either direction**; and 10 further cases changed only in their
+   diagnostic text and stayed `unsupported` (00985 01142 01410 01411 01412
+   01480 01481 01535 01539 01593), so no diagnostic was weakened. The 15
+   cases the change originally claimed were official-reference *failures*
+   in the baseline, not `unsupported` cases, and 8 of them are untouched:
+   00941 and 00943, where a `delay` of a parameter whose `initialAssignment`
+   is time-dependent is silently dropped (no diagnostic, wrong numbers);
+   01400, 01401, 01403, 01406 and 01409, which all fail at exactly one
+   sample, `t = 0`, with a maximum absolute difference of 0.5–1.5, because
+   the rule that "the `rateOf` value for any valid target in SBML for time
+   `t < 0` will always be zero" is not implemented; and 01419, whose BNGL is
+   byte-identical between the base and the branch and which was fixed by
+   the sibling PR #323.
 
 5. **MathML built-ins folded in the static evaluator, and a signed
    stoichiometry carried** (PR #335). The static evaluator now folds the
@@ -201,46 +247,72 @@ result below.
 
 ## Merged result (2026-10-20)
 
-All ten campaign pull requests are merged into `main`:
+The campaign's pull requests merge into `main` one at a time and the tree
+advances with each merge, so **every number in this section is a moving
+target**. The tables below are regenerated from a harness report by
+`scripts/ci/sbml_campaign_tables.py`; they are never maintained by hand, and
+each one names the report it came from, that report's SHA-256, and the BNG3
+commit it measured. The figures they currently carry are **conversion
+1732 passed / 191
+unsupported / 0 failed / 0
+timeout** and **official reference 1225 passed /
+687 unsupported / 11 failed
+/ 0 timeout**, from the report
+`/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`), which measured the BNG3 commit `c7550723b7ccc3a2cc3c2992e791fa922b118504`.
 
-| PR | Title | Merge commit |
-| --- | --- | --- |
-| #316 | Fix SBML initial-value resolution order in atomizer seed values | `3910dccd` |
-| #317 | Add machine-readable SBML Atomizer coverage inventory and campaign baseline | `25451a65` |
-| #318 | Interpret SBML csymbols by definitionURL and fold static parameter initial assignments | `d4ec1ee2` |
-| #319 | Preserve amount-based SBML rate laws in non-unity compartments | `0fbda8fd` |
-| #320 | Lower an n-ary MathML relation as the conjunction of its successive pairs | `aa427e70` |
-| #321 | Report a parameter assignment rule's value as the quantity SBML defines | `451884f5` |
-| #322 | Support MathML trigonometric reciprocals and report an unresolvable assigned stoichiometry | `fa53a8e8` |
-| #323 | Carry a rate-ruled species-reference stoichiometry's initial value | `6654d175` |
-| #324 | Preserve SBML delay/rateOf semantics in the Atomizer and C++ writer | `58ae449e` |
-| #335 | Fold the MathML built-ins in the static evaluator and carry a signed stoichiometry | `cee96c9a` |
+| PR | What it changed | Official cases moved | Merge commit |
+| --- | --- | --- | --- |
+| #316 | Initial-value resolution order in atomizer seed species | 15 `failed → passed` | `3910dccd` |
+| #317 | The machine-readable coverage inventory and the campaign baseline | — (measurement) | `25451a65` |
+| #318 | `csymbol` by `definitionURL`; static parameter initial assignments | 20 `failed → passed` | `d4ec1ee2` |
+| #319 | Amount-based rate laws in a non-unity compartment | 19 `failed → passed` | `0fbda8fd` |
+| #320 | n-ary MathML relations | 3 `failed → passed` | `aa427e70` |
+| #321 | Parameter assignment rules: the amount/concentration distinction | 10 `failed → passed` | `451884f5` |
+| #322 | MathML trigonometric reciprocals; numeric fidelity; assigned stoichiometry | 14 `failed → passed` | `fa53a8e8` |
+| #323 | Rate-ruled species-reference stoichiometry's initial value | 14 `failed → passed` | `9268d220` |
+| #324 | SBML `delay` / `rateOf` semantics in the Atomizer and the C++ writer | 7 `failed → passed` | `a4453c7d` |
+| #325 | Black formatting compliance on `main` | — (no behaviour change) | `03a577dd` |
+| #326 | A static Python-floor compatibility check | — (CI only) | `d647aede` |
+| #327 | The merge-gate exception record for #323 and #324 | — (record) | `c672c61f` |
+| #330 | A batched SSA sweep that checks the stochastic consistency of converted models | — (verification) | `48315b95` |
+| #331 | The pooled SBML conformance gate: one worker pool instead of a process per case | — (measurement speed) | `5c9ec354` |
+| #332 | The SBML conformance expectation manifest and the table generator | — (measurement) | `6c61d59f` |
+| #335 | The static evaluator's MathML built-ins and a signed stoichiometry | 1 `failed → passed` (`semantic/00879`) | `cee96c9a` |
+| #338 | Classify an unparsable changed file as needing a newer interpreter | — (CI only) | `c0190fb2` |
+| #339 | Structural inference on the `atomize=True` path | — (the flat measurement path is byte identical) | `d1d0c1c7` |
+| #340 | The curated BioModels inventory and the two Atomizer defects it exposed | — (corpus) | `5c9d8e1e` |
+| #345 | The expectation-manifest gate and the manifest re-measured on current main | — (measurement) | `f2cb2acc` |
+| #346 | The public helper's MathML built-ins from the shared table | — (no behaviour change) | `57736a19` |
+| #347 | The parser's `package:fbc` diagnostic in the flux guards | — (diagnostic) | `eafd6deb` |
+| #348 | A reaction's rate guarded on the sign of its derivative | — (diagnostic) | `89f19428` |
+| #353 | A species concentration rate rule in an event-driven compartment | 2 `failed → passed` (`semantic/01505`, `semantic/01506`) | `c7550723` |
 
-Per-change contribution, measured per branch, so the numbers overlap where one
-change enables another. This table is a historical per-branch record; it is
-not part of the generated region and is not regenerated by the table
-generator.
-
-| PR | Change | Official cases fixed |
-| --- | --- | --- |
-| #316 | Initial-value resolution order | 15 |
-| #318 | `csymbol` by `definitionURL`; static parameter initial assignments | 20 |
-| #319 | Amount-based rate laws in a non-unity compartment | 19 |
-| #320 | n-ary MathML relations | 3 |
-| #321 | Parameter assignment rules: the amount/concentration distinction | 10 |
-| #322 | MathML trigonometric reciprocals; numeric fidelity; assigned stoichiometry | 14 |
-| #323 | Rate-ruled species-reference stoichiometry's initial value | 14 |
+The "Official cases moved" column is measured per branch, so the numbers
+overlap where one change enables another; it is a historical per-branch record
+and not part of the generated region.
 
 The generated tables below give the measured before/after state of every
 stage, the exact cases that changed verdict, and the cases that regressed.
-They also cover PRs #324 and #335, whose effect is not broken out per
-branch above.
+They also cover the changes whose effect is not broken out per branch above.
 
-The curated-BioModels row is the campaign's flat-mode measurement, taken on
-the merged tree before PRs #323–#335; the corpus has not been re-measured
-since. A later run on a saturated machine timed out on models that had
-passed, and a timeout under contention is a false verdict rather than a
-result, so that run was not used.
+### The campaign's invariant, audited
+
+The independent audit of the merged set confirms the campaign's central
+invariant: **no case became `passed` because a diagnostic was removed, a
+tolerance was widened, a reference file was edited, or a comparison was
+skipped.** Of the 98 cases whose verdict moved, 88 changed nothing but the
+trajectory and 9 more became genuinely representable, each verified against an
+independent libRoadRunner reproduction of the official reference. No
+tolerance, reference file, mapping or comparison changed anywhere.
+
+The audit's detail is the specific evidence that no case passed because the
+comparison had become lenient: of the 88 `failed → passed` changes, **87 were
+qualitative** — beyond 100× the official tolerance before the change — and
+**one was numeric**, and **no moved case was already within tolerance before
+the change**.
+
+_Source: the independent campaign audit, recorded in
+`provenance/sbml-campaign/audit-2026-10-20.json` (PR #349)._
 
 <!-- BEGIN GENERATED: sbml-campaign-current -->
 
@@ -248,17 +320,17 @@ result, so that run was not used.
 
 | Stage | Passed | Unsupported | Failed | Not tested |
 | --- | --- | --- | --- | --- |
-| Conversion (SBML → BNGL) | 1731 | 192 | 0 | 0 |
-| Round-trip structure | 1731 | 0 | 0 | 192 |
-| Independent libRoadRunner comparison | 1731 | 0 | 0 | 192 |
-| Official reference comparison | 1220 | 686 | 17 | 0 |
-_Source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `82f837f63d7e986e7184e603819b5bb814a86c52`; the recorded manifest describes `cee96c9aeb91dd9800c840ac6066b89fd06a43d7`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
+| Conversion (SBML → BNGL) | 1732 | 191 | 0 | 0 |
+| Round-trip structure | 1732 | 0 | 0 | 191 |
+| Independent libRoadRunner comparison | 1732 | 0 | 0 | 191 |
+| Official reference comparison | 1225 | 687 | 11 | 0 |
+_Source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c7550723b7ccc3a2cc3c2992e791fa922b118504`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
 
 #### Official-reference unsupported verdicts, by owner
 
 | Count | Owner | Blocking reason |
 | --- | --- | --- |
-| 437 | harness | the in-memory CVODE reference runner cannot execute actions on the official output grid |
+| 439 | harness | the in-memory CVODE reference runner cannot execute actions on the official output grid |
 | 100 | harness | official stochastic conformance requires repeated-run mean and standard-deviation evaluation |
 | 35 | Atomizer diagnostic | Reaction "…" is marked fast (fast="true") |
 | 34 | not applicable | case does not define an official time-course reference |
@@ -268,25 +340,23 @@ _Source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95
 | 9 | C++ writer | SBML math function "…" is not losslessly representable in the C++ SBML writer |
 | 3 | Atomizer | <infinity>/<notanumber> constant encountered in math |
 | 2 | Atomizer | a compartment declares unsupported spatialDimensions |
-| 2 | Atomizer | a species concentration rate rule requires an explicit compartment derivative |
 | 1 | Atomizer | algebraic rule(s) present |
+| 1 | Atomizer | other Atomizer-side limitation |
 
-Total official-reference unsupported verdicts: 686.
-_Source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `82f837f63d7e986e7184e603819b5bb814a86c52`; the recorded manifest describes `cee96c9aeb91dd9800c840ac6066b89fd06a43d7`._
+Total official-reference unsupported verdicts: 687.
+_Source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c7550723b7ccc3a2cc3c2992e791fa922b118504`._
 
 #### Remaining official-reference failures, by official feature
 
 | Cluster | n | Cases |
 | --- | --- | --- |
 | CSymbolDelay | 7 | 00941 00943 01400 01401 01403 01406 01409 |
-| InitialAssignment | 4 | 00785 00786 01514 01821 |
 | AssignmentRule | 2 | 01492 01493 |
-| other | 2 | 00951 01820 |
 | AlgebraicRule | 1 | 01575 |
 | CSymbolAvogadro | 1 | 01121 |
 
-Total official-reference failures: 17.
-_Source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `82f837f63d7e986e7184e603819b5bb814a86c52`; the recorded manifest describes `cee96c9aeb91dd9800c840ac6066b89fd06a43d7`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
+Total official-reference failures: 11.
+_Source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c7550723b7ccc3a2cc3c2992e791fa922b118504`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
 
 #### Curated BioModels — current
 
@@ -301,19 +371,27 @@ _Source: `/tmp/bng3-campaign/biomodels-main-flat.json` (SHA-256 `0e0583d1f568892
 
 | Stage | Before | After | Cases |
 | --- | --- | --- | --- |
-| conversion | unsupported | passed | 19 |
-| independent_comparison | not_tested | passed | 19 |
-| official_reference | failed | passed | 90 |
+| conversion | passed | unsupported | 1 |
+| conversion | unsupported | passed | 21 |
+| independent_comparison | not_tested | passed | 21 |
+| independent_comparison | passed | not_tested | 1 |
+| official_reference | failed | passed | 95 |
+| official_reference | failed | unsupported | 1 |
 | official_reference | unsupported | passed | 15 |
-| roundtrip_structure | not_tested | passed | 19 |
+| roundtrip_structure | not_tested | passed | 21 |
+| roundtrip_structure | passed | not_tested | 1 |
 
-Cases with at least one stage change: 109.
+Cases with at least one stage change: 117.
 
-Regressions (a stage that was `passed` and no longer is): none.
+Regressions (a stage that was `passed` and no longer is):
+
+- `semantic/00951` [conversion]: passed → unsupported
+- `semantic/00951` [roundtrip_structure]: passed → not_tested
+- `semantic/00951` [independent_comparison]: passed → not_tested
 
 A stage that becomes `passed` is accepted only when the expectation manifest is explicitly updated.
 
-Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/current-main-2026-10-20.json` (SHA-256 `6752e57ad95ff4ba9052eabec3221c2c8931b8c2276b83a45ffdb831c0cfcac7`).
+Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`).
 
 <!-- END GENERATED: sbml-campaign-current -->
 
@@ -323,6 +401,14 @@ stage it changed at, and every case that regressed. A stage that stops being
 manifest records, and the manifest must be updated before the change is
 accepted.
 
+The curated-BioModels row in the generated table is an **aggregate**, and an
+aggregate hid two reproducible regressions: `BIOMD0000000638` and
+`BIOMD0000000954` both changed behaviour while the corpus-wide counts stayed
+the same. The two were found by the corpus inventory (PR #340) and are fixed
+there. The claim and the correction belong together: the aggregate number
+was never evidence that nothing changed, and the corpus is now inventoried
+per record so that it cannot be again.
+
 ## Python test suite
 
 <!-- BEGIN GENERATED: sbml-campaign-python -->
@@ -331,9 +417,9 @@ accepted.
 
 | Suite | Passed | Skipped | Xfailed | Failed |
 | --- | --- | --- | --- | --- |
-| tests/python | 1645 | 28 | 2 | 1 |
+| tests/python | 1572 | 28 | 2 | 1 |
 
-Source: `/tmp/bng3-campaign/pytest-cee96c9a.xml` (SHA-256 `f2a905f32a57d89e7d73af0512f53f81421fda8e7456159b3e4135f1110f80cd`).
+Source: `/tmp/bng3-campaign/pytest-current.xml` (SHA-256 `3da9b66de4abf957a25843ad0ddcd9344ef12cfa2cabfac726509c1adcd5be8e`).
 
 <!-- END GENERATED: sbml-campaign-python -->
 
@@ -345,11 +431,23 @@ fails on the unmodified base commit.
 The first form of PR #319 multiplied the recovered mass-action constant by
 `V**(m-1)` for every amount-based law. The generated integrated-validation
 case `dimerization-v1-n20-r0-a0` uses the law `k * A * A / cell`, which
-already states its own volume dependence; the correction produced the rate law
-`0.8 * (__compartment_cell__)**1`, which BNG2's expression parser rejects
-("Unexpected operator \"*\" found at position 26") and BioNetGen 2.9.3 cannot
-simulate. The integrated cross-component validation failed, and the correction
-was narrowed to a law that does not name a compartment.
+already states its own volume dependence, so the correction changed the
+model: a kinetic law's value is the reaction's extent rate and a species'
+amount changes by `stoichiometry × extent rate` (SBML L3 Core §4.11), while
+BNGL's rate laws are always *concentration* rates, so the amount-based law
+`k * n^m` needs `V^(m-1)` and a law that already divides by the compartment
+size needs `V^(m-2)` — for the two-reactant form, the constant it was
+recovered with. The integrated cross-component validation failed, and the
+correction was narrowed to a law that does not name a compartment.
+
+Narrowing it that way also exempted a law that *multiplies* by the
+compartment (`cell * k * A * A`), whose volume dependence is the opposite of
+the divisive form's: its extent rate scales with the compartment size, so
+its BNGL constant needs `V^m` rather than the constant it was recovered
+with. On a size-10 compartment BNG3 gave `A_amt(5) = 2.222222` where the
+SBML extent-rate reading gives `0.024969`, a factor of `V**2`. The
+exemption now distinguishes the two shapes, and the multiplicative form is
+lowered exactly.
 
 ### Merge-gate exception: PRs #323 and #324
 
@@ -361,6 +459,13 @@ gate not fully met, by an explicit decision of the repository owner, so that
 a saturated CI queue would not serialize the campaign. On both pull requests
 three jobs were genuinely red; every other job marked red on those pull
 requests was `cancelled` in flight, not failed.
+
+The gate is the campaign's own convention, not a rule GitHub enforces: the
+repository has no branch protection and no rulesets on `main`
+(`GET /repos/RuleWorld/BNG3/branches/main/protection` returns 404 and
+`GET /repos/RuleWorld/BNG3/rulesets` returns an empty list), so nothing in
+the platform required the merge — the exception was a decision of the
+repository owner.
 
 * `Lint & Format` and `Check formatting and suggest patch` (the
   `autofix` workflow's `black --check --target-version py312 .` gate). This
@@ -386,9 +491,29 @@ requests was `cancelled` in flight, not failed.
   under ASan` step reports `100% tests passed, 0 tests failed out of 677`
   (`681` on #324), including `OdeIntegrator recovers after late stop
   condition failure`, and `ctest --test-dir build -R '^OdeIntegrator recovers
-  after late stop condition failure$'` passes locally. The red is therefore
-  LeakSanitizer's report in the isolated re-run of that single test, which is
-  timing/environment dependent, not a behavioural regression.
+  after late stop condition failure$'` passes locally. The red is therefore a
+  **source-confirmed defect in the `OdeIntegrator` exception path — a CVODE
+  cleanup leak — that the ASan job was deliberately wired up to expose**, and
+  it is tracked as issue 141 (`docs/PACKET4_141_ACCEPTANCE.md` and
+  `docs/packet4-141-acceptance.json`, whose acceptance criteria are still
+  `INCOMPLETE`). The mechanism is in the source:
+  `cpp/engine/OdeIntegrator.cpp` allocates
+  `void* cvode_mem = CVodeCreate(CV_BDF, sunctx)` together with an
+  `N_Vector y` and a `SUNContext`, and frees them by hand on each error
+  path, but there is no unwinding-safe cleanup, so an exception thrown out
+  of the right-hand-side evaluation after CVODE has allocated leaks all
+  three. The source-confirmed exception path is
+  `stop_if='if(time > 0, missing_name, 0)'`: the lazy `if` succeeds at
+  `t=0` and raises after CVODE allocation, so the exception bypasses the
+  normal CVODE cleanup. This is a real defect, not a timing or environment
+  artefact.
+
+A repair of the CVODE cleanup leak is in flight: a scope-guarded lifetime for
+`cvode_mem`, `y` and `sunctx`, with the expectation that the `C++ ASan
+(Ubuntu)` job turns green on every pull request afterwards. It has not
+landed in this tree, so no outcome is claimed here; the repair has to show
+the LeakSanitizer summary before and after, the full C++ suite count, and an
+**empty** SBML per-case diff, because the ODE engine is involved.
 
 The discriminating checks were green at the merged heads. The `Official SBML
 references (128 PR cases; full scheduled suite)` job passed on both pull
@@ -558,7 +683,7 @@ pinned suite's own case notes and writes the marked regions above.
 ```bash
 python scripts/ci/sbml_campaign_tables.py \
   --baseline-suite-report /tmp/bng3-campaign/baseline-ssts.json \
-  --suite-report /tmp/bng3-campaign/current-main-2026-10-20.json \
+  --suite-report /tmp/bng3-campaign/current-main-2026-10-20b.json \
   --baseline-biomodels-report /tmp/bng3-campaign/biomodels-baseline.json \
   --biomodels-report /tmp/bng3-campaign/biomodels-main-flat.json \
   --suite-dir /path/to/sbml-test-suite \
@@ -595,7 +720,7 @@ regions wherever the surrounding prose needs them.
 ```bash
 python scripts/ci/sbml_campaign_tables.py \
   --baseline-suite-report /tmp/bng3-campaign/baseline-ssts.json \
-  --suite-report /tmp/bng3-campaign/current-main-2026-10-20.json \
+  --suite-report /tmp/bng3-campaign/current-main-2026-10-20b.json \
   --baseline-biomodels-report /tmp/bng3-campaign/biomodels-baseline.json \
   --biomodels-report /tmp/bng3-campaign/biomodels-main-flat.json \
   --suite-dir /path/to/sbml-test-suite \
