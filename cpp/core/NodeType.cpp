@@ -17,6 +17,21 @@ using namespace BNGcore;
 // NODETYPE //
 //////////////
 
+// Destructor
+NodeType::~NodeType ( )
+{
+    // The edge maps own the node functions they hold: every entry is
+    // created by ``add_edges_in``/``add_edges_out`` with ``new`` or with
+    // ``NodeFunction::clone()``.  Releasing them here keeps a node type
+    // from leaking its typing functions -- including the header-scope
+    // static node types, one copy of which exists per translation unit.
+    for ( typemap_iter_t it = edges_in.begin(); it != edges_in.end(); ++it )
+        delete it->second;
+    for ( typemap_iter_t it = edges_out.begin(); it != edges_out.end(); ++it )
+        delete it->second;
+}
+
+
 // Constructor 
 NodeType::NodeType  ( const std::string & _type_name, const StateType & _state_type )
   : type_name( _type_name ),
