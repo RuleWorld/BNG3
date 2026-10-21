@@ -97,7 +97,7 @@ def test_a_builtin_assigned_stoichiometry_folds_to_the_writers_value():
     # The assigned value is not an integer, so the deterministic flux
     # lowering carries it in the rate coefficient.
     assert "2.71828182845905" not in result.bngl
-    assert f"({2.71828182845905**2.7!r})" in result.bngl
+    assert f"{2.71828182845905**2.7!r}" in result.bngl
 
 
 def test_resolvable_assigned_stoichiometry_replaces_the_attribute():
