@@ -1053,9 +1053,16 @@ def test_playground_parser_reports_lossy_mathml_constants_and_operators():
         warning for warning in model.import_warnings if warning.category == "mathml"
     ]
 
+    # The source document is valid SBML: validation rule 10202 permits the
+    # MathML <infinity> constant.  The limitation is BNG3's, so the diagnostic
+    # says so rather than reading like a malformed input.
     assert {(warning.message, warning.severity) for warning in warnings} == {
         (
-            "<infinity> constant encountered in math; emitted as a large finite value.",
+            "<infinity> constant encountered in math; the source is valid SBML "
+            "(validation rule 10202 permits <infinity>), but an infinite value "
+            "cannot be represented in BNG3's finite-double model, so it is "
+            "emitted as a large finite value and the model is not claimed to be "
+            "supported.",
             "approximated",
         ),
     }
@@ -2264,11 +2271,16 @@ def test_playground_writer_reports_missing_kinetic_laws():
         logger.setLevel("WARNING")
         logger.setQuietMode(False)
 
-    assert "missing: M_A() -> M_B() 1" in bngl
+    # SBML Level 3 Version 2 Core Sec. 4.11.1 leaves the rate of a reaction
+    # without a kinetic law undefined and states that a simulator's choice is
+    # not standardized.  Zero is the reading it names that leaves the rest of
+    # the mathematical model intact, so the emitted reaction must not carry
+    # an invented rate.
+    assert "missing: M_A() -> M_B() 0" in bngl
     assert [(message.code, message.message) for message in warnings] == [
         (
             "BNW011",
-            "Reaction missing missing kinetic law; using fallback rate 1",
+            "Reaction missing missing kinetic law; using fallback rate 0",
         )
     ]
 
