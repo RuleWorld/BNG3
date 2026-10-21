@@ -59,7 +59,10 @@ rate law for every rate law type, so its own network for
 ``A() + A() -> D() Sat(kcat, K)`` reads ``0.5*Sat kcat K``.  BNG3's engine
 used to drop that factor for a special rate law, so it disagreed with the
 network it exported; the factor is applied now and the engine's ODE
-reproduces BNG2's trajectory for that model to 2.3e-8 relative.  What is left
+reproduces BNG2's trajectory for that model to 2.3e-8 relative, and both of
+the engine's stochastic backends carry it -- the NFsim route kept the symmetry
+factor on the transformation set but never applied it to a special rate, so
+the answer depended on the backend until that was repaired too.  What is left
 is that BNG2's own SSA and ODE disagree with each other for this form -- its
 SSA mean final count is 1.98 (standard error 0.08) over 261 seeded
 trajectories against its own ODE value of 2.2497 -- so there is no single

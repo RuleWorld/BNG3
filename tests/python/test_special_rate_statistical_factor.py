@@ -19,6 +19,13 @@ The oracle here is the canonical Perl BNG2 2.9.3, run on the same model:
 It wrote ``A_tot = 15.50050409333`` and ``D_tot = 2.249747953337`` at
 ``t = 1``.  The engine's own ODE now reproduces those digits, and its SSA
 propensity is the factor-carrying rate rather than the factor-free one.
+
+Both of the engine's stochastic backends have to carry the factor: the native
+one and the NFsim one, or the answer would depend on which backend the caller
+asked for.  The NFsim route kept the symmetry factor on the transformation set
+but never applied it to a special rate, so the two backends disagreed by the
+factor.  The ensemble check below pins both: each backend's event total must
+agree with the factor-carrying law and must disagree with the factor-free one.
 """
 
 from __future__ import annotations
@@ -120,3 +127,99 @@ def test_a_rule_with_distinct_reactants_is_unchanged():
         for value in cpp._validation_ssa_propensities(other._model, network, 0.0, state)
     ]
     assert propensities == pytest.approx([0.4 * 20.0 * 1.0 / (10.0 + 20.0)])
+
+
+# --------------------------------------------------------------------------
+# Both stochastic backends have to carry the factor.
+# --------------------------------------------------------------------------
+
+TRAJECTORIES = 40
+HORIZON = 1.0
+STEP = 2  # the rule consumes two A molecules per event
+
+# The hazard of the rule's event rate at a population of n A molecules.
+# The factor-carrying law is BNG2's canonical network semantics: the network
+# reads ``0.5*Sat kcat K``, so the event rate is 0.5*kcat*n^2/(K+n).
+FACTOR = 0.5
+
+
+def _hazard(population, factor=FACTOR):
+    return factor * 0.4 * population * population / (10.0 + population)
+
+
+def _expected_events(factor=FACTOR, horizon=HORIZON, steps=20000):
+    """The expected number of events, from the master equation.
+
+    The generator is a pure death with a step of two: the population falls
+    from ``n`` to ``n - 2`` at the hazard above.  The distribution is
+    integrated here, independently of the engine.
+    """
+    population = 20
+    states = list(range(population, -1, -STEP))
+    index = {value: position for position, value in enumerate(states)}
+    rates = [_hazard(value, factor) for value in states]
+    h = horizon / steps
+    weights = [0.0] * len(states)
+    weights[index[population]] = 1.0
+
+    def derivative(current):
+        out = [0.0] * len(states)
+        for position, value in enumerate(states):
+            out[position] += -rates[position] * current[position]
+            if position + 1 < len(states):
+                out[position + 1] += rates[position] * current[position]
+        return out
+
+    for _ in range(steps):
+        k1 = derivative(weights)
+        k2 = derivative([w + 0.5 * h * d for w, d in zip(weights, k1)])
+        k3 = derivative([w + 0.5 * h * d for w, d in zip(weights, k2)])
+        k4 = derivative([w + h * d for w, d in zip(weights, k3)])
+        weights = [
+            w + h / 6.0 * (a + 2.0 * b + 2.0 * c + d)
+            for w, a, b, c, d in zip(weights, k1, k2, k3, k4)
+        ]
+    return sum(
+        weight * (population - value) / STEP for weight, value in zip(weights, states)
+    )
+
+
+@pytest.mark.parametrize("backend", ["ssa", "nf"])
+def test_every_stochastic_backend_carries_the_statistical_factor(backend):
+    model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
+    total = 0
+    for seed in range(1, TRAJECTORIES + 1):
+        result = model.simulate(method=backend, t_end=HORIZON, n_steps=20, seed=seed)
+        total += float(result.observables["D_tot"][-1])
+
+    # The event count is a sum of independent Bernoulli-like counts, so its
+    # spread is set by the number of events; the band below is four standard
+    # deviations of the factor-carrying law's total.
+    carrying = _expected_events(FACTOR) * TRAJECTORIES
+    free = _expected_events(1.0) * TRAJECTORIES
+    spread = (carrying**0.5) * 4.0
+    assert abs(total - carrying) <= spread, (
+        f"{backend}: {total} events, the factor-carrying law expects "
+        f"{carrying:.1f} +/- {spread:.1f}"
+    )
+    # The factor-free law is twice the rate, so it has to be rejected.
+    assert abs(total - free) > spread, (
+        f"{backend}: {total} events, the factor-free law expects {free:.1f}; "
+        "the statistical factor is missing"
+    )
+
+
+def test_the_two_stochastic_backends_agree():
+    totals = {}
+    for backend in ("ssa", "nf"):
+        model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
+        total = 0
+        for seed in range(1, TRAJECTORIES + 1):
+            result = model.simulate(
+                method=backend, t_end=HORIZON, n_steps=20, seed=seed
+            )
+            total += float(result.observables["D_tot"][-1])
+        totals[backend] = total
+    expected = _expected_events(FACTOR) * TRAJECTORIES
+    spread = (expected**0.5) * 4.0
+    assert abs(totals["ssa"] - totals["nf"]) <= spread, totals
