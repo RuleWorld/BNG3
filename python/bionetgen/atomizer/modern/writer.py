@@ -3993,7 +3993,14 @@ def _inline_reaction_fluxes(
         return flux
 
     result = expression
-    for _ in range(4):
+    # A reaction id in the math of a rule denotes that reaction's rate
+    # (SBML Level 3 Version 2 Core, Sec. 4.2.8: the reaction ``id`` may be
+    # used in mathematical formulas to represent the rate of that reaction).
+    # Every such reference has to be replaced, not only the first few: a rule
+    # that names five reactions must not keep the fifth id in the emitted
+    # expression, where it would be an unresolved symbol.
+    handled: Set[str] = set()
+    while True:
         # A reaction id such as ``R-1`` is one whole id run, not the two tokens
         # a formula tokenizer produces, so the flux has to be selected and
         # replaced by matching whole runs.
@@ -4004,6 +4011,7 @@ def _inline_reaction_fluxes(
             if not (
                 exclude_reaction_id and str(reaction_id) == str(exclude_reaction_id)
             )
+            and str(reaction_id) not in handled
             and not (
                 str(reaction_id) in defined
                 or standardize_name(str(reaction_id)) in defined
@@ -4016,6 +4024,7 @@ def _inline_reaction_fluxes(
         for reaction_id, reaction in candidates:
             reaction_id = str(reaction_id)
             flux = reaction_flux(reaction_id, reaction)
+            handled.add(reaction_id)
             if flux is None:
                 continue
             rewritten = _rewrite_declared_id_runs(
@@ -4810,6 +4819,10 @@ def _map_compartment_references(
     A compartment whose size is driven by a rule does not have a constant
     BNGL parameter, so the reference has to name the state that carries the
     current size instead.
+
+    A reference that is already a zero-argument call keeps its form: the
+    expression may have passed through the function translation, which
+    already resolved a rule-driven compartment to its emitted function.
     """
 
     result = expression
@@ -4830,7 +4843,7 @@ def _map_compartment_references(
         else:
             replacement = f"__compartment_{name}__"
         result = re.sub(
-            rf"\b{re.escape(str(compartment_id))}\b",
+            rf"\b{re.escape(str(compartment_id))}\b(?!\s*\()",
             replacement,
             result,
         )
@@ -5181,7 +5194,12 @@ def write_functions(
         # ``bngl_function``; the same pre-pass keeps a raw species id from being
         # emitted under a name the block never declares.
         body = _standardize_declared_id_runs(body, species_map)
-        body = _map_compartment_references(convert_math_expression(body), model)
+        body = _map_compartment_references(
+            convert_math_expression(body),
+            model,
+            rate_ruled_compartments=rate_ruled_compartments,
+            assignment_rule_compartments=assignment_rule_compartments,
+        )
         lines.append(f"{name}({args}) = {body}")
         if not function.arguments:
             zero_argument_functions.append(name)
@@ -5212,7 +5230,12 @@ def write_functions(
             sbml_to_bngl_id=species_map,
             rate_rule_variables=rate_rule_variables,
         )
-        body = _map_compartment_references(convert_math_expression(body), model)
+        body = _map_compartment_references(
+            convert_math_expression(body),
+            model,
+            rate_ruled_compartments=rate_ruled_compartments,
+            assignment_rule_compartments=assignment_rule_compartments,
+        )
         name = standardize_name(variable)
         lines.append(f"{name}() = {body}")
         emitted_names.add(name)
