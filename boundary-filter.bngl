@@ -1,0 +1,16 @@
+begin model
+begin parameters
+  k 0.4
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin reaction rules
+  A() + B() -> A() k include_reactants(1,A)
+end reaction rules
+end model

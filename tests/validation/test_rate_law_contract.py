@@ -52,6 +52,7 @@ def test_generated_case_matrix_covers_the_declared_conventions():
         "table-function",
         "local-scope",
         "multiplicity",
+        "special-multiplicity",
         "dependency",
         "cache-invalidation",
     }

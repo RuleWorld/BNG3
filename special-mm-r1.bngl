@@ -1,0 +1,17 @@
+begin model
+begin parameters
+  kcat 0.4
+  Km 25.0
+end parameters
+begin molecule types
+  E()
+  S()
+end molecule types
+begin seed species
+  E() 12
+  S() 60
+end seed species
+begin reaction rules
+  S() + E() -> E() MM(kcat,Km)
+end reaction rules
+end model

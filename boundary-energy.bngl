@@ -1,0 +1,18 @@
+begin model
+begin parameters
+  k 0.4
+  Gf 1
+end parameters
+begin energy patterns
+  A() Gf
+end energy patterns
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model

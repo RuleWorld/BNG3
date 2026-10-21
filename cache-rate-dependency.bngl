@@ -1,0 +1,20 @@
+begin model
+begin parameters
+  k 0.4
+  k2 2*k
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin observables
+  Molecules A A()
+end observables
+begin reaction rules
+  A() -> B() k2
+end reaction rules
+end model

@@ -1,0 +1,16 @@
+begin model
+begin parameters
+  Vmax 2.0
+  Kh 10.0
+  n 2
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1000
+end seed species
+begin reaction rules
+  A() -> 0 Hill(Vmax,Kh,n)
+end reaction rules
+end model

@@ -833,7 +833,17 @@ void OdeIntegrator::compile() {
                     const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
                     if (uf.has_value()) combinedFactor *= *uf;
                 }
-                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+                // A special rate law is a complete flux, so it takes no
+                // compartment-volume scaling, but it does take the symmetry
+                // factor.  The statistical factor is a property of the rule's
+                // reactants, not of the rate law's shape: BNG2 writes it as a
+                // prefix on the rate law for every rate law type
+                // (RateLaw::toString), and this engine's own network writer
+                // emits the same prefix, so a Saturation/Hill/Michaelis-Menten
+                // law of a rule with identical reactants is scaled by 1/n! in
+                // the engine exactly as it is in the exported network.  Without
+                // this the engine disagreed with the network it exported.
+                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     baseExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(baseExpr));
@@ -893,7 +903,7 @@ void OdeIntegrator::compile() {
                     const auto uf = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
                     if (uf.has_value()) combinedFactor *= *uf;
                 }
-                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     funcExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(funcExpr));

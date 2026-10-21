@@ -98,7 +98,11 @@ CONVENTIONS = {
         "species. The ODE rate multiplies the coefficient by the product of "
         "the reactant amounts; the SSA propensity multiplies it by the "
         "discrete product n*(n-1)*... of the reactant populations and is the "
-        "coefficient itself for a total rate."
+        "coefficient itself for a total rate. The symmetry factor is a "
+        "property of the rule's reactants and not of the rate law's shape, so "
+        "a Saturation, Hill or Michaelis-Menten law of a rule with identical "
+        "reactants carries the same 1/n! factor, as BNG2's own network writer "
+        "and this engine's own network writer both emit."
     ),
     "dependency": (
         "A rate that reads an observable, the clock or a table function is a "
@@ -119,6 +123,7 @@ FAMILY_CONVENTION = {
     "special-saturation": "special-rate",
     "special-hill": "special-rate",
     "special-michaelis-menten": "special-rate",
+    "special-multiplicity": "multiplicity",
     "table-function": "tfun",
     "local-scope": "scope",
     "multiplicity": "multiplicity",
@@ -405,6 +410,54 @@ def _local_scope_cases():
     ]
 
 
+def _special_multiplicity_cases():
+    """A special rate law on a rule with identical reactants.
+
+    The symmetry factor is a property of the rule's reactants, not of the
+    rate law's shape.  BNG2 writes it as a prefix on the rate law for every
+    rate law type (``RateLaw::toString``), so its own network for
+    ``A() + A() -> D() Sat(Vmax,Km)`` reads ``0.5*Sat Vmax Km``; this engine's
+    own network writer emits the same prefix.  The engine used to drop the
+    factor for a special rate law, so it disagreed with the network it
+    exported and with BNG2's trajectory.
+    """
+    cases = []
+    for index, (vmax, km, amount) in enumerate(((0.4, 10.0, 20), (2.0, 5.0, 50))):
+        # BNG2's Sat lowering: statFactor * Vmax * S1 * S2 / (Km + S1).
+        coefficient = 0.5 * vmax * amount * amount / (km + amount)
+        cases.append(
+            dict(
+                id=f"special-multiplicity-r{index}",
+                family="special-multiplicity",
+                bngl=_model_source(
+                    parameters=f"  Vmax {vmax!r}\n  Km {km!r}",
+                    molecule_types="  A()\n  D()",
+                    seeds=f"  A() {amount}",
+                    rules="  A() + A() -> D() Sat(Vmax,Km)",
+                ),
+                rate_law_kind="saturation",
+                states=[{"A()": float(amount), "D()": 0.0}],
+                reactions=[
+                    [
+                        dict(
+                            reactants=["A()", "A()"],
+                            products=["D()"],
+                            coefficient=coefficient,
+                            propensity=coefficient,
+                        )
+                    ]
+                ],
+                rhs=[{"A()": -2.0 * coefficient, "D()": coefficient}],
+                expectation=(
+                    "the saturation rate Vmax*S1*S2/(Km+S1) scaled by the "
+                    "statistical factor 1/2! of the identical reactants, and "
+                    "the propensity of that same total rate"
+                ),
+            )
+        )
+    return cases
+
+
 def _multiplicity_cases():
     cases = []
     # Distinct reactants: no symmetry factor.
@@ -682,6 +735,7 @@ def cases():
         *_tfun_cases(),
         *_local_scope_cases(),
         *_multiplicity_cases(),
+        *_special_multiplicity_cases(),
         *_dependency_cases(),
         *_cache_cases(),
     ]

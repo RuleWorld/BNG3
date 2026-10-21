@@ -51,12 +51,20 @@ A rule outside the declared slice is refused with its reason rather than
 compared against a law that does not describe it.  Two refusals are expected
 and recorded: the embedded NFsim route does not construct a model whose rate
 law carries a function, so the TFUN case is unsupported for that backend; and
-a saturated or Hill law with repeated identical reactants is outside the
-slice, because BNG3's stochastic backends do not reproduce the canonical
-BioNetGen propensity for that form.  For ``A() + A() -> D() Sat(kcat, K)`` with
-``N = 20``, ``kcat = 0.4`` and ``K = 10``, the BNG3 SSA mean final count over
-150 seeded trajectories is 12.03 while the canonical Perl BNG2 2.9.3 gives
-17.00 over 60 (standard error 0.30); that divergence is recorded, not judged.
+a saturated or Hill law with repeated identical reactants is outside this
+ensemble family's slice.  The second refusal is not a BNG3 defect any more:
+the statistical factor of identical reactants is a property of the rule's
+reactants, not of the rate law's shape, and BNG2 writes it as a prefix on the
+rate law for every rate law type, so its own network for
+``A() + A() -> D() Sat(kcat, K)`` reads ``0.5*Sat kcat K``.  BNG3's engine
+used to drop that factor for a special rate law, so it disagreed with the
+network it exported; the factor is applied now and the engine's ODE
+reproduces BNG2's trajectory for that model to 2.3e-8 relative.  What is left
+is that BNG2's own SSA and ODE disagree with each other for this form -- its
+SSA mean final count is 1.98 (standard error 0.08) over 261 seeded
+trajectories against its own ODE value of 2.2497 -- so there is no single
+canonical ensemble law to reproduce, and the coefficient, right-hand side and
+propensity of the form are judged by the rate-law contract family instead.
 
 The statistical control is stated, not assumed:
 
@@ -112,7 +120,11 @@ BACKENDS = ("ssa", "nf")
 SLICE = (
     "rules with one distinct reactant, plus the elementary bimolecular rule "
     "with two identical reactants; a saturated or Hill law with repeated "
-    "identical reactants is outside the slice"
+    "identical reactants is outside this ensemble family's slice, because "
+    "canonical BNG2's own SSA and ODE disagree with each other for that form "
+    "and there is no single canonical ensemble law to reproduce. The "
+    "coefficient, right-hand side and propensity of that form are judged by "
+    "the rate-law contract family instead."
 )
 
 CHECKS = (

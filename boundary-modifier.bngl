@@ -1,0 +1,14 @@
+begin model
+begin parameters
+  k 0.4
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> 0 k MatchOnce
+end reaction rules
+end model
