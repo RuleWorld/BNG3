@@ -55,10 +55,17 @@ worse than no tool.
 Hash seed and reproducibility
 -----------------------------
 
-Per-case generated BNGL text is not bit-reproducible across processes while
-the interpreter's hash seed is random, so two runs of the same code can
-produce different text for the same model.  The comparison is therefore only
-sound when both runs produced their artifacts under the *same pinned seed*.
+The Atomizer's output is not reproducible across processes while the
+interpreter's hash seed is random: a set iteration order leaks into the
+emitted text and the text's numeric constants change with it.  The curated
+BioModels corpus documents this, and record ``BIOMD0000001058`` still shows
+it on ``main``: the same source produces ``0.01999940124825325`` under seed
+0 and ``0.019998734476196073`` under seed 1.  The SBML Test Suite's models
+were measured to be reproducible under two seeds, so the exposure is
+corpus-specific today, but the comparison must not assume that.
+
+The comparison is therefore only sound when both runs produced their
+artifacts under the *same pinned seed*.
 
 The tool says so.  It reports the seed each run recorded, if the run recorded
 one, and states the seed condition of the comparison.  When neither run
@@ -83,10 +90,9 @@ is reported as
 
     changes with the interpreter's hash seed
 
-and its difference is not reported as a difference either.  The Atomizer's
-output is not reproducible across processes while the hash seed is random, so
-two runs that used different seeds produce different text for the same model.
-Reporting that as a model change would be a false difference.
+and its difference is not reported as a difference either.  Two runs that
+used different seeds produce different text for the same model, and
+reporting that as a model change would be a false difference.
 
 When the probe cannot be run, or does not settle the question, the artifact is
 reported as *unresolved* rather than silently counted as unchanged.
