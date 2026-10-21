@@ -462,6 +462,10 @@ class EventTranslationContext:
     # Only immutable SBML identifiers may be folded into scheduled actions.
     # Default keeps the older direct-call contract source-compatible.
     is_compile_time_constant: Callable[[str], bool] = lambda _identifier: True
+    # True when the source model carries an algebraic rule that the Atomizer
+    # did not apply.  The source dynamics are then unknown, so a
+    # state-dependent event can neither be scheduled nor certified inactive.
+    unapplied_algebraic_rule: bool = False
     # Optional values for immutable species and other non-parameter symbols.
     resolve_constant: Callable[[str], Optional[float]] = lambda _identifier: None
     # Inline pure SBML function definitions before folding fixed-time events.
@@ -2847,6 +2851,29 @@ def synthesize_event_actions(
             else:
                 stochastic_events.append(event)
         events = stochastic_events
+
+    if context.unapplied_algebraic_rule:
+        # The source model has an algebraic rule the Atomizer did not apply,
+        # so the generated model does not reproduce the source dynamics.  A
+        # state-dependent event therefore cannot be scheduled, and it cannot
+        # be certified inactive either: the trigger may well become true in
+        # the source model.  Only an event whose trigger is the simulation
+        # time alone is independent of the model's dynamics.
+        algebraic_blocked_events: List[SBMLEvent] = []
+        remaining_events: List[SBMLEvent] = []
+        for event in events:
+            if parse_time_threshold(event.trigger) is None:
+                untranslated.append(
+                    (
+                        event,
+                        "the model's algebraic rule is not applied, so the "
+                        "event's trigger cannot be evaluated",
+                    )
+                )
+                algebraic_blocked_events.append(event)
+            else:
+                remaining_events.append(event)
+        events = remaining_events
 
     def fold(
         expression: str,

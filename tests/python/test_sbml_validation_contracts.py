@@ -544,6 +544,11 @@ EVENT_REFUSAL_REASONS = [
         "state_trigger_not_schedulable",
     ),
     (
+        "the model's algebraic rule is not applied, so the event's trigger "
+        "cannot be evaluated",
+        "algebraic_rule_blocks_event",
+    ),
+    (
         'trigger time "12" does not reduce to a constant',
         "trigger_time_not_constant",
     ),

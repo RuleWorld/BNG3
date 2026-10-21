@@ -4554,6 +4554,19 @@ def _seed_symbol_values(
         merged.update(ia_values)
         return merged
 
+    def _has_known_initial_quantity(species: object, model: SBMLModel) -> bool:
+        """Whether the source model defines a species' initial quantity."""
+
+        if getattr(species, "initial_amount_set", False) or getattr(
+            species, "initial_concentration_set", False
+        ):
+            return True
+        identifier = str(getattr(species, "id", "") or "")
+        return any(
+            str(getattr(assignment, "symbol", "") or "") == identifier
+            for assignment in model.initial_assignments
+        )
+
     compartment_names = {
         str(compartment_id): standardize_name(str(compartment_id))
         for compartment_id in model.compartments
@@ -4639,6 +4652,17 @@ def _seed_symbol_values(
             identifier = seed.sbml_id
             values = resolved_values()
             if identifier in values or standardize_name(identifier) in values:
+                continue
+            species = model.species.get(identifier)
+            if species is not None and not _has_known_initial_quantity(species, model):
+                # SBML Level 3 Version 2 Core Sec. 4.8: "Missing
+                # initialAmount and initialConcentration values implies that
+                # their values either are unknown, or to be obtained from an
+                # external source, or determined by an initial assignment or
+                # other SBML construct elsewhere in the model."  An unknown
+                # initial quantity must not resolve an expression: the
+                # Atomizer's zero seed for such a species is a placeholder,
+                # not a value the source model defines.
                 continue
             value = _substitute_seed_symbols(str(seed.concentration), values)
             if value is None:
@@ -10612,6 +10636,9 @@ def generate_bngl(
                     resolve_species_concentration_volume
                 ),
                 is_compile_time_constant=is_compile_time_constant,
+                unapplied_algebraic_rule=any(
+                    rule.type == "algebraic" for rule in model.rules
+                ),
                 resolve_constant=resolve_constant,
                 expand_functions=lambda expression: extend_function(
                     expression, {}, model.function_definitions
