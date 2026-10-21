@@ -6849,30 +6849,6 @@
               "identity_requirements": [
                 "source.revision"
               ]
-            },
-            {
-              "id": "event-semantics:refusal:native-multiple-events",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "A native model with more than one event is refused with a diagnostic instead of executing an arbitrarily chosen event.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "event-semantics:refusal:native-delay",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "A native event with a delay is refused with a diagnostic instead of executing the event at the wrong time.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "event-semantics:refusal:native-priority",
-              "evidence_kind": "diagnostic-only",
-              "expectation": "A native event with a priority is refused with a diagnostic instead of ignoring the priority.",
-              "identity_requirements": [
-                "source.revision"
-              ]
             }
           ],
           "test_references": [
@@ -6885,7 +6861,8 @@
           "decisions": [],
           "unmapped_scope": [
             "The event-semantics family qualifies the native event subset that the canonical compiled model carries: one immediate event with a continuous scalar trigger, species-observable assignments and constant-rate monotone dynamics. Delays, priorities, multiple events, parameter and compartment assignment targets, stochastic execution and strict initial-threshold equality stay outside the family and are covered by its refusal checks.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The native event runtime now executes several simultaneous events, a delay and a priority: upstream's change to the native event runtime makes those forms supported, and the Atomizer's own native-event tests qualify them. The event-semantics family no longer claims a refusal for them, and the scheduled path states the order the actions are written in rather than refusing a model that asks for both assignments."
           ]
         },
         {
@@ -6986,7 +6963,8 @@
           "decisions": [],
           "unmapped_scope": [
             "The event-semantics family qualifies the initial edge, the rising edge, the state, parameter and compartment updates and the solver re-synchronization against closed-form laws on generated models. Official SBML Test Suite event cases and a second independent engine remain outside the family, and the boundary sample of a scheduled phase split records the limit from before the event.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The native event runtime now executes several simultaneous events, a delay and a priority: upstream's change to the native event runtime makes those forms supported, and the Atomizer's own native-event tests qualify them. The event-semantics family no longer claims a refusal for them, and the scheduled path states the order the actions are written in rather than refusing a model that asks for both assignments."
           ]
         },
         {
@@ -7062,7 +7040,9 @@
           "decisions": [],
           "unmapped_scope": [
             "The event-semantics family qualifies the priority ordering of simultaneous events and the recurrence of a re-armed event. Delay, snapshot, persistence, cancellation and cascade semantics are not implemented and stay outside the family; the native runtime refuses delays and priorities explicitly.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The compartment-size event case states the law of the emitted model: the Atomizer lowers a species whose symbol denotes a concentration to a rate that carries the compartment's size, so the amount decays at k/V and the event's size change makes the rate k*V/V'.  The canonical comparison for that form is outstanding, because BNG2 has no SBML path and the official SBML Test Suite event cases stay outside this family's declared slice.",
+            "The native event runtime now executes several simultaneous events, a delay and a priority: upstream's change to the native event runtime makes those forms supported, and the Atomizer's own native-event tests qualify them. The event-semantics family no longer claims a refusal for them, and the scheduled path states the order the actions are written in rather than refusing a model that asks for both assignments."
           ]
         },
         {
@@ -7114,7 +7094,8 @@
           "decisions": [],
           "unmapped_scope": [
             "The event-semantics family qualifies the stochastic transition of a time-triggered event against the exact binomial count law with a recorded seed and a declared error budget, and the seeded ordering of simultaneous equal-priority events. State-triggered stochastic events are refused explicitly and stay outside the family.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The native event runtime now executes several simultaneous events, a delay and a priority: upstream's change to the native event runtime makes those forms supported, and the Atomizer's own native-event tests qualify them. The event-semantics family no longer claims a refusal for them, and the scheduled path states the order the actions are written in rather than refusing a model that asks for both assignments."
           ]
         },
         {

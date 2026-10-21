@@ -598,6 +598,14 @@ EVENT_REFUSAL_REASONS = [
         "simultaneous_dynamic_priority_unordered",
     ),
     (
+        "simultaneous same-priority event group requires a random execution order",
+        "simultaneous_random_order",
+    ),
+    (
+        "simultaneous event without a priority has an undefined execution order",
+        "simultaneous_unordered_event",
+    ),
+    (
         "time-window bounds do not form a nonempty interval",
         "time_window_empty",
     ),

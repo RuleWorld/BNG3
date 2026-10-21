@@ -77,5 +77,5 @@ end bng3_events
 
     REQUIRE_THROWS_WITH(
         bng::engine::PsaSimulator(*model, network),
-        Catch::Matchers::ContainsSubstring("BNG3 event execution is not implemented"));
+        Catch::Matchers::ContainsSubstring("BNG3 native event execution is not implemented"));
 }

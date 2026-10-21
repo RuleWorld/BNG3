@@ -1,0 +1,33 @@
+# The state-dependent rate law of tests/cpp/test_batch_ssa_reproducibility.cpp.
+#
+# The second reaction's rate law reads an observable, so the SSA path has to
+# resolve it against the current trajectory's state.  The batched CPU pool
+# shares one OdeIntegrator across its worker threads, so the observable
+# scratch this rate law resolves against must be per-worker: when it was a
+# member of the shared integrator, one worker's rate expression could read
+# another worker's trajectory, and the ensemble for a fixed seed differed
+# between runs of the same binary.
+begin parameters
+  k1 0.5
+  k2 0.05
+end parameters
+
+begin molecule types
+  A()
+  B()
+end molecule types
+
+begin seed species
+  A() 200
+  B() 0
+end seed species
+
+begin reaction rules
+  A() -> B()  k1
+  B() -> A()  k2*O_A
+end reaction rules
+
+begin observables
+  Molecules O_A A()
+  Molecules O_B B()
+end observables

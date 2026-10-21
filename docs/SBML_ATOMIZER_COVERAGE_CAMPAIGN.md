@@ -223,6 +223,59 @@ so a cluster table can no longer omit the cases it forgot.
    rather than `unsupported`: eight official cases move forward, and the
    official-reference residual falls from 18 to 17.
 
+6. **The SBML `fast` attribute is part of the model's definition, not a solver
+   hint** (PR #354). SBML Level 2 and Level 3 Version 1 Sec. 4.11 do not
+   describe a `fast="true"` reaction as merely faster: "Fast reactions are
+   considered to be instantaneous relative to the slow reactions", and
+   "software tools should use a pseudo steady-state approximation for the set
+   of fast reactions **when constructing the system of equations for the
+   model**". The same section says the attribute "has a significant effect on
+   the mathematical interpretation of a model and cannot be safely ignored if
+   a software tool does not implement support for the corresponding
+   concept". Level 3 Version 2 removes the attribute outright ("every
+   Reaction in a L3V2 model is equivalent to an SBML Level 3 Version 1
+   Reaction with a `fast` value of false"), and the appendix *Mathematical
+   consequences of the `fast` attribute on Reaction* gives the reduction
+   itself: the fast subsystem contributes the algebraic constraint
+   `A1·v_f(x) = 0` while the slow dynamics follow from `B·dx/dt = B·A2·v_s`
+   with `B` the left null space of `A1`.
+
+   The official references agree, and this is the finding that decided the
+   cluster: every published `-results.csv` for these cases is the
+   pseudo-steady-state trajectory, not the trajectory of the raw rate
+   equations. Case 00870 is already at its equilibrium (`Kf1·A4 = Kr1·A2`) at
+   `t = 0`, 00986 is exactly `B(t) = e^{-t}`, and the cases' own notes say
+   "the 'fast' reaction should go to completion instantly". Measured
+   independently with libRoadRunner 2.10.0's exact CVODE on the same models
+   with the attribute cleared, the raw-ODE solution deviates from every
+   reference by 100x-53000x the suite's own tolerance, and libRoadRunner
+   itself refuses to load a `fast="true"` model ("Unable to support 'fast'
+   reactions"). **Lowering a fast reaction as an ordinary reaction would
+   therefore have turned 35 refused cases into 35 failed ones.**
+
+   The Atomizer now lowers the two shapes whose pseudo steady state is
+   closed-form.  A rate that vanishes with one of the two species the
+   reaction converts - `c*X`, `c*Y` or `c*X*Y` with a time-independent
+   constant `c` - holds that species at zero and lets the other absorb its
+   amount, scaled by the stoichiometry ratio and by the conversion factors;
+   the sign of `c` says which of the two the reaction runs towards.  A rate
+   that *balances* the two species - `k_f*X - k_r*Y` - is held on the
+   algebraic balance `k_f*X = k_r*Y`, and the slow reactions move along that
+   balance: the eliminated species carries the reduced rate as a rate rule
+   and the fast subsystem's conserved combination changes at the slow
+   reactions' own rate.  That reduction is a closed-form pre-solve of the
+   initial condition plus an exact rate substitution, not a numerical
+   algebraic solve, so it needs no engine feature.  Independent fast
+   reactions each reduce on their own as long as they do not share a
+   species, and a rate constant an algebraic rule fixes is a constant.  29
+   official cases move `unsupported → passed` (00870 00871
+   00872 00873 00874 00875 00986 01051 01052 01053 01396 01397 01399 01544
+   01545 01546 01547 01548 01549 01550 01551 01558 01559 01560 01565 01567
+   01569 01571 01572) and 5 stay `unsupported` with a construct-naming
+   reason: a rate constant an event or a rule sets (00987 00988 01568
+   01570), a stoichiometry an event changes (01398), and a `delay` of the
+   converted species (01539).
+
 The combined effect of all nine changes is recorded in the integrated
 result below.
 
@@ -244,6 +297,7 @@ result below.
 | I | Assignment rules whose target is a parameter | agent I | not started |
 | J | Time-dependent stoichiometry (rate-ruled `speciesReference`) | agent J | PR #323 (merged) |
 | — | Independent review of each implementation PR | separate reviewer | required before merge |
+| — | The SBML `fast` reaction's pseudo steady state | agent AA | PR #354 (review pending) |
 
 ## Merged result (2026-10-20)
 

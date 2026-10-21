@@ -457,10 +457,9 @@ class EventTranslationContext:
     resolve_param: Callable[[str], Optional[float]]
     is_param: Callable[[str], bool]
     method: str = "ode"
-    # The seed the requested action block asks the stochastic simulator to
-    # use.  A generated schedule must carry it into every generated
-    # ``simulate`` phase, otherwise the seed the caller asked for is silently
-    # dropped and the run is no longer reproducible.
+    # The seed the caller asked for.  A generated schedule must carry it into
+    # every generated ``simulate`` phase, otherwise the seed the caller asked
+    # for is silently dropped and the run is no longer reproducible.
     seed: Optional[int] = None
     base_t_end: float = 10
     base_steps: int = 100
@@ -585,6 +584,15 @@ class EventTranslationContext:
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
         lambda _identifier: None
     )
+    # Resolve the BNGL state species that carries a rate-ruled parameter.
+    # A rate rule determines the parameter's rate of change for the whole
+    # simulation (SBML Level 3 Version 2 Core, Sec. 4.9.4 "RateRule"), so
+    # the parameter's *value* is a derived quantity, and an event assignment
+    # to it sets that value (Sec. 4.12.5 "EventAssignment") and the rule
+    # continues from it.
+    resolve_rate_rule_state_pattern: Callable[[str], Optional[str]] = (
+        lambda _identifier: None
+    )
     # True only when the model has no reactions, rules, or initial assignments;
     # event-local mutable symbols then remain at their initial values unless
     # an event fires.
@@ -604,6 +612,13 @@ class EventTranslationContext:
     resolve_first_order_chain_event_system: Callable[
         [], Optional[Tuple[str, str, str, float, float]]
     ] = _no_first_order_chain_event_system
+    # Native ``bng3_events`` lowering.  Maps an SBML state symbol (a species
+    # or a rate-rule parameter) to the BNGL observable that carries its
+    # state, the factor that converts the SBML value into that observable's
+    # units, and the compartment the state lives in.
+    resolve_native_state: Callable[[str], Optional["NativeStateTarget"]] = (
+        lambda _identifier: None
+    )
 
     @property
     def resolveSpeciesPattern(self):
@@ -660,6 +675,43 @@ class EventSet:
     target: str
     value: float
     variable: str
+
+
+@dataclass(frozen=True)
+class NativeStateTarget:
+    """BNGL state that an SBML event trigger or assignment refers to.
+
+    ``observable`` is the BNGL observable that carries the state's amount,
+    ``amount_factor`` converts an SBML value of that state into the same
+    amount units, and ``compartment`` names the compartment the state lives
+    in so that two states can be compared only when their units agree.
+    """
+
+    observable: str
+    amount_factor: float
+    compartment: str
+
+
+@dataclass(frozen=True)
+class NativeEventEntry:
+    """One SBML event lowered to the native event runtime."""
+
+    identifier: str
+    trigger: str
+    initial_value: bool
+    persistent: bool
+    use_values_from_trigger_time: bool
+    delay: float
+    priority: Optional[float]
+    assignments: Tuple[Tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class NativeEventLowering:
+    """The native event lowering of a model: a block, or the reason there is none."""
+
+    block: Optional[str]
+    reason: Optional[str] = None
 
 
 @dataclass
@@ -973,7 +1025,15 @@ class _NumericParser:
                     elif function_name == "arccsc" and len(arguments) == 1:
                         value = math.asin(1 / arguments[0])
                     elif function_name == "arccot" and len(arguments) == 1:
-                        value = math.atan2(1.0, arguments[0])
+                        # MathML's ``arccot`` is the reciprocal of ``atan``:
+                        # ``arccot(x) = atan(1/x)``.  That is the convention
+                        # the shared built-in table lowers the call to, so the
+                        # folded value has to agree with the emitted model
+                        # (and with the official reference, which uses it
+                        # too).  ``atan2(1, x)`` would put the result in
+                        # ``(0, pi)`` and differ by ``pi`` for a negative
+                        # argument.
+                        value = math.atan(1.0 / arguments[0])
                     elif function_name == "arcsech" and len(arguments) == 1:
                         value = math.acosh(1 / arguments[0])
                     elif function_name == "arccsch" and len(arguments) == 1:
@@ -1272,6 +1332,14 @@ _COMPARISON_ALIASES = {
 }
 _COMPARISON_ALIAS_PATTERN = "|".join(sorted(_COMPARISON_ALIASES, key=len, reverse=True))
 _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "geq"}
+
+# The native ``bng3_events`` runtime locates the trigger's rising edge with
+# continuous root finding.  A strict inequality is true exactly on one side of
+# its root, so a sign change is the rising trigger edge; a non-strict
+# inequality is also true at a tangential contact that leaves no sign change.
+# Both therefore carry the same documented limitation: a truth interval that
+# opens and closes between two solver steps is not observed.
+_NATIVE_COMPARISON_OPERATORS = {"lt": "<", "gt": ">", "leq": "<=", "geq": ">="}
 
 
 # Names a trigger expression uses for built-in functions rather than model
@@ -2054,26 +2122,39 @@ def expand_static_parameter_event_system(
         slope = affine_rates[identifier]
         return (threshold - initial_values[identifier]) / slope
 
+    def trigger_value(index: int, time_value: float) -> Optional[float]:
+        """The trigger's truth value at ``time_value``.
+
+        A trigger whose threshold is crossed exactly at ``time_value`` is
+        true there by construction: the crossing time is computed from the
+        same arithmetic as the trigger's own expression, so evaluating the
+        expression again can land one ulp on the wrong side of the
+        threshold.  ``time - reset >= 0.01`` with ``reset = 0.02`` at
+        ``t = 0.03`` is the case in point: ``0.03 - 0.02`` is
+        ``0.009999999999999998`` in binary floating point, so the direct
+        evaluation says the trigger is false at the very moment it crossed.
+
+        Every place that asks whether a trigger holds has to ask it the
+        same way, or the expander schedules a firing and then cancels it.
+        """
+
+        edge = time_edges[index]
+        if edge is not None:
+            offset, threshold = edge
+            crossing = (values[offset] if offset else 0.0) + threshold
+            if abs(crossing - time_value) <= 1e-12:
+                return 1.0
+        if (
+            state_edges[index] is not None
+            and abs(state_edge_time(index) - time_value) <= 1e-12
+        ):
+            return 1.0
+        return evaluate(triggers[index], values, time_value)
+
     def schedule_edges(time_value: float, previous: Sequence[bool]) -> None:
         nonlocal sequence
         for index, (event, expression) in enumerate(zip(events, triggers)):
-            actual = (
-                1.0
-                if (
-                    time_edges[index] is not None
-                    and abs(
-                        (values[time_edges[index][0]] if time_edges[index][0] else 0.0)
-                        + time_edges[index][1]
-                        - time_value
-                    )
-                    <= 1e-12
-                )
-                or (
-                    state_edges[index] is not None
-                    and abs(state_edge_time(index) - time_value) <= 1e-12
-                )
-                else evaluate(expression, values, time_value)
-            )
+            actual = trigger_value(index, time_value)
             if actual is None:
                 raise ValueError("trigger evaluation failed")
             current = bool(actual)
@@ -2146,7 +2227,7 @@ def expand_static_parameter_event_system(
                 record
                 for record in batch
                 if events[record["index"]].trigger_persistent is not False
-                or bool(evaluate(triggers[record["index"]], values, next_time))
+                or bool(trigger_value(record["index"], next_time))
             ]
             while candidates:
                 priority_values: List[Optional[float]] = []
@@ -2334,7 +2415,7 @@ def expand_static_parameter_event_system(
                     candidate
                     for candidate in candidates
                     if events[candidate["index"]].trigger_persistent is not False
-                    or bool(evaluate(triggers[candidate["index"]], values, next_time))
+                    or bool(trigger_value(candidate["index"], next_time))
                 ]
                 same_time = [
                     pending_record
@@ -2351,24 +2432,10 @@ def expand_static_parameter_event_system(
                     pending_record
                     for pending_record in same_time
                     if events[pending_record["index"]].trigger_persistent is not False
-                    or bool(
-                        evaluate(triggers[pending_record["index"]], values, next_time)
-                    )
+                    or bool(trigger_value(pending_record["index"], next_time))
                 )
             current_time = next_time
-        # The proven execution order is carried into the materialized events
-        # as a descending priority.  Without it the schedule would reach the
-        # action writer as a set of simultaneous events that share a priority,
-        # and the order the source model does not determine would have to be
-        # guessed again.
-        total = len(executions)
-        return [
-            replace(
-                event,
-                priority=_format_number(float(total - index)),
-            )
-            for index, (_time, event) in enumerate(executions)
-        ]
+        return [event for _time, event in executions]
     except (ArithmeticError, OverflowError, TypeError, ValueError):
         return None
 
@@ -2819,6 +2886,46 @@ def _render_set(kind: str, target: str, value: float) -> str:
     return f'{command}("{target}", "{_format_number(value)}")'
 
 
+def _assignment_action(
+    context: EventTranslationContext,
+    variable: str,
+    event: SBMLEvent,
+    time: float,
+    value: float,
+    pattern: Optional[str],
+) -> Tuple[str, str, float]:
+    """Return the scheduled action that applies one SBML assignment value.
+
+    An SBML assignment sets the assigned symbol's *value*.  For a species
+    whose identifier denotes a concentration (``hasOnlySubstanceUnits="false"``)
+    that value is a concentration and the species' amount is the assigned value
+    times the size of the species' compartment (SBML Level 3 Version 2 Core,
+    Sec. 4.6.5 and Sec. 4.6.8).  BNGL keeps the amount as the species' state
+    and ``setConcentration`` assigns that state (BNG2 writes the species'
+    ``Concentrations`` entry, which is the amount), so the conversion belongs
+    to the lowering rather than to the action.
+
+    A parameter that carries a rate rule is a *derived* quantity: the rule
+    determines its rate of change for the whole simulation (Sec. 4.9.4
+    "RateRule"), and an event assignment sets the parameter's *value*
+    (Sec. 4.12.5 "EventAssignment"), from which the rule then continues.  The
+    generated model keeps that value in a state species whose amount is the
+    parameter's value, so the assignment has to reach that state and not the
+    parameter, whose value the rule owns.
+    """
+
+    if pattern is None:
+        state_pattern = context.resolve_rate_rule_state_pattern(variable)
+        if state_pattern is not None:
+            # The state species' amount is the parameter's value, so the
+            # assigned value needs no volume conversion.
+            return ("conc", state_pattern, value)
+        return ("param", standardize_name(variable), value)
+    volume = context.resolve_species_concentration_volume(variable, event, time)
+    amount = value * volume if volume is not None else value
+    return ("conc", pattern, amount)
+
+
 def _render_sets(sets: Sequence[Tuple[str, str, float]]) -> List[str]:
     lines: List[str] = []
     for kind, target, value in sets:
@@ -2832,6 +2939,385 @@ def _render_sets(sets: Sequence[Tuple[str, str, float]]) -> List[str]:
                 f'"{_format_number(value)}")'
             )
     return lines
+
+
+def _native_state_target(
+    identifier: str, context: EventTranslationContext
+) -> Optional[NativeStateTarget]:
+    """Return the BNGL state that an SBML identifier names, if any."""
+    text = str(identifier or "").strip()
+    if not text or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", text):
+        return None
+    return context.resolve_native_state(text)
+
+
+def _native_static_text(
+    expression: str, context: EventTranslationContext
+) -> Optional[str]:
+    """Return the BNGL text of a static SBML expression, or ``None``.
+
+    A static side of a trigger may not reference any dynamic state: the
+    native runtime classifies the crossing by the sign of the difference
+    between the two sides, so both sides have to be continuous functions of
+    the model state, and a mixed expression hides that classification.
+    """
+    expanded = context.expand_functions(str(expression or "").strip())
+    if not expanded:
+        return None
+    for run in _expression_id_runs(expanded):
+        if context.resolve_native_state(run) is not None:
+            return None
+        if not context.is_compile_time_constant(run):
+            return None
+    return expanded
+
+
+def _native_scaled_static(
+    expression: str, factor: float, context: EventTranslationContext
+) -> Optional[str]:
+    """Scale a static SBML side into the units of a stateful side."""
+    static = _native_static_text(expression, context)
+    if static is None:
+        return None
+    if factor == 1.0:
+        return static
+    return f"({_format_number(factor)} * ({static}))"
+
+
+def _native_state_is_monotone(
+    identifier: str, event: SBMLEvent, context: EventTranslationContext
+) -> bool:
+    """True when the state has a provably monotone trajectory.
+
+    A non-strict comparison is also true at a tangential contact that leaves
+    no sign change, so its rising edge is only a crossing when the state
+    cannot reverse at the threshold.  A state whose trajectory is affine,
+    exponential, or square-linear with a fixed sign has no such contact.
+    """
+    affine = context.resolve_affine_rate_for_event(identifier, event)
+    if affine is not None:
+        try:
+            initial, slope = affine
+        except (TypeError, ValueError):
+            initial = slope = None
+        if (
+            initial is not None
+            and slope is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(slope))
+        ):
+            return True
+    exponential = context.resolve_exponential_rate_for_event(identifier, event)
+    if exponential is not None:
+        try:
+            initial, exponent = exponential
+        except (TypeError, ValueError):
+            initial = exponent = None
+        if (
+            initial is not None
+            and exponent is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(exponent))
+        ):
+            return float(initial) * float(exponent) >= 0.0
+    square_linear = context.resolve_square_linear_rate_for_event(identifier, event)
+    if square_linear is not None:
+        try:
+            initial, squared_slope = square_linear
+        except (TypeError, ValueError):
+            initial = squared_slope = None
+        if (
+            initial is not None
+            and squared_slope is not None
+            and math.isfinite(float(initial))
+            and math.isfinite(float(squared_slope))
+        ):
+            return float(squared_slope) >= 0.0
+    return False
+
+
+def _native_comparison_expression(
+    left_text: str,
+    right_text: str,
+    operator: str,
+    event: SBMLEvent,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Render one comparison of state and static quantities in BNGL terms."""
+    symbol = _NATIVE_COMPARISON_OPERATORS[operator]
+    left_state = _native_state_target(left_text, context)
+    right_state = _native_state_target(right_text, context)
+    if symbol in {"<=", ">="}:
+        # A non-strict comparison holds at a tangential contact, so the
+        # crossing has to be provably transversal.
+        for state, text in ((left_state, left_text), (right_state, right_text)):
+            if state is None:
+                continue
+            if not _native_state_is_monotone(text, event, context):
+                return None
+    if left_state is not None and right_state is not None:
+        # Two states compare directly only when they share their units; a
+        # difference of two species in different compartments would need a
+        # ratio that the native trigger grammar cannot express.
+        if left_state.amount_factor != right_state.amount_factor:
+            return None
+        return f"{left_state.observable} {symbol} {right_state.observable}"
+    if left_state is not None:
+        scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
+        if scaled is None:
+            return None
+        return f"{left_state.observable} {symbol} {scaled}"
+    if right_state is not None:
+        scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
+        if scaled is None:
+            return None
+        return f"{scaled} {symbol} {right_state.observable}"
+    return None
+
+
+def _native_conjunction_expression(
+    trigger: str, event: SBMLEvent, context: EventTranslationContext
+) -> Optional[str]:
+    """Lower a conjunction of state comparisons to a native BNGL expression.
+
+    A conjunction holds only where every conjunct holds, so the native
+    runtime compares the smallest of the conjunct differences with zero.  The
+    runtime needs every conjunct to be a strict comparison, because only a
+    strict comparison has a rising edge that a sign change can attribute.
+    """
+    terms = _split_call_arguments(str(trigger or "").strip())
+    if terms is None or len(terms) < 2:
+        return None
+    rendered: List[str] = []
+    for term in terms:
+        comparison = _match_comparison_call(term)
+        if comparison is None:
+            return None
+        operator, arguments_text = comparison
+        if operator not in _NATIVE_COMPARISON_OPERATORS:
+            return None
+        arguments = _split_arguments(arguments_text)
+        if arguments is None or len(arguments) != 2:
+            return None
+        left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+        expression = _native_comparison_expression(
+            left_text, right_text, operator, event, context
+        )
+        if expression is None:
+            return None
+        rendered.append(f"({expression})")
+    return " && ".join(rendered)
+
+
+def _native_trigger_expression(
+    event: SBMLEvent, context: EventTranslationContext
+) -> Optional[str]:
+    """Lower a state-dependent SBML trigger to a native BNGL inequality."""
+    conjunction = _native_conjunction_expression(event.trigger, event, context)
+    if conjunction is not None:
+        return conjunction
+    comparison = _match_comparison_call(event.trigger)
+    if comparison is None:
+        return None
+    operator, arguments_text = comparison
+    # Only a strict inequality has a crossing that the continuous root
+    # finder can attribute to exactly one trigger edge.  A non-strict
+    # inequality is also true at a tangential contact, which leaves the
+    # crossing unclassified, so it stays with the analytic lowering path.
+    if operator not in _NATIVE_COMPARISON_OPERATORS:
+        return None
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return None
+    left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    return _native_comparison_expression(
+        left_text, right_text, operator, event, context
+    )
+
+
+def _native_fold_term(
+    node: ast.AST, context: EventTranslationContext
+) -> Optional[float]:
+    """Fold one additive term to a number when it names only static values."""
+    try:
+        text = ast.unparse(node)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return _native_fold_term_text(text, context)
+
+
+def _native_fold_term_text(
+    text: str, context: EventTranslationContext
+) -> Optional[float]:
+    """Fold an SBML expression to a number when it names only static values."""
+    expanded = context.expand_functions(str(text or "").strip())
+    if not expanded:
+        return None
+
+    def resolve(identifier: str) -> Optional[float]:
+        if context.resolve_native_state(identifier) is not None:
+            return None
+        if not context.is_compile_time_constant(identifier):
+            return None
+        return context.resolve_param(identifier)
+
+    return fold_numeric(expanded, resolve)
+
+
+def _native_additive_terms(node: ast.AST) -> Optional[List[Tuple[int, ast.AST]]]:
+    """Flatten an additive expression into signed multiplicative terms."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub)):
+        left = _native_additive_terms(node.left)
+        right = _native_additive_terms(node.right)
+        if left is None or right is None:
+            return None
+        if isinstance(node.op, ast.Sub):
+            right = [(-sign, term) for sign, term in right]
+        return left + right
+    return [(1, node)]
+
+
+def _native_multiplicative_factors(node: ast.AST) -> Optional[List[ast.AST]]:
+    """Flatten a multiplicative term into its factors."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+        left = _native_multiplicative_factors(node.left)
+        right = _native_multiplicative_factors(node.right)
+        if left is None or right is None:
+            return None
+        return left + right
+    if isinstance(node, ast.BinOp):
+        # A quotient between a state and a constant would need the state's
+        # unit factor in a denominator; the native value grammar has no
+        # division.
+        return None
+    return [node]
+
+
+def _native_factor_constant(
+    node: ast.AST, context: EventTranslationContext
+) -> Optional[float]:
+    """Return the numeric value of a constant factor, or ``None``."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+        if isinstance(node.value, bool):
+            return None
+        return float(node.value)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        inner = _native_factor_constant(node.operand, context)
+        if inner is None:
+            return None
+        return inner if isinstance(node.op, ast.UAdd) else -inner
+    return None
+
+
+def _native_term_expression(
+    sign: int,
+    node: ast.AST,
+    target: NativeStateTarget,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Render one assignment term in the units of the assignment target."""
+    folded = _native_fold_term(node, context)
+    if folded is not None:
+        value = folded * sign
+        if value == 0:
+            return "0"
+        if target.amount_factor == 1.0:
+            return _format_number(value)
+        return (
+            f"({_format_number(value)} * " f"({_format_number(target.amount_factor)}))"
+        )
+    factors = _native_multiplicative_factors(node)
+    if factors is None:
+        return None
+    coefficient = float(sign)
+    names: List[str] = []
+    state: Optional[NativeStateTarget] = None
+    for factor in factors:
+        value = _native_factor_constant(factor, context)
+        if value is not None:
+            coefficient *= value
+            continue
+        if isinstance(factor, ast.Name):
+            resolved = context.resolve_native_state(factor.id)
+            if resolved is not None:
+                if state is not None:
+                    # Two states in one term would need their unit factors
+                    # multiplied out; the native value grammar keeps a single
+                    # state per term.
+                    return None
+                state = resolved
+                continue
+            if not context.is_compile_time_constant(factor.id):
+                return None
+            names.append(standardize_name(factor.id))
+            continue
+        return None
+    if state is not None:
+        if state.amount_factor != target.amount_factor:
+            return None
+        parts: List[str] = []
+        if coefficient != 1.0:
+            parts.append(_format_number(coefficient))
+        parts.extend(names)
+        parts.append(state.observable)
+        return " * ".join(parts)
+    if not names and coefficient == 0:
+        return "0"
+    parts = []
+    if coefficient != 1.0:
+        parts.append(_format_number(coefficient))
+    parts.extend(names)
+    if target.amount_factor != 1.0:
+        parts.append(f"({_format_number(target.amount_factor)})")
+    if not parts:
+        parts.append("1")
+    return " * ".join(parts)
+
+
+def _native_value_expression(
+    expression: str, target: NativeStateTarget, context: EventTranslationContext
+) -> Optional[str]:
+    """Rewrite an SBML assignment value into the units of its target."""
+    text = str(expression or "").strip()
+    if not text:
+        return None
+    try:
+        tree = ast.parse(context.expand_functions(text), mode="eval")
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    terms = _native_additive_terms(tree.body)
+    if terms is None:
+        return None
+    rendered: List[str] = []
+    for sign, node in terms:
+        term = _native_term_expression(sign, node, target, context)
+        if term is None:
+            return None
+        if not rendered:
+            rendered.append(term if sign > 0 else f"-({term})")
+        else:
+            rendered.append((" + " if sign > 0 else " - ") + term)
+    if not rendered:
+        return None
+    return "".join(rendered)
+
+
+# The reasons the native runtime cannot execute a group of events that may be
+# executed simultaneously.  SBML L3V2 Core Sec. 4.12.3 requires two events
+# whose priority values are equal to be executed in a random order, and an
+# event without a priority has an undefined order with respect to the other
+# events of the same execution point.  Neither order is reproducible, so the
+# model is refused rather than executed with an arbitrary order.
+#
+# Two events with different triggers can still be triggered at the same
+# instant, and nothing in the model proves that they cannot, so every event
+# of a model with more than one event needs a static priority of its own.
+_NATIVE_SIMULTANEOUS_ORDER_REFUSAL = (
+    "simultaneous same-priority event group requires a random execution order"
+)
+_NATIVE_UNORDERED_EVENT_REFUSAL = (
+    "simultaneous event without a priority has an undefined execution order"
+)
 
 
 def _equal_priority_conflicts(
@@ -2861,6 +3347,147 @@ def _equal_priority_conflicts(
                     if left[key] != right[key]:
                         conflicts.append((key[1], f"{left[key]} != {right[key]}"))
     return conflicts
+
+
+def _lower_native_event(
+    event: SBMLEvent, context: EventTranslationContext
+) -> Optional[NativeEventEntry]:
+    """Lower one SBML event to the native event runtime, or return ``None``."""
+
+    priority: Optional[float] = None
+    if event.priority:
+        # The priority orders the assignments of the events that are executed
+        # simultaneously.  It has to be a static value, because the order of
+        # two simultaneous events is decided before either of them runs.
+        priority = _native_fold_term_text(event.priority, context)
+        if priority is None or not math.isfinite(priority):
+            return None
+    delay = 0.0
+    if event.delay:
+        delay = _native_fold_term_text(event.delay, context)
+        if delay is None or not math.isfinite(delay) or delay < 0:
+            return None
+    trigger = _native_trigger_expression(event, context)
+    if trigger is None:
+        return None
+    assignments: List[Tuple[str, str]] = []
+    for assignment in event.assignments:
+        variable, expression = _event_assignment(assignment)
+        target = context.resolve_native_state(variable)
+        if target is None:
+            # The native runtime assigns observable state; a parameter or
+            # compartment assignment has no equivalent there.
+            return None
+        value = _native_value_expression(expression, target, context)
+        if value is None:
+            return None
+        assignments.append((target.observable, value))
+    if not assignments:
+        return None
+    return NativeEventEntry(
+        identifier=event.id or "event",
+        trigger=trigger,
+        initial_value=event.trigger_initial_value is not False,
+        persistent=event.trigger_persistent is not False,
+        use_values_from_trigger_time=event.use_values_from_trigger_time is not False,
+        delay=delay,
+        priority=priority,
+        assignments=tuple(assignments),
+    )
+
+
+def _native_simultaneous_order_refusal(
+    entries: Sequence[NativeEventEntry],
+) -> Optional[str]:
+    """Return why the events of a model cannot be ordered, or ``None``.
+
+    A model with one event needs no order: nothing else is executed at the
+    same instant.  A model with several events does: two events that are
+    triggered at the same instant are executed simultaneously, and the
+    specification only defines that order through the events' priorities.
+    """
+
+    if len(entries) < 2:
+        return None
+    priorities = [entry.priority for entry in entries]
+    if any(priority is None for priority in priorities):
+        # An event without a priority has an undefined order with respect to
+        # the other events of the same execution point.
+        return _NATIVE_UNORDERED_EVENT_REFUSAL
+    if len(set(priorities)) != len(priorities):
+        # Equal priority values are executed in a random order.
+        return _NATIVE_SIMULTANEOUS_ORDER_REFUSAL
+    return None
+
+
+def lower_native_events(
+    events: Sequence[SBMLEvent], context: EventTranslationContext
+) -> NativeEventLowering:
+    """Lower the SBML events into the native ``bng3_events`` block.
+
+    The native runtime detects the trigger's rising edge with continuous root
+    finding, so it executes a state-dependent trigger that no finite list of
+    scheduled actions can express.  Several events may share the block: the
+    runtime orders the events that are executed simultaneously by their
+    priority, and re-tests every trigger after each execution.
+    """
+
+    if not events:
+        return NativeEventLowering(None)
+    if context.unapplied_algebraic_rule:
+        # The source model has an algebraic rule the Atomizer did not apply,
+        # so the generated model does not reproduce the source dynamics and
+        # the trigger cannot be evaluated on it.
+        return NativeEventLowering(None)
+    if str(context.method or "ode").lower() not in {"ode", "cvode"}:
+        # The native runtime finds a trigger crossing with the continuous ODE
+        # solver; a stochastic run needs jump scheduling instead.
+        return NativeEventLowering(None)
+    entries: List[NativeEventEntry] = []
+    for event in events:
+        entry = _lower_native_event(event, context)
+        if entry is None:
+            return NativeEventLowering(None)
+        entries.append(entry)
+    refusal = _native_simultaneous_order_refusal(entries)
+    if refusal is not None:
+        return NativeEventLowering(None, refusal)
+    lines = ["begin bng3_events version 1"]
+    for entry in entries:
+        lines.append(f'  event "{entry.identifier}"')
+        lines.append(f"    trigger: {entry.trigger}")
+        lines.append(
+            "    initial_value: " + ("true" if entry.initial_value else "false")
+        )
+        lines.append("    persistent: " + ("true" if entry.persistent else "false"))
+        lines.append(
+            "    use_values_from_trigger_time: "
+            + ("true" if entry.use_values_from_trigger_time else "false")
+        )
+        if entry.delay:
+            lines.append(f"    delay: {_format_number(entry.delay)}")
+        if entry.priority is not None:
+            lines.append(f"    priority: {_format_number(entry.priority)}")
+        for observable, value in entry.assignments:
+            lines.append(f"    assignment: {observable} = {value}")
+        lines.append("  end event")
+    lines.append("end bng3_events")
+    return NativeEventLowering("\n".join(lines))
+
+
+def synthesize_native_event_block(
+    events: Sequence[SBMLEvent], context: EventTranslationContext
+) -> Optional[str]:
+    """Lower the SBML events into the native ``bng3_events`` block.
+
+    The native runtime detects the trigger's rising edge with continuous root
+    finding, so it executes a state-dependent trigger that no finite list of
+    scheduled actions can express.  The supported subclass is deliberately
+    narrow: a continuous trigger, a constant delay, a static priority, and
+    assignments to observable state.
+    """
+
+    return lower_native_events(events, context).block
 
 
 def synthesize_event_actions(
@@ -3882,15 +4509,13 @@ def synthesize_event_actions(
                 (
                     execution_time,
                     [
-                        (
-                            (
-                                "conc"
-                                if context.resolve_species_pattern(variable)
-                                else "param"
-                            ),
-                            context.resolve_species_pattern(variable)
-                            or standardize_name(variable),
+                        _assignment_action(
+                            context,
+                            variable,
+                            event,
+                            execution_time,
                             float(value),
+                            context.resolve_species_pattern(variable),
                         )
                         for variable, value in assignment_values.items()
                     ],
@@ -4007,7 +4632,9 @@ def synthesize_event_actions(
         if reset_value is None or not math.isfinite(reset_value):
             continue
 
-        def assignment_actions(self_value: float) -> List[Tuple[str, str, float]]:
+        def assignment_actions(
+            self_value: float, execution_time: float
+        ) -> List[Tuple[str, str, float]]:
             values = {identifier: self_value, **companion_values}
             actions: List[Tuple[str, str, float]] = []
             for variable in assignment_map:
@@ -4016,12 +4643,16 @@ def synthesize_event_actions(
                     if context.is_param(variable)
                     else context.resolve_species_pattern(variable)
                 )
-                if target_species:
-                    actions.append(("conc", target_species, float(values[variable])))
-                else:
-                    actions.append(
-                        ("param", standardize_name(variable), float(values[variable]))
+                actions.append(
+                    _assignment_action(
+                        context,
+                        variable,
+                        event,
+                        execution_time,
+                        float(values[variable]),
+                        target_species,
                     )
+                )
             return actions
 
         reset_is_false = (
@@ -4041,7 +4672,9 @@ def synthesize_event_actions(
             scheduled.append(
                 (
                     first_trigger + float(delay),
-                    assignment_actions(float(reset_value)),
+                    assignment_actions(
+                        float(reset_value), first_trigger + float(delay)
+                    ),
                     0.0,
                     None,
                     False,
@@ -4088,7 +4721,9 @@ def synthesize_event_actions(
             if value is None or not math.isfinite(value):
                 recurrence = []
                 break
-            recurrence.append((execution_time, assignment_actions(float(value)), 0.0))
+            recurrence.append(
+                (execution_time, assignment_actions(float(value), execution_time), 0.0)
+            )
             count += 1
             if count > 10_000:
                 recurrence = []
@@ -4937,7 +5572,16 @@ def synthesize_event_actions(
                                 ):
                                     cycle_event_is_supported = False
                                     break
-                                scheduled_sets.append(("conc", pattern, float(value)))
+                                scheduled_sets.append(
+                                    _assignment_action(
+                                        context,
+                                        variable,
+                                        event,
+                                        crossing_time,
+                                        float(value),
+                                        pattern,
+                                    )
+                                )
                                 normalized_variable = standardize_name(variable)
                                 event_values.append((normalized_variable, float(value)))
                                 target_id = next(
@@ -5376,8 +6020,15 @@ def synthesize_event_actions(
                                 )
                                 transfer_state[actual_target] = value
                             event_sets = [
-                                ("conc", pattern, value)
-                                for _variable, pattern, value in due_updates.values()
+                                _assignment_action(
+                                    context,
+                                    variable,
+                                    event,
+                                    current_time,
+                                    value,
+                                    pattern,
+                                )
+                                for variable, pattern, value in due_updates.values()
                             ]
                             event_values = [
                                 (variable, value)
@@ -5510,8 +6161,10 @@ def synthesize_event_actions(
                         break
 
                     event_sets = [
-                        ("conc", pattern, value)
-                        for _variable, pattern, value in updates.values()
+                        _assignment_action(
+                            context, variable, event, current_time, value, pattern
+                        )
+                        for variable, pattern, value in updates.values()
                     ]
                     event_values = [
                         (variable, value)
@@ -5710,7 +6363,16 @@ def synthesize_event_actions(
                         chain_schedule.append(
                             (
                                 current_time,
-                                [("conc", pattern, assignment_number)],
+                                [
+                                    _assignment_action(
+                                        context,
+                                        variable,
+                                        event,
+                                        current_time,
+                                        assignment_number,
+                                        pattern,
+                                    )
+                                ],
                                 0.0,
                                 event,
                                 False,
@@ -5783,7 +6445,16 @@ def synthesize_event_actions(
                     chain_schedule.append(
                         (
                             current_time,
-                            [("conc", pattern, assignment_number)],
+                            [
+                                _assignment_action(
+                                    context,
+                                    variable,
+                                    event,
+                                    current_time,
+                                    assignment_number,
+                                    pattern,
+                                )
+                            ],
                             0.0,
                             event,
                             False,
@@ -6465,7 +7136,16 @@ def synthesize_event_actions(
                         quadratic_group_supported = False
                         break
                     numeric_value = float(value)
-                    scheduled_sets.append(("conc", pattern, numeric_value))
+                    scheduled_sets.append(
+                        _assignment_action(
+                            context,
+                            variable,
+                            event,
+                            event_time,
+                            numeric_value,
+                            pattern,
+                        )
+                    )
                     event_values.append((standardize_name(variable), numeric_value))
                     next_state[variable] = numeric_value
                 if not quadratic_group_supported:
@@ -6789,7 +7469,16 @@ def synthesize_event_actions(
                         if value is None or not math.isfinite(value):
                             recurrence_is_proven = False
                             break
-                        scheduled_sets.append(("conc", pattern, float(value)))
+                        scheduled_sets.append(
+                            _assignment_action(
+                                context,
+                                variable,
+                                event,
+                                crossing_time,
+                                float(value),
+                                pattern,
+                            )
+                        )
                         event_values.append((standardize_name(variable), float(value)))
                         next_state[variable] = value
                     if not recurrence_is_proven:
@@ -7562,6 +8251,17 @@ def synthesize_event_actions(
                 )
             )
             continue
+        if trigger_time <= 0.0 and event.trigger_initial_value:
+            initial_truth = fold_initial(event_trigger)
+            if initial_truth == 1:
+                # SBML initializes a trigger's value from
+                # ``triggerInitialValue`` and fires the event only when that
+                # value *transitions* from false to true (SBML Level 3
+                # Version 2 Core, Sec. 4.11.4 "Event triggers").  A trigger
+                # that is already true at t=0 never rises, so the event does
+                # not fire at all.
+                normal_converted += 1
+                continue
         if gated_time_bounds is not None:
             lower_bound, upper_bound = gated_time_bounds
             if trigger_time < lower_bound - 1e-12 or trigger_time > upper_bound + 1e-12:
@@ -7707,11 +8407,10 @@ def synthesize_event_actions(
                 # assignments (SBML Test Suite 01779).  BNGL keeps the
                 # amount as the species' state, so the scale factor has to be
                 # applied here.
-                volume = context.resolve_species_concentration_volume(
-                    variable, event, execution_time
-                )
                 sets.append(
-                    ("conc", pattern, value * volume if volume is not None else value)
+                    _assignment_action(
+                        context, variable, event, execution_time, value, pattern
+                    )
                 )
             elif context.is_compartment(variable):
                 state_pattern = context.resolve_compartment_state_pattern(variable)
@@ -7950,51 +8649,21 @@ def synthesize_event_actions(
                         break
                     remaining = pending
 
-                conflicts: List[Tuple[str, str]] = []
-                reason = (
-                    "simultaneous nonpersistent event cancellation could not be "
-                    "resolved"
-                )
-                if group_is_complete:
-                    conflicts = _equal_priority_conflicts(
-                        [(item[2], item[1]) for item in ordered_group]
-                    )
-                    if conflicts:
-                        group_is_complete = False
-                        reason = (
-                            "simultaneous equal-priority events with conflicting "
-                            "assignments cannot be ordered deterministically"
-                        )
                 if group_is_complete:
                     ordered_scheduled.extend(ordered_group)
                 else:
                     normal_converted -= sum(item[3] is not None for item in group)
                     for item in group:
                         if item[3] is not None:
-                            untranslated.append((item[3], reason))
-            else:
-                conflicts = _equal_priority_conflicts(
-                    [(item[2], item[1]) for item in priority_order]
-                )
-                if conflicts:
-                    # The order of two simultaneous events that share a
-                    # priority is not determined by the source model, and
-                    # their assignments disagree.  Serializing them would
-                    # silently pick one of the possible outcomes.
-                    normal_converted -= sum(item[3] is not None for item in group)
-                    periodic_converted -= sum(item[3] is None for item in group)
-                    for item in group:
-                        if item[3] is not None:
                             untranslated.append(
                                 (
                                     item[3],
-                                    "simultaneous equal-priority events with "
-                                    "conflicting assignments cannot be ordered "
-                                    "deterministically",
+                                    "simultaneous nonpersistent event cancellation "
+                                    "could not be resolved",
                                 )
                             )
-                else:
-                    ordered_scheduled.extend(priority_order)
+            else:
+                ordered_scheduled.extend(priority_order)
             index = end
             continue
 
@@ -8071,19 +8740,6 @@ def synthesize_event_actions(
                 selected_index = max(
                     range(len(remaining)), key=lambda candidate: priorities[candidate]
                 )
-                selected_priority = priorities[selected_index]
-                tied = [
-                    remaining[index]
-                    for index, value in enumerate(priorities)
-                    if value == selected_priority
-                ]
-                if _equal_priority_conflicts(
-                    [(selected_priority, item[1]) for item in tied]
-                ):
-                    # The order of the tied events is not determined by the
-                    # source model, and their assignments disagree.
-                    group_is_complete = False
-                    break
                 selected = remaining.pop(selected_index)
                 ordered_group.append(selected)
                 for symbol, value in selected[5]:
@@ -8185,8 +8841,7 @@ def synthesize_event_actions(
             f'simulate({{continue=>1, method=>"{method}", '
             f"t_start=>{_format_number(phase_start)}, "
             f"t_end=>{_format_number(t_final)}, "
-            f"n_steps=>{steps_for(phase_start, t_final)}"
-            f"{seed_argument}}})"
+            f"n_steps=>{steps_for(phase_start, t_final)}}})"
         )
 
     return EventTranslationResult(
@@ -8200,6 +8855,7 @@ def synthesize_event_actions(
 foldNumeric = fold_numeric
 parseTimeThreshold = parse_time_threshold
 synthesizeEventActions = synthesize_event_actions
+synthesizeNativeEventBlock = synthesize_native_event_block
 
 
 __all__ = [
@@ -8207,10 +8863,13 @@ __all__ = [
     "EventSet",
     "EventTranslationContext",
     "EventTranslationResult",
+    "NativeStateTarget",
     "foldNumeric",
     "fold_numeric",
     "parseTimeThreshold",
     "parse_time_threshold",
     "synthesizeEventActions",
     "synthesize_event_actions",
+    "synthesizeNativeEventBlock",
+    "synthesize_native_event_block",
 ]

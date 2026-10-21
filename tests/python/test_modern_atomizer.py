@@ -2006,8 +2006,22 @@ def test_playground_writer_strips_leading_compartment_factor_from_mass_action():
     cpp.parse_string(bngl)
 
 
-@pytest.mark.parametrize("rate", ["k * A * cell", "k * A / cell"])
-def test_playground_writer_strips_internal_compartment_factor_from_mass_action(rate):
+@pytest.mark.parametrize(
+    ("rate", "expected"),
+    [
+        # A law that multiplies by the compartment states the opposite volume
+        # dependence of one that divides by it.  ``A`` is concentration-valued,
+        # so the concentration reading contributes one ``1/V`` and the law's
+        # own ``V`` cancels it: the constant is the source's.
+        ("k * A * cell", " 3"),
+        # A law that divides by the compartment carries one more ``1/V`` than
+        # the concentration reading needs.
+        ("k * A / cell", " (3) * (__compartment_cell__)**-2"),
+    ],
+)
+def test_playground_writer_strips_internal_compartment_factor_from_mass_action(
+    rate, expected
+):
     from bionetgen.atomizer.modern import (
         SBMLCompartment,
         SBMLKineticLaw,
@@ -2063,8 +2077,10 @@ def test_playground_writer_strips_internal_compartment_factor_from_mass_action(r
     )
 
     reaction_line = next(line for line in bngl.splitlines() if line.startswith("  r:"))
-    assert reaction_line.endswith(" 3")
-    assert "__compartment_cell__" not in reaction_line
+    assert reaction_line.endswith(expected)
+    # The compartment factor the law names is accounted for by the volume
+    # exponent, not left in the rate law as a separate factor.
+    assert "__compartment_cell__ * k" not in reaction_line
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     cpp.parse_string(bngl)
 

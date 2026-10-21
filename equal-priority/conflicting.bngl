@@ -34,20 +34,23 @@ begin functions
 end functions
 
 begin reaction rules
-  decay: @C:M_A() -> 0 1
+  decay: @C:M_A() -> 0 (1) * (__compartment_C__)**-1
 end reaction rules
 
 end model
 
 # ==== SBML DYNAMICS NOTES ====
-# Events NOT simulated (state-dependent or non-constant); listed for reference:
-#   event first: simultaneous equal-priority events with conflicting assignments cannot be ordered deterministically
-#     trigger: geq(time, 1)
-#     assign: A := 2
-#   event second: simultaneous equal-priority events with conflicting assignments cannot be ordered deterministically
-#     trigger: geq(time, 1)
-#     assign: A := 3
+# 2 time-triggered event(s) converted to scheduled actions.
 # ============================
+
+begin actions
+# 1 time-triggered SBML event(s) translated to scheduled actions.
+  generate_network({overwrite=>1})
+  simulate({method=>"ode", t_start=>0, t_end=>1, n_steps=>10})
+  setConcentration("@C:M_A()", "2")
+  setConcentration("@C:M_A()", "3")
+  simulate({continue=>1, method=>"ode", t_start=>1, t_end=>2, n_steps=>10})
+end actions
 
 # ==== SBML EVENT METADATA ====
 # @sbml-event %7B%22id%22%3A%22first%22%2C%22name%22%3A%22first%22%2C%22trigger%22%3A%22geq%28time%2C%201%29%22%2C%22bnglTrigger%22%3A%22geq%28time%2C%201%29%22%2C%22delay%22%3Anull%2C%22bnglDelay%22%3A%22%22%2C%22priority%22%3Anull%2C%22bnglPriority%22%3A%22%22%2C%22useValuesFromTriggerTime%22%3Atrue%2C%22triggerInitialValue%22%3Afalse%2C%22triggerPersistent%22%3Atrue%2C%22assignments%22%3A%5B%7B%22variable%22%3A%22A%22%2C%22math%22%3A%222%22%2C%22bnglVariable%22%3A%22A%22%2C%22bnglTarget%22%3A%22%40C%3AM_A%28%29%22%2C%22bnglMath%22%3A%222%22%7D%5D%7D
@@ -56,5 +59,5 @@ end model
 
 # ==== SBML IMPORT NOTES ====
 # [info] units: Model omits substanceUnits and volumeUnits; preserved source numeric scale and skipped unit normalization.
-# [dropped] event: 2 SBML event(s) parsed; 0 fixed-time event(s) lowered to scheduled actions, while 2 state-dependent or non-constant event(s) remain untranslated. (x2)
+# [info] event: 2 fixed-time, constant-valued SBML event(s) lowered to scheduled BNGL actions; trigger-time semantics are represented by explicit simulation phase boundaries. (x2)
 # ============================

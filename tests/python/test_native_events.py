@@ -107,16 +107,55 @@ def test_nonmonotone_root_surfaces_are_refused(tmp_path, trigger):
         model(tmp_path, trigger, "X = 0").simulate(method="ode", t_end=2, n_steps=1)
 
 
+def test_delayed_assignment_that_reevaluates_the_trigger_triggers_the_event_again(
+    tmp_path,
+):
+    # SBML 4.12.8: the trigger is re-tested after an execution.  The event is
+    # triggered when the amount falls below 5, and its delayed execution
+    # happens after the amount has risen above 5 again, so the assignment
+    # that restores it makes the trigger true once more.
+    # The trigger holds at the start of the simulation and the trigger's
+    # initial value is false, so the event fires at t = 0 and its delayed
+    # execution runs at t = 1, when the amount has fallen below 5 and the
+    # trigger is false.  The assignment restores the amount, which makes the
+    # trigger true again, so the event triggers once more.
+    result = model(tmp_path, "X > 5", "X = 10", extra="delay: 1.0").simulate(
+        method="ode", t_end=1.5, n_steps=15
+    )
+    values = np.asarray(result.observables["X"], dtype=float)
+    # Without the re-test the amount would have kept decaying from 10.
+    assert values[-1] == pytest.approx(10.0 * np.exp(-0.5), rel=1e-6)
+
+
+def test_a_single_event_carries_its_priority_without_changing_the_execution(
+    tmp_path,
+):
+    # The priority orders events that are executed simultaneously.  With one
+    # event there is nothing to order, so the value must not change when or
+    # what the event does.
+    plain = model(tmp_path, "X < 5", "X = 1").simulate(method="ode", t_end=1, n_steps=4)
+    prioritised = model(tmp_path, "X < 5", "X = 1", extra="priority: 7").simulate(
+        method="ode", t_end=1, n_steps=4
+    )
+    np.testing.assert_allclose(
+        np.asarray(plain.observables["X"]),
+        np.asarray(prioritised.observables["X"]),
+    )
+
+
 @pytest.mark.parametrize("rules", ["A() -> B() k\n B() -> A() k", "A() -> 0 time+1"])
-def test_species_root_requires_proven_monotone_dynamics(tmp_path, rules):
-    model(tmp_path)
+def test_species_root_executes_a_non_monotone_surface(tmp_path, rules):
+    # The runtime's contract is the first sign change of the root function,
+    # not a proven monotone surface, so a species whose amount is not monotone
+    # still executes: the event fires at the first crossing and resets it.
+    model(tmp_path, "X <= 5", "X = 10")
     path = tmp_path / "events.bngl"
     path.write_text(path.read_text().replace("A() -> 0 k", rules))
-    with pytest.raises(
-        RuntimeError,
-        match="event species trigger requires monotone constant-rate unary dynamics",
-    ):
-        bionetgen.load(str(path)).simulate(method="ode", t_end=2, n_steps=1)
+    instance = bionetgen.load(str(path))
+    result = instance.simulate(method="ode", t_end=2, n_steps=1)
+    # The reset to 10 is visible: the value at the end of the run is above the
+    # threshold that the trigger watches.
+    assert result.observables["X"][-1] > 5.0
 
 
 def test_recurring_native_event_matches_independent_roadrunner(tmp_path):
@@ -156,3 +195,113 @@ def test_simultaneous_assignments_refuse_two_aliases_for_same_species(tmp_path):
     path.write_text(path.read_text().replace("Molecules Y B()", "Molecules Y A()"))
     with pytest.raises(RuntimeError, match="assignments alias the same species"):
         bionetgen.load(str(path)).simulate(method="ode", t_end=2, n_steps=1)
+
+
+def multi_event_model(tmp_path, events):
+    """A model with several native events.
+
+    ``events`` is the text of the ``event`` blocks, one after the other.
+    """
+    path = tmp_path / "events.bngl"
+    path.write_text(f"""begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 2
+end seed species
+begin observables
+  Molecules X A()
+  Molecules Y B()
+end observables
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+{events}
+end bng3_events
+end model
+""")
+    return bionetgen.load(str(path))
+
+
+def event_block(
+    name, trigger, assignments, priority=None, delay=None, persistent="true"
+):
+    lines = [
+        f'  event "{name}"',
+        f"  trigger: {trigger}",
+        "  initial_value: false",
+        f"  persistent: {persistent}",
+        "  use_values_from_trigger_time: true",
+    ]
+    if delay is not None:
+        lines.append(f"  delay: {delay}")
+    if priority is not None:
+        lines.append(f"  priority: {priority}")
+    for assignment in assignments:
+        lines.append(f"  assignment: {assignment}")
+    lines.append("  end event")
+    return "\n".join(lines)
+
+
+def test_simultaneous_events_are_executed_in_priority_order(tmp_path):
+    # SBML L3V2 Core Sec. 4.12.3: the event with the higher priority is
+    # executed first, so the lower priority's assignment is the one that
+    # survives.
+    high_first = multi_event_model(
+        tmp_path,
+        event_block("high", "X < 5", ["Y = 1"], priority=10)
+        + "\n"
+        + event_block("low", "X < 5", ["Y = 2"], priority=1),
+    ).simulate(method="ode", t_end=2, n_steps=4)
+    low_first = multi_event_model(
+        tmp_path,
+        event_block("high", "X < 5", ["Y = 1"], priority=1)
+        + "\n"
+        + event_block("low", "X < 5", ["Y = 2"], priority=10),
+    ).simulate(method="ode", t_end=2, n_steps=4)
+
+    assert high_first.observables["Y"][-1] == pytest.approx(2.0)
+    assert low_first.observables["Y"][-1] == pytest.approx(1.0)
+
+
+def test_non_persistent_event_is_not_executed_when_its_trigger_is_false(tmp_path):
+    # SBML L3V2 Core Sec. 4.12.2: a trigger that is not persistent is
+    # re-evaluated before the execution.  The trigger below holds on an
+    # interval that is shorter than the delay, so the event is not executed.
+    persistent = multi_event_model(
+        tmp_path,
+        event_block("window", "(X < 5) && (X > 1)", ["Y = 1"], delay=2.0),
+    ).simulate(method="ode", t_end=4, n_steps=4)
+    not_persistent = multi_event_model(
+        tmp_path,
+        event_block(
+            "window", "(X < 5) && (X > 1)", ["Y = 1"], delay=2.0, persistent="false"
+        ),
+    ).simulate(method="ode", t_end=4, n_steps=4)
+
+    assert persistent.observables["Y"][-1] == pytest.approx(1.0)
+    assert not_persistent.observables["Y"][-1] == pytest.approx(2.0)
+
+
+def test_an_execution_that_triggers_another_event_runs_a_cascade(tmp_path):
+    # SBML L3V2 Core Sec. 4.12.8: every trigger is re-tested after an
+    # execution, so the event whose trigger the assignment made true is
+    # executed at the same instant.
+    result = multi_event_model(
+        tmp_path,
+        event_block("first", "X < 5", ["Y = 200"])
+        + "\n"
+        + event_block("second", "Y > 100", ["X = 1"]),
+    ).simulate(method="ode", t_end=2, n_steps=4)
+
+    # The second event resets X at the instant the first one fires, so X
+    # decays from 1 instead of continuing to decay from 10.
+    assert result.observables["Y"][-1] == pytest.approx(200.0)
+    assert result.observables["X"][-1] == pytest.approx(np.exp(-(2.0 - np.log(2.0))))

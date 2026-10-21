@@ -79,6 +79,10 @@ public:
     // very large converted rate constants numerically well-conditioned.
     void cvodeDerivs(double t, const double* y, double* dydt) const;
     double cvodeEventRoot(double time, const double* scaledState) const;
+    // The root function of every trigger group, for the solver's root
+    // finding.  One root per group: the events that share a trigger are
+    // triggered at the same instant, so they cross together.
+    void cvodeEventRoots(double time, const double* scaledState, double* roots) const;
 
     void loadTfun(const std::string& name,
                   const std::string& filePath,
@@ -130,7 +134,15 @@ private:
     std::size_t nSpecies_ = 0;
     bool hasFunctionalRates_ = false;
 
-    // Performance optimizations
+    // Performance optimizations.
+    //
+    // groupValues_ and functionalRateCoefficients_ are scratch for derivs(),
+    // the single-threaded ODE/CVODE path.  They are deliberately NOT used by
+    // the SSA path: the batched CPU pool shares one integrator across its
+    // worker threads, so any mutable member the SSA path writes would be a
+    // data race between those workers.  evaluateFunctionalRateCoefficients()
+    // therefore takes the observable scratch as an explicit argument, and the
+    // SSA path passes its own per-thread buffer.
     mutable std::vector<double> groupValues_;                  // Pre-allocated for derivs()
     mutable std::vector<double> functionalRateCoefficients_;  // Pre-allocated for derivs()
     std::unordered_map<std::string, std::size_t> observableIndex_; // O(1) observable lookup
@@ -146,17 +158,103 @@ private:
     mutable std::vector<double> cvodePhysicalDerivatives_;
     std::vector<std::size_t> resultFunctionIndices_;                // zero-argument, user-visible, declaration order
 
+    // One native event: the trigger that fires it, the delay between the
+    // trigger and the execution, the priority that orders it against the
+    // other events executed at the same instant, and the assignments it
+    // performs.
+    struct NativeEvent {
+        std::string id;
+        ast::Expression trigger;
+        bool initialValue = true;
+        bool persistent = true;
+        bool useValuesFromTriggerTime = true;
+        double delay = 0.0;
+        double priority = 0.0;
+        std::vector<ast::EventAssignment> assignments;
+        // The species each assignment writes, in the order of `assignments`.
+        std::vector<std::size_t> targets;
+    };
+    // The events that share one trigger are triggered at the same instant,
+    // so they share one root function.
+    struct NativeEventGroup {
+        ast::Expression trigger;
+        std::vector<std::size_t> events;
+    };
+    // A trigger edge that is waiting for its delay to elapse.
+    struct PendingEvent {
+        std::size_t event = 0;
+        double executionTime = 0.0;
+        std::vector<double> values;
+    };
+
     void validateEventTargets();
     double eventValue(const ast::Expression& expression, double time, const double* state) const;
-    void applyEvent(double time, std::vector<double>& state) const;
-    std::vector<std::size_t> eventTargets_;
-    std::optional<ast::Event> nativeEvent_;
+    // Execute the queued events whose execution instant has arrived.  Returns
+    // true when the state changed.
+    bool applyDueEvents(double time, std::vector<double>& state);
+    double eventSideDerivative(const ast::Expression& expression, double time,
+                               const std::vector<double>& derivatives) const;
+    double eventRootDerivative(const ast::Expression& trigger, double time,
+                               const std::vector<double>& derivatives) const;
+    // The trigger's signed root function: positive exactly where the trigger
+    // holds.  A conjunction is the conjunction of its conjuncts, so its root
+    // function is the smallest of the conjunct root functions.
+    double eventRootValue(const ast::Expression& trigger, double time,
+                          const double* state) const;
+    // The conjuncts of a trigger; a single inequality is one conjunct.
+    static std::vector<const ast::Expression*> triggerConjuncts(
+        const ast::Expression& trigger);
+    // True when every conjunct of the trigger is a strict inequality.
+    static bool isStrictTrigger(const ast::Expression& trigger);
+    // The difference that decides the sign of the trigger at a given time and
+    // the rate of change of that difference.
+    struct TriggerSurface {
+        double difference = 0.0;
+        double derivative = 0.0;
+    };
+    TriggerSurface triggerSurface(const ast::Expression& trigger, double time,
+                                  const double* state,
+                                  const std::vector<double>& derivatives) const;
+    std::vector<double> eventValues(const NativeEvent& event, double time,
+                                    const double* state) const;
+    void assignEventValues(const NativeEvent& event, std::vector<double>& state,
+                            const std::vector<double>& values) const;
+    // True when the trigger expression holds at the given instant.
+    bool triggerHolds(const ast::Expression& trigger, double time,
+                      const double* state) const;
+    // Queue every event of a trigger group that has just been triggered.
+    void queueTriggeredGroup(std::size_t groupIndex, double time,
+                             const std::vector<double>& state);
+    // Re-test every trigger after an execution (SBML L3V2 Core Sec. 4.12.8)
+    // and queue the events whose trigger became true.  `heldBefore` holds the
+    // trigger values from before the execution, so a rising edge is told
+    // from a trigger that was already true.
+    void retestTriggers(double time, std::vector<double>& state,
+                        const std::vector<bool>& heldBefore);
+    std::vector<NativeEvent> nativeEvents_;
+    std::vector<NativeEventGroup> nativeEventGroups_;
+    std::vector<PendingEvent> pendingEvents_;
+    // The root function value of every group at the last instant the events
+    // were processed.  A group whose value changed its sign since then
+    // crossed its trigger in the meantime.
+    std::vector<double> lastRootValues_;
+    // The instant at which each event's trigger last rose.
+    std::vector<double> triggerRoseAt_;
     void validateEventRootSurface();
     void compile();
     void compileGroups();
+    // Evaluate the runtime rate coefficients of every functional-rate reaction
+    // into `rates` (which must have one entry per compiled reaction).
+    //
+    // `groupValues` is the observable scratch the rate expressions are
+    // resolved against.  It is supplied by the caller so that the SSA path can
+    // use a per-thread buffer: the batched CPU pool shares a single
+    // OdeIntegrator across its worker threads, and a shared scratch would make
+    // a state-dependent rate law read another trajectory's observable values.
     void evaluateFunctionalRateCoefficients(double t,
                                             const double* y,
                                             double* rates,
+                                            std::vector<double>& groupValues,
                                             bool failOnError = false) const;
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
     void updateFunctions(const std::vector<double>& groupValues,

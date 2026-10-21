@@ -62,6 +62,17 @@ private:
         std::unordered_map<std::string, std::string> parameters;
         std::unordered_map<std::string, std::string> functions;
         std::unordered_map<std::string, std::string> observables;
+        // Every declared model function that takes arguments, with its
+        // arity.  A function with arguments has no SBML counterpart in this
+        // writer, so a name that also spells an SBML operator is ambiguous.
+        std::unordered_map<std::string, std::size_t> parameterizedFunctions;
+        // The SBML id allocated to each native event.
+        std::unordered_map<std::string, std::string> events;
+        // The network species an observable equals, when the observable
+        // covers exactly one species with weight one.  An event that names
+        // such an observable can be written against that species, so a
+        // re-imported document keeps the event executable.
+        std::unordered_map<std::string, std::string> observableSpecies;
     };
 
     // Observable-to-species weight mapping
@@ -101,6 +112,14 @@ private:
         const ast::Model& model,
         const SymbolIds& symbolIds,
         int level);
+    // Serialize the native event block as SBML events so an exported model
+    // keeps the trigger semantics that the BNGL block carried.
+    static std::string writeEvents(
+        const ast::Model& model,
+        const std::vector<ObservableGroup>& groups,
+        const SymbolIds& symbolIds,
+        const engine::GeneratedNetwork* network,
+        int level);
 
     static std::vector<ObservableGroup> computeObservableGroups(
         const ast::Model& model, const engine::GeneratedNetwork& network);
@@ -109,7 +128,8 @@ private:
     static std::string exprToMathML(
         const ast::Expression& expr,
         const std::string& indent,
-        const SymbolIds& symbolIds);
+        const SymbolIds& symbolIds,
+        bool preferSpecies = false);
     static std::string rateLawToMathML(
         const ast::Rxn& rxn,
         const ast::Model& model,

@@ -606,10 +606,37 @@ def test_the_jobs_guard_caps_the_worker_count(tmp_path):
         "args.jobs = min(args.jobs, cpu_count)", "pass  # the cap was removed"
     )
     broken_gate = broken_root / "scripts" / "ci" / "validate_sbml_test_suite.py"
+    # The broken copy is a harness in a synthetic tree, so it has to be able
+    # to import the same package and extension this checkout uses: the gate
+    # refuses to measure a package it cannot trace to the tree that owns it,
+    # and it would refuse before it ever reached the behaviour the test
+    # breaks on purpose.
+    for name in ("python", "build"):
+        target = REPO / name
+        if target.exists():
+            os.symlink(target, broken_root / name, target_is_directory=True)
+    # The broken copy has to be able to import the modules the gate imports,
+    # or it fails before it ever reaches the behaviour the test breaks on
+    # purpose.
+    shutil.copytree(
+        REPO / "scripts" / "ci",
+        broken_gate.parent,
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("validate_sbml_test_suite.py"),
+    )
     broken_gate.write_text(broken_source, encoding="utf-8")
-    shutil.copy(REPO / "scripts" / "ci" / "ssts_selection.py", broken_gate.parent)
 
     broken_report = tmp_path / "broken.json"
+    broken_environment = dict(os.environ)
+    build_cpp = REPO / "build" / "cpp"
+    if any(build_cpp.glob("_bionetgen_cpp*")):
+        # The checkout's own build is the one the gate has to measure, so the
+        # broken copy gets the same package and extension the real gate uses.
+        entries = [str(REPO / "python"), str(build_cpp)]
+        existing = broken_environment.get("PYTHONPATH")
+        if existing:
+            entries.append(existing)
+        broken_environment["PYTHONPATH"] = os.pathsep.join(entries)
     broken_result = subprocess.run(
         [
             sys.executable,
@@ -635,6 +662,7 @@ def test_the_jobs_guard_caps_the_worker_count(tmp_path):
         text=True,
         check=False,
         cwd=str(broken_root),
+        env=broken_environment,
     )
     assert broken_report.is_file(), broken_result.stdout + broken_result.stderr
     broken_document = json.loads(broken_report.read_text(encoding="utf-8"))

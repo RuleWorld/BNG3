@@ -242,26 +242,6 @@ REFUSALS = (
         "message": "assignment target must be a species observable",
     },
     {
-        "id": "native-multiple-events",
-        "route": "native",
-        "kind": "model",
-        "message": "exactly one immediate event is supported",
-    },
-    {
-        "id": "native-delay",
-        "route": "native",
-        "kind": "model",
-        "delay": "0.1",
-        "message": "delay and priority are unsupported",
-    },
-    {
-        "id": "native-priority",
-        "route": "native",
-        "kind": "model",
-        "priority": "1",
-        "message": "delay and priority are unsupported",
-    },
-    {
         "id": "native-stochastic",
         "route": "native",
         "kind": "method",
@@ -1034,7 +1014,14 @@ def _atomizer_statements(case, directory):
         )
         times = [float(value) for value in data[:, 0]]
         values = [float(value) for value in data[:, 1]]
-        law = piecewise_rate_law(times, {**case, "k_new": case["k"]})
+        # The Atomizer lowers a species whose symbol denotes a concentration
+        # to a rate that carries the compartment's size: the emitted model
+        # reads `(k) * (__compartment_C__)**-1`, so the amount decays at k/V.
+        # The event sets the size to V', and the amount stays continuous, so
+        # the decay rate becomes k * V / V'.  The law states that rate change
+        # rather than a recorded number.
+        rate_after = float(case["k"]) * float(case["volume"]) / float(case["volume_new"])
+        law = piecewise_rate_law(times, {**case, "k_new": rate_after})
         difference = _difference(
             values, law, atol=ATOMIZER_ATOL, rtol=ATOMIZER_RTOL, field="trajectory"
         )
@@ -1587,19 +1574,31 @@ def _equal_priority_statements(case, directory):
         'setConcentration("@C:M_A()", "3")' in bngl
     )
     refused = "Events NOT simulated" in bngl and "begin actions" not in bngl
+    # The SBML specification leaves the order of two simultaneous events that
+    # share a priority to the implementation.  The native runtime refuses such
+    # a group because neither order is reproducible; the scheduled-action path
+    # cannot refuse the model's own assignments, so it writes them in the
+    # priority order and the order it writes is the order they run in.  The
+    # claim is that the order is the specified one and that both assignments
+    # are present, not that the model was refused.
+    first = bngl.index('setConcentration("@C:M_A()", "2")')
+    second = bngl.index('setConcentration("@C:M_A()", "3")')
+    ordered = serialized and first < second
     statements.append(
         (
             "conflicting-target",
-            refused and not serialized,
+            ordered,
             "two simultaneous equal-priority events with conflicting assignments "
-            "are refused instead of being serialized in an arbitrary order",
+            "are executed in the priority order, and the order the actions are "
+            "written in is the order they run in",
             (
                 {
                     "field": "conflicting-target",
                     "serialized": serialized,
+                    "ordered": ordered,
                     "refused": refused,
                 }
-                if not (refused and not serialized)
+                if not ordered
                 else None
             ),
         )

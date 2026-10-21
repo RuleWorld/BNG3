@@ -30,6 +30,20 @@ from typing import Any, Iterable
 
 import numpy as np
 
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.ci.deterministic_environment import (
+    STARTUP_HASH_SEED,
+    ensure_fixed_hash_seed,
+    fixed_hash_seed_environment,
+)
+from scripts.ci.imported_package_guard import (
+    ForeignPackageError,
+    package_source_digest,
+    verify_imported_package,
+    verify_native_extension,
+)
+
 USER_AGENT = "BNG3-curated-BioModels-roundtrip-validator/2"
 NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
 # libRoadRunner and BNG3 use independent CVODE builds and Jacobian paths;
@@ -57,6 +71,27 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _runtime_provenance(
+    package_trace: dict[str, Any], extension_trace: dict[str, Any]
+) -> dict[str, Any]:
+    """Record which Python package and native extension the gate measured."""
+
+    import bionetgen
+    import bionetgen._bionetgen_cpp as native
+
+    package_file = Path(bionetgen.__file__).resolve()
+    extension_file = Path(native.__file__).resolve()
+    return {
+        "bionetgen_package_path": str(package_file),
+        "python_package_source_sha256": package_source_digest(package_file.parent),
+        "imported_package_trace": package_trace,
+        "native_extension_path": str(extension_file),
+        "native_extension_sha256": _sha256(extension_file),
+        "imported_extension_trace": extension_trace,
+        "python_hash_seed": STARTUP_HASH_SEED,
+    }
 
 
 def _fetch_json(url: str) -> dict[str, Any]:
@@ -972,6 +1007,7 @@ def _validate_mode(
     simulation_rtol: float,
     simulation_atol: float,
     source_path: Path | None = None,
+    artifacts_dir: Path | None = None,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -1070,6 +1106,10 @@ def _validate_mode(
         raise
     if not atomized.success:
         raise RuntimeError(atomized.error or "modern Atomizer returned failure")
+    if artifacts_dir is not None:
+        (artifacts_dir / f"translated.{mode}.bngl").write_text(
+            atomized.bngl, encoding="utf-8"
+        )
     source_warnings = _merge_generated_warnings(
         source_warnings, _warnings(atomizer.model)
     )
@@ -1104,6 +1144,8 @@ def _validate_mode(
         str(output_path),
         source_metadata=source_metadata,
     )
+    if artifacts_dir is not None:
+        (artifacts_dir / output_path.name).write_bytes(output_path.read_bytes())
     roundtrip_sbml = output_path.read_text(encoding="utf-8")
     result["written_xml"] = _validate_xml(roundtrip_sbml, "written SBML")
 
@@ -1139,6 +1181,10 @@ def _validate_mode(
     ).atomize(roundtrip_sbml)
     if not reimport.success:
         raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
+    if artifacts_dir is not None:
+        (artifacts_dir / f"reimported.{mode}.bngl").write_text(
+            reimport.bngl, encoding="utf-8"
+        )
     reimport_cpp = cpp.parse_string(reimport.bngl)
     reimport_network = cpp.generate_network(reimport_cpp, max_iter=100)
     result["reimport_network"] = {
@@ -1306,6 +1352,8 @@ def _run_isolated_model(
     ]
     if args.ode_smoke:
         command.append("--ode-smoke")
+    if args.artifacts_dir is not None:
+        command.extend(["--artifacts-dir", str(args.artifacts_dir.resolve())])
     try:
         completed = subprocess.run(
             command,
@@ -1313,6 +1361,10 @@ def _run_isolated_model(
             capture_output=True,
             check=False,
             timeout=args.model_timeout,
+            # A fresh interpreter randomises its hash seed, and the Atomizer
+            # emits part of its output in set-iteration order.  Pinning the
+            # seed makes the generated text the same on every run.
+            env=fixed_hash_seed_environment(),
         )
         if not worker_json.exists():
             raise RuntimeError(
@@ -1347,6 +1399,14 @@ def main() -> int:
     )
     parser.add_argument("--cache-dir", type=Path, required=True)
     parser.add_argument("--json", type=Path, required=True)
+    parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        help=(
+            "retain each model's source SBML, generated BNGL, exported SBML "
+            "and record so two runs' artifacts can be compared"
+        ),
+    )
     parser.add_argument("--mode", choices=("flat", "atomized", "both"), default="flat")
     parser.add_argument("--refresh-inventory", action="store_true")
     parser.add_argument("--offline", action="store_true")
@@ -1375,6 +1435,35 @@ def main() -> int:
     parser.add_argument("--simulation-rtol", type=float, default=1e-7)
     parser.add_argument("--simulation-atol", type=float, default=1e-12)
     args = parser.parse_args()
+
+    try:
+        package_trace = verify_imported_package(Path(__file__).resolve().parents[2])
+    except ForeignPackageError as exc:
+        print(f"package preflight failed: {exc}", file=sys.stderr)
+        return 1
+    if package_trace["package_file"]:
+        print(
+            f"bionetgen package: {package_trace['package_file']} "
+            f"(trace: {package_trace['rule']})",
+            file=sys.stderr,
+        )
+    try:
+        import bionetgen._bionetgen_cpp as cpp
+        from bionetgen import BioNetGenModel
+    except ImportError as exc:
+        raise SystemExit(
+            "BNG3 C++ extension is unavailable; set PYTHONPATH=python:build/cpp"
+        ) from exc
+    try:
+        extension_trace = verify_native_extension(
+            Path(__file__).resolve().parents[2],
+            extension_file=cpp.__file__,
+            package_trace=package_trace,
+        )
+    except ForeignPackageError as exc:
+        print(f"native extension preflight failed: {exc}", file=sys.stderr)
+        return 1
+    runtime_info = _runtime_provenance(package_trace, extension_trace)
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     args.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1422,14 +1511,6 @@ def main() -> int:
         and completeness["non_sbml_records"] == expected_non_sbml
     )
 
-    try:
-        import bionetgen._bionetgen_cpp as cpp
-        from bionetgen import BioNetGenModel
-    except ImportError as exc:
-        raise SystemExit(
-            "BNG3 C++ extension is unavailable; set PYTHONPATH=python:build/cpp"
-        ) from exc
-
     records: list[dict[str, Any]] = []
     modes = (False, True) if args.mode == "both" else (args.mode == "atomized",)
     sbml_selected = []
@@ -1454,6 +1535,7 @@ def main() -> int:
             sbml_selected.append(entry)
             continue
 
+        model_artifacts: Path | None = None
         try:
             path = args.cache_dir / str(entry["filename"])
             record["sha256"] = _download_if_needed(path, entry)
@@ -1464,6 +1546,9 @@ def main() -> int:
                 "sha256": record["sha256"],
                 "size_bytes": path.stat().st_size,
             }
+            if args.artifacts_dir is not None:
+                model_artifacts = args.artifacts_dir / str(entry["id"])
+                model_artifacts.mkdir(parents=True, exist_ok=True)
             if is_archive:
                 from bionetgen.atomizer.modern import extract_sbml_from_archive
 
@@ -1496,6 +1581,8 @@ def main() -> int:
             else:
                 sbml = path.read_text(encoding="utf-8-sig")
                 record["extracted_sbml"] = False
+            if model_artifacts is not None:
+                (model_artifacts / "source.xml").write_text(sbml, encoding="utf-8")
             with tempfile.TemporaryDirectory(
                 prefix=f"{entry['id']}-", dir=args.cache_dir
             ) as temp:
@@ -1517,6 +1604,7 @@ def main() -> int:
                                 args.simulation_rtol,
                                 args.simulation_atol,
                                 source_path=path if not is_archive else None,
+                                artifacts_dir=model_artifacts,
                             )
                         )
                     except Exception as exc:
@@ -1570,6 +1658,11 @@ def main() -> int:
             record["error"] = message
             if record["status"] == "unsupported":
                 record["unsupported_reason"] = message
+        if model_artifacts is not None:
+            (model_artifacts / "record.json").write_text(
+                json.dumps(_json_compatible(record), indent=2, allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
         records.append(record)
         print(f"{entry['id']}: {record['status'].upper()}", flush=True)
 
@@ -1631,6 +1724,7 @@ def main() -> int:
             "expected_non_sbml_records": expected_non_sbml,
         },
         "cache_dir": str(args.cache_dir.resolve()),
+        "runtime_provenance": runtime_info,
         "writer_sbml_version": "L3V2",
         "inventory": inventory,
         "completeness": completeness,
@@ -1703,10 +1797,16 @@ def main() -> int:
     print(
         f"records={len(records)} sbml_passed={passed}/{len(sbml_records)} "
         f"unsupported={unsupported} failed={failed} timeouts={timeouts} "
-        f"core={'PASS' if report['core_passed'] else 'FAIL'}"
+        f"core={'PASS' if report['core_passed'] else 'FAIL'} "
+        f"package={runtime_info['bionetgen_package_path']} "
+        f"extension_sha256={runtime_info['native_extension_sha256']}"
     )
     return 0 if report["core_passed"] else 1
 
 
 if __name__ == "__main__":
+    # The interpreter reads its hash seed at start-up, so the seed has to be
+    # fixed before the harness does any work.  This re-executes the harness
+    # once when the interpreter it was started in did not have the fixed seed.
+    ensure_fixed_hash_seed()
     raise SystemExit(main())

@@ -1,0 +1,29 @@
+# Control pair for tests/cpp/test_batch_ssa_reproducibility.cpp.
+#
+# Identical to functional_rate_observable.bngl except that no rate law reads an
+# observable: every rate is a constant, so the observable scratch the SSA path
+# uses for a state-dependent rate law is never touched.
+begin parameters
+  k1 0.5
+  k2 0.05
+end parameters
+
+begin molecule types
+  A()
+  B()
+end molecule types
+
+begin seed species
+  A() 200
+  B() 0
+end seed species
+
+begin reaction rules
+  A() -> B()  k1
+  B() -> A()  k2
+end reaction rules
+
+begin observables
+  Molecules O_A A()
+  Molecules O_B B()
+end observables

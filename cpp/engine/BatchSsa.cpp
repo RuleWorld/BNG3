@@ -321,8 +321,19 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     // reaction/group tables and writes exclusively to its own locals and the
     // OdeResult it returns. Every helper it reaches (outputTimes, parseStopIf,
     // updateGroups, stopConditionMet, computePropensity) is const and takes
-    // its output through an out-parameter. The one mutable member,
-    // groupValues_, is scratch for derivs(), which the SSA path never calls.
+    // its output through an out-parameter.
+    //
+    // The mutable members of OdeIntegrator are NOT safe to share, and the SSA
+    // path reaches none of them: groupValues_ and functionalRateCoefficients_
+    // are scratch for derivs(), which only the single-threaded ODE/CVODE path
+    // calls, and cvodePhysicalState_/cvodePhysicalDerivatives_ belong to
+    // cvodeDerivs(). A state-dependent rate law used to break this rule:
+    // evaluateFunctionalRateCoefficients() filled groupValues_ from the
+    // current state, so two workers sharing the integrator could resolve a
+    // rate expression against another trajectory's observable values. The
+    // observable scratch is now an explicit argument, and the SSA path passes
+    // its own per-thread buffer (SsaScratch::groupValues), so a fixed seed
+    // reproduces the same ensemble on every worker count.
     OdeIntegrator integrator(model_, network_);
     const auto& compiledGroups = integrator.getCompiledGroups();
     std::size_t numObs = compiledGroups.size();

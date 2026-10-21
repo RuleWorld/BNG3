@@ -18,6 +18,20 @@ The baseline and the integrated inventories are **historical facts** and are
 not rewritten. A new measurement is recorded as a *current* inventory
 alongside them.
 
+## Running the gate
+
+Both corpus gates (`scripts/ci/validate_sbml_test_suite.py` and
+`scripts/ci/validate_published_biomodels.py`) check the `bionetgen` package
+they would import before they measure anything, and refuse to run when it is
+not traceable to the checkout that owns the gate. The report records the
+package that was used in `runtime_provenance.imported_package_trace`.
+
+A refusal means the measurement would have been about a different copy of the
+package -- typically a stale installation in `site-packages` -- and would have
+looked like an ordinary report. Run the gate from the repository root with
+`PYTHONPATH=python:build/cpp`, or install the checkout's own package
+(`pip install .`), so that `bionetgen` resolves to `<root>/python/bionetgen`.
+
 ## Expectation manifest schema
 
 `expectations.json` is the **expectation manifest**. It records, per case, the

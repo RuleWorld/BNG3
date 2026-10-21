@@ -26,6 +26,7 @@ from urllib.parse import quote
 
 from .events import (
     EventTranslationContext,
+    NativeStateTarget,
     _event_assignment,
     fold_numeric,
     expand_cosh_assignment_rule_events,
@@ -33,6 +34,8 @@ from .events import (
     expand_static_parameter_event_system,
     parse_time_threshold,
     synthesize_event_actions,
+    lower_native_events,
+    synthesize_native_event_block,
 )
 from .rate_rule_constants import (
     ASSIGN_RULE_META_PREFIX,
@@ -2079,14 +2082,19 @@ def _strip_compartment_rate_factors(
     return result.strip() or "1"
 
 
-def _law_references_compartment(expression: str, model: SBMLModel) -> bool:
+def _law_references_compartment(
+    expression: str, model: SBMLModel, exclude: str = ""
+) -> bool:
     """Report whether a rate law names a compartment's size explicitly.
 
     A law that carries the compartment factor already states its own volume
-    dependence, so the amount-based correction does not apply to it.
+    dependence, so the volume correction does not apply to it.  ``exclude``
+    names the one compartment the caller accounts for separately.
     """
 
     for compartment_id in model.compartments:
+        if exclude and str(compartment_id) == str(exclude):
+            continue
         name = standardize_name(str(compartment_id))
         if re.search(rf"\b{re.escape(str(compartment_id))}\b", expression):
             return True
@@ -2131,16 +2139,13 @@ def _compartment_factor_shape(expression: str, compartment_id: str) -> str:
     return "multiplicative" if multiplicative else "divisive"
 
 
-def _amount_based_mass_action_constant(
-    mass_action_constant: float,
+def _rate_law_volume_exponent(
     reaction: SBMLReaction,
     model: SBMLModel,
     reactants: Sequence[str],
-    complete_flux: bool = False,
-    law_references_compartment: bool = False,
     compartment_factor_shape: str = "none",
-) -> str:
-    """Correct a recovered mass-action constant for an amount-based law.
+) -> int:
+    """Return the power of the compartment's volume a BNGL constant needs.
 
     An SBML kinetic law's value is the rate of change of the reaction's
     extent, so the species' amounts change by ``stoichiometry * extent
@@ -2149,49 +2154,88 @@ def _amount_based_mass_action_constant(
     ``d[A]/dt = -k*[A]*[B]``, and the reaction's extent rate is that value
     times the compartment volume.
 
-    An amount-based law ``k * n1 * ... * nm`` is an extent rate in
-    substance/time, so the BNGL constant must be ``k * V**(m-1)``: the
-    concentration form of the same law needs one volume factor per reactant
-    except the one that the concentration form already carries.  A
-    zero-order law (``m = 0``) is correspondingly divided by the volume.
+    A species' *value* in an SBML expression is its amount when it has
+    ``hasOnlySubstanceUnits="true"`` and its concentration
+    (``amount / compartmentSize``) otherwise (SBML Level 3 Version 2 Core,
+    Sec. 4.6 "Species").  A law with ``m`` reactant factors therefore has
+    the value ``k * n**m / V**c``, where ``c`` counts the concentration-valued
+    factors and ``a = m - c`` counts the amount-valued ones.  BNGL's own
+    mass-action rate divides the extent rate by one volume factor per
+    reactant beyond the first, so the equivalent BNGL constant is
+    ``k * V**(m - 1 - c)``, which is ``k * V**(a - 1)``.
 
     A law that names the compartment states its own volume dependence, and
-    the shape of that dependence decides the exponent.  A law that divides
-    by the compartment (``k * A * A / cell``) already carries the ``1/V``
-    that the amount-based reading needs, so it keeps the constant it was
-    recovered with.  A law that multiplies by the compartment
-    (``cell * k * A * A``) states the opposite dependence and needs one more
-    volume factor than a law that does not name the compartment at all, so
-    its constant becomes ``k * V**m``.  Reporting the multiplicative form
-    without that factor would leave the constant off by ``V**m``.
+    the shape of that dependence decides the exponent: a law that multiplies
+    by the compartment (``cell * k * A * A``) states the opposite dependence
+    of one that divides by it (``k * A * A / cell``), so it needs one more
+    volume factor, and a law that divides by it needs one fewer.
 
-    A concentration-based law already carries the compartment factor that
-    SBML's convention requires, and needs no correction.  A rate that is
-    emitted as a complete flux (``complete_flux``) is the extent rate
-    itself and likewise needs no correction.
+    A zero-order law has no species operand, so it states a complete flux and
+    needs no volume factor.
     """
 
-    constant = _number(mass_action_constant)
-    multiplicative = compartment_factor_shape == "multiplicative"
-    if complete_flux:
-        # A complete flux already is the extent rate.
-        return constant
-    if law_references_compartment and not multiplicative:
-        # A law that names the compartment states its own volume dependence.
-        return constant
-    if not _amount_based_extent_rate(reaction, model, reactants):
-        return constant
     order = len(reactants)
     if order == 0:
         # A zero-order law is emitted as a complete flux, which already is the
         # extent rate.
+        return 0
+    known = [
+        model.species[species_id]
+        for species_id in reactants
+        if species_id in model.species
+    ]
+    if len(known) != order:
+        # An operand the model does not define leaves the law's units
+        # undetermined, so no correction is applied.
+        return 0
+    amount_operands = sum(1 for species in known if species.has_only_substance_units)
+    explicit = {"multiplicative": 1, "divisive": -1}.get(compartment_factor_shape, 0)
+    return amount_operands - 1 + explicit
+
+
+def _volume_scaled_mass_action_constant(
+    mass_action_constant: float,
+    reaction: SBMLReaction,
+    model: SBMLModel,
+    reactants: Sequence[str],
+    complete_flux: bool = False,
+    compartment_factor_shape: str = "none",
+    law_references_other_compartment: bool = False,
+) -> str:
+    """Correct a recovered mass-action constant for the law's volume units.
+
+    The recovered constant is the law's own coefficient; the BNGL constant
+    has to carry the volume factor that turns the law's extent rate into the
+    concentration rate BNGL states.  See :func:`_rate_law_volume_exponent`
+    for the rule and its derivation.
+
+    A law that names a compartment other than the reaction's own states a
+    volume dependence the rule cannot express, so it keeps the constant it
+    was recovered with.  A rate that is emitted as a complete flux
+    (``complete_flux``) is the extent rate itself and likewise needs no
+    correction.
+    """
+
+    constant = _number(mass_action_constant)
+    if complete_flux:
+        # A complete flux already is the extent rate.
         return constant
-    if order == 1 and not multiplicative:
-        # A unimolecular law that does not name the compartment needs no
-        # volume factor.
+    if law_references_other_compartment:
+        # A law that names another compartment states its own volume
+        # dependence, which the reaction's compartment factor cannot carry.
+        return constant
+    exponent = _rate_law_volume_exponent(
+        reaction,
+        model,
+        reactants,
+        compartment_factor_shape=compartment_factor_shape,
+    )
+    if exponent == 0:
         return constant
     volume = _reaction_volume_expression(reaction, model)
-    exponent = order if multiplicative else order - 1
+    if volume == "1":
+        # The reaction has no compartment volume to scale by.
+        return constant
     return f"({constant}) * ({volume})**{exponent}"
 
 
@@ -2224,45 +2268,6 @@ def _reaction_volume_expression(reaction: SBMLReaction, model: SBMLModel) -> str
     if not compartment_id:
         return "1"
     return f"__compartment_{standardize_name(compartment_id)}__"
-
-
-def _amount_based_extent_rate(
-    reaction: SBMLReaction,
-    model: SBMLModel,
-    reactants: Sequence[str],
-) -> bool:
-    """Report whether a reaction's kinetic law is an amount-based extent rate.
-
-    SBML Level 3 Version 2 Core (Sec. 4.11) states that the numeric value of
-    a kinetic law is the rate of change of the reaction's *extent*, and that a
-    species' amount changes by ``stoichiometry * extent rate``.  A model
-    therefore writes a concentration-based law with an explicit compartment
-    factor (``compartment * k * S1 * S2``), which already carries the
-    volume, while an amount-based law (``k * S1 * S2``) does not.
-
-    BNGL's rate laws are always concentration rates, so only an amount-based
-    law needs a volume correction when it is lowered.  A law is amount-based
-    when every species it operates on is amount-valued
-    (``hasOnlySubstanceUnits="true"``); a law without species operands is
-    classified by the reaction's participants.
-    """
-
-    participants = [
-        reference.species
-        for reference in [*reaction.reactants, *reaction.products]
-        if reference.species and reference.species != "EmptySet"
-    ]
-    operated = list(reactants) or participants
-    if not operated:
-        return False
-    known = [
-        model.species[species_id]
-        for species_id in operated
-        if species_id in model.species
-    ]
-    if not known:
-        return False
-    return all(species.has_only_substance_units for species in known)
 
 
 def _requires_explicit_compartment_flux(
@@ -2420,12 +2425,15 @@ def _rate_for_reaction(
         not model.species[species_id].has_only_substance_units
         for species_id in reactants
     )
-    law_references_compartment = _law_references_compartment(math, model)
     # A law that names its compartment states its own volume dependence, and
-    # the shape of that dependence decides how the amount-based correction
-    # has to account for it.
-    compartment_factor_shape = _compartment_factor_shape(
-        math, _reaction_compartment_id(reaction, model)
+    # the shape of that dependence decides how the volume correction has to
+    # account for it.
+    reaction_compartment_id = _reaction_compartment_id(reaction, model)
+    compartment_factor_shape = _compartment_factor_shape(math, reaction_compartment_id)
+    # A law that names a *different* compartment states a volume dependence
+    # the reaction's own compartment factor cannot carry.
+    law_references_other_compartment = _law_references_compartment(
+        math, model, exclude=reaction_compartment_id
     )
     has_saturation = bool(re.search(r"\b(?:Sat|MM|Hill)\s*\(", math))
     functional = _is_functional_rate_expression(math)
@@ -2580,14 +2588,14 @@ def _rate_for_reaction(
         )
         if mass_action_constant is not None:
             return apply_conversion(
-                _amount_based_mass_action_constant(
+                _volume_scaled_mass_action_constant(
                     mass_action_constant,
                     reaction,
                     model,
                     reactants,
                     complete_flux=complete_flux,
-                    law_references_compartment=law_references_compartment,
                     compartment_factor_shape=compartment_factor_shape,
+                    law_references_other_compartment=(law_references_other_compartment),
                 )
             )
 
@@ -2682,14 +2690,14 @@ def _rate_for_reaction(
         )
         if mass_action_constant is not None:
             return apply_conversion(
-                _amount_based_mass_action_constant(
+                _volume_scaled_mass_action_constant(
                     mass_action_constant,
                     reaction,
                     model,
                     reactants,
                     complete_flux=complete_flux,
-                    law_references_compartment=law_references_compartment,
                     compartment_factor_shape=compartment_factor_shape,
+                    law_references_other_compartment=(law_references_other_compartment),
                 )
             )
 
@@ -4012,12 +4020,28 @@ def _lowerable_species_assignment_rules(
     return candidates
 
 
-def _update_event_translation_warning(model: SBMLModel, event_result: object) -> None:
+def _update_event_translation_warning(
+    model: SBMLModel, event_result: object, native_event_block: object = None
+) -> None:
     """Make the event diagnostic reflect the executable lowering result."""
 
     converted = int(getattr(event_result, "converted", 0) or 0)
     untranslated = list(getattr(event_result, "untranslated", []) or [])
     horizon_limited = int(getattr(event_result, "horizon_limited", 0) or 0)
+    if native_event_block:
+        message = (
+            f"{len(model.events)} SBML event(s) lowered to the native BNG3 "
+            "event runtime, which detects the trigger's rising edge with "
+            "continuous root finding and applies the assignments at that "
+            "instant."
+        )
+        for warning in getattr(model, "import_warnings", []) or []:
+            if warning.get("category") != "event":
+                continue
+            warning.message = message
+            warning.severity = "info"
+            warning.count = len(model.events)
+        return
     if not converted and not untranslated:
         if horizon_limited:
             message = (
@@ -7373,6 +7397,7 @@ def generate_bngl(
         )
 
     event_result = None
+    native_event_block = None
     if model.events:
         mutable_event_ids = {rule.variable for rule in model.rules if rule.variable}
         mutable_event_ids.update(
@@ -7506,6 +7531,60 @@ def generate_bngl(
         initial_assignment_stack: set[str] = set()
         assignment_rule_cache: dict[str, Optional[float]] = {}
         assignment_rule_stack: set[str] = set()
+
+        def resolve_native_state(identifier: str) -> Optional[NativeStateTarget]:
+            """Map an SBML state symbol to its BNGL observable and units.
+
+            The native ``bng3_events`` runtime observes a species amount, so
+            an SBML value has to be converted into that amount before the
+            trigger or the assignment can be expressed in BNGL.  A species
+            that reports concentrations contributes its compartment size as
+            the conversion factor; a rate-rule parameter keeps its own
+            value.
+            """
+            species = model.species.get(identifier)
+            if species is not None:
+                if species.constant or species.boundary_condition:
+                    return None
+                base = observable_map.get(identifier)
+                if base is None:
+                    return None
+                compartment_id = str(species.compartment or "")
+                factor = 1.0
+                if not species.has_only_substance_units:
+                    compartment = model.compartments.get(compartment_id)
+                    if compartment is None or not compartment.constant:
+                        return None
+                    size = _numeric_value(compartment.size)
+                    if size is None or not math.isfinite(size) or size <= 0:
+                        return None
+                    factor = float(size)
+                return NativeStateTarget(
+                    observable=f"{base}_amt",
+                    amount_factor=factor,
+                    compartment=compartment_id,
+                )
+            if identifier in synthetic_rate_rule_variables:
+                # A rate-rule parameter becomes a state species whose seed is
+                # its SBML value; a compartment would rescale that seed, so
+                # only a unit-sized default compartment preserves the value.
+                if default_compartment:
+                    compartment = model.compartments.get(default_compartment)
+                    if compartment is None or not compartment.constant:
+                        return None
+                    size = _numeric_value(compartment.size)
+                    if (
+                        size is None
+                        or not math.isfinite(size)
+                        or abs(float(size) - 1.0) > 1e-12
+                    ):
+                        return None
+                return NativeStateTarget(
+                    observable=f"{standardize_name(identifier)}_amt",
+                    amount_factor=1.0,
+                    compartment="",
+                )
+            return None
 
         def resolve_event_parameter(identifier: str) -> Optional[float]:
             # In BNGL, __Avogadro__ is normalized to 1 for molecule-count
@@ -8425,6 +8504,44 @@ def generate_bngl(
                 if not expression:
                     return None
                 expression = extend_function(expression, {}, model.function_definitions)
+                # A reaction's local parameters shadow the model's parameters
+                # of the same name (SBML Level 3 Version 2 Core, Sec. 4.9.2
+                # "Local parameters").  The trajectory of a species this
+                # reaction consumes is the trajectory the *reaction* states,
+                # so the local values have to be substituted before the rate
+                # law is read.  An event that overrides a local parameter
+                # changes the rate law at run time, and the trajectory is
+                # then not statically known.
+                local_parameters = (
+                    kinetic_law.get("localParameters", [])
+                    if isinstance(kinetic_law, Mapping)
+                    else getattr(kinetic_law, "local_parameters", [])
+                )
+                overridden_locals = {
+                    str(assignment.variable)
+                    for event in model.events
+                    for assignment in event.assignments
+                }
+                for local in local_parameters or []:
+                    local_id = str(
+                        local.get("id", "")
+                        if isinstance(local, Mapping)
+                        else getattr(local, "id", "")
+                    )
+                    raw_value = (
+                        local.get("value")
+                        if isinstance(local, Mapping)
+                        else getattr(local, "value", None)
+                    )
+                    if not local_id or raw_value is None:
+                        return None
+                    if local_id in overridden_locals:
+                        continue
+                    expression = re.sub(
+                        rf"\b{re.escape(local_id)}\b",
+                        repr(float(raw_value)),
+                        expression,
+                    )
                 try:
                     parsed = ast.parse(expression, mode="eval")
                 except (TypeError, ValueError, SyntaxError):
@@ -10825,119 +10942,150 @@ def generate_bngl(
                 return None
             return species_to_pattern.get(compartment_id)
 
+        event_context = EventTranslationContext(
+            resolve_species_pattern=lambda species_id: species_to_pattern.get(
+                species_id
+            ),
+            resolve_param=resolve_event_parameter,
+            seed=_requested_simulation_seed(actions),
+            is_param=lambda identifier: (
+                identifier in model.parameters
+                or identifier in event_species_reference_targets
+            ),
+            is_compartment=lambda identifier: identifier in model.compartments,
+            resolve_compartment_state_pattern=resolve_compartment_state_pattern,
+            resolve_rate_rule_state_pattern=(
+                lambda identifier: (
+                    species_to_pattern.get(identifier)
+                    if identifier in synthetic_rate_rule_variables
+                    else None
+                )
+            ),
+            resolve_species_concentration_volume=(resolve_species_concentration_volume),
+            is_compile_time_constant=is_compile_time_constant,
+            unapplied_algebraic_rule=any(
+                rule.type == "algebraic" for rule in model.rules
+            ),
+            resolve_constant=resolve_constant,
+            expand_functions=lambda expression: extend_function(
+                expression, {}, model.function_definitions
+            ),
+            method=(
+                "ssa"
+                if re.search(
+                    r"simulate_ssa|method\s*=>\s*[\"']?ssa", actions or "", re.I
+                )
+                else "ode"
+            ),
+            base_t_end=float(t_end),
+            base_steps=max(1, int(n_steps)),
+            resolve_initial_value=resolve_initial_event_value,
+            resolve_rate_rule_expression_for_event=(
+                lambda identifier, _event: resolve_periodic_rate_rule_expression(
+                    identifier
+                )
+            ),
+            resolve_first_order_cycle_event_system=(
+                resolve_first_order_cycle_event_system
+            ),
+            resolve_first_order_transfer_event_system=(
+                resolve_first_order_transfer_event_system
+            ),
+            resolve_first_order_chain_event_system=(
+                resolve_first_order_chain_event_system
+            ),
+            resolve_affine_rate=resolve_affine_event_rate,
+            resolve_affine_rate_for_event=lambda identifier, event: (
+                resolve_affine_event_rate(identifier, event)
+            ),
+            resolve_affine_priority_rate=lambda identifier, event: (
+                resolve_affine_event_rate(identifier, event, ignore_simultaneous=True)
+            ),
+            resolve_exponential_rate=resolve_exponential_event_rate,
+            resolve_exponential_rate_for_event=lambda identifier, event: (
+                resolve_exponential_event_rate(identifier, event)
+            ),
+            resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
+            resolve_species_volume_change_for_event=(
+                resolve_species_volume_change_for_event
+            ),
+            resolve_event_volume_assignment_targets=(
+                resolve_event_volume_assignment_targets
+            ),
+            resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
+            resolve_quadratic_state_values_for_event=(
+                resolve_quadratic_event_state_values
+            ),
+            resolve_quadratic_rate_from_state=(
+                lambda identifier, event, state_values: resolve_quadratic_event_rate(
+                    identifier, event, state_values
+                )
+            ),
+            resolve_quadratic_state_values_from_state=(
+                lambda identifier, value, event, state_values: resolve_quadratic_event_state_values(
+                    identifier, value, event, state_values
+                )
+            ),
+            resolve_reaction_rate_for_event=resolve_event_reaction_rate,
+            resolve_priority_reaction_rate_for_event=lambda identifier, event, state: (
+                resolve_event_reaction_rate(
+                    identifier,
+                    event,
+                    priority_state=True,
+                    state_values=state,
+                )
+            ),
+            resolve_priority_assignment_value=resolve_priority_assignment_value,
+            resolve_assignment_rule_value_for_event=lambda identifier, time, event, state: (
+                resolve_priority_assignment_value(
+                    identifier,
+                    time,
+                    event,
+                    state,
+                    allow_simultaneous=False,
+                )
+            ),
+            resolve_priority_initial_parameter_value=(
+                resolve_priority_initial_parameter_value
+            ),
+            resolve_rate_reset=resolve_rate_event_reset,
+            static_event_state=static_event_state,
+            resolve_native_state=resolve_native_state,
+        )
         event_result = synthesize_event_actions(
             event_translation_events,
-            EventTranslationContext(
-                resolve_species_pattern=lambda species_id: species_to_pattern.get(
-                    species_id
-                ),
-                resolve_param=resolve_event_parameter,
-                is_param=lambda identifier: (
-                    identifier in model.parameters
-                    or identifier in event_species_reference_targets
-                ),
-                is_compartment=lambda identifier: identifier in model.compartments,
-                resolve_compartment_state_pattern=resolve_compartment_state_pattern,
-                resolve_species_concentration_volume=(
-                    resolve_species_concentration_volume
-                ),
-                is_compile_time_constant=is_compile_time_constant,
-                unapplied_algebraic_rule=any(
-                    rule.type == "algebraic" for rule in model.rules
-                ),
-                resolve_constant=resolve_constant,
-                expand_functions=lambda expression: extend_function(
-                    expression, {}, model.function_definitions
-                ),
-                method=(
-                    "ssa"
-                    if re.search(
-                        r"simulate_ssa|method\s*=>\s*[\"']?ssa", actions or "", re.I
-                    )
-                    else "ode"
-                ),
-                seed=_requested_simulation_seed(actions),
-                base_t_end=float(t_end),
-                base_steps=max(1, int(n_steps)),
-                resolve_initial_value=resolve_initial_event_value,
-                resolve_rate_rule_expression_for_event=(
-                    lambda identifier, _event: resolve_periodic_rate_rule_expression(
-                        identifier
-                    )
-                ),
-                resolve_first_order_cycle_event_system=(
-                    resolve_first_order_cycle_event_system
-                ),
-                resolve_first_order_transfer_event_system=(
-                    resolve_first_order_transfer_event_system
-                ),
-                resolve_first_order_chain_event_system=(
-                    resolve_first_order_chain_event_system
-                ),
-                resolve_affine_rate=resolve_affine_event_rate,
-                resolve_affine_rate_for_event=lambda identifier, event: (
-                    resolve_affine_event_rate(identifier, event)
-                ),
-                resolve_affine_priority_rate=lambda identifier, event: (
-                    resolve_affine_event_rate(
-                        identifier, event, ignore_simultaneous=True
-                    )
-                ),
-                resolve_exponential_rate=resolve_exponential_event_rate,
-                resolve_exponential_rate_for_event=lambda identifier, event: (
-                    resolve_exponential_event_rate(identifier, event)
-                ),
-                resolve_square_linear_rate_for_event=(resolve_square_linear_event_rate),
-                resolve_species_volume_change_for_event=(
-                    resolve_species_volume_change_for_event
-                ),
-                resolve_event_volume_assignment_targets=(
-                    resolve_event_volume_assignment_targets
-                ),
-                resolve_quadratic_rate_for_event=resolve_quadratic_event_rate,
-                resolve_quadratic_state_values_for_event=(
-                    resolve_quadratic_event_state_values
-                ),
-                resolve_quadratic_rate_from_state=(
-                    lambda identifier, event, state_values: resolve_quadratic_event_rate(
-                        identifier, event, state_values
-                    )
-                ),
-                resolve_quadratic_state_values_from_state=(
-                    lambda identifier, value, event, state_values: resolve_quadratic_event_state_values(
-                        identifier, value, event, state_values
-                    )
-                ),
-                resolve_reaction_rate_for_event=resolve_event_reaction_rate,
-                resolve_priority_reaction_rate_for_event=lambda identifier, event, state: (
-                    resolve_event_reaction_rate(
-                        identifier,
-                        event,
-                        priority_state=True,
-                        state_values=state,
-                    )
-                ),
-                resolve_priority_assignment_value=resolve_priority_assignment_value,
-                resolve_assignment_rule_value_for_event=lambda identifier, time, event, state: (
-                    resolve_priority_assignment_value(
-                        identifier,
-                        time,
-                        event,
-                        state,
-                        allow_simultaneous=False,
-                    )
-                ),
-                resolve_priority_initial_parameter_value=(
-                    resolve_priority_initial_parameter_value
-                ),
-                resolve_rate_reset=resolve_rate_event_reset,
-                static_event_state=static_event_state,
-            ),
+            event_context,
         )
-        _update_event_translation_warning(model, event_result)
+        native_event_block = None
+        native_event_refusal = None
+        if (
+            not event_result.actions_block
+            and not event_result.converted
+            and not event_result.horizon_limited
+            and len(event_result.untranslated) == len(model.events)
+            and model.events
+        ):
+            native_lowering = lower_native_events(model.events, event_context)
+            native_event_block = native_lowering.block
+            native_event_refusal = native_lowering.reason
+        _update_event_translation_warning(model, event_result, native_event_block)
 
-    if event_result is not None and (
-        event_result.actions_block or event_result.untranslated
+    if native_event_block:
+        # The native event block belongs inside the model block: the grammar
+        # only accepts an actions block after ``end model``.
+        end_model = re.search(r"(?im)^end model\s*$", model_text)
+        if end_model is not None:
+            model_text = (
+                model_text[: end_model.start()]
+                + str(native_event_block)
+                + "\n\n"
+                + model_text[end_model.start() :]
+            )
+
+    if (
+        event_result is not None
+        and not native_event_block
+        and (event_result.actions_block or event_result.untranslated)
     ):
         notes = ["# ==== SBML DYNAMICS NOTES ====\n"]
         if event_result.converted:
@@ -10948,6 +11096,11 @@ def generate_bngl(
             notes.append(
                 "# Events NOT simulated (state-dependent or non-constant); listed for reference:\n"
             )
+            if native_event_refusal:
+                # The native runtime could have executed the events, but it
+                # refuses a group whose execution order the specification
+                # leaves to a random draw.
+                notes.append(f"#   native event runtime: {native_event_refusal}\n")
             for event, reason in event_result.untranslated:
                 label = event.id or event.name or "event"
                 notes.append(f"#   event {label}: {reason}\n")

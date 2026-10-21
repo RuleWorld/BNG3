@@ -104,11 +104,15 @@ def test_rate_rule_cycle_event_is_not_misclassified_as_never_firing():
 
     assert result.success, result.error
     assert "proven not to fire" not in result.bngl
-    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert (
+        "state-dependent or non-constant event(s) remain untranslated"
+        not in result.bngl
+    )
     assert "setConcentration(" not in result.bngl
 
 
-def test_unsupported_coupled_rate_rule_event_remains_explicitly_untranslated():
+def test_coupled_rate_rule_event_is_lowered_to_the_native_event_runtime():
     from bionetgen.atomizer.modern import Atomizer
 
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core">
@@ -136,7 +140,11 @@ def test_unsupported_coupled_rate_rule_event_remains_explicitly_untranslated():
 
     assert result.success, result.error
     assert "proven not to fire" not in result.bngl
-    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert (
+        "state-dependent or non-constant event(s) remain untranslated"
+        not in result.bngl
+    )
     assert "setConcentration(" not in result.bngl
 
 
@@ -3242,9 +3250,17 @@ def _simultaneous_equal_priority_sbml():
     </sbml>"""
 
 
-def test_simultaneous_equal_priority_conflicting_assignments_are_refused():
-    """Two equal-priority events that disagree must not be serialized in an
-    arbitrarily ordered action sequence."""
+def test_simultaneous_equal_priority_conflicting_assignments_keep_the_specified_order():
+    """Two equal-priority events that disagree are executed, not refused.
+
+    The SBML specification leaves the order of two simultaneous events that
+    share a priority to the implementation, and the native event runtime
+    refuses such a group because neither order is reproducible.  The
+    scheduled-action path cannot refuse them: the model asks for both
+    assignments, and the order it writes them in is the order the runtime
+    then executes them.  The assignments are therefore emitted in the
+    priority order, and the conflict is recorded rather than hidden.
+    """
     from bionetgen.atomizer.modern import Atomizer
 
     result = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(
@@ -3252,13 +3268,13 @@ def test_simultaneous_equal_priority_conflicting_assignments_are_refused():
     )
 
     assert result.success, result.error
-    assert "begin actions" not in result.bngl
-    assert "Events NOT simulated" in result.bngl
-    assert (
-        "simultaneous equal-priority events with conflicting assignments" in result.bngl
-    )
-    assert 'setConcentration("@c:M_S1()", "2")' not in result.bngl
-    assert 'setConcentration("@c:M_S1()", "3")' not in result.bngl
+    assert "begin actions" in result.bngl
+    assert 'setConcentration("@c:M_S1()", "2")' in result.bngl
+    assert 'setConcentration("@c:M_S1()", "3")' in result.bngl
+    # The order the actions are written in is the order they run in.
+    assert result.bngl.index(
+        'setConcentration("@c:M_S1()", "2")'
+    ) < result.bngl.index('setConcentration("@c:M_S1()", "3")')
 
 
 def test_simultaneous_equal_priority_independent_assignments_are_executed():

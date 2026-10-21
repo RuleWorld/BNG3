@@ -235,7 +235,12 @@ def test_process_reaction_rate_returns_source_shaped_mass_action_result():
     result = process_reaction_rate(model.reactions["r"], "r", model)
 
     assert isinstance(result, ProcessedRate)
-    assert result.rate_string == "3"
+    # ``A`` has no ``hasOnlySubstanceUnits``, so the symbol denotes its
+    # concentration (SBML Level 3 Version 2 Core, Sec. 4.6 "Species") and the
+    # law ``k * A`` is a concentration law: its value is the extent rate
+    # ``k * amount / V``, so the BNGL constant is ``k / V`` (Sec. 4.11
+    # "Reactions" makes the law's value the reaction's extent rate).
+    assert result.rate_string == "(3) * (__compartment_cell__)**-1"
     assert result.rateString == result.rate_string
     assert result.force_irreversible is False
     assert result.forceIrreversible is False
@@ -340,7 +345,12 @@ def test_generate_bngl_splits_mixed_total_rate_reversible_directions():
     )
 
     assert "r_forward: @cell:M_A() -> @cell:M_P() sin(_c_A()) TotalRate" in bngl
-    assert "r_reverse: @cell:M_P() -> @cell:M_A() 0.25\n" in bngl
+    # The reverse law is ``kr * P`` and ``P`` is concentration-valued, so its
+    # BNGL constant is ``kr / V``.
+    assert (
+        "r_reverse: @cell:M_P() -> @cell:M_A() (0.25) * (__compartment_cell__)**-1\n"
+        in bngl
+    )
 
 
 def test_process_reaction_rate_keeps_numeric_parameter_only_flux_as_total_rate():
@@ -467,7 +477,9 @@ def test_playground_writer_exposes_distinct_reaction_rule_entry_points():
 
     assert flat.startswith("begin reaction rules\n")
     assert flat.endswith("\nend reaction rules")
-    assert "r: M_A()@cell -> M_P()@cell 3" in flat
+    # ``A`` is concentration-valued, so the law ``k * A`` needs the volume
+    # factor ``V**-1`` to state the same extent rate.
+    assert "r: M_A()@cell -> M_P()@cell (3) * (__compartment_cell__)**-1" in flat
     assert atomized == flat
     assert flat_v2 == flat
     assert writeReactionRulesFlat is write_reaction_rules_flat

@@ -34,7 +34,7 @@ begin functions
 end functions
 
 begin reaction rules
-  decay: @C:M_A() -> 0 1
+  decay: @C:M_A() -> 0 (1) * (__compartment_C__)**-1
 end reaction rules
 
 end model

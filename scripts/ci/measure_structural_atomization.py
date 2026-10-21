@@ -57,6 +57,7 @@ def _measure_one(
 ) -> Dict[str, Any]:
     """Translate one model both ways and report the four metrics."""
 
+    import bionetgen  # noqa: F401  (adds the native extension to the package)
     import bionetgen._bionetgen_cpp as cpp
     from bionetgen.atomizer.modern import Atomizer
     from bionetgen.model import BioNetGenModel
@@ -257,6 +258,54 @@ def _worker_entry(request: str) -> int:
     return 0
 
 
+def _summarize(
+    records: List[Dict[str, Any]], selected: int, missing: int
+) -> Dict[str, Any]:
+    """Aggregate the measured records into the reported metrics."""
+
+    translated = [record for record in records if record.get("translated")]
+    equivalent = [
+        record for record in records if record.get("equivalence") == "equivalent"
+    ]
+    different = [
+        record for record in records if record.get("equivalence") == "different"
+    ]
+    timed_out = [record for record in records if record.get("equivalence") == "timeout"]
+    not_translated = [record for record in records if not record.get("translated")]
+    not_applicable = [
+        record for record in records if record.get("equivalence") == "not-applicable"
+    ]
+    confidence: Dict[str, int] = {}
+    species_total = 0
+    structural_total = 0
+    uncertain_total = 0
+    for record in records:
+        species_total += int(record.get("species_total", 0) or 0)
+        structural_total += int(record.get("structural_species", 0) or 0)
+        uncertain_total += int(record.get("uncertain_species", 0) or 0)
+        for key, value in (record.get("confidence") or {}).items():
+            confidence[key] = confidence.get(key, 0) + int(value)
+    return {
+        "records_selected": selected,
+        "records_missing_from_cache": missing,
+        "records_measured": len(records),
+        "translation_passed": len(translated),
+        "translation_failed": len(not_translated),
+        "equivalence_equivalent": len(equivalent),
+        "equivalence_different": len(different),
+        "equivalence_timeout": len(timed_out),
+        "not_applicable": len(not_applicable),
+        "species_total": species_total,
+        "structural_species": structural_total,
+        "elemental_species": species_total - structural_total,
+        "structural_fraction": (
+            (structural_total / species_total) if species_total else 0.0
+        ),
+        "uncertain_species": uncertain_total,
+        "confidence": confidence,
+    }
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cache-dir", default="")
@@ -296,6 +345,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         payloads = payloads[: args.limit]
 
     records: List[Dict[str, Any]] = []
+    output_path = Path(args.json) if args.json else None
+
+    def flush() -> None:
+        """Write the records so far, so an interrupted run keeps its work."""
+
+        if output_path is None:
+            return
+        payload = {
+            "summary": _summarize(records, len(payloads), len(missing)),
+            "records": records,
+            "missing": missing,
+        }
+        output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
     if args.jobs <= 1:
         for record_id, path, timeout, simulate in payloads:
             record = _run_isolated(record_id, Path(path), timeout, simulate)
@@ -306,6 +371,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"/{record.get('species_total', 0)}",
                 flush=True,
             )
+            flush()
     else:
         with ProcessPoolExecutor(max_workers=args.jobs) as executor:
             futures = {
@@ -323,48 +389,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                     f"/{record.get('species_total', 0)}",
                     flush=True,
                 )
+                flush()
 
     records.sort(key=lambda item: str(item.get("id", "")))
-    translated = [record for record in records if record.get("translated")]
-    equivalent = [
-        record for record in records if record.get("equivalence") == "equivalent"
-    ]
-    different = [
-        record for record in records if record.get("equivalence") == "different"
-    ]
-    timed_out = [record for record in records if record.get("equivalence") == "timeout"]
-    not_translated = [record for record in records if not record.get("translated")]
-    not_applicable = [
-        record for record in records if record.get("equivalence") == "not-applicable"
-    ]
-    confidence: Dict[str, int] = {}
-    species_total = 0
-    structural_total = 0
-    uncertain_total = 0
-    for record in records:
-        species_total += int(record.get("species_total", 0) or 0)
-        structural_total += int(record.get("structural_species", 0) or 0)
-        uncertain_total += int(record.get("uncertain_species", 0) or 0)
-        for key, value in (record.get("confidence") or {}).items():
-            confidence[key] = confidence.get(key, 0) + int(value)
-    summary = {
-        "records_selected": len(payloads),
-        "records_missing_from_cache": len(missing),
-        "translation_passed": len(translated),
-        "translation_failed": len(not_translated),
-        "equivalence_equivalent": len(equivalent),
-        "equivalence_different": len(different),
-        "equivalence_timeout": len(timed_out),
-        "not_applicable": len(not_applicable),
-        "species_total": species_total,
-        "structural_species": structural_total,
-        "elemental_species": species_total - structural_total,
-        "structural_fraction": (
-            (structural_total / species_total) if species_total else 0.0
-        ),
-        "uncertain_species": uncertain_total,
-        "confidence": confidence,
-    }
+    summary = _summarize(records, len(payloads), len(missing))
     payload = {
         "summary": summary,
         "records": records,
