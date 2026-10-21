@@ -604,6 +604,28 @@ error: the published trajectory satisfies `A4 = 2*A2` to machine precision
 the deviation from the exact reduced solution oscillates with the sign of a
 fixed-step integrator's truncation error.
 
+### The per-case diff over the whole pinned suite
+
+Both whole-suite runs are against the pinned suite
+`cf38585fac5de8e0e90112febb62851ee2181816` with `PYTHONHASHSEED=0` and
+`PYTHONPATH=python:build/cpp`, and each report's
+`runtime_provenance.bionetgen_package_path` points at the worktree under
+test.
+
+| stage | `origin/main` (`7f8bebe1`) | the branch |
+| --- | --- | --- |
+| conversion | 1782 passed / 141 unsupported / 0 failed / 0 timeout | 1797 passed / 126 unsupported / 0 failed / 0 timeout |
+| round-trip structure | 1782 passed / 179 not tested | 1797 passed / 126 not tested |
+| independent libRoadRunner comparison | 1782 passed / 179 not tested | 1797 passed / 126 not tested |
+| official reference | 1743 passed / 180 unsupported / 0 failed / 0 timeout | 1758 passed / 165 unsupported / 0 failed / 0 timeout |
+
+* **15 verdicts moved**, all of them this cluster's cases, all from
+  `unsupported` to `passed`: 00870 00872 00873 01051 01052 01053 01399
+  01544 01545 01546 01565 01567 01569 01571 01572.
+* **0 regressions**: no case that passed on the base commit stopped
+  passing, and the official-reference failure count is 0 on both sides.
+* **No other record of the 1923 moved at all.**
+
 
 ---
 
