@@ -317,10 +317,10 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 * **Cases:** `semantic/00963`, `semantic/00967`.  The Atomizer defect is
   fixed; the corrected lowering needs 1001 simulation phases, one more than
-  the harness's documented budget of 1000, so the harness now reports the two
-  cases as *not comparable* instead of as a numeric mismatch.  With the
-  budget raised the fixed model reproduces the official reference exactly
-  (4 s per case).
+  the harness's documented budget of 1000, so the harness reported the two
+  cases as *not comparable* instead of as a numeric mismatch.  The budget is
+  now 2000, so both cases are compared and both reproduce the official
+  reference (about 2 s per case).
 * **Mechanism:** the event expander detects a trigger's crossing with a
   tolerance, then re-evaluated the trigger's own expression to decide
   whether a scheduled firing was still valid.  For
@@ -333,6 +333,10 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   recurrence needs.
 * **Fix:** every place that asks whether a trigger holds asks it the same
   way, through one helper that keeps the crossing tolerance.
+* **Phase count.** The 1001 phases are the count the source itself implies:
+  both models' events fire every 0.01 s over the official horizon, so the
+  recurrence has 1000 firings and the action block one phase per firing.
+  The harness sees the source's own count, not an artifact of the lowering.
 
 ### 8c. A state-triggered event ignored the reaction's local parameters - FIXED
 

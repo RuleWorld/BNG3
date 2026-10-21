@@ -1707,28 +1707,30 @@ def _compare_case_to_reference(
     }
 
 
-def _phase_boundary_ambiguity(
+def _phase_boundary_indices(
     block: Any,
     times: Sequence[float],
     *,
     requested_ids: Iterable[str],
     target_symbols: Iterable[str],
-) -> str | None:
-    """Describe a scheduled-action boundary that sits on the official grid.
+) -> dict[int, float]:
+    """Return the official grid points that sit on a scheduled-action boundary.
 
     The native action dispatcher reports the phase-boundary sample before the
     phase's assignment is applied, while the official reference reports the
-    state after the assignment.  When the assignment moves a requested
-    quantity the two conventions disagree and the comparison cannot be
-    decided, so the case is reported as unsupported with this reason.
+    state after the assignment, so the two conventions differ at those points.
+    Whether that difference changes the verdict is decided from the comparison
+    itself: a case whose disagreement is confined to those points is reported
+    as not comparable rather than as a failure.
     """
 
     assignments_by_phase = dict(block.assignments)
+    boundaries: dict[int, float] = {}
     for phase in block.phases:
         assignments = assignments_by_phase.get(phase.index, ())
         if not assignments:
             continue
-        for point in times:
+        for index, point in enumerate(times):
             if abs(point - phase.t_end) > 1e-9 * max(1.0, abs(point)):
                 continue
             if assignment_affects_outputs(
@@ -1736,14 +1738,75 @@ def _phase_boundary_ambiguity(
                 requested_ids=requested_ids,
                 target_symbols=target_symbols,
             ):
-                return (
-                    "the official output grid contains the boundary of the "
-                    f"generated scheduled actions at t={point!r}, where the "
-                    "reference convention (assignment already applied) and the "
-                    "phase-boundary value produced by the native action "
-                    "dispatcher (assignment not yet applied) differ"
-                )
-    return None
+                boundaries[index] = float(point)
+    return boundaries
+
+
+def _boundary_only_disagreement(
+    failed_indices: Iterable[int],
+    boundaries: dict[int, float],
+    *,
+    complete: bool = True,
+) -> str | None:
+    """Describe a disagreement that is confined to scheduled-action boundaries.
+
+    ``complete`` says that the caller knows the whole set of failed points.
+    When it does not, the disagreement cannot be attributed to the boundary
+    convention and no such description is produced.
+    """
+
+    failed = {int(index) for index in failed_indices}
+    if not complete or not failed or not boundaries:
+        return None
+    if not failed <= set(boundaries):
+        return None
+    points = ", ".join(repr(boundaries[index]) for index in sorted(failed))
+    return (
+        "the official output grid contains the boundary of the generated "
+        f"scheduled actions at t={points}, where the reference convention "
+        "(assignment already applied) and the phase-boundary value produced by "
+        "the native action dispatcher (assignment not yet applied) differ; the "
+        "comparison disagrees only at those points, so the case is not "
+        "comparable rather than a failure"
+    )
+
+
+def _comparison_failed_indices(comparison: dict[str, Any]) -> tuple[set[int], bool]:
+    """Return the failed sample indices of a comparison and whether they are complete.
+
+    The comparison report truncates the per-variable index lists, so a
+    truncated list does not describe the whole set of failed points.
+    """
+
+    failed: set[int] = set()
+    complete = True
+    for metrics in (comparison.get("variables") or {}).values():
+        indices = [int(index) for index in metrics.get("failed_sample_indices") or []]
+        count = int(metrics.get("failed_sample_index_count", len(indices)))
+        if count != len(indices):
+            complete = False
+        failed.update(indices)
+    return failed, complete
+
+
+def _action_phase_budget_reason(block: Any) -> str | None:
+    """Describe why an action block does not fit the documented phase budget.
+
+    The budget exists because every phase is a separate integration, so the
+    comparison of an action block with too many phases would cost more than
+    the conformance gate's per-case budget allows.  The reason names that
+    cost so that a reader can act on it.
+    """
+
+    if len(block.phases) <= ACTION_MAX_PHASES:
+        return None
+    return (
+        f"the generated scheduled actions have {len(block.phases)} "
+        "simulation phases; the native dispatcher integrates every phase "
+        "separately, so the official reference comparison would cost "
+        f"about {len(block.phases)} integrations and does not fit the "
+        f"documented budget of {ACTION_MAX_PHASES} phases"
+    )
 
 
 def _compare_action_case_to_reference(
@@ -1776,28 +1839,19 @@ def _compare_action_case_to_reference(
                 f"output grid: {exc}"
             ),
         }
-    if len(block.phases) > ACTION_MAX_PHASES:
-        return {
-            "status": "unsupported",
-            "reason": (
-                f"the generated scheduled actions have {len(block.phases)} "
-                "simulation phases; the native dispatcher integrates every phase "
-                "separately, so the official reference comparison does not fit "
-                f"the documented budget of {ACTION_MAX_PHASES} phases"
-            ),
-        }
+    budget_reason = _action_phase_budget_reason(block)
+    if budget_reason is not None:
+        return {"status": "unsupported", "reason": budget_reason}
 
     symbols: set[str] = set()
     for target in targets.values():
         symbols.update(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", target))
-    ambiguity = _phase_boundary_ambiguity(
+    boundaries = _phase_boundary_indices(
         block,
         times,
         requested_ids=reference["variables"],
         target_symbols=symbols,
     )
-    if ambiguity is not None:
-        return {"status": "unsupported", "reason": ambiguity}
 
     if work_dir is None:
         return {
@@ -1834,6 +1888,16 @@ def _compare_action_case_to_reference(
         # because the reference is flat as well.  That agreement carries no
         # information about the dynamics, so it is reported as not comparable.
         return {"status": "unsupported", "reason": degenerate_reason}
+    if not comparison["passed"] and boundaries:
+        failed, complete = _comparison_failed_indices(comparison)
+        boundary_reason = _boundary_only_disagreement(
+            failed, boundaries, complete=complete
+        )
+        if boundary_reason is not None:
+            # The disagreement is confined to the points where the dispatcher
+            # and the official reference use different conventions, so the
+            # verdict is not a statement about the model.
+            return {"status": "unsupported", "reason": boundary_reason}
     return {
         "status": "passed" if comparison["passed"] else "failed",
         "reason": (
@@ -1866,11 +1930,28 @@ def _compare_action_case_to_reference(
 
 #: Documented budget for the number of simulation phases the native action
 #: dispatcher may be asked to execute for one official reference comparison.
-#: Every phase is a separate integration, so a generated action block with
-#: thousands of phases (for example a periodic event synthesised over a long
-#: horizon) does not fit the conformance gate's per-case budget.  Such a case
-#: is reported as unsupported with that reason, never as a pass.
-ACTION_MAX_PHASES = 1000
+#:
+#: Every phase is a separate integration and every phase adds a row to the
+#: dispatcher's trajectory file, so the cost of the action path grows with the
+#: phase count.  Measured on the pinned suite's models: the 1,001 phases of
+#: ``semantic/00963`` cost about 2 s and the 10,000 phases of
+#: ``semantic/01588`` about 46 s, that is about 4 ms per phase.  The
+#: conformance gate's CI runs each case under a 60 s timeout, so the 10,000
+#: phase case would spend most of that budget on the action execution alone.
+#:
+#: The budget is a fixed phase count rather than a wall-clock limit on purpose:
+#: the per-phase cost depends on the model and the runner's load, so a time
+#: limit would make the verdict of a case depend on where it ran, while the
+#: phase count is the same everywhere.  The limit is set above the largest
+#: phase count the pinned suite's models legitimately imply -- 1,001 phases for
+#: ``semantic/00963`` and ``semantic/00967``, whose source events fire every
+#: 0.01 s over the official horizon -- and below the 10,000 phases of
+#: ``semantic/01588``, whose action execution alone does not fit the gate's
+#: per-case budget.
+#:
+#: A case that exceeds the budget is reported as unsupported with that reason,
+#: never as a pass.
+ACTION_MAX_PHASES = 2000
 
 #: Documented ensemble budget (number of trajectories) for the official
 #: stochastic conformance comparison.  The SBML discrete stochastic model test
@@ -2471,14 +2552,12 @@ def _compare_stochastic_case_to_reference(
         symbols: set[str] = set()
         for target in targets.values():
             symbols.update(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", target))
-        ambiguity = _phase_boundary_ambiguity(
+        ambiguity = _phase_boundary_indices(
             block,
             times,
             requested_ids=variables,
             target_symbols=symbols,
         )
-        if ambiguity is not None:
-            return {"status": "unsupported", "reason": ambiguity}
 
         observables = {item.name for item in output_model.observables}
         engine_used = "cpu:batch"
@@ -2631,6 +2710,16 @@ def _compare_stochastic_case_to_reference(
     passed = not modelled_failures and tail >= STOCHASTIC_CASE_ERROR_RATE
     if degenerate_reason is not None and passed:
         return {"status": "unsupported", "reason": degenerate_reason}
+    if modelled_failures and ambiguity:
+        # A modelled mismatch at a scheduled-action boundary is a difference
+        # between the dispatcher's pre-assignment sample and the official
+        # reference's post-assignment sample.  When every such mismatch sits on
+        # such a boundary and the statistical criterion accepts the ensemble,
+        # the verdict is not a statement about the model.
+        failed_indices = {int(failure["index"]) for failure in modelled_failures}
+        boundary_reason = _boundary_only_disagreement(failed_indices, ambiguity)
+        if boundary_reason is not None and tail >= STOCHASTIC_CASE_ERROR_RATE:
+            return {"status": "unsupported", "reason": boundary_reason}
     if passed and unmodelled:
         # Every mismatch is on a quantity the official reference does not
         # describe, so the comparison on it does not apply.
