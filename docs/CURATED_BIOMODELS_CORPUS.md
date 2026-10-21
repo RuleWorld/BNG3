@@ -295,6 +295,152 @@ to 413 species and 417 reactions in atomized mode, and the network generation
 alone takes 10.9 s. On the larger records the same expansion does not finish
 inside the per-model budget.
 
+## The expectation manifest
+
+The inventory above records one measurement. The
+**expectation manifest**,
+[`provenance/curated-biomodels-corpus-expectations.json`](../provenance/curated-biomodels-corpus-expectations.json),
+records the *expected* verdict of every curated record at every stage of the
+corpus gate, so a corpus regression fails a comparison instead of needing a
+human to read two large reports side by side.
+
+It is the corpus counterpart of the official SBML Test Suite's
+[expectation manifest](../provenance/sbml-campaign/README.md), and it uses
+the same vocabulary, so the campaign has one set of words for a gap.
+
+The manifest is a record of *one* measurement — the flat-mode pass of commit
+`48315b958685279838b4960e24b12498e0dc1363` with `PYTHONHASHSEED=0`, a 180 s
+per-model budget and four workers, taken while holding one of the campaign's
+shared verification slots on a machine shared with the rest of the campaign.
+Its `provenance` block records the report's SHA-256, the environment, the run
+budget and the load of that pass, because the timeout bucket depends on all
+three. The tables above describe an earlier pass of the same corpus, so the
+counts differ; the differences are the Atomizer fixes that have since
+landed, the two records that regressed, and the load-induced timeouts that
+the comparison reports as timeouts rather than as verdicts.
+
+### Schema
+
+```json
+{
+  "schema_version": 1,
+  "kind": "curated-biomodels-corpus-expectations",
+  "generator": "scripts/ci/curated_biomodels_corpus_inventory.py",
+  "stages": ["conversion", "roundtrip_structure", "independent_comparison"],
+  "statuses": ["passed", "unsupported", "failed", "not_tested", "unsupported_format", "timeout"],
+  "sides": ["harness", "atomizer", "not-applicable"],
+  "corpus": {
+    "inventory_query": "curationstatus:Manually curated",
+    "snapshot_date": "2026-09-15",
+    "expected_total_records": 1096,
+    "expected_sbml_records": 1075,
+    "expected_non_sbml_records": 21,
+    "record_count": 1096,
+    "sbml_path_record_count": 1083
+  },
+  "source_report": {
+    "sha256": "<sha256 of the harness report the manifest was generated from>",
+    "bng3_commit": "<the commit the manifest describes>",
+    "measurement_date": "<date of the measurement>"
+  },
+  "provenance": {"tool_versions": {…}, "run_budget": {…}, "load": {…}},
+  "stage_counts": {…},
+  "gap_counts": {"by_construct": {…}, "by_side": {…}},
+  "cases": {
+    "BIOMD0000000174": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
+    "BIOMD0000001066": {"conversion": "unsupported_format", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"construct": "format:not-an-sbml-artifact", "causes": ["format"], "side": "not-applicable"}}}
+  }
+}
+```
+
+* `cases` is keyed by the BioModels id and holds one status per stage. The
+  status vocabulary is closed: `passed`, `unsupported`, `failed`,
+  `not_tested`, `unsupported_format`, `timeout`.
+* The stages are the corpus counterparts of the official suite's first three:
+  `conversion` is the corpus gate's record status, `roundtrip_structure` is
+  its check that the written SBML is valid and that the native reader reads
+  back the generated network's species and reaction counts, and
+  `independent_comparison` is BNG3's CVODE against libRoadRunner's CVODE. A
+  published BioModel has no official reference trajectory, so the corpus has
+  no fourth stage.
+* `passed` is a result. `failed` is a result too: the stage ran and
+  disagreed with the independent comparison, which is a finding to
+  investigate, not a construct that is missing. A `failed` verdict carries
+  no gap.
+* `unsupported` and `unsupported_format` are the only gaps. Every refusal
+  carries a `gap` entry that names the **construct** that is not
+  representable today, the harness's **cause** labels for it, and the
+  **side** of the gap:
+  * `atomizer` — a construct is not representable today;
+  * `harness` — the gate could not evaluate the record, so the record is a
+    measurement limitation rather than a claim about the Atomizer;
+  * `not-applicable` — the record does not present a convertible SBML
+    document: it is not an SBML artifact, its archive carries no SBML, or
+    its source document is not SBML-valid.
+* `not_tested` means the stage produced no verdict: it was not reached, or
+  the report carries no verdict for it.
+* `timeout` is **not a verdict**. The per-model budget is sized for an
+  unloaded machine, so on a shared machine a timeout records that the
+  machine was busy. A difference in which a timeout takes part is
+  classified `timeout` and is never counted as a regression in either
+  direction.
+* `corpus` identifies the collection, `source_report` identifies the
+  measurement: the report's SHA-256, the commit the manifest describes and
+  the measurement date. `provenance` records the environment, the run budget
+  and the load of the run, because the timeout bucket depends on all three.
+
+### Regenerating and comparing
+
+```bash
+# regenerate the committed manifest (an explicit, reviewable act)
+python scripts/ci/curated_biomodels_corpus_inventory.py \
+  --flat-report <flat report>.json \
+  --expectations-out provenance/curated-biomodels-corpus-expectations.json \
+  --measurement-date <date> --measured-commit <sha> \
+  --expectations-provenance provenance/curated-biomodels-corpus-provenance.json
+
+# the committed manifest regenerates byte-identically from the report it names
+python scripts/ci/curated_biomodels_corpus_inventory.py \
+  --flat-report <flat report>.json \
+  --expectations provenance/curated-biomodels-corpus-expectations.json \
+  --verify-regeneration
+
+# compare a fresh run against the committed manifest
+python scripts/ci/curated_biomodels_corpus_inventory.py \
+  --flat-report <flat report>.json \
+  --expectations provenance/curated-biomodels-corpus-expectations.json \
+  --report-revision <the commit the run executed>
+```
+
+Every difference is reported:
+
+* a record that was `passed` and no longer is is a **regression**;
+* a record that moves to `passed` is an **improvement**, and is only
+  accepted once the manifest is explicitly updated;
+* any other verdict change is a **change**;
+* a record that disappeared is reported (`missing-record`), never ignored;
+  only a partial run may say that it did not execute a record;
+* a record the run measured but the manifest does not name is reported
+  (`unrecorded-record`);
+* a difference in which a timeout takes part is reported as a timeout
+  difference and is not a verdict difference.
+
+A run against a different corpus snapshot or a different tool revision is
+rejected before any comparison, so a stale expectation is never compared
+against a different corpus.
+
+### Comparing two corpus reports with each other
+
+[`scripts/ci/compare_biomodels_suite_reports.py`](../scripts/ci/compare_biomodels_suite_reports.py)
+compares two corpus reports with each other, for the same purpose as
+[`compare_sbml_suite_reports.py`](../scripts/ci/compare_sbml_suite_reports.py)
+does for the official suite. It reports verdicts rather than provenance (the
+imported package's path, the native extension's digest, the command line and
+the working directory are reported as notes), it compares the aggregate id
+lists as multisets so a reordered run is not a difference, it names the
+stage of every per-record difference, and it keeps a timeout-only difference
+distinct from a real change.
+
 ## Reading the inventory
 
 The inventory is derived from the harness reports; it never re-judges a

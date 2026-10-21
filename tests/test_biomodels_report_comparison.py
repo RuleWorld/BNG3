@@ -406,6 +406,25 @@ def test_the_command_line_fails_on_a_verdict_difference(tmp_path):
     assert "BIOMD0000000001" in result.stdout
 
 
+def test_a_different_corpus_is_a_difference():
+    """Two runs of different corpora are not comparable."""
+
+    left = _report([_record("BIOMD0000000001")])
+    right = _report([_record("BIOMD0000000001")])
+    right["inventory"] = {
+        "source": "BioModels manually curated records",
+        "query": "curationstatus:NonManually curated",
+        "matches": 1,
+    }
+
+    comparison = comparator.compare_reports(left, right)
+
+    assert comparison.report_differences
+    assert any(
+        "inventory.query" in difference for difference in comparison.report_differences
+    )
+
+
 @pytest.mark.parametrize("field", ["cache_dir", "manifest", "command"])
 def test_run_local_fields_are_reported_as_notes(field):
     """A run-local field that differs is a note, never a difference."""

@@ -95,11 +95,14 @@ COMPARED_REPORT_FIELDS = (
 RUN_LOCAL_REPORT_FIELDS = (
     "cache_dir",
     "command",
-    "inventory",
     "manifest",
     "runtime_provenance",
     "source_provenance",
 )
+
+# The fields of the report's inventory that identify the corpus.  Two runs of
+# different corpora are not comparable, so a difference here is a difference.
+CORPUS_IDENTITY_FIELDS = ("source", "query", "matches")
 
 
 class Comparison(NamedTuple):
@@ -311,6 +314,14 @@ def compare_reports(left: dict[str, Any], right: dict[str, Any]) -> Comparison:
         if field in left and field in right and left[field] != right[field]:
             provenance_notes.append(
                 f"note: run-local field {field} differs (not a verdict)"
+            )
+
+    for field in CORPUS_IDENTITY_FIELDS:
+        left_value = (left.get("inventory") or {}).get(field)
+        right_value = (right.get("inventory") or {}).get(field)
+        if left_value != right_value:
+            report_differences.append(
+                f"inventory.{field}: {left_value!r} != {right_value!r}"
             )
 
     return Comparison(

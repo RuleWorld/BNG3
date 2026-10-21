@@ -1,0 +1,29 @@
+{
+  "tool_versions": {
+    "bionetgen": "3.0.0a1",
+    "libsbml": "5.21.1",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6",
+    "roadrunner": "2.10.0"
+  },
+  "run_budget": {
+    "mode": "flat",
+    "isolate_models": true,
+    "model_timeout_seconds": 180,
+    "jobs": 4,
+    "offline": true,
+    "python_hash_seed": "0",
+    "command": "PYTHONHASHSEED=0 PYTHONPATH=python:build/cpp python scripts/ci/validate_published_biomodels.py --cache-dir /tmp/bng3-campaign/biomodels-cache --json /tmp/bng3-campaign/corpus-expectations/flat-seed0-48315b95.json --mode flat --isolate-models --model-timeout 180 --jobs 4 --offline"
+  },
+  "load": {
+    "load_average_before": "49.61 38.69 32.16",
+    "load_average_after": "41.31 40.59 46.49",
+    "note": "The corpus gate was measured while holding one of the campaign's shared verification slots, on a machine shared with the rest of the campaign (15 cores, load average 32-50). The per-model budget is sized for an unloaded machine, so the timeout bucket of this measurement is load-dependent: a second pass of the same tree with a 600 s budget and a different hash seed produced eight fewer timeouts and no verdict difference at all."
+  },
+  "notes": [
+    "The timeout bucket is load-dependent and a timeout is not a verdict. The corpus gate's per-model budget is sized for an unloaded machine; the campaign's independent audit measured a parallel run with 41 timeouts where the baseline had 12, and re-measuring every differing record one at a time showed that 30 of the 33 differences were load artefacts.",
+    "The measurement uses PYTHONHASHSEED=0, the corpus's documented convention, because the modern Atomizer emits a different document for the same source model depending on the hash seed (docs/CURATED_BIOMODELS_CORPUS.md).",
+    "The run executed the tree at 48315b958685279838b4960e24b12498e0dc1363 plus this branch's recording and comparison tooling, which the corpus gate does not import. The Atomizer and the corpus gate are unchanged, so the measurement is a valid measurement of that commit.",
+    "The report was produced with PYTHONPATH=python:build/cpp, so the gate imported this checkout's python/bionetgen and the shared native extension rather than the stale bionetgen in site-packages."
+  ]
+}
