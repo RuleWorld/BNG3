@@ -1,6 +1,0 @@
-{
-  "executable": "/opt/anaconda3/bin/bionetgen",
-  "sha256": "aa30d28e18c5f091fd0a9f8bfe93650260cd1e48ecd71119d0bcb4d8afd249a8",
-  "package_file": "/private/tmp/bng3-issue-reconcile/python/bionetgen/__init__.py",
-  "entry_point": "bionetgen.cli:main"
-}
