@@ -33,12 +33,11 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 ## 1. `setConcentration` sets the species amount, not its concentration
 
 * **Classification:** engine defect (BNG2 parity).
-* **Cases:** 39 official-reference failures, all of them action-bearing
+* **Cases:** 25 official-reference failures, all of them action-bearing
   semantic cases whose trajectory diverges at the first scheduled action:
-  `00369 00370 00371 00372 00373 00426 00427 00428 00429 00430 00431
-  00679 00680 00681 00682 00683 00684 00689 00690 00743 00744 00745 00746
-  00747 00749 00750 00763 00764 00765 00766 00767 00768 00769 00770 01504
-  01507 01508 01509 01511`.
+  `00369 00370 00371 00373 00426 00427 00428 00429 00430 00431 00682 00683
+  00684 00690 00744 00745 00747 00763 00764 00765 00766 00767 00768 00769
+  00770`.
 * **Mechanism:** an SBML event assigns a species' *value*.  For a species
   with `hasOnlySubstanceUnits="false"` that value is the **concentration**;
   the species' amount is `value * compartmentSize`.  The Atomizer lowers the
@@ -98,8 +97,10 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 ## 3. A rate law on a concentration-valued species is not scaled by the compartment volume
 
 * **Classification:** Atomizer defect.
-* **Cases:** `stochastic/00011` and `stochastic/00018` (100 of 100 official
-  mean/standard-deviation acceptance tests violated in each).
+* **Cases:** `stochastic/00011` (all official mean/standard-deviation
+  acceptance tests violated).  The companion case `stochastic/00018` was
+  fixed on `main` by the multiplicative compartment factor (PR #342) after
+  this finding was recorded, and now reproduces the reference.
 * **Mechanism:** both models use the kinetic law `Lambda * X` where `X` is a
   species with `hasOnlySubstanceUnits="false"` (so `X` is the concentration)
   in a compartment of size 2 (case 00011) or 0.5 (case 00018).  The
@@ -204,11 +205,11 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 * **Classification:** Atomizer defects, not yet reduced to a single
   mechanism.
-* **Cases:** `semantic/00963 00967 01701 01702 01715 01716` (the
-  trajectory diverges at a scheduled action that assigns a *rate-rule state*,
-  so the assignment does not have the effect the source event has) and
-  `semantic/00707 00736 00929 01466 01717 01719 01720 01721` (the
-  trajectory diverges before the first scheduled action).
+* **Cases:** `semantic/00963 00967 01530 01531 01532 01533 01701 01702
+  01715 01716` (the trajectory diverges at a scheduled action that assigns a
+  *rate-rule state*, so the assignment does not have the effect the source
+  event has) and `semantic/00707 00736 00929` (the trajectory diverges
+  before the first scheduled action).
 * **Handling:** the harness reports the numeric mismatch with the official
   reference, which is the correct verdict; the next agent reduces them.
 
