@@ -371,6 +371,10 @@ class SBMLModel:
     multi_compartment_references: Mapping[str, Any] = field(default_factory=OrderedDict)
     multi_numeric_values: Mapping[str, str] = field(default_factory=OrderedDict)
     multi_executable: bool = False
+    # The BNGL function that states each reaction's rate, keyed by the
+    # source reaction id.  SBML Level 3 Version 2 Core, Sec. 4.11.8: the
+    # value of a Reaction's ``id`` denotes that reaction's rate.
+    reaction_rate_functions: Mapping[str, str] = field(default_factory=OrderedDict)
     import_warnings: List[Union[Dict[str, Any], SBMLImportWarning]] = field(
         default_factory=list
     )
@@ -449,6 +453,10 @@ class AtomizerResult:
     database: Any = None
     annotation: Any = None
     observable_map: Mapping[str, str] = field(default_factory=OrderedDict)
+    # The BNGL function that states each reaction's rate, keyed by the
+    # source reaction id.  SBML Level 3 Version 2 Core, Sec. 4.11.8: the
+    # value of a Reaction's ``id`` denotes that reaction's rate.
+    reaction_rate_functions: Mapping[str, str] = field(default_factory=OrderedDict)
     log: List[Any] = field(default_factory=list)
     success: bool = True
     error: Optional[str] = None

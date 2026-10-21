@@ -443,6 +443,7 @@ class Atomizer:
                     database=self.databases,
                     annotation=None,
                     observable_map=observable_map,
+                    reaction_rate_functions=dict(self.model.reaction_rate_functions),
                     log=logger.getMessages(),
                     success=True,
                 )
@@ -504,6 +505,7 @@ class Atomizer:
                 database=self.databases,
                 annotation=annotation,
                 observable_map=observable_map,
+                reaction_rate_functions=dict(self.model.reaction_rate_functions),
                 log=logger.getMessages(),
                 success=True,
                 structural_inference=structural,
