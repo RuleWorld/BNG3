@@ -1,7 +1,8 @@
 // Regression coverage for the SBML delay and rateOf csymbols.
 //
-// SBML Level 3 Version 2 Core Sec. 4.3.4 (delay) and Sec. 4.3.5 (rateOf)
-// define both as MathML <csymbol> operators:
+// SBML Level 3 Version 2 Core Sec. 3.4.6 ("Use of csymbol elements in
+// MathML expressions in SBML") defines delay and rateOf
+// as MathML <csymbol> operators:
 //
 //   delay(x, d) -> <apply>
 //                    <csymbol encoding="text"

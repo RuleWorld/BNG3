@@ -291,7 +291,7 @@ def test_non_persistent_event_is_not_executed_when_its_trigger_is_false(tmp_path
 
 
 def test_an_execution_that_triggers_another_event_runs_a_cascade(tmp_path):
-    # SBML L3V2 Core Sec. 4.12.8: every trigger is re-tested after an
+    # SBML L3V2 Core Sec. 4.12.7: every trigger is re-tested after an
     # execution, so the event whose trigger the assignment made true is
     # executed at the same instant.
     result = multi_event_model(

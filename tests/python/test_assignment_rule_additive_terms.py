@@ -1,6 +1,6 @@
 """An assignment-rule body is a sum; every term of it must reach the model.
 
-SBML Level 3 Version 1 section 4.11.1 defines an ``assignmentRule`` as an
+SBML Level 3 Version 2 Core Sec. 4.9.3 defines an ``assignmentRule`` as an
 identity that holds at every time point, so every expression that reads the
 rule's ``variable`` must see the whole right-hand side.  The Atomizer lowers a
 *bare additive* rule body -- one with no ``/ ^ ( )`` anywhere -- to a BNGL

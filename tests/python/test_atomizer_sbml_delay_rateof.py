@@ -1,7 +1,7 @@
 """Regression tests for the SBML ``delay`` and ``rateOf`` csymbols.
 
-SBML Level 3 Version 2 Core Sec. 4.3.4 defines ``delay(x, d)`` as the value
-of ``x`` at time ``t - d`` and Sec. 4.3.5 defines ``rateOf(x)`` as the
+SBML Level 3 Version 2 Core Sec. 3.4.6 defines ``delay(x, d)`` as the value
+of ``x`` at time ``t - d`` and defines ``rateOf(x)`` as the
 instantaneous derivative of ``x``.  Both are MathML ``<csymbol>`` operators,
 not MathML operator elements, and libSBML 5.21.1 serializes them in exactly
 that form.
@@ -263,7 +263,7 @@ def test_delay_without_a_reproducible_history_stays_unsupported():
 def test_rate_of_a_reaction_local_parameter_is_zero():
     """A reaction-local parameter shadows the global parameter of that name.
 
-    SBML Level 3 Version 2 Core Sec. 4.3.5: the ``rateOf`` of a symbol
+    SBML Level 3 Version 2 Core Sec. 3.4.6: the ``rateOf`` of a symbol
     declared constant is zero, and ``LocalParameter`` objects are always
     constant.  The global ``k1`` rate rule must therefore not be used.
     """

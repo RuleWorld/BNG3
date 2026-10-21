@@ -8224,9 +8224,9 @@ def synthesize_event_actions(
                 # SBML initializes a trigger's value from
                 # ``triggerInitialValue`` and fires the event only when that
                 # value *transitions* from false to true (SBML Level 3
-                # Version 2 Core, Sec. 4.11.4 "Event triggers").  A trigger
-                # that is already true at t=0 never rises, so the event does
-                # not fire at all.
+                # Version 2 Core, Sec. 4.12.2 "Trigger" and Sec. 4.12.7
+                # "Detailed semantics of events").  A trigger that is already
+                # true at t=0 never rises, so the event does not fire at all.
                 normal_converted += 1
                 continue
         if gated_time_bounds is not None:

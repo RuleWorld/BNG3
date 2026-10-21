@@ -1920,9 +1920,9 @@ void OdeIntegrator::queueTriggeredGroup(std::size_t groupIndex, double time,
 
 void OdeIntegrator::retestTriggers(double time, std::vector<double>& state,
                                    const std::vector<bool>& heldBefore) {
-    // SBML L3V2 Core Sec. 4.12.8: every trigger is re-tested after an
-    // execution, so an event whose trigger the assignment made true joins
-    // the same execution point.
+    // SBML L3V2 Core Sec. 4.12.7 ("Detailed semantics of events"): every
+    // trigger is re-tested after an execution, so an event whose trigger the
+    // assignment made true joins the same execution point.
     for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
         if (heldBefore[index]) continue;
         if (!triggerHolds(nativeEvents_[index].trigger, time, state.data())) continue;

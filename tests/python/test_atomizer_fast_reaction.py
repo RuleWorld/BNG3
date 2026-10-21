@@ -1,6 +1,7 @@
 """Regression tests for the SBML ``fast`` reaction lowering.
 
-SBML Level 2 and Level 3 Version 1 Section 4.11 define a reaction whose
+SBML Level 3 Version 1 Section 4.11 and SBML Level 2 Section 4.13 (Section 4.9
+in Level 2 Version 1) define a reaction whose
 ``fast`` attribute is true by a pseudo steady state of the fast subsystem:
 the fast reactions "are considered to be instantaneous relative to the slow
 reactions", so the model's system of equations is constructed with the fast

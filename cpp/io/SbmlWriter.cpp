@@ -1037,10 +1037,11 @@ std::string SbmlWriter::exprToMathML(
                 out << indent << "</apply>\n";
             } else if (funcName == "delay" || funcName == "rateOf") {
                 // SBML Level 3 Version 2 spells the delay and rateOf csymbols
-                // as <csymbol> elements inside <apply> (Core Sec. 4.3.4 and
-                // Sec. 4.3.5).  MathML has no <delay/> or <rateOf/> operator,
-                // so emitting such an element would produce a document that
-                // libSBML rejects.  libSBML 5.21.1 serializes both csymbols in
+                // as <csymbol> elements inside <apply> (Core Sec. 3.4.6, "Use
+                // of csymbol elements in MathML expressions in SBML").
+                // MathML has no <delay/> or <rateOf/> operator, so emitting
+                // such an element would produce a document that libSBML
+                // rejects.  libSBML 5.21.1 serializes both csymbols in
                 // exactly this form.
                 //
                 // The csymbols are operators, not identifiers, so they are

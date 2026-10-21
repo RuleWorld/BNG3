@@ -90,8 +90,8 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Construct**: `sbml-writer:unrepresentable-function`
 - **Cases**: 9 — semantic/00985 semantic/01142 semantic/01410 semantic/01411 semantic/01412 semantic/01480 semantic/01481 semantic/01535 semantic/01593
 - **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4 defines the delay and rateOf operators as csymbol elements with a fixed definitionURL, and requires a reader to give delay(x, d) the value x had at time t - d.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.4
+- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.6 defines the delay and rateOf operators as csymbol elements with a fixed definitionURL, and requires a reader to give delay(x, d) the value x had at time t - d.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 3.4.6
 - **What BNG3 does instead**: The C++ SBML writer serializes the call back out, but the engine cannot execute it: it reports "SBML math function \"delay\" is not losslessly representable in the BNG3 engine/libRoadRunner path: the C++ SBML writer serializes the call, but neither the BNG3 engine nor libRoadRunner can evaluate SBML delay semantics".
 - **Reducible?**: No, not in the engine. BNG3 has no delayed-history semantics and libRoadRunner rejects a model that uses delay at all, so a model that needs them cannot be executed by either engine; the writer boundary itself was already removed.
 
@@ -140,8 +140,8 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Construct**: `mathml:infinity`
 - **Cases**: 2 — semantic/00950 semantic/01811
 - **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4 permits the MathML infinity constant in a model's formulas, and Sec. 3.1 makes positive infinity a value of the double type.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1, Sec. 3.4
+- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.1 permits the MathML infinity constant in a model's formulas, and Sec. 3.1.5 makes positive infinity a value of the double type.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.5, Sec. 3.4.1
 - **What BNG3 does instead**: The Atomizer reports "<infinity> constant encountered in math; the source is valid SBML (validation rule 10202 permits <infinity>), but an infinite value cannot be represented in BNG3's finite-double model, so it is emitted as a large finite value and the model is not claimed to be supported".
 - **Reducible?**: Only by changing what BNG3's value domain is. The source is valid SBML and the boundary is BNG3's finite-double model, not a conversion defect; a large finite stand-in is an approximation, so the case is refused rather than claimed.
 
@@ -150,8 +150,8 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Construct**: `mathml:not-a-number`
 - **Cases**: 1 — semantic/01813
 - **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4 permits the MathML notanumber constant in a model's formulas, and Sec. 3.1 makes not-a-number a value of the double type.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1, Sec. 3.4
+- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.1 permits the MathML notanumber constant in a model's formulas, and Sec. 3.1.5 makes not-a-number a value of the double type.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.5, Sec. 3.4.1
 - **What BNG3 does instead**: The Atomizer reports "<notanumber> constant encountered in math; the source is valid SBML (validation rule 10202 permits <notanumber>), but a not-a-number value cannot be represented in BNG3's finite-double model, so the model is not claimed to be supported".
 - **Reducible?**: Only by changing BNG3's value domain. There is no finite value that stands for not-a-number, so no approximation is offered.
 
@@ -184,8 +184,8 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Construct**: `harness:reference-does-not-track-variable`
 - **Cases**: 3 — stochastic/00006 stochastic/00024 stochastic/00026
 - **First recorded**: 2026-10-21
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.6.5 lets a species carry the boundaryCondition attribute, in which case the species is a boundary rather than an integrated quantity.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 4.6.5
+- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.6.6 lets a species carry the boundaryCondition attribute, in which case the species is a boundary rather than an integrated quantity.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 4.6.6
 - **What BNG3 does instead**: Nothing is refused: the model converts and the boundary species is set. The harness cannot compare, because the reference reports the boundary species as identically zero while BNG3's value follows the model's boundary definition.
 - **Reducible?**: Yes, on the measurement side: the comparison has to exclude a quantity the two engines define differently, or the reference has to report it. It is a measurement limit, not a limitation of the Atomizer.
 

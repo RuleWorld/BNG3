@@ -227,7 +227,8 @@ so a cluster table can no longer omit the cases it forgot.
    official-reference residual falls from 18 to 17.
 
 6. **The SBML `fast` attribute is part of the model's definition, not a solver
-   hint** (PR #354). SBML Level 2 and Level 3 Version 1 Sec. 4.11 do not
+   hint** (PR #354). SBML Level 3 Version 1 Sec. 4.11 and SBML Level 2
+   Sec. 4.13 (Sec. 4.9 in Level 2 Version 1) do not
    describe a `fast="true"` reaction as merely faster: "Fast reactions are
    considered to be instantaneous relative to the slow reactions", and
    "software tools should use a pseudo steady-state approximation for the set

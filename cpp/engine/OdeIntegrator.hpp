@@ -218,10 +218,11 @@ private:
     // Queue every event of a trigger group that has just been triggered.
     void queueTriggeredGroup(std::size_t groupIndex, double time,
                              const std::vector<double>& state);
-    // Re-test every trigger after an execution (SBML L3V2 Core Sec. 4.12.8)
-    // and queue the events whose trigger became true.  `heldBefore` holds the
-    // trigger values from before the execution, so a rising edge is told
-    // from a trigger that was already true.
+    // Re-test every trigger after an execution (SBML L3V2 Core Sec. 4.12.7,
+    // "Detailed semantics of events") and queue the events whose trigger
+    // became true.  `heldBefore` holds the trigger values from before the
+    // execution, so a rising edge is told from a trigger that was already
+    // true.
     void retestTriggers(double time, std::vector<double>& state,
                         const std::vector<bool>& heldBefore);
     std::vector<NativeEvent> nativeEvents_;

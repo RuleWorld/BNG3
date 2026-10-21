@@ -1,6 +1,6 @@
 """Regression tests for a compartment size that a rule determines at t=0.
 
-SBML Level 3 Version 2 Core (Sec. 4.8.5, *Compartment*) says that a
+SBML Level 3 Version 2 Core (Sec. 4.5.3, *The size attribute*) says that a
 compartment's ``size`` attribute sets its initial size, and that "if the
 compartment's attribute ``constant`` has the value ``false``, the size value
 may be overridden by an InitialAssignment or changed by an AssignmentRule or

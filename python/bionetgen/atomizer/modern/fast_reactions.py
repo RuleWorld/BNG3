@@ -1,11 +1,13 @@
 """Reduce an SBML fast reaction to the pseudo steady state it defines.
 
-SBML Level 2 and Level 3 Version 1 Section 4.11 describe a reaction whose
+SBML Level 3 Version 1 Section 4.11 and SBML Level 2 Section 4.13 (Section 4.9
+in Level 2 Version 1) describe a reaction whose
 ``fast`` attribute is true as operating on a time scale significantly faster
 than the model's other reactions: fast reactions are "considered to be
-instantaneous relative to the slow reactions", and software tools "should
-use a pseudo steady-state approximation for the set of fast reactions when
-constructing the system of equations for the model".  The attribute changes
+instantaneous relative to the slow reactions", and, from Level 2 Version 2
+on, software tools "should use a pseudo steady-state approximation for the set
+of fast reactions when constructing the system of equations for the model".
+The attribute changes
 the mathematical interpretation of the model rather than only the solver's
 effort, and the specification says it "cannot be safely ignored" by a tool
 that cannot analyse the model with that approximation.  SBML Level 3

@@ -1,6 +1,6 @@
 """Regression tests for reaction ids used as rates inside SBML rules.
 
-SBML Level 3 Version 2 Core (Sec. 4.2.8) and the libSBML ``Reaction``
+SBML Level 3 Version 2 Core (Sec. 4.11.8) and the libSBML ``Reaction``
 documentation state that a reaction's ``id`` may be used in mathematical
 formulas elsewhere in the model to represent *the rate of that reaction*.
 BioModels records use that form: an assignment or rate rule can name several
