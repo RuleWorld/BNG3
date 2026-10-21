@@ -129,7 +129,8 @@
       "first_recorded": "2026-10-20",
       "status": "closed",
       "closed": "2026-10-21",
-      "closed_by": "PR #337, validated 2026-10-20, first measured as closed on 2026-10-21"
+      "closed_by": "PR #337, validated 2026-10-20, first measured as closed on 2026-10-21",
+      "resolved_note": "Closed by PR #337, validated 2026-10-20: the harness now validates official references for action-bearing cases, so these cases are compared rather than skipped. First measured as closed on 2026-10-21."
     },
     "harness:stochastic-ensemble-not-evaluated": {
       "title": "The official reference needed an ensemble the harness did not run",
@@ -140,7 +141,8 @@
       "first_recorded": "2026-10-20",
       "status": "closed",
       "closed": "2026-10-21",
-      "closed_by": "PR #337, validated 2026-10-20, first measured as closed on 2026-10-21"
+      "closed_by": "PR #337, validated 2026-10-20, first measured as closed on 2026-10-21",
+      "resolved_note": "Closed by PR #337, validated 2026-10-20: the harness now evaluates the official stochastic references, so these cases are compared rather than skipped. First measured as closed on 2026-10-21."
     },
     "rules:algebraic-not-applied": {
       "title": "An algebraic rule is not applied",
@@ -150,7 +152,8 @@
       "reducible": "Yes: the campaign resolved the suite's algebraic-rule cases by carrying the rule as an assignment (PR #355, 2026-10-20). The general implicit-DAE boundary is still open.",
       "first_recorded": "2026-10-20",
       "status": "not-exercised",
-      "last_exercised": "2026-10-20"
+      "last_exercised": "2026-10-20",
+      "resolved_note": "The refusal still exists in the Atomizer; the official suite no longer reaches it, because the campaign resolved the suite's algebraic-rule cases by carrying the rule as an assignment (PR #355, 2026-10-20). The general implicit-DAE boundary is still open, so the construct is recorded as no longer exercised rather than closed."
     },
     "stoichiometry:unsupported": {
       "title": "A reaction with a stoichiometry BNGL cannot express",
@@ -160,7 +163,8 @@
       "reducible": "Only by extending BNGL's reaction semantics: a negative or fractional stoichiometry has no BNGL counterpart, and substituting a rounded count would change the chemistry.",
       "first_recorded": "2026-10-20",
       "status": "not-exercised",
-      "last_exercised": "2026-10-20"
+      "last_exercised": "2026-10-20",
+      "resolved_note": "The refusal still exists in the Atomizer; the official suite no longer reaches it. The boundary is only reducible by extending BNGL's reaction semantics: a negative or fractional stoichiometry has no BNGL counterpart, and substituting a rounded count would change the chemistry."
     },
     "stoichiometry:assigned-stoichiometry-unresolved": {
       "title": "An assigned stoichiometry that could not be resolved",
@@ -170,7 +174,8 @@
       "reducible": "Yes: the campaign resolved the suite's cases by carrying the assigned value through the parameter's state (PR #366, 2026-10-21). A symbol that still cannot be resolved at initialization remains refused.",
       "first_recorded": "2026-10-20",
       "status": "not-exercised",
-      "last_exercised": "2026-10-20"
+      "last_exercised": "2026-10-20",
+      "resolved_note": "The refusal still exists in the Atomizer; the official suite no longer reaches it, because the campaign resolved the suite's cases by carrying the assigned value through the parameter's state (PR #366, 2026-10-21). A symbol that still cannot be resolved at initialization remains refused."
     }
   },
   "changelog": [

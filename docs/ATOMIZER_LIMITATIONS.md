@@ -207,13 +207,13 @@ The official suite itself records that these cases define no time-course referen
 
 A limitation that is closed does not vanish from the record. This section names the constructs the campaign no longer refuses, and when it stopped refusing them. The "no longer exercised" entries are different: the Atomizer still refuses that construct, but the official suite no longer reaches the refusal.
 
-| Construct | What it is | Status | Date | Why / what closed it |
+| Construct | What it is | Status | Date | What happened |
 | --- | --- | --- | --- | --- |
-| `harness:scheduled-actions-not-executed` | The reference runner could not execute a model with actions | closed | 2026-10-21 | PR #337, validated 2026-10-20, first measured as closed on 2026-10-21 |
-| `harness:stochastic-ensemble-not-evaluated` | The official reference needed an ensemble the harness did not run | closed | 2026-10-21 | PR #337, validated 2026-10-20, first measured as closed on 2026-10-21 |
-| `rules:algebraic-not-applied` | An algebraic rule is not applied | not-exercised | 2026-10-20 | Yes: the campaign resolved the suite's algebraic-rule cases by carrying the rule as an assignment (PR #355, 2026-10-20). The general implicit-DAE boundary is still open. |
-| `stoichiometry:assigned-stoichiometry-unresolved` | An assigned stoichiometry that could not be resolved | not-exercised | 2026-10-20 | Yes: the campaign resolved the suite's cases by carrying the assigned value through the parameter's state (PR #366, 2026-10-21). A symbol that still cannot be resolved at initialization remains refused. |
-| `stoichiometry:unsupported` | A reaction with a stoichiometry BNGL cannot express | not-exercised | 2026-10-20 | Only by extending BNGL's reaction semantics: a negative or fractional stoichiometry has no BNGL counterpart, and substituting a rounded count would change the chemistry. |
+| `harness:scheduled-actions-not-executed` | The reference runner could not execute a model with actions | closed | 2026-10-21 | Closed by PR #337, validated 2026-10-20: the harness now validates official references for action-bearing cases, so these cases are compared rather than skipped. First measured as closed on 2026-10-21. |
+| `harness:stochastic-ensemble-not-evaluated` | The official reference needed an ensemble the harness did not run | closed | 2026-10-21 | Closed by PR #337, validated 2026-10-20: the harness now evaluates the official stochastic references, so these cases are compared rather than skipped. First measured as closed on 2026-10-21. |
+| `rules:algebraic-not-applied` | An algebraic rule is not applied | not-exercised | 2026-10-20 | The refusal still exists in the Atomizer; the official suite no longer reaches it, because the campaign resolved the suite's algebraic-rule cases by carrying the rule as an assignment (PR #355, 2026-10-20). The general implicit-DAE boundary is still open, so the construct is recorded as no longer exercised rather than closed. |
+| `stoichiometry:assigned-stoichiometry-unresolved` | An assigned stoichiometry that could not be resolved | not-exercised | 2026-10-20 | The refusal still exists in the Atomizer; the official suite no longer reaches it, because the campaign resolved the suite's cases by carrying the assigned value through the parameter's state (PR #366, 2026-10-21). A symbol that still cannot be resolved at initialization remains refused. |
+| `stoichiometry:unsupported` | A reaction with a stoichiometry BNGL cannot express | not-exercised | 2026-10-20 | The refusal still exists in the Atomizer; the official suite no longer reaches it. The boundary is only reducible by extending BNGL's reaction semantics: a negative or fractional stoichiometry has no BNGL counterpart, and substituting a rounded count would change the chemistry. |
 
 ## What changed
 
