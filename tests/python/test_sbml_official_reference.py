@@ -1007,6 +1007,66 @@ def test_a_random_event_execution_case_is_not_comparable():
     assert "Rinc" in verdict["reason"]
 
 
+def test_equal_priorities_written_differently_are_still_competing():
+    """``semantic/01588`` writes one priority as a parameter and one as a literal.
+
+    The two priorities have the same value, so SBML Level 3 Version 2 Core,
+    Release 2, section 4.12.3 requires the events to be executed in a random
+    order, exactly as in ``semantic/01592``.  The grouping compares the
+    priority's value, not the text of the expression, so the case is refused
+    for that reason rather than reaching the phase budget.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    # The second event's priority becomes the parameter k1, whose value is 1;
+    # the first event's priority stays the literal 1.  The two priorities
+    # therefore differ in text but not in value.
+    second_event_start = RANDOM_EVENT_MODEL.index('<event id="Rinc"')
+    second_event = RANDOM_EVENT_MODEL[second_event_start:]
+    rewritten_second_event = second_event.replace(
+        """        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <cn type="integer"> 1 </cn>
+          </math>
+        </priority>""",
+        """        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <ci> k1 </ci>
+          </math>
+        </priority>""",
+        1,
+    )
+    model = (RANDOM_EVENT_MODEL[:second_event_start] + rewritten_second_event).replace(
+        '<parameter id="reset" value="0" constant="false"/>',
+        '<parameter id="reset" value="0" constant="false"/>'
+        '<parameter id="k1" value="1" constant="true"/>',
+    )
+    parsed = _parse_sbml(model)
+    events = list(parsed.events)
+    assert len(events) >= 2
+    priorities = [str(event.priority or "").strip() for event in events[:2]]
+    assert priorities[0] != priorities[1], "the two priorities must differ in text"
+
+    verdict = validator._random_event_execution_verdict(parsed)
+    assert verdict is not None
+    assert "Qinc" in verdict["reason"]
+    assert "Rinc" in verdict["reason"]
+
+
+def test_a_persistent_competing_event_is_not_a_random_order_case():
+    """A group of persistent triggers always executes all of its events.
+
+    Its outcome does not depend on the order the specification leaves
+    undefined, so the random-order verdict must not apply to it.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    model = RANDOM_EVENT_MODEL.replace('persistent="false"', 'persistent="true"')
+    parsed = _parse_sbml(model)
+
+    assert validator._random_event_execution_verdict(parsed) is None
+
+
 def test_a_boundary_species_the_reference_does_not_track_is_not_comparable(
     tmp_path, monkeypatch
 ):

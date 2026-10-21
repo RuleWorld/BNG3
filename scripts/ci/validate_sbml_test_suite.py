@@ -1484,6 +1484,49 @@ def _degenerate_network_reason(network: Any, parsed: Any) -> str | None:
     )
 
 
+def _constant_parameter_values(parsed: Any) -> dict[str, float]:
+    """Return the model's constant parameters and their initial values."""
+
+    values: dict[str, float] = {}
+    for name, parameter in (getattr(parsed, "parameters", {}) or {}).items():
+        if not getattr(parameter, "constant", True):
+            continue
+        if not getattr(parameter, "value_set", True):
+            continue
+        try:
+            values[str(name)] = float(parameter.value)
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
+def _event_priority_key(parsed: Any, event: Any) -> tuple[str, Any]:
+    """Return the grouping key of an event's priority.
+
+    Two events are executed simultaneously only when their priority *values*
+    are equal, so the grouping compares the folded value of the priority when
+    it can be folded and falls back to the expression's text when it cannot.
+    ``semantic/01588`` writes one priority as the parameter ``k1`` and the
+    other as the literal ``0.01``; they are the same number, so the same
+    random-order rule applies to them as to a pair written the same way.
+    """
+
+    expression = str(event.priority or "").strip()
+    if not expression:
+        return ("", None)
+    from bionetgen.atomizer.modern.events import fold_numeric
+
+    values = _constant_parameter_values(parsed)
+
+    def resolve(identifier: str) -> float | None:
+        return values.get(identifier)
+
+    folded = fold_numeric(expression, resolve)
+    if folded is None:
+        return (expression, None)
+    return ("", folded)
+
+
 def _random_event_execution_verdict(parsed: Any) -> dict[str, Any] | None:
     """Return the not-comparable verdict for a randomly ordered event model.
 
@@ -1509,11 +1552,12 @@ def _random_event_execution_verdict(parsed: Any) -> dict[str, Any] | None:
     random process.
     """
 
-    groups: dict[tuple[str, str, str], list[Any]] = {}
+    groups: dict[tuple[str, Any, str], list[Any]] = {}
     for event in getattr(parsed, "events", []) or []:
+        priority_text, priority_value = _event_priority_key(parsed, event)
         key = (
             str(event.trigger or "").strip(),
-            str(event.priority or "").strip(),
+            priority_value if priority_value is not None else priority_text,
             str(event.delay or "").strip(),
         )
         groups.setdefault(key, []).append(event)
