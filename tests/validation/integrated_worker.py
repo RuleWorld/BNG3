@@ -743,6 +743,8 @@ def main():
             "jax-backend-measurement",
             "rate-law-contract",
             "nfnext-slices",
+            "boundary-extraction",
+            "release-candidate",
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -842,6 +844,8 @@ def main():
         "jax-backend-measurement",
         "rate-law-contract",
         "nfnext-slices",
+        "boundary-extraction",
+        "release-candidate",
     ):
         from tests.validation.integrated_extensions import run_worker
 

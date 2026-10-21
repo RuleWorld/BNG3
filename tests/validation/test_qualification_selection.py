@@ -38,6 +38,8 @@ QUALIFICATIONS = {
     "real_model_fixtures": "include_real_model_fixtures",
     "corpus_selection": "include_corpus_selection",
     "biomodels_hold": "include_biomodels_hold",
+    "boundary_extraction": "include_boundary_extraction",
+    "release_candidate": "include_release_candidate",
 }
 
 

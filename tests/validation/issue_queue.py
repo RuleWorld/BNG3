@@ -532,6 +532,8 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .real_model_fixtures import check_ids as real_model_fixtures_check_ids
     from .corpus_selection import check_ids as corpus_selection_check_ids
     from .biomodels_hold import check_ids as biomodels_hold_check_ids
+    from .boundary_extraction import check_ids as boundary_extraction_check_ids
+    from .release_candidate import check_ids as release_candidate_check_ids
     from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
@@ -934,6 +936,43 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                 "The recorded BioModels stop only: the stop stays in effect as "
                 "a diagnostic and the retained results carry the corpus and the "
                 "source hashes they came from. No category count is claimed."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="extracted-capability-boundary",
+            case_ids=[],
+            check_ids=boundary_extraction_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(boundary_extraction_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The extracted total-rate capability only: the capability lives "
+                "behind one named seam, the callers that used to duplicate the "
+                "decision agree on its outcome, and the existing qualified "
+                "checks that cover the affected surface pass unchanged."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="release-candidate-evidence",
+            case_ids=[],
+            check_ids=release_candidate_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(release_candidate_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits=(
+                "The arms one host can decide only: the licence and notice "
+                "inventory of the shipped artefacts, the memory contract, the "
+                "declared sanitizer configuration and the declared platform "
+                "matrix. The sanitizer runs and the per-platform results need "
+                "the hosted matrix and are recorded as evidence to collect."
             ),
         )
     )

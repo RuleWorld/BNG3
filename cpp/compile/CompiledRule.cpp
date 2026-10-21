@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "SymbolTable.hpp"
+#include "TotalRate.hpp"
 #include "ast/Model.hpp"
 #include "ast/ReactionRule.hpp"
 
@@ -27,7 +28,8 @@ ModifierKind translateModifier(const std::string& rawModifier) {
     if (modifier == "deletemolecules") return ModifierKind::DeleteMolecules;
     if (modifier == "moveconnected") return ModifierKind::MoveConnected;
     if (modifier == "matchonce") return ModifierKind::MatchOnce;
-    if (modifier == "totalrate") return ModifierKind::TotalRate;
+    // The TotalRate spelling belongs to the compile layer's total-rate seam.
+    if (isTotalRateModifier(rawModifier)) return ModifierKind::TotalRate;
     if (modifier.rfind("include_reactants(", 0) == 0) return ModifierKind::IncludeReactants;
     if (modifier.rfind("exclude_reactants(", 0) == 0) return ModifierKind::ExcludeReactants;
     if (modifier.rfind("include_products(", 0) == 0) return ModifierKind::IncludeProducts;

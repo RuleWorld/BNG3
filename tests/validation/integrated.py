@@ -136,6 +136,8 @@ def expected_contract_ids(
     include_real_model_fixtures=True,
     include_corpus_selection=True,
     include_biomodels_hold=True,
+    include_boundary_extraction=True,
+    include_release_candidate=True,
     full=False,
 ):
     return [
@@ -202,6 +204,8 @@ def expected_contract_ids(
         include_real_model_fixtures=include_real_model_fixtures,
         include_corpus_selection=include_corpus_selection,
         include_biomodels_hold=include_biomodels_hold,
+        include_boundary_extraction=include_boundary_extraction,
+        include_release_candidate=include_release_candidate,
         full=full,
     )
 
@@ -994,6 +998,8 @@ FOCUS_FLAGS = {
     "real_model_fixtures": "real_model_fixtures_only",
     "corpus_selection": "corpus_selection_only",
     "biomodels_hold": "biomodels_hold_only",
+    "boundary_extraction": "boundary_extraction_only",
+    "release_candidate": "release_candidate_only",
 }
 
 
@@ -1063,6 +1069,8 @@ def main(argv=None):
     parser.add_argument("--real-model-fixtures-only", action="store_true")
     parser.add_argument("--corpus-selection-only", action="store_true")
     parser.add_argument("--biomodels-hold-only", action="store_true")
+    parser.add_argument("--boundary-extraction-only", action="store_true")
+    parser.add_argument("--release-candidate-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1209,6 +1217,14 @@ def main(argv=None):
             integrated_extensions.invoke("corpus-selection", args, rows, env, run_stage)
         if qualification_selection["include_biomodels_hold"]:
             integrated_extensions.invoke("biomodels-hold", args, rows, env, run_stage)
+        if qualification_selection["include_boundary_extraction"]:
+            integrated_extensions.invoke(
+                "boundary-extraction", args, rows, env, run_stage
+            )
+        if qualification_selection["include_release_candidate"]:
+            integrated_extensions.invoke(
+                "release-candidate", args, rows, env, run_stage
+            )
         if qualification_selection["include_graph_differential"]:
             integrated_extensions.invoke(
                 "graph-differential", args, rows, env, run_stage
@@ -1278,6 +1294,8 @@ def main(argv=None):
         "real-model-fixtures": ["--real-model-fixtures-only"],
         "corpus-selection": ["--corpus-selection-only"],
         "biomodels-hold": ["--biomodels-hold-only"],
+        "boundary-extraction": ["--boundary-extraction-only"],
+        "release-candidate": ["--release-candidate-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1383,6 +1401,8 @@ def main(argv=None):
                 "real-model-fixtures": "tests/validation/real_model_fixtures.py",
                 "corpus-selection": "tests/validation/corpus_selection.py",
                 "biomodels-hold": "tests/validation/biomodels_hold.py",
+                "boundary-extraction": "tests/validation/boundary_extraction.py",
+                "release-candidate": "tests/validation/release_candidate.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1466,6 +1486,10 @@ def main(argv=None):
                 issues = [181]
             elif stage == "biomodels-hold":
                 issues = [162]
+            elif stage == "boundary-extraction":
+                issues = [164]
+            elif stage == "release-candidate":
+                issues = [184]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

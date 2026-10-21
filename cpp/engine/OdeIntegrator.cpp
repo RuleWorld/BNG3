@@ -30,6 +30,7 @@
 #include "ast/Function.hpp"
 #include "ast/ReactionRule.hpp"
 #include "compile/CompiledRateLaw.hpp"
+#include "compile/TotalRate.hpp"
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -305,14 +306,10 @@ void OdeIntegrator::compile() {
                 rule.getRuleName(),
                 bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind);
         }
-        for (const auto& modifier : rule.getModifiers()) {
-            std::string lowerModifier = modifier;
-            std::transform(lowerModifier.begin(), lowerModifier.end(), lowerModifier.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (lowerModifier == "totalrate") {
-                totalRateRules.insert(rule.getRuleName());
-                break;
-            }
+        // The compile layer owns the total-rate decision, including the
+        // modifier's spelling.
+        if (bng::compile::isTotalRateRule(rule)) {
+            totalRateRules.insert(rule.getRuleName());
         }
     }
     const auto typedRateKindForOrigin = [&](std::string origin)
@@ -335,18 +332,11 @@ void OdeIntegrator::compile() {
         }
         return find(origin);
     };
-    const auto totalRateForOrigin = [&](std::string origin) {
+    const auto totalRateForOrigin = [&](const std::string& origin) {
+        // The compile layer owns the decision; the local set is only a cache
+        // of the rules that carry the modifier.
         if (totalRateRules.find(origin) != totalRateRules.end()) return true;
-        if (origin.rfind("_reverse__", 0) == 0) {
-            origin = origin.substr(std::string("_reverse__").size());
-        } else if (!origin.empty() && origin.front() == '_') {
-            origin.erase(origin.begin());
-        }
-        if (origin.size() > std::string("_reverse").size() &&
-            origin.rfind("_reverse") == origin.size() - std::string("_reverse").size()) {
-            origin.erase(origin.size() - std::string("_reverse").size());
-        }
-        return totalRateRules.find(origin) != totalRateRules.end();
+        return bng::compile::isTotalRateReaction(model_, origin);
     };
 
     std::string lowerRawRL;

@@ -13,6 +13,7 @@ from . import (
     integrated_boundaries,
     bngir_adversarial,
     api_surface,
+    boundary_extraction,
     capability_inventory,
     real_model_fixtures,
     corpus_selection,
@@ -37,6 +38,7 @@ from . import (
     netrule_execution,
     nfnext_slices,
     rate_law_contract,
+    release_candidate,
 )
 from .integrated_cases import generated_cases
 
@@ -69,6 +71,8 @@ OPERATIONS = (
     "real-model-fixtures",
     "corpus-selection",
     "biomodels-hold",
+    "boundary-extraction",
+    "release-candidate",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -97,6 +101,8 @@ FOCUS_FLAGS = {
     "real_model_fixtures": "--real-model-fixtures-only",
     "corpus_selection": "--corpus-selection-only",
     "biomodels_hold": "--biomodels-hold-only",
+    "boundary_extraction": "--boundary-extraction-only",
+    "release_candidate": "--release-candidate-only",
 }
 
 
@@ -125,6 +131,10 @@ def check_ids(operation, case=None, *, full=False):
         return graph_differential.check_ids()
     if operation == "capability-inventory":
         return capability_inventory.check_ids()
+    if operation == "boundary-extraction":
+        return boundary_extraction.check_ids()
+    if operation == "release-candidate":
+        return release_candidate.check_ids()
     if operation == "real-model-fixtures":
         return real_model_fixtures.check_ids()
     if operation == "corpus-selection":
@@ -166,6 +176,10 @@ def check_ids(operation, case=None, *, full=False):
         return graph_differential.run_worker(Path.cwd())
     if operation == "capability-inventory":
         return capability_inventory.run_worker(Path.cwd())
+    if operation == "boundary-extraction":
+        return boundary_extraction.run_worker(Path.cwd())
+    if operation == "release-candidate":
+        return release_candidate.run_worker(Path.cwd())
     if operation == "real-model-fixtures":
         return real_model_fixtures.run_worker(Path.cwd())
     if operation == "corpus-selection":
@@ -229,6 +243,8 @@ def expected_ids(
     include_real_model_fixtures=True,
     include_corpus_selection=True,
     include_biomodels_hold=True,
+    include_boundary_extraction=True,
+    include_release_candidate=True,
     include_stochastic_parity=True,
     include_graph_identity_contract=True,
     full=False,
@@ -302,6 +318,10 @@ def expected_ids(
         ids.extend(["campaign:corpus-selection", *check_ids("corpus-selection")])
     if include_biomodels_hold:
         ids.extend(["campaign:biomodels-hold", *check_ids("biomodels-hold")])
+    if include_boundary_extraction:
+        ids.extend(["campaign:boundary-extraction", *check_ids("boundary-extraction")])
+    if include_release_candidate:
+        ids.extend(["campaign:release-candidate", *check_ids("release-candidate")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     if include_graph_identity_contract:
@@ -350,6 +370,8 @@ def run_worker(operation, args):
         return graph_differential.run_worker(Path.cwd())
     if operation == "capability-inventory":
         return capability_inventory.run_worker(Path.cwd())
+    if operation == "boundary-extraction":
+        return boundary_extraction.run_worker(Path.cwd())
     if operation == "real-model-fixtures":
         return real_model_fixtures.run_worker(Path.cwd())
     if operation == "corpus-selection":
