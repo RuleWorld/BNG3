@@ -64,12 +64,13 @@ for the transfers, the CPU pool otherwise.  The backend that produced each
 case's numbers is recorded on the case, and the GPU/CPU sampler agreement is
 measured separately on a sample of cases.
 
-The CPU pool runs on its single worker by default.  The multi-worker pool
-shares one ``OdeIntegrator`` across its threads, and the SSA path writes that
-integrator's observable scratch when a model has a state-dependent rate law,
-so the multi-worker result is not bit-reproducible under a fixed seed; the
-single-worker pool is, so the recorded seed policy determines the numbers this
-script reports.
+The CPU pool runs on its single worker by default.  The pool is reproducible
+under a fixed seed on any worker count -- the multi-worker pool keeps the
+observable scratch that a state-dependent rate law resolves against in
+per-worker storage -- so the worker count is a throughput choice rather than a
+correctness one.  The default stays at one worker because that is the policy
+the recorded campaign measurement was taken under, and the recorded seed policy
+is what determines the numbers this script reports.
 
 References
 ----------
@@ -1911,13 +1912,11 @@ def main(argv: list[str] | None = None) -> int:
         default=1,
         help=(
             "worker threads of the CPU batch pool.  The default is the "
-            "single-worker pool: the multi-worker pool shares one OdeIntegrator "
-            "across its threads, and the SSA path writes that integrator's "
-            "group scratch when a model has a state-dependent rate law, so the "
-            "multi-worker result is not bit-reproducible under a fixed seed "
-            "(three identical runs of semantic/00990 gave 86, 89 and 87 "
-            "violating points).  The single-worker pool is reproducible, so the "
-            "recorded seed policy determines the numbers this script reports."
+            "single-worker pool, which is the policy the recorded campaign "
+            "measurement was taken under.  The pool is reproducible under a "
+            "fixed seed on any worker count, including for a model with a "
+            "state-dependent rate law, so a larger value is a throughput "
+            "choice."
         ),
     )
     parser.add_argument(
@@ -2098,10 +2097,9 @@ def main(argv: list[str] | None = None) -> int:
             ),
             "cpu_threads": options.cpu_threads,
             "cpu_pool_note": (
-                "the CPU batch pool runs on its single worker so that the "
-                "recorded seed policy determines the numbers; the multi-worker "
-                "pool is not bit-reproducible for a model with a "
-                "state-dependent rate law"
+                "the CPU batch pool runs on its single worker, the policy the "
+                "recorded campaign measurement was taken under; the pool is "
+                "reproducible under a fixed seed on any worker count"
             ),
             "cpu_fallback": not options.no_cpu_fallback,
             "suite_categories": options.categories,

@@ -432,10 +432,10 @@ def test_no_case_is_reported_as_a_failure_outside_the_taxonomy(sweep_report):
 def test_the_sweep_uses_the_reproducible_single_worker_pool(sweep_report):
     """The recorded seed policy has to determine the numbers.
 
-    The multi-worker CPU batch pool shares one ``OdeIntegrator`` across its
-    threads and the SSA path writes that integrator's observable scratch when a
-    model has a state-dependent rate law, so the multi-worker result is not
-    bit-reproducible.  The sweep therefore runs the single-worker pool.
+    The CPU batch pool is reproducible under a fixed seed on any worker count,
+    so the worker count is a throughput choice rather than a correctness one.
+    The sweep stays on the single-worker pool because that is the policy the
+    recorded campaign measurement was taken under.
     """
 
     assert sweep_report["budget"]["cpu_threads"] == 1

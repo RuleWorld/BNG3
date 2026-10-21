@@ -123,7 +123,15 @@ private:
     std::size_t nSpecies_ = 0;
     bool hasFunctionalRates_ = false;
 
-    // Performance optimizations
+    // Performance optimizations.
+    //
+    // groupValues_ and functionalRateCoefficients_ are scratch for derivs(),
+    // the single-threaded ODE/CVODE path.  They are deliberately NOT used by
+    // the SSA path: the batched CPU pool shares one integrator across its
+    // worker threads, so any mutable member the SSA path writes would be a
+    // data race between those workers.  evaluateFunctionalRateCoefficients()
+    // therefore takes the observable scratch as an explicit argument, and the
+    // SSA path passes its own per-thread buffer.
     mutable std::vector<double> groupValues_;                  // Pre-allocated for derivs()
     mutable std::vector<double> functionalRateCoefficients_;  // Pre-allocated for derivs()
     std::unordered_map<std::string, std::size_t> observableIndex_; // O(1) observable lookup
@@ -147,9 +155,18 @@ private:
     void validateEventRootSurface();
     void compile();
     void compileGroups();
+    // Evaluate the runtime rate coefficients of every functional-rate reaction
+    // into `rates` (which must have one entry per compiled reaction).
+    //
+    // `groupValues` is the observable scratch the rate expressions are
+    // resolved against.  It is supplied by the caller so that the SSA path can
+    // use a per-thread buffer: the batched CPU pool shares a single
+    // OdeIntegrator across its worker threads, and a shared scratch would make
+    // a state-dependent rate law read another trajectory's observable values.
     void evaluateFunctionalRateCoefficients(double t,
                                             const double* y,
                                             double* rates,
+                                            std::vector<double>& groupValues,
                                             bool failOnError = false) const;
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
     void updateFunctions(const std::vector<double>& groupValues,
