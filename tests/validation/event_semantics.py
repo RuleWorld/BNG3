@@ -1020,7 +1020,9 @@ def _atomizer_statements(case, directory):
         # The event sets the size to V', and the amount stays continuous, so
         # the decay rate becomes k * V / V'.  The law states that rate change
         # rather than a recorded number.
-        rate_after = float(case["k"]) * float(case["volume"]) / float(case["volume_new"])
+        rate_after = (
+            float(case["k"]) * float(case["volume"]) / float(case["volume_new"])
+        )
         law = piecewise_rate_law(times, {**case, "k_new": rate_after})
         difference = _difference(
             values, law, atol=ATOMIZER_ATOL, rtol=ATOMIZER_RTOL, field="trajectory"

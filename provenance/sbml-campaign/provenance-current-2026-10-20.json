@@ -1,8 +1,8 @@
 {
-  "base_commit": "cee96c9aeb91dd9800c840ac6066b89fd06a43d7",
-  "measurement_date": "2026-10-20",
+  "base_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
+  "measurement_date": "2026-10-21",
   "measurement_host": "darwin, CPython 3.14.6, libsbml 5.21.1, roadrunner 2.10.0",
-  "note": "The current measurement of the merged tree. The run executed the #335 branch head 82f837f63d7e986e7184e603819b5bb814a86c52; the tree difference to the base commit touches no file under python/bionetgen/atomizer/ and no file under cpp/, so the Atomizer behaviour the gate measures is identical. The curated-BioModels figures are not part of this record; the corpus has not been re-measured since the campaign's flat-mode run.",
+  "note": "The current measurement of the merged tree, and the measurement the committed expectation manifest was generated from. The curated-BioModels figures are not part of this record; the corpus has not been re-measured since the campaign's flat-mode run.",
   "sbml_test_suite": {
     "case_timeout_seconds": 300,
     "categories": [

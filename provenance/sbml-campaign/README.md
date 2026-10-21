@@ -10,9 +10,9 @@ them changes a verdict.
 | `expectations.json` | the expected verdict of every official SBML Test Suite case at every stage of the gate | `scripts/ci/sbml_campaign_inventory.py --expectations-out` |
 | `baseline-2026-10-19.json` | the measured inventory at campaign base commit `219c76da` | `scripts/ci/sbml_campaign_inventory.py --out` |
 | `integrated-2026-10-20.json` | the measured inventory after the campaign's integrated changes | `scripts/ci/sbml_campaign_inventory.py --out` |
-| `current-2026-10-20.json` | the measured inventory of the merged tree at the #335 branch head | `scripts/ci/sbml_campaign_inventory.py --out` |
-| `current-main-2026-10-20b.json` | the measured inventory of the current merged tree, the one the campaign document's current-stage tables state | `scripts/ci/sbml_campaign_inventory.py --out` |
+| `current-2026-10-20.json` | the measured inventory of the current merged tree | `scripts/ci/sbml_campaign_inventory.py --out` |
 | `provenance-<label>.json` | the measurement metadata merged into the matching inventory | hand-maintained; reviewed with the inventory it describes |
+| `atomizer-limitations.json` | the narrative behind [`docs/ATOMIZER_LIMITATIONS.md`](../../docs/ATOMIZER_LIMITATIONS.md): what each construct is, what the specification requires, what BNG3 does instead, whether the boundary is reducible, and when it was recorded | hand-maintained; the generator checks it against the manifest |
 
 The baseline and the integrated inventories are **historical facts** and are
 not rewritten. A new measurement is recorded as a *current* inventory

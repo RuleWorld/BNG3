@@ -5,7 +5,10 @@ robust SBML-to-BNGL converter, with **demonstrable** mathematical equivalence
 rather than merely successful conversion.
 
 This document records the campaign's measurement baseline, the failure
-clusters derived from it, and the state of each workstream.
+clusters derived from it, and the state of each workstream. The scope record
+of what the Atomizer refuses, and why, is
+[`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md); it is generated from the
+same expectation manifest this document's tables are generated from.
 
 Every result table in this document is **generated** from the harness report it
 names, by `scripts/ci/sbml_campaign_tables.py`; the exact command is in
@@ -374,43 +377,35 @@ _Source: the independent campaign audit, recorded in
 
 | Stage | Passed | Unsupported | Failed | Not tested |
 | --- | --- | --- | --- | --- |
-| Conversion (SBML → BNGL) | 1732 | 191 | 0 | 0 |
-| Round-trip structure | 1732 | 0 | 0 | 191 |
-| Independent libRoadRunner comparison | 1732 | 0 | 0 | 191 |
-| Official reference comparison | 1225 | 687 | 11 | 0 |
-_Source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c7550723b7ccc3a2cc3c2992e791fa922b118504`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
+| Conversion (SBML → BNGL) | 1797 | 126 | 0 | 0 |
+| Round-trip structure | 1797 | 0 | 0 | 126 |
+| Independent libRoadRunner comparison | 1797 | 0 | 0 | 126 |
+| Official reference comparison | 1758 | 165 | 0 | 0 |
+_Source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `5d8e78b061337874d5a575a3987bde630bfe54d7`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
 
 #### Official-reference unsupported verdicts, by owner
 
 | Count | Owner | Blocking reason |
 | --- | --- | --- |
-| 439 | harness | the in-memory CVODE reference runner cannot execute actions on the official output grid |
-| 100 | harness | official stochastic conformance requires repeated-run mean and standard-deviation evaluation |
-| 35 | Atomizer diagnostic | Reaction "…" is marked fast (fast="true") |
+| 71 | Atomizer | state-dependent / non-constant SBML events untranslated |
 | 34 | not applicable | case does not define an official time-course reference |
-| 28 | Atomizer | state-dependent / non-constant SBML events untranslated |
-| 19 | harness mapping | no exact BNG3 result mapping for: <reaction id> |
-| 16 | Atomizer | … has no MathML expression (empty math) |
+| 22 | harness mapping | no exact BNG3 result mapping for: <reaction id> |
+| 18 | Atomizer | other Atomizer-side limitation |
 | 9 | C++ writer | SBML math function "…" is not losslessly representable in the C++ SBML writer |
+| 6 | Atomizer diagnostic | Reaction "…" is marked fast (fast="true") |
 | 3 | Atomizer | <infinity>/<notanumber> constant encountered in math |
 | 2 | Atomizer | a compartment declares unsupported spatialDimensions |
-| 1 | Atomizer | algebraic rule(s) present |
-| 1 | Atomizer | other Atomizer-side limitation |
 
-Total official-reference unsupported verdicts: 687.
-_Source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c7550723b7ccc3a2cc3c2992e791fa922b118504`._
+Total official-reference unsupported verdicts: 165.
+_Source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `5d8e78b061337874d5a575a3987bde630bfe54d7`._
 
 #### Remaining official-reference failures, by official feature
 
 | Cluster | n | Cases |
 | --- | --- | --- |
-| CSymbolDelay | 7 | 00941 00943 01400 01401 01403 01406 01409 |
-| AssignmentRule | 2 | 01492 01493 |
-| AlgebraicRule | 1 | 01575 |
-| CSymbolAvogadro | 1 | 01121 |
 
-Total official-reference failures: 11.
-_Source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c7550723b7ccc3a2cc3c2992e791fa922b118504`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
+Total official-reference failures: 0.
+_Source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `5d8e78b061337874d5a575a3987bde630bfe54d7`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
 
 #### Curated BioModels — current
 
@@ -425,27 +420,41 @@ _Source: `/tmp/bng3-campaign/biomodels-main-flat.json` (SHA-256 `0e0583d1f568892
 
 | Stage | Before | After | Cases |
 | --- | --- | --- | --- |
-| conversion | passed | unsupported | 1 |
-| conversion | unsupported | passed | 21 |
-| independent_comparison | not_tested | passed | 21 |
-| independent_comparison | passed | not_tested | 1 |
-| official_reference | failed | passed | 95 |
-| official_reference | failed | unsupported | 1 |
-| official_reference | unsupported | passed | 15 |
-| roundtrip_structure | not_tested | passed | 21 |
-| roundtrip_structure | passed | not_tested | 1 |
+| conversion | passed | unsupported | 5 |
+| conversion | unsupported | passed | 90 |
+| independent_comparison | not_tested | passed | 90 |
+| independent_comparison | passed | not_tested | 5 |
+| official_reference | failed | passed | 105 |
+| official_reference | failed | unsupported | 2 |
+| official_reference | passed | unsupported | 1 |
+| official_reference | unsupported | passed | 539 |
+| roundtrip_structure | not_tested | passed | 90 |
+| roundtrip_structure | passed | not_tested | 5 |
 
-Cases with at least one stage change: 117.
+Cases with at least one stage change: 649.
 
 Regressions (a stage that was `passed` and no longer is):
 
 - `semantic/00951` [conversion]: passed → unsupported
 - `semantic/00951` [roundtrip_structure]: passed → not_tested
 - `semantic/00951` [independent_comparison]: passed → not_tested
+- `semantic/01169` [conversion]: passed → unsupported
+- `semantic/01169` [roundtrip_structure]: passed → not_tested
+- `semantic/01169` [independent_comparison]: passed → not_tested
+- `semantic/01466` [conversion]: passed → unsupported
+- `semantic/01466` [roundtrip_structure]: passed → not_tested
+- `semantic/01466` [independent_comparison]: passed → not_tested
+- `semantic/01575` [conversion]: passed → unsupported
+- `semantic/01575` [roundtrip_structure]: passed → not_tested
+- `semantic/01575` [independent_comparison]: passed → not_tested
+- `semantic/01576` [conversion]: passed → unsupported
+- `semantic/01576` [roundtrip_structure]: passed → not_tested
+- `semantic/01576` [independent_comparison]: passed → not_tested
+- `semantic/01576` [official_reference]: passed → unsupported
 
 A stage that becomes `passed` is accepted only when the expectation manifest is explicitly updated.
 
-Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/current-main-2026-10-20b.json` (SHA-256 `3aee9d9012bb137bbb1e007ecf9e254ed64e8b2c972c5d1d2b03ceb1e0015b4c`).
+Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`).
 
 <!-- END GENERATED: sbml-campaign-current -->
 

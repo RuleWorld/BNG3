@@ -419,6 +419,10 @@ maintainer dispositions. Both issues stay open: the conformance family covers
 one bounded selection of one suite revision, and the reconstruction family
 covers a generated structural slice whose event semantics, dynamic-rule
 classes and SBML packages remain outside it.
+This file records the live verification state. The scope boundary of the
+SBML atomizer — the constructs it refuses, why, and whether each boundary is
+reducible — is recorded separately in
+[`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md).
 ## Structural SBML atomization recovers molecular identity
 
 The atomized SBML translation (`atomize=True`) recognized a molecular

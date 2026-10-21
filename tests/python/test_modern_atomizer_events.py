@@ -3272,9 +3272,9 @@ def test_simultaneous_equal_priority_conflicting_assignments_keep_the_specified_
     assert 'setConcentration("@c:M_S1()", "2")' in result.bngl
     assert 'setConcentration("@c:M_S1()", "3")' in result.bngl
     # The order the actions are written in is the order they run in.
-    assert result.bngl.index(
-        'setConcentration("@c:M_S1()", "2")'
-    ) < result.bngl.index('setConcentration("@c:M_S1()", "3")')
+    assert result.bngl.index('setConcentration("@c:M_S1()", "2")') < result.bngl.index(
+        'setConcentration("@c:M_S1()", "3")'
+    )
 
 
 def test_simultaneous_equal_priority_independent_assignments_are_executed():

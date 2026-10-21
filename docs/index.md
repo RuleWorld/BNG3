@@ -73,6 +73,8 @@ df = result.to_dataframe()
 - [Contributing](contributing.md) — Development setup and guidelines
 - [Validation harness](../tests/validation/README.md) — Full-corpus commands,
   references, and oracle boundaries
+- [SBML Atomizer limitations](ATOMIZER_LIMITATIONS.md) — SBML atomizer scope
+  boundary — what the modern atomizer does not support, and why
 - [CI parity](CI_PARITY.md) — Independent BNG2/NFsim gates and exact-head CI
 - [Convergence checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) — Release gate
   and remaining work
