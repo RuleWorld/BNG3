@@ -76,6 +76,26 @@ def _math(math: str) -> str:
     )
 
 
+def _initial_assignment(symbol: str, math: str) -> str:
+    return (
+        '<initialAssignment symbol="'
+        + symbol
+        + '">'
+        + _math(math)
+        + "</initialAssignment>"
+    )
+
+
+def _assignment_rule(variable: str, math: str) -> str:
+    return (
+        '<assignmentRule variable="'
+        + variable
+        + '">'
+        + _math(math)
+        + "</assignmentRule>"
+    )
+
+
 def _bngl_seed_lines(bngl: str) -> dict[str, str]:
     seeds: dict[str, str] = {}
     in_seed = False
@@ -356,15 +376,11 @@ def test_initial_assignment_group_resolves_before_assignment_rules():
     # p = 5) for this model.
     sbml = _overlap_sbml(
         initial_assignments=(
-            f'<initialAssignment symbol="S1">{_math("<ci>p</ci>")}</initialAssignment>'
-            f'<initialAssignment symbol="p">{_math("<cn>3</cn>")}</initialAssignment>'
-            f'<initialAssignment symbol="S2">{_math("<ci>S1</ci>")}</initialAssignment>'
+            _initial_assignment("S1", "<ci>p</ci>")
+            + _initial_assignment("p", "<cn>3</cn>")
+            + _initial_assignment("S2", "<ci>S1</ci>")
         ),
-        rules=(
-            "<listOfRules>"
-            f'<assignmentRule variable="p">{_math("<cn>5</cn>")}</assignmentRule>'
-            "</listOfRules>"
-        ),
+        rules="<listOfRules>" + _assignment_rule("p", "<cn>5</cn>") + "</listOfRules>",
     )
     res = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
     assert res.success, res.error
@@ -384,15 +400,10 @@ def test_assignment_rule_governs_variable_named_by_initial_assignment():
     # (S1 = 6, p = 5) for this model.
     sbml = _overlap_sbml(
         initial_assignments=(
-            f'<initialAssignment symbol="p">{_math("<cn>3</cn>")}</initialAssignment>'
-            f'<initialAssignment symbol="S1">'
-            f'{_math("<apply><times/><cn>2</cn><ci>p</ci></apply>")}</initialAssignment>'
+            _initial_assignment("p", "<cn>3</cn>")
+            + _initial_assignment("S1", "<apply><times/><cn>2</cn><ci>p</ci></apply>")
         ),
-        rules=(
-            "<listOfRules>"
-            f'<assignmentRule variable="p">{_math("<cn>5</cn>")}</assignmentRule>'
-            "</listOfRules>"
-        ),
+        rules="<listOfRules>" + _assignment_rule("p", "<cn>5</cn>") + "</listOfRules>",
     )
     res = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
     assert res.success, res.error
@@ -408,15 +419,13 @@ def test_assignment_rule_reads_initial_assignment_value():
     # p = 4 and S1 = 2 * 4 = 8 at t=0.
     sbml = _overlap_sbml(
         initial_assignments=(
-            f'<initialAssignment symbol="q">{_math("<cn>3</cn>")}</initialAssignment>'
-            f'<initialAssignment symbol="S1">'
-            f'{_math("<apply><times/><cn>2</cn><ci>p</ci></apply>")}</initialAssignment>'
+            _initial_assignment("q", "<cn>3</cn>")
+            + _initial_assignment("S1", "<apply><times/><cn>2</cn><ci>p</ci></apply>")
         ),
         rules=(
             "<listOfRules>"
-            f'<assignmentRule variable="p">'
-            f'{_math("<apply><plus/><ci>q</ci><cn>1</cn></apply>")}</assignmentRule>'
-            "</listOfRules>"
+            + _assignment_rule("p", "<apply><plus/><ci>q</ci><cn>1</cn></apply>")
+            + "</listOfRules>"
         ),
         parameters=(
             '<parameter id="p" value="1" constant="true"/>'
