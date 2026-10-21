@@ -1,5 +1,10 @@
 # BNG3 current progress
 
+This file records the live verification state. The scope boundary of the
+SBML atomizer — the constructs it refuses, why, and whether each boundary is
+reducible — is recorded separately in
+[`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md).
+
 ## Structural SBML atomization recovers molecular identity
 
 The atomized SBML translation (`atomize=True`) recognized a molecular

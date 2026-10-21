@@ -191,7 +191,8 @@ python scripts/validate.py --bng-cpp build/cpp/bng_cpp --strict-references \
 
 See [`tests/validation/README.md`](tests/validation/README.md) for the oracle
 boundaries and [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md) for
-current evidence. Historical migration reports are organized under
+current evidence. For what the SBML atomizer does *not* support, and why,
+see [`docs/ATOMIZER_LIMITATIONS.md`](docs/ATOMIZER_LIMITATIONS.md). Historical migration reports are organized under
 [`docs/archive/reports/`](docs/archive/reports/).
 
 ## Citation

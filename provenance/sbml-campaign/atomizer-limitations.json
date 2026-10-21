@@ -1,0 +1,202 @@
+{
+  "schema_version": 1,
+  "kind": "atomizer-limitations-narrative",
+  "note": "The narrative half of docs/ATOMIZER_LIMITATIONS.md. The counts, the case ids, the sides and the recorded measurement come from the expectation manifest (provenance/sbml-campaign/expectations.json); this file records what each construct is, what the specification requires, what BNG3 does instead, whether the limitation is reducible, and when it was first recorded. It is the one part of the document that is maintained by hand, and the generator checks it against the manifest on every run.",
+  "constructs": {
+    "events:untranslated": {
+      "title": "An event the Atomizer cannot lower, or cannot order",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.12 defines an Event as a two-phase operation: a Trigger (Sec. 4.12.2) decides when the event may fire, and the execution phase applies the EventAssignments (Sec. 4.12.5). Sec. 4.12.7 says the order in which events occur is resolved, that this order can be significant for a simulation's outcome, and that an event may carry a special priority through a Priority subobject (Sec. 4.12.3).",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.12, Sec. 4.12.2, Sec. 4.12.3, Sec. 4.12.7",
+      "bng3_does": "The Atomizer lowers an event whose trigger is a constant time threshold to a scheduled BNGL action and refuses the rest: it reports \"N SBML event(s) parsed; M fixed-time event(s) lowered to scheduled actions, while K state-dependent or non-constant event(s) remain untranslated\", and the case is not claimed to be supported. The refusal names the specific condition, for example \"state-triggered SBML events require stochastic jump scheduling\", \"the model's algebraic rule is not applied, so the event's trigger cannot be evaluated\", \"volume change can cause the state trigger to re-enter within the simulation horizon\" or \"trigger time ... does not reduce to a constant\".",
+      "reducible": "Partly reduced, and the work is continuing. A state trigger the native event runtime can evaluate is now lowered (PR #328, 2026-10-21) and several simultaneous events execute in the order the specification defines (PR #371, 2026-10-21). What remains needs a trigger value the engine does not poll, a trigger whose value depends on a construct the Atomizer does not apply, or an event whose effect is not a scheduled action.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "events:state-trigger-not-schedulable": {
+      "title": "A state trigger the runtime cannot schedule",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.12.2 requires the Trigger to be evaluated against the model's current state, and Sec. 4.12.7 requires the event to be executed when the trigger becomes true.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.12.2, Sec. 4.12.7",
+      "bng3_does": "The Atomizer refuses the event and says why: \"trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)\", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier \"contains a character outside the SBML SId class and cannot be matched\".",
+      "reducible": "Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "package:fbc": {
+      "title": "The fbc package: a flux-balance model, not a time course",
+      "sbml_requires": "The SBML Level 3 Package for Flux Balance Constraints (FBC) adds goals and constraints to a model. A model that carries FBC elements is a constraint-based model, not a kinetic time course, so the Core's reaction semantics (Sec. 4.11.7) and event semantics (Sec. 4.12.7) do not give it a trajectory to compare.",
+      "citation": "SBML Level 3 Package for Flux Balance Constraints (FBC) Version 1 Release 3; the Core itself is SBML Level 3 Version 2 Core Sec. 4.11.7 and Sec. 4.12.7",
+      "bng3_does": "The Atomizer reports that the package is declared and that the affected structure is missing from the converted model, and it says why the model is out of scope: \"This is a constraint-based flux-balance model, not a kinetic time-course model.\"",
+      "reducible": "No, not as a time course. BNG3 has no flux-balance solver, so a flux-balance model is not convertible; the honest boundary is to refuse it and to say that it is a different kind of model.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "sbml-writer:unrepresentable-function": {
+      "title": "A math function the engine cannot execute",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 3.4 defines the delay and rateOf operators as csymbol elements with a fixed definitionURL, and requires a reader to give delay(x, d) the value x had at time t - d.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 3.4",
+      "bng3_does": "The C++ SBML writer serializes the call back out, but the engine cannot execute it: it reports \"SBML math function \\\"delay\\\" is not losslessly representable in the BNG3 engine/libRoadRunner path: the C++ SBML writer serializes the call, but neither the BNG3 engine nor libRoadRunner can evaluate SBML delay semantics\".",
+      "reducible": "No, not in the engine. BNG3 has no delayed-history semantics and libRoadRunner rejects a model that uses delay at all, so a model that needs them cannot be executed by either engine; the writer boundary itself was already removed.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "fast-reaction:no-fast-equilibrium-solve": {
+      "title": "A fast reaction whose pseudo steady state cannot be used",
+      "sbml_requires": "SBML Level 3 Version 1 Core Sec. 4.11 asks that software tools use a pseudo steady-state approximation for the set of reactions whose fast attribute is true. SBML Level 3 Version 2 removed the fast attribute (Sec. 4.11), so a Level 3 Version 2 model says nothing about fast reactions.",
+      "citation": "SBML Level 3 Version 1 Core Sec. 4.11; SBML Level 3 Version 2 Core Sec. 4.11",
+      "bng3_does": "The Atomizer reduces a fast reaction to its pseudo steady state where it can (PR #370, 2026-10-21) and refuses the remainder, saying that it treats such a reaction as an ordinary reaction and that this changes the trajectory.",
+      "reducible": "Largely reduced already: the reduction closed most of these cases. The remainder needs a fast reaction whose pseudo steady state cannot be written as a BNGL rule.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "mathml:infinity": {
+      "title": "An infinite constant",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 3.4 permits the MathML infinity constant in a model's formulas, and Sec. 3.1 makes positive infinity a value of the double type.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 3.1, Sec. 3.4",
+      "bng3_does": "The Atomizer reports \"<infinity> constant encountered in math; the source is valid SBML (validation rule 10202 permits <infinity>), but an infinite value cannot be represented in BNG3's finite-double model, so it is emitted as a large finite value and the model is not claimed to be supported\".",
+      "reducible": "Only by changing what BNG3's value domain is. The source is valid SBML and the boundary is BNG3's finite-double model, not a conversion defect; a large finite stand-in is an approximation, so the case is refused rather than claimed.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "mathml:not-a-number": {
+      "title": "A not-a-number constant",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 3.4 permits the MathML notanumber constant in a model's formulas, and Sec. 3.1 makes not-a-number a value of the double type.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 3.1, Sec. 3.4",
+      "bng3_does": "The Atomizer reports \"<notanumber> constant encountered in math; the source is valid SBML (validation rule 10202 permits <notanumber>), but a not-a-number value cannot be represented in BNG3's finite-double model, so the model is not claimed to be supported\".",
+      "reducible": "Only by changing BNG3's value domain. There is no finite value that stands for not-a-number, so no approximation is offered.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "compartment:unsupported-spatial-dimensions": {
+      "title": "A compartment with more than three spatial dimensions",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.5.2 lets a compartment declare any floating-point spatialDimensions value, and Sec. 4.5.4 uses that value to choose between the model's volumeUnits, areaUnits and lengthUnits.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.5.2, Sec. 4.5.4",
+      "bng3_does": "The Atomizer refuses the compartment and says why: \"Compartment \\\"C\\\" has spatialDimensions 7; BNG3 does not support spatialDimensions values greater than 3.\" It also refuses a negative dimension and, for a Level 2 model, any value outside 0 through 3.",
+      "reducible": "No, not as a compartment. BNGL compartments carry a volume; a compartment with a fractal or higher dimension has no BNGL counterpart, and the unit selection Sec. 4.5.4 describes cannot be expressed.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "other": {
+      "title": "Refusals the cause taxonomy does not yet name",
+      "sbml_requires": "No single construct: each case is refused for a reason the campaign's cause taxonomy has no label for yet.",
+      "citation": "SBML Level 3 Version 2 Core, the section the case's own reason names",
+      "bng3_does": "The Atomizer refuses the case and reports the reason; the campaign's classification records it as \"other\" because no known construct class matches.",
+      "reducible": "Unknown until each reason is read. This bucket is a request to extend the taxonomy, not a claim that the cases are alike.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "reference:no-result-mapping": {
+      "title": "The official reference names a quantity BNG3 cannot observe",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.11.8 says the id of a Reaction may be used in a MathML formula and then represents that reaction's rate. The official SBML Test Suite's results file for such a case reports that rate as the quantity to compare.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.11.8",
+      "bng3_does": "Nothing is refused: the model converts. The harness cannot map the reference's quantity onto a BNG3 observable and reports \"no exact BNG3 result mapping for: <reaction id>\".",
+      "reducible": "Yes, on the measurement side. BNGL has no observable for a reaction's rate, so the reference's quantity has to be mapped onto something BNG3 produces, or the reference has to name something it does. It is a measurement limit, not a limitation of the Atomizer.",
+      "first_recorded": "2026-10-20",
+      "status": "open"
+    },
+    "harness:random-event-execution": {
+      "title": "The official reference is one draw of a random execution order",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.12.3 and Sec. 4.12.7 define the order in which simultaneously triggered events are executed; a case that draws the events in a random order is a valid instance of that semantics.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.12.3, Sec. 4.12.7",
+      "bng3_does": "Nothing is refused: the model converts and the engine executes the events in the order the specification defines. The harness cannot compare point-wise, because the reference is one draw of a random order and no deterministic simulator reproduces it point-wise.",
+      "reducible": "Yes, on the measurement side: the comparison has to be distributional rather than point-wise, or the reference has to pin the order. It is a measurement limit, not a limitation of the Atomizer.",
+      "first_recorded": "2026-10-21",
+      "status": "open"
+    },
+    "harness:reference-does-not-track-variable": {
+      "title": "The official reference does not report a boundary species",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.6.5 lets a species carry the boundaryCondition attribute, in which case the species is a boundary rather than an integrated quantity.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.6.5",
+      "bng3_does": "Nothing is refused: the model converts and the boundary species is set. The harness cannot compare, because the reference reports the boundary species as identically zero while BNG3's value follows the model's boundary definition.",
+      "reducible": "Yes, on the measurement side: the comparison has to exclude a quantity the two engines define differently, or the reference has to report it. It is a measurement limit, not a limitation of the Atomizer.",
+      "first_recorded": "2026-10-21",
+      "status": "open"
+    },
+    "reference:not-applicable": {
+      "title": "The suite says the case has no official time-course reference",
+      "sbml_requires": "Nothing in the Core applies: the official suite itself records that the case defines no official time-course reference, so there is nothing to compare against.",
+      "citation": "the official SBML Test Suite's own case notes; no Core section applies",
+      "bng3_does": "Nothing is refused and nothing is claimed. The case is recorded as having no official reference, which is not a limitation of the Atomizer and not a defect.",
+      "reducible": "Not applicable. The official suite defines no reference for these cases, so there is no comparison to make and no work to do.",
+      "first_recorded": "2026-10-20",
+      "status": "not-applicable"
+    },
+    "harness:scheduled-actions-not-executed": {
+      "title": "The reference runner could not execute a model with actions",
+      "sbml_requires": "Nothing: this was a limit of the measurement, not of the model.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.12 (scheduled events)",
+      "bng3_does": "Nothing was refused. The harness's in-memory reference runner could not execute actions on the official output grid, so it reported the case as unsupported.",
+      "reducible": "Closed: the harness now validates official references for action-bearing cases (PR #337, 2026-10-20), so these cases are compared rather than skipped.",
+      "first_recorded": "2026-10-20",
+      "status": "closed",
+      "closed": "2026-10-21",
+      "closed_by": "PR #337, validated 2026-10-20, first measured as closed on 2026-10-21"
+    },
+    "harness:stochastic-ensemble-not-evaluated": {
+      "title": "The official reference needed an ensemble the harness did not run",
+      "sbml_requires": "Nothing: this was a limit of the measurement, not of the model.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.11.7 (stochastic reaction semantics)",
+      "bng3_does": "Nothing was refused. The harness reported that official stochastic conformance requires a repeated-run mean and standard deviation, which it did not evaluate.",
+      "reducible": "Closed: the harness now evaluates the official stochastic references (PR #337, validated 2026-10-20), so these cases are compared rather than skipped.",
+      "first_recorded": "2026-10-20",
+      "status": "closed",
+      "closed": "2026-10-21",
+      "closed_by": "PR #337, validated 2026-10-20, first measured as closed on 2026-10-21"
+    },
+    "rules:algebraic-not-applied": {
+      "title": "An algebraic rule is not applied",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.9.2 defines an algebraic rule as an equation that is neither an assignment of a model variable nor a rate of change, and says that in the context of a simulation algebraic rules are in effect at all times.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.9.2",
+      "bng3_does": "The Atomizer still refuses such a model: it reports \"N algebraic rule(s) present; these are implicit DAE constraints with no BNGL equivalent and are not applied\". The official suite no longer reaches this refusal, so the limitation itself is still open while the suite no longer exercises it.",
+      "reducible": "Yes: the campaign resolved the suite's algebraic-rule cases by carrying the rule as an assignment (PR #355, 2026-10-20). The general implicit-DAE boundary is still open.",
+      "first_recorded": "2026-10-20",
+      "status": "not-exercised",
+      "last_exercised": "2026-10-20"
+    },
+    "stoichiometry:unsupported": {
+      "title": "A reaction with a stoichiometry BNGL cannot express",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.11.3 lets a speciesReference carry any stoichiometry, including a negative or fractional one.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.11.3",
+      "bng3_does": "The Atomizer still refuses such a reaction and reports that it has unsupported stoichiometry. The official suite no longer reaches this refusal, so the limitation itself is still open while the suite no longer exercises it.",
+      "reducible": "Only by extending BNGL's reaction semantics: a negative or fractional stoichiometry has no BNGL counterpart, and substituting a rounded count would change the chemistry.",
+      "first_recorded": "2026-10-20",
+      "status": "not-exercised",
+      "last_exercised": "2026-10-20"
+    },
+    "stoichiometry:assigned-stoichiometry-unresolved": {
+      "title": "An assigned stoichiometry that could not be resolved",
+      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.11.3 gives a speciesReference id the meaning of a model-level symbol whose value is that reference's stoichiometry, and Sec. 4.9 lets a rule determine that symbol's value.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.9, Sec. 4.11.3",
+      "bng3_does": "The Atomizer still reports that the stoichiometry \"is assigned by ..., whose value could not be resolved to a number at initialization\". The official suite no longer reaches this refusal, so the limitation itself is still open while the suite no longer exercises it.",
+      "reducible": "Yes: the campaign resolved the suite's cases by carrying the assigned value through the parameter's state (PR #366, 2026-10-21). A symbol that still cannot be resolved at initialization remains refused.",
+      "first_recorded": "2026-10-20",
+      "status": "not-exercised",
+      "last_exercised": "2026-10-20"
+    }
+  },
+  "changelog": [
+    {
+      "date": "2026-10-20",
+      "change": "The campaign's baseline measurement is recorded: 1712 of the 1923 official suite cases convert, 211 are refused, and 107 official-reference comparisons fail."
+    },
+    {
+      "date": "2026-10-20",
+      "change": "The machine-readable expectation manifest is added, so every case's expected verdict at every stage is recorded rather than re-derived by hand."
+    },
+    {
+      "date": "2026-10-20",
+      "change": "Closed: the harness now validates official references for action-bearing and stochastic cases (PR #337), so the harness-side limits 'scheduled actions not executed' and 'stochastic ensemble not evaluated' are gone."
+    },
+    {
+      "date": "2026-10-20",
+      "change": "The suite no longer exercises the algebraic-rule and assigned-stoichiometry refusals: the campaign resolved those cases (PRs #355 and #366). The refusals themselves still exist in the Atomizer."
+    },
+    {
+      "date": "2026-10-21",
+      "change": "Opened: two harness-side classes were named, so the measurement limits 'random event execution' and 'reference does not track variable' are now visible as such instead of being counted as Atomizer limitations (PR #359)."
+    },
+    {
+      "date": "2026-10-21",
+      "change": "Reduced: a fast reaction is lowered to its pseudo steady state instead of being refused (PR #370), and several simultaneous events execute in the order the specification defines (PR #371). The official-reference failure count is zero."
+    }
+  ]
+}
