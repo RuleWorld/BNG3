@@ -319,3 +319,113 @@ def test_event_with_an_initially_true_trigger_does_not_fire():
 
     assert result.success, result.error
     assert "setConcentration" not in result.bngl, result.bngl
+
+
+def _rate_ruled_parameter_event_model() -> str:
+    """An event that assigns a parameter which carries a rate rule.
+
+    ``P1`` starts at 10 and a rate rule drives it down at 1 per second.  The
+    event fires when ``P1 <= 8.9`` (at ``t = 1.1``) and, after a delay of 2,
+    assigns ``P1 = P1 + 3`` using the *trigger-time* value of ``P1``.
+    """
+
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="rate_ruled_parameter_event">
+        <listOfParameters>
+          <parameter id="P1" value="10" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <rateRule variable="P1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <cn type="integer">-1</cn>
+            </math>
+          </rateRule>
+        </listOfRules>
+        <listOfEvents>
+          <event id="E0" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><leq/><ci>P1</ci><cn>8.9</cn></apply>
+              </math>
+            </trigger>
+            <delay>
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math>
+            </delay>
+            <listOfEventAssignments>
+              <eventAssignment variable="P1">
+                <math xmlns="http://www.w3.org/1998/Math/MathML">
+                  <apply><plus/><ci>P1</ci><cn>3</cn></apply>
+                </math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_event_assignment_reaches_the_rate_rule_state():
+    """The assignment sets the value the rate rule owns, not the parameter.
+
+    SBML Level 3 Version 2 Core, Sec. 4.9.4 ("RateRule"), makes a rate rule
+    determine the variable's rate of change for the whole simulation, and
+    Sec. 4.12.5 ("EventAssignment") makes an event assignment set the
+    variable's *value*; the rule then continues from the assigned value.  The
+    generated model keeps that value in a state species, so the scheduled
+    action has to reach the state species: assigning the parameter would leave
+    the state - and therefore the reported quantity - untouched.
+    """
+
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=10.0, n_steps=100).atomize(
+        _rate_ruled_parameter_event_model()
+    )
+
+    assert result.success, result.error
+    # The rate-ruled parameter is reported through its state species.
+    assert "Species P1_amt M___rate_rule_state__P1()" in result.bngl, result.bngl
+    assignments = [
+        line.strip()
+        for line in result.bngl.splitlines()
+        if line.strip().startswith(("setParameter(", "setConcentration("))
+    ]
+    assert assignments, result.bngl
+    for assignment in assignments:
+        assert "M___rate_rule_state__P1()" in assignment, assignment
+        assert not assignment.startswith("setParameter("), assignment
+    # The assigned value is the trigger-time value plus three: 8.9 + 3.
+    assert '"11.9"' in assignments[0], assignments[0]
+
+
+def test_rate_ruled_parameter_event_matches_libroadrunner():
+    """The independent oracle agrees with the lowered model."""
+
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+
+    sbml = _rate_ruled_parameter_event_model()
+    rr = roadrunner.RoadRunner(sbml)
+    rr.timeCourseSelections = ["time", "P1"]
+    # libRoadRunner evaluates an event's trigger at its integration steps, so
+    # the grid has to be fine enough to contain the crossing at t = 1.1.
+    values = np.asarray(rr.simulate(0.0, 10.0, 10001), dtype=float)
+    times = values[:, 0]
+    amounts = values[:, 1]
+
+    def at(time: float) -> float:
+        index = int(np.argmin(np.abs(times - time)))
+        assert abs(times[index] - time) < 1e-9, (time, times[index])
+        return float(amounts[index])
+
+    # The rate rule drives P1 down at 1 per second and the event sets it to
+    # the trigger-time value plus three when it executes.
+    assert math.isclose(at(0.0), 10.0, rel_tol=1e-9)
+    assert math.isclose(at(1.0), 9.0, rel_tol=1e-9)
+    assert math.isclose(at(3.1), 11.9, rel_tol=1e-9)
+    assert math.isclose(at(3.5), 11.5, rel_tol=1e-9)
+    # The trigger fires again at t = 6.1, so the value is back at the
+    # threshold there.  libRoadRunner 2.10.0 does not execute the *second*
+    # firing of this trigger (the official reference does, and the
+    # conformance gate compares against the reference), so the comparison
+    # stops at the crossing.
+    assert math.isclose(at(6.1), 8.9, rel_tol=1e-9)

@@ -10841,6 +10841,13 @@ def generate_bngl(
             ),
             is_compartment=lambda identifier: identifier in model.compartments,
             resolve_compartment_state_pattern=resolve_compartment_state_pattern,
+            resolve_rate_rule_state_pattern=(
+                lambda identifier: (
+                    species_to_pattern.get(identifier)
+                    if identifier in synthetic_rate_rule_variables
+                    else None
+                )
+            ),
             resolve_species_concentration_volume=(resolve_species_concentration_volume),
             is_compile_time_constant=is_compile_time_constant,
             unapplied_algebraic_rule=any(

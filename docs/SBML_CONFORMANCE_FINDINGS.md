@@ -293,8 +293,9 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 ## 8. Other newly measured mismatches
 
 * **Classification:** Atomizer defects.  **REDUCED** to four mechanisms on
-  `campaign/fix-concentration-rate-law` (pull request #363); three are fixed
-  and one is identified and documented.
+  `campaign/fix-concentration-rate-law` (pull request #363) and
+  `campaign/fix-rate-rule-event-assignment` (pull request #366); all four are
+  fixed.
 * **Cases:** `semantic/00963 00967 01530 01531 01532 01533 01701 01702
   01715 01716` and `semantic/00707 00736 00929`.
 
@@ -437,24 +438,43 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 * **Fix:** a trigger that is already true at `t = 0` with
   `triggerInitialValue="true"` does not fire the event.
 
-### 8e. A scheduled action assigns a parameter, not the rate-rule state - OPEN
+### 8e. A scheduled action assigns a parameter, not the rate-rule state - FIXED
 
 * **Cases:** `semantic/01701`, `semantic/01702`, `semantic/01715`,
-  `semantic/01716`.  These are the four cases that still fail.
+  `semantic/01716`; all four now pass.
 * **Mechanism:** a parameter that carries a rate rule is lowered to a
   synthetic state species (`M___rate_rule_state__k1()`), and the model's
-  observable reports that species.  The event's assignment is lowered to
+  observable reports that species.  The event's assignment was lowered to
   `setParameter("k1", "3.2")`, which sets the *parameter*; the rate rule
-  keeps driving the *species*, so the assignment has no effect on the
-  quantity the reference reports.  The source's semantics are the opposite:
-  an event assignment to a rate-ruled variable sets the variable and the
-  rate rule continues from the assigned value.
-* **Expected behaviour:** the action has to assign the state species, so
-  that the rate rule continues from the assigned value.
-* **Handling:** the harness reports the numeric mismatch with the official
-  reference, which is the correct verdict.  The fix is not in this pull
-  request: it needs the action lowering to resolve a rate-rule state's
-  pattern and to state the assignment in the units the state carries.
+  keeps driving the *species*, so the assignment had no effect on the
+  quantity the reference reports - the reported value simply did not move
+  with the assignment.
+* **What the specification requires.**  Section 4.9.4 ("RateRule") makes a
+  rate rule determine the variable's rate of change for the whole
+  simulation, and section 4.12.5 ("EventAssignment") makes an event
+  assignment set the variable's *value*, from which the rule then
+  continues.  The two are not in conflict: the rule is in effect for
+  `t > 0` and the assignment sets the value the rule owns.  The
+  specification's restriction is the other way round - "a variable cannot
+  be assigned a value in an EventAssignment object instance and also be
+  assigned a value by an AssignmentRule" - because an assignment rule
+  holds at all times; a rate rule does not, and the corpus contains the
+  case (`semantic/01701` and its companions) with the official reference
+  spelling out the result.  BNG2 has no event support at all, so there is
+  no BNG2 behaviour to match; libRoadRunner 2.10.0 on the source SBML is
+  the independent oracle, and it agrees with the official reference: the
+  value is set at the event's *execution* time and the rate rule continues
+  from it (`semantic/01701`: `P1` is 11.9 at `t = 3.1` and 11.5 at
+  `t = 3.5`).
+* **Fix:** the scheduled action reaches the state species that carries the
+  rate-ruled parameter's value, so the assignment has the effect the source
+  event has and the rate rule continues from the assigned value.
+* **Numbers:** against `main` at `0b87c475` (conversion 1782 passed / 141
+  unsupported / 0 failed), the official-reference stage goes from **1739
+  passed / 180 unsupported / 4 failed** to **1743 passed / 180 unsupported /
+  0 failed**: `semantic/01701`, `01702`, `01715` and `01716` move failed ->
+  passed and nothing else moves.  The official-reference stage has no
+  failures left.
 
 
 ---

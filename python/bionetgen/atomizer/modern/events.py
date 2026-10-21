@@ -580,6 +580,15 @@ class EventTranslationContext:
     resolve_rate_reset: Callable[[str], Optional[Tuple[float, float]]] = (
         lambda _identifier: None
     )
+    # Resolve the BNGL state species that carries a rate-ruled parameter.
+    # A rate rule determines the parameter's rate of change for the whole
+    # simulation (SBML Level 3 Version 2 Core, Sec. 4.9.4 "RateRule"), so
+    # the parameter's *value* is a derived quantity, and an event assignment
+    # to it sets that value (Sec. 4.12.5 "EventAssignment") and the rule
+    # continues from it.
+    resolve_rate_rule_state_pattern: Callable[[str], Optional[str]] = (
+        lambda _identifier: None
+    )
     # True only when the model has no reactions, rules, or initial assignments;
     # event-local mutable symbols then remain at their initial values unless
     # an event fires.
@@ -2869,9 +2878,22 @@ def _assignment_action(
     and ``setConcentration`` assigns that state (BNG2 writes the species'
     ``Concentrations`` entry, which is the amount), so the conversion belongs
     to the lowering rather than to the action.
+
+    A parameter that carries a rate rule is a *derived* quantity: the rule
+    determines its rate of change for the whole simulation (Sec. 4.9.4
+    "RateRule"), and an event assignment sets the parameter's *value*
+    (Sec. 4.12.5 "EventAssignment"), from which the rule then continues.  The
+    generated model keeps that value in a state species whose amount is the
+    parameter's value, so the assignment has to reach that state and not the
+    parameter, whose value the rule owns.
     """
 
     if pattern is None:
+        state_pattern = context.resolve_rate_rule_state_pattern(variable)
+        if state_pattern is not None:
+            # The state species' amount is the parameter's value, so the
+            # assigned value needs no volume conversion.
+            return ("conc", state_pattern, value)
         return ("param", standardize_name(variable), value)
     volume = context.resolve_species_concentration_volume(variable, event, time)
     amount = value * volume if volume is not None else value
