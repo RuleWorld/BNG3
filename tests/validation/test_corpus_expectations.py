@@ -67,6 +67,17 @@ def _mode_for(stages: dict[str, str]) -> dict[str, Any]:
             "failed_observables": ["S1"],
             "error": "BNG3 CVODE/libRoadRunner observable mismatch: S1",
         }
+    elif stages["independent_comparison"] == "not_comparable":
+        mode["simulation_comparison"] = {
+            "passed": False,
+            "skipped": False,
+            "failed_observables": [],
+            "not_comparable": {"S1": "the source observable is undefined at t=0"},
+            "error": (
+                "the source observable is undefined at t=0: BNG3 and "
+                "libRoadRunner report the same undefined value"
+            ),
+        }
     return mode
 
 
@@ -159,6 +170,13 @@ def test_an_unsupported_expectation_names_the_construct_and_the_side():
     # Every record the gate refused names the construct it waits for.
     for model_id, entry in manifest["cases"].items():
         if entry["conversion"] in {"unsupported", "unsupported_format"}:
+            assert "conversion" in gaps.get(model_id, {}), model_id
+            assert gaps[model_id]["conversion"]["construct"], model_id
+    # A record the gate could not measure names the construct that made the
+    # measurement impossible, so a reader is never left with an unnamed
+    # boundary.
+    for model_id, entry in manifest["cases"].items():
+        if entry["conversion"] == "not_comparable":
             assert "conversion" in gaps.get(model_id, {}), model_id
             assert gaps[model_id]["conversion"]["construct"], model_id
     # A failure is a result, not a construct gap.

@@ -59,7 +59,9 @@ SCHEMA_VERSION = 1
 # SBML construct that causes them.  The classification is a statement about the
 # *source model*, so it does not change when the Atomizer changes: a record is
 # listed here because the construct it uses is the reason the record does not
-# convert, not because of a particular code path.
+# convert, not because of a particular code path.  A record that no longer
+# fails keeps its entry, so the diagnosis of the boundary it reached stays
+# readable.
 #
 # ``layer`` names the component that owns the outcome:
 #
@@ -136,8 +138,9 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
         "summary": (
             "The Atomizer refuses explicitly: a species rate rule in a "
             "compartment whose size an event changes has no exact BNGL "
-            "lowering.  The corpus harness does not recognise the refusal and "
-            "records the record as failed instead of unsupported."
+            "lowering.  The corpus harness now recognises the refusal and "
+            "records the record as unsupported, with the construct named, "
+            "instead of as a failure of the gate."
         ),
     },
     "BIOMD0000000339": {
@@ -145,8 +148,8 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
         "construct": "event-driven compartment size with a species rate rule",
         "summary": (
             "The Atomizer refuses explicitly for the same reason as "
-            "BIOMD0000000338; the corpus harness does not recognise the "
-            "refusal."
+            "BIOMD0000000338; the corpus harness now recognises the refusal "
+            "and records the record as unsupported."
         ),
     },
     "BIOMD0000000404": {
@@ -163,8 +166,11 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
         "construct": "stiff model rejected by the independent oracle's solver",
         "summary": (
             "libRoadRunner's CVODE fails to converge on the written SBML; "
-            "BNG3's own solver produces a trajectory.  The corpus comparison "
-            "needs both, so the record cannot be judged."
+            "BNG3's own solver produces a trajectory, and the two models "
+            "integrate alike at a tolerance libRoadRunner can reach.  The "
+            "corpus comparison needs a trajectory from both engines, so the "
+            "record is recorded as not comparable rather than as a "
+            "disagreement."
         ),
     },
     "BIOMD0000000601": {
@@ -178,11 +184,15 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
     },
     "BIOMD0000000674": {
         "layer": "atomizer",
-        "construct": "algebraic species emitted as a function",
+        "construct": "reversible TotalRate rule written as a mass-action law",
         "summary": (
-            "Species with an assignment rule are emitted as functions and "
-            "removed from the reaction state; the observable values of the "
-            "written SBML and of the generated model diverge."
+            "The C++ SBML writer recognised the TotalRate modifier only in "
+            "the forward direction of a reversible rule.  The reverse "
+            "reaction was written as an ordinary mass-action law: it carried "
+            "an extra factor of the species the forward rule produced and it "
+            "lost the bng:totalRate annotation, so the written SBML did not "
+            "reproduce the model it came from.  The writer now recognises the "
+            "modifier in both directions."
         ),
     },
     "BIOMD0000000731": {
@@ -190,8 +200,9 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
         "construct": "observable that is undefined at t=0",
         "summary": (
             "The observable is ln of a quantity that is zero at t=0, so both "
-            "BNG3 and libRoadRunner return -inf.  The corpus comparison "
-            "requires finite values in both engines."
+            "BNG3 and libRoadRunner return -inf.  A pointwise comparison "
+            "cannot measure the record, so the corpus gate records it as not "
+            "comparable instead of as a failure."
         ),
     },
     "BIOMD0000000803": {
@@ -199,8 +210,9 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
         "construct": "observable that is undefined at t=0",
         "summary": (
             "The observable is a ratio of two species that both start at "
-            "zero, so both BNG3 and libRoadRunner return NaN.  The corpus "
-            "comparison requires finite values in both engines."
+            "zero, so both BNG3 and libRoadRunner return NaN.  A pointwise "
+            "comparison cannot measure the record, so the corpus gate records "
+            "it as not comparable instead of as a failure."
         ),
     },
     "BIOMD0000000973": {
@@ -208,8 +220,9 @@ FAILURE_TAXONOMY: dict[str, dict[str, Any]] = {
         "construct": "observable that is undefined at t=0",
         "summary": (
             "The observable divides by a species that starts at zero, so both "
-            "BNG3 and libRoadRunner return NaN.  The corpus comparison "
-            "requires finite values in both engines."
+            "BNG3 and libRoadRunner return NaN.  A pointwise comparison "
+            "cannot measure the record, so the corpus gate records it as not "
+            "comparable instead of as a failure."
         ),
     },
 }
@@ -368,16 +381,23 @@ CORPUS_EXPECTATION_STAGES: tuple[str, ...] = (
 )
 
 # The closed expectation vocabulary of the curated corpus.  It is the official
-# SBML Test Suite manifest's vocabulary plus the two buckets the corpus gate
+# SBML Test Suite manifest's vocabulary plus the three buckets the corpus gate
 # has of its own:
 #
 #   unsupported_format  the record is not an SBML artifact at all
 #   timeout             the run produced no verdict for the record
+#   not_comparable      the gate could not measure the record: the record's
+#                       own observable has no value to compare, or the
+#                       independent oracle could not integrate the model
 #
 # A timeout is *not* a verdict.  The corpus gate's per-model budget is sized
 # for an unloaded machine, so a timeout records that the machine was busy, not
 # that the model is unsupported.  A difference that is only a timeout is
 # reported as such and is never counted as a regression.
+#
+# A *not_comparable* verdict is not a verdict about the model either: the
+# record says why the comparison could not be measured, and its gap entry
+# names the construct that makes the measurement impossible.
 CORPUS_EXPECTATION_STATUSES: tuple[str, ...] = (
     "passed",
     "unsupported",
@@ -385,6 +405,7 @@ CORPUS_EXPECTATION_STATUSES: tuple[str, ...] = (
     "not_tested",
     "unsupported_format",
     "timeout",
+    "not_comparable",
 )
 
 # The sides of a gap, shared with the official SBML Test Suite manifest.
@@ -393,7 +414,20 @@ CORPUS_EXPECTATION_STATUSES: tuple[str, ...] = (
 #                  measurement limitation, not a claim about the Atomizer
 #   atomizer       a construct is not representable today
 #   not-applicable the record does not present a convertible SBML document
-CORPUS_GAP_SIDES: tuple[str, ...] = ("harness", "atomizer", "not-applicable")
+#   source         the source model itself is degenerate -- an observable that
+#                  is undefined at the initial point -- and the Atomizer
+#                  reproduces that degeneracy exactly
+CORPUS_GAP_SIDES: tuple[str, ...] = (
+    "harness",
+    "atomizer",
+    "not-applicable",
+    "source",
+)
+
+# The constructs whose boundary is the *semantics* of the source model rather
+# than the presence of a convertible document.  They carry their own side, so
+# they are listed here instead of being derived from the construct's prefix.
+SOURCE_SEMANTIC_CONSTRUCTS: tuple[str, ...] = ("source:undefined-observable",)
 
 # The construct that keeps a record from converting.  The needles are matched
 # against the harness's own reason text and the signatures are the official
@@ -405,6 +439,14 @@ CORPUS_CONSTRUCTS: tuple[tuple[str, str], ...] = (
     ("not an sbml biomodels artifact", "format:not-an-sbml-artifact"),
     ("contains no usable sbml", "format:no-usable-sbml"),
     ("not libsbml-valid", "source:libsbml-invalid"),
+    (
+        "could not integrate the written sbml",
+        "harness:oracle-solver-failure",
+    ),
+    (
+        "the source observable is undefined at",
+        "source:undefined-observable",
+    ),
     (
         "event-controlled parameter initial assignment",
         "assignment:event-controlled-initial-value",
@@ -455,9 +497,14 @@ def corpus_gap_side(construct: str) -> str:
     evaluate the record, so the record is not a claim about the Atomizer.  An
     *Atomizer-side* gap is a representational one: a construct is not
     representable today.  A record that does not present a convertible SBML
-    document is neither: there is nothing for the SBML path to evaluate.
+    document is neither: there is nothing for the SBML path to evaluate.  A
+    record whose *own* observable is undefined sits on the source's side:
+    the model reproduces the source exactly, and there is no value to
+    compare.
     """
 
+    if construct in SOURCE_SEMANTIC_CONSTRUCTS:
+        return "source"
     if construct.startswith("harness:"):
         return "harness"
     if construct.startswith("format:") or construct.startswith("source:"):
@@ -525,6 +572,11 @@ def _independent_status(mode: dict[str, Any] | None) -> str:
         return "passed"
     if comparison.get("skipped"):
         return "not_tested"
+    if comparison.get("not_comparable"):
+        # The comparison ran, but it could not measure the record: the
+        # record's own observable has no value to compare, or the independent
+        # oracle could not integrate the written model.
+        return "not_comparable"
     if comparison:
         return "failed"
     return "not_tested"
@@ -536,8 +588,14 @@ def _record_reason(record: dict[str, Any]) -> str:
     reason = str(record.get("unsupported_reason") or "").strip()
     if reason:
         return reason
+    reason = str(record.get("not_comparable_reason") or "").strip()
+    if reason:
+        return reason
     for mode in record.get("modes") or []:
         candidate = str(mode.get("unsupported_reason") or "").strip()
+        if candidate:
+            return candidate
+        candidate = str(mode.get("not_comparable_reason") or "").strip()
         if candidate:
             return candidate
         error = str(mode.get("error") or "").strip()
@@ -556,7 +614,7 @@ def _record_causes(record: dict[str, Any], reason: str) -> list[str]:
         return recorded
     if str(record.get("status")) == "unsupported_format":
         return ["format"]
-    if str(record.get("status")) != "unsupported":
+    if str(record.get("status")) not in {"unsupported", "not_comparable"}:
         return []
     return sorted(
         set(_harness_causes("scripts.ci.validate_published_biomodels", reason))
@@ -608,7 +666,11 @@ def corpus_expectation_gaps(report: dict[str, Any]) -> dict[str, dict[str, Any]]
         identity = str(record.get("id") or "")
         if not identity:
             continue
-        if str(record.get("status")) not in {"unsupported", "unsupported_format"}:
+        if str(record.get("status")) not in {
+            "unsupported",
+            "unsupported_format",
+            "not_comparable",
+        }:
             continue
         reason = _record_reason(record)
         construct = corpus_construct(reason)
@@ -712,16 +774,20 @@ def corpus_expectations_from_report(
             "source_report.bng3_commit produced for that record at each stage "
             "of the curated BioModels gate. 'passed' is a result. 'failed' is "
             "a result too: the stage ran and disagreed with the independent "
-            "comparison, which is a finding to investigate. 'unsupported' and "
-            "'unsupported_format' are the only gaps: the record was refused, "
-            "and its 'gap' entry names the construct that is not representable "
-            "today together with the harness's cause labels and the side of "
-            "the gap. A 'timeout' is not a verdict: the corpus gate's "
-            "per-model budget is sized for an unloaded machine, so a timeout "
-            "records that the machine was busy and never counts as a "
-            "regression. No entry claims that a currently unsupported "
-            "construct should become supported, and an 'unsupported' entry is "
-            "never counted as support."
+            "comparison, which is a finding to investigate. 'unsupported', "
+            "'unsupported_format' and 'not_comparable' are the only gaps: the "
+            "record was refused, or the gate could not measure it, and its "
+            "'gap' entry names the construct that is not representable today "
+            "together with the harness's cause labels and the side of the "
+            "gap. A 'not_comparable' record is one whose own observable has "
+            "no value to compare, or whose independent oracle could not "
+            "integrate the model: it is neither a pass nor a disagreement. A "
+            "'timeout' is not a verdict: the corpus gate's per-model budget "
+            "is sized for an unloaded machine, so a timeout records that the "
+            "machine was busy and never counts as a regression. No entry "
+            "claims that a currently unsupported construct should become "
+            "supported, and an 'unsupported' entry is never counted as "
+            "support."
         ),
         "stages": list(CORPUS_EXPECTATION_STAGES),
         "statuses": list(CORPUS_EXPECTATION_STATUSES),

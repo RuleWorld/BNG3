@@ -69,9 +69,39 @@ bool isInternalFunction(const std::string& name) {
            name.rfind("__rate_rule_neg__", 0) == 0;
 }
 
+// The origin rule name of a network reaction is the name of the reaction
+// rule it came from.  The reverse direction of a reversible rule carries the
+// prefix ``_reverse__`` (or ``__reverse__``), and a rule that the parser
+// named with a leading underscore carries the underscore itself.
+struct OriginRule {
+    std::string ruleName;
+    bool reverse = false;
+};
+
+OriginRule normalizeOriginRuleName(const std::string& origin) {
+    OriginRule result;
+    std::string ruleName = origin;
+    if (ruleName.rfind("_reverse__", 0) == 0) {
+        ruleName.erase(0, std::string("_reverse__").size());
+        result.reverse = true;
+    } else if (ruleName.rfind("__reverse__", 0) == 0) {
+        ruleName.erase(0, std::string("__reverse__").size());
+        result.reverse = true;
+    } else if (!ruleName.empty() && ruleName.front() == '_') {
+        ruleName.erase(ruleName.begin());
+    }
+    result.ruleName = std::move(ruleName);
+    return result;
+}
+
 bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
+    // The ``TotalRate`` modifier belongs to the reaction rule, so both
+    // directions of a reversible rule carry it.  The reverse direction of a
+    // network reaction carries the rule name behind the ``_reverse__``
+    // prefix, and looking the origin name up verbatim would miss it.
+    const auto ruleName = normalizeOriginRuleName(origin).ruleName;
     for (const auto& rule : model.getReactionRules()) {
-        if (rule.getRuleName() != origin) continue;
+        if (rule.getRuleName() != ruleName) continue;
         for (const auto& modifier : rule.getModifiers()) {
             std::string lowerModifier = modifier;
             std::transform(lowerModifier.begin(), lowerModifier.end(), lowerModifier.begin(),
@@ -85,21 +115,12 @@ bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
 
 const ast::Expression* rateExpressionForOrigin(
     const ast::Model& model, const std::string& origin) {
-    bool reverse = false;
-    std::string ruleName = origin;
-    if (ruleName.rfind("_reverse__", 0) == 0) {
-        ruleName.erase(0, std::string("_reverse__").size());
-        reverse = true;
-    } else if (ruleName.rfind("__reverse__", 0) == 0) {
-        ruleName.erase(0, std::string("__reverse__").size());
-        reverse = true;
-    } else if (!ruleName.empty() && ruleName.front() == '_') {
-        ruleName.erase(ruleName.begin());
-    }
+    const auto normalized = normalizeOriginRuleName(origin);
+    const auto& ruleName = normalized.ruleName;
 
     for (const auto& rule : model.getReactionRules()) {
         if (rule.getRuleName() != ruleName || rule.getRates().empty()) continue;
-        const auto index = reverse && rule.getRates().size() > 1 ? 1U : 0U;
+        const auto index = normalized.reverse && rule.getRates().size() > 1 ? 1U : 0U;
         return &rule.getRates()[index];
     }
     return nullptr;
