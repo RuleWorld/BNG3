@@ -442,8 +442,9 @@ def _is_type_like(
     """Return True when the expression denotes a type for PEP 604 purposes.
 
     A module attribute is only treated as a type when its name looks like one:
-    an attribute of a single capital letter is a flag or a constant
-    (``re.S | re.M``), not a class.
+    an attribute whose name is a single capital letter, or a name in capitals
+    with underscores, is a flag or a constant (``re.S | re.M``,
+    ``os.O_WRONLY | os.O_CREAT``), not a class.
     """
     if isinstance(node, ast.Constant):
         return node.value is None
@@ -453,6 +454,9 @@ def _is_type_like(
         root = _dotted_path(node.value)
         root_name = root.split(".")[0] if root else None
         if node.attr[:1].isupper():
+            if node.attr.isupper():
+                # A name in capitals is a constant, not a class.
+                return False
             if len(node.attr) > 1 or (root_name or "") in typing_modules:
                 return True
         return _is_type_like(node.value, type_names, typing_modules)

@@ -607,6 +607,95 @@ python scripts/ci/sbml_campaign_tables.py \
 A drifted region is reported as a unified diff and the command exits
 non-zero.
 
+## Reading the campaign's state in one command
+
+The tables above are assembled by a generator, and the numbers they carry
+come from reports that are produced by different tools. `scripts/ci/sbml_campaign_status.py`
+reads the reports themselves and answers, in one place: what the Atomizer
+supports now, what changed since the previous measurement, and whether the
+committed expectation manifest still describes reality.
+
+```bash
+python scripts/ci/sbml_campaign_status.py \
+  --suite-report /tmp/bng3-campaign/report.json \
+  --previous-suite-report /tmp/bng3-campaign/previous.json \
+  --biomodels-report /tmp/bng3-campaign/biomodels.json \
+  --corpus-inventory provenance/curated-biomodels-corpus-inventory.json \
+  --suite-dir /path/to/sbml-test-suite \
+  --checkout-root .
+```
+
+It reports the per-stage counts of the SBML suite and of the curated corpus
+with the report's SHA-256, the commit the run executed and the native
+extension's digest; the remaining official-reference failures grouped by the
+campaign's official-feature clusters; the unsupported cases split by the side
+of the gap — a *harness-side* gap is a measurement limitation, an
+*Atomizer-side* gap is a representational one, and the two are different kinds
+of work; the per-case diff against the previous report, classified as a
+regression, an improvement or a change, with the regressions first; and
+whether the expectation manifest is current.
+
+The command is a reporter. It never changes a verdict, a tolerance, a
+reference file, or the harness's own behaviour.
+
+Its exit status is a bit mask, so that every condition is separately visible:
+
+| Bit | Condition |
+| --- | --- |
+| 1 | a regression is present (a stage that was `passed` and no longer is) |
+| 2 | the expectation manifest is stale against this report |
+| 4 | the report's provenance does not match the checkout it is read against |
+| 8 | the report does not account for every case it ran |
+
+The provenance bit is the important one. The harness inserts the *repository
+root* into `sys.path`, not `python/`, so a run without
+`PYTHONPATH=python:build/cpp` silently measures the installed copy of
+`bionetgen` in `site-packages`. The status command does not depend on a
+guard for that: it reports the package path, the native extension's path and
+digest, and the commit the run executed, and it refuses to present a report
+it cannot tie to the checkout as a clean result.
+
+```bash
+python scripts/ci/sbml_campaign_status.py \
+  --suite-report /tmp/bng3-campaign/report.json --json /tmp/bng3-campaign/status.json
+```
+
+## The harness's own contract suite
+
+The harness's invariants were asserted in four or five scattered files.
+`tests/test_harness_contracts.py` is the single entry point for them:
+
+```bash
+PYTHONPATH=python:build/cpp python -m pytest -q tests/test_harness_contracts.py
+```
+
+Where an invariant is already asserted elsewhere, that suite *calls* the
+assertion instead of repeating it, so there is one place to keep in step.
+Beside each call it shows that a deliberately broken copy of the thing the
+invariant guards is detected, because an invariant that cannot fail is not an
+invariant. The invariants are:
+
+1. every case is accounted for — the stage counts sum to the cases that ran,
+   no case is silently dropped, and a new outcome bucket has to be added to
+   the vocabulary deliberately;
+2. provenance is present and checkable — a report names the package, the
+   native build, the suite revision and the tool versions, and a package that
+   is not traceable to the checkout cannot be presented as this checkout's
+   measurement;
+3. the comparison tool reports verdicts, not provenance or order;
+4. the gate's isolation is real — a case cannot observe another case's state,
+   and the case order is not significant;
+5. the expectation manifest's ratchet behaves — a regression fails, an
+   improvement needs an explicit manifest update, a foreign suite revision is
+   rejected, and every gap names a construct and records its side;
+6. the verification slot fails open and never deadlocks, and the `--jobs`
+   guard caps the worker count;
+7. the artifacts are reproducible under a pinned `PYTHONHASHSEED`, and an
+   artifact that is not comparable is detected rather than reported as a
+   difference;
+8. the Python-floor check reaches the same verdict on every interpreter from
+   the declared floor upwards, including a construct the host cannot parse.
+
 ## Invariants for this campaign
 
 * A conversion success is not a conformance claim. Official conformance is
