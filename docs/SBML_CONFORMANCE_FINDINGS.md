@@ -629,6 +629,45 @@ test.
 
 ---
 
+## 9. The remaining official-suite event gap is not a scheduling gap - KNOWN
+
+* **Cases:** `semantic/00965`, `00966`, `01000`, `01169`, `01466`, `01590`
+  (`events:untranslated`), `semantic/00988`, `01466`, `01575`, `01576`
+  (`events:state-trigger-not-schedulable`), and `stochastic/00033`.
+* **Mechanism:** the native `bng3_events` runtime now executes *several*
+  events: it registers one root function per trigger, orders the events that
+  are executed simultaneously by their priority (SBML L3V2 Core Sec. 4.12.3),
+  does not execute a non-persistent event whose trigger has become false
+  again (Sec. 4.12.2), and re-tests every trigger after an execution
+  (Sec. 4.12.8).  The cases above still do not reach that runtime, and each
+  of them is blocked by a construct the runtime does not have:
+  * `00965`, `00966`, `01466` and `01590` assign **parameters** (`Q`, `R`,
+    `reset`, ...), and the native runtime writes observable state.  Their two
+    competing events also share one trigger *and* one priority, so the
+    specification requires a random execution order: the official reference
+    is one draw of that random process and the case is not comparable
+    point-wise.  The harness already reports that shape with the
+    `harness:random-event-execution` reason.
+  * `00988` assigns the parameter `k2`, which is a reaction rate constant,
+    and its model also carries a `fast` reaction.
+  * `01000` mixes five time-triggered events with three state-triggered ones,
+    assigns parameters, and watches a rate-ruled compartment.
+  * `01169` gives its events a *dynamic* priority (`Q`, an assignment-rule
+    parameter), so the order of the simultaneous events is not static.
+  * `01575` and `01576` carry an algebraic rule the Atomizer does not apply,
+    so the trigger cannot be evaluated on the generated model at all.
+  * `stochastic/00033` needs a state-triggered event in a **stochastic** run:
+    the native runtime finds the trigger's rising edge with the continuous
+    ODE solver, and a stochastic run needs jump scheduling instead.
+* **Consequence:** the event construct remains the largest Atomizer-side
+  cluster of the campaign.  The runtime work that a multi-event model needs
+  is in place; what is missing is a parameter as an event target, the random
+  ordering of a same-priority group, a dynamic priority, and the stochastic
+  jump scheduler.  Each of those is a separate piece of work, and none of
+  them may be approximated: a model whose execution order is a random draw
+  stays *not comparable*, and a model the runtime cannot execute stays an
+  explicit refusal that names the construct.
+
 ## Measurements that are *not* findings
 
 * `semantic/01592` timed out in one hosted run.  Re-run uncontended it

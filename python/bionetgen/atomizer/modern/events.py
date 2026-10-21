@@ -688,6 +688,28 @@ class NativeStateTarget:
     compartment: str
 
 
+@dataclass(frozen=True)
+class NativeEventEntry:
+    """One SBML event lowered to the native event runtime."""
+
+    identifier: str
+    trigger: str
+    initial_value: bool
+    persistent: bool
+    use_values_from_trigger_time: bool
+    delay: float
+    priority: Optional[float]
+    assignments: Tuple[Tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class NativeEventLowering:
+    """The native event lowering of a model: a block, or the reason there is none."""
+
+    block: Optional[str]
+    reason: Optional[str] = None
+
+
 @dataclass
 class EventTranslationResult:
     actions_block: Optional[str]
@@ -3276,40 +3298,37 @@ def _native_value_expression(
     return "".join(rendered)
 
 
-def synthesize_native_event_block(
-    events: Sequence[SBMLEvent], context: EventTranslationContext
-) -> Optional[str]:
-    """Lower one SBML event into the native ``bng3_events`` block.
+# The reasons the native runtime cannot execute a group of events that may be
+# executed simultaneously.  SBML L3V2 Core Sec. 4.12.3 requires two events
+# whose priority values are equal to be executed in a random order, and an
+# event without a priority has an undefined order with respect to the other
+# events of the same execution point.  Neither order is reproducible, so the
+# model is refused rather than executed with an arbitrary order.
+#
+# Two events with different triggers can still be triggered at the same
+# instant, and nothing in the model proves that they cannot, so every event
+# of a model with more than one event needs a static priority of its own.
+_NATIVE_SIMULTANEOUS_ORDER_REFUSAL = (
+    "simultaneous same-priority event group requires a random execution order"
+)
+_NATIVE_UNORDERED_EVENT_REFUSAL = (
+    "simultaneous event without a priority has an undefined execution order"
+)
 
-    The native runtime detects the trigger's rising edge with continuous root
-    finding, so it executes a state-dependent trigger that no finite list of
-    scheduled actions can express.  The supported subclass is deliberately
-    narrow: one event, no delay, no priority, a persistent trigger, a single
-    strict continuous inequality, and assignments to observable state.
-    """
 
-    if len(events) != 1:
-        return None
-    event = events[0]
-    if context.unapplied_algebraic_rule:
-        # The source model has an algebraic rule the Atomizer did not apply,
-        # so the generated model does not reproduce the source dynamics and
-        # the trigger cannot be evaluated on it.
-        return None
-    if str(context.method or "ode").lower() not in {"ode", "cvode"}:
-        # The native runtime finds a trigger crossing with the continuous ODE
-        # solver; a stochastic run needs jump scheduling instead.
-        return None
-    priority = 0.0
+def _lower_native_event(
+    event: SBMLEvent, context: EventTranslationContext
+) -> Optional[NativeEventEntry]:
+    """Lower one SBML event to the native event runtime, or return ``None``."""
+
+    priority: Optional[float] = None
     if event.priority:
-        # The priority orders the assignments of events that are executed
-        # simultaneously.  With one event there is nothing to order, so the
-        # value is carried but does not change the execution.
+        # The priority orders the assignments of the events that are executed
+        # simultaneously.  It has to be a static value, because the order of
+        # two simultaneous events is decided before either of them runs.
         priority = _native_fold_term_text(event.priority, context)
         if priority is None or not math.isfinite(priority):
             return None
-    if event.trigger_persistent is False:
-        return None
     delay = 0.0
     if event.delay:
         delay = _native_fold_term_text(event.delay, context)
@@ -3332,26 +3351,110 @@ def synthesize_native_event_block(
         assignments.append((target.observable, value))
     if not assignments:
         return None
-    lines = [
-        "begin bng3_events version 1",
-        f'  event "{event.id or "event"}"',
-        f"    trigger: {trigger}",
-        "    initial_value: "
-        + ("true" if event.trigger_initial_value is not False else "false"),
-        "    persistent: "
-        + ("true" if event.trigger_persistent is not False else "false"),
-        "    use_values_from_trigger_time: "
-        + ("true" if event.use_values_from_trigger_time is not False else "false"),
-    ]
-    if delay:
-        lines.append(f"    delay: {_format_number(delay)}")
-    if event.priority:
-        lines.append(f"    priority: {_format_number(priority)}")
-    for observable, value in assignments:
-        lines.append(f"    assignment: {observable} = {value}")
-    lines.append("  end event")
+    return NativeEventEntry(
+        identifier=event.id or "event",
+        trigger=trigger,
+        initial_value=event.trigger_initial_value is not False,
+        persistent=event.trigger_persistent is not False,
+        use_values_from_trigger_time=event.use_values_from_trigger_time is not False,
+        delay=delay,
+        priority=priority,
+        assignments=tuple(assignments),
+    )
+
+
+def _native_simultaneous_order_refusal(
+    entries: Sequence[NativeEventEntry],
+) -> Optional[str]:
+    """Return why the events of a model cannot be ordered, or ``None``.
+
+    A model with one event needs no order: nothing else is executed at the
+    same instant.  A model with several events does: two events that are
+    triggered at the same instant are executed simultaneously, and the
+    specification only defines that order through the events' priorities.
+    """
+
+    if len(entries) < 2:
+        return None
+    priorities = [entry.priority for entry in entries]
+    if any(priority is None for priority in priorities):
+        # An event without a priority has an undefined order with respect to
+        # the other events of the same execution point.
+        return _NATIVE_UNORDERED_EVENT_REFUSAL
+    if len(set(priorities)) != len(priorities):
+        # Equal priority values are executed in a random order.
+        return _NATIVE_SIMULTANEOUS_ORDER_REFUSAL
+    return None
+
+
+def lower_native_events(
+    events: Sequence[SBMLEvent], context: EventTranslationContext
+) -> NativeEventLowering:
+    """Lower the SBML events into the native ``bng3_events`` block.
+
+    The native runtime detects the trigger's rising edge with continuous root
+    finding, so it executes a state-dependent trigger that no finite list of
+    scheduled actions can express.  Several events may share the block: the
+    runtime orders the events that are executed simultaneously by their
+    priority, and re-tests every trigger after each execution.
+    """
+
+    if not events:
+        return NativeEventLowering(None)
+    if context.unapplied_algebraic_rule:
+        # The source model has an algebraic rule the Atomizer did not apply,
+        # so the generated model does not reproduce the source dynamics and
+        # the trigger cannot be evaluated on it.
+        return NativeEventLowering(None)
+    if str(context.method or "ode").lower() not in {"ode", "cvode"}:
+        # The native runtime finds a trigger crossing with the continuous ODE
+        # solver; a stochastic run needs jump scheduling instead.
+        return NativeEventLowering(None)
+    entries: List[NativeEventEntry] = []
+    for event in events:
+        entry = _lower_native_event(event, context)
+        if entry is None:
+            return NativeEventLowering(None)
+        entries.append(entry)
+    refusal = _native_simultaneous_order_refusal(entries)
+    if refusal is not None:
+        return NativeEventLowering(None, refusal)
+    lines = ["begin bng3_events version 1"]
+    for entry in entries:
+        lines.append(f'  event "{entry.identifier}"')
+        lines.append(f"    trigger: {entry.trigger}")
+        lines.append(
+            "    initial_value: " + ("true" if entry.initial_value else "false")
+        )
+        lines.append("    persistent: " + ("true" if entry.persistent else "false"))
+        lines.append(
+            "    use_values_from_trigger_time: "
+            + ("true" if entry.use_values_from_trigger_time else "false")
+        )
+        if entry.delay:
+            lines.append(f"    delay: {_format_number(entry.delay)}")
+        if entry.priority is not None:
+            lines.append(f"    priority: {_format_number(entry.priority)}")
+        for observable, value in entry.assignments:
+            lines.append(f"    assignment: {observable} = {value}")
+        lines.append("  end event")
     lines.append("end bng3_events")
-    return "\n".join(lines)
+    return NativeEventLowering("\n".join(lines))
+
+
+def synthesize_native_event_block(
+    events: Sequence[SBMLEvent], context: EventTranslationContext
+) -> Optional[str]:
+    """Lower the SBML events into the native ``bng3_events`` block.
+
+    The native runtime detects the trigger's rising edge with continuous root
+    finding, so it executes a state-dependent trigger that no finite list of
+    scheduled actions can express.  The supported subclass is deliberately
+    narrow: a continuous trigger, a constant delay, a static priority, and
+    assignments to observable state.
+    """
+
+    return lower_native_events(events, context).block
 
 
 def synthesize_event_actions(

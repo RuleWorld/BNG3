@@ -34,6 +34,7 @@ from .events import (
     expand_static_parameter_event_system,
     parse_time_threshold,
     synthesize_event_actions,
+    lower_native_events,
     synthesize_native_event_block,
 )
 from .rate_rule_constants import (
@@ -10944,6 +10945,7 @@ def generate_bngl(
             event_context,
         )
         native_event_block = None
+        native_event_refusal = None
         if (
             not event_result.actions_block
             and not event_result.converted
@@ -10951,9 +10953,9 @@ def generate_bngl(
             and len(event_result.untranslated) == len(model.events)
             and model.events
         ):
-            native_event_block = synthesize_native_event_block(
-                model.events, event_context
-            )
+            native_lowering = lower_native_events(model.events, event_context)
+            native_event_block = native_lowering.block
+            native_event_refusal = native_lowering.reason
         _update_event_translation_warning(model, event_result, native_event_block)
 
     if native_event_block:
@@ -10982,6 +10984,11 @@ def generate_bngl(
             notes.append(
                 "# Events NOT simulated (state-dependent or non-constant); listed for reference:\n"
             )
+            if native_event_refusal:
+                # The native runtime could have executed the events, but it
+                # refuses a group whose execution order the specification
+                # leaves to a random draw.
+                notes.append(f"#   native event runtime: {native_event_refusal}\n")
             for event, reason in event_result.untranslated:
                 label = event.id or event.name or "event"
                 notes.append(f"#   event {label}: {reason}\n")
