@@ -390,7 +390,9 @@ def render(
                     entry.get("title", ""),
                     entry.get("status", ""),
                     entry.get("closed") or entry.get("last_exercised") or "—",
-                    entry.get("closed_by", "") or entry.get("reducible", ""),
+                    entry.get("resolved_note", "")
+                    or entry.get("closed_by", "")
+                    or entry.get("reducible", ""),
                 ]
             )
         lines.extend(
@@ -400,7 +402,7 @@ def render(
                     "What it is",
                     "Status",
                     "Date",
-                    "Why / what closed it",
+                    "What happened",
                 ],
                 rows,
             )
