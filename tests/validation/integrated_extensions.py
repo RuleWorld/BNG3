@@ -13,6 +13,9 @@ from . import (
     integrated_boundaries,
     bngir_adversarial,
     api_surface,
+    integrated_nfsim_fixtures as nfsim_fixtures,
+    integrated_nfnext_boundary as nfnext_boundary,
+    integrated_engine_routes as engine_routes,
     capability_inventory,
     real_model_fixtures,
     corpus_selection,
@@ -69,6 +72,9 @@ OPERATIONS = (
     "real-model-fixtures",
     "corpus-selection",
     "biomodels-hold",
+    "nfsim-fixtures",
+    "nfnext-boundary",
+    "engine-routes",
 )
 
 # The focused-campaign flag that reproduces one qualification on its own.
@@ -97,6 +103,9 @@ FOCUS_FLAGS = {
     "real_model_fixtures": "--real-model-fixtures-only",
     "corpus_selection": "--corpus-selection-only",
     "biomodels_hold": "--biomodels-hold-only",
+    "nfsim_fixtures": "--nfsim-fixtures-only",
+    "nfnext_boundary": "--nfnext-boundary-only",
+    "engine_routes": "--engine-routes-only",
 }
 
 
@@ -131,6 +140,12 @@ def check_ids(operation, case=None, *, full=False):
         return corpus_selection.check_ids()
     if operation == "biomodels-hold":
         return biomodels_hold.check_ids()
+    if operation == "nfsim-fixtures":
+        return nfsim_fixtures.check_ids()
+    if operation == "nfnext-boundary":
+        return nfnext_boundary.check_ids()
+    if operation == "engine-routes":
+        return engine_routes.check_ids()
     if operation == "energy-qualification":
         return energy_qualification.check_ids()
     if operation == "workload-profile":
@@ -172,6 +187,12 @@ def check_ids(operation, case=None, *, full=False):
         return corpus_selection.run_worker(Path.cwd())
     if operation == "biomodels-hold":
         return biomodels_hold.run_worker(Path.cwd())
+    if operation == "nfsim-fixtures":
+        return nfsim_fixtures.run_worker(Path.cwd())
+    if operation == "nfnext-boundary":
+        return nfnext_boundary.run_worker(Path.cwd())
+    if operation == "engine-routes":
+        return engine_routes.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":
@@ -229,6 +250,9 @@ def expected_ids(
     include_real_model_fixtures=True,
     include_corpus_selection=True,
     include_biomodels_hold=True,
+    include_nfsim_fixtures=True,
+    include_nfnext_boundary=True,
+    include_engine_routes=True,
     include_stochastic_parity=True,
     include_graph_identity_contract=True,
     full=False,
@@ -302,6 +326,12 @@ def expected_ids(
         ids.extend(["campaign:corpus-selection", *check_ids("corpus-selection")])
     if include_biomodels_hold:
         ids.extend(["campaign:biomodels-hold", *check_ids("biomodels-hold")])
+    if include_nfsim_fixtures:
+        ids.extend(["campaign:nfsim-fixtures", *check_ids("nfsim-fixtures")])
+    if include_nfnext_boundary:
+        ids.extend(["campaign:nfnext-boundary", *check_ids("nfnext-boundary")])
+    if include_engine_routes:
+        ids.extend(["campaign:engine-routes", *check_ids("engine-routes")])
     if include_stochastic_parity:
         ids.extend(["campaign:stochastic-parity", *check_ids("stochastic-parity")])
     if include_graph_identity_contract:
@@ -356,6 +386,12 @@ def run_worker(operation, args):
         return corpus_selection.run_worker(Path.cwd())
     if operation == "biomodels-hold":
         return biomodels_hold.run_worker(Path.cwd())
+    if operation == "nfsim-fixtures":
+        return nfsim_fixtures.run_worker(Path.cwd())
+    if operation == "nfnext-boundary":
+        return nfnext_boundary.run_worker(Path.cwd())
+    if operation == "engine-routes":
+        return engine_routes.run_worker(Path.cwd())
     if operation == "stochastic-parity":
         return stochastic_parity.run_worker(Path.cwd())
     if operation == "graph-identity-contract":

@@ -3029,12 +3029,159 @@
           "criterion": "Extend fixtures for scopes, dynamic rates, observables, symmetry, deletion, filters, compartments and lifecycle; assert the selected route.",
           "scope": "Extend fixtures for scopes, dynamic rates, observables, symmetry, deletion, filters, compartments and lifecycle; assert the selected route.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only.",
+            "The named fixture families are covered by the generated fixtures; the routes and the error control are recorded with every row."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:146:extend-fixtures-for-scopes-dynamic-rates-observables-symmetry-de",
+              "id": "nfsim-fixture-scope:nf-fixtures:route",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The direct NFsim route is selected for the scoped local function fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-dynamic-rate:nf-fixtures:route",
+              "evidence_kind": "supported-execution",
+              "expectation": "The direct NFsim route is selected for the observable-driven dynamic rate fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-observables:nf-fixtures:route",
+              "evidence_kind": "supported-execution",
+              "expectation": "The direct NFsim route is selected for the observable identity fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-symmetry:nf-fixtures:route",
+              "evidence_kind": "supported-execution",
+              "expectation": "The direct NFsim route is selected for the symmetric dimerization fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-deletion:nf-fixtures:route",
+              "evidence_kind": "supported-execution",
+              "expectation": "The direct NFsim route is selected for the deletion scope fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-filters:nf-fixtures:route",
+              "evidence_kind": "supported-execution",
+              "expectation": "The direct NFsim route is selected for the include/exclude filter fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-compartments:nf-fixtures:route",
+              "evidence_kind": "supported-execution",
+              "expectation": "The direct NFsim route is selected for the compartment fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-lifecycle:nf-fixtures:route",
+              "evidence_kind": "supported-execution",
+              "expectation": "The direct NFsim route is selected for the molecule lifecycle fixture and the fixture invariants hold.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-scope:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the scoped local function fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-dynamic-rate:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the dynamic rate fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-observables:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the observable identity fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-symmetry:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the symmetric dimerization fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-deletion:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the deletion scope fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-filters:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the filter fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-compartments:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the compartment fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-lifecycle:nf-fixtures:direct-xml-equality",
+              "evidence_kind": "supported-execution",
+              "expectation": "The XML route reproduces the direct route bit for bit under every recorded seed of the molecule lifecycle fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-scope:nf-fixtures:source-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The scoped local function ensemble reproduces the independent pure-death count law of the model.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-symmetry:nf-fixtures:source-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The symmetric dimerization ensemble reproduces the independent finite pure-death count law of the model in BNG2's count-rate convention.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-deletion:nf-fixtures:source-law",
+              "evidence_kind": "supported-execution",
+              "expectation": "The deletion scope ensemble reproduces the independent pure-death count law of the model.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -3044,40 +3191,89 @@
             "tests/cpp/test_nfsim_ast_adapter.cpp",
             "tests/cpp/test_nfsim_reactant_tree.cpp",
             "tests/cpp/test_symbol_table.cpp",
+            "tests/validation/integrated_nfsim_fixtures.py",
+            "tests/validation/test_nfsim_fixtures.py",
             "tests/validation/test_parity_nfsim.py",
             "tests/validation/test_parity_nfsim_deletion.py",
             "tests/validation/test_parity_nfsim_seed.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:146:extend-fixtures-for-scopes-dynamic-rates-observables-symmetry-de.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          "unmapped_scope": []
         },
         {
           "id": "issue:146:compare-direct-xml-and-independently-built-native-nfsim-using-fi",
           "criterion": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
           "scope": "Compare direct, XML and independently built native NFsim using fixed seeds and distributional checks on pinned revisions.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The comparison is distributional: the two engines are not the same implementation, so equal seeds establish pathwise parity only where the construction and the draw ordering are comparable. A model the pinned oracle cannot be handed in the executed count-rate convention is reported as an explicit untested route: the multi-compartment fixture is such a model, because the pinned oracle does not read the compartment from this export and would match reactants across compartments."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:146:compare-direct-xml-and-independently-built-native-nfsim-using-fi",
+              "id": "nfsim-fixture-scope:nf-fixtures:native-distributional",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The independently built native NFsim and the executed route agree distributionally on the scoped local function fixture under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-dynamic-rate:nf-fixtures:native-distributional",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independently built native NFsim and the executed route agree distributionally on the dynamic rate fixture under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-observables:nf-fixtures:native-distributional",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independently built native NFsim and the executed route agree distributionally on the observable identity fixture under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-symmetry:nf-fixtures:native-distributional",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independently built native NFsim and the executed route agree distributionally on the symmetric dimerization fixture under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-deletion:nf-fixtures:native-distributional",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independently built native NFsim and the executed route agree distributionally on the deletion scope fixture under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-filters:nf-fixtures:native-distributional",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independently built native NFsim and the executed route agree distributionally on the filter fixture under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfsim-fixture-lifecycle:nf-fixtures:native-distributional",
+              "evidence_kind": "supported-execution",
+              "expectation": "The independently built native NFsim and the executed route agree distributionally on the molecule lifecycle fixture under the recorded fixed seeds and error control.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/integrated_nfsim_fixtures.py",
+            "tests/validation/test_nfsim_fixtures.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:146:compare-direct-xml-and-independently-built-native-nfsim-using-fi.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          "unmapped_scope": []
         },
         {
           "id": "issue:146:closure-record",
@@ -3697,50 +3893,119 @@
           "criterion": "Carry and initialize the supported seeds, observables, parameter/function graph, protocol and output contract, beyond topology/rules.",
           "scope": "Carry and initialize the supported seeds, observables, parameter/function graph, protocol and output contract, beyond topology/rules.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The supported NFnext execution subset is narrow: unary site-state rules with an elementary expression rate, isolated integer seed populations and unary Molecules observables. The unsupported remainder stays explicitly refused."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:148:carry-and-initialize-the-supported-seeds-observables-parameter-f",
+              "id": "nfnext-unary-site-state-n100-k0.500000:nfnext-boundary:carried-state",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The production lowering carries and initializes the supported seeds, the observables, the parameter graph, the protocol and the output contract of the unary site-state fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-unary-site-state-n40-k0.250000:nfnext-boundary:carried-state",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production lowering carries and initializes the supported seeds, the observables, the parameter graph, the protocol and the output contract of the unary site-state fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-unary-site-state-n200-k1.000000:nfnext-boundary:carried-state",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production lowering carries and initializes the supported seeds, the observables, the parameter graph, the protocol and the output contract of the unary site-state fixture.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-boundary:unsupported-refusals",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every part of the model graph the NFnext execution boundary does not support is refused with a named reason.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
           "test_references": [
-            "tests/architecture_contracts/nfnext"
+            "tests/architecture_contracts/nfnext",
+            "tests/architecture_contracts/nfnext/test_execution_boundary.cpp",
+            "tests/validation/integrated_nfnext_boundary.py",
+            "tests/validation/test_nfnext_boundary.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:148:carry-and-initialize-the-supported-seeds-observables-parameter-f.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          "unmapped_scope": []
         },
         {
           "id": "issue:148:compare-production-lowered-execution-with-reference-fixtures-and",
           "criterion": "Compare production-lowered execution with reference fixtures and independent NFsim before promoting it as a replacement.",
           "scope": "Compare production-lowered execution with reference fixtures and independent NFsim before promoting it as a replacement.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "NFnext is not promoted: the comparison is the promotion precondition, not a replacement claim. The native comparison is distributional because the two engines are not the same implementation."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:148:compare-production-lowered-execution-with-reference-fixtures-and",
+              "id": "nfnext-unary-site-state-n100-k0.500000:nfnext-boundary:reference-fixture",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The production-lowered NFnext execution reproduces the independent pure-death count law of the model and is separated from the law a wrong rate would produce.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-unary-site-state-n40-k0.250000:nfnext-boundary:reference-fixture",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production-lowered NFnext execution reproduces the independent pure-death count law of the model and is separated from the law a wrong rate would produce.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-unary-site-state-n200-k1.000000:nfnext-boundary:reference-fixture",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production-lowered NFnext execution reproduces the independent pure-death count law of the model and is separated from the law a wrong rate would produce.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-unary-site-state-n100-k0.500000:nfnext-boundary:native-independent",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production-lowered NFnext execution and the independently built native NFsim agree distributionally under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-unary-site-state-n40-k0.250000:nfnext-boundary:native-independent",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production-lowered NFnext execution and the independently built native NFsim agree distributionally under the recorded fixed seeds and error control.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfnext-unary-site-state-n200-k1.000000:nfnext-boundary:native-independent",
+              "evidence_kind": "supported-execution",
+              "expectation": "The production-lowered NFnext execution and the independently built native NFsim agree distributionally under the recorded fixed seeds and error control.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/architecture_contracts/nfnext/test_execution_boundary.cpp",
+            "tests/validation/integrated_nfnext_boundary.py",
+            "tests/validation/test_nfnext_boundary.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:148:compare-production-lowered-execution-with-reference-fixtures-and.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          "unmapped_scope": []
         },
         {
           "id": "issue:148:closure-record",
@@ -3780,9 +4045,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:149:document-which-engine-owns-each-supported-workload-and-whether-n",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "nfcore2-route:disposition",
+              "evidence_kind": "supported-execution",
+              "expectation": "The recorded disposition of the NFcore2 route matches the product state: a contained prototype that is not promoted.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -3791,12 +4056,13 @@
           "test_references": [
             "tests/architecture_contracts/nfcore2",
             "tests/architecture_contracts/nfnext",
-            "tests/cpp/test_nfcore2_parity.cpp"
+            "tests/cpp/test_nfcore2_parity.cpp",
+            "tests/validation/integrated_engine_routes.py",
+            "tests/validation/test_engine_routes.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:149:document-which-engine-owns-each-supported-workload-and-whether-n.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
@@ -3805,24 +4071,43 @@
           "criterion": "Implement and qualify any promoted route, or contain/deprecate overlap without losing supported behavior.",
           "scope": "Implement and qualify any promoted route, or contain/deprecate overlap without losing supported behavior.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "The NFcore2 route is not promoted: it stays a bounded prototype, so the overlap is contained rather than promoted. A route that becomes reachable without this qualification fails instead of being re-labelled."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:149:implement-and-qualify-any-promoted-route-or-contain-deprecate-ov",
+              "id": "nfcore2-route:containment",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "The NFcore2 route is not selectable from the public execution surface and the supported production route still executes.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfcore2-route:prototype-parity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The contained NFcore2 prototype still passes its own parity qualification against NFcore.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "nfcore2-route:disposition",
+              "evidence_kind": "supported-execution",
+              "expectation": "The recorded disposition of the NFcore2 route matches the product state: a contained prototype that is not promoted.",
               "identity_requirements": [
                 "source.revision"
               ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/cpp/test_nfcore2_parity.cpp",
+            "tests/validation/integrated_engine_routes.py",
+            "tests/validation/test_engine_routes.py"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:149:implement-and-qualify-any-promoted-route-or-contain-deprecate-ov.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          "unmapped_scope": []
         },
         {
           "id": "issue:149:closure-record",
@@ -3859,12 +4144,30 @@
           "criterion": "Distinguish population-map storage and hybrid BNGL generation from actual execution refinement.",
           "scope": "Distinguish population-map storage and hybrid BNGL generation from actual execution refinement.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "Population-map storage and hybrid BNGL generation are generation semantics; the population/particle execution refinement is not implemented and stays explicitly refused."
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:150:distinguish-population-map-storage-and-hybrid-bngl-generation-fr",
+              "id": "population-map:storage-not-execution",
               "evidence_kind": "supported-execution",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "A model that stores a population map is refused by the NFsim route, so a stored population map is never reported as an executed one.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "population-map:hybrid-generation",
+              "evidence_kind": "supported-execution",
+              "expectation": "The hybrid model generator produces the hybrid BNGL model and no simulation artefact.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "population-map:execution-refinement-refusal",
+              "evidence_kind": "supported-execution",
+              "expectation": "A requested execution of the hybrid model is refused with a named diagnostic, and the actions that do not need the population semantics run against the generated hybrid model.",
               "identity_requirements": [
                 "source.revision"
               ]
@@ -3872,14 +4175,13 @@
           ],
           "test_references": [
             "tests/cpp/test_hybrid_model_generator.cpp",
-            "tests/cpp/test_symbol_table.cpp"
+            "tests/cpp/test_symbol_table.cpp",
+            "tests/validation/integrated_engine_routes.py",
+            "tests/validation/test_engine_routes.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:150:distinguish-population-map-storage-and-hybrid-bngl-generation-fr.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ]
+          "unmapped_scope": []
         },
         {
           "id": "issue:150:qualify-approved-conversion-rates-conservation-observables-and-c",

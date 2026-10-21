@@ -38,6 +38,9 @@ QUALIFICATIONS = {
     "real_model_fixtures": "include_real_model_fixtures",
     "corpus_selection": "include_corpus_selection",
     "biomodels_hold": "include_biomodels_hold",
+    "nfsim_fixtures": "include_nfsim_fixtures",
+    "nfnext_boundary": "include_nfnext_boundary",
+    "engine_routes": "include_engine_routes",
 }
 
 

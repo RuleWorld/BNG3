@@ -561,13 +561,15 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     std::cerr << "Wrote hybrid model to file " << modelfile << ".\n";
 
     // === Step 13: Optionally execute actions ===
-    // In Perl, this calls $hybrid_model->$action for each action.
-    // In C++, we flag that execution was requested; the caller in ActionDispatch
-    // handles the actual execution.
+    // In Perl, this calls $hybrid_model->$action for each action.  The
+    // generated model records the requested actions in its own action block;
+    // the caller (ActionDispatch.cpp) reads the generated model back and runs
+    // them against it, so this step must not claim an execution it does not
+    // perform.
     if (opts.execute) {
-        std::cerr << indent << "Executing actions on hybrid model...\n";
-        // Execution is handled by the caller (ActionDispatch.cpp) since it requires
-        // parsing the hybrid BNGL and running the simulation pipeline.
+        std::cerr << indent
+                  << "Requested actions are recorded in the generated hybrid "
+                     "model; the caller executes them against it.\n";
     }
 
     return result;

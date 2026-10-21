@@ -136,6 +136,9 @@ def expected_contract_ids(
     include_real_model_fixtures=True,
     include_corpus_selection=True,
     include_biomodels_hold=True,
+    include_nfsim_fixtures=True,
+    include_nfnext_boundary=True,
+    include_engine_routes=True,
     full=False,
 ):
     return [
@@ -202,6 +205,9 @@ def expected_contract_ids(
         include_real_model_fixtures=include_real_model_fixtures,
         include_corpus_selection=include_corpus_selection,
         include_biomodels_hold=include_biomodels_hold,
+        include_nfsim_fixtures=include_nfsim_fixtures,
+        include_nfnext_boundary=include_nfnext_boundary,
+        include_engine_routes=include_engine_routes,
         full=full,
     )
 
@@ -994,6 +1000,9 @@ FOCUS_FLAGS = {
     "real_model_fixtures": "real_model_fixtures_only",
     "corpus_selection": "corpus_selection_only",
     "biomodels_hold": "biomodels_hold_only",
+    "nfsim_fixtures": "nfsim_fixtures_only",
+    "nfnext_boundary": "nfnext_boundary_only",
+    "engine_routes": "engine_routes_only",
 }
 
 
@@ -1063,6 +1072,9 @@ def main(argv=None):
     parser.add_argument("--real-model-fixtures-only", action="store_true")
     parser.add_argument("--corpus-selection-only", action="store_true")
     parser.add_argument("--biomodels-hold-only", action="store_true")
+    parser.add_argument("--nfsim-fixtures-only", action="store_true")
+    parser.add_argument("--nfnext-boundary-only", action="store_true")
+    parser.add_argument("--engine-routes-only", action="store_true")
     parser.add_argument("--nfnext-slices-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
@@ -1207,6 +1219,12 @@ def main(argv=None):
             )
         if qualification_selection["include_corpus_selection"]:
             integrated_extensions.invoke("corpus-selection", args, rows, env, run_stage)
+        if qualification_selection["include_nfsim_fixtures"]:
+            integrated_extensions.invoke("nfsim-fixtures", args, rows, env, run_stage)
+        if qualification_selection["include_nfnext_boundary"]:
+            integrated_extensions.invoke("nfnext-boundary", args, rows, env, run_stage)
+        if qualification_selection["include_engine_routes"]:
+            integrated_extensions.invoke("engine-routes", args, rows, env, run_stage)
         if qualification_selection["include_biomodels_hold"]:
             integrated_extensions.invoke("biomodels-hold", args, rows, env, run_stage)
         if qualification_selection["include_graph_differential"]:
@@ -1278,6 +1296,9 @@ def main(argv=None):
         "real-model-fixtures": ["--real-model-fixtures-only"],
         "corpus-selection": ["--corpus-selection-only"],
         "biomodels-hold": ["--biomodels-hold-only"],
+        "nfsim-fixtures": ["--nfsim-fixtures-only"],
+        "nfnext-boundary": ["--nfnext-boundary-only"],
+        "engine-routes": ["--engine-routes-only"],
         "boundaries": ["--boundaries-only"],
         "bngir-adversarial": ["--bngir-adversarial-only"],
         "graph-identity": ["--graph-identity-only"],
@@ -1383,6 +1404,9 @@ def main(argv=None):
                 "real-model-fixtures": "tests/validation/real_model_fixtures.py",
                 "corpus-selection": "tests/validation/corpus_selection.py",
                 "biomodels-hold": "tests/validation/biomodels_hold.py",
+                "nfsim-fixtures": "tests/validation/integrated_nfsim_fixtures.py",
+                "nfnext-boundary": "tests/validation/integrated_nfnext_boundary.py",
+                "engine-routes": "tests/validation/integrated_engine_routes.py",
                 "netrule-execution": [
                     "tests/validation/netrule_execution.py",
                     "cpp/engine/NetworkRulePlan.cpp",
@@ -1466,6 +1490,12 @@ def main(argv=None):
                 issues = [181]
             elif stage == "biomodels-hold":
                 issues = [162]
+            elif stage == "nfsim-fixtures":
+                issues = [146]
+            elif stage == "nfnext-boundary":
+                issues = [149]
+            elif stage == "engine-routes":
+                issues = [148]
             elif stage == "jax-backend-measurement":
                 issues = [174]
             elif stage in integrated_consumers.ISSUES:

@@ -1,6 +1,7 @@
 """Detector controls for the linked monorepo integration campaign."""
 
 import json
+import re
 import sys
 from itertools import combinations
 from pathlib import Path
@@ -189,6 +190,17 @@ def test_missing_oracle_emits_actionable_failure_packet(tmp_path):
     assert "--report-dir" in tasks[0]["reproduce_command"]
     assert Path(tasks[0]["reproduce_cwd"]).is_absolute()
     assert (output / "artifacts.json").is_file()
+
+
+def test_every_focused_qualification_flag_is_a_declared_option():
+    # The campaign reads one focused flag per qualification.  A flag that is
+    # read but not declared aborts the whole campaign before any check runs.
+    source = Path(integrated.__file__).read_text(encoding="utf-8")
+    declared = set(re.findall(r'"--([a-z-]+-only)"', source))
+    read = set(re.findall(r"args\.([a-z_]+_only)", source))
+    assert read
+    for name in read:
+        assert name.replace("_", "-") in declared, name
 
 
 def test_unknown_case_is_rejected_instead_of_running_an_empty_green_matrix(tmp_path):

@@ -532,6 +532,9 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     from .real_model_fixtures import check_ids as real_model_fixtures_check_ids
     from .corpus_selection import check_ids as corpus_selection_check_ids
     from .biomodels_hold import check_ids as biomodels_hold_check_ids
+    from .integrated_nfsim_fixtures import check_ids as nfsim_fixture_check_ids
+    from .integrated_nfnext_boundary import check_ids as nfnext_boundary_check_ids
+    from .integrated_engine_routes import check_ids as engine_route_check_ids
     from .sbml_conformance import check_ids as conformance_check_ids
     from .graph_identity_contract import CASES as GRAPH_CONTRACT_CASES
     from .graph_identity_contract import CHECKS as GRAPH_CONTRACT_CHECKS
@@ -939,6 +942,59 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     families.append(
         dict(
+            id="nfsim-fixtures",
+            case_ids=[],
+            check_ids=nfsim_fixture_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(nfsim_fixture_check_ids()),
+                stage_timeout_seconds=900,
+            ),
+            limits=(
+                "The declared fixture families only: the scopes, dynamic rates, "
+                "observables, symmetry and deletion cases compared across the "
+                "direct route, the XML route and the independent NFsim result "
+                "with a fixed seed and a stated error control."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="nfnext-boundary",
+            case_ids=[],
+            check_ids=nfnext_boundary_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(nfnext_boundary_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The NFcore2 route only: whether the route is promoted, "
+                "qualified or deprecated is stated, and the overlap is "
+                "contained without changing the supported semantics."
+            ),
+        )
+    )
+    families.append(
+        dict(
+            id="engine-routes",
+            case_ids=[],
+            check_ids=engine_route_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(engine_route_check_ids()),
+                stage_timeout_seconds=600,
+            ),
+            limits=(
+                "The declared route families only: the seeds, observables, "
+                "parameter and function graphs are carried and initialized, and "
+                "the production-lowered execution is compared with the "
+                "reference fixtures."
+            ),
+        )
+    )
+    families.append(
+        dict(
             id="nfnext-slices",
             case_ids=[],
             check_ids=nfnext_slice_check_ids(),
@@ -1124,16 +1180,43 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
                                                                                                                     "id"
                                                                                                                 ]
                                                                                                                 == "biomodels-retention"
-                                                                                                                else [
-                                                                                                                    argument
-                                                                                                                    for case_id in family[
-                                                                                                                        "case_ids"
+                                                                                                                else (
+                                                                                                                    [
+                                                                                                                        "--nfsim-fixtures-only"
                                                                                                                     ]
-                                                                                                                    for argument in (
-                                                                                                                        "--case",
-                                                                                                                        case_id,
+                                                                                                                    if family[
+                                                                                                                        "id"
+                                                                                                                    ]
+                                                                                                                    == "nfsim-fixtures"
+                                                                                                                    else (
+                                                                                                                        [
+                                                                                                                            "--nfnext-boundary-only"
+                                                                                                                        ]
+                                                                                                                        if family[
+                                                                                                                            "id"
+                                                                                                                        ]
+                                                                                                                        == "nfnext-boundary"
+                                                                                                                        else (
+                                                                                                                            [
+                                                                                                                                "--engine-routes-only"
+                                                                                                                            ]
+                                                                                                                            if family[
+                                                                                                                                "id"
+                                                                                                                            ]
+                                                                                                                            == "engine-routes"
+                                                                                                                            else [
+                                                                                                                                argument
+                                                                                                                                for case_id in family[
+                                                                                                                                    "case_ids"
+                                                                                                                                ]
+                                                                                                                                for argument in (
+                                                                                                                                    "--case",
+                                                                                                                                    case_id,
+                                                                                                                                )
+                                                                                                                            ]
+                                                                                                                        )
                                                                                                                     )
-                                                                                                                ]
+                                                                                                                )
                                                                                                             )
                                                                                                         )
                                                                                                     )
