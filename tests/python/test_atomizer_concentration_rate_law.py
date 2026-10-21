@@ -392,3 +392,106 @@ def test_mixed_amount_and_concentration_law_matches_libroadrunner():
             amounts[index],
             expected,
         )
+
+
+def _concentration_law_with_a_scheduled_action() -> str:
+    """A concentration-valued rate law *and* a concentration-valued action.
+
+    The reaction's law ``Lambda * X`` is a concentration law, and the event
+    assigns the species' *concentration* (``X = 50``).  Both state the
+    compartment's volume once: the rate law divides the extent rate by the
+    volume, and the assignment multiplies the concentration by it to reach the
+    species' amount.
+    """
+
+    return """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="compose" substanceUnits="item" timeUnits="second" volumeUnits="litre">
+        <listOfCompartments>
+          <compartment id="Cell" spatialDimensions="3" size="2" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="X" compartment="Cell" initialAmount="100"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false"
+                   constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="Lambda" value="0.1" constant="true"/>
+          <parameter id="Mu" value="0.11" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="Birth" reversible="false">
+            <listOfReactants>
+              <speciesReference species="X" stoichiometry="1" constant="false"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="X" stoichiometry="2" constant="false"/>
+            </listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>Lambda</ci><ci>X</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+          <reaction id="Death" reversible="false">
+            <listOfReactants>
+              <speciesReference species="X" stoichiometry="1" constant="false"/>
+            </listOfReactants>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>Mu</ci><ci>X</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+        <listOfEvents>
+          <event id="Set" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply>
+                  <gt/>
+                  <csymbol encoding="text"
+                    definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol>
+                  <cn>1</cn>
+                </apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="X">
+                <math xmlns="www.w3.org/1998/Math/MathML"><cn>50</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+
+
+def test_concentration_law_and_concentration_action_each_use_the_volume_once():
+    """The rate law and the action must not double-count the volume.
+
+    The rate law is a concentration law, so the extent rate divides the
+    species' amount by the compartment's volume.  The event assigns the
+    species' concentration, and the species' amount is that concentration times
+    the volume.  Each of the two states the volume exactly once.
+    """
+
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=3.0, n_steps=30).atomize(
+        _concentration_law_with_a_scheduled_action()
+    )
+
+    assert result.success, result.error
+    birth = _rate_law(result.bngl, "Birth:")
+    death = _rate_law(result.bngl, "Death:")
+    # The rate law carries the volume once, as a divisor.
+    assert "(0.1) * (__compartment_Cell__)**-1" in birth, birth
+    assert "(0.11) * (__compartment_Cell__)**-1" in death, death
+
+    # The action reaches the species' amount: the assigned concentration 50 in
+    # a size-2 compartment is the amount 100.
+    assignments = [
+        line.strip()
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("setConcentration(")
+    ]
+    assert len(assignments) == 1, result.bngl
+    assert '"100"' in assignments[0], assignments[0]
