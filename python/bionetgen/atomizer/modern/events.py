@@ -47,6 +47,16 @@ def _no_event_volume_assignment_targets(
     return ()
 
 
+def _no_compartment_state_pattern(_compartment_id: str) -> Optional[str]:
+    return None
+
+
+def _no_species_concentration_volume(
+    _species_id: str, _event: SBMLEvent, _time: float
+) -> Optional[float]:
+    return None
+
+
 def _no_event_reaction_rate(_identifier: str, _event: SBMLEvent) -> Optional[float]:
     return None
 
@@ -505,6 +515,19 @@ class EventTranslationContext:
     resolve_event_volume_assignment_targets: Callable[
         [str, SBMLEvent], Sequence[str]
     ] = _no_event_volume_assignment_targets
+    # A compartment whose size is driven by a rate rule carries that size in
+    # a BNGL state species. Return the pattern of that state so an event
+    # assignment to the compartment updates the size it governs.
+    resolve_compartment_state_pattern: Callable[[str], Optional[str]] = (
+        _no_compartment_state_pattern
+    )
+    # Return the compartment volume in effect immediately before the event
+    # fires. An SBML assignment to a species whose symbol denotes a
+    # concentration sets the species' amount, so the assigned concentration
+    # has to be scaled by that volume.
+    resolve_species_concentration_volume: Callable[
+        [str, SBMLEvent, float], Optional[float]
+    ] = _no_species_concentration_volume
     # Return (initial, quadratic, linear, constant) for a proven scalar ODE
     # dx/dt = quadratic*x^2 + linear*x + constant.
     resolve_quadratic_rate_for_event: Callable[
@@ -2764,7 +2787,10 @@ def _render_set(kind: str, target: str, value: float) -> str:
     if kind == "volume":
         return f'setVolume({{target=>"{target}", value=>{_format_number(value)}}})'
     command = {
+        # BNGL's ``setConcentration`` assigns a species' substance amount,
+        # which is how a rate-ruled compartment's size state is updated.
         "conc": "setConcentration",
+        "amount": "setConcentration",
         "param": "setParameter",
     }.get(kind)
     if command is None:
@@ -7602,9 +7628,27 @@ def synthesize_event_actions(
                     break
             pattern = context.resolve_species_pattern(variable)
             if pattern:
-                sets.append(("conc", pattern, value))
+                # An SBML assignment to a species whose symbol denotes a
+                # concentration (hasOnlySubstanceUnits="false") sets the
+                # species' amount to the assigned concentration scaled by the
+                # compartment volume in effect before the event's own
+                # assignments (SBML Test Suite 01779).  BNGL keeps the
+                # amount as the species' state, so the scale factor has to be
+                # applied here.
+                volume = context.resolve_species_concentration_volume(
+                    variable, event, execution_time
+                )
+                sets.append(
+                    ("conc", pattern, value * volume if volume is not None else value)
+                )
             elif context.is_compartment(variable):
-                sets.append(("volume", standardize_name(variable), value))
+                state_pattern = context.resolve_compartment_state_pattern(variable)
+                if state_pattern:
+                    # The compartment's size is carried by a rate-rule state
+                    # species, so the event assigns that state.
+                    sets.append(("amount", state_pattern, value))
+                else:
+                    sets.append(("volume", standardize_name(variable), value))
             elif context.is_param(variable):
                 sets.append(("param", standardize_name(variable), value))
                 sets.extend(
