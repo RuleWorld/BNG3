@@ -8,7 +8,7 @@
       "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.12 defines an Event as a two-phase operation: a Trigger (Sec. 4.12.2) decides when the event may fire, and the execution phase applies the EventAssignments (Sec. 4.12.5). Sec. 4.12.7 says the order in which events occur is resolved, that this order can be significant for a simulation's outcome, and that an event may carry a special priority through a Priority subobject (Sec. 4.12.3).",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.12, Sec. 4.12.2, Sec. 4.12.3, Sec. 4.12.7",
       "bng3_does": "The Atomizer lowers an event whose trigger is a constant time threshold to a scheduled BNGL action and refuses the rest: it reports \"N SBML event(s) parsed; M fixed-time event(s) lowered to scheduled actions, while K state-dependent or non-constant event(s) remain untranslated\", and the case is not claimed to be supported. The refusal names the specific condition, for example \"state-triggered SBML events require stochastic jump scheduling\", \"the model's algebraic rule is not applied, so the event's trigger cannot be evaluated\", \"volume change can cause the state trigger to re-enter within the simulation horizon\" or \"trigger time ... does not reduce to a constant\".",
-      "reducible": "Partly reduced, and the work is continuing. A state trigger the native event runtime can evaluate is now lowered (PR #328, 2026-10-21) and several simultaneous events execute in the order the specification defines (PR #371, 2026-10-21). What remains needs a trigger value the engine does not poll, a trigger whose value depends on a construct the Atomizer does not apply, or an event whose effect is not a scheduled action.",
+      "reducible": "Partly reduced, and the work is continuing. A state trigger the native event runtime can evaluate is now lowered (PR #328, 2026-10-21) and several simultaneous events execute in the order the specification defines (PR #371, 2026-10-21), and a simultaneous group whose priority is read from the model state is now ordered by the priority it has at the execution instant, which SBML L3V2 Core Sec. 4.12.3 requires (PR #376, 2026-10-21). What remains needs a trigger value the engine does not poll, a trigger whose value depends on a construct the Atomizer does not apply, or an event whose effect is not a scheduled action.",
       "first_recorded": "2026-10-20",
       "status": "open"
     },
@@ -88,10 +88,13 @@
       "title": "The official reference names a quantity BNG3 cannot observe",
       "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.11.8 says the id of a Reaction may be used in a MathML formula and then represents that reaction's rate. The official SBML Test Suite's results file for such a case reports that rate as the quantity to compare.",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.11.8",
-      "bng3_does": "Nothing is refused: the model converts. The harness cannot map the reference's quantity onto a BNG3 observable and reports \"no exact BNG3 result mapping for: <reaction id>\".",
-      "reducible": "Yes, on the measurement side. BNGL has no observable for a reaction's rate, so the reference's quantity has to be mapped onto something BNG3 produces, or the reference has to name something it does. It is a measurement limit, not a limitation of the Atomizer.",
+      "bng3_does": "The Atomizer states each reaction's rate as a zero-argument function in the generated model, and the harness maps a reference variable naming a reaction onto that function, so the quantity is compared. A rate that cannot be stated in the model's own symbols states no rate, and the refusal is preserved rather than approximated.",
+      "reducible": "Closed: the Atomizer states a reaction's rate as a zero-argument function (PR #378, 2026-10-21), and the harness maps the reference's reaction id onto it, so these cases are compared rather than skipped. The boundary that remains is a rate that cannot be stated in the model's own symbols, which is still refused.",
       "first_recorded": "2026-10-20",
-      "status": "open"
+      "status": "closed",
+      "closed": "2026-10-21",
+      "closed_by": "PR #378, validated 2026-10-21, first measured as closed on 2026-10-21",
+      "resolved_note": "Closed by PR #378, validated 2026-10-21: the Atomizer states each reaction's rate as a zero-argument function and the harness maps a reference variable naming a reaction onto it, so the twenty-two cases are compared against the official reference instead of being skipped. First measured as closed on 2026-10-21."
     },
     "harness:random-event-execution": {
       "title": "The official reference is one draw of a random execution order",
@@ -106,10 +109,13 @@
       "title": "The official reference does not report a boundary species",
       "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.6.6 lets a species carry the boundaryCondition attribute, in which case the species is a boundary rather than an integrated quantity.",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.6.6",
-      "bng3_does": "Nothing is refused: the model converts and the boundary species is set. The harness cannot compare, because the reference reports the boundary species as identically zero while BNG3's value follows the model's boundary definition.",
-      "reducible": "Yes, on the measurement side: the comparison has to exclude a quantity the two engines define differently, or the reference has to report it. It is a measurement limit, not a limitation of the Atomizer.",
+      "bng3_does": "Nothing was refused: the model converted, but the direct SSA path decremented and incremented a boundary species like any other, so the species' value drifted away from the value the reference reports. The direct SSA path now skips a constant species in its state update — the propensity is untouched, so a boundary species still contributes its amount to the rate law it appears in — and the batched accelerator path does the same, so every engine agrees.",
+      "reducible": "Closed: the direct SSA path and the batched accelerator now honour a boundary species (PR #380, 2026-10-21), so the model's value matches the reference's and the cases are compared rather than skipped.",
       "first_recorded": "2026-10-21",
-      "status": "open"
+      "status": "closed",
+      "closed": "2026-10-21",
+      "closed_by": "PR #380, validated 2026-10-21, first measured as closed on 2026-10-21",
+      "resolved_note": "Closed by PR #380, validated 2026-10-21: the direct SSA path no longer decrements or increments a boundary species, so the model's value matches the official reference and the three cases are compared instead of skipped. The defect had been a symptom of the engine honouring a boundary species in three of its four engines. First measured as closed on 2026-10-21."
     },
     "reference:not-applicable": {
       "title": "The suite says the case has no official time-course reference",
@@ -202,6 +208,10 @@
     {
       "date": "2026-10-21",
       "change": "Reduced: a fast reaction is lowered to its pseudo steady state instead of being refused (PR #370), and several simultaneous events execute in the order the specification defines (PR #371). The official-reference failure count is zero."
+    },
+    {
+      "date": "2026-10-21",
+      "change": "Closed: a reference that names a reaction's rate is now compared, because the Atomizer states the rate as a zero-argument function and the harness maps the reference's quantity onto it (PR #378); and a boundary species is now honoured by the direct SSA path, so the reference's value for it is compared rather than skipped (PR #380). The event limit 'an event the Atomizer cannot lower, or cannot order' shrinks by one case: an event group whose priority is read from the model state is now ordered by the priority it has at the execution instant (PR #376)."
     }
   ]
 }

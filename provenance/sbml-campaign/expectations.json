@@ -3,41 +3,55 @@
   "kind": "sbml-test-suite-expectations",
   "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that case. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the reference, which is a finding to investigate. 'unsupported' is the only gap: the case's 'gap' entry names the construct that is not representable today together with the harness's cause labels for it. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
   "provenance": {
-    "measured_at_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
-    "measured_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
+    "base_commit": "2cb9f2c3bc013307414379a22e655e3e3a0b6b18",
+    "measured_at_commit": "2cb9f2c3bc013307414379a22e655e3e3a0b6b18",
+    "measured_commit": "2cb9f2c3bc013307414379a22e655e3e3a0b6b18",
+    "measurement_date": "2026-10-21",
     "measurement_environment": {
       "libsbml_version": "5.21.1",
-      "native_extension_sha256": "6f82e81131d2a33cb48049ffab080d5f04b0003cfffdc3d56ca758f0812ec5c1",
+      "native_extension_sha256": "f79a695f0a0922cf3729745f05602c990f7068c5cf62d3559e79e7d32b344ee2",
       "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
-      "python_package_source_sha256": "7250a2eabf01f67dd99c574ac93bbe55b6f4f30f951472339e8a7071ce096f9d",
+      "python_package_source_sha256": "750ec39eb1e2fa048bb33fe711a2275fc65743ab6a3c819f90efa238a2da3168",
       "python_version": "3.14.6",
       "roadrunner_version": "2.10.0",
-      "source_tree": "/private/tmp/bng3-campaign/wt-f2/python/bionetgen/__init__.py"
+      "source_tree": "/private/tmp/bng3-campaign/wt-main2/python/bionetgen/__init__.py"
+    },
+    "measurement_host": "darwin, CPython 3.14.6, libsbml 5.21.1, roadrunner 2.10.0",
+    "note": "The current measurement of the merged tree, and the measurement the committed expectation manifest was generated from. The run executed the tree at commit 2cb9f2c3 (the squash merge of the reaction-rate outputs) with the native extension built from it; the only commit merged after that measurement, the mass-action hash-seed determinism fix, changes no verdict, so the measurement still describes the tree. The curated-BioModels figures are not part of this record; the corpus has not been re-measured since the campaign's flat-mode run.",
+    "sbml_test_suite": {
+      "case_timeout_seconds": 300,
+      "categories": [
+        "semantic",
+        "stochastic"
+      ],
+      "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+      "revision": "cf38585fac5de8e0e90112febb62851ee2181816"
     }
   },
   "schema_version": 1,
   "source_report": {
-    "bng3_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
-    "measured_at_commit": "5d8e78b061337874d5a575a3987bde630bfe54d7",
+    "bng3_commit": "2cb9f2c3bc013307414379a22e655e3e3a0b6b18",
+    "measured_at_commit": "2cb9f2c3bc013307414379a22e655e3e3a0b6b18",
+    "measurement_date": "2026-10-21",
     "python_version": "3.14.6",
-    "sha256": "e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576"
+    "sha256": "a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4"
   },
   "stage_counts": {
     "conversion": {
-      "passed": 1797,
-      "unsupported": 126
+      "passed": 1798,
+      "unsupported": 125
     },
     "independent_comparison": {
-      "not_tested": 126,
-      "passed": 1797
+      "not_tested": 125,
+      "passed": 1798
     },
     "official_reference": {
-      "passed": 1758,
-      "unsupported": 165
+      "passed": 1784,
+      "unsupported": 139
     },
     "roundtrip_structure": {
-      "not_tested": 126,
-      "passed": 1797
+      "not_tested": 125,
+      "passed": 1798
     }
   },
   "stages": [
@@ -1236,7 +1250,7 @@
     "semantic/01166": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01167": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01168": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01169": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": [], "construct": "events:untranslated", "side": "atomizer"}}},
+    "semantic/01169": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01170": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01171": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01172": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1411,15 +1425,15 @@
     "semantic/01341": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01342": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01343": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01344": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01345": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01346": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01347": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01348": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01349": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01350": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01351": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01352": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
+    "semantic/01344": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01345": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01346": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01347": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01348": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01349": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01350": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01351": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01352": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01353": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01354": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01355": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1427,7 +1441,7 @@
     "semantic/01357": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01358": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01359": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01360": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
+    "semantic/01360": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01361": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01362": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01363": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1436,7 +1450,7 @@
     "semantic/01366": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01367": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01368": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01369": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
+    "semantic/01369": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01370": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01371": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01372": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1445,18 +1459,18 @@
     "semantic/01375": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01376": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01377": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01378": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
+    "semantic/01378": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01379": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01380": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01381": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01382": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01383": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01384": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01385": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01386": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01387": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01388": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
-    "semantic/01389": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "reference:no-result-mapping", "side": "harness"}}},
+    "semantic/01380": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01381": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01382": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01383": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01384": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01385": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01386": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01387": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01388": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "semantic/01389": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01390": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01391": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01392": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1896,7 +1910,7 @@
     "stochastic/00003": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00004": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00005": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "stochastic/00006": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "harness:reference-does-not-track-variable", "side": "harness"}}},
+    "stochastic/00006": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00007": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00008": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00009": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1914,9 +1928,9 @@
     "stochastic/00021": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00022": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00023": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "stochastic/00024": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "harness:reference-does-not-track-variable", "side": "harness"}}},
+    "stochastic/00024": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00025": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "stochastic/00026": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "harness:reference-does-not-track-variable", "side": "harness"}}},
+    "stochastic/00026": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00027": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00028": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": [], "construct": "other", "side": "atomizer"}}},
     "stochastic/00029": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},

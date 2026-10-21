@@ -11,13 +11,13 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 | Field | Value |
 | --- | --- |
 | Generated on | 2026-10-21 |
-| Tree described | `5d8e78b061337874d5a575a3987bde630bfe54d7` |
-| Measured at commit | `5d8e78b061337874d5a575a3987bde630bfe54d7` |
+| Tree described | `2cb9f2c3bc013307414379a22e655e3e3a0b6b18` |
+| Measured at commit | `2cb9f2c3bc013307414379a22e655e3e3a0b6b18` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
-| Report SHA-256 | `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576` |
+| Report SHA-256 | `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4` |
 | BNG3 version | 3.0.0a1 |
-| Native extension SHA-256 | `6f82e81131d2a33cb48049ffab080d5f04b0003cfffdc3d56ca758f0812ec5c1` |
-| Source tree of the measurement | `/private/tmp/bng3-campaign/wt-f2/python/bionetgen/__init__.py` |
+| Native extension SHA-256 | `f79a695f0a0922cf3729745f05602c990f7068c5cf62d3559e79e7d32b344ee2` |
+| Source tree of the measurement | `/private/tmp/bng3-campaign/wt-main2/python/bionetgen/__init__.py` |
 
 The measurement is a full run of the pinned official SBML Test Suite; its per-case verdicts are recorded in the expectation manifest, which the campaign regenerates whenever a merge changes a verdict.
 
@@ -45,7 +45,7 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 
 | Construct | Side | Cases | What it is | First recorded |
 | --- | --- | --- | --- | --- |
-| `events:untranslated` | atomizer | 68 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
+| `events:untranslated` | atomizer | 67 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
 | `package:fbc` | atomizer | 34 | The fbc package: a flux-balance model, not a time course | 2026-10-20 |
 | `sbml-writer:unrepresentable-function` | atomizer | 9 | A math function the engine cannot execute | 2026-10-20 |
 | `fast-reaction:no-fast-equilibrium-solve` | atomizer | 5 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
@@ -54,12 +54,10 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 | `compartment:unsupported-spatial-dimensions` | atomizer | 2 | A compartment with more than three spatial dimensions | 2026-10-20 |
 | `mathml:infinity` | atomizer | 2 | An infinite constant | 2026-10-20 |
 | `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
-| `reference:no-result-mapping` | harness | 22 | The official reference names a quantity BNG3 cannot observe | 2026-10-20 |
 | `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
-| `harness:reference-does-not-track-variable` | harness | 3 | The official reference does not report a boundary species | 2026-10-21 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 128 atomizer-side, 37 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 127 atomizer-side, 12 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -68,12 +66,12 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 ### An event the Atomizer cannot lower, or cannot order
 
 - **Construct**: `events:untranslated`
-- **Cases**: 68 — semantic/00761 semantic/00965 semantic/00966 semantic/01000 semantic/01169 semantic/01590 stochastic/00033 stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 … (44 more)
+- **Cases**: 67 — semantic/00761 semantic/00965 semantic/00966 semantic/01000 semantic/01590 stochastic/00033 stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 stochastic/00057 … (43 more)
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12 defines an Event as a two-phase operation: a Trigger (Sec. 4.12.2) decides when the event may fire, and the execution phase applies the EventAssignments (Sec. 4.12.5). Sec. 4.12.7 says the order in which events occur is resolved, that this order can be significant for a simulation's outcome, and that an event may carry a special priority through a Priority subobject (Sec. 4.12.3).
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12, Sec. 4.12.2, Sec. 4.12.3, Sec. 4.12.7
 - **What BNG3 does instead**: The Atomizer lowers an event whose trigger is a constant time threshold to a scheduled BNGL action and refuses the rest: it reports "N SBML event(s) parsed; M fixed-time event(s) lowered to scheduled actions, while K state-dependent or non-constant event(s) remain untranslated", and the case is not claimed to be supported. The refusal names the specific condition, for example "state-triggered SBML events require stochastic jump scheduling", "the model's algebraic rule is not applied, so the event's trigger cannot be evaluated", "volume change can cause the state trigger to re-enter within the simulation horizon" or "trigger time ... does not reduce to a constant".
-- **Reducible?**: Partly reduced, and the work is continuing. A state trigger the native event runtime can evaluate is now lowered (PR #328, 2026-10-21) and several simultaneous events execute in the order the specification defines (PR #371, 2026-10-21). What remains needs a trigger value the engine does not poll, a trigger whose value depends on a construct the Atomizer does not apply, or an event whose effect is not a scheduled action.
+- **Reducible?**: Partly reduced, and the work is continuing. A state trigger the native event runtime can evaluate is now lowered (PR #328, 2026-10-21) and several simultaneous events execute in the order the specification defines (PR #371, 2026-10-21), and a simultaneous group whose priority is read from the model state is now ordered by the priority it has at the execution instant, which SBML L3V2 Core Sec. 4.12.3 requires (PR #376, 2026-10-21). What remains needs a trigger value the engine does not poll, a trigger whose value depends on a construct the Atomizer does not apply, or an event whose effect is not a scheduled action.
 
 ### The fbc package: a flux-balance model, not a time course
 
@@ -159,16 +157,6 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 
 **These are measurement limits, not limitations of the Atomizer.** The model converts and nothing is refused; the comparison against the official reference simply could not be made. They are the reducible ones, and they are kept apart so that a reader does not mistake a measurement limit for something BNG3 cannot do.
 
-### The official reference names a quantity BNG3 cannot observe
-
-- **Construct**: `reference:no-result-mapping`
-- **Cases**: 22 — semantic/01344 semantic/01345 semantic/01346 semantic/01347 semantic/01348 semantic/01349 semantic/01350 semantic/01351 semantic/01352 semantic/01360 semantic/01369 semantic/01378 semantic/01380 semantic/01381 semantic/01382 semantic/01383 semantic/01384 semantic/01385 semantic/01386 semantic/01387 semantic/01388 semantic/01389
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.11.8 says the id of a Reaction may be used in a MathML formula and then represents that reaction's rate. The official SBML Test Suite's results file for such a case reports that rate as the quantity to compare.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 4.11.8
-- **What BNG3 does instead**: Nothing is refused: the model converts. The harness cannot map the reference's quantity onto a BNG3 observable and reports "no exact BNG3 result mapping for: <reaction id>".
-- **Reducible?**: Yes, on the measurement side. BNGL has no observable for a reaction's rate, so the reference's quantity has to be mapped onto something BNG3 produces, or the reference has to name something it does. It is a measurement limit, not a limitation of the Atomizer.
-
 ### The official reference is one draw of a random execution order
 
 - **Construct**: `harness:random-event-execution`
@@ -178,16 +166,6 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.3, Sec. 4.12.7
 - **What BNG3 does instead**: Nothing is refused: the model converts and the engine executes the events in the order the specification defines. The harness cannot compare point-wise, because the reference is one draw of a random order and no deterministic simulator reproduces it point-wise.
 - **Reducible?**: Yes, on the measurement side: the comparison has to be distributional rather than point-wise, or the reference has to pin the order. It is a measurement limit, not a limitation of the Atomizer.
-
-### The official reference does not report a boundary species
-
-- **Construct**: `harness:reference-does-not-track-variable`
-- **Cases**: 3 — stochastic/00006 stochastic/00024 stochastic/00026
-- **First recorded**: 2026-10-21
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.6.6 lets a species carry the boundaryCondition attribute, in which case the species is a boundary rather than an integrated quantity.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 4.6.6
-- **What BNG3 does instead**: Nothing is refused: the model converts and the boundary species is set. The harness cannot compare, because the reference reports the boundary species as identically zero while BNG3's value follows the model's boundary definition.
-- **Reducible?**: Yes, on the measurement side: the comparison has to exclude a quantity the two engines define differently, or the reference has to report it. It is a measurement limit, not a limitation of the Atomizer.
 
 ## Cases the official suite says do not apply
 
@@ -209,8 +187,10 @@ A limitation that is closed does not vanish from the record. This section names 
 
 | Construct | What it is | Status | Date | What happened |
 | --- | --- | --- | --- | --- |
+| `harness:reference-does-not-track-variable` | The official reference does not report a boundary species | closed | 2026-10-21 | Closed by PR #380, validated 2026-10-21: the direct SSA path no longer decrements or increments a boundary species, so the model's value matches the official reference and the three cases are compared instead of skipped. The defect had been a symptom of the engine honouring a boundary species in three of its four engines. First measured as closed on 2026-10-21. |
 | `harness:scheduled-actions-not-executed` | The reference runner could not execute a model with actions | closed | 2026-10-21 | Closed by PR #337, validated 2026-10-20: the harness now validates official references for action-bearing cases, so these cases are compared rather than skipped. First measured as closed on 2026-10-21. |
 | `harness:stochastic-ensemble-not-evaluated` | The official reference needed an ensemble the harness did not run | closed | 2026-10-21 | Closed by PR #337, validated 2026-10-20: the harness now evaluates the official stochastic references, so these cases are compared rather than skipped. First measured as closed on 2026-10-21. |
+| `reference:no-result-mapping` | The official reference names a quantity BNG3 cannot observe | closed | 2026-10-21 | Closed by PR #378, validated 2026-10-21: the Atomizer states each reaction's rate as a zero-argument function and the harness maps a reference variable naming a reaction onto it, so the twenty-two cases are compared against the official reference instead of being skipped. First measured as closed on 2026-10-21. |
 | `rules:algebraic-not-applied` | An algebraic rule is not applied | not-exercised | 2026-10-20 | The refusal still exists in the Atomizer; the official suite no longer reaches it, because the campaign resolved the suite's algebraic-rule cases by carrying the rule as an assignment (PR #355, 2026-10-20). The general implicit-DAE boundary is still open, so the construct is recorded as no longer exercised rather than closed. |
 | `stoichiometry:assigned-stoichiometry-unresolved` | An assigned stoichiometry that could not be resolved | not-exercised | 2026-10-20 | The refusal still exists in the Atomizer; the official suite no longer reaches it, because the campaign resolved the suite's cases by carrying the assigned value through the parameter's state (PR #366, 2026-10-21). A symbol that still cannot be resolved at initialization remains refused. |
 | `stoichiometry:unsupported` | A reaction with a stoichiometry BNGL cannot express | not-exercised | 2026-10-20 | The refusal still exists in the Atomizer; the official suite no longer reaches it. The boundary is only reducible by extending BNGL's reaction semantics: a negative or fractional stoichiometry has no BNGL counterpart, and substituting a rounded count would change the chemistry. |
@@ -225,6 +205,7 @@ The expectation manifest records one measurement, not a history, so this log is 
 - **2026-10-20** — The suite no longer exercises the algebraic-rule and assigned-stoichiometry refusals: the campaign resolved those cases (PRs #355 and #366). The refusals themselves still exist in the Atomizer.
 - **2026-10-21** — Opened: two harness-side classes were named, so the measurement limits 'random event execution' and 'reference does not track variable' are now visible as such instead of being counted as Atomizer limitations (PR #359).
 - **2026-10-21** — Reduced: a fast reaction is lowered to its pseudo steady state instead of being refused (PR #370), and several simultaneous events execute in the order the specification defines (PR #371). The official-reference failure count is zero.
+- **2026-10-21** — Closed: a reference that names a reaction's rate is now compared, because the Atomizer states the rate as a zero-argument function and the harness maps the reference's quantity onto it (PR #378); and a boundary species is now honoured by the direct SSA path, so the reference's value for it is compared rather than skipped (PR #380). The event limit 'an event the Atomizer cannot lower, or cannot order' shrinks by one case: an event group whose priority is read from the model state is now ordered by the priority it has at the execution instant (PR #376).
 
 ## How to regenerate
 

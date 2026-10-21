@@ -378,27 +378,26 @@ _Source: the independent campaign audit, recorded in
 
 | Stage | Passed | Unsupported | Failed | Not tested |
 | --- | --- | --- | --- | --- |
-| Conversion (SBML → BNGL) | 1797 | 126 | 0 | 0 |
-| Round-trip structure | 1797 | 0 | 0 | 126 |
-| Independent libRoadRunner comparison | 1797 | 0 | 0 | 126 |
-| Official reference comparison | 1758 | 165 | 0 | 0 |
-_Source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `5d8e78b061337874d5a575a3987bde630bfe54d7`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
+| Conversion (SBML → BNGL) | 1798 | 125 | 0 | 0 |
+| Round-trip structure | 1798 | 0 | 0 | 125 |
+| Independent libRoadRunner comparison | 1798 | 0 | 0 | 125 |
+| Official reference comparison | 1784 | 139 | 0 | 0 |
+_Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `2cb9f2c3bc013307414379a22e655e3e3a0b6b18`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
 
 #### Official-reference unsupported verdicts, by owner
 
 | Count | Owner | Blocking reason |
 | --- | --- | --- |
-| 71 | Atomizer | state-dependent / non-constant SBML events untranslated |
+| 70 | Atomizer | state-dependent / non-constant SBML events untranslated |
 | 34 | not applicable | case does not define an official time-course reference |
-| 22 | harness mapping | no exact BNG3 result mapping for: <reaction id> |
-| 18 | Atomizer | other Atomizer-side limitation |
+| 15 | Atomizer | other Atomizer-side limitation |
 | 9 | C++ writer | SBML math function "…" is not losslessly representable in the C++ SBML writer |
 | 6 | Atomizer diagnostic | Reaction "…" is marked fast (fast="true") |
 | 3 | Atomizer | <infinity>/<notanumber> constant encountered in math |
 | 2 | Atomizer | a compartment declares unsupported spatialDimensions |
 
-Total official-reference unsupported verdicts: 165.
-_Source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `5d8e78b061337874d5a575a3987bde630bfe54d7`._
+Total official-reference unsupported verdicts: 139.
+_Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `2cb9f2c3bc013307414379a22e655e3e3a0b6b18`._
 
 #### Remaining official-reference failures, by official feature
 
@@ -406,7 +405,7 @@ _Source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b
 | --- | --- | --- |
 
 Total official-reference failures: 0.
-_Source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `5d8e78b061337874d5a575a3987bde630bfe54d7`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
+_Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `2cb9f2c3bc013307414379a22e655e3e3a0b6b18`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
 
 #### Curated BioModels — current
 
@@ -421,27 +420,24 @@ _Source: `/tmp/bng3-campaign/biomodels-main-flat.json` (SHA-256 `0e0583d1f568892
 
 | Stage | Before | After | Cases |
 | --- | --- | --- | --- |
-| conversion | passed | unsupported | 5 |
+| conversion | passed | unsupported | 4 |
 | conversion | unsupported | passed | 90 |
 | independent_comparison | not_tested | passed | 90 |
-| independent_comparison | passed | not_tested | 5 |
+| independent_comparison | passed | not_tested | 4 |
 | official_reference | failed | passed | 105 |
 | official_reference | failed | unsupported | 2 |
 | official_reference | passed | unsupported | 1 |
-| official_reference | unsupported | passed | 539 |
+| official_reference | unsupported | passed | 565 |
 | roundtrip_structure | not_tested | passed | 90 |
-| roundtrip_structure | passed | not_tested | 5 |
+| roundtrip_structure | passed | not_tested | 4 |
 
-Cases with at least one stage change: 649.
+Cases with at least one stage change: 674.
 
 Regressions (a stage that was `passed` and no longer is):
 
 - `semantic/00951` [conversion]: passed → unsupported
 - `semantic/00951` [roundtrip_structure]: passed → not_tested
 - `semantic/00951` [independent_comparison]: passed → not_tested
-- `semantic/01169` [conversion]: passed → unsupported
-- `semantic/01169` [roundtrip_structure]: passed → not_tested
-- `semantic/01169` [independent_comparison]: passed → not_tested
 - `semantic/01466` [conversion]: passed → unsupported
 - `semantic/01466` [roundtrip_structure]: passed → not_tested
 - `semantic/01466` [independent_comparison]: passed → not_tested
@@ -455,7 +451,7 @@ Regressions (a stage that was `passed` and no longer is):
 
 A stage that becomes `passed` is accepted only when the expectation manifest is explicitly updated.
 
-Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/coordinator/f3.json` (SHA-256 `e82db1729153b592a95b4ea91fb9b025a4e44d88a7c129da1ecb3269acf7e576`).
+Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`).
 
 <!-- END GENERATED: sbml-campaign-current -->
 
@@ -481,9 +477,9 @@ per record so that it cannot be again.
 
 | Suite | Passed | Skipped | Xfailed | Failed |
 | --- | --- | --- | --- | --- |
-| tests/python | 1572 | 28 | 2 | 1 |
+| tests/python | 1951 | 28 | 2 | 47 |
 
-Source: `/tmp/bng3-campaign/pytest-current.xml` (SHA-256 `3da9b66de4abf957a25843ad0ddcd9344ef12cfa2cabfac726509c1adcd5be8e`).
+Source: `/tmp/bng3-campaign/pytest-main2.xml` (SHA-256 `2716fefda0dcfeb5ea13df2d756b9f8f276bf454e5053d4b4783299ac2e002f4`).
 
 <!-- END GENERATED: sbml-campaign-python -->
 
