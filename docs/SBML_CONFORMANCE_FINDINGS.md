@@ -631,9 +631,9 @@ test.
 
 ## 9. The remaining official-suite event gap is not a scheduling gap - KNOWN
 
-* **Cases:** `semantic/00965`, `00966`, `01000`, `01169`, `01466`, `01590`
-  (`events:untranslated`), `semantic/00988`, `01466`, `01575`, `01576`
-  (`events:state-trigger-not-schedulable`), and `stochastic/00033`.
+* **Cases:** `semantic/00965`, `00966`, `01000`, `01466`, `01590`
+  (`events:untranslated`), `semantic/00988`, `01466` (`events:state-trigger-not-schedulable`),
+  and `stochastic/00033`.
 * **Mechanism:** the native `bng3_events` runtime now executes *several*
   events: it registers one root function per trigger, orders the events that
   are executed simultaneously by their priority (SBML L3V2 Core Sec. 4.12.3),
@@ -652,21 +652,91 @@ test.
     and its model also carries a `fast` reaction.
   * `01000` mixes five time-triggered events with three state-triggered ones,
     assigns parameters, and watches a rate-ruled compartment.
-  * `01169` gives its events a *dynamic* priority (`Q`, an assignment-rule
-    parameter), so the order of the simultaneous events is not static.
-  * `01575` and `01576` carry an algebraic rule the Atomizer does not apply,
-    so the trigger cannot be evaluated on the generated model at all.
   * `stochastic/00033` needs a state-triggered event in a **stochastic** run:
     the native runtime finds the trigger's rising edge with the continuous
     ODE solver, and a stochastic run needs jump scheduling instead.
+* **What an event assignment to a parameter means, and what the Atomizer
+  does with it.**  SBML L3V2 Core Sec. 4.12.4 (`EventAssignment`) makes the
+  assignment set the *value* of the variable, and Sec. 4.12.5 fixes the
+  instant at which that value is computed.  A parameter without a rule is
+  therefore a mutable quantity, and the assignment is representable: the
+  parameter becomes a state whose amount is the parameter's value, exactly as
+  a rate-rule parameter does.  Sec. 4.9.3 draws the line: an `EventAssignment`
+  may not share a variable with an `AssignmentRule`, because an assignment
+  rule holds at all times while an event assignment sets the variable at one
+  instant.  Such a model is invalid SBML, so the Atomizer must refuse it and
+  name the construct rather than lower one of the two.
+  The corpus shows that the parameter target is *not* what blocks the
+  remaining cases: `semantic/01169` is blocked by its *dynamic* priority (see
+  below) and `semantic/01000` by the mixture of scheduled and native events.
+  The parameter target itself is a separate piece of work: it needs the
+  state, the assignment action that reaches that state, and the harness's
+  mapping of the reference's parameter onto it.
 * **Consequence:** the event construct remains the largest Atomizer-side
-  cluster of the campaign.  The runtime work that a multi-event model needs
-  is in place; what is missing is a parameter as an event target, the random
-  ordering of a same-priority group, a dynamic priority, and the stochastic
+  cluster of the campaign.  What is missing is a parameter as an event
+  target, the random ordering of a same-priority group, and the stochastic
   jump scheduler.  Each of those is a separate piece of work, and none of
   them may be approximated: a model whose execution order is a random draw
   stays *not comparable*, and a model the runtime cannot execute stays an
   explicit refusal that names the construct.
+
+## 10. A conjunction's root function is not monotone - KNOWN
+
+* **Cases:** none of the pinned suite's cases is *failing* because of it; the
+  cases that use a conjunction trigger (`semantic/00932`, `00933`, `01511`,
+  `01675`-`01680`, `01703`, `01704`, `01710`, `01711`, `01717`, `01718`, ...)
+  all pass.  `semantic/01575` and `semantic/01576` cannot be lowered at all
+  today (see section 9 and section 11), so the defect is latent.
+* **Mechanism:** the native runtime locates a trigger's rising edge with
+  continuous root finding, and the root function of a *conjunction* is the
+  **smallest** of the conjunct differences, because a conjunction holds only
+  where every conjunct holds.  That function is continuous but not
+  monotone: where the conjuncts cross, the minimum has a kink and a local
+  maximum.  CVODE interpolates the crossing with a secant over the step that
+  brackets it, and the solver's steps follow the output grid, so a step that
+  contains the kink can return a crossing that is not the trigger's rising
+  edge.  The event's execution time then depends on the output grid.
+* **Evidence:** with the alias of section 11 in place, `semantic/01575`'s
+  event (the trigger `k2 > 3.5 && k2 < 4` on a state that grows by one per
+  second, so the rising edge is at `t = 2.5`) fires at `t = 2.5`, `t = 2.8` and
+  `t = 3.37` with 20, 11 and 101 output steps respectively.
+* **Consequence:** a conjunction trigger must not use the minimum as its
+  root function.  The runtime needs **one root per conjunct** and has to
+  decide the conjunction's rising edge from the conjuncts' truth at the
+  crossing, which is also what removes the dependence on the output grid.
+
+## 11. An algebraic rule the Atomizer cannot solve is a different construct - KNOWN
+
+* **Cases:** `semantic/00761` (an algebraic rule the Atomizer does not
+  apply), `semantic/01575` and `semantic/01576` (a rule it does apply).
+* **Mechanism:** an `AlgebraicRule` states an equation, not a value, and the
+  specification's own reading (Sec. 4.9.3) is that the equation *determines*
+  the value of one of the symbols it mentions: "for at least one of the
+  entities referenced in the rule's math element the value of that entity
+  must not be completely determined by other constructs in the model ...
+  there must also not be a rate rule or assignment rule for it".  That
+  symbol is the dependent variable of the rule, and the rule is its
+  definition.
+  The modern Atomizer already applies the tractable form of this: the
+  parser solves a *linear* rule for its dependent variable and lowers it
+  as an assignment rule, so `semantic/01575`'s `k1 - k2 = 0` becomes the
+  assignment rule `k2 = k1` (`k2` is the dependent variable, because `k1`
+  carries the rate rule).  The generated model reports `k2` through the
+  state of `k1`, so the event's assignment to `k1` carries `k2` with it,
+  exactly as the published reference does.
+  `semantic/00761`'s rule is a constant (`k2 - 0.9`), which the parser
+  cannot turn into a dependent variable, so the model keeps the refusal.
+* **What is still missing:** the *nonlinear* and *multi-equation* forms.
+  Those are differential-algebraic systems: a simulator has to solve the
+  equation together with the model's other rules and reactions, and the
+  dependent variable's rate follows from the differentiated constraint.
+  That is a DAE capability, not a diagnostic, and the Atomizer has no such
+  solver.  Until it has one, such a model stays an explicit refusal that
+  names the algebraic rule, and the event it carries stays untranslated.
+* **Consequence:** `semantic/01575` and `semantic/01576` are blocked by
+  section 10, not by the algebraic rule: their rule is applied today, and
+  their trigger is a conjunction that the native runtime cannot yet locate
+  reliably.
 
 ## Measurements that are *not* findings
 
