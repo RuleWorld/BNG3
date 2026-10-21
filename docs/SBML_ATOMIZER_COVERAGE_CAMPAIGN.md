@@ -115,6 +115,27 @@ most important fact in the campaign: most of the remaining official coverage
 gap is not an Atomizer defect. The generated baseline table above gives the
 exact counts, grouped by the component that owns each blocking reason.
 
+The gap taxonomy counts every gap at every stage of the gate, and the side
+each gap falls on is the most important remaining structural fact about the
+campaign's coverage:
+
+| Side | n | What it is |
+| --- | --- | --- |
+| harness | 556 | a **measurement** limitation: the model converts and runs, but the gate cannot evaluate it (437 scheduled actions, 100 stochastic ensembles, 19 result mappings) |
+| Atomizer | 288 | a **representational** limitation: the model uses a construct BNGL cannot say (96 at the official-reference stage — 35 fast reactions, 28 untranslated events, 16 empty MathML, 9 delay, … — and 192 at the conversion stage) |
+| not applicable | 34 | the case defines no official time-course reference |
+
+A harness-side gap is a statement about the *measurement*, not about the
+model: the official suite exercises a construct BNG3 can represent and the
+gate is what cannot yet evaluate it. An Atomizer-side gap is a statement
+about the *representation*: the model uses something BNGL cannot say. The
+first kind is the campaign's remaining instrumentation work, the second is
+its remaining coverage work, and they need different fixes.
+
+_Source: the measurement of `main` in the generated current tables above
+(878 gaps in all: 192 at the conversion stage and 686 at the
+official-reference stage)._
+
 The baseline official-reference failures are also grouped by each case's own
 official `componentTags` metadata, read from the pinned suite's own
 `NNNNN-model.m` notes. The generated baseline table lists every failing case,
@@ -347,6 +368,14 @@ stage it changed at, and every case that regressed. A stage that stops being
 `passed` is a regression: the run then delivers less than the expectation
 manifest records, and the manifest must be updated before the change is
 accepted.
+
+The curated-BioModels row in the generated table is an **aggregate**, and an
+aggregate hid two reproducible regressions: `BIOMD0000000638` and
+`BIOMD0000000954` both changed behaviour while the corpus-wide counts stayed
+the same. The two were found by the corpus inventory (PR #340) and are fixed
+there. The claim and the correction belong together: the aggregate number
+was never evidence that nothing changed, and the corpus is now inventoried
+per record so that it cannot be again.
 
 ## Python test suite
 
