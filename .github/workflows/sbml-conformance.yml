@@ -8,6 +8,7 @@ on:
       - 'provenance/ssts-ci-linux-py312.lock'
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
+      - 'scripts/ci/imported_package_guard.py'
       - 'scripts/ci/sbml_campaign_inventory.py'
       - 'scripts/ci/ssts_selection.py'
       - 'provenance/sbml-campaign/expectations.json'
