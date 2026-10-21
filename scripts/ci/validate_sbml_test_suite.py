@@ -1544,6 +1544,10 @@ _EVENT_REFUSAL_SUBCAUSES: tuple[tuple[str, str], ...] = (
         "state_trigger_not_schedulable",
         "trigger is not a simple time threshold",
     ),
+    (
+        "algebraic_rule_blocks_event",
+        "the model's algebraic rule is not applied",
+    ),
     ("trigger_time_not_constant", "does not reduce to a constant"),
     (
         "trigger_outside_time_gate",

@@ -173,10 +173,18 @@ def test_compartment_initial_assignments_resolve_a_chain():
 
 
 def test_only_resolved_compartment_initial_assignments_are_applied():
-    # An assignment rule governs its target at every time, so a compartment
-    # with one keeps the size from its definition; an initial assignment
-    # whose expression depends on a species cannot be resolved at t=0 and is
-    # left alone as well.  Only the plainly resolvable compartment is folded.
+    # An initial assignment whose expression depends on a species cannot be
+    # resolved at t=0, because that species has no initial amount or
+    # concentration and its initial quantity is therefore unknown (SBML
+    # Level 3 Version 2 Core, Sec. 4.8).  The compartment keeps the size its
+    # assignment rule computes instead: an assignment rule "overrides the
+    # value assigned to the given symbol by the object defining that
+    # symbol" (Sec. 4.9.3), so the declared size is ignored.
+    #
+    # The fixture model is not valid SBML -- Sec. 4.9.3 forbids a model from
+    # containing both an assignment rule and an initial assignment for the
+    # same variable -- so the rule's value is what the model defines, and
+    # the unresolved initial assignment contributes nothing.
     _, result = _atomize(
         "<listOfCompartments>"
         '<compartment id="C1" spatialDimensions="3" size="3.5" constant="true"/>'
@@ -207,4 +215,6 @@ def test_only_resolved_compartment_initial_assignments_are_applied():
 
     assert _parameter(result.bngl, "__compartment_C1__") == "0.5"
     assert _parameter(result.bngl, "__compartment_C3__") == "0.25"
-    assert _parameter(result.bngl, "__compartment_C2__") == "3.5"
+    # The unresolved initial assignment contributes nothing: the size is the
+    # assignment rule's value, not the species' undefined initial quantity.
+    assert _parameter(result.bngl, "__compartment_C2__") == "2"
