@@ -82,6 +82,13 @@ jobs:
       - name: Run CI contract tests
         run: python -m pytest tests/test_ci_contract.py -q
 
+      - name: Check the legacy dependency inventory against the live tree
+        # The inventory of the legacy compatibility paths is evidence, not
+        # prose: a retired path that is imported again, or a path that grows
+        # a new caller, fails the check instead of silently widening the
+        # compatibility surface.
+        run: python tools/check_legacy_dependency_inventory.py
+
       - name: Verify conformance harness with controlled mutations
         run: |
           python -m pytest -q \
