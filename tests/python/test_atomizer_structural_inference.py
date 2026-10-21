@@ -280,8 +280,8 @@ def test_reaction_topology_infers_a_complex_from_an_unbinding():
     assert record["molecules"] == ["A", "B"]
 
 
-def test_stoichiometry_above_one_is_reflected_in_the_complex_composition():
-    """The composition of an inferred complex follows the stoichiometry."""
+def test_association_that_is_not_one_to_one_keeps_the_flat_representation():
+    """A stoichiometry above one is a mass balance, not a composition."""
 
     sbml = build_sbml(
         "stoichiometry_model",
@@ -305,8 +305,40 @@ def test_stoichiometry_above_one_is_reflected_in_the_complex_composition():
 
     record = _inference(sbml, "A2B")
 
-    assert record["confidence"] == "reaction-topology"
-    assert record["molecules"] == ["A", "A", "B"]
+    assert record["confidence"] == "elemental"
+    assert record["molecules"] == ["A2B"]
+    assert any(
+        alternative["confidence"] == "reaction-topology"
+        for alternative in record["alternatives"]
+    )
+
+
+def test_flat_and_atomized_networks_match_for_a_non_unit_stoichiometry():
+    sbml = build_sbml(
+        "non_unit_model",
+        [
+            ("A", "A", 10.0, None),
+            ("B", "B", 5.0, None),
+            ("A2B", "dimer", 0.0, None),
+        ],
+        [
+            _reaction(
+                "dimerize",
+                ["A", "B"],
+                ["A2B"],
+                "kon",
+                ["A", "B"],
+                stoichiometries={"A": 2},
+            )
+        ],
+        [("kon", 0.5)],
+    )
+
+    report = compare_flat_and_atomized(sbml)
+
+    assert report["problems"] == []
+    assert report["flat_species"] == report["atomized_species"]
+    assert report["flat_reactions"] == report["atomized_reactions"]
 
 
 def test_topology_analysis_is_reported_separately():

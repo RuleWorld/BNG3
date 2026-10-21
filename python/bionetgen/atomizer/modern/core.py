@@ -675,6 +675,10 @@ def _expanded_species(
     complex follows the source stoichiometry instead of the distinct
     reactant count.  ``None`` is returned when a stoichiometry is not a
     positive integer, because such a composition has no exact pattern.
+
+    The structural inference does not use this: an SBML stoichiometry is a
+    mass balance, not a molecular composition, so a species that a reaction
+    produces in several units is not a complex of that many molecules.
     """
 
     result: List[str] = []
@@ -691,10 +695,9 @@ def _expanded_species(
 def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
     """Collect stoichiometry-aware reaction-topology evidence.
 
-    ``complexes`` maps a product species onto the reactant molecules that
-    form it.  A species produced by a reaction with two or more reactant
-    molecules is a complex of those molecules, and the composition follows
-    the source stoichiometry.
+    ``complexes`` maps a product species onto the reactant species that form
+    it.  A species produced by a reaction with two or more distinct
+    reactants is a complex of those reactants, one molecule of each.
 
     ``modifications`` maps a product species onto the single reactant it is
     derived from, together with the SBML SBO term that names the
@@ -703,6 +706,13 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
     ``unbindings`` maps a reactant species onto the distinct products a
     reaction dissociates it into.  A species that dissociates into other
     species is a complex of them.
+
+    ``rejected`` names the species whose association is *not* one to one.
+    A reaction that consumes or produces several units of one species does
+    not describe a complex of several molecules: the stoichiometry is a
+    mass balance, not a molecular composition.  Inferring a complex there
+    would change the reaction stoichiometry, so the species keeps its exact
+    flat representation.
 
     The result deliberately does not feed the species-composition
     dependency graph: the flat translation must keep its existing species
@@ -713,6 +723,7 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
     complexes: Dict[str, List[str]] = OrderedDict()
     modifications: Dict[str, Dict[str, object]] = OrderedDict()
     unbindings: Dict[str, List[str]] = OrderedDict()
+    rejected: Dict[str, str] = OrderedDict()
 
     for reaction_id, reaction in model.reactions.items():
         reactants = _stoichiometric_species(reaction.reactants)
@@ -723,15 +734,34 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
             stoichiometry == 1 for _species, stoichiometry in reactants
         )
         unit_products = all(stoichiometry == 1 for _species, stoichiometry in products)
-        expanded_reactants = _expanded_species(reactants)
-        expanded_products = _expanded_species(products)
         if (
-            expanded_reactants is not None
-            and len(expanded_reactants) >= 2
+            len(distinct_reactants) >= 2
             and len(distinct_products) == 1
             and distinct_products[0] not in distinct_reactants
         ):
-            complexes.setdefault(distinct_products[0], expanded_reactants)
+            if unit_reactants and unit_products:
+                complexes.setdefault(distinct_products[0], distinct_reactants)
+            else:
+                rejected.setdefault(
+                    distinct_products[0],
+                    "the association is not one to one, so the reaction "
+                    "stoichiometry is a mass balance rather than a molecular "
+                    "composition",
+                )
+        if (
+            len(distinct_reactants) == 1
+            and len(distinct_products) >= 2
+            and distinct_reactants[0] not in distinct_products
+        ):
+            if unit_reactants and unit_products:
+                unbindings.setdefault(distinct_reactants[0], distinct_products)
+            else:
+                rejected.setdefault(
+                    distinct_reactants[0],
+                    "the dissociation is not one to one, so the reaction "
+                    "stoichiometry is a mass balance rather than a molecular "
+                    "composition",
+                )
         if (
             len(distinct_reactants) == 1
             and len(distinct_products) == 1
@@ -752,18 +782,12 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
             if sbo and entry.get("sbo") is None:
                 entry["sbo"] = sbo
                 entry["reaction"] = reaction_id
-        if (
-            expanded_products is not None
-            and len(distinct_reactants) == 1
-            and len(expanded_products) >= 2
-            and distinct_reactants[0] not in distinct_products
-        ):
-            unbindings.setdefault(distinct_reactants[0], expanded_products)
 
     return {
         "complexes": complexes,
         "modifications": modifications,
         "unbindings": unbindings,
+        "rejected": rejected,
     }
 
 
@@ -1296,11 +1320,23 @@ def _infer_species_structure(
     name = item.name or species_id
     alternatives: List[Dict[str, Any]] = []
     topology = context.topology
+    rejected = topology.get("rejected") or {}
     topology_components = (
         topology["complexes"].get(species_id)
-        or context.binding.get(species_id)
         or topology["unbindings"].get(species_id)
+        or context.binding.get(species_id)
     )
+    if species_id in rejected:
+        # The association is not one to one, so a complex would change the
+        # reaction stoichiometry.  The species keeps its exact flat form and
+        # the rejected reading is reported.
+        alternatives.append(
+            _alternative_inference(
+                "reaction-topology",
+                str(rejected[species_id]),
+            )
+        )
+        topology_components = None
 
     explicit, unparsed = _explicit_pattern_structure(name)
     if explicit is not None:
