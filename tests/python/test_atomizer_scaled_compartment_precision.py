@@ -89,9 +89,9 @@ def test_independent_oracle_integrates_the_scaled_model():
         source_concentration = (
             source_solver.getFloatingSpeciesConcentrationsNamedArray()[0, 0]
         )
-        written_concentration = (
-            solver.getFloatingSpeciesConcentrationsNamedArray()[0, 0]
-        )
+        written_concentration = solver.getFloatingSpeciesConcentrationsNamedArray()[
+            0, 0
+        ]
         assert written_amount == pytest.approx(source_amount, rel=0, abs=1e-12)
         assert written_concentration == pytest.approx(
             source_concentration / SOURCE_VOLUME_SCALE, rel=1e-12
@@ -100,9 +100,7 @@ def test_independent_oracle_integrates_the_scaled_model():
         if integrator.hasValue("relative_tolerance"):
             integrator.setValue("relative_tolerance", 1e-7)
         if integrator.hasValue("absolute_tolerance"):
-            integrator.setValue(
-                "absolute_tolerance", ROADRUNNER_ABSOLUTE_TOLERANCE
-            )
+            integrator.setValue("absolute_tolerance", ROADRUNNER_ABSOLUTE_TOLERANCE)
         solver.timeCourseSelections = ["time"]
         values = solver.simulate(0.0, 1.0, 11)
     finally:
