@@ -69,19 +69,9 @@ def _cases_by_construct(
 
 def _tool_version() -> str:
     """Return the version of the package this document describes."""
-
-    try:
-        result = subprocess.run(
-            [sys.executable, "-c", "import bionetgen; print(bionetgen.__version__)"],
-            cwd=REPO,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except OSError:
-        return "unknown"
-    version = result.stdout.strip()
-    return version or "unknown"
+    pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r'^version\s*=\s*"([^"]+)"\s*$', pyproject, re.M)
+    return match.group(1) if match else "unknown"
 
 
 def _generated_on() -> str:
