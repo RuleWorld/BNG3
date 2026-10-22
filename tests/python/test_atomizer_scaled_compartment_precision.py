@@ -7,7 +7,7 @@ factor is approximated and once when the product is rounded, and the result
 can sit a full unit in the last place away from the value the source states.
 
 For a compartment that matters.  The curated record BIOMD0000000638 declares
-a compartment of 3.92 picolitre; the scaled size is 3.92e-15 litre, and the
+a compartment of 3.92 femtolitre; the scaled size is 3.92e-15 litre, and the
 record's rate laws divide by it, so the rate coefficients are of order 1e19
 and the model is stiff.  The double-rounded size, one unit in the last place
 away, is enough to stop libRoadRunner's CVODE from taking its first step:
@@ -37,6 +37,13 @@ MODEL = (
 # The correctly rounded double of 3.92e-15, the SI-base value of the
 # compartment the fixture declares.
 EXPECTED_SIZE = float("3.92e-15")
+SOURCE_VOLUME_SCALE = 1e-15
+# The source fixture expresses concentrations in item/(10^-15 litre), while
+# the generated SBML uses item/litre. Preserve the same absolute error scale
+# when changing coordinates for RoadRunner: 1e-12 source units becomes 1e3
+# item/litre. Keeping 1e-12 unchanged would ask CVODE to resolve values at a
+# scale fifteen orders of magnitude smaller after the unit conversion.
+ROADRUNNER_ABSOLUTE_TOLERANCE = 1e-12 / SOURCE_VOLUME_SCALE
 
 
 def _translation() -> str:
@@ -76,11 +83,24 @@ def test_independent_oracle_integrates_the_scaled_model():
     try:
         extension.io.write_sbml(model, network, str(output))
         solver = roadrunner.RoadRunner(str(output))
+        source_solver = roadrunner.RoadRunner(str(MODEL))
+        source_amount = source_solver.getFloatingSpeciesAmountsNamedArray()[0, 0]
+        written_amount = solver.getFloatingSpeciesAmountsNamedArray()[0, 0]
+        source_concentration = (
+            source_solver.getFloatingSpeciesConcentrationsNamedArray()[0, 0]
+        )
+        written_concentration = solver.getFloatingSpeciesConcentrationsNamedArray()[
+            0, 0
+        ]
+        assert written_amount == pytest.approx(source_amount, rel=0, abs=1e-12)
+        assert written_concentration == pytest.approx(
+            source_concentration / SOURCE_VOLUME_SCALE, rel=1e-12
+        )
         integrator = solver.integrator
         if integrator.hasValue("relative_tolerance"):
             integrator.setValue("relative_tolerance", 1e-7)
         if integrator.hasValue("absolute_tolerance"):
-            integrator.setValue("absolute_tolerance", 1e-12)
+            integrator.setValue("absolute_tolerance", ROADRUNNER_ABSOLUTE_TOLERANCE)
         solver.timeCourseSelections = ["time"]
         values = solver.simulate(0.0, 1.0, 11)
     finally:

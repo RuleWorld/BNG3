@@ -428,7 +428,12 @@ def test_a_negative_assigned_stoichiometry_is_carried_by_the_flux_lowering():
         for warning in atomizer.model.import_warnings
         if warning["category"] == "stoichiometry" and warning["severity"] == "dropped"
     ], atomizer.model.import_warnings
-    assert "@C:M_A() -> 0 if(((-0.5235987755982988) * (1)) < 0," in result.bngl
+    flux = re.search(
+        r"J0_consume_A: @C:M_A\(\) -> 0 if\(\(\(([-+0-9.eE]+)\) \* \(1\)\) < 0,",
+        result.bngl,
+    )
+    assert flux is not None, result.bngl
+    assert math.isclose(float(flux.group(1)), -math.pi / 6, rel_tol=1e-15)
 
 
 def test_an_unknown_builtin_is_not_folded():
