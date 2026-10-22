@@ -35,7 +35,6 @@ from .events import (
     parse_time_threshold,
     synthesize_event_actions,
     lower_native_events,
-    synthesize_native_event_block,
 )
 from .rate_rule_constants import (
     ASSIGN_RULE_META_PREFIX,
@@ -4590,6 +4589,8 @@ def _substitute_seed_symbols(
     for _ in range(8):
         changed = False
         for symbol, value in list(symbols.items()):
+            if symbol not in result:
+                continue
             escaped = re.escape(symbol)
             result, call_count = re.subn(
                 rf"\b{escaped}\s*\(\s*\)", _number(value), result
