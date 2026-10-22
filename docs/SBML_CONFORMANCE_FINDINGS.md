@@ -1116,6 +1116,13 @@ repeated-population correction: `reactionClass.cpp` builds `identicalPopCountCor
 zero (`reaction.cpp`, lines 709-736).  Thus the native SSA's continuous
 population factor in a functional special-law co-reactant was the outlier.
 
+BNG3 preserves the canonical identical-MM refusal at the shared native
+`OdeIntegrator` compilation boundary: `MM(kcat,Km)` with the same generated
+species in both substrate and enzyme positions returns an explicit
+unsupported error instead of applying the self-consistent two-reactant
+formula. This guard is tested through both ODE and native SSA entry points;
+it does not establish support or parity for this configuration in NFsim.
+
 The native engine now carries the repeat offset on compiled special-law
 reactant references and resolves it as `population - offset` in the stochastic
 functional-rate evaluation.  Its deterministic resolver keeps the unshifted
@@ -1153,4 +1160,8 @@ Regression coverage in `tests/python/test_special_rate_statistical_factor.py`
 checks the native SSA and NFsim ensembles against the discrete analytic law
 and compares their means under the same 4,000-seed policy.  The existing
 `tests/python/test_ssa_closed_form_parity.py::test_identical_reactant_propensity_is_the_combinatorial_one`
-continues to exercise the batch path's mass-action `k * C(n, 2)` law.
+continues to exercise the batch path's mass-action `k * C(n, 2)` law. Focused
+tests also exercise the repeated co-reactant count in Hill SSA against its
+analytic one-firing probability, the third-order PLA propensity against an
+independently integrated pure-death master equation, and the native refusal
+for identical MM substrate/enzyme reactants.

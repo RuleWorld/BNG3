@@ -382,3 +382,47 @@ def test_the_two_stochastic_backends_carry_the_same_statistical_factor():
         f"the backends differ by {observed:.4f} events, more than four pooled "
         f"standard errors ({4.0 * pooled_stderr:.4f})"
     )
+
+
+def test_hill_ssa_uses_discrete_count_for_a_repeated_co_reactant():
+    """The Hill substrate stays continuous; its repeated co-reactant is discrete.
+
+    Starting with two A molecules allows at most one firing. The Hill
+    substrate contributes ``A/(K+A)`` while the second, identical reactant
+    contributes ``A-1`` in the stochastic law. This separates the discrete
+    propensity from the previous continuous ``A*A`` evaluation.
+    """
+    hill_model = MODEL.replace("kcat 0.4", "kcat 20").replace("K 10", "K 0.1")
+    hill_model = hill_model.replace("A() 20", "A() 2").replace(
+        "Sat(kcat,K)", "Hill(kcat,K,1)"
+    )
+    model = _model(hill_model)
+    horizon = 0.05
+    trajectories = 1000
+    discrete_rate = 0.5 * 20.0 * 2.0 / (0.1 + 2.0) * (2.0 - 1.0)
+    discrete_probability = 1.0 - math.exp(-discrete_rate * horizon)
+    continuous_rate = 0.5 * 20.0 * 2.0 / (0.1 + 2.0) * 2.0
+    continuous_probability = 1.0 - math.exp(-continuous_rate * horizon)
+
+    events = [
+        float(
+            model.simulate(
+                method="ssa", t_end=horizon, n_steps=1, seed=seed
+            ).observables["D_tot"][-1]
+        )
+        for seed in range(1, trajectories + 1)
+    ]
+    mean = sum(events) / trajectories
+    sample_variance = sum((event - mean) ** 2 for event in events) / (trajectories - 1)
+    band = 4.0 * math.sqrt(sample_variance / trajectories)
+
+    assert abs(mean - discrete_probability) <= band, (
+        mean,
+        discrete_probability,
+        band,
+    )
+    assert abs(mean - continuous_probability) > band, (
+        mean,
+        continuous_probability,
+        band,
+    )

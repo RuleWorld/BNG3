@@ -93,6 +93,45 @@ def _simulate(
     ]
 
 
+@pytest.mark.parametrize("method", ["ode", "ssa"])
+def test_identical_mm_substrate_and_enzyme_reactants_are_refused(
+    tmp_path: Path, method: str
+):
+    executable = _bng_cpp()
+    path = tmp_path / "mm_identical_reactants.bngl"
+    path.write_text(
+        f"""begin model
+begin parameters
+  kcat 1
+  Km 1
+end parameters
+begin species
+  S() 10
+  P() 0
+end species
+begin reaction rules
+  S() + S() -> P() MM(kcat,Km)
+end reaction rules
+end model
+
+begin actions
+  generate_network({{overwrite=>1}})
+  simulate({{method=>"{method}", t_start=>0, t_end=>1, n_steps=>10, seed=>7}})
+end actions
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        [executable, path.name], cwd=tmp_path, capture_output=True, text=True
+    )
+
+    assert result.returncode != 0
+    assert (
+        "MM(kcat,Km) with identical substrate and enzyme reactants is unsupported"
+        in result.stderr
+    )
+
+
 def _row_at(rows: list[list[float]], t: float) -> list[float]:
     matches = [row for row in rows if abs(row[0] - t) < 1e-9]
     assert len(matches) == 1, (t, [row[0] for row in rows])

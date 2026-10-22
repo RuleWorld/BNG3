@@ -885,6 +885,12 @@ void OdeIntegrator::compile() {
                             reactantReference(ri));
                     }
                 } else if (isMM && crxn.reactantIndices.size() >= 2) {
+                    if (crxn.reactantIndices[0] == crxn.reactantIndices[1]) {
+                        throw std::runtime_error(
+                            "MM(kcat,Km) with identical substrate and enzyme "
+                            "reactants is unsupported; canonical BioNetGen "
+                            "rejects this rate-law configuration");
+                    }
                     // MM(kcat, Km) with 2 reactants: self-consistent Michaelis-Menten
                     // Use 4-arg MM(kcat, Km, St, Et) which applies the quadratic formula
                     std::size_t enzymeIdx = crxn.reactantIndices[1];
