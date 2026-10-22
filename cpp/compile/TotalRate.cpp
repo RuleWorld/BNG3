@@ -69,13 +69,20 @@ OriginRule resolveOriginRule(const std::string& originRuleName) {
 
 bool isTotalRateReaction(const ast::Model& model, const std::string& originRuleName) {
     if (originRuleName.empty()) return false;
-    // A rule the model declares decides the capability by its own modifiers.
     // The Atomizer emits the two directions of a step whose rate is a total
     // rate in one direction only as two rules whose names end in "_forward"
     // and "_reverse", and each of them keeps its own modifiers; a consumer
     // that stripped a trailing "_reverse" from the name would take the
     // capability from the other direction.
-    if (isTotalRateRule(model, originRuleName)) return true;
+    // An exact model identity is authoritative whether or not it has the
+    // modifier.  Only normalize the network marker when no rule has that
+    // exact name; otherwise a legal rule such as ``_foo`` could inherit the
+    // capability of a different rule named ``foo``.
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getRuleName() == originRuleName) {
+            return isTotalRateRule(rule);
+        }
+    }
     const auto origin = resolveOriginRule(originRuleName);
     if (origin.name.empty() || origin.name == originRuleName) return false;
     return isTotalRateRule(model, origin.name);

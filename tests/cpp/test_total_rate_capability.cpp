@@ -26,6 +26,7 @@
 
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
+#include "compile/TotalRate.hpp"
 #include "io/NetWriter.hpp"
 #include "io/SbmlWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -125,4 +126,32 @@ TEST_CASE("the engine and the SBML writer agree about a rule named reverse",
     // The complete flux is stated as the rate; the reactant population is
     // not part of it.
     CHECK(xml.find("<ci> k </ci>") != std::string::npos);
+}
+
+TEST_CASE("an exact underscore-prefixed rule name decides its own capability",
+          "[TotalRate]") {
+    auto model = parser::parseModel(R"(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 0
+    B() 10
+end seed species
+begin reaction rules
+    foo: B() -> A() k TotalRate
+    _foo: A() -> B() k
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 2);
+    model->getReactionRules()[0].setRuleName("foo");
+    model->getReactionRules()[1].setRuleName("_foo");
+
+    CHECK(compile::isTotalRateReaction(*model, "foo"));
+    CHECK_FALSE(compile::isTotalRateReaction(*model, "_foo"));
 }
