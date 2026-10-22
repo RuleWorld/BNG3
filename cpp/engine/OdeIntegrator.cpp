@@ -795,6 +795,32 @@ void OdeIntegrator::compile() {
             // We build the expression text for the resolver
             std::size_t substrateIdx = crxn.reactantIndices[0];
 
+            // The reference to the reactant at `position` of the reaction's
+            // reactant list.
+            //
+            // A repeated identical reactant does not contribute the plain
+            // population: it contributes the number of *distinct* reactant
+            // pairs, `population - offset`, exactly as canonical BioNetGen
+            // 2.9.3's discrete branch does (`bng2/Network3/src/network.cpp`,
+            // `rxn_rate`: a repeated reactant is multiplied by `X - n`).  The
+            // offset travels with the reference, so the deterministic and the
+            // stochastic evaluations can read the same expression and still
+            // use the convention their own law calls for: the deterministic
+            // path resolves the reference to the plain population, the
+            // stochastic path to `population - offset`.
+            const auto reactantReference = [&crxn](std::size_t position) {
+                const std::size_t species = crxn.reactantIndices[position];
+                const std::size_t offset =
+                    identicalReactantOffset(crxn.reactantIndices, position);
+                if (offset == 0) {
+                    return ast::Expression::identifier(
+                        "__substrate_" + std::to_string(species));
+                }
+                return ast::Expression::identifier(
+                    "__substrate_" + std::to_string(species) + "_off" +
+                    std::to_string(offset));
+            };
+
             if (paramNames.size() >= 2) {
                 // Sat(kcat, Km): rate = kcat * [S] / (Km + [S]) * [other reactants]
                 // MM(kcat, Km):  rate = self-consistent MM with quadratic for free substrate
@@ -821,7 +847,7 @@ void OdeIntegrator::compile() {
                     // Multiply by non-substrate reactant concentrations
                     for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
                         baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            ast::Expression::identifier("__substrate_" + std::to_string(crxn.reactantIndices[ri])));
+                            reactantReference(ri));
                     }
                 } else if (isHill) {
                     // Hill(Vmax, Kh) with no exponent: Hill coefficient of one.
@@ -831,7 +857,7 @@ void OdeIntegrator::compile() {
                          ast::Expression::identifier("__substrate_" + std::to_string(substrateIdx))});
                     for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
                         baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            ast::Expression::identifier("__substrate_" + std::to_string(crxn.reactantIndices[ri])));
+                            reactantReference(ri));
                     }
                 } else if (isMM && paramNames.size() >= 3) {
                     // MM(Vmax, Km, S) with a named substrate: the simple
@@ -841,9 +867,15 @@ void OdeIntegrator::compile() {
                          rateLawArgument(paramNames[2])});
                     for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
                         baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            ast::Expression::identifier("__substrate_" + std::to_string(crxn.reactantIndices[ri])));
+                            reactantReference(ri));
                     }
                 } else if (isMM && crxn.reactantIndices.size() >= 2) {
+                    if (crxn.reactantIndices[0] == crxn.reactantIndices[1]) {
+                        throw std::runtime_error(
+                            "MM(kcat,Km) with identical substrate and enzyme "
+                            "reactants is unsupported; canonical BioNetGen "
+                            "rejects this rate-law configuration");
+                    }
                     // MM(kcat, Km) with 2 reactants: self-consistent Michaelis-Menten
                     // Use 4-arg MM(kcat, Km, St, Et) which applies the quadratic formula
                     std::size_t enzymeIdx = crxn.reactantIndices[1];
@@ -860,7 +892,7 @@ void OdeIntegrator::compile() {
                     // Multiply by non-substrate reactant concentrations (e.g., enzyme [E])
                     for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
                         baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            ast::Expression::identifier("__substrate_" + std::to_string(crxn.reactantIndices[ri])));
+                            reactantReference(ri));
                     }
                 }
 
@@ -1461,7 +1493,8 @@ std::vector<double> OdeIntegrator::evaluateRateCoefficients(
 
 void OdeIntegrator::evaluateFunctionalRateCoefficients(
     double t, const double* y, double* rates,
-    std::vector<double>& groupValues, bool failOnError) const {
+    std::vector<double>& groupValues, bool failOnError,
+    bool discreteReactantCounts) const {
     updateGroups(y, groupValues);
 
     // Build resolver with O(1) observable lookup. Keep this shared with the
@@ -1490,9 +1523,36 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         }
 
         // Sat/MM/Hill substrate references: __substrate_N -> y[N]
+        //
+        // A reference that carries a count offset, `__substrate_N_offK`, names
+        // a repeated identical reactant: the k-th copy of a reactant cannot
+        // react with the copies before it, so it contributes `y[N] - K`
+        // distinct pairs rather than `y[N]` reactant choices.  The stochastic
+        // paths resolve it that way (canonical BioNetGen's discrete branch);
+        // the deterministic path resolves it to the plain population
+        // (canonical BioNetGen's continuous branch).
         if (name.rfind("__substrate_", 0) == 0) {
-            std::size_t idx = std::stoul(name.substr(12));
-            return (idx < nSpecies_) ? y[idx] : 0.0;
+            const std::string rest = name.substr(12);
+            const std::size_t marker = rest.find("_off");
+            const std::string indexText =
+                (marker == std::string::npos) ? rest : rest.substr(0, marker);
+            std::size_t idx = 0;
+            try {
+                idx = static_cast<std::size_t>(std::stoul(indexText));
+            } catch (...) {
+                return 0.0;
+            }
+            double value = (idx < nSpecies_) ? y[idx] : 0.0;
+            if (marker != std::string::npos && discreteReactantCounts) {
+                double offset = 0.0;
+                try {
+                    offset = std::stod(rest.substr(marker + 4));
+                } catch (...) {
+                    offset = 0.0;
+                }
+                value = std::max(0.0, value - offset);
+            }
+            return value;
         }
 
         const auto observable = observableIndex_.find(name);
@@ -3371,10 +3431,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
 double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
                                         const std::vector<double>& y,
                                         double rateCoefficient) const {
-    // Compute discrete propensity for SSA
-    // For identical reactants A+A: propensity = k * n * (n-1)
-    // The stat_factor is already baked into rateConstant
-
+    // The stochastic propensity uses the discrete reactant count: a rule with
+    // two identical reactants has `n * (n - 1)` ways to react, not `n * n`,
+    // because the same molecule cannot react with itself.  This is canonical
+    // BioNetGen's convention: the `discrete` branch of
+    // `bng2/Network3/src/network.cpp`'s `rxn_rate` multiplies a repeated
+    // reactant by `X - n`, and NFsim reaches the same count by rejecting the
+    // degenerate self-pair as a null event.
+    //
+    // The stat_factor is already baked into rateConstant.
     double propensity = rateCoefficient;
 
     // For TotalRate, the propensity IS the rate constant (no species multiplication)
@@ -3382,18 +3447,12 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
         return propensity;
     }
 
-    // Group identical reactants and apply discrete formula
-    // BNG2 assumes reactant indices are sorted, so identical species are adjacent
-    double n_offset = 0.0;
+    // Group identical reactants and apply the discrete formula.  BNG2 assumes
+    // reactant indices are sorted, so identical species are adjacent.
     for (size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
         std::size_t idx = rxn.reactantIndices[i];
-
-        // Check if this is a repeat of the previous reactant
-        if (i > 0 && rxn.reactantIndices[i] == rxn.reactantIndices[i-1]) {
-            n_offset += 1.0;
-        } else {
-            n_offset = 0.0;
-        }
+        const double n_offset =
+            static_cast<double>(identicalReactantOffset(rxn.reactantIndices, i));
 
         // Discrete formula: multiply by (population - offset)
         double population = y[idx];
@@ -3545,7 +3604,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     auto recomputeAll = [&]() {
         if (hasFunctionalRates_) {
             evaluateFunctionalRateCoefficients(
-                t, y.data(), rateCoefficients.data(), scratch.groupValues, true);
+                t, y.data(), rateCoefficients.data(), scratch.groupValues, true,
+                /*discreteReactantCounts=*/true);
         }
         totalPropensity = 0.0;
         monotonePrefix = true;
@@ -3621,7 +3681,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             // model, so refresh every functional coefficient after a state
             // change. Constant-rate reactions retain dependency-indexed work.
             evaluateFunctionalRateCoefficients(
-                t, y.data(), rateCoefficients.data(), scratch.groupValues, true);
+                t, y.data(), rateCoefficients.data(), scratch.groupValues, true,
+                /*discreteReactantCounts=*/true);
             for (const auto r : functionalRxnIndices_) {
                 propensities[r] = computePropensity(
                     compiledRxns_[r], y, rateCoefficients[r]);

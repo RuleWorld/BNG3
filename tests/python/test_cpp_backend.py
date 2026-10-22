@@ -1818,6 +1818,72 @@ writeNetwork()
         assert output.exists()
         assert "X() 7" in output.read_text()
 
+    @pytest.mark.parametrize(
+        ("initial_amount", "expected_amount", "error"),
+        [
+            ("(RAS_tot * (1 - RAS_t0_active))", 60000.0, None),
+            ("10^2", 100.0, None),
+            ("MISSING_AMOUNT", None, r"Failed to evaluate \.net initial amount"),
+            ("1e308 * 1e308", None, "is not finite"),
+        ],
+    )
+    def test_net_reload_evaluates_symbolic_initial_amount_with_context(
+        self, tmp_path, initial_amount, expected_amount, error
+    ):
+        (tmp_path / "context.bngl").write_text(
+            """begin model
+begin parameters
+    RAS_tot 60000
+    RAS_t0_active 0
+end parameters
+end model
+""",
+            encoding="utf-8",
+        )
+        (tmp_path / "input.net").write_text(
+            """begin parameters
+    1 RAS_tot 60000
+    2 RAS_t0_active 0
+end parameters
+begin species
+    1 RAS(g~GDP,sos) __INITIAL_AMOUNT__
+end species
+begin reactions
+end reactions
+begin groups
+    1 RAS_GDP 1
+end groups
+""".replace("__INITIAL_AMOUNT__", initial_amount),
+            encoding="utf-8",
+        )
+        protocol = tmp_path / "symbolic_net_reload.bngl"
+        protocol.write_text(
+            """begin model
+end model
+begin actions
+    readFile({file=>"context.bngl"})
+    readFile({file=>"input.net"})
+    simulate_ode({prefix=>"symbolic_net_reload",netfile=>"input.net",t_start=>0,t_end=>1,n_steps=>1,print_CDAT=>1})
+end actions
+""",
+            encoding="utf-8",
+        )
+
+        if expected_amount is None:
+            with pytest.raises(RuntimeError, match=error):
+                bionetgen.load(str(protocol)).execute()
+            return
+
+        bionetgen.load(str(protocol)).execute()
+
+        cdat = tmp_path / "symbolic_net_reload.cdat"
+        rows = [
+            [float(value) for value in line.split()]
+            for line in cdat.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert rows[0][1] == pytest.approx(expected_amount)
+
     def test_set_add_concentration_survives_network_regeneration_in_net(self, tmp_path):
         bngl = tmp_path / "set_add_initial.bngl"
         bngl.write_text(

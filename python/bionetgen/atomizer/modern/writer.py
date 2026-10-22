@@ -4641,6 +4641,8 @@ def _substitute_seed_symbols(
     for _ in range(8):
         changed = False
         for symbol, value in list(symbols.items()):
+            if symbol not in result:
+                continue
             escaped = re.escape(symbol)
             result, call_count = re.subn(
                 rf"\b{escaped}\s*\(\s*\)", _number(value), result
