@@ -478,6 +478,7 @@ def _namespace(tmp_path: Path, case_timeout: int):
         simulation_n_steps=10,
         simulation_rtol=1e-7,
         simulation_atol=1e-12,
+        stochastic_runs=runner.STOCHASTIC_DEFAULT_RUNS,
         case_timeout=case_timeout,
         artifacts_dir=None,
     )
