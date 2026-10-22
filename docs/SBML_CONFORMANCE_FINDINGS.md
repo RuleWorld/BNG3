@@ -1092,12 +1092,14 @@ test.
 
   The case-level criterion fails a case at three violated acceptance tests,
   so the case failed below `n = 3,000` and passed above it.  The reduction
-  the harness applied on a loaded runner landed in the failing window: four
-  repeats of the same case, tree and seed on `main` reported `failed` with
-  2,872 trajectories and `passed` with 5,356, 4,016 and 3,964, while a
-  measurement on another tree reported `passed` with 8,711.  The committed
-  expectation manifest recorded `passed` for a verdict the tree does not
-  reproduce.
+  the harness applied on a loaded runner therefore decided the verdict: four
+  repeats of the same case, tree and seed reported `failed` with 2,872
+  trajectories and `passed` with 5,356, 4,016 and 3,964, and the campaign's
+  own full-suite measurements of the case reported `passed` with 5,594,
+  8,711, 8,948, 10,604, 11,688 and 12,477 trajectories - seven different
+  ensemble sizes, every one of them decided by how fast the runner was.  The
+  committed expectation manifest recorded `passed` for a verdict the tree
+  does not reproduce.
 * **Decision:** **the documented budget, or a verdict at all - never a
   verdict from a truncated ensemble.**  The alternative - "make the
   acceptance statistic correct for the ensemble size actually used" - cannot
@@ -1136,11 +1138,19 @@ test.
   `tests/python/test_sbml_official_reference.py` asserts it directly: the
   same model, probed with the same reaction work, plans the same trajectory
   count at a measured 0.5-second probe and at a measured 50-second probe,
-  while the reported CPU projection differs.  On the tree, the two affected
-  cases are reported as not comparable with the same numbers under every
-  load: the projected event count and the trajectory count the work budget
-  would allow are properties of the model and the seed, and only the
-  reported CPU projection moves.
+  while the reported CPU projection differs.  Measured on the tree, with
+  background CPU load added to the runner:
+
+  | Background load | `stochastic/00001` | | | `stochastic/00023` | | |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | | trajectories | projected work | verdict | projected work | affordable | verdict |
+  | none | 40,000 | 32,131,250 | passed | 3,605,337,500 | 4,437 | not comparable |
+  | 4 processes | 40,000 | 32,131,250 | passed | 3,605,337,500 | 4,437 | not comparable |
+  | 8 processes | 40,000 | 32,131,250 | passed | 3,605,337,500 | 4,437 | not comparable |
+
+  Only the reported CPU projection moves (2.1 s, 2.7 s and 3.0 s for the
+  three loads); the trajectory count, the projected work and the verdict do
+  not.
 * **What changed in the records:** `stochastic/00005` and `stochastic/00023`
   move from `passed` to `unsupported` at the official-reference stage, with
   the gap construct `harness:stochastic-ensemble-budget` and the cause
