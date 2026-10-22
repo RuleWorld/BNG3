@@ -38,6 +38,12 @@ Thumbs.db
 *.species
 *.xml
 
+# A vendored official SBML Test Suite input is an *input*, not generated
+# output, so it is tracked.  Without this exception the blanket rule above
+# silently drops the vendored fixtures of the reaction-rate cluster, and the
+# tests that read them fail with a missing file rather than a missing rule.
+!tests/fixtures/sbml_test_suite_reaction_rate/*.xml
+
 # Test reference data (large binary files from BNG2 Validate)
 tests/reference_data/
 
