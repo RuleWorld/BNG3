@@ -85,6 +85,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 SCHEMA_VERSION = 1
 EXPECTATIONS_SCHEMA_VERSION = 1
 
@@ -891,10 +894,16 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
         causes = sorted(
             set(str(cause) for cause in (record.get("unsupported_causes") or []))
         )
-        if not causes:
-            causes = sorted(
+        # A report written by an older harness may carry ``other`` even
+        # though this inventory revision can now identify the underlying
+        # refusal.  Prefer the shared current taxonomy for that unclassified
+        # bucket; retain the recorded labels otherwise.
+        if not causes or "other" in causes:
+            derived = sorted(
                 set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
             )
+            if derived and derived != ["other"]:
+                causes = derived
         construct = reason_signature(reason)
         return {
             "construct": construct,

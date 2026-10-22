@@ -1,0 +1,16 @@
+{
+  "base_commit": "cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a",
+  "measurement_date": "2026-10-22",
+  "measurement_host": "GitHub Actions hosted Ubuntu 22.04, CPython 3.12.15, libSBML 5.21.2, libRoadRunner 2.10.0",
+  "note": "Exact-main full SBML Test Suite measurement from workflow_dispatch run 39827300127, artifact 12447252607. Semantic suite isolation used a 60-second per-case timeout; the official stochastic reference used 40000 runs. This artifact covers the SBML Test Suite only; curated BioModels remain represented by their separate, older provenance record.",
+  "sbml_test_suite": {
+    "case_timeout_seconds": 60,
+    "categories": ["semantic", "stochastic"],
+    "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+    "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+    "workflow_run": 39827300127,
+    "workflow_job": 119993872872,
+    "artifact_id": 12447252607,
+    "report_sha256": "68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3"
+  }
+}

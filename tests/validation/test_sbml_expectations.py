@@ -24,7 +24,7 @@ from scripts.ci import sbml_campaign_inventory as inventory
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
-INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-20.json"
+INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-22.json"
 LOCK = REPO / "provenance" / "upstreams.lock.yml"
 TOOL = REPO / "scripts" / "ci" / "sbml_campaign_inventory.py"
 GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
@@ -176,9 +176,15 @@ def test_generic_nonfinite_and_scheduled_boundary_refusals_are_classified():
         "id": "99998",
         "status": "unsupported",
         "unsupported_reason": parameter_approximation,
+        "unsupported_causes": ["other"],
     }
     suite._unsupported_summary([conversion_record])
     assert conversion_record["unsupported_causes"] == ["mathml"]
+    assert inventory._stage_gap(conversion_record, "conversion") == {
+        "construct": "mathml:non-finite-parameter-approximation",
+        "causes": ["mathml"],
+        "side": "atomizer",
+    }
 
     scheduled_boundary = (
         "the official output grid contains the boundary of the generated "

@@ -1049,7 +1049,7 @@ test.
 * **The base commit fails 63 of the 1923 pinned cases, and this branch does
   not change that.**  `origin/main` (`51fe8e00`) reports
   `1735 passed / 125 unsupported / 63 failed / 0 timeout` where the committed
-  expectation manifest (`provenance/sbml-campaign/current-2026-10-20.json`,
+  expectation manifest (`provenance/sbml-campaign/current-2026-10-22.json`,
   measured at `5d8e78b0`) reports no failure.  The regression is in the
   *deterministic* path, and it is the symmetry factor of a `TotalRate` rule:
   pull request #315 removed the `!crxn.isTotalRate` guard in

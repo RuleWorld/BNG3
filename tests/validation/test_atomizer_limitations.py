@@ -153,7 +153,7 @@ def test_historical_unknown_causes_have_specific_owners_without_verdict_changes(
         "side": "atomizer",
     }
     assert nonfinite_parameter["gap"]["official_reference"] == {
-        "causes": [],
+        "causes": ["mathml"],
         "construct": "mathml:non-finite-parameter-approximation",
         "side": "atomizer",
     }

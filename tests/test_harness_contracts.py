@@ -78,7 +78,7 @@ GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
 COMPARATOR = REPO / "scripts" / "ci" / "compare_sbml_suite_reports.py"
 FLOOR_CHECKER = REPO / "scripts" / "ci" / "check_python_floor.py"
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
-INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-20.json"
+INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-22.json"
 
 
 # --------------------------------------------------------------------------
