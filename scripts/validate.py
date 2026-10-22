@@ -28,6 +28,48 @@ sys.path.insert(0, str(REPO))
 from tests.validation.compare import compare_net, parse_net  # noqa: E402
 
 _FILE_ARGUMENT = re.compile(r"\b(?:file|argfile)\s*=>\s*(['\"])([^'\"]+)\1")
+_TFUN_CALL = re.compile(r"\btfun\s*\(", re.IGNORECASE)
+
+
+def _tfun_string_arguments(text: str) -> list[str]:
+    """Return quoted string arguments from file-based TFUN/tfun calls."""
+
+    values: list[str] = []
+    for match in _TFUN_CALL.finditer(text):
+        depth = 1
+        quote = None
+        escaped = False
+        value: list[str] = []
+        in_string = False
+        for character in text[match.end() :]:
+            if quote is not None:
+                if in_string:
+                    if escaped:
+                        value.append(character)
+                        escaped = False
+                    elif character == "\\":
+                        escaped = True
+                    elif character == quote:
+                        values.append("".join(value))
+                        value = []
+                        in_string = False
+                        quote = None
+                    else:
+                        value.append(character)
+                elif character == quote:
+                    in_string = True
+                continue
+
+            if character in {"'", '"'}:
+                quote = character
+                in_string = True
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+    return values
 
 
 def load_skip_models(skip_file: Union[Path, str], profile: str) -> list[str]:
@@ -143,9 +185,12 @@ def copy_referenced_support_files(
     """
 
     copied: list[Path] = []
+    seen: set[Path] = set()
     text = bngl.read_text(encoding="utf-8")
-    for match in _FILE_ARGUMENT.finditer(text):
-        relative = Path(match.group(2))
+    references = [match.group(2) for match in _FILE_ARGUMENT.finditer(text)]
+    references.extend(_tfun_string_arguments(text))
+    for reference in references:
+        relative = Path(reference)
         if relative.is_absolute() or ".." in relative.parts:
             continue
 
@@ -162,9 +207,12 @@ def copy_referenced_support_files(
             continue
 
         destination = work_dir / relative
+        if destination in seen:
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
         copied.append(destination)
+        seen.add(destination)
 
     return copied
 

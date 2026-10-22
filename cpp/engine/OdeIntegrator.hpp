@@ -12,6 +12,33 @@
 
 namespace bng::engine {
 
+// The reactant-count offset canonical BioNetGen applies to a repeated
+// identical reactant.
+//
+// A rule with two identical reactants does not have `n^2` ways to react: it
+// has `n * (n - 1)`, because the same molecule cannot react with itself.
+// Canonical BioNetGen 2.9.3 encodes that in the `discrete` branch of
+// `bng2/Network3/src/network.cpp`'s `rxn_rate`, which multiplies a repeated
+// reactant by `X - n` instead of `X`.  This helper computes the `n` of that
+// expression: the number of identical reactants immediately preceding the
+// reactant at `position` in the reaction's reactant list.
+//
+// Every stochastic path in this engine uses it, so the count convention does
+// not depend on which route a caller asked for.  The deterministic (ODE)
+// evaluation keeps the continuous convention, exactly as canonical BioNetGen
+// does: its `discrete` flag is off for CVODE and on for SSA/PLA/PSA
+// (`bng2/Network3/src/run_network.cpp`).
+inline std::size_t identicalReactantOffset(
+    const std::vector<std::size_t>& reactantIndices, std::size_t position) {
+    if (position == 0 || position >= reactantIndices.size()) {
+        return 0;
+    }
+    if (reactantIndices[position] != reactantIndices[position - 1]) {
+        return 0;
+    }
+    return identicalReactantOffset(reactantIndices, position - 1) + 1;
+}
+
 struct OdeOptions {
     double tStart = 0.0;
     double tEnd = 1.0;
@@ -245,11 +272,20 @@ private:
     // use a per-thread buffer: the batched CPU pool shares a single
     // OdeIntegrator across its worker threads, and a shared scratch would make
     // a state-dependent rate law read another trajectory's observable values.
+    //
+    // `discreteReactantCounts` selects the reactant-count convention for the
+    // substrate references a special rate law carries.  The stochastic paths
+    // pass true: a repeated identical reactant contributes `population -
+    // offset`, the distinct-reactant-pair count canonical BioNetGen uses.  The
+    // deterministic path passes false: the same reference contributes the
+    // plain population, the concentration-like count canonical BioNetGen's
+    // continuous branch uses.
     void evaluateFunctionalRateCoefficients(double t,
                                             const double* y,
                                             double* rates,
                                             std::vector<double>& groupValues,
-                                            bool failOnError = false) const;
+                                            bool failOnError = false,
+                                            bool discreteReactantCounts = false) const;
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
     void updateFunctions(const std::vector<double>& groupValues,
                          double time,

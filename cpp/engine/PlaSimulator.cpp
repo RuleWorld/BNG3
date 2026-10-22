@@ -227,20 +227,21 @@ void PlaSimulator::compileGroups() {
 }
 
 double PlaSimulator::computePropensity(const CompiledReaction& rxn, const std::vector<double>& state) const {
+    // The stochastic propensity uses the discrete reactant count: a rule with
+    // two identical reactants has `n * (n - 1)` ways to react, not `n * n`.
+    // This is canonical BioNetGen's convention (the `discrete` branch of
+    // `bng2/Network3/src/network.cpp`'s `rxn_rate`), and the same one the
+    // native SSA and the batched accelerator use.
     double prop = rxn.statFactor * rxn.rateConstant;
 
-    for (auto idx : rxn.reactantIndices) {
-        if (idx < state.size()) {
-            prop *= state[idx];
-        } else {
+    for (std::size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
+        const std::size_t idx = rxn.reactantIndices[i];
+        if (idx >= state.size()) {
             return 0.0;
         }
-    }
-
-    // Handle dimerization: if same reactant appears twice, use n*(n-1)/2
-    if (rxn.reactantIndices.size() == 2 && rxn.reactantIndices[0] == rxn.reactantIndices[1]) {
-        double n = state[rxn.reactantIndices[0]];
-        prop = rxn.statFactor * rxn.rateConstant * n * (n - 1.0);
+        const double offset =
+            static_cast<double>(identicalReactantOffset(rxn.reactantIndices, i));
+        prop *= std::max(0.0, state[idx] - offset);
     }
 
     return std::max(0.0, prop);

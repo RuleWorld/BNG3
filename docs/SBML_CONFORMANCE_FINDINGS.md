@@ -1221,3 +1221,77 @@ test.
   different package than the one under test is a measurement error; the
   harness records `runtime_provenance.bionetgen_package_path` so that this
   is checkable.
+
+## 2026-10-22 — stochastic repeated-reactant counts for special laws
+
+Canonical BNG2 2.9.3 (RuleWorld/bionetgen source revision
+`9601746f8884ed19ab2acea49fe87fc4660ace46`, recorded in
+`provenance/upstreams.lock.yml`) defines two count evaluations for a repeated
+population reactant.  In `bng2/Network3/src/network.cpp`, `rxn_rate`'s `ELEMENTARY`
+branch applies `X - n` to each repeated discrete reactant (lines 2486-2512),
+while its continuous branch applies `X` (lines 2508-2512).  `SATURATION`
+uses `X - n` in each discrete numerator factor (lines 2542-2568), preserving
+the saturation denominator `K + X`; `HILL` applies `X - n` to repeated
+co-reactants after its Hill substrate (lines 2593-2606).  `FUNCTIONAL` uses the
+same discrete distinct-copy count (lines 2617-2637).  Canonical Perl BNG2
+rejects identical MM substrate/enzyme reactants in `bng2/Perl2/RateLaw.pm`
+(lines 1243-1249).  Its ODE calls `rxn_rate(..., 0)` while its stochastic path
+calls `rxn_rate(..., 1)` (`network.cpp`, lines 3192-3193 and 5283-5284).
+
+Canonical NFsim (RuleWorld/NFsim source revision
+`9b00d42f734dcc3e695205600f12cae5b44d1daa`, recorded in
+`provenance/upstreams.lock.yml`) independently applies a per-reactant
+repeated-population correction: `reactionClass.cpp` builds `identicalPopCountCorrection` (lines 289-306), and
+`BasicRxnClass::getCorrectedReactantCount` clamps `population - correction` at
+zero (`reaction.cpp`, lines 709-736).  Thus the native SSA's continuous
+population factor in a functional special-law co-reactant was the outlier.
+
+BNG3 preserves the canonical identical-MM refusal at the shared native
+`OdeIntegrator` compilation boundary: `MM(kcat,Km)` with the same generated
+species in both substrate and enzyme positions returns an explicit
+unsupported error instead of applying the self-consistent two-reactant
+formula. This guard is tested through both ODE and native SSA entry points;
+it does not establish support or parity for this configuration in NFsim.
+
+The native engine now carries the repeat offset on compiled special-law
+reactant references and resolves it as `population - offset` in the stochastic
+functional-rate evaluation.  Its deterministic resolver keeps the unshifted
+population.  Native SSA, PLA, and batch flattening share the same helper for
+reactant offsets.  Elementary mass-action already used this count in native
+SSA and the batched path.  Batch SSA continues to fail closed on functional
+rate laws and `TotalRate`; this change does not claim to add those law types to
+the accelerator.  `TotalRate` still returns its complete flux without
+multiplying by reactant counts, and BNG2's writer assigns it statistical
+factor one (`bng2/Perl2/Rxn.pm`, line 70).
+
+The independent analytic master equation and source agree on the saturation
+law's discrete propensity:
+`0.5 * kcat * n * (n - 1) / (Km + n)`.  With seeds 1-4000, one trajectory
+per seed, `t_end=1`, and `A(0)=20`, the uncorrected native SSA measured
+`2.282750 +/- 0.020151` mean events while NFsim measured `2.110500 +/-
+0.019835`; the campaign's analytic discrete mean is `2.145819`.  The old
+native mean differs from this law by 6.80 standard errors, while the NFsim
+mean differs by 1.78.  The canonical BNG2 standalone SSA was also attempted
+for this saturating network in the campaign and exited with SIGSEGV, so it
+provides no trustworthy trajectory ensemble for this law; the decision uses
+BNG2's executable rate-law source plus the independently integrated master
+equation.  The BNG2 ODE remains the continuous-law oracle for deterministic
+behavior.
+
+On the patched native build, the same seed policy measured native SSA at
+`2.176000 +/- 0.019786` events (z=+1.53 against the analytic discrete mean)
+and NFsim at `2.110500 +/- 0.019835` (z=-1.78).  The old native mean was
+`2.282750 +/- 0.020151`, a change of `-0.106750` events; the old SSA/NFsim
+residual was `+0.172250 +/- 0.028275` (z=+6.09), while the patched residual
+is `+0.065500 +/- 0.028031` (z=+2.34).  These are ensemble comparisons under
+the recorded seeds, not pathwise-equality claims.
+
+Regression coverage in `tests/python/test_special_rate_statistical_factor.py`
+checks the native SSA and NFsim ensembles against the discrete analytic law
+and compares their means under the same 4,000-seed policy.  The existing
+`tests/python/test_ssa_closed_form_parity.py::test_identical_reactant_propensity_is_the_combinatorial_one`
+continues to exercise the batch path's mass-action `k * C(n, 2)` law. Focused
+tests also exercise the repeated co-reactant count in Hill SSA against its
+analytic one-firing probability, the third-order PLA propensity against an
+independently integrated pure-death master equation, and the native refusal
+for identical MM substrate/enzyme reactants.

@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <cmath>
+#include <cstdint>
 #include "../../cpp/engine/PlaSimulator.hpp"
 #include "../../cpp/ast/Model.hpp"
 #include "../../cpp/engine/NetworkGenerator.hpp"
@@ -120,4 +122,70 @@ TEST_CASE("evaluateRateString error path", "[PlaSimulator]") {
     REQUIRE_THAT(evaluateRateString("invalid_float", resolve), Catch::Matchers::WithinRel(0.0));
     REQUIRE_THAT(evaluateRateString("valid_var", resolve), Catch::Matchers::WithinRel(42.0));
     REQUIRE_THAT(evaluateRateString("1.23abc", resolve), Catch::Matchers::WithinRel(0.0));
+}
+
+TEST_CASE("PLA counts three identical reactants as distinct triples",
+          "[PlaSimulator][RepeatedReactants]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    A() 10
+    D() 0
+end seed species
+begin observables
+    Molecules Dtot D()
+end observables
+begin reaction rules
+    A() + A() + A() -> D() k
+end reaction rules
+)BNGL");
+    REQUIRE(model != nullptr);
+    NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    PlaSimulator simulator(*model, network);
+
+    OdeOptions options;
+    options.method = "pla";
+    options.tEnd = 0.01;
+    options.nSteps = 1;
+    const PlaConfig config = PlaConfig::parse(
+        "||tau=0.0001,apx1=1000000,gg1=1000001");
+
+    constexpr std::size_t trajectories = 2000;
+    std::vector<double> eventCounts;
+    eventCounts.reserve(trajectories);
+    for (std::uint64_t seed = 1; seed <= trajectories; ++seed) {
+        options.seed = static_cast<unsigned int>(seed);
+        const auto result = simulator.simulate(options, config);
+        REQUIRE(result.observables.size() == 2);
+        REQUIRE(result.observables.back().size() == 1);
+        eventCounts.push_back(result.observables.back()[0]);
+    }
+
+    double mean = 0.0;
+    for (const double count : eventCounts) mean += count;
+    mean /= static_cast<double>(eventCounts.size());
+    double sumSquares = 0.0;
+    for (const double count : eventCounts) {
+        const double difference = count - mean;
+        sumSquares += difference * difference;
+    }
+    const double standardError = std::sqrt(
+        sumSquares / static_cast<double>(eventCounts.size() - 1) /
+        static_cast<double>(eventCounts.size()));
+
+    // Independent pure-death master equation for rates k * choose(n, 3),
+    // with states 10, 7, 4, 1 and t=0.01. RK4 at 20,000 steps gives
+    // E[D]=0.829896932543434. Multiplying by n^3/6 instead gives 1.060199,
+    // outside this four-standard-error band.
+    constexpr double discreteExpected = 0.829896932543434;
+    constexpr double continuousExpected = 1.060199043093818;
+    CHECK(std::abs(mean - discreteExpected) <= 4.0 * standardError);
+    CHECK(std::abs(mean - continuousExpected) > 4.0 * standardError);
 }
