@@ -157,17 +157,17 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
         flat.rateConstants[r] = static_cast<float>(rxn.rateConstant);
 
         // Reactants (with offset for identical reactants: A + A -> offset 0 for 1st, 1 for 2nd)
-        float currentOffset = 0.0f;
+        // The offset is the distinct-reactant-pair count canonical BioNetGen
+        // uses for a repeated identical reactant, so the flattened network the
+        // accelerator kernels evaluate carries the same convention the native
+        // SSA does.
         for (std::size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
             std::size_t sIdx = rxn.reactantIndices[i];
             if (sIdx >= flat.numSpecies) {
                 throw std::runtime_error("Batch SSA: reactant index out of range");
             }
-            if (i > 0 && rxn.reactantIndices[i] == rxn.reactantIndices[i - 1]) {
-                currentOffset += 1.0f;
-            } else {
-                currentOffset = 0.0f;
-            }
+            const float currentOffset = static_cast<float>(
+                identicalReactantOffset(rxn.reactantIndices, i));
             flat.reactantSpecies.push_back(static_cast<uint32_t>(sIdx));
             flat.reactantStoichOffsets.push_back(currentOffset);
             if (!constantSpecies[sIdx]) {

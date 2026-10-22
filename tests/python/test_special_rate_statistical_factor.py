@@ -38,21 +38,17 @@ set but never applied it to a special rate, so the two backends disagreed by
 the factor.  The ensemble check below pins both against the analytic count law
 of the declared convention, under a recorded seed policy and run budget.
 
-The two backends count the repeated reactant differently, and that difference
-is *not* the statistical factor.  Canonical BioNetGen's own discrete
-saturating rate (``bng2/Network3/src/network.cpp``, the ``discrete`` branch of
-the ``SATURATION`` case) multiplies the repeated reactant by
-``X[iarr[ig]] - n``, so it counts distinct pairs, while its continuous branch
-multiplies by ``X[iarr[ig]]``.  The NFsim route follows the discrete
-convention; the native engine's saturating propensity uses the continuous
-count, the same count its own ODE uses.  The ensemble checks below compare
-each backend against the analytic law of the convention that backend
-implements, and they only require the two backends to agree about the
-*factor*, which is what this repair is about.
+The native SSA, NFsim, and canonical BioNetGen use the discrete distinct-pair
+count for stochastic propensities.  Canonical BioNetGen's discrete saturating
+rate (``bng2/Network3/src/network.cpp``, ``SATURATION``) multiplies a repeated
+reactant by ``X[iarr[ig]] - n``; NFsim applies the same correction in
+``BasicRxnClass::getCorrectedReactantCount``.  The ODE retains the continuous
+count, as canonical BioNetGen does when its ``discrete`` flag is off.
 """
 
 from __future__ import annotations
 
+import math
 import re
 import shutil
 import subprocess
@@ -276,17 +272,12 @@ def test_a_rule_with_distinct_reactants_takes_no_statistical_factor():
 # over a horizon of 1.0 time unit.
 # --------------------------------------------------------------------------
 
-TRAJECTORIES = 400
+TRAJECTORIES = 4000
 HORIZON = 1.0
 STEP = 2  # the rule consumes two A molecules per event
 POPULATION = 20
 KCAT = 0.4
 KM = 10.0
-
-
-def _continuous_hazard(population: float, factor: float = 0.5) -> float:
-    """The count convention of the native engine and of the ODE."""
-    return factor * KCAT * population * population / (KM + population)
 
 
 def _discrete_hazard(population: float, factor: float = 0.5) -> float:
@@ -349,7 +340,7 @@ def _ensemble(backend: str) -> list[float]:
 #: The count convention each backend implements, and the analytic mean of the
 #: corresponding law with and without the statistical factor.
 BACKENDS = {
-    "ssa": _continuous_hazard,
+    "ssa": _discrete_hazard,
     "nf": _discrete_hazard,
 }
 
@@ -377,31 +368,17 @@ def test_every_stochastic_backend_carries_the_statistical_factor(backend):
 
 
 def test_the_two_stochastic_backends_carry_the_same_statistical_factor():
-    """The two backends must not differ by as much as a missing factor does.
-
-    The backends count the repeated reactant differently (see the module
-    docstring), so they are not expected to agree exactly.  What they have to
-    agree about is the factor: a backend that dropped it would differ from
-    the other one by the separation between the factor-carrying and the
-    factor-free laws.
-    """
-    means = {}
+    """The two backends implement the same stochastic count law and factor."""
+    summaries = {}
     for backend in ("ssa", "nf"):
         values = _ensemble(backend)
-        means[backend] = sum(values) / len(values)
+        mean = sum(values) / len(values)
+        variance = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
+        summaries[backend] = (mean, math.sqrt(variance / len(values)))
 
-    carrying_separation = abs(
-        _expected_events(_continuous_hazard) - _expected_events(_discrete_hazard)
+    observed = abs(summaries["ssa"][0] - summaries["nf"][0])
+    pooled_stderr = math.hypot(summaries["ssa"][1], summaries["nf"][1])
+    assert observed <= 4.0 * pooled_stderr, (
+        f"the backends differ by {observed:.4f} events, more than four pooled "
+        f"standard errors ({4.0 * pooled_stderr:.4f})"
     )
-    factor_separation = abs(
-        _expected_events(_continuous_hazard)
-        - _expected_events(lambda population: _continuous_hazard(population, 1.0))
-    )
-    observed = abs(means["ssa"] - means["nf"])
-    assert observed < 0.5 * factor_separation, (
-        f"the backends differ by {observed:.4f} events, which is the size of a "
-        "missing statistical factor"
-    )
-    # The observed difference is of the size of the count-convention
-    # difference, not of the factor difference.
-    assert observed < 2.0 * carrying_separation, (observed, carrying_separation)
