@@ -288,14 +288,38 @@ engine::GeneratedNetwork networkFromNetData(
 
         auto graph = parseNetSpeciesGraph(cleanPattern, model);
         double amount = 0.0;
+        bool parsedNumericLiteral = false;
         try {
-            amount = std::stod(amountText);
-        } catch (...) {
-            try {
-                amount = model.getParameters().evaluate(amountText);
-            } catch (...) {
-                amount = 0.0;
+            std::size_t parsedCharacters = 0;
+            const double numericValue = std::stod(amountText, &parsedCharacters);
+            if (parsedCharacters == amountText.size()) {
+                amount = numericValue;
+                parsedNumericLiteral = true;
             }
+        } catch (const std::invalid_argument&) {
+            // Non-literal amounts are BNGL expressions evaluated against the
+            // parameter context loaded with the network.
+        } catch (const std::out_of_range&) {
+            // Parse as an expression below so overflow receives a contextual
+            // diagnostic instead of being replaced by zero.
+        }
+        if (!parsedNumericLiteral) {
+            try {
+                const auto amountExpression = bng::parser::parseExpression(amountText);
+                amount = amountExpression.evaluate(
+                    [&model](const std::string& name) {
+                        return model.getParameters().evaluate(name);
+                    });
+            } catch (const std::exception& error) {
+                throw std::runtime_error(
+                    "Failed to evaluate .net initial amount '" + amountText +
+                    "' for species '" + pattern + "': " + error.what());
+            }
+        }
+        if (!std::isfinite(amount)) {
+            throw std::runtime_error(
+                ".net initial amount for species '" + pattern +
+                "' is not finite: " + amountText);
         }
         const auto speciesCompartment = graph.getCompartment();
         network.species.add(ast::Species(
