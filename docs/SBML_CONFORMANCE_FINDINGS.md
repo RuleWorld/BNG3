@@ -1067,16 +1067,18 @@ test.
   picking up minor issues".  Section 3.1 defines the standardised mean
   statistic `Z = sqrt(n) * (X_bar - mu) / sigma`, section 3.2 the
   standardised variance statistic `Y = sqrt(n/2) * (S^2 / sigma^2 - 1)`, and
-  both are approximately standard normal **for every n**; the guide's
-  acceptance ranges are stated on those standardised statistics - "most
+  the guide motivates with an approximate-normal null; its acceptance ranges
+  are stated on those standardised statistics - "most
   values will lie in the range (-3, 3)" for `Z` and, because the variance
   test rests on an approximation, "only values outside the range (-5, 5)" for
   `Y` - and the suite's own `-settings.txt` files carry the same two ranges
   (`meanRange: (-3, 3)`, `sdRange: (-5, 5)`).
 * **Observed behaviour:** the harness already computes the guide's statistics
-  with the `n` it actually ran, so its *per-test* criterion was and is
-  n-correct: the acceptance band does not widen for a smaller ensemble, and
-  the per-test chance rate is the same at every `n`.  What is not n-correct
+  with the `n` it actually ran, so its *per-test* criterion follows the guide's
+  formula: the acceptance band does not widen for a smaller ensemble.  This
+  preserves the guide's approximate-normal null; it does not establish that
+  approximation or the same per-test chance rate for every source distribution
+  and every `n`.  What is not n-correct
   is the *verdict*, because a verdict is a property of the realised ensemble
   and not of its distribution: the batched samplers derive one engine seed
   per trajectory from the base seed, so the ensemble of `n` trajectories is a
@@ -1104,9 +1106,10 @@ test.
   verdict from a truncated ensemble.**  The alternative - "make the
   acceptance statistic correct for the ensemble size actually used" - cannot
   work here, for two reasons that the guide settles.  First, the statistic
-  is already the guide's statistic and is already n-correct: `Z` and `Y` are
-  standard normal at every `n`, the acceptance ranges are stated on them, and
-  the difference between the normal and Student's `t` reference at
+  is already the guide's statistic and is already n-correct under the guide's
+  approximate-normal null: `Z` and `Y` are approximately standard normal at
+  every `n`, the acceptance ranges are stated on them, and the difference
+  between the normal and Student's `t` reference at
   `n = 1,000` is 0.03 in the 3-sigma quantile, so there is no band to widen.
   Second, and decisively, no acceptance statistic can make the *verdict*
   machine-independent, because the verdict is a property of the realised

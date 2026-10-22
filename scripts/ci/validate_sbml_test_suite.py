@@ -2075,14 +2075,15 @@ ACTION_MAX_PHASES = 2000
 #:
 #: The guide's two acceptance statistics are defined *in terms of* the
 #: repetition count: the standardised mean ``Z = sqrt(n) * (mean - mu) / sigma``
-#: and the standardised variance ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)`` are
-#: approximately standard normal for every n, and the guide states its
-#: acceptance ranges on those standardised statistics ((-3, 3) for the mean and
-#: (-5, 5) for the standard deviation; the suite's own ``-settings.txt`` files
-#: carry the same two ranges).  The harness computes exactly those statistics
-#: with the n it actually ran, so its per-test criterion is n-correct: the
-#: acceptance band does not widen for a smaller ensemble, and the per-test
-#: chance rate is the same at every n.
+#: and the standardised variance ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)`` use
+#: the guide's approximate-normal null.  The guide states fixed acceptance
+#: ranges on those statistics ((-3, 3) for the mean and (-5, 5) for the
+#: standard deviation; the suite's own ``-settings.txt`` files carry the same
+#: two ranges).  The harness computes those statistics with the n it actually
+#: ran and does not widen the acceptance bands when an ensemble is smaller.
+#: This preserves the guide's criterion; it does not establish that its
+#: approximate-normal null fits every source model or that the chance rate is
+#: identical at every n for every source distribution.
 #:
 #: What is *not* n-correct is the verdict.  A verdict is a property of the
 #: realised ensemble, not of its distribution: the batched samplers derive one
@@ -2218,9 +2219,9 @@ def _stochastic_statistics(
 
     The DSMTS user guide defines the standardised mean statistic
     ``Z = sqrt(n) * (mean - mu) / sigma`` and the standardised variance
-    statistic ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)``; both are approximately
-    standard normal under a correct simulator.  A value outside the official
-    acceptance range is a violation.  Only the requested statistic is tested:
+    statistic ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)``; the guide uses an
+    approximate-normal null when its assumptions fit the source law.  A value
+    outside the official acceptance range is a violation.  Only the requested statistic is tested:
     the suite may ask for the mean, the standard deviation, or both.
 
     ``mean_values`` and ``sd_values`` are the *sample* mean and standard
