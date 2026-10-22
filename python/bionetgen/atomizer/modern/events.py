@@ -3511,7 +3511,7 @@ def _equal_priority_conflicts(
     serialized into one deterministic action sequence.  The conflict is
     reported instead of being resolved by an arbitrary order.
     """
-    tiers: Dict[float, List[Sequence[Tuple[str, str, float]]]] = {}
+    tiers: dict[float, List[Sequence[Tuple[str, str, float]]]] = {}
     for priority, sets in members:
         tiers.setdefault(priority, []).append(sets)
     conflicts: List[Tuple[str, str]] = []

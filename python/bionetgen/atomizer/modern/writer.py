@@ -35,7 +35,6 @@ from .events import (
     parse_time_threshold,
     synthesize_event_actions,
     lower_native_events,
-    synthesize_native_event_block,
 )
 from .rate_rule_constants import (
     ASSIGN_RULE_META_PREFIX,
