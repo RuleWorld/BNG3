@@ -87,7 +87,8 @@ add_library(bng_compile STATIC
     compile/energy/DrivenEnergy.cpp
     compile/CompiledRateLaw.cpp
     compile/CompiledRule.cpp
-    compile/CompiledModel.cpp)
+    compile/CompiledModel.cpp
+    compile/TotalRate.cpp)
 target_link_libraries(bng_compile PUBLIC bng_ast PRIVATE bng_parser)
 
 # =============================================================================

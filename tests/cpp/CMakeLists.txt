@@ -465,6 +465,18 @@ target_link_libraries(test_sbml_delay_writer PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
 catch_discover_tests(test_sbml_delay_writer)
 
+# test_total_rate_capability — one owner for the TotalRate capability
+add_executable(test_total_rate_capability test_total_rate_capability.cpp)
+target_include_directories(test_total_rate_capability PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
+    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput/TinyXML
+)
+target_link_libraries(test_total_rate_capability PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bionetgen_core)
+catch_discover_tests(test_total_rate_capability)
+
 add_executable(test_finite_backend test_finite_backend.cpp)
 target_include_directories(test_finite_backend PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp
