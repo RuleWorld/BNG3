@@ -2108,6 +2108,28 @@ STOCHASTIC_ACTION_RUNS = 1_000
 #: derive one engine seed per trajectory from this base seed, so the whole
 #: ensemble is reproducible.
 STOCHASTIC_SEED_BASE = 1_000_000
+STOCHASTIC_SEED_MAX = (1 << 64) - 1
+
+
+def _validate_stochastic_seed_base(seed: int) -> int:
+    """Validate the unsigned 64-bit seed accepted by native SSA bindings."""
+
+    value = int(seed)
+    if value < 0 or value > STOCHASTIC_SEED_MAX:
+        raise ValueError("--stochastic-seed-base must fit an unsigned 64-bit integer")
+    return value
+
+
+def _validate_stochastic_seed_span(seed: int, max_offset: int) -> None:
+    """Reject seed derivations that would exceed the native uint64 seed type."""
+
+    if max_offset < 0 or seed + max_offset > STOCHASTIC_SEED_MAX:
+        raise ValueError(
+            "stochastic seed base plus the ensemble seed offset must fit an "
+            "unsigned 64-bit integer"
+        )
+
+
 #: Per-case false-positive budget for the stochastic violation count.  Under
 #: the null hypothesis a correct simulator violates the official acceptance
 #: ranges with the probability implied by those ranges; a case is only failed
@@ -2432,6 +2454,7 @@ def _stochastic_batch_ensemble(
     CPU batched sampler.
     """
 
+    _validate_stochastic_seed_span(int(seed), max(0, int(runs) - 1))
     start = reference["start"]
     duration = reference["duration"]
     steps = reference["steps"]
@@ -2517,6 +2540,8 @@ def _stochastic_action_ensemble(
     same action block through the native dispatcher with its own seed.
     """
 
+    max_seed_offset = max(0, int(runs) - 1) * 1000 + max(0, phase_count - 1)
+    _validate_stochastic_seed_span(int(seed), max_seed_offset)
     samples: dict[str, list[list[float]]] = {name: [] for name in aliases}
     for run_index in range(runs):
         seeds = [
@@ -2549,6 +2574,7 @@ def _stochastic_ensemble_plan(
     network: Any,
     reference: dict[str, Any],
     runs: int,
+    seed: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
     """Choose the ensemble engine and the trajectory budget of the ensemble.
 
@@ -2595,7 +2621,7 @@ def _stochastic_ensemble_plan(
             t_end=reference["start"] + reference["duration"],
             n_steps=reference["steps"],
             t_start=reference["start"],
-            base_seed=STOCHASTIC_SEED_BASE,
+            base_seed=seed,
             threads=STOCHASTIC_CPU_THREADS,
             max_sim_steps=0,
         )
@@ -2661,6 +2687,7 @@ def _compare_stochastic_case_to_reference(
     runs: int,
     cpp_model: Any,
     network: Any,
+    seed_base: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
     """Compare an official stochastic reference against a BNG3 ensemble.
 
@@ -2757,7 +2784,9 @@ def _compare_stochastic_case_to_reference(
         metrics: dict[str, Any] = {}
         plan: dict[str, Any] = {}
         if _stochastic_batch_applicable(block, targets, observables):
-            plan = _stochastic_ensemble_plan(cpp, cpp_model, network, reference, runs)
+            plan = _stochastic_ensemble_plan(
+                cpp, cpp_model, network, reference, runs, seed=seed_base
+            )
             if plan.get("not_comparable"):
                 # The documented ensemble budget does not fit the gate's work
                 # budget even at the guide's minimum number of repetitions.
@@ -2774,7 +2803,7 @@ def _compare_stochastic_case_to_reference(
                     reference,
                     targets,
                     runs=budget,
-                    seed=STOCHASTIC_SEED_BASE,
+                    seed=seed_base,
                     backend=engine,
                 )
             except Exception as exc:
@@ -2792,7 +2821,7 @@ def _compare_stochastic_case_to_reference(
                     reference,
                     targets,
                     runs=budget,
-                    seed=STOCHASTIC_SEED_BASE,
+                    seed=seed_base,
                     backend=None,
                 )
                 fallback["metrics"] = {
@@ -2812,7 +2841,7 @@ def _compare_stochastic_case_to_reference(
                 times,
                 output_aliases,
                 runs=budget,
-                seed=STOCHASTIC_SEED_BASE,
+                seed=seed_base,
                 phase_count=len(block.phases),
                 work_dir=work_dir,
             )["values"]
@@ -2953,7 +2982,7 @@ def _compare_stochastic_case_to_reference(
         "documented_runs": int(runs),
         "work_budget": STOCHASTIC_MAX_EVENTS,
         "seeds": {
-            "base": STOCHASTIC_SEED_BASE,
+            "base": seed_base,
             "rule": (
                 "the batched samplers derive one engine seed per trajectory "
                 "from base; the action-Dispatcher ensemble uses "
@@ -3425,6 +3454,7 @@ def _validate_case(
     simulation_atol: float,
     artifacts_dir: Path | None = None,
     stochastic_runs: int = STOCHASTIC_DEFAULT_RUNS,
+    stochastic_seed_base: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -3578,6 +3608,7 @@ def _validate_case(
                             stochastic_runs,
                             cpp_model,
                             network,
+                            stochastic_seed_base,
                         )
                     )
                 else:
@@ -3769,6 +3800,8 @@ def _run_isolated_case(
         str(args.simulation_atol),
         "--stochastic-runs",
         str(getattr(args, "stochastic_runs", STOCHASTIC_DEFAULT_RUNS)),
+        "--stochastic-seed-base",
+        str(getattr(args, "stochastic_seed_base", STOCHASTIC_SEED_BASE)),
     ]
     if artifacts_dir is not None:
         command.extend(["--artifacts-dir", str(artifacts_dir.resolve())])
@@ -3955,6 +3988,7 @@ def _forked_case_child(
             args.simulation_atol,
             args.artifacts_dir,
             args.stochastic_runs,
+            getattr(args, "stochastic_seed_base", STOCHASTIC_SEED_BASE),
         )
     except BaseException as exc:  # pragma: no cover - defensive child guard
         message = f"{type(exc).__name__}: {exc}"
@@ -4461,11 +4495,23 @@ def main() -> int:
             "conformance comparison (DSMTS minimum: 1000)"
         ),
     )
+    parser.add_argument(
+        "--stochastic-seed-base",
+        type=int,
+        default=STOCHASTIC_SEED_BASE,
+        help="base seed for the reproducible official stochastic ensemble",
+    )
     args = parser.parse_args()
     if args.jobs < 1:
         raise SystemExit("--jobs must be at least one")
     if args.stochastic_runs < 1:
         raise SystemExit("--stochastic-runs must be at least one")
+    try:
+        args.stochastic_seed_base = _validate_stochastic_seed_base(
+            args.stochastic_seed_base
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     try:
         suite_info = _validate_suite_checkout(args.suite_dir, args.lock)
@@ -4637,6 +4683,7 @@ def main() -> int:
                         args.simulation_atol,
                         args.artifacts_dir,
                         args.stochastic_runs,
+                        args.stochastic_seed_base,
                     )
                     records.append(record)
                     print(
@@ -4701,6 +4748,7 @@ def main() -> int:
         "runtime_provenance": runtime_info,
         "writer_sbml_version": "L3V2",
         "categories": args.categories,
+        "stochastic_seed_base": args.stochastic_seed_base,
         "canonical_version_priority": list(VERSION_PRIORITY),
         "case_isolation": {
             "mode": isolation_mode,
@@ -4743,6 +4791,7 @@ def main() -> int:
                 "meanRange/sdRange acceptance ranges"
             ),
             "stochastic_runs": args.stochastic_runs,
+            "stochastic_seed_base": args.stochastic_seed_base,
             "counts": official_counts,
             "by_category": official_by_category,
             "summary": official_summary,

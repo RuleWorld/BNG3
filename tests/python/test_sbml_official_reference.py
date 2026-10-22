@@ -324,6 +324,7 @@ def test_stochastic_run_budget_and_seeds_are_documented():
     assert validator.STOCHASTIC_SEED_BASE > 0
     assert validator.STOCHASTIC_CASE_ERROR_RATE > 0
     assert validator.STOCHASTIC_CASE_ERROR_RATE < 0.01
+    assert validator._validate_stochastic_seed_base(2_000_000) == 2_000_000
 
 
 class _StubSampler:
@@ -331,12 +332,14 @@ class _StubSampler:
 
     def __init__(self, events: int) -> None:
         self.events = events
+        self.seed = None
 
     def simulate_batch_ssa_cpu(self, *args, **kwargs) -> dict:
+        self.seed = kwargs.get("base_seed")
         return {"total_events": float(self.events)}
 
 
-def _plan_for(validator, events: int, seconds: float) -> dict:
+def _plan_for(validator, events: int, seconds: float, seed: int | None = None) -> dict:
     """Plan an ensemble for a model whose probe performs ``events`` firings."""
 
     reference = {"start": 0.0, "duration": 10.0, "steps": 10}
@@ -348,9 +351,17 @@ def _plan_for(validator, events: int, seconds: float) -> dict:
     original = validator.time.monotonic
     validator.time.monotonic = monotonic
     try:
-        return validator._stochastic_ensemble_plan(
-            _StubSampler(events), object(), object(), reference, 40_000
+        sampler = _StubSampler(events)
+        result = validator._stochastic_ensemble_plan(
+            sampler,
+            object(),
+            object(),
+            reference,
+            40_000,
+            **({} if seed is None else {"seed": seed}),
         )
+        result["probe_seed"] = sampler.seed
+        return result
     finally:
         validator.time.monotonic = original
 
@@ -375,6 +386,12 @@ def test_the_ensemble_size_does_not_depend_on_the_runner_speed():
     assert slow["work_budget_reduced"] is False
     # The measured cost is reported, but it does not decide anything.
     assert fast["projected_cpu_seconds"] != slow["projected_cpu_seconds"]
+
+
+def test_the_ensemble_plan_uses_the_requested_seed_base():
+    validator = _load_validator("validate_sbml_test_suite")
+    plan = _plan_for(validator, 64 * 100, 0.5, seed=2_000_000)
+    assert plan["probe_seed"] == 2_000_000
 
 
 def test_a_case_too_heavy_for_the_work_budget_is_not_comparable():
@@ -990,6 +1007,8 @@ def _boundary_sink_verdict(
     validator,
     case: dict,
     model: str,
+    seed_base: int = 1_000_000,
+    observed_seed: dict[str, int] | None = None,
 ) -> dict:
     """Run the stochastic gate against a case with an untracked boundary species.
 
@@ -1014,6 +1033,8 @@ def _boundary_sink_verdict(
     def fake_ensemble(
         cpp, model, network, reference, targets, *, runs, seed, backend
     ) -> dict:
+        if observed_seed is not None:
+            observed_seed["base"] = seed
         values = {}
         for variable in targets:
             mean = np.asarray(
@@ -1048,6 +1069,7 @@ def _boundary_sink_verdict(
         1000,
         cpp_model,
         network,
+        seed_base,
     )
 
 
@@ -1168,12 +1190,20 @@ def test_a_boundary_species_the_reference_does_not_track_is_not_comparable(
         ),
     )
 
+    observed_seed = {}
     verdict = _boundary_sink_verdict(
-        tmp_path, monkeypatch, validator, case, BOUNDARY_SINK_MODEL
+        tmp_path,
+        monkeypatch,
+        validator,
+        case,
+        BOUNDARY_SINK_MODEL,
+        2_000_000,
+        observed_seed,
     )
 
     assert verdict["status"] == "unsupported"
     assert "Sink" in verdict["reason"]
+    assert observed_seed["base"] == 2_000_000
 
 
 def test_a_boundary_species_next_to_a_boundary_source_is_not_comparable(

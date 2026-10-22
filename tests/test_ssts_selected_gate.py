@@ -87,10 +87,10 @@ def test_isolated_case_checks_and_retains_worker_runtime(
     child = tmp_path / "worker.py"
     payload = {"records": [passed_case()], "runtime_provenance": worker_runtime}
     child.write_text(
-        "import sys\nfrom pathlib import Path\n"
-        "Path(sys.argv[sys.argv.index('--json') + 1]).write_text("
-        + repr(json.dumps(payload))
-        + ")\n"
+        "import json, sys\nfrom pathlib import Path\n"
+        f"payload = {payload!r}\n"
+        "payload['stochastic_seed_base'] = int(sys.argv[sys.argv.index('--stochastic-seed-base') + 1])\n"
+        "Path(sys.argv[sys.argv.index('--json') + 1]).write_text(json.dumps(payload))\n"
     )
     monkeypatch.setattr(runner, "__file__", str(child))
     args = argparse.Namespace(
@@ -103,6 +103,7 @@ def test_isolated_case_checks_and_retains_worker_runtime(
         simulation_atol=1e-12,
         case_timeout=10,
         artifacts_dir=tmp_path / "artifacts",
+        stochastic_seed_base=1234567,
     )
     case = {
         "category": "semantic",
@@ -121,6 +122,20 @@ def test_isolated_case_checks_and_retains_worker_runtime(
     else:
         assert record["status"] == "passed"
         assert record["worker_runtime_provenance"] == expected
+        command = json.loads((retained / "worker-report.json").read_text())
+        assert command["stochastic_seed_base"] == 1234567
+
+
+def test_stochastic_seed_base_range_matches_native_uint64():
+    assert runner._validate_stochastic_seed_base(0) == 0
+    assert runner._validate_stochastic_seed_base((1 << 64) - 1) == (1 << 64) - 1
+    with pytest.raises(ValueError, match="unsigned 64-bit"):
+        runner._validate_stochastic_seed_base(-1)
+    with pytest.raises(ValueError, match="unsigned 64-bit"):
+        runner._validate_stochastic_seed_base(1 << 64)
+    runner._validate_stochastic_seed_span((1 << 64) - 2, 1)
+    with pytest.raises(ValueError, match="seed offset"):
+        runner._validate_stochastic_seed_span((1 << 64) - 2, 2)
 
 
 def test_isolated_timeout_retains_partial_output(tmp_path, monkeypatch):
@@ -178,6 +193,15 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
     assert '"${{ github.event_name }}" == "schedule"' in run
     assert '"${{ github.event_name }}" == "workflow_dispatch"' in run
     assert "selection=(--categories semantic stochastic)" in run
+    dispatch_env = steps[
+        next(
+            i
+            for i, step in enumerate(steps)
+            if step.get("name") == "Run bounded official conformance"
+        )
+    ]["env"]
+    assert dispatch_env["SSTS_ONLY_CASE"] == "${{ inputs.only_case }}"
+    assert '--stochastic-seed-base "$SSTS_STOCHASTIC_SEED_BASE"' in run
     assert '"${selection[@]}"' in run
     dispatch = (workflow.get(True) or {}).get("workflow_dispatch") or {}
     bounded = dispatch.get("inputs", {}).get("bounded")
@@ -187,6 +211,8 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
         "type": "boolean",
         "default": False,
     }
+    assert dispatch["inputs"]["only_case"]["type"] == "string"
+    assert dispatch["inputs"]["stochastic_seed_base"]["default"] == "1000000"
     selector_shell = run.split("python scripts/ci/validate_sbml_test_suite.py", 1)[0]
     selector_shell = selector_shell.replace(
         '"${{ github.event_name }}"', '"$EVENT_NAME"'
@@ -194,9 +220,11 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
     selector_shell = selector_shell.replace(
         '"${{ inputs.bounded }}"', '"$BOUNDED_MANUAL"'
     )
+    selector_shell = selector_shell.replace('"${{ inputs.only_case }}"', '"$ONLY_CASE"')
+    selector_shell = selector_shell.replace('"$SSTS_ONLY_CASE"', '"$ONLY_CASE"')
     selector_shell += '\nprintf "%s\\n" "${selection[@]}"\n'
 
-    def selected_args(event, bounded_input="false"):
+    def selected_args(event, bounded_input="false", only_case=""):
         result = subprocess.run(
             ["bash", "-c", selector_shell],
             check=True,
@@ -206,6 +234,7 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
                 **os.environ,
                 "EVENT_NAME": event,
                 "BOUNDED_MANUAL": bounded_input,
+                "ONLY_CASE": only_case,
             },
         )
         return result.stdout.splitlines()
@@ -223,6 +252,25 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
     assert selected_args("schedule") == full_args
     assert selected_args("workflow_dispatch") == full_args
     assert selected_args("workflow_dispatch", "true") == bounded_args
+    assert selected_args("workflow_dispatch", only_case="stochastic/00003") == [
+        "--categories",
+        "semantic",
+        "stochastic",
+        "--only-case",
+        "stochastic/00003",
+    ]
+    conflict = subprocess.run(
+        ["bash", "-c", selector_shell],
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "EVENT_NAME": "workflow_dispatch",
+            "BOUNDED_MANUAL": "true",
+            "ONLY_CASE": "stochastic/00003",
+        },
+    )
+    assert conflict.returncode == 2
     assert "--case-timeout 60" in run
     assert "--jobs 4" in run
     assert '--artifacts-dir "$RUNNER_TEMP/ssts-artifacts/cases"' in run
