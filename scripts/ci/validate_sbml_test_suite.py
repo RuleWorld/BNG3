@@ -143,7 +143,12 @@ def _phase_progress(log: str | bytes) -> dict[str, str | None]:
     for line in log.splitlines():
         if not line.startswith(CASE_PHASE_PREFIX + " "):
             continue
-        _, state, phase = line.split(" ", 2)
+        parts = line.split(" ", 2)
+        if len(parts) != 3:
+            continue
+        _, state, phase = parts
+        if not phase or state not in {"started", "completed", "failed"}:
+            continue
         if state == "started":
             active.append(phase)
         elif state == "completed":

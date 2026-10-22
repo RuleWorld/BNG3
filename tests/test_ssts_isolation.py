@@ -336,6 +336,25 @@ def test_phase_progress_restores_outer_phase_after_nested_completion():
     }
 
 
+def test_phase_progress_ignores_partial_or_unknown_breadcrumbs():
+    progress = runner._phase_progress(
+        "\n".join(
+            (
+                "@@SBML_CASE_PHASE@@",
+                "@@SBML_CASE_PHASE@@ started",
+                "@@SBML_CASE_PHASE@@ started ",
+                "@@SBML_CASE_PHASE@@ unknown ignored",
+                "@@SBML_CASE_PHASE@@ started atomizer-translation",
+            )
+        )
+    )
+
+    assert progress == {
+        "last_completed_phase": None,
+        "active_phase": "atomizer-translation",
+    }
+
+
 @pytest.mark.skipif(
     not hasattr(os, "fork"), reason="fork isolation requires POSIX fork"
 )
