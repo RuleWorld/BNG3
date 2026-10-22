@@ -98,6 +98,7 @@ RECORD_STATUSES = ("passed", "unsupported", "failed", "timeout", "invalid-source
 DEFAULT_VERIFICATION_LOCK = (
     Path(tempfile.gettempdir()) / "bng3-sbml-suite-verification.lock"
 )
+CASE_PHASE_PREFIX = "@@SBML_CASE_PHASE@@"
 
 
 class SuiteLockError(ValueError):
@@ -110,6 +111,51 @@ class IncompleteSuiteTreeError(SuiteLockError):
 
 class OfficialReferenceUnsupported(ValueError):
     """Raised when a locked case has no deterministic time-course reference."""
+
+
+def _case_phase(phase: str, state: str) -> None:
+    """Write a flushed phase breadcrumb that survives an isolated timeout."""
+
+    print(f"{CASE_PHASE_PREFIX} {state} {phase}", file=sys.stderr, flush=True)
+
+
+@contextlib.contextmanager
+def _case_phase_scope(phase: str) -> Iterable[None]:
+    """Record one case stage's start and successful completion in worker logs."""
+
+    _case_phase(phase, "started")
+    try:
+        yield
+    except BaseException:
+        _case_phase(phase, "failed")
+        raise
+    else:
+        _case_phase(phase, "completed")
+
+
+def _phase_progress(log: str | bytes) -> dict[str, str | None]:
+    """Recover the active and last completed phases from captured worker logs."""
+
+    if isinstance(log, bytes):
+        log = log.decode("utf-8", errors="replace")
+    last_completed = None
+    active = []
+    for line in log.splitlines():
+        if not line.startswith(CASE_PHASE_PREFIX + " "):
+            continue
+        _, state, phase = line.split(" ", 2)
+        if state == "started":
+            active.append(phase)
+        elif state == "completed":
+            last_completed = phase
+            if phase in active:
+                del active[active.index(phase) :]
+        elif state == "failed":
+            active.append(phase)
+    return {
+        "last_completed_phase": last_completed,
+        "active_phase": active[-1] if active else None,
+    }
 
 
 def _suite_lock_entry(lock_path: Path = DEFAULT_SUITE_LOCK) -> dict[str, str]:
@@ -1039,14 +1085,15 @@ def _simulate_and_compare(
         raise RuntimeError(
             "libRoadRunner is required for direct numerical comparison"
         ) from exc
-    bng_result = BioNetGenModel(cpp_model).simulate(
-        method="ode",
-        t_start=0.0,
-        t_end=t_end,
-        n_steps=n_steps,
-        rtol=rtol,
-        atol=atol,
-    )
+    with _case_phase_scope("independent-bng3-cvode"):
+        bng_result = BioNetGenModel(cpp_model).simulate(
+            method="ode",
+            t_start=0.0,
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
+        )
     series = dict(bng_result.observables)
     function_values = getattr(bng_result, "functions", {}) or {}
     if function_names is None:
@@ -1062,7 +1109,8 @@ def _simulate_and_compare(
     names = list(series)
     bng_time = np.asarray(bng_result.time, dtype=float)
     bng_values = {name: np.asarray(series[name], dtype=float) for name in names}
-    rr = roadrunner.RoadRunner(str(output_path))
+    with _case_phase_scope("independent-libroadrunner-load"):
+        rr = roadrunner.RoadRunner(str(output_path))
     integrator = rr.integrator
     if integrator.hasValue("relative_tolerance"):
         integrator.setValue("relative_tolerance", rtol)
@@ -1101,7 +1149,8 @@ def _simulate_and_compare(
             + ", ".join(missing[:10])
         )
     rr.timeCourseSelections = ["time", *selected_names]
-    rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+    with _case_phase_scope("independent-libroadrunner-cvode"):
+        rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
     expected_shape = (len(bng_time), len(names) + 1)
     if rr_values.ndim != 2 or rr_values.shape != expected_shape:
         raise RuntimeError(
@@ -1702,15 +1751,16 @@ def _compare_case_to_reference(
             )
         from bionetgen import BioNetGenModel
 
-        result = BioNetGenModel(output_model).simulate(
-            method="ode",
-            t_start=reference["start"],
-            t_end=reference["start"] + reference["duration"],
-            n_steps=0,
-            sample_times=reference["times"].tolist(),
-            rtol=1e-9,
-            atol=1e-14,
-        )
+        with _case_phase_scope("official-bng3-cvode"):
+            result = BioNetGenModel(output_model).simulate(
+                method="ode",
+                t_start=reference["start"],
+                t_end=reference["start"] + reference["duration"],
+                n_steps=0,
+                sample_times=reference["times"].tolist(),
+                rtol=1e-9,
+                atol=1e-14,
+            )
         if not np.array_equal(np.asarray(result.time, dtype=float), reference["times"]):
             return {
                 "status": "failed",
@@ -3436,9 +3486,11 @@ def _validate_case(
                     (work_dir / reference_path.name).write_bytes(
                         reference_path.read_bytes()
                     )
-        record["source_xml"] = _validate_xml(sbml, "source SBML")
+        with _case_phase_scope("source-xml-validation"):
+            record["source_xml"] = _validate_xml(sbml, "source SBML")
         source_xml_valid = True
-        parsed = SBMLParser().parse(sbml, source_path=source_path)
+        with _case_phase_scope("source-parse"):
+            parsed = SBMLParser().parse(sbml, source_path=source_path)
         record["source_model"] = {
             "species": len(parsed.species),
             "reactions": len(parsed.reactions),
@@ -3461,7 +3513,8 @@ def _validate_case(
             t_end=atomizer_t_end,
             n_steps=atomizer_n_steps,
         )
-        atomized = atomizer.atomize(sbml, source_path=source_path)
+        with _case_phase_scope("atomizer-translation"):
+            atomized = atomizer.atomize(sbml, source_path=source_path)
         if not atomized.success:
             raise RuntimeError(atomized.error or "modern Atomizer returned failure")
         if artifacts_dir is not None:
@@ -3493,49 +3546,56 @@ def _validate_case(
             }
             record["core_passed"] = False
             return record
-        cpp_model = cpp.parse_string(atomized.bngl)
-        network = cpp.generate_network(cpp_model, max_iter=100)
+        with _case_phase_scope("bng3-model-parse"):
+            cpp_model = cpp.parse_string(atomized.bngl)
+        with _case_phase_scope("network-generation"):
+            network = cpp.generate_network(cpp_model, max_iter=100)
         record["generated_network"] = {
             "species": network.num_species,
             "reactions": network.num_reactions,
         }
         if record["official_conformance"]["status"] == "pending":
-            if case["category"] == "stochastic":
-                record["official_conformance"] = _compare_stochastic_case_to_reference(
-                    case,
-                    atomized.bngl,
-                    parsed,
-                    atomized,
-                    reference,
-                    cpp,
-                    work_dir,
-                    stochastic_runs,
-                    cpp_model,
-                    network,
-                )
-            else:
-                record["official_conformance"] = _compare_case_to_reference(
-                    case,
-                    cpp_model,
-                    atomized.bngl,
-                    parsed,
-                    atomized,
-                    reference,
-                    cpp,
-                    work_dir,
-                    network,
-                )
+            with _case_phase_scope("official-reference-comparison"):
+                if case["category"] == "stochastic":
+                    record["official_conformance"] = (
+                        _compare_stochastic_case_to_reference(
+                            case,
+                            atomized.bngl,
+                            parsed,
+                            atomized,
+                            reference,
+                            cpp,
+                            work_dir,
+                            stochastic_runs,
+                            cpp_model,
+                            network,
+                        )
+                    )
+                else:
+                    record["official_conformance"] = _compare_case_to_reference(
+                        case,
+                        cpp_model,
+                        atomized.bngl,
+                        parsed,
+                        atomized,
+                        reference,
+                        cpp,
+                        work_dir,
+                        network,
+                    )
 
         output_path = work_dir / f"{case['category']}_{case['id']}.xml"
-        cpp.io.write_sbml(
-            cpp_model,
-            network,
-            str(output_path),
-            source_metadata=source_metadata,
-        )
-        output_text = output_path.read_text(encoding="utf-8")
-        record["written_xml"] = _validate_xml(output_text, "written SBML")
-        reimport_model = SBMLParser().parse(output_text)
+        with _case_phase_scope("sbml-export-and-validation"):
+            cpp.io.write_sbml(
+                cpp_model,
+                network,
+                str(output_path),
+                source_metadata=source_metadata,
+            )
+            output_text = output_path.read_text(encoding="utf-8")
+            record["written_xml"] = _validate_xml(output_text, "written SBML")
+        with _case_phase_scope("roundtrip-source-parse"):
+            reimport_model = SBMLParser().parse(output_text)
         record["reimport_model"] = {
             "species": len(reimport_model.species),
             "reactions": len(reimport_model.reactions),
@@ -3560,24 +3620,27 @@ def _validate_case(
                 and reimport_model.source_metadata_payload == source_metadata
             ),
         }
-        reimport = Atomizer(
-            atomize=False,
-            quiet_mode=True,
-            t_end=simulation_t_end,
-            n_steps=simulation_n_steps,
-        ).atomize(output_text)
+        with _case_phase_scope("roundtrip-atomizer-translation"):
+            reimport = Atomizer(
+                atomize=False,
+                quiet_mode=True,
+                t_end=simulation_t_end,
+                n_steps=simulation_n_steps,
+            ).atomize(output_text)
         if not reimport.success:
             raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
         if artifacts_dir is not None:
             (work_dir / "reimported.bngl").write_text(reimport.bngl, encoding="utf-8")
-        reimport_network = cpp.generate_network(
-            cpp.parse_string(reimport.bngl), max_iter=100
-        )
+        with _case_phase_scope("roundtrip-network-generation"):
+            reimport_network = cpp.generate_network(
+                cpp.parse_string(reimport.bngl), max_iter=100
+            )
         record["reimport_network"] = {
             "species": reimport_network.num_species,
             "reactions": reimport_network.num_reactions,
         }
-        native = dict(cpp.io.read_sbml(str(output_path), False))
+        with _case_phase_scope("native-sbml-readback"):
+            native = dict(cpp.io.read_sbml(str(output_path), False))
         record["native_reader"] = native
         if not native.get("success"):
             raise RuntimeError(
@@ -3603,24 +3666,25 @@ def _validate_case(
             record["unsupported_reason"] = " ".join(limitations)
         else:
             record["status"] = "passed"
-        comparison = _simulate_and_compare(
-            cpp_model,
-            output_path,
-            t_end=simulation_t_end,
-            n_steps=simulation_n_steps,
-            rtol=simulation_rtol,
-            atol=simulation_atol,
-            function_names={
-                standardize_name(str(rule.variable))
-                for rule in parsed.rules
-                if rule.type == "assignment" and rule.variable
-            }
-            | {
-                standardize_name(str(assignment.symbol))
-                for assignment in parsed.initial_assignments
-                if assignment.symbol
-            },
-        )
+        with _case_phase_scope("independent-simulation-comparison"):
+            comparison = _simulate_and_compare(
+                cpp_model,
+                output_path,
+                t_end=simulation_t_end,
+                n_steps=simulation_n_steps,
+                rtol=simulation_rtol,
+                atol=simulation_atol,
+                function_names={
+                    standardize_name(str(rule.variable))
+                    for rule in parsed.rules
+                    if rule.type == "assignment" and rule.variable
+                }
+                | {
+                    standardize_name(str(assignment.symbol))
+                    for assignment in parsed.initial_assignments
+                    if assignment.symbol
+                },
+            )
         record["simulation_comparison"] = comparison
         if not comparison.get("passed", False):
             record["status"] = "failed"
@@ -3744,7 +3808,7 @@ def _run_isolated_case(
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout or ""
         stderr = exc.stderr or ""
-        return {
+        record = {
             "category": case["category"],
             "id": case["id"],
             "version": case["version"],
@@ -3757,6 +3821,10 @@ def _run_isolated_case(
                 "reason": f"per-case timeout after {args.case_timeout}s",
             },
         }
+        progress = _phase_progress(stderr)
+        if progress["active_phase"] is not None or progress["last_completed_phase"]:
+            record["phase_progress"] = progress
+        return record
     except Exception as exc:
         return {
             "category": case["category"],
@@ -3923,11 +3991,13 @@ def _forked_case_child(
         os._exit(0)
 
 
-def _forked_timeout_record(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
+def _forked_timeout_record(
+    case: dict[str, Any], case_timeout: int, stderr_path: Path | None = None
+) -> dict[str, Any]:
     """Return the timeout verdict used by every isolation mode."""
 
     reason = f"per-case timeout after {case_timeout}s"
-    return {
+    record = {
         "category": case["category"],
         "id": case["id"],
         "version": case["version"],
@@ -3937,6 +4007,11 @@ def _forked_timeout_record(case: dict[str, Any], case_timeout: int) -> dict[str,
         "error": reason,
         "official_conformance": {"status": "timed-out", "reason": reason},
     }
+    if stderr_path is not None and stderr_path.is_file():
+        progress = _phase_progress(stderr_path.read_bytes())
+        if progress["active_phase"] is not None or progress["last_completed_phase"]:
+            record["phase_progress"] = progress
+    return record
 
 
 def _forked_failure_record(case: dict[str, Any], message: str) -> dict[str, Any]:
@@ -4049,6 +4124,7 @@ def _run_forked_cases(
                 active[pid] = {
                     "case": case,
                     "record_path": record_path,
+                    "stderr_path": stderr_path,
                     "read_fd": read_fd,
                     "deadline": time.monotonic() + args.case_timeout,
                 }
@@ -4106,7 +4182,7 @@ def _run_forked_cases(
                     pass
                 case = state["case"]
                 results[(case["category"], case["id"])] = _forked_timeout_record(
-                    case, args.case_timeout
+                    case, args.case_timeout, state.get("stderr_path")
                 )
                 print(
                     f"{case['category']}/{case['id']}: TIMEOUT",
