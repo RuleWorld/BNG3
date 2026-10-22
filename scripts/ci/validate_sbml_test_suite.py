@@ -2911,6 +2911,8 @@ def _unsupported_causes(reason: str) -> list[str]:
         causes.append("conversion_factors")
     if "reaction-local" in lower or "no bngl-wide scope" in lower:
         causes.append("local_scope")
+    if "spatialdimensions" in lower:
+        causes.append("compartments")
     if any(
         marker in lower
         for marker in (

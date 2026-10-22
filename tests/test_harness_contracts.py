@@ -629,14 +629,28 @@ def test_the_jobs_guard_caps_the_worker_count(tmp_path):
     broken_report = tmp_path / "broken.json"
     broken_environment = dict(os.environ)
     build_cpp = REPO / "build" / "cpp"
+    # An editable install may register ScikitBuildRedirectingFinder ahead of
+    # PathFinder and route ``bionetgen`` back to the primary checkout even
+    # when PYTHONPATH names this synthetic checkout. Remove that environment
+    # redirect only in this subprocess so the test exercises the broken copy
+    # after the normal checkout-identity guard has verified its source.
+    bootstrap = tmp_path / "synthetic_import_bootstrap"
+    bootstrap.mkdir()
+    (bootstrap / "sitecustomize.py").write_text(
+        "import sys\n"
+        "sys.meta_path[:] = [finder for finder in sys.meta_path "
+        "if type(finder).__name__ != 'ScikitBuildRedirectingFinder']\n",
+        encoding="utf-8",
+    )
+    entries = [str(bootstrap), str(broken_root / "python")]
     if any(build_cpp.glob("_bionetgen_cpp*")):
         # The checkout's own build is the one the gate has to measure, so the
         # broken copy gets the same package and extension the real gate uses.
-        entries = [str(REPO / "python"), str(build_cpp)]
-        existing = broken_environment.get("PYTHONPATH")
-        if existing:
-            entries.append(existing)
-        broken_environment["PYTHONPATH"] = os.pathsep.join(entries)
+        entries.append(str(build_cpp))
+    existing = broken_environment.get("PYTHONPATH")
+    if existing:
+        entries.append(existing)
+    broken_environment["PYTHONPATH"] = os.pathsep.join(entries)
     broken_result = subprocess.run(
         [
             sys.executable,

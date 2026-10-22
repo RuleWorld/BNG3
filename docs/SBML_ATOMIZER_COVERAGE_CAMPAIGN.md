@@ -538,15 +538,6 @@ _Source: `/tmp/bng3-campaign/full-main-cf93/ssts-cf93ba7c2b59fdec71a6c54ebb4314a
 Total official-reference unsupported verdicts: 139.
 _Source: `/tmp/bng3-campaign/full-main-cf93/ssts-cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a-1/report.json` (SHA-256 `68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a`._
 
-#### Remaining official-reference failures, by official feature
-
-| Cluster | n | Cases |
-| --- | --- | --- |
-| other | 1 | 00003 |
-
-Total official-reference failures: 1.
-_Source: `/tmp/bng3-campaign/full-main-cf93/ssts-cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a-1/report.json` (SHA-256 `68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
-
 <!-- END GENERATED: sbml-campaign-current -->
 
 The generated comparison above lists every case whose verdict changed, the

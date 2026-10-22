@@ -208,6 +208,26 @@ def test_generic_nonfinite_and_scheduled_boundary_refusals_are_classified():
     }
 
 
+def test_inventory_refines_recorded_other_without_losing_source_report_label():
+    record = {
+        "category": "semantic",
+        "id": "99997",
+        "status": "unsupported",
+        "unsupported_reason": (
+            'Compartment "C" has spatialDimensions 7; BNG3 does not support '
+            "spatialDimensions values greater than 3."
+        ),
+        "unsupported_causes": ["other"],
+        "official_conformance": {"status": "unsupported"},
+    }
+
+    reduced = inventory.suite_inventory({"records": [record]})
+
+    assert reduced["cases"][0]["causes"] == ["compartments"]
+    assert reduced["cases"][0]["reported_causes"] == ["other"]
+    assert reduced["cause_counts"] == {"compartments": 1}
+
+
 @pytest.mark.smoke
 def test_committed_manifest_agrees_with_the_committed_inventory():
     manifest = _manifest()

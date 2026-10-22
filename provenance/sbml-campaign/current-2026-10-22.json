@@ -4,7 +4,7 @@
     "base_commit": "cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a",
     "measurement_date": "2026-10-22",
     "measurement_host": "GitHub Actions hosted Ubuntu 22.04, CPython 3.12.15, libSBML 5.21.2, libRoadRunner 2.10.0",
-    "note": "Exact-main full SBML Test Suite measurement from workflow_dispatch run 39827300127, artifact 12447252607. Semantic suite isolation used a 60-second per-case timeout; the official stochastic reference used 40000 runs. This artifact covers the SBML Test Suite only; curated BioModels remain represented by their separate, older provenance record.",
+    "note": "Exact-main full SBML Test Suite measurement from workflow_dispatch run 39827300127, artifact 12447252607. Semantic suite isolation used a 60-second per-case timeout. The configured official stochastic ensemble size was 40000 trajectories, but actual per-case counts vary and are recorded in each result (stochastic/00023 ran 3611 under the adaptive planner). This artifact covers the SBML Test Suite only; curated BioModels remain represented by their separate, older provenance record.",
     "sbml_test_suite": {
       "artifact_id": 12447252607,
       "case_timeout_seconds": 60,
@@ -11417,7 +11417,7 @@
       {
         "category": "semantic",
         "causes": [
-          "other"
+          "mathml"
         ],
         "conversion": "unsupported",
         "id": "00950",
@@ -11425,13 +11425,16 @@
         "official_reference": "unsupported",
         "reason_signature": "mathml:infinity",
         "ref": "semantic/00950",
+        "reported_causes": [
+          "other"
+        ],
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
       },
       {
         "category": "semantic",
         "causes": [
-          "other"
+          "mathml"
         ],
         "conversion": "unsupported",
         "id": "00951",
@@ -11439,6 +11442,9 @@
         "official_reference": "unsupported",
         "reason_signature": "mathml:non-finite-parameter-approximation",
         "ref": "semantic/00951",
+        "reported_causes": [
+          "other"
+        ],
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
       },
@@ -13632,7 +13638,7 @@
       {
         "category": "semantic",
         "causes": [
-          "other"
+          "compartments"
         ],
         "conversion": "unsupported",
         "id": "01133",
@@ -13640,6 +13646,9 @@
         "official_reference": "unsupported",
         "reason_signature": "compartment:unsupported-spatial-dimensions",
         "ref": "semantic/01133",
+        "reported_causes": [
+          "other"
+        ],
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
       },
@@ -14470,7 +14479,7 @@
       {
         "category": "semantic",
         "causes": [
-          "other"
+          "compartments"
         ],
         "conversion": "unsupported",
         "id": "01197",
@@ -14478,6 +14487,9 @@
         "official_reference": "unsupported",
         "reason_signature": "compartment:unsupported-spatial-dimensions",
         "ref": "semantic/01197",
+        "reported_causes": [
+          "other"
+        ],
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
       },
@@ -22014,7 +22026,7 @@
       {
         "category": "semantic",
         "causes": [
-          "other"
+          "mathml"
         ],
         "conversion": "unsupported",
         "id": "01811",
@@ -22022,6 +22034,9 @@
         "official_reference": "unsupported",
         "reason_signature": "mathml:infinity",
         "ref": "semantic/01811",
+        "reported_causes": [
+          "other"
+        ],
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
       },
@@ -22040,7 +22055,7 @@
       {
         "category": "semantic",
         "causes": [
-          "other"
+          "mathml"
         ],
         "conversion": "unsupported",
         "id": "01813",
@@ -22048,6 +22063,9 @@
         "official_reference": "unsupported",
         "reason_signature": "mathml:not-a-number",
         "ref": "semantic/01813",
+        "reported_causes": [
+          "other"
+        ],
         "roundtrip_structure": "not-tested",
         "version": "l3v2"
       },
@@ -23559,11 +23577,11 @@
     ],
     "cause_counts": {
       "algebraic_rules": 1,
+      "compartments": 2,
       "constraints": 35,
       "events": 106,
       "fast_reactions": 6,
-      "mathml": 49,
-      "other": 6,
+      "mathml": 53,
       "package:distrib": 61,
       "package:fbc": 34,
       "stoichiometry": 35
@@ -23590,13 +23608,7 @@
         "causes": [
           "mathml"
         ],
-        "count": 9
-      },
-      {
-        "causes": [
-          "other"
-        ],
-        "count": 6
+        "count": 13
       },
       {
         "causes": [
@@ -23616,6 +23628,12 @@
           "fast_reactions"
         ],
         "count": 3
+      },
+      {
+        "causes": [
+          "compartments"
+        ],
+        "count": 2
       },
       {
         "causes": [
