@@ -2017,6 +2017,32 @@ ACTION_MAX_PHASES = 2000
 #: spread of the ensemble standard deviation between independent ensembles of
 #: 10,000 trajectories is about 1.5 % of the estimate, so the ensemble standard
 #: deviation test would otherwise produce occasional false violations.
+#:
+#: The guide's two acceptance statistics are defined *in terms of* the
+#: repetition count: the standardised mean ``Z = sqrt(n) * (mean - mu) / sigma``
+#: and the standardised variance ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)`` are
+#: approximately standard normal for every n, and the guide states its
+#: acceptance ranges on those standardised statistics ((-3, 3) for the mean and
+#: (-5, 5) for the standard deviation; the suite's own ``-settings.txt`` files
+#: carry the same two ranges).  The harness computes exactly those statistics
+#: with the n it actually ran, so its per-test criterion is n-correct: the
+#: acceptance band does not widen for a smaller ensemble, and the per-test
+#: chance rate is the same at every n.
+#:
+#: What is *not* n-correct is the verdict.  A verdict is a property of the
+#: realised ensemble, not of its distribution: the batched samplers derive one
+#: engine seed per trajectory from the base seed, so the ensemble of n
+#: trajectories is a prefix of the ensemble of 40,000 trajectories, and a
+#: different n is a different draw from the same null.  Measured on
+#: ``stochastic/00023`` with the campaign's base seed, the largest standardised
+#: mean statistic of the ensemble was 4.51 at n = 1,000, 4.15 at n = 2,000,
+#: 2.83 at n = 4,000, 2.78 at n = 8,000, 1.75 at n = 16,000 and 1.63 at
+#: n = 32,000, so the case-level criterion (three violated acceptance tests)
+#: failed that case below n = 3,000 and passed it above.  A reduction that
+#: depends on the runner's speed therefore lands the verdict in either window
+#: at random, which is why the harness never reduces the ensemble to what the
+#: runner can afford: it uses the documented budget, reduced only by the work
+#: budget below, which counts the model's work and not the runner's speed.
 STOCHASTIC_DEFAULT_RUNS = 40_000
 #: Documented budget for the action-dispatcher ensemble.  That path rebuilds
 #: and regenerates the network for every repetition, so it uses the DSMTS
@@ -2054,14 +2080,36 @@ STOCHASTIC_GPU_PROBE_TRAJECTORIES = 64
 #: trajectories for the same seed, so a conformance verdict has to stay
 #: reproducible.
 STOCHASTIC_CPU_THREADS = 1
-#: Per-case wall-clock budget for one CPU batched ensemble.  When the
-#: measured projection exceeds it, the trajectory count is reduced to the
-#: largest affordable value (never below the DSMTS minimum) and the report
-#: records the budget that was actually used.  The budget keeps a stochastic
-#: case comfortably inside the conformance gate's per-case timeout.
-STOCHASTIC_CPU_TIME_BUDGET_SECONDS = 30.0
+#: Work budget for one stochastic ensemble, counted in reaction events.  The
+#: budget is a work measure rather than a time measure for the reason the
+#: action phase budget is a phase count: the cost of an event depends on the
+#: model and on the runner's load, so a wall-clock limit would make the
+#: trajectory count - and with it the conformance verdict - depend on where
+#: the case ran, while the number of events the ensemble performs is the same
+#: on every runner.
+#:
+#: The value keeps a compared case comfortably inside the conformance gate's
+#: per-case timeout on a runner *without* GPU acceleration: the CPU batched
+#: sampler performs about 1.4e7 to 2.6e7 reaction events per second on the
+#: reference runner, so 4e8 events is about 15 to 30 seconds of CPU against
+#: the gate's 60-second per-case timeout.  The budget binds only on the two
+#: heaviest cases of the pinned suite, whose documented 40,000-trajectory
+#: ensembles need about 3.3e9 and 3.6e9 events; every other case of the suite
+#: needs at most 2.3e8 events and keeps the documented trajectory budget.
+STOCHASTIC_MAX_EVENTS = 400_000_000
 #: Smallest trajectory count the harness will use for a stochastic ensemble.
+#: This is the DSMTS user guide's absolute minimum number of independent
+#: repetitions.
 STOCHASTIC_MIN_RUNS = 1_000
+#: Smallest trajectory count at which the harness will *compare* a stochastic
+#: case.  The DSMTS user guide, section 3, requires at least 1,000
+#: independent repetitions and recommends 10,000 "for the statistical tests
+#: to have reasonable power to detect problems"; section 3.4 calls 10,000 the
+#: size that is "needed to have any chance of picking up minor issues".  A
+#: case whose documented ensemble cannot be run at that size inside the
+#: gate's work budget is not comparable at a documented budget: it is
+#: reported as not comparable, never as a pass and never as a failure.
+STOCHASTIC_MIN_POWER_RUNS = 10_000
 
 
 def _standard_normal_outside(bounds: tuple[float, float]) -> float:
@@ -2447,26 +2495,37 @@ def _stochastic_ensemble_plan(
     reference: dict[str, Any],
     runs: int,
 ) -> dict[str, Any]:
-    """Choose the ensemble engine and an affordable trajectory budget.
+    """Choose the ensemble engine and the trajectory budget of the ensemble.
+
+    The trajectory count is the documented budget, reduced only by the
+    ensemble's *work* budget: the number of reaction events the ensemble may
+    perform.  The work is a property of the model and the seed, so the count
+    is the same on every runner, and so is the verdict that is computed from
+    it.  A wall-clock budget cannot do that: the ensemble of n trajectories is
+    a prefix of the ensemble of the documented budget, so a count that
+    depends on the runner's speed is a different draw from the same null and
+    can disagree with it.
 
     The GPU batched sampler pays a per-call model preparation and a
     host/device transfer, so it only pays off when the batch does enough
     reaction work to amortise them (``docs/GPU_BATCH_SSA_EVALUATION.md``
     measures the crossover).  The harness therefore probes the CPU sampler
     with a small batch, measures the reaction work of that batch, and selects
-    the GPU when the projected work of the full batch is large enough.  When
-    the CPU batched sampler is used and the projected CPU cost would exceed
-    the per-case ensemble time budget, the trajectory count is reduced to the
-    largest affordable value; the report records the budget that was used.
+    the GPU when the projected work of the ensemble is large enough.
     """
 
     plan: dict[str, Any] = {
         "backend": None,
         "runs": int(runs),
+        "documented_runs": int(runs),
         "projected_cpu_seconds": None,
         "projected_events": None,
+        "ensemble_events": None,
         "probe_trajectories": None,
-        "cpu_budget_reduced": False,
+        "work_budget": STOCHASTIC_MAX_EVENTS,
+        "work_budget_reduced": False,
+        "not_comparable": False,
+        "reason": "",
     }
     backends = _gpu_backend_names(cpp)
     probe = min(int(runs), STOCHASTIC_GPU_PROBE_TRAJECTORIES)
@@ -2491,24 +2550,44 @@ def _stochastic_ensemble_plan(
         return plan
     probe_seconds = max(time.monotonic() - start, 1e-6)
     per_trajectory = probe_seconds / float(probe)
-    projected = per_trajectory * float(runs)
-    plan["projected_cpu_seconds"] = projected
+    plan["projected_cpu_seconds"] = per_trajectory * float(runs)
     plan["probe_trajectories"] = probe
     probe_events = float(probe_metrics.get("total_events") or 0.0)
-    plan["projected_events"] = probe_events * float(runs) / float(probe)
+    events_per_trajectory = probe_events / float(probe)
+    plan["projected_events"] = events_per_trajectory * float(runs)
+
+    # The work budget, and not the runner's speed, decides the count.
+    affordable = int(runs)
+    if events_per_trajectory > 0.0:
+        affordable = int(float(STOCHASTIC_MAX_EVENTS) / events_per_trajectory)
+    if affordable < STOCHASTIC_MIN_POWER_RUNS:
+        # The documented ensemble budget does not fit the gate's work budget
+        # even at the number of repetitions the DSMTS user guide requires for
+        # the acceptance tests to have reasonable power.  The case is not
+        # comparable at a documented budget: it is neither a pass nor a
+        # failure, and no truncated ensemble is run for it.
+        plan["not_comparable"] = True
+        plan["reason"] = (
+            f"the documented ensemble budget of {int(runs)} trajectories would "
+            f"perform about {float(plan['projected_events']):.0f} reaction "
+            f"events, which exceeds the ensemble work budget of "
+            f"{STOCHASTIC_MAX_EVENTS} reaction events; at the work budget the "
+            f"ensemble would hold {affordable} trajectories, fewer than the "
+            f"{STOCHASTIC_MIN_POWER_RUNS} independent repetitions the DSMTS "
+            f"user guide requires for the acceptance tests to have reasonable "
+            f"power, so the case is not comparable at a documented budget"
+        )
+        return plan
+    budget = min(int(runs), max(STOCHASTIC_MIN_RUNS, affordable))
+    plan["runs"] = budget
+    plan["work_budget_reduced"] = budget < int(runs)
+    plan["ensemble_events"] = events_per_trajectory * float(budget)
     if (
         backends
-        and int(runs) >= STOCHASTIC_GPU_MIN_RUNS
-        and plan["projected_events"] >= STOCHASTIC_GPU_MIN_EVENTS
+        and budget >= STOCHASTIC_GPU_MIN_RUNS
+        and float(plan["ensemble_events"]) >= STOCHASTIC_GPU_MIN_EVENTS
     ):
         plan["backend"] = backends[0]
-        return plan
-    if projected > STOCHASTIC_CPU_TIME_BUDGET_SECONDS:
-        affordable = int(
-            float(runs) * STOCHASTIC_CPU_TIME_BUDGET_SECONDS / max(projected, 1e-9)
-        )
-        plan["runs"] = max(STOCHASTIC_MIN_RUNS, min(int(runs), affordable))
-        plan["cpu_budget_reduced"] = plan["runs"] < int(runs)
     return plan
 
 
@@ -2620,6 +2699,12 @@ def _compare_stochastic_case_to_reference(
         plan: dict[str, Any] = {}
         if _stochastic_batch_applicable(block, targets, observables):
             plan = _stochastic_ensemble_plan(cpp, cpp_model, network, reference, runs)
+            if plan.get("not_comparable"):
+                # The documented ensemble budget does not fit the gate's work
+                # budget even at the guide's minimum number of repetitions.
+                # The case is not comparable, which is neither a pass nor a
+                # failure.
+                return {"status": "unsupported", "reason": plan["reason"]}
             budget = int(plan["runs"])
             engine = plan["backend"]
             try:
@@ -2638,24 +2723,9 @@ def _compare_stochastic_case_to_reference(
                     raise
                 # The GPU path fails closed on rate laws it cannot flatten;
                 # the CPU batched sampler is the documented fallback.  The
-                # fallback keeps the trajectory budget affordable.
-                projected = plan.get("projected_cpu_seconds")
-                if (
-                    projected is not None
-                    and projected > STOCHASTIC_CPU_TIME_BUDGET_SECONDS
-                ):
-                    budget = max(
-                        STOCHASTIC_MIN_RUNS,
-                        min(
-                            budget,
-                            int(
-                                float(budget)
-                                * STOCHASTIC_CPU_TIME_BUDGET_SECONDS
-                                / max(float(projected), 1e-9)
-                            ),
-                        ),
-                    )
-                    plan["cpu_budget_reduced"] = True
+                # fallback runs the same trajectory count: the work budget
+                # already accounts for the CPU cost of the ensemble, so the
+                # count does not depend on the engine either.
                 fallback = _stochastic_batch_ensemble(
                     cpp,
                     cpp_model,
@@ -2821,6 +2891,8 @@ def _compare_stochastic_case_to_reference(
         "statistic": "DSMTS standardised mean and variance statistics",
         "engine": engine_used,
         "runs": budget,
+        "documented_runs": int(runs),
+        "work_budget": STOCHASTIC_MAX_EVENTS,
         "seeds": {
             "base": STOCHASTIC_SEED_BASE,
             "rule": (
@@ -2884,6 +2956,10 @@ def _unsupported_causes(reason: str) -> list[str]:
     """Normalize an unsupported reason into auditable semantic cause labels."""
 
     lower = str(reason or "").lower()
+    if "ensemble work budget" in lower or "ensemble budget" in lower:
+        # The reason is exclusively about the ensemble's work budget.  The
+        # word "events" in it names reaction events, not SBML events.
+        return ["ensemble_budget"]
     causes: list[str] = []
     for package in (
         "comp",

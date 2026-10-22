@@ -326,6 +326,78 @@ def test_stochastic_run_budget_and_seeds_are_documented():
     assert validator.STOCHASTIC_CASE_ERROR_RATE < 0.01
 
 
+class _StubSampler:
+    """A batched sampler that reports a fixed amount of reaction work."""
+
+    def __init__(self, events: int) -> None:
+        self.events = events
+
+    def simulate_batch_ssa_cpu(self, *args, **kwargs) -> dict:
+        return {"total_events": float(self.events)}
+
+
+def _plan_for(validator, events: int, seconds: float) -> dict:
+    """Plan an ensemble for a model whose probe performs ``events`` firings."""
+
+    reference = {"start": 0.0, "duration": 10.0, "steps": 10}
+    ticks = [0.0, seconds]
+
+    def monotonic() -> float:
+        return ticks.pop(0) if len(ticks) > 1 else ticks[0]
+
+    original = validator.time.monotonic
+    validator.time.monotonic = monotonic
+    try:
+        return validator._stochastic_ensemble_plan(
+            _StubSampler(events), object(), object(), reference, 40_000
+        )
+    finally:
+        validator.time.monotonic = original
+
+
+def test_the_ensemble_size_does_not_depend_on_the_runner_speed():
+    """A verdict must not depend on how fast the runner is.
+
+    The trajectory count used to be reduced to the largest count the runner
+    could afford within a wall-clock budget, so the same model, tree, seed
+    and binary produced different verdicts on a fast and on a slow machine.
+    The count is now decided by the ensemble's *work*, which is a property of
+    the model and the seed.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    fast = _plan_for(validator, 64 * 100, 0.5)
+    slow = _plan_for(validator, 64 * 100, 50.0)
+    assert fast["runs"] == slow["runs"] == 40_000
+    assert fast["work_budget_reduced"] is False
+    assert slow["work_budget_reduced"] is False
+    # The measured cost is reported, but it does not decide anything.
+    assert fast["projected_cpu_seconds"] != slow["projected_cpu_seconds"]
+
+
+def test_a_case_too_heavy_for_the_work_budget_is_not_comparable():
+    """A case that cannot be compared at the guide's power floor is a gap.
+
+    The DSMTS user guide requires at least 1,000 independent repetitions and
+    recommends 10,000 for the acceptance tests to have reasonable power.  A
+    case whose documented ensemble does not fit the gate's work budget at
+    that size is not comparable: it is neither a pass nor a failure.
+    """
+
+    validator = _load_validator("validate_sbml_test_suite")
+    plan = _plan_for(validator, 64 * 90_000, 1.0)
+    assert plan["not_comparable"] is True
+    assert "ensemble work budget" in plan["reason"]
+    assert "not comparable" in plan["reason"]
+    # The cause labels name the harness limitation, not an SBML construct.
+    assert validator._unsupported_causes(plan["reason"]) == ["ensemble_budget"]
+
+    # A case whose work fits keeps the documented budget.
+    affordable = _plan_for(validator, 64 * 100, 1.0)
+    assert affordable["not_comparable"] is False
+    assert affordable["runs"] == 40_000
+
+
 def test_batched_ensemble_is_used_only_for_single_phase_action_blocks():
     validator = _load_validator("validate_sbml_test_suite")
     actions = _load_actions()
