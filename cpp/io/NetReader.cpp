@@ -158,20 +158,27 @@ void NetReader::parseSpeciesLine(const std::string& line, std::vector<std::pair<
     // Example: "1 EGFR(L,CR1,Y1068~U) 1.8e5" or "1 S(a~0,c~R) S0"
     // Note: concentration can be a numeric literal or a parameter reference
 
-    // Find first space (after index)
-    auto firstSpace = line.find(' ');
-    if (firstSpace == std::string::npos) {
+    // Split at the first whitespace after the species pattern. Concentrations
+    // may be expressions containing whitespace, so they must remain intact.
+    auto indexEnd = line.find_first_of(" \t");
+    if (indexEnd == std::string::npos) {
         throw std::runtime_error("Invalid species format: " + line);
     }
 
-    // Find last space (before concentration)
-    auto lastSpace = line.rfind(' ');
-    if (lastSpace == firstSpace) {
+    const auto patternStart = line.find_first_not_of(" \t", indexEnd);
+    if (patternStart == std::string::npos) {
+        throw std::runtime_error("Invalid species format: " + line);
+    }
+    const auto patternEnd = line.find_first_of(" \t", patternStart);
+    if (patternEnd == std::string::npos) {
         throw std::runtime_error("Invalid species format: " + line);
     }
 
-    std::string pattern = trim(line.substr(firstSpace + 1, lastSpace - firstSpace - 1));
-    std::string concentration = trim(line.substr(lastSpace + 1));
+    std::string pattern = line.substr(patternStart, patternEnd - patternStart);
+    std::string concentration = trim(line.substr(patternEnd + 1));
+    if (concentration.empty()) {
+        throw std::runtime_error("Invalid species format: " + line);
+    }
 
     species.emplace_back(pattern, concentration);
 }
