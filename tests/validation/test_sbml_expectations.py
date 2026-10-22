@@ -158,6 +158,51 @@ def test_an_unsupported_expectation_names_the_construct_it_waits_for():
 
 
 @pytest.mark.smoke
+def test_generic_nonfinite_and_scheduled_boundary_refusals_are_classified():
+    """Fresh report records must not fall into the generic ``other`` bucket."""
+
+    from scripts.ci import validate_sbml_test_suite as suite
+
+    parameter_approximation = (
+        'Parameter "P" has an infinite value; emitted 1e20 as a finite BNGL '
+        "approximation."
+    )
+    assert suite._unsupported_causes(parameter_approximation) == ["mathml"]
+    assert inventory.reason_signature(parameter_approximation) == (
+        "mathml:non-finite-parameter-approximation"
+    )
+    conversion_record = {
+        "category": "semantic",
+        "id": "99998",
+        "status": "unsupported",
+        "unsupported_reason": parameter_approximation,
+    }
+    suite._unsupported_summary([conversion_record])
+    assert conversion_record["unsupported_causes"] == ["mathml"]
+
+    scheduled_boundary = (
+        "the official output grid contains the boundary of the generated "
+        "scheduled actions at t=25.0, where the reference convention and "
+        "native action dispatcher differ"
+    )
+    record = {
+        "category": "semantic",
+        "id": "99999",
+        "status": "passed",
+        "official_conformance": {
+            "status": "unsupported",
+            "reason": scheduled_boundary,
+        },
+    }
+    gap = inventory._stage_gap(record, "official_reference")
+    assert gap == {
+        "construct": "harness:scheduled-action-phase-boundary",
+        "causes": ["events"],
+        "side": "harness",
+    }
+
+
+@pytest.mark.smoke
 def test_committed_manifest_agrees_with_the_committed_inventory():
     manifest = _manifest()
     rows = _inventory_rows()

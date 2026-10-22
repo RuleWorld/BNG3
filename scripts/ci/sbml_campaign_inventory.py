@@ -146,6 +146,14 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
         "generated bngl contains scheduled actions",
         "harness:scheduled-actions-not-executed",
     ),
+    (
+        "official output grid contains the boundary of the generated scheduled actions",
+        "harness:scheduled-action-phase-boundary",
+    ),
+    ("<infinity> constant encountered in math", "mathml:infinity"),
+    ("<notanumber> constant encountered in math", "mathml:not-a-number"),
+    ("has an infinite value; emitted", "mathml:non-finite-parameter-approximation"),
+    ("has nan value; emitted", "mathml:non-finite-parameter-approximation"),
     ("repeated-run mean", "harness:stochastic-ensemble-not-evaluated"),
     (
         "executed in a random order",

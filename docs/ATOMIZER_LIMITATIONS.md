@@ -10,7 +10,7 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 
 | Field | Value |
 | --- | --- |
-| Generated on | 2026-10-21 |
+| Generated on | 2026-10-22 |
 | Tree described | `2cb9f2c3bc013307414379a22e655e3e3a0b6b18` |
 | Measured at commit | `2cb9f2c3bc013307414379a22e655e3e3a0b6b18` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
@@ -50,14 +50,15 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 | `sbml-writer:unrepresentable-function` | atomizer | 9 | A math function the engine cannot execute | 2026-10-20 |
 | `fast-reaction:no-fast-equilibrium-solve` | atomizer | 5 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
 | `events:state-trigger-not-schedulable` | atomizer | 4 | A state trigger the runtime cannot schedule | 2026-10-20 |
-| `other` | atomizer | 3 | Refusals the cause taxonomy does not yet name | 2026-10-20 |
 | `compartment:unsupported-spatial-dimensions` | atomizer | 2 | A compartment with more than three spatial dimensions | 2026-10-20 |
 | `mathml:infinity` | atomizer | 2 | An infinite constant | 2026-10-20 |
+| `mathml:non-finite-parameter-approximation` | atomizer | 1 | A non-finite parameter value is replaced by a finite diagnostic placeholder | 2026-10-22 |
 | `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
 | `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
+| `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 127 atomizer-side, 12 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 125 atomizer-side, 14 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -113,16 +114,6 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: The Atomizer refuses the event and says why: "trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier "contains a character outside the SBML SId class and cannot be matched".
 - **Reducible?**: Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.
 
-### Refusals the cause taxonomy does not yet name
-
-- **Construct**: `other`
-- **Cases**: 3 — semantic/00951 stochastic/00028 stochastic/00032
-- **First recorded**: 2026-10-20
-- **What SBML requires**: No single construct: each case is refused for a reason the campaign's cause taxonomy has no label for yet.
-- **Citation**: SBML Level 3 Version 2 Core, the section the case's own reason names
-- **What BNG3 does instead**: The Atomizer refuses the case and reports the reason; the campaign's classification records it as "other" because no known construct class matches.
-- **Reducible?**: Unknown until each reason is read. This bucket is a request to extend the taxonomy, not a claim that the cases are alike.
-
 ### A compartment with more than three spatial dimensions
 
 - **Construct**: `compartment:unsupported-spatial-dimensions`
@@ -142,6 +133,16 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.5, Sec. 3.4.1
 - **What BNG3 does instead**: The Atomizer reports "<infinity> constant encountered in math; the source is valid SBML (validation rule 10202 permits <infinity>), but an infinite value cannot be represented in BNG3's finite-double model, so it is emitted as a large finite value and the model is not claimed to be supported".
 - **Reducible?**: Only by changing what BNG3's value domain is. The source is valid SBML and the boundary is BNG3's finite-double model, not a conversion defect; a large finite stand-in is an approximation, so the case is refused rather than claimed.
+
+### A non-finite parameter value is replaced by a finite diagnostic placeholder
+
+- **Construct**: `mathml:non-finite-parameter-approximation`
+- **Cases**: 1 — semantic/00951
+- **First recorded**: 2026-10-22
+- **What SBML requires**: The source values use non-finite numeric values, which are distinct from any finite value. A finite-double target cannot preserve them by substituting an arbitrary finite parameter.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.4; MathML 2 Sec. 4.2.3
+- **What BNG3 does instead**: The case source validates with libSBML, but parameter values include infinity and NaN. The writer emits finite placeholder numbers to produce a diagnostic artifact and marks the conversion unsupported; these placeholders do not preserve the source values.
+- **Reducible?**: No within BNG3's finite numeric state; conversion must keep refusing rather than treating the emitted finite placeholder as equivalent.
 
 ### A not-a-number constant
 
@@ -166,6 +167,16 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.3, Sec. 4.12.7
 - **What BNG3 does instead**: Nothing is refused: the model converts and the engine executes the events in the order the specification defines. The harness cannot compare point-wise, because the reference is one draw of a random order and no deterministic simulator reproduces it point-wise.
 - **Reducible?**: Yes, on the measurement side: the comparison has to be distributional rather than point-wise, or the reference has to pin the order. It is a measurement limit, not a limitation of the Atomizer.
+
+### The official reference samples a scheduled-action phase boundary
+
+- **Construct**: `harness:scheduled-action-phase-boundary`
+- **Cases**: 2 — stochastic/00028 stochastic/00032
+- **First recorded**: 2026-10-22
+- **What SBML requires**: SBML event execution applies EventAssignments when the event fires; the reporting convention at an event time must distinguish pre-event from post-event state.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.5, Sec. 4.12.7; campaign reference-comparison contract
+- **What BNG3 does instead**: The source model converts, round-trips, and passes the independent trajectory comparison. The official reference grid includes the exact scheduled-action boundary, where the official convention reports the assignment as already applied while the native action dispatcher exposes the pre-assignment phase value. The point-wise reference comparison therefore remains unsupported.
+- **Reducible?**: Yes, in the comparison contract: sample the post-event value at the defined boundary, or compare according to the event execution phase. This is a harness/runtime observation-boundary issue, not an Atomizer refusal.
 
 ## Cases the official suite says do not apply
 
@@ -206,6 +217,7 @@ The expectation manifest records one measurement, not a history, so this log is 
 - **2026-10-21** — Opened: two harness-side classes were named, so the measurement limits 'random event execution' and 'reference does not track variable' are now visible as such instead of being counted as Atomizer limitations (PR #359).
 - **2026-10-21** — Reduced: a fast reaction is lowered to its pseudo steady state instead of being refused (PR #370), and several simultaneous events execute in the order the specification defines (PR #371). The official-reference failure count is zero.
 - **2026-10-21** — Closed: a reference that names a reaction's rate is now compared, because the Atomizer states the rate as a zero-argument function and the harness maps the reference's quantity onto it (PR #378); and a boundary species is now honoured by the direct SSA path, so the reference's value for it is compared rather than skipped (PR #380). The event limit 'an event the Atomizer cannot lower, or cannot order' shrinks by one case: an event group whose priority is read from the model state is now ordered by the priority it has at the execution instant (PR #376).
+- **2026-10-22** — Corrected three previously unclassified cause/owner labels without changing verdicts or stage counts: semantic/00950 is MathML infinity, semantic/00951 is a non-finite parameter approximation, and stochastic/00028 and stochastic/00032 are scheduled-action phase-boundary comparison limits owned by the harness.
 
 ## How to regenerate
 
