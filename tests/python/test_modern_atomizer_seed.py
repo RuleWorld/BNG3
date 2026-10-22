@@ -8,6 +8,10 @@ that comes back is not the run that was requested.
 """
 
 from bionetgen.atomizer.modern import Atomizer
+import bionetgen
+from _extdep import require_extension
+
+require_extension()
 
 SBML = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/l3v1/core" level="3" version="1">
@@ -22,6 +26,7 @@ SBML = """<?xml version="1.0" encoding="UTF-8"?>
     </listOfSpecies>
     <listOfParameters>
       <parameter id="p" value="0" constant="true"/>
+      <parameter id="seed_value" value="42" constant="true"/>
     </listOfParameters>
     <listOfEvents>
       <event id="e" useValuesFromTriggerTime="true">
@@ -77,3 +82,17 @@ def test_a_deterministic_schedule_does_not_invent_a_seed():
     written = _generate("ode", ", seed=>42")
     assert "translated to scheduled actions" in written
     assert "seed=>" not in written
+
+
+def test_generated_event_schedule_preserves_seed_expressions_and_native_parses(
+    tmp_path,
+):
+    for index, seed_expression in enumerate(("seed_value", "40+2")):
+        written = _generate("ssa", f", seed=>{seed_expression}")
+        assert f"seed=>{seed_expression}" in written
+
+        generated = tmp_path / f"seeded_schedule_{index}.bngl"
+        generated.write_text(written)
+        # Native parsing verifies the preserved expression is accepted as a
+        # simulate action argument in the generated BNGL.
+        assert bionetgen.load(generated) is not None

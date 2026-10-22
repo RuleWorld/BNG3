@@ -460,7 +460,7 @@ class EventTranslationContext:
     # The seed the caller asked for.  A generated schedule must carry it into
     # every generated ``simulate`` phase, otherwise the seed the caller asked
     # for is silently dropped and the run is no longer reproducible.
-    seed: Optional[int] = None
+    seed: Optional[str] = None
     base_t_end: float = 10
     base_steps: int = 100
     # Only immutable SBML identifiers may be folded into scheduled actions.
@@ -8914,7 +8914,7 @@ def synthesize_event_actions(
     # The requested seed belongs to every generated phase.  A stochastic
     # schedule that dropped it would not be the run the caller asked for.
     seed_argument = (
-        f", seed=>{int(context.seed)}"
+        f", seed=>{context.seed}"
         if context.seed is not None and method.lower() == "ssa"
         else ""
     )

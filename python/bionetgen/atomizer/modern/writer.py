@@ -450,19 +450,56 @@ def _factorial(value: float) -> int:
     return math.factorial(int(value))
 
 
-def _requested_simulation_seed(actions: Optional[str]) -> Optional[int]:
-    """Return the seed the requested action block asks the simulator to use.
+def _requested_simulation_seed(actions: Optional[str]) -> Optional[str]:
+    """Return the seed expression from the requested simulation action.
 
     A generated event schedule replaces the requested action block, so the
-    seed has to be carried into the generated ``simulate`` phases.  Dropping
-    it would silently return a run the caller did not ask for.
+    seed expression has to be carried into every generated ``simulate``
+    phase. Preserve it as BNGL source: native action parsing evaluates
+    parameter and arithmetic expressions, and converting them here would
+    duplicate that semantics.
     """
     if not actions:
         return None
-    match = re.search(r"seed\s*=>\s*(\d+)", actions)
+    match = re.search(r"\bseed\s*=>", actions)
     if match is None:
         return None
-    return int(match.group(1))
+
+    start = match.end()
+    while start < len(actions) and actions[start].isspace():
+        start += 1
+    closers: List[str] = []
+    quote: Optional[str] = None
+    escaped = False
+    end = len(actions)
+    for index, character in enumerate(actions[start:], start=start):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character in {"'", '"'}:
+            quote = character
+        elif character in "([":
+            closers.append(")" if character == "(" else "]")
+        elif character in ")]":
+            if not closers:
+                end = index
+                break
+            if character == closers[-1]:
+                closers.pop()
+        elif character == "}":
+            if not closers:
+                end = index
+                break
+        elif character == "," and not closers:
+            end = index
+            break
+    expression = actions[start:end].strip()
+    return expression or None
 
 
 def _evaluate_arithmetic(expression: str) -> Optional[float]:
