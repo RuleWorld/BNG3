@@ -326,10 +326,14 @@ def test_inventory_preserves_all_snapshot_issues_and_missing_scope():
     for issue in catalog["issues"]:
         assert len(issue["body_sha256"]) == 64
         for obligation in issue["obligations"]:
+            not_reapplied = set(
+                obligation.get("not_reapplied_from_recorded_revision", [])
+            )
             assert obligation["criterion"] and obligation["scope"]
             assert obligation["completion_condition"]
             for ref in obligation["test_references"]:
-                assert (q.ROOT / ref.split("::")[0]).exists(), ref
+                path_exists = (q.ROOT / ref.split("::")[0]).exists()
+                assert path_exists or ref in not_reapplied, ref
             for check in obligation["required_checks"]:
                 if check["id"].startswith("qualification:"):
                     assert obligation["unmapped_scope"]

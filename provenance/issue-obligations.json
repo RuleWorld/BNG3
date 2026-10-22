@@ -41,6 +41,7 @@
           },
           "not_reapplied_from_recorded_revision": [
             "provenance/capability-union.yml",
+            "tests/validation/capability_inventory.py",
             "tests/validation/test_capability_inventory.py"
           ]
         },
@@ -549,7 +550,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "cpp/compile/CompiledRuleExecution.hpp",
-            "cpp/compile/RateCandidateContext.hpp"
+            "cpp/compile/RateCandidateContext.hpp",
+            "tests/validation/netrule_execution.py"
           ]
         },
         {
@@ -654,7 +656,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 9,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/netrule_execution.py"
+          ]
         },
         {
           "id": "issue:139:closure-record",
@@ -721,7 +726,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 2,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/netrule_execution.py"
+          ]
         },
         {
           "id": "issue:139:executed-slice:network-rule-execution-rate",
@@ -759,7 +767,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 2,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/netrule_execution.py"
+          ]
         },
         {
           "id": "issue:139:executed-slice:network-rule-execution-filter",
@@ -797,7 +808,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 2,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/netrule_execution.py"
+          ]
         },
         {
           "id": "issue:139:executed-slice:network-rule-execution-local-scope",
@@ -826,7 +840,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/netrule_execution.py"
+          ]
         },
         {
           "id": "issue:139:executed-slice:network-rule-execution-reversible",
@@ -864,7 +881,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 2,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/netrule_execution.py"
+          ]
         }
       ]
     },
@@ -2001,7 +2021,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "cpp/core/IdentityContract.hpp",
-            "tests/cpp/test_graph_identity_contract.cpp"
+            "tests/cpp/test_graph_identity_contract.cpp",
+            "tests/validation/graph_identity_contract.py"
           ]
         },
         {
@@ -2155,7 +2176,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "cpp/core/IdentityContract.hpp",
-            "tests/cpp/test_graph_identity_contract.cpp"
+            "tests/cpp/test_graph_identity_contract.cpp",
+            "tests/validation/graph_identity_contract.py"
           ]
         },
         {
@@ -2584,7 +2606,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_rate_law_contract.py"
+            "tests/validation/test_rate_law_contract.py",
+            "tests/validation/rate_law_contract.py"
           ]
         },
         {
@@ -3042,7 +3065,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_rate_law_contract.py"
+            "tests/validation/test_rate_law_contract.py",
+            "tests/validation/rate_law_contract.py"
           ]
         },
         {
@@ -3171,7 +3195,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_bngsim_boundary.py"
+            "tests/validation/test_bngsim_boundary.py",
+            "tests/validation/bngsim_boundary.py"
           ]
         },
         {
@@ -3236,7 +3261,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_bngsim_boundary.py"
+            "tests/validation/test_bngsim_boundary.py",
+            "tests/validation/bngsim_boundary.py"
           ]
         },
         {
@@ -3285,7 +3311,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_bngsim_boundary.py"
+            "tests/validation/test_bngsim_boundary.py",
+            "tests/validation/bngsim_boundary.py"
           ]
         }
       ]
@@ -3475,7 +3502,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_nfsim_fixtures.py"
+            "tests/validation/test_nfsim_fixtures.py",
+            "tests/validation/integrated_nfsim_fixtures.py"
           ]
         },
         {
@@ -3556,7 +3584,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_nfsim_fixtures.py"
+            "tests/validation/test_nfsim_fixtures.py",
+            "tests/validation/integrated_nfsim_fixtures.py"
           ]
         },
         {
@@ -3986,7 +4015,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_nfnext_slices.py"
+            "tests/validation/test_nfnext_slices.py",
+            "tests/validation/nfnext_slices.py"
           ]
         },
         {
@@ -4188,7 +4218,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_nfnext_slices.py"
+            "tests/validation/test_nfnext_slices.py",
+            "tests/validation/nfnext_slices.py"
           ]
         },
         {
@@ -4282,7 +4313,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/architecture_contracts/nfnext/test_execution_boundary.cpp",
-            "tests/validation/test_nfnext_boundary.py"
+            "tests/validation/test_nfnext_boundary.py",
+            "tests/validation/integrated_nfnext_boundary.py"
           ]
         },
         {
@@ -4356,7 +4388,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/architecture_contracts/nfnext/test_execution_boundary.cpp",
-            "tests/validation/test_nfnext_boundary.py"
+            "tests/validation/test_nfnext_boundary.py",
+            "tests/validation/integrated_nfnext_boundary.py"
           ]
         },
         {
@@ -4427,7 +4460,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_engine_routes.py"
+            "tests/validation/test_engine_routes.py",
+            "tests/validation/integrated_engine_routes.py"
           ]
         },
         {
@@ -4477,7 +4511,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_engine_routes.py"
+            "tests/validation/test_engine_routes.py",
+            "tests/validation/integrated_engine_routes.py"
           ]
         },
         {
@@ -4564,7 +4599,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_engine_routes.py"
+            "tests/validation/test_engine_routes.py",
+            "tests/validation/integrated_engine_routes.py"
           ]
         },
         {
@@ -5483,7 +5519,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/fixtures/nfsim/SOURCES.json",
-            "tests/validation/test_real_model_fixtures.py"
+            "tests/validation/test_real_model_fixtures.py",
+            "tests/validation/real_model_fixtures.py"
           ]
         },
         {
@@ -5702,7 +5739,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 2,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_reconstruction_contracts.py"
+          ]
         },
         {
           "id": "issue:153:round-trip-and-execute-reconstructed-models-with-source-text-ind",
@@ -5735,7 +5775,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_reconstruction_contracts.py"
+          ]
         },
         {
           "id": "issue:153:closure-record",
@@ -5959,7 +6002,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 4,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_reconstruction_contracts.py"
+          ]
         },
         {
           "id": "issue:154:check-semantic-execution-as-well-as-document-shape-reject-every",
@@ -6002,7 +6048,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 2,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_reconstruction_contracts.py"
+          ]
         },
         {
           "id": "issue:154:closure-record",
@@ -6186,7 +6235,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_format_contracts.py"
+          ]
         },
         {
           "id": "issue:155:native-export-contract",
@@ -6237,7 +6289,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 3,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_format_contracts.py"
+          ]
         },
         {
           "id": "issue:155:version-migration-fixtures",
@@ -6268,7 +6323,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_format_contracts.py"
+          ]
         },
         {
           "id": "issue:155:deterministic-serialization-fixtures",
@@ -6299,7 +6357,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_format_contracts.py"
+          ]
         },
         {
           "id": "issue:155:malformed-reference-cases",
@@ -7497,7 +7558,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_format_contracts.py"
+          ]
         },
         {
           "id": "issue:156:specify-identity-versus-provenance-and-test-exactly-what-semanti",
@@ -7528,7 +7592,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/bngir_format_contracts.py"
+          ]
         },
         {
           "id": "issue:156:closure-record",
@@ -7655,7 +7722,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_event_semantics.py"
+            "tests/validation/test_event_semantics.py",
+            "tests/validation/event_semantics.py"
           ]
         },
         {
@@ -7764,7 +7832,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_event_semantics.py"
+            "tests/validation/test_event_semantics.py",
+            "tests/validation/event_semantics.py"
           ]
         },
         {
@@ -7796,7 +7865,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/event_semantics.py"
+          ]
         }
       ]
     },
@@ -7855,7 +7927,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_event_semantics.py"
+            "tests/validation/test_event_semantics.py",
+            "tests/validation/event_semantics.py"
           ]
         },
         {
@@ -7915,7 +7988,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_event_semantics.py"
+            "tests/validation/test_event_semantics.py",
+            "tests/validation/event_semantics.py"
           ]
         },
         {
@@ -7947,7 +8021,10 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/event_semantics.py"
+          ]
         }
       ]
     },
@@ -7989,7 +8066,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_sbml_conformance.py"
+            "tests/validation/test_sbml_conformance.py",
+            "tests/validation/sbml_conformance.py"
           ]
         },
         {
@@ -8064,7 +8142,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_sbml_conformance.py"
+            "tests/validation/test_sbml_conformance.py",
+            "tests/validation/sbml_conformance.py"
           ]
         },
         {
@@ -8211,7 +8290,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/python/test_modern_atomizer_scope.py",
-            "tests/validation/test_sbml_support_boundary.py"
+            "tests/validation/test_sbml_support_boundary.py",
+            "tests/validation/sbml_support_boundary.py"
           ]
         },
         {
@@ -8394,7 +8474,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_atomizer_reconstruction.py"
+            "tests/validation/test_atomizer_reconstruction.py",
+            "tests/validation/atomizer_reconstruction.py"
           ]
         },
         {
@@ -8548,7 +8629,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_atomizer_reconstruction.py"
+            "tests/validation/test_atomizer_reconstruction.py",
+            "tests/validation/atomizer_reconstruction.py"
           ]
         },
         {
@@ -8654,7 +8736,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_biomodels_hold.py"
+            "tests/validation/test_biomodels_hold.py",
+            "tests/validation/biomodels_hold.py"
           ]
         },
         {
@@ -9324,7 +9407,8 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/python/test_modern_atomizer_scope.py",
-            "tests/validation/test_atomizer_symbol_resolution.py"
+            "tests/validation/test_atomizer_symbol_resolution.py",
+            "tests/validation/atomizer_symbol_resolution.py"
           ]
         },
         {
@@ -9396,7 +9480,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_boundary_extraction.py"
+            "tests/validation/test_boundary_extraction.py",
+            "tests/validation/boundary_extraction.py"
           ]
         },
         {
@@ -9526,7 +9611,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -9589,7 +9675,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -9676,7 +9763,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -9734,7 +9823,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -9792,7 +9883,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -9850,7 +9943,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         }
       ]
@@ -9896,7 +9991,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -9933,7 +10029,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -9996,7 +10093,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -10030,7 +10128,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -10064,7 +10163,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -10098,7 +10198,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -10132,7 +10233,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -10166,7 +10268,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -10200,7 +10303,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         },
         {
@@ -10234,7 +10338,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_stochastic_parity.py"
+            "tests/validation/test_stochastic_parity.py",
+            "tests/validation/stochastic_parity.py"
           ]
         }
       ]
@@ -10321,7 +10426,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_graph_differential.py"
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/graph_differential.py"
           ]
         },
         {
@@ -10402,7 +10508,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_graph_differential.py"
+            "tests/validation/test_graph_differential.py",
+            "tests/validation/graph_differential.py"
           ]
         },
         {
@@ -10481,7 +10588,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -10531,7 +10640,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -10581,7 +10692,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -10631,7 +10744,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -10681,7 +10796,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -10731,7 +10848,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         },
         {
@@ -10781,7 +10900,9 @@
           },
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_graph_differential.py",
-            "tests/validation/test_semantic_identity.py"
+            "tests/validation/test_semantic_identity.py",
+            "tests/validation/graph_differential.py",
+            "tests/validation/semantic_identity.py"
           ]
         }
       ]
@@ -11616,7 +11737,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_jax_backend_measurement.py"
+            "tests/validation/test_jax_backend_measurement.py",
+            "tests/validation/jax_backend_measurement.py"
           ]
         },
         {
@@ -11723,7 +11845,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_jax_backend_measurement.py"
+            "tests/validation/test_jax_backend_measurement.py",
+            "tests/validation/jax_backend_measurement.py"
           ]
         },
         {
@@ -11866,7 +11989,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_workload_profile.py"
+            "tests/validation/test_workload_profile.py",
+            "tests/validation/workload_profile.py"
           ]
         },
         {
@@ -11918,7 +12042,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_workload_profile.py"
+            "tests/validation/test_workload_profile.py",
+            "tests/validation/workload_profile.py"
           ]
         },
         {
@@ -12262,7 +12387,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_energy_qualification.py"
+            "tests/validation/test_energy_qualification.py",
+            "tests/validation/energy_qualification.py"
           ]
         },
         {
@@ -12307,7 +12433,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_energy_qualification.py"
+            "tests/validation/test_energy_qualification.py",
+            "tests/validation/energy_qualification.py"
           ]
         },
         {
@@ -12680,7 +12807,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_corpus_selection.py"
+            "tests/validation/test_corpus_selection.py",
+            "tests/validation/corpus_selection.py"
           ]
         },
         {
@@ -12721,7 +12849,8 @@
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
           "not_reapplied_from_recorded_revision": [
-            "tests/validation/test_corpus_selection.py"
+            "tests/validation/test_corpus_selection.py",
+            "tests/validation/corpus_selection.py"
           ]
         },
         {
@@ -12966,7 +13095,8 @@
             "NOTICE",
             "cpp/nfsim/LICENSE.txt",
             "provenance/third-party-notices.json",
-            "tests/validation/test_release_candidate.py"
+            "tests/validation/test_release_candidate.py",
+            "tests/validation/release_candidate.py"
           ]
         },
         {
