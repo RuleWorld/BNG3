@@ -2097,8 +2097,8 @@ ACTION_MAX_PHASES = 2000
 #: failed that case below n = 3,000 and passed it above.  A reduction that
 #: depends on the runner's speed therefore lands the verdict in either window
 #: at random, which is why the harness never reduces the ensemble to what the
-#: runner can afford: it uses the documented budget, reduced only by the work
-#: budget below, which counts the model's work and not the runner's speed.
+#: runner can afford: it uses the documented budget, reduced only when the
+#: deterministic CPU probe projects event work above the threshold below.
 STOCHASTIC_DEFAULT_RUNS = 40_000
 #: Documented budget for the action-dispatcher ensemble.  That path rebuilds
 #: and regenerates the network for every repetition, so it uses the DSMTS
@@ -2136,22 +2136,21 @@ STOCHASTIC_GPU_PROBE_TRAJECTORIES = 64
 #: trajectories for the same seed, so a conformance verdict has to stay
 #: reproducible.
 STOCHASTIC_CPU_THREADS = 1
-#: Work budget for one stochastic ensemble, counted in reaction events.  The
-#: budget is a work measure rather than a time measure for the reason the
-#: action phase budget is a phase count: the cost of an event depends on the
-#: model and on the runner's load, so a wall-clock limit would make the
-#: trajectory count - and with it the conformance verdict - depend on where
-#: the case ran, while the number of events the ensemble performs is the same
-#: on every runner.
+#: Estimated reaction-event work threshold for a stochastic ensemble.  The
+#: harness extrapolates this from a deterministic, fixed-seed CPU probe; it is
+#: not an enforced cap on the full ensemble.  Using projected work rather
+#: than elapsed probe time keeps the planned trajectory count independent of
+#: runner speed for the same model, seed, and implementation.
 #:
-#: The value keeps a compared case comfortably inside the conformance gate's
-#: per-case timeout on a runner *without* GPU acceleration: the CPU batched
-#: sampler performs about 1.4e7 to 2.6e7 reaction events per second on the
-#: reference runner, so 4e8 events is about 15 to 30 seconds of CPU against
-#: the gate's 60-second per-case timeout.  The budget binds only on the two
-#: heaviest cases of the pinned suite, whose documented 40,000-trajectory
-#: ensembles need about 3.3e9 and 3.6e9 events; every other case of the suite
-#: needs at most 2.3e8 events and keeps the documented trajectory budget.
+#: On the reference runner, the CPU batched sampler measured about 1.4e7 to
+#: 2.6e7 reaction events per second, making this threshold project to about
+#: 15 to 30 seconds of CPU against the gate's 60-second per-case timeout.
+#: This is an estimate, not a runtime guarantee: the full ensemble's actual
+#: event count and elapsed time can exceed the probe projection.  The threshold
+#: binds only on the two heaviest cases of the pinned suite, whose documented
+#: 40,000-trajectory ensembles project to about 3.3e9 and 3.6e9 events; every
+#: other case projects to at most 2.3e8 events and keeps the documented
+#: trajectory budget.
 STOCHASTIC_MAX_EVENTS = 400_000_000
 #: Smallest trajectory count the harness will use for a stochastic ensemble.
 #: This is the DSMTS user guide's absolute minimum number of independent
@@ -2162,8 +2161,8 @@ STOCHASTIC_MIN_RUNS = 1_000
 #: independent repetitions and recommends 10,000 "for the statistical tests
 #: to have reasonable power to detect problems"; section 3.4 calls 10,000 the
 #: size that is "needed to have any chance of picking up minor issues".  A
-#: case whose documented ensemble cannot be run at that size inside the
-#: gate's work budget is not comparable at a documented budget: it is
+#: case whose documented ensemble projects above the configured event-work
+#: threshold before that size is not comparable at a documented budget: it is
 #: reported as not comparable, never as a pass and never as a failure.
 STOCHASTIC_MIN_POWER_RUNS = 10_000
 
@@ -2553,14 +2552,15 @@ def _stochastic_ensemble_plan(
 ) -> dict[str, Any]:
     """Choose the ensemble engine and the trajectory budget of the ensemble.
 
-    The trajectory count is the documented budget, reduced only by the
-    ensemble's *work* budget: the number of reaction events the ensemble may
-    perform.  The work is a property of the model and the seed, so the count
-    is the same on every runner, and so is the verdict that is computed from
-    it.  A wall-clock budget cannot do that: the ensemble of n trajectories is
-    a prefix of the ensemble of the documented budget, so a count that
-    depends on the runner's speed is a different draw from the same null and
-    can disagree with it.
+    The trajectory count starts at the documented budget and is reduced when
+    the deterministic fixed-seed CPU probe projects event work above the
+    configured threshold.  This makes the planned count independent of probe
+    elapsed time for a given model, seed, and implementation.  Projected work
+    is an estimate, not an enforced event cap or runtime bound: the full
+    ensemble can perform more events or take longer than the probe predicts.
+    A wall-clock budget would also make the planned count depend directly on
+    runner speed, changing the prefix of the documented ensemble being
+    sampled.
 
     The GPU batched sampler pays a per-call model preparation and a
     host/device transfer, so it only pays off when the batch does enough
@@ -2612,23 +2612,26 @@ def _stochastic_ensemble_plan(
     events_per_trajectory = probe_events / float(probe)
     plan["projected_events"] = events_per_trajectory * float(runs)
 
-    # The work budget, and not the runner's speed, decides the count.
+    # The fixed-seed probe's projected event work, not its elapsed time,
+    # decides the count. This projection is not a cap on the full ensemble.
     affordable = int(runs)
     if events_per_trajectory > 0.0:
         affordable = int(float(STOCHASTIC_MAX_EVENTS) / events_per_trajectory)
     if affordable < STOCHASTIC_MIN_POWER_RUNS:
-        # The documented ensemble budget does not fit the gate's work budget
-        # even at the number of repetitions the DSMTS user guide requires for
-        # the acceptance tests to have reasonable power.  The case is not
-        # comparable at a documented budget: it is neither a pass nor a
-        # failure, and no truncated ensemble is run for it.
+        # Even the probe projection places the documented ensemble below the
+        # repetitions the DSMTS guide recommends for reasonable power at the
+        # configured event-work threshold. The case is not comparable at a
+        # documented budget; no truncated ensemble is run. Actual work may
+        # differ from this estimate.
         plan["not_comparable"] = True
         plan["reason"] = (
-            f"the documented ensemble budget of {int(runs)} trajectories would "
-            f"perform about {float(plan['projected_events']):.0f} reaction "
-            f"events, which exceeds the ensemble work budget of "
-            f"{STOCHASTIC_MAX_EVENTS} reaction events; at the work budget the "
-            f"ensemble would hold {affordable} trajectories, fewer than the "
+            f"the deterministic CPU probe projects about "
+            f"{float(plan['projected_events']):.0f} reaction events for the "
+            f"documented ensemble of {int(runs)} trajectories, above the "
+            f"estimated ensemble work budget threshold of "
+            f"{STOCHASTIC_MAX_EVENTS}; "
+            f"using this projection, the ensemble would hold {affordable} "
+            f"trajectories, fewer than the "
             f"{STOCHASTIC_MIN_POWER_RUNS} independent repetitions the DSMTS "
             f"user guide requires for the acceptance tests to have reasonable "
             f"power, so the case is not comparable at a documented budget"
@@ -2779,9 +2782,9 @@ def _compare_stochastic_case_to_reference(
                     raise
                 # The GPU path fails closed on rate laws it cannot flatten;
                 # the CPU batched sampler is the documented fallback.  The
-                # fallback runs the same trajectory count: the work budget
-                # already accounts for the CPU cost of the ensemble, so the
-                # count does not depend on the engine either.
+                # fallback runs the same planned trajectory count. That count
+                # uses the CPU probe's projected event work, not an enforced
+                # cap; actual work and runtime may differ by backend.
                 fallback = _stochastic_batch_ensemble(
                     cpp,
                     cpp_model,

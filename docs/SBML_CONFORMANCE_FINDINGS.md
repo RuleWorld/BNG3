@@ -1121,27 +1121,30 @@ test.
   cannot be run at the documented budget has to be reported as *not
   comparable* - the campaign's own vocabulary for "the comparison could not
   be made", which is neither a pass nor a failure.
-* **The fix:** the trajectory count is decided by the ensemble's **work** -
-  the number of reaction events it performs - and not by the runner's
-  speed.  The work is a property of the model and the seed, so the count is
-  the same on every runner; this is the same discipline the action phase
-  budget already uses, where the budget is a phase count precisely because
-  "the per-phase cost depends on the model and the runner's load, so a time
-  limit would make the verdict of a case depend on where it ran, while the
-  phase count is the same everywhere".  The work budget is 4e8 reaction
-  events, which the CPU batched sampler performs in about 15 to 30 seconds -
-  comfortably inside the conformance gate's 60-second per-case timeout on a
-  runner *without* GPU acceleration.  A case whose documented 40,000-trajectory
-  ensemble does not fit that budget is not compared at the guide's power
-  floor of 10,000 repetitions, and is reported as not comparable with the
-  shortfall named.
-* **The evidence that the verdict no longer moves with the load:** the
-  ensemble size is now a function of the model and the seed, so the count,
-  the ensemble and the verdict are the same on a fast and on a slow runner.
-  `tests/python/test_sbml_official_reference.py` asserts it directly: the
-  same model, probed with the same reaction work, plans the same trajectory
-  count at a measured 0.5-second probe and at a measured 50-second probe,
-  while the reported CPU projection differs.  Measured on the tree, with
+* **The fix:** the harness uses a fixed-seed 64-trajectory CPU probe to
+  estimate event work and elapsed CPU time, then projects that work to the
+  documented ensemble.  The 4e8 event-work threshold is a planning threshold,
+  not an enforced cap on the full ensemble.  It makes the planned trajectory
+  count independent of probe elapsed time for the same model, seed, and
+  implementation; it does not guarantee the full ensemble's actual event
+  count or runtime.  On the reference runner, the CPU sampler measured about
+  1.4e7 to 2.6e7 reaction events per second, so the threshold projects to
+  about 15 to 30 CPU seconds against the gate's 60-second per-case timeout.
+  This is a projection, not a runtime bound, and the actual full ensemble may
+  exceed it.  The documented 40,000-trajectory ensembles for
+  `stochastic/00005` and `stochastic/00023` project to about 3.3e9 and 3.6e9
+  events, while every other case projects to at most 2.3e8 events.  Cases
+  projected above the threshold are not compared when the projected affordable
+  count falls below the guide's power floor of 10,000 repetitions; they are
+  reported as not comparable with the shortfall named.
+* **The evidence that planning no longer follows probe speed:** the
+  deterministic probe's projected event work, rather than its elapsed time,
+  determines the planned count.  For the same model, seed, and implementation,
+  `tests/python/test_sbml_official_reference.py` asserts that a 0.5-second
+  probe and a 50-second probe plan the same trajectory count while reporting
+  different CPU projections.  This establishes deterministic planning for
+  those probe inputs; it does not establish a hard cap on the full ensemble's
+  actual work or runtime.  Measured on the tree, with
   background CPU load added to the runner:
 
   | Background load | `stochastic/00001` | | | `stochastic/00023` | | |
@@ -1152,8 +1155,9 @@ test.
   | 8 processes | 40,000 | 32,131,250 | passed | 3,605,337,500 | 4,437 | not comparable |
 
   Only the reported CPU projection moves (2.1 s, 2.7 s and 3.0 s for the
-  three loads); the trajectory count, the projected work and the verdict do
-  not.
+  three loads); the planned trajectory count and projected work do not.  This
+  probe-level comparison does not assert equal full-ensemble event totals or
+  runtime across machines or backends.
 * **What changed in the records:** `stochastic/00005` and `stochastic/00023`
   move from `passed` to `unsupported` at the official-reference stage, with
   the gap construct `harness:stochastic-ensemble-budget` and the cause

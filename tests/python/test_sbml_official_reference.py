@@ -361,8 +361,10 @@ def test_the_ensemble_size_does_not_depend_on_the_runner_speed():
     The trajectory count used to be reduced to the largest count the runner
     could afford within a wall-clock budget, so the same model, tree, seed
     and binary produced different verdicts on a fast and on a slow machine.
-    The count is now decided by the ensemble's *work*, which is a property of
-    the model and the seed.
+    The count is now decided by projected event work from a deterministic
+    fixed-seed CPU probe, rather than measured probe elapsed time. The
+    projection makes planning stable for the same model, seed, and
+    implementation; it is not a hard cap on full-ensemble work.
     """
 
     validator = _load_validator("validate_sbml_test_suite")
@@ -380,8 +382,9 @@ def test_a_case_too_heavy_for_the_work_budget_is_not_comparable():
 
     The DSMTS user guide requires at least 1,000 independent repetitions and
     recommends 10,000 for the acceptance tests to have reasonable power.  A
-    case whose documented ensemble does not fit the gate's work budget at
-    that size is not comparable: it is neither a pass nor a failure.
+    case whose deterministic CPU probe projects the documented ensemble
+    above the event-work threshold at that size is not comparable: it is
+    neither a pass nor a failure. The estimate is not an enforced cap.
     """
 
     validator = _load_validator("validate_sbml_test_suite")
