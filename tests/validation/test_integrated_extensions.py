@@ -233,3 +233,33 @@ def test_scientific_lane_runs_independent_checks_after_case_failure():
         s for s in steps if s.get("name") == "Verify spawned scientific worker identity"
     )
     assert "test_worker_package_identity.py" in worker["run"]
+
+
+def test_the_worker_can_dispatch_every_registered_qualification():
+    # The worker runs in isolated mode, so it cannot derive its dispatch list
+    # from the registry at run time.  A qualification the worker cannot
+    # dispatch falls through to the NFsim route and reports itself under the
+    # wrong stage, which reads as an executed family that did something else.
+    from tests.validation import integrated_worker
+
+    registered = set(extensions.OPERATIONS)
+    dispatchable = set(integrated_worker.QUALIFICATION_OPERATIONS)
+    assert dispatchable == registered, {
+        "missing_from_worker": sorted(registered - dispatchable),
+        "unknown_to_worker": sorted(dispatchable - registered),
+    }
+
+
+def test_the_worker_refuses_an_operation_it_does_not_dispatch():
+    # A catch-all route would run the NFsim trajectory for an operation the
+    # worker does not dispatch, and the campaign would record that family as
+    # executed.  The worker refuses the operation instead.
+    import pytest
+
+    from tests.validation import integrated_worker
+
+    assert integrated_worker.require_dispatchable("boundaries") == "qualification"
+    assert integrated_worker.require_dispatchable("bngir-v01") == "consumer"
+    assert integrated_worker.require_dispatchable("nf") == "model"
+    with pytest.raises(integrated_worker.HarnessError):
+        integrated_worker.require_dispatchable("not-a-registered-family")
