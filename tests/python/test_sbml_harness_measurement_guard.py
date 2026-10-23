@@ -110,6 +110,56 @@ def test_windows_hash_seed_reexec_propagates_child_status(
     assert excinfo.value.code == child_status
 
 
+@pytest.mark.parametrize("child_status", [0, 1])
+def test_windows_hash_seed_reexec_process_exit_status(tmp_path, child_status):
+    script = tmp_path / "reexec_probe.py"
+    script.write_text(
+        "\n".join(
+            [
+                "import importlib.util",
+                "import os",
+                "import sys",
+                "",
+                "if os.environ.get('BNG3_HARNESS_FIXED_HASH_SEED'):",
+                "    assert os.environ['PYTHONHASHSEED'] == '0'",
+                "    raise SystemExit(int(os.environ['EXPECTED_CHILD_STATUS']))",
+                f"environment_path = {str(ENVIRONMENT_PATH)!r}",
+                "spec = importlib.util.spec_from_file_location(",
+                "    'deterministic_environment', environment_path",
+                ")",
+                "environment = importlib.util.module_from_spec(spec)",
+                "spec.loader.exec_module(environment)",
+                "environment.STARTUP_HASH_SEED = 'random'",
+                "environment._reexecutable = lambda: True",
+                "if os.name != 'nt':",
+                "    environment.os.name = 'nt'",
+                "    environment.os.execv = lambda *args: (_ for _ in ()).throw(",
+                "        OSError('execv does not replace the process on Windows')",
+                "    )",
+                "environment.ensure_fixed_hash_seed()",
+                "raise AssertionError('re-exec did not exit the parent process')",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    process_environment = os.environ.copy()
+    process_environment.pop("BNG3_HARNESS_FIXED_HASH_SEED", None)
+    process_environment["PYTHONHASHSEED"] = "1"
+    process_environment["EXPECTED_CHILD_STATUS"] = str(child_status)
+
+    result = subprocess.run(
+        [sys.executable, str(script)],
+        env=process_environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == child_status
+    assert result.stderr == ""
+
+
 def _stand_in_package(directory: Path, marker: str) -> Path:
     """Write a stand-in for an unrelated installed BNG3 package."""
 

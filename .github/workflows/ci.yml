@@ -125,6 +125,26 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  windows-harness-reexec:
+    name: Windows harness re-exec contract
+    runs-on: windows-2022
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: python -m pip install pytest
+
+      - name: Verify hash-seed re-exec preserves child exit status
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/test_sbml_harness_measurement_guard.py
+          -k windows_hash_seed_reexec_process_exit_status
+
   # ═══════════════════════════════════════════════════════════════════════════
   # C++ Build & Test (BNG engine with embedded NFsim library)
   # ═══════════════════════════════════════════════════════════════════════════
