@@ -132,6 +132,10 @@ OFFICIAL_STATUS_MAP: dict[str, str] = {
 # The curated-BioModels needles are checked first because their wording is
 # distinctive; the generic needles below are shared with the official suite.
 REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
+    (
+        "ensemble work budget",
+        "harness:stochastic-ensemble-budget-not-comparable",
+    ),
     ("flux-balance constraints/objectives", "constraints:flux-balance-not-kinetic"),
     ('"fbc" package', "package:fbc"),
     ("not an sbml biomodels artifact", "format:not-an-sbml-artifact"),
@@ -891,9 +895,10 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
 
     ``passed`` is a result.  ``failed`` is a result too: the stage ran and
     disagreed with the reference, which is a finding to investigate.
-    ``unsupported`` is the only gap: the case was refused because a
-    construct is not representable today, and the manifest has to say which
-    construct rather than record a bare refusal.
+    ``unsupported`` is a gap: either the construct is not representable today
+    or the harness cannot compare it under the declared workload. The
+    manifest names that boundary and whether it belongs to the harness or
+    Atomizer rather than recording a bare refusal.
     """
 
     if stage == "conversion":

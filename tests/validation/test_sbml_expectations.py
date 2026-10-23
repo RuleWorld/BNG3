@@ -228,6 +228,34 @@ def test_inventory_refines_recorded_other_without_losing_source_report_label():
     assert reduced["cause_counts"] == {"compartments": 1}
 
 
+def test_ensemble_work_budget_is_a_harness_comparability_gap_not_support():
+    reason = (
+        "The documented ensemble work budget for 40000 runs exceeds the "
+        "gate's estimated event-work budget; this case is not comparable."
+    )
+    record = {
+        "category": "stochastic",
+        "id": "00023",
+        "status": "passed",
+        "official_conformance": {"status": "unsupported", "reason": reason},
+    }
+
+    gap = inventory._stage_gap(record, "official_reference")
+
+    assert gap == {
+        "construct": "harness:stochastic-ensemble-budget-not-comparable",
+        "causes": ["ensemble_budget"],
+        "side": "harness",
+    }
+    assert inventory.expectation_gaps({"records": [record]}) == {
+        "stochastic/00023": {"official_reference": gap}
+    }
+    # The source-run status remains the historical unsupported label. This
+    # classification is explicitly a harness comparability limit, not a
+    # scientific pass or an Atomizer representability claim.
+    assert record["official_conformance"]["status"] == "unsupported"
+
+
 @pytest.mark.smoke
 def test_committed_manifest_agrees_with_the_committed_inventory():
     manifest = _manifest()
