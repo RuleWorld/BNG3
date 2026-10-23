@@ -2,12 +2,12 @@
   "schema_version": 1,
   "kind": "curated-biomodels-query-inventory-provenance",
   "captured_at": "2026-10-19T23:53:08-04:00",
-  "source": "https://www.ebi.ac.uk/biomodels/search",
+  "source": "https://www.biomodels.org/search",
   "query": "curationstatus:Manually curated",
   "manifest_path": "provenance/published-biomodels.json",
-  "manifest_sha256": "bbc787f1b38722164b27a2707e6f82bbf3d4395c07260c11bbca28e35e5e8377",
+  "manifest_sha256": "9c648b6fb31e029662a22c662894226210d5f7c9cc9d406acddc26cf3d81d611",
   "inventory_path": "provenance/curated-biomodels-query-inventory.json",
-  "inventory_sha256": "6511860f92ad5bd95236c71487b2ece26ec5c9353aed4d77d728b63a431cbebf",
+  "inventory_sha256": "edcae53b51491e00c4f117194abb0d2224bbbc86325993d4fb8818c9ebe4cf42",
   "matches": 1096,
   "models": 1096,
   "format_counts": {
@@ -17,5 +17,5 @@
     "Other": 4,
     "MATLAB (Octave)": 1
   },
-  "note": "This immutable query response seeds the hosted replay so model IDs, filenames, checksums, and BioModels API URLs are fixed. The validator still downloads each model artifact from the recorded public BioModels URL and records the retrieved artifact hash in its result."
+  "note": "The dated inventory retains the original 1,096 IDs and source checksums. Its API links are canonicalized to the current official biomodels.org domain; the inventory is checked against live membership when reachable, and each downloaded artifact is verified against its pinned SHA-256."
 }

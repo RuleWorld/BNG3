@@ -389,6 +389,8 @@ CORPUS_EXPECTATION_STAGES: tuple[str, ...] = (
 #   not_comparable      the gate could not measure the record: the record's
 #                       own observable has no value to compare, or the
 #                       independent oracle could not integrate the model
+#   harness_error       source acquisition or runner infrastructure failed
+#                       before the model could be validated
 #
 # A timeout is *not* a verdict.  The corpus gate's per-model budget is sized
 # for an unloaded machine, so a timeout records that the machine was busy, not
@@ -406,6 +408,7 @@ CORPUS_EXPECTATION_STATUSES: tuple[str, ...] = (
     "unsupported_format",
     "timeout",
     "not_comparable",
+    "harness_error",
 )
 
 # The sides of a gap, shared with the official SBML Test Suite manifest.
@@ -1145,6 +1148,12 @@ def _case_rows(
         }
         if flat_status == "failed":
             row["failure_classification"] = FAILURE_TAXONOMY.get(model_id)
+        if flat_status == "harness_error":
+            row["harness_error_classification"] = {
+                "layer": "harness",
+                "cause": "source_acquisition_or_runner",
+                "evidence": record.get("error"),
+            }
         if flat_status == "timeout":
             row["timeout_classification"] = TIMEOUT_TAXONOMY.get(model_id)
         rows.append(row)
@@ -1497,11 +1506,14 @@ def main() -> int:
     flat_summary = inventory["modes"]["flat"]
     failures = [row for row in rows if row["flat_status"] == "failed"]
     timeouts = [row for row in rows if row["flat_status"] == "timeout"]
+    harness_errors = [row for row in rows if row["flat_status"] == "harness_error"]
     inventory["residuals"] = {
         "failed_count": len(failures),
         "timeout_count": len(timeouts),
+        "harness_error_count": len(harness_errors),
         "failed_ids": [row["id"] for row in failures],
         "timeout_ids": [row["id"] for row in timeouts],
+        "harness_error_ids": [row["id"] for row in harness_errors],
         "by_layer": dict(
             sorted(
                 Counter(

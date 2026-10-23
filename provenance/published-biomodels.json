@@ -2,8 +2,8 @@
   "schema_version": 2,
   "source": "BioModels manually curated records",
   "source_documentation": "https://www.ebi.ac.uk/biostudies/BioModels/help",
-  "search_api_url": "https://www.ebi.ac.uk/biomodels/search",
-  "record_api_url_template": "https://www.ebi.ac.uk/biomodels/{id}?format=json",
+  "search_api_url": "https://www.biomodels.org/search",
+  "record_api_url_template": "https://www.biomodels.org/{id}?format=json",
   "download_url_template": "https://www.biomodels.org/model/download/{id}?filename={filename}",
   "curation_query": "curationstatus:Manually curated",
   "sbml_query": "curationstatus:Manually curated AND modelformat:SBML",
@@ -14,8 +14,9 @@
   "page_size": 100,
   "inventory_cache_name": "curated-biomodels-inventory.json",
   "notes": [
-    "The inventory is enumerated from the official search API at run time so the validator covers every currently manually curated record.",
+    "The inventory is replayed from a dated official BioModels search snapshot and checked against current membership when the live API is reachable.",
     "All records are retained in the report; non-SBML records are explicitly classified as unsupported by this SBML round-trip path rather than silently omitted.",
-    "The expected counts are a dated completeness guard and must be reviewed when the upstream collection changes."
+    "The expected counts are a dated completeness guard and must be reviewed when the upstream collection changes.",
+    "The API host was updated to the official biomodels.org domain; the pinned model IDs, filenames, and source SHA-256 values are unchanged."
   ]
 }

@@ -6,7 +6,8 @@ record is retained in the report: SBML records go through the modern
 Atomizer, C++ network generation, C++ SBML writing, modern SBML re-import,
 the native C++ SBML reader, and direct BNG3-CVODE/libRoadRunner observable
 comparison; non-SBML records are explicitly reported as unsupported by this
-SBML path.
+SBML path. Public-source transport failures are reported as ``harness_error``
+with endpoint and HTTP diagnostics; they are not Atomizer verdicts.
 """
 
 from __future__ import annotations
@@ -99,15 +100,17 @@ def _supported_surface_passed(
     partial: bool,
     counts_match: bool,
     failed_records: int,
+    harness_error_records: int,
     timeout_records: int,
     not_comparable_records: int,
 ) -> bool:
-    """Require a complete run and an actual independent comparison per record."""
+    """Require complete inputs, no harness errors, and a comparison per record."""
 
     return (
         not partial
         and counts_match
         and failed_records == 0
+        and harness_error_records == 0
         and timeout_records == 0
         and not_comparable_records == 0
     )
@@ -117,6 +120,33 @@ def _fetch_json(url: str) -> dict[str, Any]:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=120) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+class SourceAcquisitionError(RuntimeError):
+    """A public model source could not be acquired for scientific validation."""
+
+    def __init__(self, message: str, attempts: list[dict[str, Any]]):
+        super().__init__(message)
+        self.attempts = attempts
+
+
+def _acquisition_attempt(url: str, exc: Exception) -> dict[str, Any]:
+    status = getattr(exc, "code", None)
+    return {
+        "url": url,
+        "error_type": type(exc).__name__,
+        "http_status": status,
+        "reason": str(getattr(exc, "reason", None) or exc)[:300],
+    }
+
+
+def _model_exception_status(exc: Exception) -> str:
+    message = f"{type(exc).__name__}: {exc}"
+    if _known_unsupported_error(message):
+        return "unsupported"
+    if isinstance(exc, SourceAcquisitionError):
+        return "harness_error"
+    return "failed"
 
 
 def _fetch_text(url: str) -> str:
@@ -334,21 +364,33 @@ def _enumerate_inventory(
 def _download_if_needed(path: Path, entry: dict[str, Any]) -> str:
     expected = entry.get("sha256")
     if not path.exists() or (expected and _sha256(path) != expected):
+        attempts: list[dict[str, Any]] = []
         try:
             request = urllib.request.Request(
                 entry["download_url"], headers={"User-Agent": USER_AGENT}
             )
             with urllib.request.urlopen(request, timeout=180) as response:
                 data = response.read()
-        except Exception:
+        except (OSError, TimeoutError) as exc:
+            attempts.append(_acquisition_attempt(entry["download_url"], exc))
             # Most records use the stable ``{id}_url.xml`` name, but the
             # record endpoint is authoritative for models whose main file
             # has a different name.  Resolve that only on a failed default
             # download so the full inventory remains fast.
-            record = _fetch_json(entry["record_url"])
+            try:
+                record = _fetch_json(entry["record_url"])
+            except (OSError, TimeoutError, ValueError) as metadata_exc:
+                attempts.append(_acquisition_attempt(entry["record_url"], metadata_exc))
+                raise SourceAcquisitionError(
+                    f"could not acquire source metadata or model bytes: {attempts}",
+                    attempts,
+                ) from metadata_exc
             files = list(_record_files(record))
             if not files:
-                raise
+                raise SourceAcquisitionError(
+                    f"source metadata contained no main file after download failure: {attempts}",
+                    attempts,
+                )
             item = files[0]
             entry["filename"] = str(
                 item.get("name")
@@ -365,8 +407,15 @@ def _download_if_needed(path: Path, entry: dict[str, Any]) -> str:
             request = urllib.request.Request(
                 entry["download_url"], headers={"User-Agent": USER_AGENT}
             )
-            with urllib.request.urlopen(request, timeout=180) as response:
-                data = response.read()
+            try:
+                with urllib.request.urlopen(request, timeout=180) as response:
+                    data = response.read()
+            except (OSError, TimeoutError) as retry_exc:
+                attempts.append(_acquisition_attempt(entry["download_url"], retry_exc))
+                raise SourceAcquisitionError(
+                    f"could not acquire model bytes after metadata fallback: {attempts}",
+                    attempts,
+                ) from retry_exc
         path.write_bytes(data)
     expected = entry.get("sha256")
     actual = _sha256(path)
@@ -1564,7 +1613,7 @@ def _run_isolated_model(
         )
     except Exception as exc:
         record.update(
-            status="failed",
+            status="harness_error",
             core_passed=False,
             error=f"{type(exc).__name__}: {exc}",
         )
@@ -1812,6 +1861,8 @@ def main() -> int:
             ]
             if "failed" in mode_statuses:
                 record["status"] = "failed"
+            elif "harness_error" in mode_statuses:
+                record["status"] = "harness_error"
             elif "not_comparable" in mode_statuses:
                 record["status"] = "not_comparable"
                 record["not_comparable_reason"] = "; ".join(
@@ -1831,13 +1882,13 @@ def main() -> int:
             else:
                 record["status"] = "passed"
             record["core_passed"] = record["status"] == "passed"
-        except Exception as exc:  # download and round-trip failures are hard failures
+        except Exception as exc:  # keep transport errors distinct from model failures
             message = f"{type(exc).__name__}: {exc}"
-            record["status"] = (
-                "unsupported" if _known_unsupported_error(message) else "failed"
-            )
+            record["status"] = _model_exception_status(exc)
             record["core_passed"] = False
             record["error"] = message
+            if isinstance(exc, SourceAcquisitionError):
+                record["source_acquisition_attempts"] = exc.attempts
             if record["status"] == "unsupported":
                 record["unsupported_reason"] = message
         if model_artifacts is not None:
@@ -1888,10 +1939,11 @@ def main() -> int:
         for record in records
     )
     failed = sum(record.get("status") == "failed" for record in records)
+    harness_errors = sum(record.get("status") == "harness_error" for record in records)
     timeouts = sum(record.get("status") == "timeout" for record in records)
     not_comparable = sum(record.get("status") == "not_comparable" for record in records)
     report = {
-        "schema_version": 4,
+        "schema_version": 5,
         "manifest": str(args.manifest.resolve()),
         "cache_dir": str(args.cache_dir.resolve()),
         "runtime_provenance": runtime_info,
@@ -1929,12 +1981,14 @@ def main() -> int:
             "unsupported_records": unsupported,
             "not_comparable_records": not_comparable,
             "failed_records": failed,
+            "harness_error_records": harness_errors,
             "timeout_records": timeouts,
         },
         "core_passed": (
             not partial
             and completeness["counts_match"]
             and failed == 0
+            and harness_errors == 0
             and timeouts == 0
             and sbml_unsupported == 0
             and passed == len(sbml_records)
@@ -1944,6 +1998,7 @@ def main() -> int:
                 partial=partial,
                 counts_match=completeness["counts_match"],
                 failed_records=failed,
+                harness_error_records=harness_errors,
                 timeout_records=timeouts,
                 not_comparable_records=not_comparable,
             )
@@ -1970,7 +2025,7 @@ def main() -> int:
     print(
         f"records={len(records)} sbml_passed={passed}/{len(sbml_records)} "
         f"unsupported={unsupported} not_comparable={not_comparable} "
-        f"failed={failed} timeouts={timeouts} "
+        f"failed={failed} harness_errors={harness_errors} timeouts={timeouts} "
         f"core={'PASS' if report['core_passed'] else 'FAIL'} "
         f"package={runtime_info['bionetgen_package_path']} "
         f"extension_sha256={runtime_info['native_extension_sha256']}"

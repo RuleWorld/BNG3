@@ -106,7 +106,7 @@
     "independent_comparison"
   ],
   "status_mapping": {
-    "conversion": "the corpus gate's record status; a timeout maps to timeout and is not a verdict",
+    "conversion": "the corpus gate record outcome: passed, unsupported, failed, not_tested, unsupported_format, timeout, not_comparable, or harness_error. A timeout is load-sensitive; harness_error records source acquisition or runner failure before a scientific verdict and is not an Atomizer result.",
     "independent_comparison": "simulation_comparison.passed; a skipped comparison maps to not_tested",
     "roundtrip_structure": "the written SBML re-imports with the generated network's species and reaction counts; a stage that produced no verdict maps to not_tested"
   },
@@ -117,7 +117,8 @@
     "not_tested",
     "unsupported_format",
     "timeout",
-    "not_comparable"
+    "not_comparable",
+    "harness_error"
   ],
   "cases": {
     "BIOMD0000000001": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},

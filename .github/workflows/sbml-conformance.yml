@@ -55,6 +55,11 @@ on:
           - curated-biomodels
           - both
         default: sbml-suite
+      biomodels_only_id:
+        description: Run a one-model public-source and execution smoke for this BioModels ID
+        required: false
+        type: string
+        default: ''
       stochastic_seed_base:
         description: Base seed for reproducible stochastic ensemble comparisons
         required: false
@@ -453,13 +458,63 @@ jobs:
           print(json.dumps(result, indent=2))
           PY
 
+      - name: Run one-model flat and atomized BioModels smoke
+        if: inputs.biomodels_only_id != ''
+        shell: bash
+        env:
+          BIOMODELS_ONLY_ID: ${{ inputs.biomodels_only_id }}
+        run: |
+          set -euo pipefail
+          artifacts="$RUNNER_TEMP/biomodels-artifacts"
+          mkdir -p "$artifacts"
+          set +e
+          python scripts/ci/validate_published_biomodels.py \
+            --manifest provenance/published-biomodels.json \
+            --cache-dir "$RUNNER_TEMP/biomodels-cache" \
+            --json "$artifacts/source-smoke-report.json" \
+            --mode both --only-id "$BIOMODELS_ONLY_ID" \
+            --offline --isolate-models --jobs 1 --model-timeout 180 \
+            2>&1 | tee "$artifacts/source-smoke-execution.log"
+          validator_status=${PIPESTATUS[0]}
+          set -e
+          python - "$artifacts/source-smoke-report.json" "$BIOMODELS_ONLY_ID" "$validator_status" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report = json.loads(Path(sys.argv[1]).read_text())
+          model_id = sys.argv[2]
+          validator_status = int(sys.argv[3])
+          records = report.get("records", [])
+          if len(records) != 1 or records[0].get("id") != model_id:
+              raise SystemExit(f"unexpected selected record set: {[r.get('id') for r in records]}")
+          record = records[0]
+          if record.get("status") != "passed" or len(record.get("modes", [])) != 2:
+              raise SystemExit(f"source/execution smoke did not pass: {record}")
+          if any(mode.get("status") != "passed" for mode in record["modes"]):
+              raise SystemExit(f"both modes did not pass: {record['modes']}")
+          if not record.get("source_artifact", {}).get("sha256"):
+              raise SystemExit("smoke did not retain the downloaded source SHA-256")
+          if validator_status != 1 or not report.get("completeness", {}).get("partial_run"):
+              raise SystemExit(
+                  "one-model mode must remain explicitly partial and unqualified"
+              )
+          print(
+              f"source/execution smoke passed for {model_id}; "
+              f"source_sha256={record['source_artifact']['sha256']} "
+              "(one model; not a corpus qualification)"
+          )
+          PY
+
       - name: Run full flat and atomized BioModels corpus
+        if: inputs.biomodels_only_id == ''
         shell: bash
         run: |
           set -euo pipefail
           cache="$RUNNER_TEMP/biomodels-cache"
           artifacts="$RUNNER_TEMP/biomodels-artifacts"
           mkdir -p "$artifacts"
+          lane_failed=0
           for mode in flat atomized; do
             set +e
             python scripts/ci/validate_published_biomodels.py \
@@ -473,9 +528,10 @@ jobs:
             set -e
             if [[ ! -s "$artifacts/$mode-report.json" ]]; then
               echo "::error::The $mode validator produced no report (exit $validator_status)."
-              exit 1
+              lane_failed=1
+              continue
             fi
-            python - "$artifacts/$mode-report.json" "$mode" <<'PY'
+            if python - "$artifacts/$mode-report.json" "$mode" <<'PY'
           import json
           import sys
           from pathlib import Path
@@ -486,6 +542,11 @@ jobs:
           completeness = report["completeness"]
           if not completeness.get("counts_match") or completeness.get("partial_run"):
               raise SystemExit(f"{mode}: inventory is incomplete: {completeness}")
+          if summary.get("harness_error_records"):
+              raise SystemExit(
+                  f"{mode}: source/runner harness errors: "
+                  f"{summary['harness_error_records']}"
+              )
           if report.get("mode") != mode or not report.get("supported_surface_passed"):
               raise SystemExit(f"{mode}: the declared supported surface did not qualify")
           if not report.get("unsupported_formats_are_explicit") or not report.get(
@@ -518,7 +579,15 @@ jobs:
               f"not_comparable={summary['not_comparable_records']}"
           )
           PY
+            then
+              :
+            else
+              lane_failed=1
+            fi
           done
+          if [[ $lane_failed -ne 0 ]]; then
+            exit 1
+          fi
           python - "$RUNNER_TEMP/biomodels-artifacts/membership-check.json" <<'PY'
           import json
           import sys
@@ -533,7 +602,7 @@ jobs:
           PY
 
       - name: Build per-record corpus inventory and compare flat expectations
-        if: always()
+        if: always() && inputs.biomodels_only_id == ''
         run: |
           set -euo pipefail
           artifacts="$RUNNER_TEMP/biomodels-artifacts"
