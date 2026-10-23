@@ -17,14 +17,15 @@ for *this* tree, and the two are kept consistent:
   the obligation stays open.  The disposition names the reason in the
   obligation's `decisions`, so the catalog never claims a check that does not
   exist.
-- The seven product defects #315 repaired are re-applied here, each with its
-  own regression test:
+- The seven product fixes from #315 are present in this candidate. Six were
+  re-applied on this branch; the reverse SBML TotalRate writer fix was already
+  present on its base through PR #381. Each has a regression test:
 
 | #315 defect | Re-applied by | Regression test |
 | --- | --- | --- |
 | the BNGL writer emitted rate laws the parser could not read back | `fix(bngl-writer)` | `tests/python/test_native_bngl_writer.py` |
-| the SBML writer missed the reverse direction of a total-rate rule | `fix(sbml-writer)` | `tests/python/test_sbml_total_rate_reverse.py` |
-| the capability rules existed in three places that disagreed | `refactor(compile)` | `tests/python/test_total_rate_capability.py` |
+| the SBML writer missed the reverse direction of a total-rate rule | already on base via PR #381 | `tests/python/test_sbml_writer_total_rate_reverse.py` |
+| the capability rules existed in three places that disagreed | `refactor(compile)` | `tests/cpp/test_total_rate_capability.cpp` |
 | the requested SSA seed was dropped by the generated action block | `fix(atomizer)` | `tests/python/test_modern_atomizer_seed.py` |
 | two simultaneous equal-priority events with conflicting assignments were silently serialized | `fix(atomizer)` | `tests/python/test_modern_atomizer_priority_order.py` |
 | the action surface accepted invalid typed options and silently ran the ODE for the population sampler | `fix(actions)` | `tests/python/test_action_surface_contract.py` |
@@ -33,6 +34,37 @@ for *this* tree, and the two are kept consistent:
 The statistical (symmetry) factor of #315's repair is **not** re-applied here:
 it is the change that regressed the official SBML Test Suite on 63 cases, and
 it is owned separately.
+
+## PR #315 comparison evidence and limits
+
+The durable manifest `provenance/pr315-reapply-1923-case-comparison.json`
+records paired inputs, translated BNGL byte hashes, per-case conversion and
+official-reference statuses, and the source/runtime identities for the two
+valid retained descendant reports. It compares the reverted-tree descendant
+`5ff8b1a506524874e9845ea4eb46a4820e1eab98` against candidate descendant
+`85296db1f21dfdd5b6861c00422ab0c841aef6f1`, using the same pinned SBML Test
+Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`. All 1,923 input
+hashes match, and all 1,923 translated BNGL files are byte-identical. The
+conversion status is unchanged for every case. The official-reference status
+differs only for `stochastic/00023` (passed in the reverted descendant, failed
+in the candidate); this comparison does not establish why that stochastic
+verdict changed and does not support a claim that all official verdicts are
+unchanged.
+
+This is not an exact original #315 baseline comparison. The retained
+63-failure report `coordinator/main-final.json` records source
+`51fe8e000af34c41308fd46e7ebee9d03bcc8ef3`, but its native extension resolved
+outside its worktree to the shared primary build (SHA256
+`b70f601de8cf58c34ed2079b51311942a6e14216c8982df498c9e85d8cd3474b`). Only
+`semantic/00069` has retained original paired translated artifacts
+(`art-rev` and `art-p315`, both SHA256
+`b7aa7033faae669c276434497f5878832b62c9dabb15fbd486ecc1955833487c`). The
+report for source `25f13c5bf9924dd413ab659198095b5d8d6bee05` is also unsuitable:
+its extension resolved to the shared primary build (SHA256
+`48f70e56868c445e76a4de46ebe00d1425c844f176866b890c97759bb4bae0f6`), which
+lacked the `simulation_option_support` API expected by that source. Therefore
+the all-63 original source/native attribution remains unverified; neither
+descendant equality nor the incomplete original artifact pair closes it.
 
 ## Snapshot and evidence provenance
 
