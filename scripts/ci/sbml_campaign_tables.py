@@ -83,6 +83,12 @@ UNSUPPORTED_OWNER_RULES: tuple[tuple[str, str, str], ...] = (
         "standard-deviation evaluation",
     ),
     (
+        "ensemble work budget",
+        "harness",
+        "the documented ensemble budget does not fit the gate's per-case "
+        "ensemble work budget",
+    ),
+    (
         "does not define an official time-course reference",
         "not applicable",
         "case does not define an official time-course reference",

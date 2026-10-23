@@ -305,3 +305,14 @@ def test_an_execution_that_triggers_another_event_runs_a_cascade(tmp_path):
     # decays from 1 instead of continuing to decay from 10.
     assert result.observables["Y"][-1] == pytest.approx(200.0)
     assert result.observables["X"][-1] == pytest.approx(np.exp(-(2.0 - np.log(2.0))))
+
+
+def test_nonfirst_cvode_root_group_executes_its_event(tmp_path):
+    result = multi_event_model(
+        tmp_path,
+        event_block("later", "time >= 100", ["Y = 999"])
+        + "\n"
+        + event_block("decay", "X < 5", ["Y = 123"]),
+    ).simulate(method="ode", t_end=2, n_steps=4)
+
+    assert result.observables["Y"][-1] == pytest.approx(123.0)

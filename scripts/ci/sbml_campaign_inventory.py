@@ -159,6 +159,10 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ("has nan value; emitted", "mathml:non-finite-parameter-approximation"),
     ("repeated-run mean", "harness:stochastic-ensemble-not-evaluated"),
     (
+        "ensemble work budget",
+        "harness:stochastic-ensemble-budget",
+    ),
+    (
         "executed in a random order",
         "harness:random-event-execution",
     ),
