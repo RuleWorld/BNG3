@@ -28,8 +28,6 @@ ModifierKind translateModifier(const std::string& rawModifier) {
     if (modifier == "moveconnected") return ModifierKind::MoveConnected;
     if (modifier == "matchonce") return ModifierKind::MatchOnce;
     if (modifier == "totalrate") return ModifierKind::TotalRate;
-    if (modifier.rfind("delay=", 0) == 0) return ModifierKind::Delay;
-    if (modifier == "nonconsuming") return ModifierKind::NonConsuming;
     if (modifier.rfind("include_reactants(", 0) == 0) return ModifierKind::IncludeReactants;
     if (modifier.rfind("exclude_reactants(", 0) == 0) return ModifierKind::ExcludeReactants;
     if (modifier.rfind("include_products(", 0) == 0) return ModifierKind::IncludeProducts;

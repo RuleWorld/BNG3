@@ -86,8 +86,6 @@ enum class ModifierKind {
     ExcludeReactants,
     IncludeProducts,
     ExcludeProducts,
-    Delay,
-    NonConsuming,
     Unknown,
 };
 

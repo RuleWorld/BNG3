@@ -270,9 +270,13 @@ end model
     assert completion.getNumReactants() == 0
     assert completion.getNumProducts() == 1
     initiation_formula = libsbml.formulaToL3String(initiation.getKineticLaw().getMath())
+    assert "0.5" in initiation_formula, initiation_formula
     completion_delays = list(delay_nodes(completion.getKineticLaw().getMath()))
     assert len(completion_delays) == 1
-    assert libsbml.formulaToL3String(completion_delays[0].getChild(0)) == initiation_formula
+    assert (
+        libsbml.formulaToL3String(completion_delays[0].getChild(0))
+        == initiation_formula
+    )
     assert "5" in libsbml.formulaToL3String(completion.getKineticLaw().getMath())
 
     non_consuming = export(
@@ -280,7 +284,8 @@ end model
     )
     assert non_consuming.getNumReactions() == 1
     delayed = non_consuming.getReaction(0)
-    assert delayed.getNumReactants() == delayed.getNumProducts() == 2
+    assert delayed.getNumReactants() == 1
+    assert delayed.getNumProducts() == 2
     assert len(list(delay_nodes(delayed.getKineticLaw().getMath()))) == 1
 
     zero_delay = export("A() -> B() k delay=0", "zero.xml")

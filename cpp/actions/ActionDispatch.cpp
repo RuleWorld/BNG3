@@ -4064,8 +4064,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     content = io::XmlWriter::write(model, &(*network));
                 } else if (format == "sbml") {
                     io::SbmlWriter::Options options;
-                    options.level = 2;
-                    options.version = 3;
+                    options.level = static_cast<int>(parseScalarValue(
+                        readArgument(action, "level", "2"), model));
+                    options.version = static_cast<int>(parseScalarValue(
+                        readArgument(action, "version", "3"), model));
                     options.networksExport = true;
                     options.startTime = parseScalarValue(
                         readArgument(action, "t_start", "0"), model);
@@ -4132,8 +4134,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "writesbml") {
             ensureNetwork();
             io::SbmlWriter::Options sbmlOpts;
-            sbmlOpts.level = 2;
-            sbmlOpts.version = 3;  // Perl default: L2V3
+            sbmlOpts.level = static_cast<int>(parseScalarValue(
+                readArgument(action, "level", "2"), model));
+            sbmlOpts.version = static_cast<int>(parseScalarValue(
+                readArgument(action, "version", "3"), model));  // Perl default: L2V3
             sbmlOpts.networksExport = true;
             sbmlOpts.startTime = parseScalarValue(
                 readArgument(action, "t_start", "0"), model);

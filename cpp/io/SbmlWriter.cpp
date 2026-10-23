@@ -219,6 +219,9 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
     requireNoEnergySemantics(model, "SBML");
+    if (!std::isfinite(options.startTime)) {
+        throw std::runtime_error("SBML start time must be finite");
+    }
     if (options.level < 3) {
         const auto rejectDelay = [] {
             throw std::runtime_error(

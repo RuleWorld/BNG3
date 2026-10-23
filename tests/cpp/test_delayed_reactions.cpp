@@ -1,7 +1,9 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <filesystem>
+#include <cmath>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -9,8 +11,10 @@
 
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
+#include "actions/ActionDispatch.hpp"
 #include "io/BnglWriter.hpp"
 #include "io/NetWriter.hpp"
+#include "io/NetReader.hpp"
 #include "io/SbmlWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -51,15 +55,15 @@ std::string readFile(const std::filesystem::path& path) {
 }  // namespace
 
 TEST_CASE("delayed reaction metadata parses, survives network generation, and round trips") {
-    auto model = parse("G() -> G() + M() 0.5 delay=tau NonConsuming");
+    auto model = parse("G() -> G() + M() 0.5 delay=tau+1 NonConsuming");
     REQUIRE(model->getReactionRules().size() == 1);
     const auto& rule = model->getReactionRules().front();
     REQUIRE(rule.getDelayExpression());
-    CHECK(rule.getDelayExpression()->toBnglString() == "tau");
+    CHECK(rule.getDelayExpression()->toBnglString() == "tau + 1");
     CHECK(rule.isNonConsuming());
 
     const auto bngl = io::BnglWriter::write(*model);
-    CHECK_THAT(bngl, Catch::Matchers::ContainsSubstring("delay=tau NonConsuming"));
+    CHECK_THAT(bngl, Catch::Matchers::ContainsSubstring("delay=tau + 1 NonConsuming"));
     auto roundTrip = parser::parseModel(bngl);
     REQUIRE(roundTrip->getReactionRules().front().getDelayExpression());
     CHECK(roundTrip->getReactionRules().front().isNonConsuming());
@@ -71,8 +75,28 @@ TEST_CASE("delayed reaction metadata parses, survives network generation, and ro
     CHECK(network.reactions.all().front().isNonConsuming());
 
     auto output = std::filesystem::temp_directory_path() / "bng3-delay-net-writer.net";
-    io::NetWriter::write(output, *model, network);
-    CHECK_THAT(readFile(output), Catch::Matchers::ContainsSubstring("delay=tau NonConsuming"));
+    io::NetWriterOptions options;
+    io::NetWriter::write(output, *model, network, options);
+    const auto netText = readFile(output);
+    CHECK_THAT(netText, Catch::Matchers::ContainsSubstring("delay=__delay_1 NonConsuming"));
+    CHECK_THAT(netText, Catch::Matchers::ContainsSubstring("__delay_1 3"));
+    const auto parsedNet = io::NetReader::parse(output);
+    REQUIRE(parsedNet.success);
+    REQUIRE(parsedNet.parameters.count("__delay_1") == 1);
+    CHECK(parsedNet.parameters.at("__delay_1") == Catch::Approx(3.0));
+    REQUIRE(parsedNet.reactions.size() == 1);
+    CHECK_THAT(parsedNet.reactions.front(),
+               Catch::Matchers::ContainsSubstring("delay=__delay_1 NonConsuming"));
+
+    auto reloaded = parse("G() -> G() + M() 0.5 delay=tau+1 NonConsuming");
+    reloaded->addAction(ast::Action{
+        "readFile", {{"file", output.filename().string()}}});
+    reloaded->addAction(ast::Action{
+        "simulate", {{"method", "ode"}, {"t_end", "1"}, {"n_steps", "1"}}});
+    CHECK_THROWS_WITH(actions::ActionDispatch::execute(
+                          *reloaded, output.parent_path() / "delayed_read.bngl"),
+                      Catch::Matchers::ContainsSubstring(
+                          "Delayed reactions are not supported by the native ODE engine"));
     std::filesystem::remove(output);
 }
 
@@ -110,6 +134,14 @@ end model
     CHECK(model->getParameters().evaluate("NonConsuming") == 1.0);
 }
 
+TEST_CASE("static mathematical functions are permitted in delay parameters") {
+    auto model = parse("A() -> B() 1 delay=sqrt(tau)");
+    REQUIRE(model->getReactionRules().front().getDelayExpression());
+    CHECK(model->getReactionRules().front().getDelayExpression()->evaluate(
+              [&](const std::string& name) { return model->getParameters().evaluate(name); })
+          == Catch::Approx(std::sqrt(2.0)));
+}
+
 TEST_CASE("NonConsuming delayed rules require nonnegative net species stoichiometry") {
     auto model = parse("A() -> 0 1 delay=tau NonConsuming");
     engine::NetworkGenerator generator(*model);
@@ -130,6 +162,10 @@ TEST_CASE("SBML lowers consuming delay with an empty initial history gate") {
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<csymbol encoding=\"text\" definitionURL=\"http://www.sbml.org/sbml/symbols/delay\"> delay </csymbol>"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<cn> 5 </cn>"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<apply><geq/>"));
+
+    options.level = 2;
+    CHECK_THROWS_WITH(io::SbmlWriter::write(*model, &network, options),
+                      Catch::Matchers::ContainsSubstring("require Level 3"));
 }
 
 TEST_CASE("native ODE refuses a delayed reaction instead of running it undelayed") {
