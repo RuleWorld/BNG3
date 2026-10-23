@@ -1887,9 +1887,6 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
         throw std::runtime_error("NonConsuming is valid only with delay=<expr>");
     }
     if (delayExpression) {
-        if (bidirectional) {
-            throw std::runtime_error("Delayed reversible rules are unsupported; write two unidirectional rules");
-        }
         const auto& parameters = currentModel_->getParameters();
         const auto delayDependencies = delayExpression->getDependencies();
         if (std::any_of(delayDependencies.begin(), delayDependencies.end(),
@@ -1932,6 +1929,9 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
             [&](const std::string& name) { return parameters.evaluate(name); });
         if (!std::isfinite(delay) || delay < 0.0) {
             throw std::runtime_error("Reaction delay must evaluate to a finite nonnegative value");
+        }
+        if (bidirectional && delay > 0.0) {
+            throw std::runtime_error("Delayed reversible rules are unsupported; write two unidirectional rules");
         }
     }
 

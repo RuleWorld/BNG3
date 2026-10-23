@@ -119,6 +119,8 @@ TEST_CASE("delayed rule syntax rejects invalid modes and dynamic delays") {
                       Catch::Matchers::ContainsSubstring("nonnegative"));
     CHECK_THROWS_WITH(parse("A() -> B() 1 delay=time"),
                       Catch::Matchers::ContainsSubstring("constant"));
+    auto zeroDelayReversible = parse("A() <-> B() 1, 1 delay=0");
+    CHECK(zeroDelayReversible->getReactionRules().front().isBidirectional());
 }
 
 TEST_CASE("delay keywords remain valid parameter identifiers outside modifiers") {
