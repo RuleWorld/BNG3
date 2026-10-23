@@ -33,6 +33,9 @@ from scripts.cross_validate import (
     run_cross_validation,
     write_cross_validation_summary,
 )
+from scripts.ci.disable_unreachable_microsoft_apt_source import (
+    disable_unreachable_sources,
+)
 
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
@@ -1804,3 +1807,45 @@ def test_issue141_cleanup_probe_enables_leaks_and_requires_a_selected_test():
         'TEST_CASE("OdeIntegrator recovers after late stop condition failure"' in source
     )
     assert 'options.stopIf = "if(time > 0, missing_name, 0)"' in source
+
+
+def test_cuda_job_disables_only_unreachable_microsoft_apt_entries(tmp_path):
+    (tmp_path / "sources.list.d").mkdir()
+    legacy = tmp_path / "sources.list.d" / "microsoft.list"
+    legacy.write_text(
+        "deb [signed-by=/usr/share/keyrings/microsoft.gpg] "
+        "https://packages.microsoft.com/ubuntu/22.04/prod jammy main\n"
+        "deb http://archive.ubuntu.com/ubuntu jammy main\n",
+        encoding="utf-8",
+    )
+    deb822 = tmp_path / "sources.list.d" / "mixed.sources"
+    deb822.write_text(
+        "Types: deb\nURIs: https://packages.microsoft.com/ubuntu/22.04/prod\n"
+        " https://example.test/ubuntu\nSuites: jammy\nComponents: main\n\n"
+        "Types: deb\nURIs: https://packages.microsoft.com/ubuntu/22.04/prod\n"
+        "Suites: jammy\nComponents: main\n",
+        encoding="utf-8",
+    )
+
+    assert disable_unreachable_sources(tmp_path) == 3
+    legacy_text = legacy.read_text(encoding="utf-8")
+    assert "# disabled for CUDA CI" in legacy_text
+    assert "deb http://archive.ubuntu.com/ubuntu jammy main" in legacy_text
+    deb822_text = deb822.read_text(encoding="utf-8")
+    assert "URIs: https://example.test/ubuntu" in deb822_text
+    assert "Enabled: no" in deb822_text
+    assert deb822_text.count("https://packages.microsoft.com") == 0
+
+    cuda_steps = parse_workflow(CI_WORKFLOW)["jobs"]["cpp-cuda"]["steps"]
+    filter_step = next(
+        step
+        for step in cuda_steps
+        if step.get("name") == "Disable unrelated Microsoft apt feed"
+    )
+    install_step = next(
+        step for step in cuda_steps if step.get("name") == "Install dependencies"
+    )
+    assert filter_step["run"] == (
+        "sudo python3 scripts/ci/disable_unreachable_microsoft_apt_source.py"
+    )
+    assert cuda_steps.index(filter_step) < cuda_steps.index(install_step)
