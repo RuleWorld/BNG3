@@ -19,6 +19,7 @@ import itertools
 import json
 import math
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -72,6 +73,68 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _model_source_cache_path(cache_dir: Path, entry: dict[str, Any]) -> Path:
+    """Return a content-addressed or model-scoped source path."""
+
+    model_id = str(entry.get("id", ""))
+    filename = Path(str(entry.get("filename", ""))).name
+    if (
+        not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", model_id)
+        or not filename
+        or filename in {".", ".."}
+    ):
+        raise ValueError("source cache entries require a model id and filename")
+    expected = str(entry.get("sha256", "")).lower()
+    if re.fullmatch(r"[0-9a-f]{64}", expected):
+        return cache_dir / "sha256" / expected
+    return cache_dir / "models" / model_id / filename
+
+
+def _migrate_legacy_source_cache(
+    cache_dir: Path, entries: list[dict[str, Any]]
+) -> dict[str, int]:
+    """Copy matching legacy files into SHA paths once before isolated workers start."""
+
+    expected = {
+        str(entry.get("sha256", "")).lower()
+        for entry in entries
+        if re.fullmatch(r"[0-9a-fA-F]{64}", str(entry.get("sha256", "")))
+    }
+    destinations = {digest: cache_dir / "sha256" / digest for digest in expected}
+    pending = {digest for digest, path in destinations.items() if not path.is_file()}
+    if not pending:
+        return {"expected_hashes": len(expected), "migrated": 0, "missing": 0}
+
+    root = cache_dir.resolve()
+    migrated: set[str] = set()
+    for candidate in root.rglob("*"):
+        if (
+            not candidate.is_file()
+            or candidate.is_symlink()
+            or candidate.suffix.lower() not in {".xml", ".omex", ".zip"}
+            or "sha256" in candidate.relative_to(root).parts
+        ):
+            continue
+        try:
+            digest = _sha256(candidate)
+        except OSError:
+            continue
+        if digest not in pending:
+            continue
+        destination = destinations[digest]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(candidate, destination)
+        migrated.add(digest)
+        pending.remove(digest)
+        if not pending:
+            break
+    return {
+        "expected_hashes": len(expected),
+        "migrated": len(migrated),
+        "missing": len(pending),
+    }
 
 
 def _runtime_provenance(
@@ -375,6 +438,8 @@ def _enumerate_inventory(
 
 def _download_if_needed(path: Path, entry: dict[str, Any]) -> str:
     expected = entry.get("sha256")
+    if expected and path.exists() and _sha256(path) == expected:
+        return str(expected)
     if not path.exists() or (expected and _sha256(path) != expected):
         attempts: list[dict[str, Any]] = []
         try:
@@ -428,6 +493,7 @@ def _download_if_needed(path: Path, entry: dict[str, Any]) -> str:
                     f"could not acquire model bytes after metadata fallback: {attempts}",
                     attempts,
                 ) from retry_exc
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     expected = entry.get("sha256")
     actual = _sha256(path)
@@ -1780,7 +1846,7 @@ def main() -> int:
 
         model_artifacts: Path | None = None
         try:
-            path = args.cache_dir / str(entry["filename"])
+            path = _model_source_cache_path(args.cache_dir, entry)
             record["sha256"] = _download_if_needed(path, entry)
             record["source_artifact"] = {
                 "format": entry.get("format", ""),
@@ -1917,6 +1983,14 @@ def main() -> int:
     if sbml_selected:
         if args.jobs < 1:
             raise SystemExit("--jobs must be at least one")
+        cache_migration = _migrate_legacy_source_cache(args.cache_dir, sbml_selected)
+        print(
+            "source cache: "
+            f"{cache_migration['migrated']} legacy payloads migrated by SHA; "
+            f"{cache_migration['missing']} expected hashes not cached",
+            file=sys.stderr,
+            flush=True,
+        )
         if args.jobs == 1:
             isolated_records = [
                 _run_isolated_model(entry, args) for entry in sbml_selected
