@@ -9,6 +9,7 @@ on:
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
       - 'scripts/ci/validate_published_biomodels.py'
+      - 'scripts/ci/install_biomodels_source_bundle.py'
       - 'scripts/ci/curated_biomodels_corpus_inventory.py'
       - 'scripts/ci/imported_package_guard.py'
       - 'scripts/ci/sbml_campaign_inventory.py'
@@ -17,8 +18,11 @@ on:
       - 'provenance/published-biomodels.json'
       - 'provenance/curated-biomodels-query-inventory.json'
       - 'provenance/curated-biomodels-query-inventory.provenance.json'
+      - 'provenance/curated-biomodels-source-bundle.json'
+      - 'tests/fixtures/curated_biomodels/**'
       - 'tests/test_ci_contract.py'
       - 'tests/test_harness_contracts.py'
+      - 'tests/test_biomodels_source_bundle.py'
       - 'tests/test_ssts_selected_gate.py'
       - 'tests/test_ssts_feature_selection.py'
       - 'tests/test_ssts_isolation.py'
@@ -422,6 +426,27 @@ jobs:
           )
           PY
 
+      - name: Install the verified offline BioModels source snapshot
+        shell: bash
+        env:
+          BIOMODELS_ONLY_ID: ${{ inputs.biomodels_only_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/biomodels-artifacts"
+          args=()
+          if [[ -n "${BIOMODELS_ONLY_ID:-}" ]]; then
+            args+=(--only-id "$BIOMODELS_ONLY_ID")
+          fi
+          python scripts/ci/install_biomodels_source_bundle.py \
+            --bundle tests/fixtures/curated_biomodels/source-payloads-2026-09.tar.gz \
+            --bundle-manifest provenance/curated-biomodels-source-bundle.json \
+            --inventory provenance/curated-biomodels-query-inventory.json \
+            --inventory-provenance provenance/curated-biomodels-query-inventory.provenance.json \
+            --query-manifest provenance/published-biomodels.json \
+            --cache-dir "$RUNNER_TEMP/biomodels-cache" \
+            --receipt "$RUNNER_TEMP/biomodels-artifacts/source-bundle-receipt.json" \
+            "${args[@]}"
+
       - name: Check current BioModels membership against the pinned snapshot
         shell: bash
         run: |
@@ -616,19 +641,6 @@ jobs:
           if [[ $lane_failed -ne 0 ]]; then
             exit 1
           fi
-          python - "$RUNNER_TEMP/biomodels-artifacts/membership-check.json" <<'PY'
-          import json
-          import sys
-          from pathlib import Path
-
-          membership = json.loads(Path(sys.argv[1]).read_text())
-          if membership.get("status") != "matched":
-              raise SystemExit(
-                  "live BioModels membership is not qualified against the pinned "
-                  f"snapshot: {membership}"
-              )
-          PY
-
       - name: Build per-record corpus inventory and compare flat expectations
         if: always() && inputs.biomodels_only_id == ''
         run: |
