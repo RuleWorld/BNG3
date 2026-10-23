@@ -288,6 +288,37 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
     )
     assert "check_python_package_identity.py" in identity
     assert '--product-checkout "$GITHUB_WORKSPACE/_bng3_product"' in identity
+    assert "python -m pytest" not in identity
+    harness_tests = next(
+        step for step in steps if step.get("name") == "Run harness contract tests"
+    )
+    assert harness_tests["if"] == (
+        "inputs.product_revision == '' || inputs.product_revision == github.sha"
+    )
+    assert "python -m pytest tests/test_ssts_selected_gate.py" in harness_tests["run"]
+    baseline_harness_tests = next(
+        step
+        for step in steps
+        if step.get("name") == "Install harness checkout and run contract tests"
+    )
+    assert baseline_harness_tests["if"] == (
+        "inputs.product_revision != '' && inputs.product_revision != github.sha"
+    )
+    assert (
+        "pip install --force-reinstall --no-deps --no-build-isolation ."
+        in baseline_harness_tests["run"]
+    )
+    assert "harness-package-identity.json" in baseline_harness_tests["run"]
+    restore_product = next(
+        step for step in steps if step.get("name") == "Restore exact product package"
+    )
+    assert restore_product["if"] == (
+        "inputs.product_revision != '' && inputs.product_revision != github.sha"
+    )
+    assert (
+        "pip install --force-reinstall --no-deps --no-build-isolation ./_bng3_product"
+        in restore_product["run"]
+    )
     product_smoke = next(
         step for step in steps if step.get("name") == "Run product smoke tests"
     )

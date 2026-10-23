@@ -131,7 +131,35 @@ jobs:
             --product-checkout "$GITHUB_WORKSPACE/_bng3_product" \
             > "$RUNNER_TEMP/ssts-artifacts/package-identity.json"
           python -c 'import libsbml, roadrunner; print(libsbml.getLibSBMLDottedVersion(), roadrunner.__version__)'
+
+      - name: Run harness contract tests
+        if: inputs.product_revision == '' || inputs.product_revision == github.sha
+        run: |
           python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_isolation.py tests/test_ssts_report_comparison.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/test_harness_contracts.py -q
+
+      - name: Install harness checkout and run contract tests
+        if: inputs.product_revision != '' && inputs.product_revision != github.sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --force-reinstall --no-deps --no-build-isolation .
+          "$RUNNER_TEMP/ssts-venv/bin/python" scripts/ci/check_python_package_identity.py \
+            --source-revision "$BNG3_PR_HEAD_SHA" \
+            --require-source-head \
+            --product-checkout "$GITHUB_WORKSPACE" \
+            > "$RUNNER_TEMP/ssts-artifacts/harness-package-identity.json"
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_isolation.py tests/test_ssts_report_comparison.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/test_harness_contracts.py -q
+
+      - name: Restore exact product package
+        if: inputs.product_revision != '' && inputs.product_revision != github.sha
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --force-reinstall --no-deps --no-build-isolation ./_bng3_product
+          "$RUNNER_TEMP/ssts-venv/bin/python" scripts/ci/check_python_package_identity.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --product-checkout "$GITHUB_WORKSPACE/_bng3_product" \
+            > "$RUNNER_TEMP/ssts-artifacts/package-identity.json"
 
       - name: Run product smoke tests
         id: product_smoke_tests
