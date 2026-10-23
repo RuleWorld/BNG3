@@ -1442,11 +1442,10 @@ public:
     antlr4::tree::TerminalNode *MATCHONCE();
     antlr4::tree::TerminalNode *TOTALRATE();
     antlr4::tree::TerminalNode *DELAY();
-    antlr4::tree::TerminalNode *EQUALS();
+    antlr4::tree::TerminalNode *BECOMES();
     ExpressionContext *expression();
     antlr4::tree::TerminalNode *NONCONSUMING();
     antlr4::tree::TerminalNode *PRIORITY();
-    antlr4::tree::TerminalNode *BECOMES();
     antlr4::tree::TerminalNode *INCLUDE_REACTANTS();
     antlr4::tree::TerminalNode *LPAREN();
     antlr4::tree::TerminalNode *INT();

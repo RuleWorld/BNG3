@@ -581,7 +581,7 @@ void bngparserParserInitialize() {
 	997,1000,3,220,110,0,998,1000,3,188,94,0,999,991,1,0,0,0,999,995,1,0,
 	0,0,999,996,1,0,0,0,999,997,1,0,0,0,999,998,1,0,0,0,1000,113,1,0,0,0,
 	1001,1041,5,32,0,0,1002,1041,5,33,0,0,1003,1041,5,31,0,0,1004,1041,5,
-	40,0,0,1005,1006,5,34,0,0,1006,1007,5,226,0,0,1007,1041,3,192,96,0,1008,
+	40,0,0,1005,1006,5,34,0,0,1006,1007,5,228,0,0,1007,1041,3,192,96,0,1008,
 	1041,5,35,0,0,1009,1010,5,173,0,0,1010,1011,5,228,0,0,1011,1041,3,192,
 	96,0,1012,1013,5,36,0,0,1013,1014,5,214,0,0,1014,1015,5,202,0,0,1015,
 	1016,5,212,0,0,1016,1017,3,116,58,0,1017,1018,5,215,0,0,1018,1041,1,0,
@@ -8196,8 +8196,8 @@ tree::TerminalNode* BNGParser::Rule_modifiersContext::DELAY() {
   return getToken(BNGParser::DELAY, 0);
 }
 
-tree::TerminalNode* BNGParser::Rule_modifiersContext::EQUALS() {
-  return getToken(BNGParser::EQUALS, 0);
+tree::TerminalNode* BNGParser::Rule_modifiersContext::BECOMES() {
+  return getToken(BNGParser::BECOMES, 0);
 }
 
 BNGParser::ExpressionContext* BNGParser::Rule_modifiersContext::expression() {
@@ -8210,10 +8210,6 @@ tree::TerminalNode* BNGParser::Rule_modifiersContext::NONCONSUMING() {
 
 tree::TerminalNode* BNGParser::Rule_modifiersContext::PRIORITY() {
   return getToken(BNGParser::PRIORITY, 0);
-}
-
-tree::TerminalNode* BNGParser::Rule_modifiersContext::BECOMES() {
-  return getToken(BNGParser::BECOMES, 0);
 }
 
 tree::TerminalNode* BNGParser::Rule_modifiersContext::INCLUDE_REACTANTS() {
@@ -8325,7 +8321,7 @@ BNGParser::Rule_modifiersContext* BNGParser::rule_modifiers() {
         setState(1005);
         match(BNGParser::DELAY);
         setState(1006);
-        match(BNGParser::EQUALS);
+        match(BNGParser::BECOMES);
         setState(1007);
         expression();
         break;

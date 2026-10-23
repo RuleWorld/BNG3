@@ -335,7 +335,7 @@ rule_modifiers
     | MOVECONNECTED
     | MATCHONCE
     | TOTALRATE
-    | DELAY EQUALS expression
+    | DELAY BECOMES expression
     | NONCONSUMING
     | PRIORITY BECOMES expression  // BNG2 parity: priority modifier (priority=5)
     | INCLUDE_REACTANTS LPAREN INT COMMA pattern_list RPAREN
@@ -558,6 +558,8 @@ arg_name
     | PARAM | COMPLEX | GET_FINAL_STATE | GML | NOCSLF | NOTF | BINARY_OUTPUT | UTL | EQUIL | NFSIM_EXEC
     // Hybrid model options
     | MOL_THRESHOLD | ACTIONS
+    // These rule-modifier keywords remain valid parameter and expression identifiers.
+    | DELAY | NONCONSUMING
     // Parameter scan options
     | PARAMETER | PAR_MIN | PAR_MAX | N_SCAN_PTS | LOG_SCALE | RESET_CONC
     // Mfile options

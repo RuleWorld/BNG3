@@ -232,9 +232,12 @@ TEST_CASE("SSA and PSA refuse delayed reactions at their construction boundary")
 }
 
 TEST_CASE("native simulation refuses the SBML delay function in a rate law") {
-    auto model = parse("A() -> B() delay(A,tau)");
-    engine::NetworkGenerator generator(*model);
-    const auto network = generator.generateNative();
+    auto model = parse("A() -> B() 1");
+    engine::GeneratedNetwork network;
+    network.reactions.add(ast::Rxn(
+        "r_delay", {}, {}, "delay(A, tau)", 1.0, {},
+        ast::Expression::function("delay", {ast::Expression::identifier("A"),
+                                             ast::Expression::identifier("tau")})));
     CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
                       Catch::Matchers::ContainsSubstring("delay(x, tau)"));
 }
