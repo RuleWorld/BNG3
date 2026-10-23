@@ -22,6 +22,7 @@
 #include "engine/NetworkGenerator.hpp"
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -72,51 +73,23 @@ bool isInternalFunction(const std::string& name) {
 // The origin rule name of a network reaction is the name of the reaction
 // rule it came from.  The reverse direction of a reversible rule carries the
 // prefix ``_reverse__`` (or ``__reverse__``), and a rule that the parser
-// named with a leading underscore carries the underscore itself.
-struct OriginRule {
-    std::string ruleName;
-    bool reverse = false;
-};
-
-OriginRule normalizeOriginRuleName(const std::string& origin) {
-    OriginRule result;
-    std::string ruleName = origin;
-    if (ruleName.rfind("_reverse__", 0) == 0) {
-        ruleName.erase(0, std::string("_reverse__").size());
-        result.reverse = true;
-    } else if (ruleName.rfind("__reverse__", 0) == 0) {
-        ruleName.erase(0, std::string("__reverse__").size());
-        result.reverse = true;
-    } else if (!ruleName.empty() && ruleName.front() == '_') {
-        ruleName.erase(ruleName.begin());
-    }
-    result.ruleName = std::move(ruleName);
-    return result;
-}
+// named with a leading underscore carries the underscore itself.  The
+// resolution belongs to the shared capability owner, so the rate-expression
+// lookup and the TotalRate lookup cannot resolve the same name differently.
+using bng::compile::resolveOriginRule;
 
 bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
     // The ``TotalRate`` modifier belongs to the reaction rule, so both
     // directions of a reversible rule carry it.  The reverse direction of a
     // network reaction carries the rule name behind the ``_reverse__``
     // prefix, and looking the origin name up verbatim would miss it.
-    const auto ruleName = normalizeOriginRuleName(origin).ruleName;
-    for (const auto& rule : model.getReactionRules()) {
-        if (rule.getRuleName() != ruleName) continue;
-        for (const auto& modifier : rule.getModifiers()) {
-            std::string lowerModifier = modifier;
-            std::transform(lowerModifier.begin(), lowerModifier.end(), lowerModifier.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (lowerModifier == "totalrate") return true;
-        }
-        break;
-    }
-    return false;
+    return bng::compile::isTotalRateReaction(model, origin);
 }
 
 const ast::Expression* rateExpressionForOrigin(
     const ast::Model& model, const std::string& origin) {
-    const auto normalized = normalizeOriginRuleName(origin);
-    const auto& ruleName = normalized.ruleName;
+    const auto normalized = resolveOriginRule(origin);
+    const auto& ruleName = normalized.name;
 
     for (const auto& rule : model.getReactionRules()) {
         if (rule.getRuleName() != ruleName || rule.getRates().empty()) continue;

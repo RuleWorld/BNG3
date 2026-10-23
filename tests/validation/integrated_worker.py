@@ -715,28 +715,66 @@ def write_legacy_result(result):
     )
 
 
+# The qualification operations the worker can dispatch.  The worker runs in
+# isolated mode, so it cannot import the harness registry to derive this
+# list; the contract test in test_integrated_extensions.py asserts that the
+# two agree, so a family the registry knows cannot be missing here.  A
+# qualification the worker cannot dispatch would otherwise fall through to
+# the NFsim route and report itself under the wrong stage, which reads as an
+# executed family that did something else.
+QUALIFICATION_OPERATIONS = (
+    "boundaries",
+    "protocol",
+    "nf-marginals",
+    "graph-identity",
+    "bngir-adversarial",
+    "quantity-laws",
+)
+
+# The consumer operations the worker can dispatch.
+CONSUMER_OPERATIONS = (
+    "bngir-v01",
+    "bngir-v02",
+    "bngl-reload",
+    "sbml-reload",
+    "reuse",
+)
+
+# The model routes the worker can dispatch.
+MODEL_OPERATIONS = (
+    "atomizer",
+    "rate-trace",
+    "api",
+    "nf",
+    "pybng",
+    "compat",
+)
+
+
+def require_dispatchable(operation):
+    """The route an operation takes, or a refusal when there is none.
+
+    The worker refuses an operation it does not dispatch.  A catch-all route
+    would run the NFsim trajectory for it, and the campaign would record
+    that family as executed while the receipt describes another route.
+    """
+    if operation in QUALIFICATION_OPERATIONS:
+        return "qualification"
+    if operation in CONSUMER_OPERATIONS:
+        return "consumer"
+    if operation in MODEL_OPERATIONS:
+        return "model"
+    raise HarnessError(f"the worker does not dispatch the operation {operation!r}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "operation",
         choices=(
-            "atomizer",
-            "rate-trace",
-            "api",
-            "nf",
-            "pybng",
-            "compat",
-            "bngir-v01",
-            "bngir-v02",
-            "bngl-reload",
-            "sbml-reload",
-            "reuse",
-            "boundaries",
-            "protocol",
-            "nf-marginals",
-            "graph-identity",
-            "bngir-adversarial",
-            "quantity-laws",
+            *MODEL_OPERATIONS,
+            *CONSUMER_OPERATIONS,
+            *QUALIFICATION_OPERATIONS,
         ),
     )
     parser.add_argument("--input", type=Path, required=True)
@@ -751,13 +789,8 @@ def main():
     parser.add_argument("--ensemble-cases", type=int, default=48)
     parser.add_argument("--xml-out", type=Path)
     args = parser.parse_args()
-    consumer_operations = (
-        "bngir-v01",
-        "bngir-v02",
-        "bngl-reload",
-        "sbml-reload",
-        "reuse",
-    )
+    consumer_operations = CONSUMER_OPERATIONS
+    require_dispatchable(args.operation)
     if args.operation == "pybng":
         # -I excludes inherited PYTHONPATH and user site paths. The dedicated interpreter has dependencies, not a second BNG3.
         root = args.upstream.resolve()
@@ -822,14 +855,7 @@ def main():
     Path("identity.json").write_text(json.dumps(identity, indent=2) + "\n")
     import bionetgen
 
-    if args.operation in (
-        "boundaries",
-        "protocol",
-        "nf-marginals",
-        "graph-identity",
-        "bngir-adversarial",
-        "quantity-laws",
-    ):
+    if args.operation in QUALIFICATION_OPERATIONS:
         from tests.validation.integrated_extensions import run_worker
 
         checks = run_worker(args.operation, args)
@@ -931,12 +957,19 @@ def main():
     elif args.operation == "compat":
         result = bionetgen.run(str(args.input), str(Path.cwd()), suppress=True)
         write_legacy_result(result)
-    else:
+    elif args.operation == "nf":
         model = bionetgen.load(str(args.input))
         result = model.simulate(method="nf", t_end=2, n_steps=10, seed=7)
         if result.construction_path != "direct":
             raise RuntimeError(f"NFsim path changed: {result.construction_path}")
         write_result(result, "nf.gdat")
+    else:
+        # The worker refuses an operation it does not dispatch.  A catch-all
+        # route would run the NFsim trajectory for a family the worker cannot
+        # dispatch, and the campaign would record that family as executed.
+        raise HarnessError(
+            f"the worker does not dispatch the operation {args.operation!r}"
+        )
 
 
 if __name__ == "__main__":

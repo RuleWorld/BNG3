@@ -26,6 +26,7 @@
 #include "generated/BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include "compile/RuleUnitConversion.hpp"
 #include "compile/UnitAnalysis.hpp"
 #include "compile/energy/BarrierCompiler.hpp"
@@ -64,31 +65,11 @@ const std::unordered_map<std::string, std::string> builtinCanonicalName = {
 };
 
 bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
-    std::string ruleName = origin;
-    if (ruleName.rfind("_reverse__", 0) == 0) {
-        ruleName.erase(0, std::string("_reverse__").size());
-    } else if (!ruleName.empty() && ruleName.front() == '_') {
-        ruleName.erase(0, 1);
-    }
-    constexpr std::string_view reverseSuffix = "_reverse";
-    if (ruleName.size() > reverseSuffix.size() &&
-        ruleName.compare(ruleName.size() - reverseSuffix.size(),
-                         reverseSuffix.size(), reverseSuffix) == 0) {
-        ruleName.erase(ruleName.size() - reverseSuffix.size());
-    }
-    for (const auto& rule : model.getReactionRules()) {
-        if (rule.getRuleName() != ruleName) continue;
-        for (const auto& modifier : rule.getModifiers()) {
-            std::string lowered = modifier;
-            std::transform(lowered.begin(), lowered.end(), lowered.begin(),
-                           [](unsigned char c) {
-                               return static_cast<char>(std::tolower(c));
-                           });
-            if (lowered == "totalrate") return true;
-        }
-        break;
-    }
-    return false;
+    // The decision belongs to the shared capability owner, which also
+    // resolves the reverse direction of a rule.  A consumer that re-derives
+    // the decision from the rule name alone cannot see that direction, and
+    // then writes a rate for a reaction the engine executes as a total rate.
+    return bng::compile::isTotalRateReaction(model, origin);
 }
 
 // Simple recursive evaluator for mathematical expressions

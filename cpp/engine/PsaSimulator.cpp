@@ -18,6 +18,7 @@
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
 #include "ast/ReactionRule.hpp"
+#include "compile/TotalRate.hpp"
 
 namespace bng::engine {
 
@@ -150,25 +151,8 @@ void PsaSimulator::compile() {
         crxn.productIndices = rxn.getProducts();
         crxn.statFactor = rxn.getFactor();
 
-        // Check for TotalRate modifier
         const auto& originRuleName = rxn.getOriginRuleName();
-        if (!originRuleName.empty()) {
-            std::string lookupName = originRuleName;
-            if (lookupName.rfind("_reverse__", 0) == 0) {
-                lookupName = lookupName.substr(std::string("_reverse__").size());
-            }
-            for (const auto& rule : model_.getReactionRules()) {
-                if (rule.getRuleName() == lookupName) {
-                    for (const auto& mod : rule.getModifiers()) {
-                        if (mod == "TotalRate") {
-                            crxn.isTotalRate = true;
-                            break;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
+        crxn.isTotalRate = bng::compile::isTotalRateReaction(model_, originRuleName);
 
         // Build rate string (same logic as OdeIntegrator::compile)
         std::ostringstream rateStrBuilder;

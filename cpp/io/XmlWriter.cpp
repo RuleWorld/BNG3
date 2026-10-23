@@ -1,4 +1,5 @@
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include "XmlWriter.hpp"
 
 #include "compile/energy/BarrierCompiler.hpp"
@@ -1442,13 +1443,20 @@ bool ruleHasModifier(const ast::ReactionRule& rule, const std::string& wanted) {
                        });
 }
 
+// The TotalRate modifier's spelling belongs to the shared capability owner,
+// so this writer cannot disagree with the engine about which rules state a
+// complete macroscopic rate.
+bool ruleIsTotalRate(const ast::ReactionRule& rule) {
+    return bng::compile::hasTotalRateModifier(rule.getModifiers());
+}
+
 // BNG2 forces an elementary rate into a generated zero-argument function when
 // TotalRate is present. Rates already represented by another XML type need no
 // wrapper.
 bool needsTotalRateFunctionWrapper(const ast::Model& model,
                                    const ast::ReactionRule& rule,
                                    const ast::Expression& rate) {
-    return ruleHasModifier(rule, "TotalRate") &&
+    return ruleIsTotalRate(rule) &&
            xmlRateLawType(model, rate) == "Ele";
 }
 
@@ -1749,7 +1757,7 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
 
         xml << "        <RateLaw id=\"" << rrId << "_RateLaw\" type=\"" << type
             << "\" totalrate=\""
-            << (hasModifier(rule.getModifiers(), "TotalRate") ? "1" : "0") << "\"";
+            << (ruleIsTotalRate(rule) ? "1" : "0") << "\"";
         // Signed reservoir work travels with the rate law because it modifies
         // dG rather than the rule's structure. Emitted only when present, so
         // ordinary models produce byte-identical XML.

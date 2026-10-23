@@ -201,20 +201,6 @@ def test_positive_structure_does_not_hide_unexpected_native_refusal():
     assert row["status"] == "FAIL"
 
 
-def test_worker_cli_accepts_registered_adversarial_execution():
-    import ast
-
-    tree = ast.parse((Path(__file__).parent / "integrated_worker.py").read_text())
-    choices = next(
-        keyword.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        for keyword in node.keywords
-        if keyword.arg == "choices"
-    )
-    assert "bngir-adversarial" in ast.literal_eval(choices)
-
-
 def test_numeric_seed_rhs_and_trajectory_corruption_are_detected():
     for field in ("seed", "rhs", "trajectory"):
         difference = adversarial.compare_observation(

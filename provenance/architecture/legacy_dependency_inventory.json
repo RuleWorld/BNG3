@@ -1,0 +1,185 @@
+{
+  "description": "Dependency inventory for the legacy compatibility paths of issue #172. Recorded by tools/check_legacy_dependency_inventory.py; the check fails when the live import/include graph drifts away from this file.",
+  "paths": [
+    {
+      "blocker": "bionetgen.bngmodel and bionetgen.SympyOdes/export_sympy_odes are public compatibility exports with no native BNG3 equivalent; bionetgen.core.tools.cli, bionetgen.core.tools.visualize and bionetgen.atomizer.utils.consoleCommands call into this package, and the package itself depends on the Cement CLI (bionetgen.main.BioNetGen), so it can only be retired after that CLI is retired. Retiring it requires re-implementing bngmodel on the native backend and migrating those three tools; no qualified check covers a native bngmodel yet.",
+      "dependents": {
+        "product": [
+          "bionetgen",
+          "bionetgen.core.tools.cli"
+        ],
+        "tests": [
+          "tests.python.test_bionetgen",
+          "tests.python.test_bng_parsing",
+          "tests.python.test_bngfile_compat",
+          "tests.python.test_get_rule_mod",
+          "tests.python.test_regression",
+          "tests.python.test_runner",
+          "tests.python.test_sympy_odes",
+          "tests.validation.integrated_worker"
+        ]
+      },
+      "key": "modelapi",
+      "kind": "python",
+      "modules": [
+        "bionetgen.modelapi"
+      ],
+      "qualified_checks": [
+        "tests/python/test_compatibility_contract.py::test_legacy_public_symbols_are_available_from_package_root",
+        "tests/python/test_bngfile_compat.py",
+        "tests/python/test_sympy_odes.py"
+      ],
+      "status": "retained"
+    },
+    {
+      "blocker": null,
+      "dependents": {
+        "product": [],
+        "tests": []
+      },
+      "key": "network",
+      "kind": "python",
+      "modules": [
+        "bionetgen.network"
+      ],
+      "qualified_checks": [
+        "tests/cpp/test_sbml_reader.cpp (native bng::io::NetReader supersedes the retired reader)",
+        "tests/validation/test_compare_net.py",
+        "tests/validation/test_parity_net.py"
+      ],
+      "status": "retired"
+    },
+    {
+      "blocker": "bionetgen.sim_getter is a public compatibility export whose libRoadRunner adapter has no native BNG3 equivalent; its behaviour is already covered by qualified checks, so the adapter is retained deliberately instead of being migrated.",
+      "dependents": {
+        "product": [
+          "bionetgen"
+        ],
+        "tests": []
+      },
+      "key": "simulator",
+      "kind": "python",
+      "modules": [
+        "bionetgen.simulator"
+      ],
+      "qualified_checks": [
+        "tests/python/test_compatibility_contract.py::test_legacy_roadrunner_adapter_runs_analytic_sbml",
+        "tests/python/test_compatibility_contract.py::test_legacy_roadrunner_adapter_reports_missing_optional_dependency",
+        "tests/python/test_compatibility_contract.py::test_legacy_sim_getter_rejects_unknown_simulator_type"
+      ],
+      "status": "retained"
+    },
+    {
+      "blocker": "The legacy Cement CLI is the deliberate compatibility adapter for the modelapi path, which imports bionetgen.main.BioNetGen. Without Cement the CLI already fails with an explicit ImportError (\"Install 'cement'\") instead of silently degrading, so the missing dependency is diagnostic rather than hidden. Retiring it requires the modelapi path to be retired first.",
+      "dependents": {
+        "product": [
+          "bionetgen",
+          "bionetgen.atomizer.atomizeTool",
+          "bionetgen.core.tools.visualize",
+          "bionetgen.modelapi.bngfile",
+          "bionetgen.modelapi.bngparser",
+          "bionetgen.modelapi.model",
+          "bionetgen.modelapi.runner"
+        ],
+        "tests": [
+          "tests.python.test_bionetgen",
+          "tests.python.test_bng_atomizer",
+          "tests.python.test_bng_core",
+          "tests.python.test_bng_models",
+          "tests.python.test_bng_visualization",
+          "tests.python.test_compatibility_contract",
+          "tests.validation.integrated_worker"
+        ]
+      },
+      "key": "cement",
+      "kind": "python",
+      "modules": [
+        "bionetgen.main",
+        "bionetgen.core.main",
+        "bionetgen.core.defaults",
+        "bionetgen.core.version"
+      ],
+      "qualified_checks": [
+        "tests/python/test_compatibility_contract.py::test_defaults_and_legacy_cli_remain_diagnostic_without_cement",
+        "tests/python/test_compatibility_contract.py::test_core_version_delegates_to_cement_formatter_when_available"
+      ],
+      "status": "retained"
+    },
+    {
+      "blocker": "The explicit Perl-mode adapter is the compatibility adapter issue #172 asks to retain. It is selected only by BIONETGEN_USE_PERL=1 and its selection is covered by a qualified check.",
+      "dependents": {
+        "product": [
+          "bionetgen"
+        ],
+        "tests": [
+          "tests.python.conftest"
+        ]
+      },
+      "key": "compat-adapter",
+      "kind": "python",
+      "modules": [
+        "bionetgen.compat.legacy_runner"
+      ],
+      "qualified_checks": [
+        "tests/python/test_compatibility_contract.py::test_explicit_perl_mode_keeps_the_sanctioned_legacy_adapter"
+      ],
+      "status": "retained"
+    },
+    {
+      "blocker": "The kernel still reconstructs an ast::ReactionRule from the compiled rule and runs the AST expansion algorithm (ReactionRule::expandRule/buildReaction), which has no compile-owned replacement. The rule's execution decisions (filters, local scopes, zero-rate rejection) are now compile-owned and arrive as compile::CompiledRuleExecutionHooks, so the kernel no longer recovers them from the reconstructed rule. The netrule-execution family compares the engine's network-rule execution against a hand-derived closed form and the canonical Perl BNG2 oracle over single-molecule rule patterns without bonds, compartments or delete-molecules; retiring the kernel would remove the implementation that family exercises, so it stays until the expansion algorithm is replaced.",
+      "dependents": {
+        "product": [
+          "cpp/engine/NetworkRulePlan.cpp"
+        ],
+        "tests": []
+      },
+      "headers": [
+        "cpp/engine/LegacyNetworkRuleKernel.hpp"
+      ],
+      "key": "legacy-network-rule-kernel",
+      "kind": "cpp",
+      "qualified_checks": [
+        "tests/validation/netrule_execution.py",
+        "netrule-execution:conversion-r0:graph",
+        "netrule-execution:conversion-r1:graph",
+        "netrule-execution:conversion-r0:rate",
+        "netrule-execution:conversion-r1:rate",
+        "netrule-execution:filter-include:filter",
+        "netrule-execution:filter-exclude:filter",
+        "netrule-execution:local-scope:local-scope",
+        "netrule-execution:reversible-r0:reversible",
+        "netrule-execution:reversible-r1:reversible"
+      ],
+      "sources": [
+        "cpp/engine/LegacyNetworkRuleKernel.cpp"
+      ],
+      "status": "retained"
+    },
+    {
+      "blocker": "The compile-owned network-rule plan owns the rule's filters, local scopes and the zero-rate decision, and it no longer includes the legacy AST, so it left the AST compatibility allowlist. It still writes into the ast::SpeciesList and ast::RxnList containers through the compatibility kernel, so those containers have to become compile-owned before the kernel itself can be retired.",
+      "dependents": {
+        "product": [
+          "cpp/engine/NetworkGenerator.cpp"
+        ],
+        "tests": [
+          "tests/cpp/test_reaction_rule_expansion.cpp"
+        ]
+      },
+      "headers": [
+        "cpp/engine/NetworkRulePlan.hpp"
+      ],
+      "key": "network-rule-plan",
+      "kind": "cpp",
+      "qualified_checks": [
+        "tests/validation/netrule_execution.py",
+        "tests/cpp/test_network_generator.cpp",
+        "tests/cpp/test_reaction_rule_expansion.cpp"
+      ],
+      "sources": [
+        "cpp/engine/NetworkRulePlan.cpp"
+      ],
+      "status": "migration-target"
+    }
+  ],
+  "schema_version": 1
+}

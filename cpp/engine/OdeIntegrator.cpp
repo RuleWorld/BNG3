@@ -1,4 +1,5 @@
 #include "compile/LegacyAstLowering.hpp"
+#include "compile/TotalRate.hpp"
 #include "ast/EventSupport.hpp"
 #include "OdeIntegrator.hpp"
 
@@ -344,21 +345,11 @@ void OdeIntegrator::compile() {
     }
 
     std::unordered_map<std::string, bng::compile::RateLawKind> typedRateKinds;
-    std::unordered_set<std::string> totalRateRules;
     for (const auto& rule : model_.getReactionRules()) {
         if (!rule.getRates().empty()) {
             typedRateKinds.emplace(
                 rule.getRuleName(),
                 bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind);
-        }
-        for (const auto& modifier : rule.getModifiers()) {
-            std::string lowerModifier = modifier;
-            std::transform(lowerModifier.begin(), lowerModifier.end(), lowerModifier.begin(),
-                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            if (lowerModifier == "totalrate") {
-                totalRateRules.insert(rule.getRuleName());
-                break;
-            }
         }
     }
     const auto typedRateKindForOrigin = [&](std::string origin)
@@ -381,18 +372,12 @@ void OdeIntegrator::compile() {
         }
         return find(origin);
     };
-    const auto totalRateForOrigin = [&](std::string origin) {
-        if (totalRateRules.find(origin) != totalRateRules.end()) return true;
-        if (origin.rfind("_reverse__", 0) == 0) {
-            origin = origin.substr(std::string("_reverse__").size());
-        } else if (!origin.empty() && origin.front() == '_') {
-            origin.erase(origin.begin());
-        }
-        if (origin.size() > std::string("_reverse").size() &&
-            origin.rfind("_reverse") == origin.size() - std::string("_reverse").size()) {
-            origin.erase(origin.size() - std::string("_reverse").size());
-        }
-        return totalRateRules.find(origin) != totalRateRules.end();
+    const auto totalRateForOrigin = [&](const std::string& origin) {
+        // The total-rate decision belongs to the shared capability owner,
+        // which also resolves the reverse direction of a rule; a consumer
+        // that re-derives it from the rule name alone cannot see that
+        // direction.
+        return bng::compile::isTotalRateReaction(model_, origin);
     };
 
     std::string lowerRawRL;

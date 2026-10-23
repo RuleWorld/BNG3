@@ -36,6 +36,7 @@
 #include "io/SbmlReader.hpp"
 #include "io/SbmlWriter.hpp"
 #include "io/SbmlMultiWriter.hpp"
+#include "parser/BNGAstVisitor.hpp"
 #include "io/MatlabWriter.hpp"
 #include "io/CppExportWriter.hpp"
 #include "io/PythonExportWriter.hpp"
@@ -95,6 +96,35 @@ std::string stripQuotes(const std::string& text) {
 }
 
 std::string lowercase(std::string value);
+
+/// The action name of a `generate_hybrid_model` action string.
+///
+/// The option carries the action source text (`writeXML()`), so the leading
+/// identifier is the action name the dispatcher will use.
+std::string hybridActionName(const std::string& action) {
+    std::size_t length = 0;
+    while (length < action.size() &&
+           (std::isalnum(static_cast<unsigned char>(action[length])) ||
+            action[length] == '_')) {
+        ++length;
+    }
+    return lowercase(action.substr(0, length));
+}
+
+/// Whether a `generate_hybrid_model` action would simulate the hybrid model.
+///
+/// The generated hybrid model states its populations as molecule types with
+/// population mapping rules.  BNG3 has no population execution semantics, so
+/// simulating the hybrid model would execute the population species as
+/// ordinary molecules and silently change the model's meaning.
+bool isHybridSimulationAction(const std::string& name) {
+    static const std::set<std::string> simulationActions = {
+        "simulate",     "simulate_ode", "simulate_ssa",         "simulate_pla",
+        "simulate_nf",  "simulate_rm",  "simulate_psa",         "simulate_protocol",
+        "parameter_scan", "bifurcate",  "linearparametersensitivity"};
+    return simulationActions.find(name) != simulationActions.end();
+}
+
 
 ast::SpeciesGraph parseNetSpeciesGraph(const std::string& pattern,
                                        ast::Model& model) {
@@ -1741,6 +1771,16 @@ void runSimulation(
     const auto rtolText = readArgument(action, "rtol", "");
     if (!rtolText.empty()) {
         opts.rtol = parseScalarValue(rtolText, model);
+    }
+    // The tolerances are typed values: the public API rejects a tolerance
+    // that is not finite and positive, so the action surface refuses the
+    // same values instead of accepting an option the caller cannot use
+    // through the API.
+    if (!std::isfinite(opts.atol) || opts.atol <= 0.0) {
+        throw std::runtime_error("atol must be finite and positive");
+    }
+    if (!std::isfinite(opts.rtol) || opts.rtol <= 0.0) {
+        throw std::runtime_error("rtol must be finite and positive");
     }
 
     const auto maxStepText = readArgument(action, "max_step", "");
@@ -3907,24 +3947,45 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 std::cerr << "[bng_cpp] Wrote hybrid model: " << genResult.hybridBnglPath << "\n";
             }
 
-            // Optionally execute the hybrid model
+            // Optionally execute the hybrid model.
+            //
+            // `execute=>1` runs the requested actions on the hybrid model,
+            // as BNG2 does (bng2/Perl2/BNGAction.pm executes the `actions`
+            // list against the generated hybrid model).  It must not run the
+            // original model: the hybrid model is a population/particle
+            // artifact whose population execution refinement BNG3 does not
+            // implement, so simulating the original model here would run a
+            // different model than the one that was generated and would
+            // silently change the model's meaning.  A requested simulation
+            // action on the hybrid model is refused instead, and every other
+            // requested action is dispatched against the hybrid model.
             if (hppOpts.execute) {
-                if (verbose) {
-                    std::cerr << "[bng_cpp] generate_hybrid_model: execute=1, running ODE on full network\n";
+                for (const auto& requested : hppOpts.actions) {
+                    const std::string name = hybridActionName(requested);
+                    if (isHybridSimulationAction(name)) {
+                        throw std::runtime_error(
+                            "generate_hybrid_model: execute=>1 requested the action '" +
+                            name + "' on the generated hybrid model, but hybrid "
+                            "population execution refinement is not supported; the "
+                            "hybrid model was generated at " +
+                            genResult.hybridBnglPath +
+                            " and no simulation output was produced for it");
+                    }
                 }
-                engine::OdeOptions odeOpts;
-                odeOpts.tEnd = hppOpts.tEnd;
-                odeOpts.nSteps = hppOpts.nSteps;
-                odeOpts.method = "cvode";
-                engine::OdeIntegrator integrator(model, *network);
-                auto odeResult = integrator.integrate(odeOpts);
-                const auto prefix = sourcePath.stem().string();
-                const auto outputPrefix = sourcePath.parent_path() / (prefix + "_" + hppOpts.suffix);
-                integrator.writeOutputFiles(outputPrefix.string(), odeResult);
-                if (verbose) {
-                    std::cerr << "[bng_cpp] Wrote hybrid simulation output: "
-                              << outputPrefix.string() << ".cdat, .gdat\n";
+                auto hybridModel =
+                    bng::parser::parseModelFromFile(genResult.hybridBnglPath);
+                if (!hybridModel) {
+                    throw std::runtime_error(
+                        "generate_hybrid_model: the generated hybrid model could "
+                        "not be read back: " + genResult.hybridBnglPath);
                 }
+                if (verbose) {
+                    std::cerr << "[bng_cpp] generate_hybrid_model: execute=1, "
+                              << "running the requested actions on the hybrid model "
+                              << genResult.hybridBnglPath << "\n";
+                }
+                bng::actions::ActionDispatch::execute(
+                    *hybridModel, genResult.hybridBnglPath, verbose);
             }
             continue;
         }

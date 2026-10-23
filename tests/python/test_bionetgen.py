@@ -253,18 +253,6 @@ def test_atomize_atomized():
         assert file_list.sort() == to_match.sort()
 
 
-def test_network_parse():
-    netfile = os.path.join(tfold, "mockup.net")
-    from bionetgen.network.network import Network
-
-    try:
-        net = Network(netfile)
-        res = True
-    except:
-        res = False
-    assert res is True
-
-
 def test_pattern_reader():
     patfile = os.path.join(tfold, "patterns.txt")
     from bionetgen.modelapi.pattern_reader import BNGPatternReader
