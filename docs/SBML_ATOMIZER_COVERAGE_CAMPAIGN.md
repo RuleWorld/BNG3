@@ -662,56 +662,48 @@ lowered exactly.
 ### The ODE regression and the revert that closed it
 
 PR #315 ("Reconcile issue obligations and detect native BNGIR rule reference
-corruption", merged as `25f13c5b`) was merged into `main` and **reverted**
-by PR #379 (`9213008f`). It is the one regression the campaign introduced,
-and it is recorded here because a reader of the merged-pull-request table
-must not read the revert as an improvement.
+corruption", merged as `25f13c5b`) changed two statistical-factor guards in
+`cpp/engine/OdeIntegrator.cpp`. PR #379 (`9213008f`) later reverted #315. The
+intended special-rate-law change and the collateral total-rate change have
+since been separated by exact product comparison and a pinned-harness
+counterfactual; see the [PR #315 replacement-pair and counterfactual receipt](../provenance/pr315-exact-product-pair-1923-case-comparison.md)
+and its [machine-readable companion](../provenance/pr315-exact-product-pair-1923-case-comparison.json).
 
-#315 made the native ODE engine apply a reaction's **statistical (symmetry)
-factor** to a **total-rate** reaction's flux. In `cpp/engine/OdeIntegrator.cpp`
-the guard
+The ODE defect was removal of `!crxn.isTotalRate` at the functional
+(total-rate) guard. The special-rate-law branch was the intended change; the
+functional branch was collateral. A total-rate rule already denotes the
+reaction's complete extent rate (SBML L3V2 Core §4.11), and the Atomizer
+encodes stoichiometry in its rule pattern. Applying an identical-reactant
+factor such as `1/2` again changes the model. In the exact 1,923-case
+replacement pair, the merge product had 63 core pass-to-fail transitions
+versus base: 62 official-reference pass-to-fail and one unsupported-to-fail.
+All 63 affected models contain a total-rate reaction with identical
+reactants.
 
-```cpp
-if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
-```
+The isolated counterfactual commit `e05c37e9` has the exact #315 merge as its
+parent and changes only the total-rate guard, restoring
+`!crxn.isTotalRate`. With the same harness, suite, seed, and case inventory,
+all 63 cases pass the core gate again, and the full core and official status
+vectors match base for all 1,923 cases. The four shared timeouts remain. The
+official report also retains one shared statistical failure in
+`stochastic/00003`; the distinct `semantic/00003` case passes. The full
+counterfactual workflow therefore remains failed, and it does not establish a
+zero-failure suite result.
 
-lost its `!crxn.isTotalRate` half at **two** sites: the special-rate-law
-branch and the functional (total-rate) branch. The special-rate-law site was
-the intended one — #315's own reconciliation record says the statistical
-factor "is a property of the rule's reactants, not of the rate law's shape" —
-and the total-rate site was a collateral removal. A total-rate rule's value
-**is** the reaction's extent rate (SBML L3V2 Core §4.11), and the Atomizer
-encodes the stoichiometry in the rule's pattern, so multiplying such a rule's
-flux by `1/2` changes the model. **Every one of the 63 affected cases has a
-converted rule of the shape `A + A -> ... <rate> TotalRate`.**
+The merge-product failure is numeric, not tolerance noise: for `semantic/00069` the
+comparison fails 148 of 153 output points, with maximum scaled errors of
+62.4, 56.8, and 435.6 on its three species. The retained base-versus-merge
+artifact comparison finds all 5,933 model artifacts byte-identical across the
+1,923 cases, with zero generated BNGL, XML, or SBML differences. This rules
+out a changed Atomizer model as the explanation for these verdict transitions;
+the one-line native ODE guard counterfactual restores them under the pinned
+measurement.
 
-The failure was numeric, not tolerance noise: for `semantic/00069` the
-comparison failed 148 of 153 output points, with a maximum scaled error of
-62.4, 56.8 and 435.6 on the three species. The measurement of `main` while
-#315 was in it reported 63 failures at the official-reference stage and 63
-at the conversion stage, where the tree before it reported none.
-
-**The Atomizer is not implicated, and the revert shows it on the model text
-rather than asserting it.** The generated BNGL for the failing cases is
-byte-identical between the reverted tree and the tree carrying #315. The
-only thing that differs is the native binary, and the verdict follows the
-binary: the same model text, a different trajectory.
-
-PR #379 reverts `25f13c5b` in full and restores the state in which the
-official suite measures zero failures. It changes no verdict, no tolerance,
-no reference file and no excluded case. **#315's content is not lost**: it
-remains in the repository's history, and its fixes are being re-applied
-selectively, each on its own, each gated on the official-suite conformance
-measurement — which is what the revert makes possible again. #315's intended
-repair of the statistical factor is *not* being discarded on its merits: the
-guard it removed was doing real work for total-rate reactions. The correct
-repair applies the factor to a **special** rate law, where canonical Perl
-BNG2 2.9.3 writes it as a prefix on the rate law for every rate-law type
-(`my $sf = ($rxn->RxnRule && $rxn->RxnRule->TotalRate) ? 1 : $rxn->StatFactor;`),
-and leaves a **total-rate** law alone. That repair was separate work, with
-its own evidence, and it has been merged (PR #382): the engine now applies
-both the conversion and the statistical factor to a special rate law, so it
-agrees with the network it exports.
+PR #379's revert restored the prior total-rate behavior. PR #315's intended
+special-rate-law repair was retained and re-applied separately in PR #382:
+the engine applies the conversion and statistical factor to a special
+rate-law reaction, consistent with the network it exports and canonical Perl
+BNG2 2.9.3, while leaving an already-complete total-rate flux unscaled.
 
 ### Merge-gate exception: PRs #323 and #324
 
