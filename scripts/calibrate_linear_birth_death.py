@@ -32,6 +32,10 @@ from typing import Any, Mapping
 import numpy as np
 from numpy.random import Generator, default_rng
 
+HELDOUT_PREREGISTRATION_SHA256 = (
+    "7950ae79dc71bc5bf4ce0b2394fbffa8dbc0e9450b56cae4cb7ffefa170b1fe1"
+)
+
 
 def transition_parameters(birth_rate: float, death_rate: float, interval: float):
     """Return survival and geometric probabilities for one ancestor lineage."""
@@ -107,6 +111,121 @@ def source_law_compatibility_status(interval: tuple[float, float], alpha: float)
     if interval[1] < alpha:
         return "FAIL"
     return "INCONCLUSIVE"
+
+
+def analysis_design_description(design: str) -> str:
+    if design == "retrospective":
+        return (
+            "retrospective compatibility diagnostic against one previously "
+            "recorded engine ensemble; the statistic was selected after "
+            "reviewing that report"
+        )
+    if design == "preregistered-heldout":
+        return (
+            "held-out source-law diagnostic scored after the engine report was "
+            "generated; the statistic, seeds, budget, and decision rule were "
+            "registered before that report"
+        )
+    raise ValueError(f"unknown analysis design: {design}")
+
+
+def validate_preregistration(
+    preregistration: Mapping[str, Any],
+    *,
+    preregistration_sha256: str,
+    category: str,
+    case_id: str,
+    source_model_sha256: str,
+    initial_count: int,
+    birth_rate: float,
+    death_rate: float,
+    official: Mapping[str, Any],
+    report_seed_base: int | None,
+    replicates: int,
+    source_law_seed: int,
+) -> None:
+    """Fail closed unless the held-out report and diagnostic match the lock."""
+
+    if preregistration_sha256 != HELDOUT_PREREGISTRATION_SHA256:
+        raise ValueError("preregistration identity does not match the registered lock")
+    source = preregistration["source_validation"]
+    engine = preregistration["engine_run"]
+    source_law = preregistration["independent_source_law"]
+    decision = preregistration["decision"]
+    if preregistration.get("status") != "registered-before-held-out-engine-run":
+        raise ValueError("preregistration is not marked as pre-run")
+    expected_case = f"{category}/{case_id}"
+    if source.get("sbml_test_suite_case") != expected_case:
+        raise ValueError("preregistered source case does not match the report")
+    if source.get("source_model_sha256") != source_model_sha256:
+        raise ValueError("preregistered model hash does not match the report")
+    if source.get("validated_source_law") != (
+        "X(0)=100; independent particles have birth propensity X and death "
+        "propensity 1.1*X; no events, rules, time-varying parameters, or "
+        "packages alter these propensities."
+    ):
+        raise ValueError("preregistration source law is outside this adapter")
+    if (initial_count, birth_rate, death_rate) != (100, 1.0, 1.1):
+        raise ValueError("source-law parameters do not match the validated source")
+    if engine.get("observable") != "X":
+        raise ValueError("preregistered observable is outside this adapter")
+    if (
+        engine.get("variance_estimator")
+        != "population variance with denominator n (1/n)"
+    ):
+        raise ValueError("preregistered variance estimator does not match the harness")
+    if report_seed_base != engine.get("seed_base"):
+        raise ValueError("engine seed base does not match the preregistration")
+    for field in ("runs", "start", "duration", "steps"):
+        if official.get(field) != engine.get(field):
+            raise ValueError(f"engine {field} does not match the preregistration")
+    if official.get("engine") != "cpu:batch":
+        raise ValueError("engine backend does not match the preregistered CPU batch")
+    if official.get("seeds", {}).get("base") != report_seed_base:
+        raise ValueError("recorded engine seed does not match report metadata")
+    if official.get("mean_range") != [-3, 3] or official.get("sd_range") != [-5, 5]:
+        raise ValueError(
+            "official statistic thresholds do not match the preregistration"
+        )
+    if official.get("case_error_rate") != 0.001:
+        raise ValueError(
+            "official case error rate does not match the recorded contract"
+        )
+    if source_law.get("replicates") != replicates:
+        raise ValueError(
+            "source-law replicate count does not match the preregistration"
+        )
+    if source_law.get("seed") != source_law_seed:
+        raise ValueError("source-law seed does not match the preregistration")
+    if source_law.get("runs_per_replicate") != official.get("runs"):
+        raise ValueError("source-law run count does not match the engine ensemble")
+    if source_law.get("observations") != int(official["steps"]) + 1:
+        raise ValueError("source-law observation grid does not match the engine")
+    if decision.get("familywise_alpha") != 0.01:
+        raise ValueError("diagnostic alpha does not match the preregistration")
+    if decision.get("statistic") != (
+        "T = max over t=1..50 of abs(Z_t)/3 and abs(Y_t)/5, where "
+        "Z=sqrt(n)*(sample_mean-exact_mean)/sqrt(exact_variance), "
+        "Y=sqrt(n/2)*(S2/exact_variance-1), and S2 uses denominator n."
+    ):
+        raise ValueError("familywise statistic does not match the preregistration")
+    if decision.get("multiplicity_control") != (
+        "One maximum statistic covers all 100 official mean/variance tests and "
+        "their within-trajectory dependence."
+    ):
+        raise ValueError("multiplicity rule does not match the preregistration")
+    if decision.get("monte_carlo_p_value") != (
+        "(1 + number of independent source-law replicates with T >= held-out "
+        "engine T)/(1000 + 1)."
+    ):
+        raise ValueError("Monte Carlo tail rule does not match the preregistration")
+    if decision.get("uncertainty") != (
+        "Two-sided Wilson 95% interval for the source-law exceedance probability; "
+        "report replicate count and every seed."
+    ):
+        raise ValueError(
+            "Monte Carlo uncertainty rule does not match the preregistration"
+        )
 
 
 def calibrate(
@@ -306,12 +425,38 @@ def main() -> int:
     parser.add_argument("--death-rate", required=True, type=float)
     parser.add_argument("--replicates", type=int, default=1000)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument(
+        "--analysis-design",
+        choices=("retrospective", "preregistered-heldout"),
+        default="retrospective",
+    )
+    parser.add_argument("--preregistration", type=Path)
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
 
     report, record, official, mean_stats, sd_stats = _read_report_record(
         args.report, args.category, args.case_id
     )
+    preregistration_sha256 = None
+    if args.analysis_design == "preregistered-heldout":
+        if args.preregistration is None:
+            raise ValueError("--preregistration is required for a held-out analysis")
+        preregistration_bytes = args.preregistration.read_bytes()
+        preregistration_sha256 = hashlib.sha256(preregistration_bytes).hexdigest()
+        validate_preregistration(
+            json.loads(preregistration_bytes),
+            preregistration_sha256=preregistration_sha256,
+            category=args.category,
+            case_id=args.case_id,
+            source_model_sha256=record.get("input_sha256", {}).get("sbml"),
+            initial_count=args.initial_count,
+            birth_rate=args.birth_rate,
+            death_rate=args.death_rate,
+            official=official,
+            report_seed_base=report.get("stochastic_seed_base"),
+            replicates=args.replicates,
+            source_law_seed=args.seed,
+        )
     observed_sd_thresholds = {
         int(item["index"]): float(item["statistic"])
         for item in sd_stats.get("sd_violations", [])
@@ -337,11 +482,7 @@ def main() -> int:
     result.update(
         {
             "case": f"{args.category}/{args.case_id}",
-            "analysis_design": (
-                "retrospective compatibility diagnostic against one previously "
-                "recorded engine ensemble; the statistic was selected after "
-                "reviewing that report"
-            ),
+            "analysis_design": analysis_design_description(args.analysis_design),
             "recorded_verdict": official["status"],
             "official_case_error_rate": official.get("case_error_rate"),
             "diagnostic_alpha_is_not_official_case_error_rate": True,
@@ -365,6 +506,7 @@ def main() -> int:
             "analysis_script_sha256": hashlib.sha256(
                 Path(__file__).read_bytes()
             ).hexdigest(),
+            "preregistration_sha256": preregistration_sha256,
             "analysis_runtime": {
                 "python_version": platform.python_version(),
                 "numpy_version": np.__version__,
