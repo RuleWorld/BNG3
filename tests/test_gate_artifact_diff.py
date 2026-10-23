@@ -73,6 +73,113 @@ def _report(records: list[dict[str, Any]], **overrides: Any) -> dict[str, Any]:
     return report
 
 
+def _write_pair_report(
+    path: Path,
+    record: dict[str, Any],
+    revision: str,
+    native: str,
+    *,
+    include_suite_provenance: bool = True,
+    extra_records: list[dict[str, Any]] | None = None,
+):
+    overrides = (
+        {
+            "suite_commit": "suite-abc",
+            "suite_source_lock": {"sha256": "suite-lock"},
+            "case_selection": {"strategy": "full-inventory", "selected_case_count": 1},
+        }
+        if include_suite_provenance
+        else {}
+    )
+    payload = _report(
+        [record, *(extra_records or [])],
+        **overrides,
+        source_provenance={
+            "bng3_commit": revision,
+            "bng3_worktree_clean_for_report": True,
+            "bng3_source_diff_sha256": "clean-tree",
+        },
+        runtime_provenance={
+            "python_package_source_sha256": f"python-{revision}",
+            "native_extension_sha256": native,
+            "python_hash_seed": "0",
+            "bionetgen_package_path": f"/pkg/{revision}",
+        },
+    )
+    path.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
+
+
+def _run_pair_report(
+    tmp_path: Path,
+    monkeypatch,
+    *,
+    first_record: dict[str, Any],
+    second_record: dict[str, Any],
+    include_suite_provenance: bool = True,
+    first_extra_records: list[dict[str, Any]] | None = None,
+    second_extra_records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    first_artifacts = tmp_path / "first-artifacts"
+    second_artifacts = tmp_path / "second-artifacts"
+    _write_case(
+        first_artifacts,
+        "semantic/00001",
+        {
+            "source.xml": "<sbml/>\n",
+            "translated.bngl": "begin model\nend model\n",
+            "worker-report.json": json.dumps(_report([first_record])),
+        },
+    )
+    _write_case(
+        second_artifacts,
+        "semantic/00001",
+        {
+            "source.xml": "<sbml/>\n",
+            "translated.bngl": "begin model\n# changed\nend model\n",
+            "worker-report.json": json.dumps(_report([second_record])),
+        },
+    )
+    first_report = tmp_path / "first-report.json"
+    second_report = tmp_path / "second-report.json"
+    _write_pair_report(
+        first_report,
+        first_record,
+        "base-rev",
+        "base-native",
+        include_suite_provenance=include_suite_provenance,
+        extra_records=first_extra_records,
+    )
+    _write_pair_report(
+        second_report,
+        second_record,
+        "candidate-rev",
+        "candidate-native",
+        include_suite_provenance=include_suite_provenance,
+        extra_records=second_extra_records,
+    )
+    output = tmp_path / "pair.json"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "diff_gate_artifacts.py",
+            "--first-artifacts",
+            str(first_artifacts),
+            "--second-artifacts",
+            str(second_artifacts),
+            "--first-report",
+            str(first_report),
+            "--second-report",
+            str(second_report),
+            "--json",
+            str(output),
+        ],
+    )
+    assert diff.main() == 1
+    return json.loads(output.read_text(encoding="utf-8"))
+
+
 def _compare(
     tmp_path: Path,
     first_files: dict[str, str],
@@ -186,6 +293,107 @@ def test_the_first_differing_line_is_reported(tmp_path):
     assert entry["first_differing_line"]["first"] == "  k1 0.7"
     assert entry["first_differing_line"]["second"] == "  k1 0.5"
     assert entry["differing_lines"] == 1
+
+
+def test_pair_report_retains_revision_report_native_and_case_artifact_hashes(
+    tmp_path, monkeypatch
+):
+    """The changed translation is tied to the exact two measured builds."""
+
+    first = _record(
+        "00001",
+        input_sha256={"sbml": "same-source"},
+        generated_network={"species": 1, "reactions": 1},
+    )
+    second = _record(
+        "00001",
+        input_sha256={"sbml": "same-source"},
+        generated_network={"species": 2, "reactions": 1},
+    )
+    pair = _run_pair_report(
+        tmp_path,
+        monkeypatch,
+        first_record=first,
+        second_record=second,
+    )
+
+    assert pair["first"]["provenance"]["product_revision"] == "base-rev"
+    assert pair["second"]["provenance"]["product_revision"] == "candidate-rev"
+    assert pair["first"]["provenance"]["native_extension_sha256"] == "base-native"
+    assert pair["second"]["provenance"]["native_extension_sha256"] == "candidate-native"
+    assert len(pair["first"]["provenance"]["report_sha256"]) == 64
+    evidence = pair["cases"][0]["paired_evidence"]
+    assert evidence["input_hashes_equal"] is True
+    assert evidence["translated_bngl_sha256_equal"] is False
+    assert evidence["changed_stages"] == ["generated_network"]
+    assert "generated_network" in evidence["first"]["stages"]["stages"]
+    assert "native_reader" in evidence["second"]["stages"]["stages"]
+    assert len(evidence["first"]["artifact_sha256"]["translated.bngl"]["sha256"]) == 64
+    assert pair["pair_scope"]["same_suite_commit"] is True
+    assert pair["pair_scope"]["same_suite_source_lock"] is True
+
+
+def test_pair_report_flags_source_fixture_hash_mismatch(tmp_path, monkeypatch):
+    """A different SBML source cannot be mistaken for a product-only change."""
+
+    first = _record("00001", input_sha256={"sbml": "source-before"})
+    second = _record("00001", input_sha256={"sbml": "source-after"})
+    pair = _run_pair_report(
+        tmp_path,
+        monkeypatch,
+        first_record=first,
+        second_record=second,
+        include_suite_provenance=False,
+    )
+
+    assert pair["cases"][0]["paired_evidence"]["input_hashes_equal"] is False
+    assert pair["pair_scope"]["paired_input_hashes_match"] is False
+    assert pair["pair_scope"]["input_hash_mismatch_cases"] == ["semantic/00001"]
+
+
+def test_pair_report_does_not_treat_missing_provenance_as_a_match(
+    tmp_path, monkeypatch
+):
+    """Missing evidence is unknown, not proof that the pair is comparable."""
+
+    first = _record("00001")
+    second = _record("00001")
+    pair = _run_pair_report(
+        tmp_path,
+        monkeypatch,
+        first_record=first,
+        second_record=second,
+        include_suite_provenance=False,
+    )
+
+    assert pair["cases"][0]["paired_evidence"]["input_hashes_equal"] is None
+    assert pair["pair_scope"]["paired_input_hashes_match"] is None
+    assert pair["pair_scope"]["same_suite_commit"] is None
+    assert pair["pair_scope"]["same_suite_source_lock"] is None
+
+
+def test_pair_report_checks_hash_completeness_for_every_report_record(
+    tmp_path, monkeypatch
+):
+    """An artifact subset cannot hide report records missing source identities."""
+
+    first = _record("00001", input_sha256={"sbml": "same-source"})
+    second = _record("00001", input_sha256={"sbml": "same-source"})
+    extra_first = _record("00002")
+    extra_second = _record("00002")
+    pair = _run_pair_report(
+        tmp_path,
+        monkeypatch,
+        first_record=first,
+        second_record=second,
+        first_extra_records=[extra_first],
+        second_extra_records=[extra_second],
+    )
+
+    assert pair["pair_scope"]["first_report_case_count"] == 2
+    assert pair["pair_scope"]["paired_report_case_ids_equal"] is True
+    assert pair["pair_scope"]["paired_input_hashes_match"] is None
+    assert pair["pair_scope"]["input_hash_unavailable_cases"] == ["semantic/00002"]
 
 
 def test_an_artifact_that_is_not_reproducible_is_not_reported_as_a_difference(

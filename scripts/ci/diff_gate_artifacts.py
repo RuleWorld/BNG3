@@ -117,6 +117,7 @@ The exit status is 0 when no model artifact changed and no verdict changed,
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shlex
@@ -208,6 +209,148 @@ def _runtime_identity(payload: Any) -> dict[str, Any]:
             "native_extension_resolved_path"
         ),
         "bionetgen_version": provenance.get("bionetgen_version"),
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _report_provenance(payload: Any, report_path: Path | None) -> dict[str, Any]:
+    """Retain the exact report, product, suite, and runtime identities."""
+
+    if not isinstance(payload, dict):
+        return {}
+    source = payload.get("source_provenance")
+    runtime = payload.get("runtime_provenance")
+    return {
+        "report_sha256": _sha256_file(report_path) if report_path else None,
+        "product_revision": (
+            source.get("bng3_commit") if isinstance(source, dict) else None
+        ),
+        "product_tree_clean": (
+            source.get("bng3_worktree_clean_for_report")
+            if isinstance(source, dict)
+            else None
+        ),
+        "product_source_diff_sha256": (
+            source.get("bng3_source_diff_sha256") if isinstance(source, dict) else None
+        ),
+        "suite_commit": payload.get("suite_commit"),
+        "suite_source_lock": payload.get("suite_source_lock"),
+        "selection": payload.get("case_selection"),
+        "runtime_identity": _runtime_identity(payload),
+        "python_package_source_sha256": (
+            runtime.get("python_package_source_sha256")
+            if isinstance(runtime, dict)
+            else None
+        ),
+        "native_extension_sha256": (
+            runtime.get("native_extension_sha256")
+            if isinstance(runtime, dict)
+            else None
+        ),
+        "python_hash_seed": (
+            runtime.get("python_hash_seed") if isinstance(runtime, dict) else None
+        ),
+    }
+
+
+def _stage_evidence(record: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Keep per-case stage verdicts and source input hashes side by side."""
+
+    if record is None:
+        return None
+    official = record.get("official_conformance")
+    official = official if isinstance(official, dict) else {}
+    simulation = record.get("simulation_comparison")
+    simulation = simulation if isinstance(simulation, dict) else {}
+    source_xml = record.get("source_xml")
+    source_xml = source_xml if isinstance(source_xml, dict) else {}
+    written_xml = record.get("written_xml")
+    written_xml = written_xml if isinstance(written_xml, dict) else {}
+    return {
+        "input_sha256": record.get("input_sha256"),
+        "stages": {
+            "conversion": {
+                "status": record.get("status"),
+                "reason": record.get("unsupported_reason") or record.get("error"),
+            },
+            "source_model": record.get("source_model"),
+            "source_xml": source_xml,
+            "generated_network": record.get("generated_network"),
+            "roundtrip": {"passed": record.get("roundtrip_passed")},
+            "written_xml": written_xml,
+            "reimport_model": record.get("reimport_model"),
+            "metadata_roundtrip": record.get("metadata_roundtrip"),
+            "reimport_network": record.get("reimport_network"),
+            "native_reader": record.get("native_reader"),
+            "simulation": {
+                "passed": simulation.get("passed"),
+                "error": simulation.get("error"),
+            },
+            "official_reference": {
+                "status": official.get("status"),
+                "reason": official.get("reason"),
+                "results_sha256": official.get("results_sha256"),
+                "settings_sha256": official.get("settings_sha256"),
+            },
+        },
+    }
+
+
+def _artifact_hashes(case_dir: Path | None) -> dict[str, dict[str, Any]] | None:
+    if case_dir is None:
+        return None
+    return {
+        path.name: {"sha256": _sha256_file(path), "bytes": path.stat().st_size}
+        for path in sorted(case_dir.iterdir())
+        if path.is_file()
+    }
+
+
+def _paired_case_evidence(
+    first_dir: Path | None,
+    second_dir: Path | None,
+    first_record: dict[str, Any] | None,
+    second_record: dict[str, Any] | None,
+) -> dict[str, Any]:
+    first = _stage_evidence(first_record)
+    second = _stage_evidence(second_record)
+    first_inputs = first.get("input_sha256") if first else None
+    second_inputs = second.get("input_sha256") if second else None
+    first_stages = first.get("stages", {}) if first else {}
+    second_stages = second.get("stages", {}) if second else {}
+    first_hashes = _artifact_hashes(first_dir)
+    second_hashes = _artifact_hashes(second_dir)
+    translated_first = (first_hashes or {}).get("translated.bngl", {}).get("sha256")
+    translated_second = (second_hashes or {}).get("translated.bngl", {}).get("sha256")
+    return {
+        "first": {
+            "stages": first,
+            "artifact_sha256": first_hashes,
+        },
+        "second": {
+            "stages": second,
+            "artifact_sha256": second_hashes,
+        },
+        "input_hashes_equal": (
+            first_inputs == second_inputs if first_inputs and second_inputs else None
+        ),
+        "translated_bngl_sha256_equal": (
+            translated_first == translated_second
+            if translated_first is not None and translated_second is not None
+            else None
+        ),
+        "changed_stages": [
+            name
+            for name in sorted(set(first_stages) | set(second_stages))
+            if first_stages.get(name) != second_stages.get(name)
+        ],
     }
 
 
@@ -762,6 +905,9 @@ def compare_case(
         "artifacts": artifacts,
         "numeric_changes": numeric_changes,
         "probe": probe,
+        "paired_evidence": _paired_case_evidence(
+            first_dir, second_dir, first_record, second_record
+        ),
     }
 
 
@@ -1077,6 +1223,72 @@ def main() -> int:
     for case in cases:
         counts[case["outcome"]] = counts.get(case["outcome"], 0) + 1
 
+    first_report_records = {
+        case_key_from_record(record): record
+        for record in (first_payload or {}).get("records", [])
+    }
+    second_report_records = {
+        case_key_from_record(record): record
+        for record in (second_payload or {}).get("records", [])
+    }
+    input_hash_mismatches = [
+        case_key
+        for case_key in sorted(set(first_report_records) & set(second_report_records))
+        if (
+            first_report_records[case_key].get("input_sha256")
+            and second_report_records[case_key].get("input_sha256")
+            and first_report_records[case_key].get("input_sha256")
+            != second_report_records[case_key].get("input_sha256")
+        )
+    ]
+    input_hash_unavailable = [
+        case_key
+        for case_key in sorted(set(first_report_records) | set(second_report_records))
+        if (
+            case_key not in first_report_records
+            or case_key not in second_report_records
+            or not first_report_records[case_key].get("input_sha256")
+            or not second_report_records[case_key].get("input_sha256")
+        )
+    ]
+    first_provenance = _report_provenance(first_payload, args.first_report)
+    second_provenance = _report_provenance(second_payload, args.second_report)
+    same_report_ids = set(first_report_records) == set(second_report_records)
+    if input_hash_mismatches:
+        paired_input_hashes_match = False
+    elif (
+        same_report_ids
+        and bool(first_report_records)
+        and not input_hash_unavailable
+    ):
+        paired_input_hashes_match = True
+    else:
+        paired_input_hashes_match = None
+
+    def equal_if_present(first: Any, second: Any) -> bool | None:
+        if first in (None, "", {}) or second in (None, "", {}):
+            return None
+        return first == second
+
+    pair_scope = {
+        "first_report_case_count": len(first_report_records),
+        "second_report_case_count": len(second_report_records),
+        "paired_report_case_ids_equal": same_report_ids,
+        "paired_input_hashes_match": paired_input_hashes_match,
+        "input_hash_mismatch_cases": input_hash_mismatches,
+        "input_hash_unavailable_cases": input_hash_unavailable,
+        "same_suite_commit": equal_if_present(
+            first_provenance.get("suite_commit"),
+            second_provenance.get("suite_commit"),
+        ),
+        "same_suite_source_lock": equal_if_present(
+            first_provenance.get("suite_source_lock"),
+            second_provenance.get("suite_source_lock"),
+        ),
+        "first_product_tree_clean": first_provenance.get("product_tree_clean"),
+        "second_product_tree_clean": second_provenance.get("product_tree_clean"),
+    }
+
     report = {
         "tool": "diff_gate_artifacts",
         "first": {
@@ -1084,13 +1296,16 @@ def main() -> int:
             "report": str(args.first_report) if args.first_report else None,
             "seed": first_seed,
             "runtime_identity": first_identity,
+            "provenance": first_provenance,
         },
         "second": {
             "artifacts": str(args.second_artifacts),
             "report": str(args.second_report) if args.second_report else None,
             "seed": second_seed,
             "runtime_identity": second_identity,
+            "provenance": second_provenance,
         },
+        "pair_scope": pair_scope,
         "seed_condition": seed_condition,
         "numeric_tolerance": {"rtol": args.numeric_rtol, "atol": args.numeric_atol},
         "counts": counts,
