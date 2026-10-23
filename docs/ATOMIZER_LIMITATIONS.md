@@ -10,14 +10,14 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 
 | Field | Value |
 | --- | --- |
-| Generated on | 2026-10-21 |
-| Tree described | `2cb9f2c3bc013307414379a22e655e3e3a0b6b18` |
-| Measured at commit | `2cb9f2c3bc013307414379a22e655e3e3a0b6b18` |
+| Generated on | 2026-10-22 |
+| Tree described | `c6da742f2a49cf993ff22ee00a15c7331311cd9b` |
+| Measured at commit | `c6da742f2a49cf993ff22ee00a15c7331311cd9b` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
-| Report SHA-256 | `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4` |
+| Report SHA-256 | `a2ad60a2108f6e9a894515e73f4c57217e554b2834a86e5f321d78f2b85522f5` |
 | BNG3 version | 3.0.0a1 |
-| Native extension SHA-256 | `f79a695f0a0922cf3729745f05602c990f7068c5cf62d3559e79e7d32b344ee2` |
-| Source tree of the measurement | `/private/tmp/bng3-campaign/wt-main2/python/bionetgen/__init__.py` |
+| Native extension SHA-256 | `22a7a99aeac857a8f80e205f61d707e41f43990665caac5fc7887dea5a76ddcf` |
+| Source tree of the measurement | `/private/tmp/bng3-campaign/wt-n2/python/bionetgen/__init__.py` |
 
 The measurement is a full run of the pinned official SBML Test Suite; its per-case verdicts are recorded in the expectation manifest, which the campaign regenerates whenever a merge changes a verdict.
 
@@ -55,9 +55,10 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 | `mathml:infinity` | atomizer | 2 | An infinite constant | 2026-10-20 |
 | `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
 | `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
+| `harness:stochastic-ensemble-budget` | harness | 2 | The documented ensemble budget does not fit the gate's work budget | 2026-10-21 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 127 atomizer-side, 12 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 127 atomizer-side, 14 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -167,6 +168,16 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: Nothing is refused: the model converts and the engine executes the events in the order the specification defines. The harness cannot compare point-wise, because the reference is one draw of a random order and no deterministic simulator reproduces it point-wise.
 - **Reducible?**: Yes, on the measurement side: the comparison has to be distributional rather than point-wise, or the reference has to pin the order. It is a measurement limit, not a limitation of the Atomizer.
 
+### The documented ensemble budget does not fit the gate's work budget
+
+- **Construct**: `harness:stochastic-ensemble-budget`
+- **Cases**: 2 — stochastic/00005 stochastic/00023
+- **First recorded**: 2026-10-21
+- **What SBML requires**: Nothing: this is a limit of the measurement, not of the model. The SBML discrete stochastic model test suite (DSMTS) user guide, section 3, asks for at least 1,000 independent repetitions and recommends 10,000 so that the statistical tests have reasonable power, and section 3.4 calls 10,000 the size that is needed to have any chance of picking up minor issues.
+- **Citation**: the SBML discrete stochastic model test suite (DSMTS) user guide, sections 3 and 3.4
+- **What BNG3 does instead**: Nothing is refused. The model converts and the engine simulates it; the harness cannot compare the case, because the documented 40,000-trajectory ensemble of this model performs about 3.3e9 to 3.6e9 reaction events, which is more work than the gate's per-case ensemble budget allows, and the ensemble that would fit is smaller than the 10,000 independent repetitions the guide requires for the acceptance tests to have power. The harness says so: "the documented ensemble budget of 40000 trajectories would perform about 3,605,337,500 reaction events, which exceeds the ensemble work budget of 400,000,000 reaction events; at the work budget the ensemble would hold 4437 trajectories, fewer than the 10000 independent repetitions the DSMTS user guide requires for the acceptance tests to have reasonable power, so the case is not comparable at a documented budget".
+- **Reducible?**: Yes, on the measurement side: the case becomes comparable when the gate can afford the documented ensemble, either by a larger work budget or by a batched sampler that can afford the model's rate laws. The limit is a measurement limit, not a limitation of the Atomizer.
+
 ## Cases the official suite says do not apply
 
 The official suite itself records that these cases define no time-course reference, so there is nothing to compare against. This is not a limitation of the Atomizer and not a defect; nobody should go looking for a fix.
@@ -206,6 +217,7 @@ The expectation manifest records one measurement, not a history, so this log is 
 - **2026-10-21** — Opened: two harness-side classes were named, so the measurement limits 'random event execution' and 'reference does not track variable' are now visible as such instead of being counted as Atomizer limitations (PR #359).
 - **2026-10-21** — Reduced: a fast reaction is lowered to its pseudo steady state instead of being refused (PR #370), and several simultaneous events execute in the order the specification defines (PR #371). The official-reference failure count is zero.
 - **2026-10-21** — Closed: a reference that names a reaction's rate is now compared, because the Atomizer states the rate as a zero-argument function and the harness maps the reference's quantity onto it (PR #378); and a boundary species is now honoured by the direct SSA path, so the reference's value for it is compared rather than skipped (PR #380). The event limit 'an event the Atomizer cannot lower, or cannot order' shrinks by one case: an event group whose priority is read from the model state is now ordered by the priority it has at the execution instant (PR #376).
+- **2026-10-21** — Opened: the harness-side limit 'the documented ensemble budget does not fit the gate's work budget' is named. The ensemble size no longer depends on the runner's speed - it is decided by the ensemble's work, which is a property of the model and the seed - so a conformance verdict no longer moves with the machine's load, and a case whose documented ensemble is too heavy to be compared at the guide's power floor is reported as not comparable instead of being judged on a truncated ensemble.
 
 ## How to regenerate
 

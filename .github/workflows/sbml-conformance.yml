@@ -34,6 +34,16 @@ on:
         required: false
         type: boolean
         default: false
+      only_case:
+        description: Run one official suite case as CATEGORY/ID
+        required: false
+        type: string
+        default: ''
+      stochastic_seed_base:
+        description: Base seed for reproducible stochastic ensemble comparisons
+        required: false
+        type: string
+        default: '1000000'
 
 permissions:
   contents: read
@@ -108,6 +118,9 @@ jobs:
 
       - name: Run bounded official conformance
         shell: bash
+        env:
+          SSTS_ONLY_CASE: ${{ inputs.only_case }}
+          SSTS_STOCHASTIC_SEED_BASE: ${{ inputs.stochastic_seed_base || '1000000' }}
         run: |
           set -euo pipefail
           # PR selection covers official metadata classes within a 128-case
@@ -117,9 +130,17 @@ jobs:
           if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             selection=(--categories semantic stochastic)
           fi
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$SSTS_ONLY_CASE" ]]; then
+            if [[ "${{ inputs.bounded }}" == "true" ]]; then
+              echo "::error::only_case cannot be combined with bounded=true"
+              exit 2
+            fi
+            selection=(--categories semantic stochastic --only-case "$SSTS_ONLY_CASE")
+          fi
           python scripts/ci/validate_sbml_test_suite.py \
             --suite-dir "$RUNNER_TEMP/official-ssts" \
             "${selection[@]}" \
+            --stochastic-seed-base "$SSTS_STOCHASTIC_SEED_BASE" \
             --isolate-cases --case-timeout 60 --jobs 4 \
             --lock-file "$RUNNER_TEMP/sbml-verification.lock" --lock-wait 1800 \
             --artifacts-dir "$RUNNER_TEMP/ssts-artifacts/cases" \
