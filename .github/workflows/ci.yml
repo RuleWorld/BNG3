@@ -315,6 +315,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Disable unrelated Microsoft apt feed
+        run: sudo python3 scripts/ci/disable_unreachable_microsoft_apt_source.py
+
       - name: Install dependencies
         run: |
           sudo apt-get update
