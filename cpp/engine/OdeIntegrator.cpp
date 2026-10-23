@@ -942,7 +942,7 @@ void OdeIntegrator::compile() {
                 // The symmetry factor of identical reactants belongs to the
                 // rule, so it applies to a total rate as well: BNG2 writes it
                 // as a prefix on the rate law whatever the rate law's type.
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
+                if (!crxn.isTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) combinedFactor *= rxn.getFactor();
                 if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                     funcExpr = ast::Expression::binary("*",
                         ast::Expression::number(combinedFactor), std::move(funcExpr));
