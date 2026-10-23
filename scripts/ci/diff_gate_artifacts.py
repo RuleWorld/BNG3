@@ -1256,11 +1256,7 @@ def main() -> int:
     same_report_ids = set(first_report_records) == set(second_report_records)
     if input_hash_mismatches:
         paired_input_hashes_match = False
-    elif (
-        same_report_ids
-        and bool(first_report_records)
-        and not input_hash_unavailable
-    ):
+    elif same_report_ids and bool(first_report_records) and not input_hash_unavailable:
         paired_input_hashes_match = True
     else:
         paired_input_hashes_match = None
