@@ -93,21 +93,32 @@ def test_windows_hash_seed_reexec_propagates_child_status(
     environment = _environment()
     script = tmp_path / "validate_sbml_test_suite.py"
     script.write_text("# re-executable stand-in\n", encoding="utf-8")
-    monkeypatch.setattr(environment, "STARTUP_HASH_SEED", "1")
-    monkeypatch.setattr(environment.sys, "argv", [str(script)])
-    monkeypatch.setattr(environment.os, "name", "nt")
-    monkeypatch.setattr(environment, "_reexecutable", lambda: True)
-    monkeypatch.delenv(environment._REEXEC_MARKER, raising=False)
-    monkeypatch.setattr(
-        environment.subprocess,
-        "run",
-        lambda command, env, check: subprocess.CompletedProcess(command, child_status),
-    )
+    environment_keys = ("PYTHONHASHSEED", environment._REEXEC_MARKER)
+    before = {key: os.environ.get(key) for key in environment_keys}
+    with monkeypatch.context() as isolated:
+        isolated.setattr(environment, "STARTUP_HASH_SEED", "1")
+        isolated.setattr(environment.sys, "argv", [str(script)])
+        isolated.setattr(environment.os, "name", "nt")
+        isolated.setattr(environment, "_reexecutable", lambda: True)
+        # ensure_fixed_hash_seed intentionally changes both values before the
+        # Windows child exits. Keep those process-wide mutations inside this
+        # test so later harness invocations exercise their own startup seed.
+        isolated.setenv("PYTHONHASHSEED", "1")
+        isolated.setenv(environment._REEXEC_MARKER, "")
+        isolated.setattr(
+            environment.subprocess,
+            "run",
+            lambda command, env, check: subprocess.CompletedProcess(
+                command, child_status
+            ),
+        )
 
-    with pytest.raises(SystemExit) as excinfo:
-        environment.ensure_fixed_hash_seed()
+        with pytest.raises(SystemExit) as excinfo:
+            environment.ensure_fixed_hash_seed()
 
-    assert excinfo.value.code == child_status
+        assert excinfo.value.code == child_status
+
+    assert {key: os.environ.get(key) for key in environment_keys} == before
 
 
 @pytest.mark.parametrize("child_status", [0, 1])
