@@ -967,6 +967,25 @@ def _python_package_source_digest(package_dir: Path) -> str:
     return package_source_digest(package_dir)
 
 
+def _product_checkout_root(
+    product_checkout: Path | None,
+    harness_root: Path,
+    declared_revision: str | None = None,
+) -> Path:
+    """Return the checkout whose Python/native package is being qualified."""
+    if product_checkout is None:
+        return harness_root.resolve()
+    product_root = product_checkout.resolve()
+    if declared_revision:
+        actual_revision = _repository_provenance(product_root)["bng3_commit"]
+        if actual_revision != declared_revision:
+            raise ValueError(
+                "product checkout revision does not match "
+                f"BNG3_SOURCE_REVISION: {actual_revision} != {declared_revision}"
+            )
+    return product_root
+
+
 def _runtime_provenance(cpp: Any) -> dict[str, Any]:
     """Record interpreter, Python package, native extension, and oracle versions."""
 
@@ -3817,6 +3836,9 @@ def _run_isolated_case(
         "--stochastic-seed-base",
         str(getattr(args, "stochastic_seed_base", STOCHASTIC_SEED_BASE)),
     ]
+    product_checkout = getattr(args, "product_checkout", None)
+    if product_checkout is not None:
+        command.extend(["--product-checkout", str(product_checkout.resolve())])
     if artifacts_dir is not None:
         command.extend(["--artifacts-dir", str(artifacts_dir.resolve())])
     stdout = stderr = ""
@@ -4496,6 +4518,14 @@ def main() -> int:
         ),
     )
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--product-checkout",
+        type=Path,
+        help=(
+            "checkout containing the BNG3 package/native build under test; "
+            "defaults to the validation harness checkout"
+        ),
+    )
     parser.add_argument("--simulation-t-end", type=float, default=1.0)
     parser.add_argument("--simulation-n-steps", type=int, default=10)
     parser.add_argument("--simulation-rtol", type=float, default=1e-7)
@@ -4516,6 +4546,21 @@ def main() -> int:
         help="base seed for the reproducible official stochastic ensemble",
     )
     args = parser.parse_args()
+    harness_root = Path(__file__).resolve().parents[2]
+    try:
+        product_root = _product_checkout_root(
+            args.product_checkout,
+            harness_root,
+            (
+                os.environ.get("BNG3_SOURCE_REVISION")
+                if args.product_checkout is not None
+                else None
+            ),
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if not product_root.is_dir():
+        raise SystemExit(f"product checkout does not exist: {product_root}")
     if args.jobs < 1:
         raise SystemExit("--jobs must be at least one")
     if args.stochastic_runs < 1:
@@ -4602,7 +4647,7 @@ def main() -> int:
             selected = cases[: args.max_cases] if args.max_cases else cases
     partial = _is_partial_run(args.categories, args.max_cases, args.only_case)
     try:
-        package_trace = verify_imported_package(Path(__file__).resolve().parents[2])
+        package_trace = verify_imported_package(product_root)
     except ForeignPackageError as exc:
         print(f"package preflight failed: {exc}", file=sys.stderr)
         return 1
@@ -4620,9 +4665,7 @@ def main() -> int:
         ) from exc
     try:
         extension_trace = verify_native_extension(
-            Path(__file__).resolve().parents[2],
-            extension_file=cpp.__file__,
-            package_trace=package_trace,
+            product_root, extension_file=cpp.__file__, package_trace=package_trace
         )
     except ForeignPackageError as exc:
         print(f"native extension preflight failed: {exc}", file=sys.stderr)
@@ -4756,9 +4799,8 @@ def main() -> int:
             "arguments": [str(Path(__file__).resolve()), *sys.argv[1:]],
             "working_directory": str(Path.cwd()),
         },
-        "source_provenance": _repository_provenance(
-            Path(__file__).resolve().parents[2]
-        ),
+        "source_provenance": _repository_provenance(product_root),
+        "validation_harness_provenance": _repository_provenance(harness_root),
         "runtime_provenance": runtime_info,
         "writer_sbml_version": "L3V2",
         "categories": args.categories,

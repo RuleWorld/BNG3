@@ -880,6 +880,31 @@ def test_package_identity_preflight_rejects_a_wrong_declared_source_head():
     assert wrong in result.stderr
 
 
+def test_package_identity_preflight_rejects_a_wrong_product_checkout_revision():
+    """The package identity record must bind to the separately checked-out product."""
+    actual = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=REPO, text=True
+    ).strip()
+    wrong = "0" * 40 if actual != "0" * 40 else "1" * 40
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "scripts" / "ci" / "check_python_package_identity.py"),
+            "--source-revision",
+            wrong,
+            "--product-checkout",
+            str(REPO),
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "does not match product checkout HEAD" in result.stderr
+    assert wrong in result.stderr
+
+
 def test_issue182_frozen_ssa_ensemble_inputs_match_the_bng2_lock():
     """The scheduled statistical lane consumes the unchanged, hashed BNG2 fixtures."""
 
