@@ -1,6 +1,6 @@
 """Regression tests for the SBML ``delay`` and ``rateOf`` csymbols.
 
-SBML Level 3 Version 2 Core Sec. 3.4.6 defines ``delay(x, d)`` as the value
+SBML Level 2 Version 4 and Level 3 Version 2 Core Sec. 3.4.6 define ``delay(x, d)`` as the value
 of ``x`` at time ``t - d`` and defines ``rateOf(x)`` as the
 instantaneous derivative of ``x``.  Both are MathML ``<csymbol>`` operators,
 not MathML operator elements, and libSBML 5.21.1 serializes them in exactly
@@ -225,7 +225,7 @@ end model
 
 
 def test_delayed_reaction_sbml_has_valid_split_gated_and_zero_delay_forms(tmp_path):
-    def export(rule: str, filename: str, start_time: float = 0.0):
+    def export(rule: str, filename: str, start_time: float = 0.0, level: int = 3):
         source = f"""
 begin model
 begin parameters
@@ -247,7 +247,9 @@ end model
         model = _cpp.parse_string(source)
         network = _cpp.generate_network(model, max_iter=100)
         destination = tmp_path / filename
-        _cpp.io.write_sbml(model, network, str(destination), start_time=start_time)
+        _cpp.io.write_sbml(
+            model, network, str(destination), start_time=start_time, level=level
+        )
         document = libsbml.readSBML(str(destination))
         assert document.getNumErrors() == 0, [
             str(error) for error in document.getErrors()
@@ -293,6 +295,23 @@ end model
     assert zero_delay.getReaction(0).getNumReactants() == 1
     assert zero_delay.getReaction(0).getNumProducts() == 1
     assert not list(delay_nodes(zero_delay.getReaction(0).getKineticLaw().getMath()))
+
+    source = export("0 -> B() k delay=tau", "source.xml")
+    assert source.getNumReactions() == 1
+    assert source.getReaction(0).getNumReactants() == 0
+    assert source.getReaction(0).getNumProducts() == 1
+    assert source.getReaction(0).getId() == "R1_complete"
+
+    sink = export("A() -> 0 k delay=tau", "sink.xml")
+    assert sink.getNumReactions() == 1
+    assert sink.getReaction(0).getNumReactants() == 1
+    assert sink.getReaction(0).getNumProducts() == 0
+    assert sink.getReaction(0).getId() == "R1_init"
+
+    level2 = export("A() -> B() k delay=tau", "level2.xml", level=2)
+    assert level2.getLevel() == 2
+    assert level2.getNumReactions() == 2
+    assert len(list(delay_nodes(level2.getReaction(1).getKineticLaw().getMath()))) == 1
 
 
 def test_delay_with_a_reproducible_history_is_not_reported_as_unsupported():

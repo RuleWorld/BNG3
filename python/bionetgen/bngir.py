@@ -116,8 +116,14 @@ def _model_of(model: Any) -> Any:
     return native
 
 
+def _reject_delayed_rules(native: Any, version: str) -> None:
+    if any(rule.has_delay for rule in native.reaction_rules):
+        raise ValueError(f"BNGIR {version} cannot represent delayed reaction rules")
+
+
 def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
+    _reject_delayed_rules(native, VERSION)
 
     # Physical-unit metadata has no place in the 0.1 wire object, and silently
     # dropping it would turn a unit-aware model into a unit-free one on
@@ -314,6 +320,7 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
 
 def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
+    _reject_delayed_rules(native, STRUCTURAL_VERSION)
     # The compiled snapshot only resolves Molecules/Species observables; any
     # other kind would serialize as "unknown" and the reader cannot rebuild it
     # from structured patterns alone.

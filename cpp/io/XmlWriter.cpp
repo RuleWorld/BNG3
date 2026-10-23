@@ -1464,7 +1464,11 @@ bool needsTotalRateFunctionWrapper(const ast::Model& model,
 } // anonymous namespace
 
 std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network) {
-    engine::requireNoDelayedRuleSemantics(model, "BNG-XML export");
+    if (network) {
+        engine::requireNoDelayedSemantics(model, *network, "BNG-XML export");
+    } else {
+        engine::requireNoDelayedRuleSemantics(model, "BNG-XML export");
+    }
     compile::requireNoNativeEvents(model, "BNG-XML export");
     std::ostringstream xml;
 

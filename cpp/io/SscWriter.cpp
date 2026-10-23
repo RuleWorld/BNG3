@@ -28,7 +28,7 @@ std::string SscWriter::writeConfig(const ast::Model& model) {
 
 
 std::string SscWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
-    engine::requireNoDelayedRuleSemantics(model, "SSC export");
+    engine::requireNoDelayedSemantics(model, network, "SSC export");
     requireNoEnergySemantics(model, "SSC");
     compile::requireNoNativeEvents(model, "SSC export");
     std::ostringstream out;

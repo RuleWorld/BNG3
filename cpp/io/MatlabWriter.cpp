@@ -38,7 +38,7 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
 }
 
 std::string MatlabWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
-    engine::requireNoDelayedRuleSemantics(model, "MATLAB export");
+    engine::requireNoDelayedSemantics(model, network, "MATLAB export");
     requireNoEnergySemantics(model, "MATLAB M-file");
     compile::requireNoNativeEvents(model, "MATLAB export");
     std::ostringstream m;

@@ -27,7 +27,7 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
 }
 
 std::string PythonExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
-    engine::requireNoDelayedRuleSemantics(model, "Python export");
+    engine::requireNoDelayedSemantics(model, network, "Python export");
     requireNoEnergySemantics(model, "Python export");
     compile::requireNoNativeEvents(model, "Python export");
     std::ostringstream py;

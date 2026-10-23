@@ -54,16 +54,20 @@ inline bool expressionUsesDelay(const ast::Expression& expression) {
     return false;
 }
 
+inline void requireNoDelayedRuleSemantics(const ast::Model& model,
+                                          const std::string& backend);
+
 inline void requireNoDelayedSemantics(const ast::Model& model,
                                       const GeneratedNetwork& network,
                                       const std::string& backend) {
+    requireNoDelayedRuleSemantics(model, backend);
     for (const auto& reaction : network.reactions.all()) {
         if (reaction.getDelayExpression()) requireValidDelay(*reaction.getDelayExpression(), model, backend);
         if (reaction.getRateExpression() &&
             expressionUsesDelay(*reaction.getRateExpression())) {
             throw std::runtime_error("delay(x, tau) expressions are not supported by " + backend);
         }
-        if (!reaction.getRateExpression() && containsDelayCall(reaction.getRate())) {
+        if (!reaction.getRateExpression() && containsDelayCall(reaction.getRateLaw())) {
             throw std::runtime_error("delay(x, tau) expressions are not supported by " + backend);
         }
     }

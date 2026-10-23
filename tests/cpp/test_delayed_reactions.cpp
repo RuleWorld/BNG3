@@ -11,8 +11,11 @@
 
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
+#include "engine/BatchSsa.hpp"
+#include "engine/PsaSimulator.hpp"
 #include "actions/ActionDispatch.hpp"
 #include "io/BnglWriter.hpp"
+#include "io/CppExportWriter.hpp"
 #include "io/NetWriter.hpp"
 #include "io/NetReader.hpp"
 #include "io/SbmlWriter.hpp"
@@ -119,8 +122,37 @@ TEST_CASE("delayed rule syntax rejects invalid modes and dynamic delays") {
                       Catch::Matchers::ContainsSubstring("nonnegative"));
     CHECK_THROWS_WITH(parse("A() -> B() 1 delay=time"),
                       Catch::Matchers::ContainsSubstring("constant"));
-    auto zeroDelayReversible = parse("A() <-> B() 1, 1 delay=0");
-    CHECK(zeroDelayReversible->getReactionRules().front().isBidirectional());
+    CHECK_THROWS_WITH(parse("A() <-> B() 1, 1 delay=0"),
+                      Catch::Matchers::ContainsSubstring("reversible"));
+    CHECK_THROWS_WITH(parse("A() -> B() 1 delay=tau delay=tau"),
+                      Catch::Matchers::ContainsSubstring("only one delay"));
+}
+
+TEST_CASE("delay parameters reject aliases assigned by native events") {
+    CHECK_THROWS_WITH(parser::parseModel(R"(
+begin model
+begin parameters
+  tau 2
+  tauAlias tau
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin reaction rules
+  A() -> B() 1 delay=tauAlias
+end reaction rules
+begin bng3_events version 1
+  event "change_tau"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: tau = 3
+  end event
+end bng3_events
+end model
+)"), Catch::Matchers::ContainsSubstring("event-assigned parameter 'tau'"));
 }
 
 TEST_CASE("delay keywords remain valid parameter identifiers outside modifiers") {
@@ -176,8 +208,9 @@ TEST_CASE("SBML lowers consuming delay with an empty initial history gate") {
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<apply><geq/>"));
 
     options.level = 2;
-    CHECK_THROWS_WITH(io::SbmlWriter::write(*model, &network, options),
-                      Catch::Matchers::ContainsSubstring("require Level 3"));
+    const auto level2 = io::SbmlWriter::write(*model, &network, options);
+    CHECK_THAT(level2, Catch::Matchers::ContainsSubstring(
+                           "definitionURL=\"http://www.sbml.org/sbml/symbols/delay\""));
 }
 
 TEST_CASE("native ODE refuses a delayed reaction instead of running it undelayed") {
@@ -186,6 +219,34 @@ TEST_CASE("native ODE refuses a delayed reaction instead of running it undelayed
     const auto network = generator.generateNative();
     CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
                       Catch::Matchers::ContainsSubstring("Delayed reactions are not supported"));
+}
+
+TEST_CASE("SSA and PSA refuse delayed reactions at their construction boundary") {
+    auto model = parse("A() -> B() 0.5 delay=tau");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    CHECK_THROWS_WITH(engine::CpuBatchSsaSimulator(*model, network),
+                      Catch::Matchers::ContainsSubstring("not supported by SSA"));
+    CHECK_THROWS_WITH(engine::PsaSimulator(*model, network),
+                      Catch::Matchers::ContainsSubstring("not supported by PSA"));
+}
+
+TEST_CASE("native simulation refuses the SBML delay function in a rate law") {
+    auto model = parse("A() -> B() delay(A,tau)");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
+                      Catch::Matchers::ContainsSubstring("delay(x, tau)"));
+}
+
+TEST_CASE("network exporters refuse delay metadata even when the AST lacks the rule") {
+    auto delayedModel = parse("A() -> B() 0.5 delay=tau");
+    engine::NetworkGenerator generator(*delayedModel);
+    const auto delayedNetwork = generator.generateNative();
+    auto ordinaryModel = parse("A() -> B() 0.5");
+    CHECK_THROWS_WITH(io::CppExportWriter::write(*ordinaryModel, delayedNetwork),
+                      Catch::Matchers::ContainsSubstring(
+                          "Delayed reactions are not supported by C++ export"));
 }
 
 TEST_CASE("native ODE validates delayed parameter values at execution time") {

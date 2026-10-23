@@ -22,7 +22,7 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
 }
 
 std::string CppExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
-    engine::requireNoDelayedRuleSemantics(model, "C++ export");
+    engine::requireNoDelayedSemantics(model, network, "C++ export");
     requireNoEnergySemantics(model, "C++ export");
     compile::requireNoNativeEvents(model, "C++ export");
     std::ostringstream out;

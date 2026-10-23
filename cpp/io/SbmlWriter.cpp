@@ -222,37 +222,6 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     if (!std::isfinite(options.startTime)) {
         throw std::runtime_error("SBML start time must be finite");
     }
-    if (options.level < 3) {
-        const auto rejectDelay = [] {
-            throw std::runtime_error(
-                "SBML delay semantics require Level 3; refusing Level 2 export");
-        };
-        if (network) {
-            for (const auto& reaction : network->reactions.all()) {
-                if (reaction.getDelayExpression() &&
-                    engine::delayedTime(*reaction.getDelayExpression(), model) > 0.0) {
-                    rejectDelay();
-                }
-                if ((reaction.getRateExpression() &&
-                     engine::expressionUsesDelay(*reaction.getRateExpression())) ||
-                    engine::containsDelayCall(reaction.getRate())) {
-                    rejectDelay();
-                }
-            }
-        }
-        for (const auto& rule : model.getReactionRules()) {
-            if (rule.getDelayExpression() &&
-                engine::delayedTime(*rule.getDelayExpression(), model) > 0.0) {
-                rejectDelay();
-            }
-            for (const auto& rate : rule.getRates()) {
-                if (engine::expressionUsesDelay(rate)) rejectDelay();
-            }
-        }
-        for (const auto& function : model.getFunctions()) {
-            if (engine::expressionUsesDelay(function.getExpression())) rejectDelay();
-        }
-    }
     const compile::CompiledModel compiled(model);
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default
@@ -741,6 +710,12 @@ std::string SbmlWriter::writeReactions(
         const bool splitConsuming = delayed && !rxn.isNonConsuming();
         for (int part = 0; part < (splitConsuming ? 2 : 1); ++part) {
         const bool completion = splitConsuming && part == 1;
+        const bool hasReactants = !completion && !rxn.getReactants().empty();
+        const bool hasProducts = (!splitConsuming || completion) && !rxn.getProducts().empty();
+        // SBML reactions must have at least one participant. A delayed source
+        // needs only its completion reaction; a delayed sink needs only its
+        // initiation reaction.
+        if (splitConsuming && !hasReactants && !hasProducts) continue;
         std::string reactionId = "R" + std::to_string(r + 1);
         if (splitConsuming) reactionId += completion ? "_complete" : "_init";
         const bool syntheticRateRule =
@@ -751,7 +726,7 @@ std::string SbmlWriter::writeReactions(
         sbml << "      <reaction id=\"" << reactionId << "\" reversible=\"false\">\n";
 
         // Reactants
-        if (!completion && !rxn.getReactants().empty()) {
+        if (hasReactants) {
             sbml << "        <listOfReactants>\n";
             std::map<std::size_t, std::size_t> reactantStoichiometry;
             for (const auto idx : rxn.getReactants()) {
@@ -771,7 +746,7 @@ std::string SbmlWriter::writeReactions(
         }
 
         // Products
-        if ((!splitConsuming || completion) && !rxn.getProducts().empty()) {
+        if (hasProducts) {
             sbml << "        <listOfProducts>\n";
             std::map<std::size_t, std::size_t> productStoichiometry;
             for (const auto idx : rxn.getProducts()) {

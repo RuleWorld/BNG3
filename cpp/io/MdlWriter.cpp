@@ -15,7 +15,7 @@
 namespace bng::io {
 
 std::string MdlWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
-    engine::requireNoDelayedRuleSemantics(model, "MCell MDL export");
+    engine::requireNoDelayedSemantics(model, network, "MCell MDL export");
     requireNoEnergySemantics(model, "MCell MDL");
     compile::requireNoNativeEvents(model, "MCell export");
     std::ostringstream out;

@@ -1930,7 +1930,7 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
         if (!std::isfinite(delay) || delay < 0.0) {
             throw std::runtime_error("Reaction delay must evaluate to a finite nonnegative value");
         }
-        if (bidirectional && delay > 0.0) {
+        if (bidirectional) {
             throw std::runtime_error("Delayed reversible rules are unsupported; write two unidirectional rules");
         }
     }

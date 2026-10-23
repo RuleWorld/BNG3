@@ -27,7 +27,7 @@ std::string MexWriter::write(const ast::Model& model, const engine::GeneratedNet
 }
 
 std::string MexWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
-    engine::requireNoDelayedRuleSemantics(model, "MEX export");
+    engine::requireNoDelayedSemantics(model, network, "MEX export");
     requireNoEnergySemantics(model, "MEX");
     compile::requireNoNativeEvents(model, "MEX export");
     std::ostringstream out;
