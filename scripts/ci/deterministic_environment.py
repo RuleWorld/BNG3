@@ -21,6 +21,7 @@ never changes the harness's arguments or its output.
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -71,5 +72,10 @@ def ensure_fixed_hash_seed() -> str:
     os.environ[_REEXEC_MARKER] = "1"
     sys.stdout.flush()
     sys.stderr.flush()
+    if os.name == "nt":
+        result = subprocess.run(
+            [sys.executable, *sys.argv], env=os.environ.copy(), check=False
+        )
+        raise SystemExit(result.returncode)
     os.execv(sys.executable, [sys.executable, *sys.argv])
     raise SystemExit(0)

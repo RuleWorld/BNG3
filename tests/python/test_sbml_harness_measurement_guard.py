@@ -86,6 +86,30 @@ def _environment() -> ModuleType:
     return _load(ENVIRONMENT_PATH, "deterministic_environment")
 
 
+@pytest.mark.parametrize("child_status", [0, 1])
+def test_windows_hash_seed_reexec_propagates_child_status(
+    tmp_path, monkeypatch, child_status
+):
+    environment = _environment()
+    script = tmp_path / "validate_sbml_test_suite.py"
+    script.write_text("# re-executable stand-in\n", encoding="utf-8")
+    monkeypatch.setattr(environment, "STARTUP_HASH_SEED", "1")
+    monkeypatch.setattr(environment.sys, "argv", [str(script)])
+    monkeypatch.setattr(environment.os, "name", "nt")
+    monkeypatch.setattr(environment, "_reexecutable", lambda: True)
+    monkeypatch.delenv(environment._REEXEC_MARKER, raising=False)
+    monkeypatch.setattr(
+        environment.subprocess,
+        "run",
+        lambda command, env, check: subprocess.CompletedProcess(command, child_status),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        environment.ensure_fixed_hash_seed()
+
+    assert excinfo.value.code == child_status
+
+
 def _stand_in_package(directory: Path, marker: str) -> Path:
     """Write a stand-in for an unrelated installed BNG3 package."""
 
