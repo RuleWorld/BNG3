@@ -58,6 +58,7 @@ def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
     suite = workflow["jobs"]["conformance"]
     assert "inputs.lane != 'curated-biomodels'" in suite["if"]
     corpus = workflow["jobs"]["curated-biomodels"]
+    assert triggers["workflow_dispatch"]["inputs"]["biomodels_only_id"]["default"] == ""
     assert "inputs.lane == 'curated-biomodels'" in corpus["if"]
     assert "inputs.lane == 'both'" in corpus["if"]
     commands = "\n".join(step.get("run", "") for step in corpus["steps"])
@@ -74,6 +75,22 @@ def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
     assert "--offline --isolate-models --jobs 3 --model-timeout 180" in commands
     assert '--mode "$mode"' in commands
     assert "not_comparable_records" in commands
+    assert "harness_error_records" in commands
+    assert "BIOMODELS_ONLY_ID" in commands
+    smoke = next(
+        step
+        for step in corpus["steps"]
+        if step.get("name") == "Run one-model flat and atomized BioModels smoke"
+    )
+    assert '--only-id "$BIOMODELS_ONLY_ID"' in smoke["run"]
+    assert "source_artifact" in smoke["run"]
+    full = next(
+        step
+        for step in corpus["steps"]
+        if step.get("name") == "Run full flat and atomized BioModels corpus"
+    )
+    assert full.get("if") == "inputs.biomodels_only_id == ''"
+    assert "lane_failed=1" in full["run"] and "continue" in full["run"]
     assert "membership-check.json" in commands
     assert 'manifest_digest != provenance["manifest_sha256"]' in commands
     assert (
@@ -99,6 +116,14 @@ def test_curated_biomodels_inventory_is_a_complete_pinned_query_result():
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert inventory["query"] == manifest["curation_query"]
     assert inventory["matches"] == manifest["expected_total_records"]
+    assert manifest["search_api_url"] == "https://www.biomodels.org/search"
+    assert manifest["record_api_url_template"].startswith("https://www.biomodels.org/")
+    assert inventory["source"] == manifest["search_api_url"]
+    assert all(
+        item["record_url"].startswith("https://www.biomodels.org/")
+        and item["download_url"].startswith("https://www.biomodels.org/")
+        for item in inventory["models"]
+    )
     assert len(inventory["models"]) == inventory["matches"]
     assert sum(inventory["format_counts"].values()) == inventory["matches"]
     assert inventory["format_counts"]["SBML"] == manifest["expected_sbml_records"]
