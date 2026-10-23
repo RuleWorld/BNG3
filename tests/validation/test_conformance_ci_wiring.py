@@ -92,6 +92,18 @@ def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
     assert full.get("if") == "inputs.biomodels_only_id == ''"
     assert "lane_failed=1" in full["run"] and "continue" in full["run"]
     assert "membership-check.json" in commands
+    bundle_install = next(
+        step
+        for step in corpus["steps"]
+        if step.get("name") == "Install the verified offline BioModels source snapshot"
+    )
+    assert "scripts/ci/install_biomodels_source_bundle.py" in bundle_install["run"]
+    assert (
+        "tests/fixtures/curated_biomodels/source-payloads-2026-09.tar.gz"
+        in bundle_install["run"]
+    )
+    assert "--receipt" in bundle_install["run"]
+    assert 'membership.get("status") != "matched"' not in commands
     assert 'manifest_digest != provenance["manifest_sha256"]' in commands
     assert (
         'inventory.get("matches") != manifest.get("expected_total_records")' in commands
