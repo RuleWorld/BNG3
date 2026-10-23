@@ -1,8 +1,8 @@
 {
   "attribution": {
-    "established": "Under the same modern harness and pinned hash seed, the exact replacement product revisions produce 63 core pass-to-fail transitions with unchanged generated BNGL/SBML; all 63 cases pass the core gate at the exact PR #389 merge report.",
-    "future_gap": "Isolate the causal source change only if a separate focused experiment can do so without changing the established run identities or acceptance criteria.",
-    "not_established": "A single source hunk as the cause of the runtime differences. The evidence attributes behavior to product revisions and documents recovery at the PR #389 merge, not causal blame to one patch."
+    "established": "Under the same pinned modern harness, suite, hash seed, and 1,923-case inventory, the exact PR #315 merge product has 63 core pass-to-fail transitions versus base. An isolated one-line counterfactual restoring the TotalRate symmetry guard in cpp/engine/OdeIntegrator.cpp returns all 63 cases to pass and makes the complete 1,923-case core and official status vectors identical to base. The counterfactual differs from its exact PR #315 merge parent only by this guard.",
+    "future_gap": "Do not generalize beyond this exact pinned suite and product pair; broader rate-law families still require their own semantic evidence.",
+    "not_established": "A universal rule for every TotalRate model. The full counterfactual workflow remains non-green because the shared stochastic/00003 official failure and four timeouts persist."
   },
   "historical_reconciliation": {
     "historical_report_was_valid": false,
@@ -934,6 +934,157 @@
     }
   },
   "schema_version": 1,
-  "scope": "Exact product base/merge replacement runs using one pinned modern validation harness, followed by the complete report at exact PR #389 merge. This does not validate the original PR #315 workflow artifacts.",
-  "title": "PR #315 exact replacement-pair comparison and PR #389 recovery"
+  "scope": "Exact PR #315 product base/merge replacement runs, a one-hunk counterfactual against the exact merge product, the complete report at exact PR #389 merge, and exact-head hosted main validation snapshots. This does not validate the original PR #315 workflow artifacts.",
+  "title": "PR #315 exact replacement-pair comparison and PR #389 recovery",
+  "counterfactual_attribution": {
+    "experiment": {
+      "commit": "e05c37e9b4b838f1d1df1d200f8284f90ae74699",
+      "parent": "25f13c5bf9924dd413ab659198095b5d8d6bee05",
+      "diff_files": [
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "diff_stat": "1 file changed, 1 insertion(+), 1 deletion(-)",
+      "diff_check_clean": true,
+      "isolated_change": "Restore !crxn.isTotalRate in the identical-reactant symmetry-factor guard at OdeIntegrator.cpp:945, so the factor is not applied again to the complete total-rate flux.",
+      "product_tree_clean": true,
+      "native_extension_sha256": "7f38e4f05ab518d535979817a004554f79424a08910dc249a5a900f599ba4d42"
+    },
+    "harness": {
+      "revision": "18ccc087226018e6eb4ec6d80db30454e4ef4c2b",
+      "suite_commit": "cf38585fac5de8e0e90112febb62851ee2181816",
+      "suite_source_lock_sha256": "01ef836f4d8af178916b0f27b6a5f3963b2f25005e211a5f770ed4d79065bd30",
+      "selected_cases": 1923,
+      "python_version": "3.12.15",
+      "python_hash_seed": "0",
+      "stochastic_seed_base": 1000000,
+      "case_isolation": {
+        "mode": "fork",
+        "jobs": 4,
+        "case_timeout_seconds": 60
+      }
+    },
+    "run": {
+      "id": 39960972129,
+      "url": "https://github.com/RuleWorld/BNG3/actions/runs/39960972129",
+      "conclusion": "failure",
+      "run_failure_scope": "The same shared official stochastic/00003 failure and four timeouts remain; the 63-case core regression is absent.",
+      "product_revision": "e05c37e9b4b838f1d1df1d200f8284f90ae74699",
+      "harness_revision": "18ccc087226018e6eb4ec6d80db30454e4ef4c2b",
+      "artifact": {
+        "id": 12505544007,
+        "name": "ssts-18ccc087226018e6eb4ec6d80db30454e4ef4c2b-1",
+        "size_in_bytes": 23026394,
+        "sha256": "7b5c025cf771dc4f63d4a4e9b78deddbc20c54a36eec3038c6d9a9e8cacc9fab",
+        "archive_download_url": "https://api.github.com/repos/RuleWorld/BNG3/actions/artifacts/12505544007/zip",
+        "expired": false
+      },
+      "report_sha256": "3bef89791f1085d96871fc76f9b1ccf0a9be134185c49b792a820d10e950ed4c",
+      "package_identity_sha256": "d0ca156b840ccb90ee1e6fb1f5dc193b94f6999069608f0a4c1b3d7eaf5f136c",
+      "harness_package_identity_sha256": "4798d3dc1e4e9b96d3458d9920c794c714ad40a4f13a0a41f7ba5ac3c62f9f33",
+      "download_command": "gh run download 39960972129 --repo RuleWorld/BNG3 --name ssts-18ccc087226018e6eb4ec6d80db30454e4ef4c2b-1 --dir \"$COUNTERFACTUAL_DIR\""
+    },
+    "comparison_to_original_pair": {
+      "base_run_id": 39954197216,
+      "merge_run_id": 39954195888,
+      "core_status_vector_equal_base_all_cases": true,
+      "official_status_vector_equal_base_all_cases": true,
+      "input_hashes_equal_base_all_non_timeout_cases": true,
+      "non_timeout_cases_with_input_hashes": 1919,
+      "timeout_cases_without_worker_input_hashes": [
+        "semantic/01561",
+        "semantic/01562",
+        "semantic/01563",
+        "semantic/01565"
+      ],
+      "source_xml_source_model_generated_network_written_xml_summaries_equal_base_all_non_timeout_cases": true,
+      "generated_bngl_and_sbml_byte_equality_evidence": "The retained exact base-vs-merge raw artifact diff compares 1,923 case records and reports all 5,933 raw model artifacts identical, with zero generated BNGL/XML/SBML differences. The diff file is 67,729,617 bytes with SHA-256 f77c03d5a6b46fd55ed0b29aa4793f575e139eedb61521a32c86737bcab566f3. The counterfactual hosted artifact retains report records rather than raw per-case output files; its report-level source/network/writer summaries match base for all 1,919 non-timeout cases.",
+      "affected_case_count": 63,
+      "affected_category_counts": {
+        "semantic": 60,
+        "stochastic": 3
+      },
+      "core_transitions": {
+        "base_pass_merge_fail_counterfactual_pass": 63
+      },
+      "official_transitions_in_merge_vs_base": {
+        "passed_to_failed": 62,
+        "unsupported_to_failed": 1
+      },
+      "counterfactual_official_statuses_match_base_for_all_affected_cases": true,
+      "full_core_counts": {
+        "passed": 1793,
+        "unsupported": 126,
+        "failed": 0,
+        "timeout": 4
+      },
+      "official_reference_counts": {
+        "passed": 1751,
+        "unsupported": 167,
+        "failed": 1,
+        "timed-out": 4
+      },
+      "shared_failure": "stochastic/00003 failed its official statistical check in both base and counterfactual; semantic/00003 is a distinct case and passed.",
+      "shared_timeouts": [
+        "semantic/01561",
+        "semantic/01562",
+        "semantic/01563",
+        "semantic/01565"
+      ],
+      "raw_artifact_comparison": {
+        "artifact_diff_path_outside_repository": "/tmp/bng3-campaign/replacement-pair-diff-validated.json",
+        "artifact_diff_bytes": 67729617,
+        "artifact_diff_sha256": "f77c03d5a6b46fd55ed0b29aa4793f575e139eedb61521a32c86737bcab566f3",
+        "case_records": 1923,
+        "raw_model_artifacts_identical": 5933,
+        "source_artifacts_identical": 1923,
+        "reference_artifacts_identical": 4673,
+        "reference_artifacts_different": 13,
+        "log_artifacts_identical": 3783,
+        "log_artifacts_different": 63,
+        "report_artifacts_compared_as_report": 1919,
+        "generated_bngl_xml_sbml_differences": 0
+      }
+    },
+    "causal_scope": "The single guard reversal is sufficient to recover all 63 observed transitions under this exact harness and product pair. This is a bounded causal attribution for these cases, not a universal claim about all TotalRate models."
+  },
+  "current_hosted_main_evidence": {
+    "head_sha": "2eeb244f896e54b55335f918d10f4034fb322571",
+    "ci": {
+      "run_id": 39959629615,
+      "url": "https://github.com/RuleWorld/BNG3/actions/runs/39959629615",
+      "conclusion": "success",
+      "completed_jobs": 42,
+      "failed_jobs": 0,
+      "skipped_jobs": [
+        "Publish to PyPI"
+      ],
+      "total_jobs": 42,
+      "successful_jobs": 41
+    },
+    "codeql": {
+      "run_id": 39959629509,
+      "url": "https://github.com/RuleWorld/BNG3/actions/runs/39959629509",
+      "conclusion": "success"
+    },
+    "lean_semantic_kernel": {
+      "run_id": 39959629501,
+      "url": "https://github.com/RuleWorld/BNG3/actions/runs/39959629501",
+      "conclusion": "success"
+    },
+    "cross_tool_parity": {
+      "run_id": 39959629459,
+      "url": "https://github.com/RuleWorld/BNG3/actions/runs/39959629459",
+      "conclusion": "success"
+    },
+    "windows_probe": {
+      "job_id": 120434058329,
+      "url": "https://github.com/RuleWorld/BNG3/actions/runs/39959629615/job/120434058329",
+      "job_name": "Windows harness re-exec contract",
+      "runner": "Windows Server 2022",
+      "python": "3.12.10",
+      "test": "tests/python/test_sbml_harness_measurement_guard.py -k windows_hash_seed_reexec_process_exit_status",
+      "result": "2 passed, 17 deselected",
+      "step_conclusion": "success"
+    }
+  }
 }
