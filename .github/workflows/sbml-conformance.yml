@@ -60,6 +60,11 @@ on:
         required: false
         type: string
         default: '1000000'
+      product_revision:
+        description: Exact BNG3 product commit to qualify; defaults to the workflow checkout
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -75,7 +80,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     env:
-      BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      BNG3_SOURCE_REVISION: ${{ inputs.product_revision || github.event.pull_request.head.sha || github.sha }}
       BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       CMAKE_BUILD_PARALLEL_LEVEL: '2'
       CMAKE_ARGS: '-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF'
@@ -84,6 +89,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.product_revision || github.event.pull_request.head.sha || github.sha }}
+          path: _bng3_product
 
       - uses: actions/setup-python@v5
         with:
@@ -100,10 +110,12 @@ jobs:
           echo "$RUNNER_TEMP/ssts-venv/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --require-hashes \
             -r provenance/ssts-ci-linux-py312.lock
-          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --no-deps --no-build-isolation .
+          test "$(git -C _bng3_product rev-parse HEAD)" = "$BNG3_SOURCE_REVISION"
+          "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --no-deps --no-build-isolation ./_bng3_product
           "$RUNNER_TEMP/ssts-venv/bin/python" -m pip check
           "$RUNNER_TEMP/ssts-venv/bin/python" -m pip freeze > "$RUNNER_TEMP/ssts-artifacts/runtime.txt"
           cp provenance/ssts-ci-linux-py312.lock "$RUNNER_TEMP/ssts-artifacts/"
+          test -z "$(git -C _bng3_product status --porcelain --untracked-files=all)"
 
       - name: Verify installed identity and required independent engines
         shell: bash
@@ -111,9 +123,54 @@ jobs:
           set -euo pipefail
           python scripts/ci/check_python_package_identity.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
+            --product-checkout "$GITHUB_WORKSPACE/_bng3_product" \
             > "$RUNNER_TEMP/ssts-artifacts/package-identity.json"
           python -c 'import libsbml, roadrunner; print(libsbml.getLibSBMLDottedVersion(), roadrunner.__version__)'
-          python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_isolation.py tests/test_ssts_report_comparison.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/test_harness_contracts.py tests/python/test_structural_multi_execution.py tests/python/test_native_events.py tests/python/test_sbml_function_forward_references.py tests/python/test_species_rate_rule_amounts.py -q
+          python -m pytest tests/test_ssts_selected_gate.py tests/test_ssts_feature_selection.py tests/test_ssts_isolation.py tests/test_ssts_report_comparison.py tests/test_ssts_stage_reporting.py tests/test_ci_contract.py tests/test_harness_contracts.py -q
+
+      - name: Run product smoke tests
+        id: product_smoke_tests
+        continue-on-error: ${{ inputs.product_revision != '' && inputs.product_revision != github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest \
+            _bng3_product/tests/python/test_structural_multi_execution.py \
+            _bng3_product/tests/python/test_native_events.py \
+            _bng3_product/tests/python/test_sbml_function_forward_references.py \
+            _bng3_product/tests/python/test_species_rate_rule_amounts.py \
+            -q \
+            --junitxml "$RUNNER_TEMP/ssts-artifacts/product-smoke-tests.xml"
+
+      - name: Record product smoke-test outcome
+        if: always()
+        env:
+          PRODUCT_TEST_OUTCOME: ${{ steps.product_smoke_tests.outcome }}
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import xml.etree.ElementTree as ET
+          import os
+          from pathlib import Path
+
+          print(f"Pinned product smoke tests: `{os.environ['PRODUCT_TEST_OUTCOME']}`.")
+          report = Path(os.environ['RUNNER_TEMP']) / 'ssts-artifacts' / 'product-smoke-tests.xml'
+          if report.is_file():
+              root = ET.parse(report).getroot()
+              suites = [root] if root.tag == 'testsuite' else list(root.findall('testsuite'))
+              failures = [
+                  (case.get('name', '<unnamed>'), (case.findtext('failure') or case.findtext('error') or '').strip())
+                  for suite in suites
+                  for case in suite.findall('testcase')
+                  if case.find('failure') is not None or case.find('error') is not None
+              ]
+              print(f"Product smoke diagnostics: {sum(int(suite.get('tests', '0')) for suite in suites)} tests, {len(failures)} failures/errors.")
+              for name, detail in failures:
+                  print(f"- `{name}`: {detail[:500]}")
+          else:
+              print("Product smoke tests did not produce a JUnit report.")
+          if os.environ['PRODUCT_TEST_OUTCOME'] == 'failure':
+              print("These failures remain visible in the step outcome; the historical source-locked suite is still run.")
+          PY
 
       - name: Checkout and preflight complete locked suite
         shell: bash
@@ -131,6 +188,7 @@ jobs:
           PY
           python scripts/ci/validate_sbml_test_suite.py \
             --suite-dir "$RUNNER_TEMP/official-ssts" --validate-only \
+            --product-checkout "$GITHUB_WORKSPACE/_bng3_product" \
             > "$RUNNER_TEMP/ssts-artifacts/suite-identity.json"
 
       - name: Run bounded official conformance
@@ -156,6 +214,7 @@ jobs:
           fi
           python scripts/ci/validate_sbml_test_suite.py \
             --suite-dir "$RUNNER_TEMP/official-ssts" \
+            --product-checkout "$GITHUB_WORKSPACE/_bng3_product" \
             "${selection[@]}" \
             --stochastic-seed-base "$SSTS_STOCHASTIC_SEED_BASE" \
             --isolate-cases --case-timeout 60 --jobs 4 \

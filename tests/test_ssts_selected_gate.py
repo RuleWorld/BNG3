@@ -30,6 +30,46 @@ def test_selected_gate_accepts_executed_reference_and_explicit_unsupported():
     assert runner._selected_surface_passed(records)
 
 
+def test_product_checkout_identity_root_defaults_to_harness_and_can_be_pinned(tmp_path):
+    harness_root = tmp_path / "harness"
+    product_root = tmp_path / "product"
+    product_root.mkdir()
+    subprocess.run(["git", "init", str(product_root)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(product_root), "config", "user.name", "SSTS product test"],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(product_root),
+            "config",
+            "user.email",
+            "ssts-product@example.invalid",
+        ],
+        check=True,
+    )
+    (product_root / "model.py").write_text("model = True\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(product_root), "add", "model.py"], check=True)
+    subprocess.run(
+        ["git", "-C", str(product_root), "commit", "-m", "product source"],
+        check=True,
+        capture_output=True,
+    )
+    revision = subprocess.check_output(
+        ["git", "-C", str(product_root), "rev-parse", "HEAD"], text=True
+    ).strip()
+
+    assert runner._product_checkout_root(None, harness_root) == harness_root
+    assert (
+        runner._product_checkout_root(product_root, harness_root, revision)
+        == product_root.resolve()
+    )
+    with pytest.raises(ValueError, match="does not match BNG3_SOURCE_REVISION"):
+        runner._product_checkout_root(product_root, harness_root, "0" * 40)
+
+
 @pytest.mark.parametrize(
     "status", ["failed", "timed-out", "invalid-source", "pending", "missing"]
 )
@@ -90,6 +130,7 @@ def test_isolated_case_checks_and_retains_worker_runtime(
         "import json, sys\nfrom pathlib import Path\n"
         f"payload = {payload!r}\n"
         "payload['stochastic_seed_base'] = int(sys.argv[sys.argv.index('--stochastic-seed-base') + 1])\n"
+        "payload['product_checkout'] = sys.argv[sys.argv.index('--product-checkout') + 1] if '--product-checkout' in sys.argv else None\n"
         "Path(sys.argv[sys.argv.index('--json') + 1]).write_text(json.dumps(payload))\n"
     )
     monkeypatch.setattr(runner, "__file__", str(child))
@@ -104,6 +145,7 @@ def test_isolated_case_checks_and_retains_worker_runtime(
         case_timeout=10,
         artifacts_dir=tmp_path / "artifacts",
         stochastic_seed_base=1234567,
+        product_checkout=tmp_path / "product",
     )
     case = {
         "category": "semantic",
@@ -124,6 +166,7 @@ def test_isolated_case_checks_and_retains_worker_runtime(
         assert record["worker_runtime_provenance"] == expected
         command = json.loads((retained / "worker-report.json").read_text())
         assert command["stochastic_seed_base"] == 1234567
+        assert command["product_checkout"] == str(args.product_checkout.resolve())
 
 
 def test_stochastic_seed_base_range_matches_native_uint64():
@@ -213,6 +256,50 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
     }
     assert dispatch["inputs"]["only_case"]["type"] == "string"
     assert dispatch["inputs"]["stochastic_seed_base"]["default"] == "1000000"
+    assert dispatch["inputs"]["product_revision"] == {
+        "description": "Exact BNG3 product commit to qualify; defaults to the workflow checkout",
+        "required": False,
+        "type": "string",
+        "default": "",
+    }
+    assert any(
+        step.get("with", {}).get("path") == "_bng3_product"
+        for step in steps
+        if step.get("uses", "").startswith("actions/checkout@")
+    )
+    install = next(
+        step["run"]
+        for step in steps
+        if step.get("name") == "Install hashed runtime and exact-source package"
+    )
+    assert "git -C _bng3_product rev-parse HEAD" in install
+    assert "git -C _bng3_product status --porcelain --untracked-files=all" in install
+    assert "pip install --no-deps --no-build-isolation ./_bng3_product" in install
+    identity = next(
+        step["run"]
+        for step in steps
+        if step.get("name")
+        == "Verify installed identity and required independent engines"
+    )
+    assert "check_python_package_identity.py" in identity
+    assert '--product-checkout "$GITHUB_WORKSPACE/_bng3_product"' in identity
+    product_smoke = next(
+        step for step in steps if step.get("name") == "Run product smoke tests"
+    )
+    assert product_smoke["continue-on-error"] == (
+        "${{ inputs.product_revision != '' && inputs.product_revision != github.sha }}"
+    )
+    assert (
+        '--junitxml "$RUNNER_TEMP/ssts-artifacts/product-smoke-tests.xml"'
+        in product_smoke["run"]
+    )
+    assert any(
+        step.get("name") == "Record product smoke-test outcome"
+        and step.get("if") == "always()"
+        and "failure" in step.get("run", "")
+        for step in steps
+    )
+    assert '--product-checkout "$GITHUB_WORKSPACE/_bng3_product"' in run
     selector_shell = run.split("python scripts/ci/validate_sbml_test_suite.py", 1)[0]
     selector_shell = selector_shell.replace(
         '"${{ github.event_name }}"', '"$EVENT_NAME"'
@@ -275,7 +362,11 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
     assert "--jobs 4" in run
     assert '--artifacts-dir "$RUNNER_TEMP/ssts-artifacts/cases"' in run
     assert "continue-on-error" not in job
-    assert not any(step.get("continue-on-error") for step in steps)
+    assert not any(
+        step.get("continue-on-error")
+        for step in steps
+        if step.get("name") != "Run product smoke tests"
+    )
     upload = next(
         step
         for step in steps

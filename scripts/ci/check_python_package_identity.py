@@ -30,6 +30,19 @@ def _checked_out_git_head() -> str:
         return "unavailable"
 
 
+def _checkout_git_head(checkout: Path) -> str:
+    try:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=checkout,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unavailable"
+
+
 def _require_source_head(source_revision: str, git_head: str) -> None:
     if not source_revision:
         raise RuntimeError("exact-source identity requires a declared source revision")
@@ -45,7 +58,10 @@ def _require_source_head(source_revision: str, git_head: str) -> None:
 
 
 def inspect_installed_package(
-    source_revision: str | None = None, *, require_source_head: bool = False
+    source_revision: str | None = None,
+    *,
+    require_source_head: bool = False,
+    product_checkout: Path | None = None,
 ) -> dict[str, str]:
     """Verify package and extension come from one installed distribution."""
 
@@ -54,6 +70,17 @@ def inspect_installed_package(
     git_head = _checked_out_git_head()
     if require_source_head:
         _require_source_head(source_revision, git_head)
+    product_root = (product_checkout or Path(__file__).resolve().parents[2]).resolve()
+    product_head = _checkout_git_head(product_root)
+    if product_head == "unavailable":
+        raise RuntimeError(
+            f"product checkout identity could not read Git HEAD: {product_root}"
+        )
+    if source_revision and product_head != source_revision:
+        raise RuntimeError(
+            "declared BNG3 source revision "
+            f"{source_revision} does not match product checkout HEAD {product_head}"
+        )
 
     editable_finders = editable_finders_for_package(sys.meta_path, "bionetgen")
     if editable_finders:
@@ -113,8 +140,11 @@ def inspect_installed_package(
     return {
         "python_executable": sys.executable,
         "python_prefix": sys.prefix,
-        "source_revision": source_revision or git_head,
+        "source_revision": source_revision or product_head,
         "git_head": git_head,
+        "validation_harness_revision": git_head,
+        "product_source_revision": product_head,
+        "product_checkout": str(product_root),
         "pr_head_sha": os.environ.get("BNG3_PR_HEAD_SHA", ""),
         "distribution_version": distribution.version,
         "packaging_version": importlib.metadata.version("packaging"),
@@ -136,10 +166,17 @@ def main() -> int:
         action="store_true",
         help="fail unless the declared source revision matches the checked-out Git HEAD",
     )
+    parser.add_argument(
+        "--product-checkout",
+        type=Path,
+        help="checkout containing the installed BNG3 product source",
+    )
     args = parser.parse_args()
     try:
         identity = inspect_installed_package(
-            args.source_revision, require_source_head=args.require_source_head
+            args.source_revision,
+            require_source_head=args.require_source_head,
+            product_checkout=args.product_checkout,
         )
     except (OSError, RuntimeError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
