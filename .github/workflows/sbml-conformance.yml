@@ -8,15 +8,21 @@ on:
       - 'provenance/ssts-ci-linux-py312.lock'
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
+      - 'scripts/ci/validate_published_biomodels.py'
+      - 'scripts/ci/curated_biomodels_corpus_inventory.py'
       - 'scripts/ci/imported_package_guard.py'
       - 'scripts/ci/sbml_campaign_inventory.py'
       - 'scripts/ci/ssts_selection.py'
       - 'provenance/sbml-campaign/expectations.json'
+      - 'provenance/published-biomodels.json'
+      - 'provenance/curated-biomodels-query-inventory.json'
+      - 'provenance/curated-biomodels-query-inventory.provenance.json'
       - 'tests/test_ci_contract.py'
       - 'tests/test_ssts_selected_gate.py'
       - 'tests/test_ssts_feature_selection.py'
       - 'tests/test_ssts_isolation.py'
       - 'tests/test_ssts_report_comparison.py'
+      - 'tests/validation/test_conformance_ci_wiring.py'
       - 'tests/test_ssts_stage_reporting.py'
       - 'tests/python/test_native_events.py'
       - 'tests/python/test_species_rate_rule_amounts.py'
@@ -39,6 +45,15 @@ on:
         required: false
         type: string
         default: ''
+      lane:
+        description: Select the official suite, curated BioModels, or both
+        required: false
+        type: choice
+        options:
+          - sbml-suite
+          - curated-biomodels
+          - both
+        default: sbml-suite
       stochastic_seed_base:
         description: Base seed for reproducible stochastic ensemble comparisons
         required: false
@@ -55,6 +70,7 @@ concurrency:
 jobs:
   conformance:
     name: Official SBML references (128 PR cases; full scheduled suite)
+    if: github.event_name != 'workflow_dispatch' || inputs.lane != 'curated-biomodels'
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     env:
@@ -207,6 +223,7 @@ jobs:
           import json
           import os
           from pathlib import Path
+          from datetime import datetime, timezone
           directory = Path(os.environ['RUNNER_TEMP']) / 'ssts-artifacts'
           directory.mkdir(exist_ok=True)
           report_path = directory / 'report.json'
@@ -231,4 +248,265 @@ jobs:
           name: ssts-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ssts-artifacts/
           if-no-files-found: error
+          retention-days: 90
+
+  curated-biomodels:
+    name: Curated BioModels flat and atomized validation
+    if: github.event_name == 'workflow_dispatch' && (inputs.lane == 'curated-biomodels' || inputs.lane == 'both')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      BNG3_SOURCE_REVISION: ${{ github.sha }}
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CMAKE_ARGS: '-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF'
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the pinned runtime and exact-source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m venv "$RUNNER_TEMP/biomodels-venv"
+          echo "$RUNNER_TEMP/biomodels-venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip install --require-hashes \
+            -r provenance/ssts-ci-linux-py312.lock
+          "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip install --no-deps --no-build-isolation .
+          "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip check
+          "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip freeze \
+            > "$RUNNER_TEMP/biomodels-runtime.txt"
+
+      - name: Verify package and native extension identity
+        run: |
+          python scripts/ci/check_python_package_identity.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --require-source-head \
+            > "$RUNNER_TEMP/biomodels-package-identity.json"
+
+      - name: Seed the pinned BioModels query inventory
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/biomodels-cache"
+          mkdir -p "$cache"
+          cp provenance/curated-biomodels-query-inventory.json \
+            "$cache/curated-biomodels-inventory.json"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          provenance = json.loads(Path(
+              "provenance/curated-biomodels-query-inventory.provenance.json"
+          ).read_text())
+          manifest_path = Path("provenance/published-biomodels.json")
+          manifest = json.loads(manifest_path.read_text())
+          manifest_digest = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+          if manifest_digest != provenance["manifest_sha256"]:
+              raise SystemExit(f"published BioModels manifest SHA mismatch: {manifest_digest}")
+          inventory = json.loads(Path(
+              "provenance/curated-biomodels-query-inventory.json"
+          ).read_text())
+          if inventory.get("query") != manifest.get("curation_query"):
+              raise SystemExit("pinned inventory query does not match the manifest")
+          if inventory.get("matches") != manifest.get("expected_total_records"):
+              raise SystemExit("pinned inventory total does not match the manifest")
+          if len(inventory.get("models", [])) != manifest.get("expected_total_records"):
+              raise SystemExit("pinned inventory model list is incomplete")
+          runner_temp = Path(os.environ["RUNNER_TEMP"])
+          inventory_path = runner_temp / "biomodels-cache/curated-biomodels-inventory.json"
+          digest = hashlib.sha256(inventory_path.read_bytes()).hexdigest()
+          if digest != provenance["inventory_sha256"]:
+              raise SystemExit(f"pinned inventory SHA mismatch: {digest}")
+          (runner_temp / "biomodels-inventory.sha256").write_text(
+              f"{digest}  {inventory_path.name}\n"
+          )
+          PY
+
+      - name: Check current BioModels membership against the pinned snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/biomodels-artifacts"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          from scripts.ci.validate_published_biomodels import _enumerate_inventory
+
+          runner_temp = Path(os.environ["RUNNER_TEMP"])
+          artifacts = runner_temp / "biomodels-artifacts"
+          manifest = json.loads(Path("provenance/published-biomodels.json").read_text())
+          pinned = json.loads(Path(
+              "provenance/curated-biomodels-query-inventory.json"
+          ).read_text())
+          result = {
+              "status": "unavailable",
+              "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+              "query": manifest["curation_query"],
+              "pinned_matches": pinned.get("matches"),
+              "pinned_inventory_sha256": hashlib.sha256(
+                  Path("provenance/curated-biomodels-query-inventory.json").read_bytes()
+              ).hexdigest(),
+          }
+          live_cache = runner_temp / "biomodels-live-inventory"
+          try:
+              live = _enumerate_inventory(
+                  manifest,
+                  live_cache,
+                  refresh=True,
+                  offline=False,
+                  fetch_metadata=False,
+              )
+              live_path = artifacts / "live-query-inventory.json"
+              live_path.write_text(json.dumps(live, indent=2) + "\n")
+              pinned_ids = {item["id"] for item in pinned["models"]}
+              live_ids = {item["id"] for item in live["models"]}
+              result.update(
+                  status=(
+                      "matched"
+                      if pinned_ids == live_ids
+                      and live.get("matches") == pinned.get("matches")
+                      else "changed"
+                  ),
+                  live_matches=live.get("matches"),
+                  live_inventory_sha256=hashlib.sha256(
+                      live_path.read_bytes()
+                  ).hexdigest(),
+                  added_ids=sorted(live_ids - pinned_ids),
+                  missing_ids=sorted(pinned_ids - live_ids),
+              )
+          except Exception as exc:
+              result["error"] = f"{type(exc).__name__}: {exc}"
+          (artifacts / "membership-check.json").write_text(
+              json.dumps(result, indent=2) + "\n"
+          )
+          print(json.dumps(result, indent=2))
+          PY
+
+      - name: Run full flat and atomized BioModels corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/biomodels-cache"
+          artifacts="$RUNNER_TEMP/biomodels-artifacts"
+          mkdir -p "$artifacts"
+          for mode in flat atomized; do
+            set +e
+            python scripts/ci/validate_published_biomodels.py \
+              --manifest provenance/published-biomodels.json \
+              --cache-dir "$cache" \
+              --json "$artifacts/$mode-report.json" \
+              --mode "$mode" \
+              --offline --isolate-models --jobs 3 --model-timeout 180 \
+              2>&1 | tee "$artifacts/$mode-execution.log"
+            validator_status=${PIPESTATUS[0]}
+            set -e
+            if [[ ! -s "$artifacts/$mode-report.json" ]]; then
+              echo "::error::The $mode validator produced no report (exit $validator_status)."
+              exit 1
+            fi
+            python - "$artifacts/$mode-report.json" "$mode" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report = json.loads(Path(sys.argv[1]).read_text())
+          mode = sys.argv[2]
+          summary = report["summary"]
+          completeness = report["completeness"]
+          if not completeness.get("counts_match") or completeness.get("partial_run"):
+              raise SystemExit(f"{mode}: inventory is incomplete: {completeness}")
+          if report.get("mode") != mode or not report.get("supported_surface_passed"):
+              raise SystemExit(f"{mode}: the declared supported surface did not qualify")
+          if not report.get("unsupported_formats_are_explicit") or not report.get(
+              "simulation_comparison_is_required"
+          ):
+              raise SystemExit(f"{mode}: validator contract metadata is incomplete")
+          if summary.get("failed_records") or summary.get("timeout_records"):
+              raise SystemExit(
+                  f"{mode}: unresolved failures/timeouts: "
+                  f"failed={summary.get('failed_records')} "
+                  f"timeout={summary.get('timeout_records')}"
+              )
+          if summary.get("not_comparable_records"):
+              raise SystemExit(
+                  f"{mode}: independent comparison is incomplete for "
+                  f"{summary['not_comparable_records']} record(s)"
+              )
+          unreasoned = [
+              record["id"]
+              for record in report["records"]
+              if record.get("status") in {"unsupported", "unsupported_format"}
+              and not record.get("unsupported_reason")
+          ]
+          if unreasoned:
+              raise SystemExit(f"{mode}: unsupported records lack reasons: {unreasoned}")
+          print(
+              f"{mode}: records={summary['selected_records']} "
+              f"sbml_passed={summary['passed_sbml_records']} "
+              f"unsupported={summary['unsupported_records']} "
+              f"not_comparable={summary['not_comparable_records']}"
+          )
+          PY
+          done
+          python - "$RUNNER_TEMP/biomodels-artifacts/membership-check.json" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          membership = json.loads(Path(sys.argv[1]).read_text())
+          if membership.get("status") != "matched":
+              raise SystemExit(
+                  "live BioModels membership is not qualified against the pinned "
+                  f"snapshot: {membership}"
+              )
+          PY
+
+      - name: Build per-record corpus inventory and compare flat expectations
+        if: always()
+        run: |
+          set -euo pipefail
+          artifacts="$RUNNER_TEMP/biomodels-artifacts"
+          if [[ -s "$artifacts/flat-report.json" && -s "$artifacts/atomized-report.json" ]]; then
+            python scripts/ci/curated_biomodels_corpus_inventory.py \
+              --flat-report "$artifacts/flat-report.json" \
+              --atomized-report "$artifacts/atomized-report.json" \
+              --manifest provenance/published-biomodels.json \
+              --base-commit "$BNG3_SOURCE_REVISION" \
+              --measurement-date "$(date -u +%F)" \
+              --out "$artifacts/corpus-inventory.json"
+            python scripts/ci/curated_biomodels_corpus_inventory.py \
+              --flat-report "$artifacts/flat-report.json" \
+              --manifest provenance/published-biomodels.json \
+              --expectations provenance/curated-biomodels-corpus-expectations.json
+          else
+            echo 'One or both BioModels reports were not produced.'
+            exit 1
+          fi
+
+      - name: Upload BioModels reports and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: curated-biomodels-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/biomodels-artifacts/
+            ${{ runner.temp }}/biomodels-runtime.txt
+            ${{ runner.temp }}/biomodels-package-identity.json
+            ${{ runner.temp }}/biomodels-inventory.sha256
+            provenance/curated-biomodels-query-inventory.json
+            provenance/curated-biomodels-query-inventory.provenance.json
+            provenance/curated-biomodels-corpus-expectations.json
+            provenance/published-biomodels.json
+          if-no-files-found: warn
           retention-days: 90

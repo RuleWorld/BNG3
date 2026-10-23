@@ -48,6 +48,85 @@ def test_differential_reporting_is_additive_and_nightly():
     assert "--corpus-tier" in report["run"]
 
 
+def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
+    workflow = parse_workflow(ROOT / ".github/workflows/sbml-conformance.yml")
+    triggers = workflow.get("on", workflow.get(True))
+    lane = triggers["workflow_dispatch"]["inputs"]["lane"]
+    assert lane["type"] == "choice"
+    assert lane["options"] == ["sbml-suite", "curated-biomodels", "both"]
+
+    suite = workflow["jobs"]["conformance"]
+    assert "inputs.lane != 'curated-biomodels'" in suite["if"]
+    corpus = workflow["jobs"]["curated-biomodels"]
+    assert "inputs.lane == 'curated-biomodels'" in corpus["if"]
+    assert "inputs.lane == 'both'" in corpus["if"]
+    commands = "\n".join(step.get("run", "") for step in corpus["steps"])
+    membership_step = next(
+        step
+        for step in corpus["steps"]
+        if "_enumerate_inventory" in step.get("run", "")
+    )
+    assert "from datetime import datetime, timezone" in membership_step["run"]
+    assert "--require-source-head" in commands
+    assert "provenance/curated-biomodels-query-inventory.json" in commands
+    assert "_enumerate_inventory" in commands
+    assert "pinned_ids == live_ids" in commands
+    assert "--offline --isolate-models --jobs 3 --model-timeout 180" in commands
+    assert '--mode "$mode"' in commands
+    assert "not_comparable_records" in commands
+    assert "membership-check.json" in commands
+    assert 'manifest_digest != provenance["manifest_sha256"]' in commands
+    assert (
+        'inventory.get("matches") != manifest.get("expected_total_records")' in commands
+    )
+    assert "curated-biomodels-${{ github.sha }}" in "\n".join(
+        step.get("with", {}).get("name", "") for step in corpus["steps"]
+    )
+
+
+def test_curated_biomodels_inventory_is_a_complete_pinned_query_result():
+    import hashlib
+    import json
+
+    inventory_path = ROOT / "provenance/curated-biomodels-query-inventory.json"
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    provenance = json.loads(
+        (
+            ROOT / "provenance/curated-biomodels-query-inventory.provenance.json"
+        ).read_text(encoding="utf-8")
+    )
+    manifest_path = ROOT / "provenance/published-biomodels.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert inventory["query"] == manifest["curation_query"]
+    assert inventory["matches"] == manifest["expected_total_records"]
+    assert len(inventory["models"]) == inventory["matches"]
+    assert sum(inventory["format_counts"].values()) == inventory["matches"]
+    assert inventory["format_counts"]["SBML"] == manifest["expected_sbml_records"]
+    assert (
+        sum(
+            count
+            for format_name, count in inventory["format_counts"].items()
+            if format_name != "SBML"
+        )
+        == manifest["expected_non_sbml_records"]
+    )
+    assert len({model["id"] for model in inventory["models"]}) == len(
+        inventory["models"]
+    )
+    assert all(
+        model.get("sha256") and model.get("download_url") and model.get("record_url")
+        for model in inventory["models"]
+    )
+    assert (
+        provenance["inventory_sha256"]
+        == hashlib.sha256(inventory_path.read_bytes()).hexdigest()
+    )
+    assert (
+        provenance["manifest_sha256"]
+        == hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    )
+
+
 def test_backlog_snapshot_enriches_reports_without_blocking_semantic_execution():
     workflow = parse_workflow(ROOT / ".github/workflows/parity.yml")
     steps = workflow["jobs"]["bng2-parity"]["steps"]

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "kind": "curated-biomodels-query-inventory-provenance",
+  "captured_at": "2026-10-19T23:53:08-04:00",
+  "source": "https://www.ebi.ac.uk/biomodels/search",
+  "query": "curationstatus:Manually curated",
+  "manifest_path": "provenance/published-biomodels.json",
+  "manifest_sha256": "bbc787f1b38722164b27a2707e6f82bbf3d4395c07260c11bbca28e35e5e8377",
+  "inventory_path": "provenance/curated-biomodels-query-inventory.json",
+  "inventory_sha256": "6511860f92ad5bd95236c71487b2ece26ec5c9353aed4d77d728b63a431cbebf",
+  "matches": 1096,
+  "models": 1096,
+  "format_counts": {
+    "SBML": 1075,
+    "Open Neural Network Exchange": 7,
+    "COMBINE archive": 9,
+    "Other": 4,
+    "MATLAB (Octave)": 1
+  },
+  "note": "This immutable query response seeds the hosted replay so model IDs, filenames, checksums, and BioModels API URLs are fixed. The validator still downloads each model artifact from the recorded public BioModels URL and records the retrieved artifact hash in its result."
+}

@@ -94,6 +94,25 @@ def _runtime_provenance(
     }
 
 
+def _supported_surface_passed(
+    *,
+    partial: bool,
+    counts_match: bool,
+    failed_records: int,
+    timeout_records: int,
+    not_comparable_records: int,
+) -> bool:
+    """Require a complete run and an actual independent comparison per record."""
+
+    return (
+        not partial
+        and counts_match
+        and failed_records == 0
+        and timeout_records == 0
+        and not_comparable_records == 0
+    )
+
+
 def _fetch_json(url: str) -> dict[str, Any]:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=120) as response:
@@ -1921,10 +1940,13 @@ def main() -> int:
             and passed == len(sbml_records)
         ),
         "supported_surface_passed": (
-            not partial
-            and completeness["counts_match"]
-            and failed == 0
-            and timeouts == 0
+            _supported_surface_passed(
+                partial=partial,
+                counts_match=completeness["counts_match"],
+                failed_records=failed,
+                timeout_records=timeouts,
+                not_comparable_records=not_comparable,
+            )
         ),
         "unsupported_formats_are_explicit": True,
         "simulation_comparison_is_required": True,
