@@ -62,11 +62,11 @@ TEST_CASE("delayed reaction metadata parses, survives network generation, and ro
     REQUIRE(model->getReactionRules().size() == 1);
     const auto& rule = model->getReactionRules().front();
     REQUIRE(rule.getDelayExpression());
-    CHECK(rule.getDelayExpression()->toBnglString() == "tau + 1");
+    CHECK(rule.getDelayExpression()->toBnglString() == "(tau + 1)");
     CHECK(rule.isNonConsuming());
 
     const auto bngl = io::BnglWriter::write(*model);
-    CHECK_THAT(bngl, Catch::Matchers::ContainsSubstring("delay=tau + 1 NonConsuming"));
+    CHECK_THAT(bngl, Catch::Matchers::ContainsSubstring("delay=(tau + 1) NonConsuming"));
     auto roundTrip = parser::parseModel(bngl);
     REQUIRE(roundTrip->getReactionRules().front().getDelayExpression());
     CHECK(roundTrip->getReactionRules().front().isNonConsuming());
@@ -121,7 +121,7 @@ TEST_CASE("delayed rule syntax rejects invalid modes and dynamic delays") {
     CHECK_THROWS_WITH(parse("A() -> B() 1 delay=-1"),
                       Catch::Matchers::ContainsSubstring("nonnegative"));
     CHECK_THROWS_WITH(parse("A() -> B() 1 delay=time"),
-                      Catch::Matchers::ContainsSubstring("constant"));
+                      Catch::Matchers::ContainsSubstring("parameter expression"));
     CHECK_THROWS_WITH(parse("A() <-> B() 1, 1 delay=0"),
                       Catch::Matchers::ContainsSubstring("reversible"));
     CHECK_THROWS_WITH(parse("A() -> B() 1 delay=tau delay=tau"),

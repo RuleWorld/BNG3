@@ -413,7 +413,7 @@ event_def
     ;
 
 event_delay
-    : STRING COLON expression
+    : (STRING | DELAY) COLON expression
     ;
 
 event_priority

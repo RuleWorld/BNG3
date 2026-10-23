@@ -1542,7 +1542,8 @@ std::any BNGAstVisitor::visitEvent_def(BNGParser::Event_defContext* ctx) {
             throw std::runtime_error("Unexpected BNG3 event field '" + keys[index]->getText() + "'");
         }
     }
-    if (hasDelay && ctx->event_delay()->STRING()->getText() != "delay") {
+    if (hasDelay && ctx->event_delay()->DELAY() == nullptr &&
+        ctx->event_delay()->STRING()->getText() != "delay") {
         throw std::runtime_error("Unexpected BNG3 event delay field");
     }
     for (auto* assignment : assignments) {
