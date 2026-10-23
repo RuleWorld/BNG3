@@ -83,8 +83,8 @@ campaign's coverage:
 
 | Side | n | What it is |
 | --- | --- | --- |
-| harness | 12 | a **measurement** limitation: the model converts and runs, but the gate cannot evaluate it (12 cases whose official reference is one draw of a random event-execution order) |
-| Atomizer | 218 | a **representational** limitation: the model uses a construct BNGL cannot say (93 at the official-reference stage and 125 at the conversion stage) |
+| harness | 16 | a **measurement** limitation: the gate cannot evaluate a source-faithful comparison (12 random-event order cases, 2 ensemble-budget cases, and 2 scheduled-action phase-boundary cases) |
+| Atomizer | 216 | a **representational** limitation: the model uses a construct BNGL cannot say (91 at the official-reference stage and 125 at the conversion stage) |
 | not applicable | 34 | the case defines no official time-course reference |
 
 A harness-side gap is a statement about the *measurement*, not about the
@@ -96,8 +96,10 @@ its remaining coverage work, and they need different fixes.
 
 _Source: the expectation manifest's gap taxonomy
 (`provenance/sbml-campaign/expectations.json`), as of the measurement the
-generated current tables below record: 264 gaps in all — 125 at the
-conversion stage and 139 at the official-reference stage._
+generated current tables below record: 266 unsupported outcomes in all — 125
+at conversion and 141 at the official-reference stage. Of these, 216 are
+Atomizer-side, 16 are harness-side, and 34 are not applicable because the
+case has no official time-course reference._
 
 The Atomizer-side gaps are the constructs the scope record describes one by
 one, each with the cases it covers and whether the boundary is reducible:
@@ -105,12 +107,12 @@ untranslated events, the `fbc` package, the `delay`/`rateOf` operators, a
 fast reaction whose pseudo steady state cannot be written as a BNGL rule, a
 state trigger the runtime cannot schedule, an infinite or not-a-number
 constant, a compartment with more than three spatial dimensions, and a small
-bucket of refusals the taxonomy does not yet name. The harness-side gap is
-narrower than it was: the two large harness limits of the baseline — a
-reference runner that could not execute a model with scheduled actions, and an
-official stochastic reference that needed an ensemble the harness did not
-run — were closed by PR #337, and the reference that names a reaction's
-extent rate was closed by PR #378.
+bucket of refusals the taxonomy does not yet name. Earlier action-runner and
+reaction-extent measurement limits were closed by PR #337 and PR #378. The
+current 16 harness gaps include 12 random-event order comparisons, 2
+ensemble-budget cases that cannot meet the documented run count within the
+fixed work budget, and 2 scheduled-action phase-boundary comparisons. The
+budget cases are not Atomizer refusals.
 
 The baseline official-reference failures are also grouped by each case's own
 official `componentTags` metadata, read from the pinned suite's own
@@ -314,11 +316,10 @@ The method was a measurement, not an opinion:
   boundary is reducible, and when it was recorded.
 
 What it reached is in the generated tables below: on the measured tree the
-official-reference comparison has **no failure at all** and the conversion
-stage has **no failure at all**. What is left is not a set of wrong
-answers; it is a set of **declared boundaries**, each of which is either an
-explicit refusal that names its construct or a case the gate cannot compare
-point-wise and says so.
+conversion stage has **no failures**, while the official-reference comparison
+has one retained failure, `stochastic/00003`, and no timeouts. Other remaining
+gaps are declared refusals or comparisons the gate cannot make under its
+current measurement budget; they are not successful scientific executions.
 
 **How to read the numbers.** The figures in this document come from three
 kinds of statement, and they are not interchangeable:
@@ -340,12 +341,12 @@ present it as finished. The open work is:
   schedule, an infinite or not-a-number constant, a compartment with more
   than three spatial dimensions, and a small bucket of refusals the
   taxonomy does not yet name.
-* **The harness-side measurement limits**, which are fewer than they were
-  and are not the Atomizer's: the official reference for a model with
-  simultaneous events of equal priority is *one draw* of a random
-  execution order, so it cannot be compared point-wise at all. The
-  comparison for those cases has to be distributional, or the reference has
-  to pin the order.
+* **The harness-side measurement limits**, which are not Atomizer refusals:
+  12 official references for equal-priority events provide only one draw of
+  a random execution order; 2 stochastic cases cannot fit the documented
+  ensemble count within the fixed event-work budget; and 2 scheduled-action
+  cases stop at a phase boundary the native dispatcher reports before the
+  phase assignment is applied.
 * **The cases the campaign could not make comparable**: the official suite
   itself records that 34 of its cases define no time-course reference, so
   there is nothing to compare against and nobody should go looking for a
@@ -497,8 +498,8 @@ models libRoadRunner itself refuses to load (`delay`, an algebraic rule, a
 
 **The invariant has been checked again since.** The audit measured a tree
 that has since moved a long way; the current measurement is in the
-generated tables below, and it has no official-reference failure and no
-conversion failure at all. Every verdict-changing merge since has been
+generated tables below. It has one official-reference failure,
+`stochastic/00003`, and no conversion failure. Every verdict-changing merge since has been
 gated by the expectation manifest's ratchet, which fails a change that
 drops a case from `passed` unless the manifest is updated explicitly, and
 the manifest was refreshed on the merged tree as the campaign's work landed
@@ -520,8 +521,8 @@ this document does not use them as one.
 | Conversion (SBML → BNGL) | 1798 | 125 | 0 | 0 |
 | Round-trip structure | 1798 | 0 | 0 | 125 |
 | Independent libRoadRunner comparison | 1798 | 0 | 0 | 125 |
-| Official reference comparison | 1783 | 139 | 1 | 0 |
-_Source: `/tmp/bng3-campaign/full-main-cf93/ssts-cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a-1/report.json` (SHA-256 `68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
+| Official reference comparison | 1781 | 141 | 1 | 0 |
+_Source: `/tmp/bng3-campaign/run39878668497/ssts-31ae76c19fdd03c9d4af788f58dd5187726e14a1-1/report.json` (SHA-256 `49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `31ae76c19fdd03c9d4af788f58dd5187726e14a1`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
 
 #### Official-reference unsupported verdicts, by owner
 
@@ -534,11 +535,32 @@ _Source: `/tmp/bng3-campaign/full-main-cf93/ssts-cf93ba7c2b59fdec71a6c54ebb4314a
 | 6 | Atomizer diagnostic | Reaction "…" is marked fast (fast="true") |
 | 3 | Atomizer | <infinity>/<notanumber> constant encountered in math |
 | 2 | Atomizer | a compartment declares unsupported spatialDimensions |
+| 2 | harness | the documented ensemble budget does not fit the gate's per-case ensemble work budget |
 
-Total official-reference unsupported verdicts: 139.
-_Source: `/tmp/bng3-campaign/full-main-cf93/ssts-cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a-1/report.json` (SHA-256 `68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a`._
+Total official-reference unsupported verdicts: 141.
+_Source: `/tmp/bng3-campaign/run39878668497/ssts-31ae76c19fdd03c9d4af788f58dd5187726e14a1-1/report.json` (SHA-256 `49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `31ae76c19fdd03c9d4af788f58dd5187726e14a1`._
+
+#### Remaining official-reference failures, by official feature
+
+| Cluster | n | Cases |
+| --- | --- | --- |
+| other | 1 | 00003 |
+
+Total official-reference failures: 1.
+_Source: `/tmp/bng3-campaign/run39878668497/ssts-31ae76c19fdd03c9d4af788f58dd5187726e14a1-1/report.json` (SHA-256 `49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `31ae76c19fdd03c9d4af788f58dd5187726e14a1`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
 
 <!-- END GENERATED: sbml-campaign-current -->
+
+`stochastic/00003` remains an official-reference failure in this report. The
+recorded 40,000-run ensemble violates 5 of 100 DSMTS mean/standard-deviation
+tests; the report estimates a `3.04e-7` tail probability under the guide's
+approximate-normal null assumptions. A separate exact linear birth-death
+source-law calibration is retained in
+[`stochastic-00003-heldout-source-law-calibration.json`](../provenance/sbml-campaign/stochastic-00003-heldout-source-law-calibration.json).
+That calibration covers a distinct held-out ensemble and predates PR #389;
+its receipt-scoped diagnostic does not revise the current raw failure or
+qualify the integrated product. The current manifest therefore keeps
+`stochastic/00003` failed.
 
 The generated comparison above lists every case whose verdict changed, the
 stage it changed at, and every case that regressed. A stage that stops being

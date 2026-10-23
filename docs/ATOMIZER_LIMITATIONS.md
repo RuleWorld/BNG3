@@ -10,13 +10,13 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 
 | Field | Value |
 | --- | --- |
-| Generated on | 2026-10-22 |
-| Tree described | `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a` |
-| Measured at commit | `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a` |
+| Generated on | 2026-10-23 |
+| Tree described | `31ae76c19fdd03c9d4af788f58dd5187726e14a1` |
+| Measured at commit | `31ae76c19fdd03c9d4af788f58dd5187726e14a1` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
-| Report SHA-256 | `68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3` |
+| Report SHA-256 | `49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f` |
 | BNG3 version | 3.0.0a1 |
-| Native extension SHA-256 | `0f3b9a6821d9e14e93684a95b33675d9c770508a0a0aeca388ec9549c78503bc` |
+| Native extension SHA-256 | `aa947dc7da940bf24605eda8f22914e16ccfc4efbe7cf04026468843dea78246` |
 | Source tree of the measurement | `/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py` |
 
 The measurement is a full run of the pinned official SBML Test Suite; its per-case verdicts are recorded in the expectation manifest, which the campaign regenerates whenever a merge changes a verdict.
@@ -56,9 +56,10 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 | `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
 | `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
 | `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
+| `harness:stochastic-ensemble-budget-not-comparable` | harness | 2 | **no narrative recorded** | — |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 125 atomizer-side, 14 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 125 atomizer-side, 16 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -177,6 +178,10 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.5, Sec. 4.12.7; campaign reference-comparison contract
 - **What BNG3 does instead**: The source model converts, round-trips, and passes the independent trajectory comparison. The official reference grid includes the exact scheduled-action boundary, where the official convention reports the assignment as already applied while the native action dispatcher exposes the pre-assignment phase value. The point-wise reference comparison therefore remains unsupported.
 - **Reducible?**: Yes, in the comparison contract: sample the post-event value at the defined boundary, or compare according to the event execution phase. This is a harness/runtime observation-boundary issue, not an Atomizer refusal.
+
+### `harness:stochastic-ensemble-budget-not-comparable`
+
+**No narrative is recorded for this construct.** The narrative file must gain an entry for it; the generator refuses to render a limitation it cannot explain.
 
 ## Cases the official suite says do not apply
 

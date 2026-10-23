@@ -1007,11 +1007,11 @@ def expectations_from_report(
             "source_report.bng3_commit produced for that case. 'passed' is a "
             "result. 'failed' is a result too: the stage ran and disagreed "
             "with the reference, which is a finding to investigate. "
-            "'unsupported' is the only gap: the case's 'gap' entry names the "
-            "construct that is not representable today together with the "
-            "harness's cause labels for it. No entry claims that a currently "
-            "unsupported construct should become supported, and an "
-            "'unsupported' entry is never counted as support."
+            "'unsupported' records a gap: the case's 'gap' entry names either "
+            "a construct that is not representable today or a harness-side "
+            "comparability limit, with its side and cause labels. No entry "
+            "claims that a currently unsupported construct should become "
+            "supported, and an 'unsupported' entry is never counted as support."
         ),
         "stages": list(EXPECTATION_STAGES),
         "statuses": list(EXPECTATION_STATUSES),

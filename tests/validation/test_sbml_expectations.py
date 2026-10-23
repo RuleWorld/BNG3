@@ -110,6 +110,7 @@ def test_committed_manifest_records_a_reproducible_measurement():
     assert manifest["schema_version"] == 1
     assert manifest["kind"] == "sbml-test-suite-expectations"
     assert manifest["generator"] == "scripts/ci/sbml_campaign_inventory.py"
+    assert "harness-side comparability limit" in manifest["note"]
     assert tuple(manifest["stages"]) == inventory.EXPECTATION_STAGES
     assert tuple(manifest["statuses"]) == inventory.EXPECTATION_STATUSES
 
