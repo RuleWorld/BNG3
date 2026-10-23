@@ -29,6 +29,22 @@ inventory are the same numbers.
 Every record is retained. A record that is not an SBML artifact is reported
 as `unsupported_format` with its format, not silently dropped.
 
+The hosted `Official SBML conformance subset` workflow can run this corpus
+without rerunning the official suite: dispatch it with `lane=curated-biomodels`
+to run the complete flat and atomized passes. The workflow seeds its inventory
+from the checked-in query response snapshot
+[`curated-biomodels-query-inventory.json`](../provenance/curated-biomodels-query-inventory.json),
+whose query, capture time, record count and SHA-256 are recorded in
+[`curated-biomodels-query-inventory.provenance.json`](../provenance/curated-biomodels-query-inventory.provenance.json).
+Before the replay, it queries the live search API and compares current record
+IDs with that snapshot. Membership drift is reported separately and fails the
+qualification while preserving the snapshot run. The validator downloads each
+model using its pinned public URL and SHA-256 and records the retrieved artifact
+hash in the report. The gate keeps unsupported and not-comparable records
+separate, and fails on incomplete inventory, semantic failures, non-comparable
+records or timeouts. Reports and per-record classifications are retained as a
+workflow artifact for follow-up.
+
 ## How the statuses are read
 
 The harness owns the vocabulary, and the categories are kept apart:
